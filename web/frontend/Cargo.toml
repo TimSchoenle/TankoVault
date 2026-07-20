@@ -6,6 +6,13 @@ authors = ["TankoVault contributors"]
 publish = false
 description = "TankoVault reader-facing web frontend — Dioxus (WASM SPA) + the Inkstone design system (design §17)."
 
+# The web bundle's output filenames (`<bin>_bg.wasm`, `<bin>.js`, referenced from the
+# generated index.html) follow this binary target's name, not the package name. Pin it to a
+# generic, project-agnostic `app` so renaming the crate never churns the served asset paths.
+[[bin]]
+name = "app"
+path = "src/main.rs"
+
 # This crate is intentionally excluded from the host workspace (see the root
 # Cargo.toml `exclude`) because it targets `wasm32-unknown-unknown` via the `dx`
 # CLI. Dependency versions are therefore pinned here rather than inherited.

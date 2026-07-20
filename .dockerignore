@@ -3,12 +3,19 @@
 # the images need is compiled from source inside the build stages.
 
 # ---------------------------------------------------------------------------
-# Build / output artefacts (rebuilt inside the image)
+# Build / output artefacts (rebuilt inside the image). Patterns are matched at
+# the context root AND nested — `target/` alone would only exclude the repo-root
+# Cargo target, leaving `web/frontend/target/` to leak a stale WASM bundle into
+# the frontend image (the `dx build` output is rebuilt from source in-stage).
 # ---------------------------------------------------------------------------
 target/
+**/target/
 dist/
+**/dist/
 .dioxus/
+**/.dioxus/
 node_modules/
+**/node_modules/
 
 # ---------------------------------------------------------------------------
 # VCS / CI / editor / tooling metadata (not needed to build)

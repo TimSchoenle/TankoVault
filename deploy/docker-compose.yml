@@ -1,0 +1,216 @@
+# Full end-to-end local stack (design §19): Postgres + Redis + NATS(JetStream) +
+# FlareSolverr, a one-shot migrate/seed step, every TankoVault backend service, and the Dioxus
+# web frontend behind nginx. Backend images are built from the single parameterised
+# deploy/docker/Dockerfile; the frontend from deploy/docker/Dockerfile.frontend (build
+# context = repo root for both).
+#
+#   docker compose -f deploy/docker-compose.yml up --build
+#
+# Then open the app at http://localhost:3000 (nginx serves the SPA and proxies /v1/* to api).
+#
+# Secrets here are DEV-ONLY placeholders. Replace TANKOVAULT_AUTH__JWT_SECRET, the AniList
+# credentials, and TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY before any non-local use.
+name: tankovault
+
+x-build: &build
+  context: ..
+  dockerfile: deploy/docker/Dockerfile
+
+x-telemetry: &telemetry
+  TANKOVAULT_TELEMETRY__JSON_LOGS: "true"
+  TANKOVAULT_TELEMETRY__LOG_FILTER: "info,tankovault=debug"
+
+x-db-url: &db-url "postgres://tankovault:tankovault@postgres:5432/tankovault"
+
+services:
+  # ---- Infrastructure ---------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: tankovault
+      POSTGRES_PASSWORD: tankovault
+      POSTGRES_DB: tankovault
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tankovault -d tankovault"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  nats:
+    image: nats:2-alpine
+    command: ["-js", "-m", "8222"] # JetStream + HTTP monitoring (for the healthcheck)
+    ports: ["4222:4222"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    environment:
+      LOG_LEVEL: info
+    ports: ["8191:8191"]
+
+  # ---- Schema migrations + demo seed (runs once, then exits) -------------------------
+  migrate:
+    build:
+      <<: *build
+      args: { BIN: xtask }
+    command: ["migrate"]
+    environment:
+      DATABASE_URL: *db-url
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  seed:
+    build:
+      <<: *build
+      args: { BIN: xtask }
+    command: ["seed"]
+    environment:
+      DATABASE_URL: *db-url
+      TANKOVAULT_SEED_ADMIN_PASSWORD: changeme12345
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    restart: "no"
+
+  # ---- Services ---------------------------------------------------------------------
+  api:
+    build:
+      <<: *build
+      args: { BIN: api }
+    environment:
+      <<: *telemetry
+      TANKOVAULT_TELEMETRY__SERVICE_NAME: api
+      TANKOVAULT_DATABASE__URL: *db-url
+      TANKOVAULT_AUTH__JWT_SECRET: dev-jwt-secret-change-me
+      TANKOVAULT_CONTROL_PLANE_URL: http://control-plane:8081
+      TANKOVAULT_SYNC_URL: http://sync:8083
+      TANKOVAULT_NATS__URL: nats://nats:4222 # live per-user notification SSE relay (/v1/me/stream)
+    ports: ["8080:8080"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      nats: { condition: service_healthy }
+
+  control-plane:
+    build:
+      <<: *build
+      args: { BIN: control-plane }
+    environment:
+      <<: *telemetry
+      TANKOVAULT_TELEMETRY__SERVICE_NAME: control-plane
+      TANKOVAULT_DATABASE__URL: *db-url
+      TANKOVAULT_NATS__URL: nats://nats:4222
+      TANKOVAULT_REDIS__URL: redis://redis:6379 # singleton-scheduler leader election (design §12)
+    ports: ["8081:8081"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      nats: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  worker:
+    build:
+      <<: *build
+      args: { BIN: worker }
+    environment:
+      <<: *telemetry
+      TANKOVAULT_TELEMETRY__SERVICE_NAME: worker
+      TANKOVAULT_DATABASE__URL: *db-url
+      TANKOVAULT_NATS__URL: nats://nats:4222
+      TANKOVAULT_WORKER__CHALLENGE_SOLVER_ENDPOINT: http://challenge-solver:8090
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      nats: { condition: service_healthy }
+      challenge-solver: { condition: service_started }
+    deploy:
+      replicas: 2 # JetStream consumer group → free horizontal scale
+
+  notifier:
+    build:
+      <<: *build
+      args: { BIN: notifier }
+    environment:
+      <<: *telemetry
+      TANKOVAULT_TELEMETRY__SERVICE_NAME: notifier
+      TANKOVAULT_DATABASE__URL: *db-url
+      TANKOVAULT_NATS__URL: nats://nats:4222
+    ports: ["8082:8082"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      nats: { condition: service_healthy }
+
+  sync:
+    build:
+      <<: *build
+      args: { BIN: sync }
+    environment:
+      <<: *telemetry
+      TANKOVAULT_TELEMETRY__SERVICE_NAME: sync
+      TANKOVAULT_DATABASE__URL: *db-url
+      TANKOVAULT_ANILIST__CLIENT_ID: ""
+      TANKOVAULT_ANILIST__CLIENT_SECRET: ""
+      # OAuth returns the browser to the frontend origin, which proxies /v1/* to the api.
+      TANKOVAULT_ANILIST__REDIRECT_URI: http://localhost:3000/v1/me/sync/anilist/callback
+      # DEV key only: 32 zero bytes, base64. Generate a real one with `openssl rand -base64 32`.
+      TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    ports: ["8083:8083"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  challenge-solver:
+    build:
+      <<: *build
+      args: { BIN: challenge-solver }
+    environment:
+      <<: *telemetry
+      TANKOVAULT_TELEMETRY__SERVICE_NAME: challenge-solver
+      TANKOVAULT_SOLVER__FLARESOLVERR_ENDPOINT: http://flaresolverr:8191
+    ports: ["8090:8090"]
+    depends_on:
+      flaresolverr: { condition: service_started }
+
+  # Optional headless-render tier (design §9). Uses the Chromium-provisioned runtime
+  # (the distroless image has no browser); doubles as a ChallengeSolver back-end on /v1/solve.
+  render:
+    build:
+      <<: *build
+      target: runtime-browser
+      args: { BIN: render }
+    environment:
+      <<: *telemetry
+      TANKOVAULT_TELEMETRY__SERVICE_NAME: render
+      # CHROME_PATH + NO_SANDBOX are baked into the runtime-browser image.
+    ports: ["8084:8084"]
+
+  # ---- Frontend (Dioxus WASM SPA behind nginx) --------------------------------------
+  # nginx serves the built SPA and reverse-proxies /v1/* (REST + SSE) to `api`, giving the
+  # single origin the client's same-origin API calls (API_BASE = "") require. This is the
+  # front door for the E2E stack: open http://localhost:3000.
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.frontend
+    ports: ["3000:80"]
+    depends_on:
+      api: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+volumes:
+  pgdata:

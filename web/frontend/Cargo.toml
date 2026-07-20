@@ -1,0 +1,36 @@
+[package]
+name = "tankovault-frontend"
+version = "0.1.0"
+edition = "2021"
+authors = ["TankoVault contributors"]
+publish = false
+description = "TankoVault reader-facing web frontend — Dioxus (WASM SPA) + the Inkstone design system (design §17)."
+
+# This crate is intentionally excluded from the host workspace (see the root
+# Cargo.toml `exclude`) because it targets `wasm32-unknown-unknown` via the `dx`
+# CLI. Dependency versions are therefore pinned here rather than inherited.
+
+[dependencies]
+dioxus = { version = "0.7", features = ["web", "router"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+gloo-net = { version = "0.6", features = ["http", "json", "eventsource"] }
+# Console dashboard auto-refresh loop (wasm-friendly async sleep).
+gloo-timers = { version = "0.3", features = ["futures"] }
+futures-util = "0.3"
+base64 = "0.22"
+# Live notification stream: read `MessageEvent.data()` from the SSE subscription.
+web-sys = { version = "0.3", features = ["MessageEvent"] }
+wasm-bindgen = "0.2"
+# Relative-time formatting on the console uses the browser's own ISO-8601 date parser.
+js-sys = "0.3"
+
+[features]
+default = ["web"]
+web = []
+
+# Keep debug builds small enough for fast `dx serve` iteration; release is CDN-bound.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1

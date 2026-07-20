@@ -1,0 +1,18 @@
+[application]
+name = "tankovault"
+
+[web.app]
+title = "TankoVault — manga tracker"
+# Base path when the SPA is served under a sub-path by the API/CDN.
+base_path = ""
+
+[web.watcher]
+# The Tailwind CLI writes assets/tailwind.css; watch it so `dx serve` hot-reloads styles.
+watch_path = ["src", "assets"]
+
+[web.resource]
+# Extra static assets copied verbatim into the build output.
+[web.resource.dev]
+
+[bundle]
+identifier = "dev.tankovault.frontend"

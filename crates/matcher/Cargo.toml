@@ -1,0 +1,13 @@
+[package]
+name = "tankovault-matcher"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Series canonicalisation: pure candidate scoring and merge-band decisions."
+
+[dependencies]
+tankovault-domain = { workspace = true }
+
+[lints]
+workspace = true

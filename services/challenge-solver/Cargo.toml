@@ -1,0 +1,26 @@
+[package]
+name = "tankovault-challenge-solver"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Bot-management bypass tier: HTTP front over a pluggable ChallengeSolver."
+
+[[bin]]
+name = "challenge-solver"
+path = "src/main.rs"
+
+[dependencies]
+tankovault-config = { workspace = true }
+tankovault-observability = { workspace = true }
+tankovault-solver = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+metrics = { workspace = true }
+
+[lints]
+workspace = true

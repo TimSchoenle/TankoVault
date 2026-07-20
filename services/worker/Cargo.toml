@@ -1,0 +1,34 @@
+[package]
+name = "tankovault-worker"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Scan worker: executes tasks via adapters + fetch stack, upserts deltas idempotently."
+
+[[bin]]
+name = "worker"
+path = "src/main.rs"
+
+[dependencies]
+tankovault-config = { workspace = true }
+tankovault-observability = { workspace = true }
+tankovault-domain = { workspace = true }
+tankovault-db = { workspace = true }
+tankovault-adapters = { workspace = true }
+tankovault-fetch = { workspace = true }
+tankovault-solver = { workspace = true }
+tankovault-bus = { workspace = true }
+tankovault-contracts = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+time = { workspace = true }
+sha2 = { workspace = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

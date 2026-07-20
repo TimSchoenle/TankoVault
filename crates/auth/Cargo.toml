@@ -1,0 +1,23 @@
+[package]
+name = "tankovault-auth"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Password hashing (argon2id), JWT access tokens, rotating refresh tokens, RBAC."
+
+[dependencies]
+tankovault-domain = { workspace = true }
+argon2 = { workspace = true }
+aes-gcm = { workspace = true }
+jsonwebtoken = { workspace = true }
+sha2 = { workspace = true }
+rand = { workspace = true }
+base64 = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+time = { workspace = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

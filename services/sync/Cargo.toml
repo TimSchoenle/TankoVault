@@ -1,0 +1,30 @@
+[package]
+name = "tankovault-sync"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "AniList external sync (OAuth push/pull). Phase 5."
+
+[[bin]]
+name = "sync"
+path = "src/main.rs"
+
+[dependencies]
+tankovault-config = { workspace = true }
+tankovault-observability = { workspace = true }
+tankovault-db = { workspace = true }
+tankovault-domain = { workspace = true }
+tankovault-auth = { workspace = true }
+tankovault-matcher = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

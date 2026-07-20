@@ -28,14 +28,22 @@ RUN rustup target add wasm32-unknown-unknown \
 COPY web/frontend/ ./web/frontend/
 WORKDIR /app/web/frontend
 # `dx build` emits the web bundle under target/dx/<app>/release/web/public. Locate it by path
-# rather than hardcoding the app name, then flatten it into /dist for the runtime stage. The
-# guards fail the build loudly if the layout ever changes, instead of silently copying `/.`.
-RUN dx build --platform web --release \
- && public_dir="$(find target/dx -type d -path '*/web/public' | head -n1)" \
- && test -n "$public_dir" || (echo "dx build output (web/public) not found" >&2; exit 1) \
- && mkdir -p /dist \
- && cp -r "$public_dir/." /dist/ \
- && test -f /dist/index.html || (echo "bundle missing index.html" >&2; exit 1)
+# rather than hardcoding the app name, then flatten it into /dist for the runtime stage.
+# Match the `release` bundle explicitly and require exactly one hit: `head -n1` on an
+# ambiguous match silently shipped a stale `debug` bundle when a second output dir was
+# present, so fail loudly instead of guessing which build to serve.
+RUN set -eu; \
+    dx build --platform web --release; \
+    matches="$(find target/dx -type d -path '*/release/web/public')"; \
+    count="$(printf '%s\n' "$matches" | grep -c . || true)"; \
+    if [ "$count" -ne 1 ]; then \
+      echo "expected exactly one release bundle under target/dx, found ${count}:" >&2; \
+      printf '%s\n' "$matches" >&2; \
+      exit 1; \
+    fi; \
+    mkdir -p /dist; \
+    cp -r "${matches}/." /dist/; \
+    test -f /dist/index.html || { echo "bundle missing index.html" >&2; exit 1; }
 
 # --- Runtime: nginx serving the SPA + reverse-proxying the API. ---------------------
 FROM nginx:1.27-alpine AS frontend

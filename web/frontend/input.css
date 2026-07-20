@@ -1,0 +1,10 @@
+/*
+ * Tailwind entrypoint (optional build path). The shipped assets/main.css is authored by
+ * hand so the app renders without Node/Tailwind; if you prefer utility-first authoring,
+ * build this file over the top:
+ *
+ *   npx tailwindcss -i ./input.css -o ./assets/main.css --watch
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

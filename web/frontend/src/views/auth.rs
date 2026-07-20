@@ -1,0 +1,156 @@
+//! Login / Register (§17.4 auth flow). Access token is held in memory; the refresh token
+//! is set as an httpOnly cookie by the API. On success we route to Discover.
+
+use crate::api;
+use crate::models::{LoginRequest, RegisterRequest};
+use crate::state::use_session;
+use crate::Route;
+use dioxus::prelude::*;
+
+#[component]
+pub fn Login() -> Element {
+    let session = use_session();
+    let nav = use_navigator();
+
+    let mut register_mode = use_signal(|| false);
+    let mut email = use_signal(String::new);
+    let mut username = use_signal(String::new);
+    let mut login = use_signal(String::new);
+    let mut password = use_signal(String::new);
+    let mut error = use_signal(|| Option::<String>::None);
+    let mut busy = use_signal(|| false);
+
+    let submit = use_callback(move |()| {
+        if *busy.read() {
+            return;
+        }
+        busy.set(true);
+        error.set(None);
+        let is_register = *register_mode.read();
+        let email_v = email.read().trim().to_owned();
+        let username_v = username.read().trim().to_owned();
+        let login_v = login.read().trim().to_owned();
+        let password_v = password.read().clone();
+        spawn(async move {
+            let result = if is_register {
+                api::register(&RegisterRequest {
+                    email: email_v,
+                    username: username_v,
+                    password: password_v,
+                })
+                .await
+            } else {
+                api::login(&LoginRequest {
+                    login: login_v,
+                    password: password_v,
+                })
+                .await
+            };
+            match result {
+                Ok(tok) => {
+                    session.set_token(tok.access_token);
+                    nav.push(Route::Discover {});
+                }
+                Err(e) => error.set(Some(e)),
+            }
+            busy.set(false);
+        });
+    });
+
+    let is_register = *register_mode.read();
+    let heading = if is_register {
+        "Create your account"
+    } else {
+        "Welcome back"
+    };
+    let cta = if is_register {
+        "Create account"
+    } else {
+        "Sign in"
+    };
+    let toggle_label = if is_register {
+        "Have an account? Sign in"
+    } else {
+        "New here? Create an account"
+    };
+
+    rsx! {
+        div { class: "ik-auth",
+            h1 { "{heading}" }
+            p { class: "ik-muted", "Track manga across every provider, in one place." }
+
+            if let Some(msg) = error.read().clone() {
+                div { class: "ik-error", style: "padding:12px;margin:14px 0;text-align:left;",
+                    "{msg}"
+                }
+            }
+
+            if is_register {
+                div { class: "ik-field",
+                    label { "Email" }
+                    input {
+                        class: "ik-input",
+                        r#type: "email",
+                        value: "{email}",
+                        oninput: move |e| email.set(e.value()),
+                    }
+                }
+                div { class: "ik-field",
+                    label { "Username" }
+                    input {
+                        class: "ik-input",
+                        value: "{username}",
+                        oninput: move |e| username.set(e.value()),
+                    }
+                }
+            } else {
+                div { class: "ik-field",
+                    label { "Email or username" }
+                    input {
+                        class: "ik-input",
+                        value: "{login}",
+                        oninput: move |e| login.set(e.value()),
+                    }
+                }
+            }
+            div { class: "ik-field",
+                label { "Password" }
+                input {
+                    class: "ik-input",
+                    r#type: "password",
+                    value: "{password}",
+                    oninput: move |e| password.set(e.value()),
+                    onkeydown: move |e| {
+                        if e.key() == Key::Enter {
+                            submit.call(());
+                        }
+                    },
+                }
+            }
+
+            button {
+                class: "ik-btn primary",
+                style: "width:100%;",
+                disabled: *busy.read(),
+                onclick: move |_| submit.call(()),
+                if *busy.read() {
+                    "Working…"
+                } else {
+                    "{cta}"
+                }
+            }
+
+            button {
+                class: "ik-btn",
+                style: "width:100%;margin-top:10px;",
+                r#type: "button",
+                onclick: move |_| {
+                    error.set(None);
+                    let now = *register_mode.read();
+                    register_mode.set(!now);
+                },
+                "{toggle_label}"
+            }
+        }
+    }
+}

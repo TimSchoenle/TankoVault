@@ -1,0 +1,29 @@
+[package]
+name = "tankovault-render"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Optional headless render service for JS-rendered provider pages."
+
+[[bin]]
+name = "render"
+path = "src/main.rs"
+
+[dependencies]
+tankovault-config = { workspace = true }
+tankovault-observability = { workspace = true }
+tankovault-solver = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+metrics = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+chromiumoxide = { workspace = true }
+
+[lints]
+workspace = true

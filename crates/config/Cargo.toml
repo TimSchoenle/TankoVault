@@ -1,0 +1,18 @@
+[package]
+name = "tankovault-config"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Layered typed configuration loading."
+
+[dependencies]
+serde = { workspace = true }
+figment = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+figment = { workspace = true, features = ["test"] }
+
+[lints]
+workspace = true

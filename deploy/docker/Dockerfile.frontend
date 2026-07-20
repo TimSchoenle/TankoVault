@@ -1,0 +1,44 @@
+# syntax=docker/dockerfile:1
+#
+# Frontend image for the local E2E stack. Two stages:
+#   1. build the Dioxus (WASM SPA) bundle with the `dx` CLI;
+#   2. serve the static bundle behind nginx, which also reverse-proxies `/v1/*`
+#      (REST + SSE) to the `api` service.
+#
+# The SPA calls the API same-origin (web/frontend/src/api.rs → `API_BASE = ""`), so serving
+# it and proxying `/v1/*` from one nginx origin is what makes those calls resolve — no CORS,
+# and Server-Sent Events (`/v1/me/stream`, `/v1/admin/scans/stream`) flow through unbuffered.
+#
+# Build context is the repo root (see deploy/docker-compose.yml):
+#   docker build -f deploy/docker/Dockerfile.frontend -t tankovault-frontend .
+
+ARG RUST_VERSION=1.94
+
+# --- Build: compile the WASM bundle with the Dioxus CLI. ----------------------------
+FROM rust:${RUST_VERSION}-bookworm AS frontend-builder
+WORKDIR /app
+# The CLI version must match the `dioxus` library version (web/frontend/Cargo.toml → 0.7.9)
+# so asset hashing/codegen line up. `--locked` builds it from its own pinned lockfile.
+# This layer is cached independently of the frontend source below.
+RUN rustup target add wasm32-unknown-unknown \
+ && cargo install dioxus-cli@0.7.9 --locked
+
+# The frontend crate is excluded from the host workspace and pins its own dependencies, so it
+# builds standalone from just this directory — keeping the layer independent of backend churn.
+COPY web/frontend/ ./web/frontend/
+WORKDIR /app/web/frontend
+# `dx build` emits the web bundle under target/dx/<app>/release/web/public. Locate it by path
+# rather than hardcoding the app name, then flatten it into /dist for the runtime stage. The
+# guards fail the build loudly if the layout ever changes, instead of silently copying `/.`.
+RUN dx build --platform web --release \
+ && public_dir="$(find target/dx -type d -path '*/web/public' | head -n1)" \
+ && test -n "$public_dir" || (echo "dx build output (web/public) not found" >&2; exit 1) \
+ && mkdir -p /dist \
+ && cp -r "$public_dir/." /dist/ \
+ && test -f /dist/index.html || (echo "bundle missing index.html" >&2; exit 1)
+
+# --- Runtime: nginx serving the SPA + reverse-proxying the API. ---------------------
+FROM nginx:1.27-alpine AS frontend
+COPY deploy/docker/frontend.nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=frontend-builder /dist /usr/share/nginx/html
+EXPOSE 80

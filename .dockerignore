@@ -1,0 +1,53 @@
+# The Docker build context is the repository root (see deploy/docker-compose.yml
+# and deploy/docker/Dockerfile*). Keep it small and free of secrets: everything
+# the images need is compiled from source inside the build stages.
+
+# ---------------------------------------------------------------------------
+# Build / output artefacts (rebuilt inside the image)
+# ---------------------------------------------------------------------------
+target/
+dist/
+.dioxus/
+node_modules/
+
+# ---------------------------------------------------------------------------
+# VCS / CI / editor / tooling metadata (not needed to build)
+# ---------------------------------------------------------------------------
+.git/
+.gitignore
+.gitattributes
+.github/
+.idea/
+.vscode/
+.serena/
+.junie/
+*.iml
+
+# ---------------------------------------------------------------------------
+# Docs & repo meta (never copied into an image)
+# ---------------------------------------------------------------------------
+docs/
+**/*.md
+LICENSE*
+
+# ---------------------------------------------------------------------------
+# Local env & secrets (never bake these into an image)
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---------------------------------------------------------------------------
+# Logs & OS junk
+# ---------------------------------------------------------------------------
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------------------
+# The ignore files themselves
+# ---------------------------------------------------------------------------
+.dockerignore

@@ -1,0 +1,41 @@
+[package]
+name = "tankovault-api"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Axum HTTP edge: public read/write + admin, auth, resolved links, SSE."
+
+[[bin]]
+name = "api"
+path = "src/main.rs"
+
+[dependencies]
+tankovault-config = { workspace = true }
+tankovault-observability = { workspace = true }
+tankovault-db = { workspace = true }
+tankovault-domain = { workspace = true }
+tankovault-auth = { workspace = true }
+tankovault-adapters = { workspace = true }
+tankovault-fetch = { workspace = true }
+tankovault-solver = { workspace = true }
+tankovault-bus = { workspace = true }
+tankovault-contracts = { workspace = true }
+axum = { workspace = true }
+tokio-stream = { workspace = true }
+axum-extra = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+time = { workspace = true }
+reqwest = { workspace = true }
+metrics = { workspace = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

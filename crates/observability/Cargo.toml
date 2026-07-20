@@ -1,0 +1,18 @@
+[package]
+name = "tankovault-observability"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Tracing, OTel, and metrics init helpers."
+
+[dependencies]
+tankovault-config = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

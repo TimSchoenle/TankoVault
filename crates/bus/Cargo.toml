@@ -1,0 +1,21 @@
+[package]
+name = "tankovault-bus"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "NATS JetStream connection, stream provisioning, publish and consume helpers."
+
+[dependencies]
+tankovault-contracts = { workspace = true }
+async-nats = { workspace = true }
+uuid = { workspace = true }
+bytes = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+futures = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

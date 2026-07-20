@@ -1,0 +1,17 @@
+[package]
+name = "tankovault-contracts"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Shared NATS message/event schemas and subject naming."
+
+[dependencies]
+tankovault-domain = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+time = { workspace = true }
+
+[lints]
+workspace = true

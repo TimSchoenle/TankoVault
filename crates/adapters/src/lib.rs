@@ -16,6 +16,7 @@ mod error;
 mod factory;
 mod generic;
 pub mod html;
+mod kunmanga;
 mod madara;
 pub mod presets;
 mod types;
@@ -25,6 +26,7 @@ pub use demonicscans::DemonicScansAdapter;
 pub use error::AdapterError;
 pub use factory::build_adapter;
 pub use generic::GenericConfigAdapter;
+pub use kunmanga::KunMangaAdapter;
 pub use madara::madara_default_config;
 pub use presets::{ProviderPreset, builtin as builtin_presets};
 pub use types::{

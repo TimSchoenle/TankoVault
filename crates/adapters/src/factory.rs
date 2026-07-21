@@ -4,6 +4,7 @@ use crate::config::AdapterConfig;
 use crate::demonicscans::DemonicScansAdapter;
 use crate::error::AdapterError;
 use crate::generic::GenericConfigAdapter;
+use crate::kunmanga::KunMangaAdapter;
 use crate::madara::madara_default_config;
 use crate::types::SourceAdapter;
 use tankovault_domain::AdapterKind;
@@ -26,7 +27,9 @@ fn merge(base: &mut Value, over: &Value) {
 /// - `Madara`: Madara defaults with the provider `config` merged on top (provider wins).
 /// - `GenericConfig`: the provider `config` used as-is.
 /// - `Custom`: dispatched by slug to a registered struct, otherwise
-///   [`AdapterError::UnknownCustom`].
+///   [`AdapterError::UnknownCustom`]. A custom adapter may still consume `config` — e.g.
+///   `kunmanga` reuses the Madara selectors (merged as for [`AdapterKind::Madara`]) for its
+///   HTML catalogue/series parsing and overrides only chapter fetching.
 ///
 /// # Errors
 /// [`AdapterError::Config`] if the effective config is malformed, or
@@ -37,21 +40,25 @@ pub fn build_adapter(
     config: &Value,
 ) -> Result<Box<dyn SourceAdapter>, AdapterError> {
     match adapter {
-        AdapterKind::Madara => {
-            let mut effective = madara_default_config();
-            merge(&mut effective, config);
-            let cfg = AdapterConfig::from_value(&effective)?;
-            Ok(Box::new(GenericConfigAdapter::new(cfg)))
-        }
+        AdapterKind::Madara => Ok(Box::new(GenericConfigAdapter::new(madara_config(config)?))),
         AdapterKind::GenericConfig => {
             let cfg = AdapterConfig::from_value(config)?;
             Ok(Box::new(GenericConfigAdapter::new(cfg)))
         }
         AdapterKind::Custom => match slug {
             "demonicscans" => Ok(Box::new(DemonicScansAdapter::new())),
+            // Hybrid: Madara-shaped HTML for catalogue/series, JSON API for chapters.
+            "kunmanga" => Ok(Box::new(KunMangaAdapter::new(madara_config(config)?))),
             other => Err(AdapterError::UnknownCustom(other.to_owned())),
         },
     }
+}
+
+/// Merge a provider `config` onto the Madara selector defaults and parse the result.
+fn madara_config(config: &Value) -> Result<AdapterConfig, AdapterError> {
+    let mut effective = madara_default_config();
+    merge(&mut effective, config);
+    AdapterConfig::from_value(&effective)
 }
 
 #[cfg(test)]

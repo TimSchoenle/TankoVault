@@ -201,22 +201,32 @@ impl TryFrom<TaskRow> for ScanTask {
     }
 }
 
-/// Create a queued task and return its id (planner writes then publishes to `JetStream`).
+/// Create a queued task and return its id, or `None` when an identical task
+/// (`run_id`, `kind`, `target`) already exists.
+///
+/// The `ON CONFLICT DO NOTHING` makes fan-out idempotent under at-least-once delivery: a
+/// redelivered `catalog_page` re-attempts the same child inserts and simply gets `None`
+/// back, so the caller skips the duplicate `add_total_tasks` + publish instead of
+/// re-enqueuing every series (design §12). Relies on the `scan_tasks_run_kind_target`
+/// unique index.
 pub async fn create_task<'e, E: PgExecutor<'e>>(
     exec: E,
     run_id: ScanRunId,
     kind: &str,
     target: &Json,
-) -> DbResult<ScanTaskId> {
+) -> DbResult<Option<ScanTaskId>> {
     let id = ScanTaskId::new();
-    sqlx::query("INSERT INTO scan_tasks (id, run_id, kind, target) VALUES ($1,$2,$3,$4)")
-        .bind(id.as_uuid())
-        .bind(run_id.as_uuid())
-        .bind(kind)
-        .bind(target)
-        .execute(exec)
-        .await?;
-    Ok(id)
+    let inserted: Option<Uuid> = sqlx::query_scalar(
+        "INSERT INTO scan_tasks (id, run_id, kind, target) VALUES ($1,$2,$3,$4) \
+         ON CONFLICT (run_id, kind, (target::text)) DO NOTHING RETURNING id",
+    )
+    .bind(id.as_uuid())
+    .bind(run_id.as_uuid())
+    .bind(kind)
+    .bind(target)
+    .fetch_optional(exec)
+    .await?;
+    Ok(inserted.map(ScanTaskId::from_uuid))
 }
 
 /// Mark a task claimed by a worker (the normal path: the worker already has the message

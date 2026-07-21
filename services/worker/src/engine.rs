@@ -4,7 +4,7 @@
 
 use tankovault_adapters::{ChapterMeta, Ctx, SeriesMeta, SourceAdapter, build_adapter};
 use tankovault_bus::Bus;
-use tankovault_contracts::{ChapterDiscovered, TaskKind};
+use tankovault_contracts::{ChapterDiscovered, ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
 use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert};
 use tankovault_domain::{Provider, normalize_title};
@@ -141,9 +141,12 @@ impl Engine {
         Ok(outcome.new_chapters.len())
     }
 
-    /// One-shot full scan of a provider without the broker: walk the catalogue and ingest
-    /// every series inline. This is the Phase-0 deliverable (design §20). A single series'
-    /// malformed markup fails only that series, never the whole run.
+    /// One-shot full scan of a provider without the broker (the CLI `worker scan` path).
+    ///
+    /// Two phases, matching the broker fan-out (design §12, §20): **first** walk the entire
+    /// catalogue, registering every series from its listing so the complete series list
+    /// materialises up front; **then** fetch chapters + full metadata per series. A single
+    /// series' malformed markup fails only that series, never the whole run.
     pub(crate) async fn run_full_scan_inline(
         &self,
         provider: &Provider,
@@ -151,6 +154,10 @@ impl Engine {
         let (adapter, ctx) = self.provider_context(provider)?;
         let mut summary = ScanSummary::default();
 
+        // Phase 1 — collect ALL series: walk every catalogue page and register each series
+        // immediately (metadata-light, no chapters).
+        let mut paths: Vec<String> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
         for page in 1..=self.max_catalog_pages {
             let catalog = match adapter.list_catalog(&ctx, page).await {
                 Ok(c) => c,
@@ -163,20 +170,39 @@ impl Engine {
                 break;
             }
             for item in &catalog.items {
-                summary.series_seen += 1;
-                match self
-                    .process_series(provider, adapter.as_ref(), &ctx, &item.path)
-                    .await
-                {
-                    Ok(new) => summary.new_chapters += new,
-                    Err(e) => {
-                        summary.series_failed += 1;
-                        tracing::warn!(path = %item.path, error = %e, "series ingest failed");
-                    }
+                // Skip duplicates a paginator may repeat across pages.
+                if !seen.insert(item.path.clone()) {
+                    continue;
                 }
+                summary.series_seen += 1;
+                if let Err(e) = tankovault_db::repo::catalog::register_source_stub(
+                    &self.pool,
+                    provider.id,
+                    &item.path,
+                    &item.title,
+                )
+                .await
+                {
+                    tracing::warn!(path = %item.path, error = %e, "series registration failed");
+                }
+                paths.push(item.path.clone());
             }
             if !catalog.has_next {
                 break;
+            }
+        }
+
+        // Phase 2 — enrich: fetch chapters + full metadata for every collected series.
+        for path in &paths {
+            match self
+                .process_series(provider, adapter.as_ref(), &ctx, path)
+                .await
+            {
+                Ok(new) => summary.new_chapters += new,
+                Err(e) => {
+                    summary.series_failed += 1;
+                    tracing::warn!(path = %path, error = %e, "series ingest failed");
+                }
             }
         }
         Ok(summary)
@@ -212,18 +238,24 @@ impl Engine {
         Ok(summary)
     }
 
-    /// Dispatch a single task received from `JetStream`. Fanned-out series tasks are
-    /// published back to the bus; catalogue pages expand into series tasks.
+    /// Dispatch a single task received from `JetStream` (design §12).
+    ///
+    /// - `CatalogPage` **fans out**: it registers every series on the page immediately
+    ///   (breadth-first "collect all series first"), enqueues a `Series` task per series,
+    ///   and chains the next `CatalogPage` while the catalogue has more pages. This is what
+    ///   makes a full scan walk the *whole* catalogue instead of only page 1.
+    /// - `Series` fetches metadata + chapters and upserts (idempotent).
+    /// - `LatestFeed` (fast scan) ingests each updated series inline.
     pub(crate) async fn dispatch_task(
         &self,
         provider: &Provider,
-        kind: TaskKind,
-        target: &serde_json::Value,
+        task: &ScanTaskMessage,
     ) -> anyhow::Result<()> {
         let (adapter, ctx) = self.provider_context(provider)?;
-        match kind {
+        match task.kind {
             TaskKind::Series => {
-                let path = target
+                let path = task
+                    .target
                     .get("path")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("series task missing path"))?;
@@ -231,21 +263,45 @@ impl Engine {
                     .await?;
             }
             TaskKind::CatalogPage => {
-                let page = target
+                let page = task
+                    .target
                     .get("page")
                     .and_then(serde_json::Value::as_u64)
                     .and_then(|p| u32::try_from(p).ok())
                     .unwrap_or(1);
                 let catalog = adapter.list_catalog(&ctx, page).await?;
                 for item in &catalog.items {
-                    // In the broker path each series would be published as its own task;
-                    // here we ingest inline to keep the fan-out simple and idempotent.
-                    if let Err(e) = self
-                        .process_series(provider, adapter.as_ref(), &ctx, &item.path)
-                        .await
+                    // Breadth-first: register the series now so the full list is available
+                    // before any chapters are fetched; a registration failure must not lose
+                    // the series, so still enqueue its enrichment task.
+                    if let Err(e) = tankovault_db::repo::catalog::register_source_stub(
+                        &self.pool,
+                        provider.id,
+                        &item.path,
+                        &item.title,
+                    )
+                    .await
                     {
-                        tracing::warn!(path = %item.path, error = %e, "series ingest failed");
+                        tracing::warn!(path = %item.path, error = %e, "series registration failed");
                     }
+                    self.enqueue_child(
+                        task,
+                        "series",
+                        TaskKind::Series,
+                        serde_json::json!({ "path": item.path }),
+                    )
+                    .await?;
+                }
+                // Chain the next page while the catalogue has more, bounded by the same
+                // safety cap the inline walk uses so an unbounded paginator cannot loop.
+                if catalog.has_next && page < self.max_catalog_pages {
+                    self.enqueue_child(
+                        task,
+                        "catalog_page",
+                        TaskKind::CatalogPage,
+                        serde_json::json!({ "page": page + 1 }),
+                    )
+                    .await?;
                 }
             }
             TaskKind::LatestFeed => {
@@ -260,6 +316,47 @@ impl Engine {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Fan out one child task of `parent`'s run: persist it, bump the run's task total, and
+    /// publish it to the provider's `JetStream` subject.
+    ///
+    /// Task creation is idempotent on `(run_id, kind, target)`: if an identical child already
+    /// exists — e.g. this `catalog_page` was redelivered and re-processed — `create_task`
+    /// returns `None` and this is a no-op, so a redelivered page does not re-enqueue every
+    /// series. The total is incremented **before** the parent completes (the caller completes
+    /// it only after `dispatch_task` returns), so `done + failed` can never reach `total`
+    /// while fan-out is in flight — the run cannot finalise early.
+    async fn enqueue_child(
+        &self,
+        parent: &ScanTaskMessage,
+        kind_str: &str,
+        kind: TaskKind,
+        target: serde_json::Value,
+    ) -> anyhow::Result<()> {
+        let Some(bus) = &self.bus else {
+            anyhow::bail!("cannot fan out scan tasks without a broker");
+        };
+        let Some(task_id) =
+            tankovault_db::repo::scans::create_task(&self.pool, parent.run_id, kind_str, &target)
+                .await?
+        else {
+            // Identical child already enqueued (idempotent redelivery); nothing to do.
+            return Ok(());
+        };
+        tankovault_db::repo::scans::add_total_tasks(&self.pool, parent.run_id, 1).await?;
+        bus.publish_task(&ScanTaskMessage {
+            task_id,
+            run_id: parent.run_id,
+            provider_id: parent.provider_id,
+            provider_slug: parent.provider_slug.clone(),
+            mode: parent.mode,
+            kind,
+            target,
+            traceparent: None,
+        })
+        .await?;
         Ok(())
     }
 

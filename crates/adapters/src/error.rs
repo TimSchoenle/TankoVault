@@ -24,6 +24,9 @@ pub enum AdapterError {
     /// A required element was absent from the parsed page.
     #[error("required element not found: {0}")]
     Missing(String),
+    /// A structured (e.g. JSON API) response could not be parsed.
+    #[error("failed to parse provider response: {0}")]
+    Parse(String),
     /// No adapter is registered for a `custom` provider slug.
     #[error("no custom adapter registered for provider {0:?}")]
     UnknownCustom(String),

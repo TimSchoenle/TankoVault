@@ -174,9 +174,9 @@ async fn run_consumer(engine: &Engine) -> anyhow::Result<()> {
 async fn handle_task(engine: &Engine, task: &ScanTaskMessage) -> anyhow::Result<()> {
     let provider = tankovault_db::repo::providers::get(&engine.pool, task.provider_id).await?;
     tankovault_db::repo::scans::claim_task(&engine.pool, task.task_id, &engine.worker_id).await?;
-    engine
-        .dispatch_task(&provider, task.kind, &task.target)
-        .await?;
+    // A `CatalogPage` task fans out its children (and bumps the run total) before this
+    // returns, so completing it here cannot finalise the run prematurely.
+    engine.dispatch_task(&provider, task).await?;
     tankovault_db::repo::scans::complete_task(&engine.pool, task.task_id).await?;
     Ok(())
 }

@@ -27,8 +27,10 @@ pub struct ProviderPreset {
 /// The provider presets bundled with this build.
 ///
 /// - `demonicscans` — **custom Rust adapter** (bespoke PHP layout); no selector config.
-/// - `manhuaus`, `kunmanga` — the shared **Madara** adapter plus the handful of selector
-///   overrides where each site deviates from the Madara defaults.
+/// - `kunmanga` — **custom adapter**: Madara-shaped catalogue/series HTML (reusing the
+///   selector overrides below) but a JSON chapter API.
+/// - `manhuaus` — the shared **Madara** adapter plus the handful of selector overrides
+///   where the site deviates from the Madara defaults.
 #[must_use]
 pub fn builtin() -> Vec<ProviderPreset> {
     vec![
@@ -59,12 +61,14 @@ pub fn builtin() -> Vec<ProviderPreset> {
                 }
             }),
         },
-        // Madara with an ad-injected catalogue and Bootstrap pagination.
+        // Hybrid: Madara-shaped catalogue/series HTML, but chapters come from a JSON API
+        // (`/api/comics/{slug}/chapters`), so it ships a **custom adapter** that reuses the
+        // Madara selectors below for HTML parsing and overrides chapter fetching.
         ProviderPreset {
             slug: "kunmanga",
             name: "KunManga",
             base_url: "https://www.kunmanga.co.uk",
-            adapter: AdapterKind::Madara,
+            adapter: AdapterKind::Custom,
             config: json!({
                 "catalog": {
                     "path": "/manga/page/{page}",
@@ -72,10 +76,6 @@ pub fn builtin() -> Vec<ProviderPreset> {
                     // "Next" control marks additional pages.
                     "item": "div.page-item-detail:not(.custom-item-ad)",
                     "next": "a[aria-label=\"Next\"]"
-                },
-                "chapters": {
-                    // Chapter rows are <div>, not the Madara-default <li>.
-                    "container": "div.wp-manga-chapter"
                 }
             }),
         },

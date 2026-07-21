@@ -8,7 +8,7 @@
 use crate::error::{DbError, DbResult};
 use tankovault_domain::{
     Chapter, ChapterId, ContentType, ProviderId, ProviderState, Series, SeriesId, SeriesSource,
-    SeriesSourceId, SeriesStatus,
+    SeriesSourceId, SeriesStatus, normalize_title,
 };
 use sqlx::{FromRow, PgExecutor};
 use std::str::FromStr;
@@ -273,6 +273,56 @@ pub async fn upsert_source<'e, E: PgExecutor<'e>>(
     .fetch_one(exec)
     .await?;
     Ok(SeriesSourceId::from_uuid(id))
+}
+
+
+/// Ensure a series **source** row exists for a catalogue entry, creating a canonical
+/// series from the listing title when the source is new.
+///
+/// This is the breadth-first "collect all series first" step of a full scan (design §12):
+/// the catalogue walk registers every series immediately from its listing title + path, so
+/// the complete series list materialises before any per-series chapter fetch runs. It is a
+/// **no-op when the source already exists**, so it never downgrades metadata that a later
+/// `Series` task (or an earlier scan) has already enriched, and it never touches chapters.
+///
+/// For a genuinely new source it runs the same canonicalisation pipeline as `ingest_series`
+/// ([`resolve_canonical_series`]); the subsequent `Series` task, resolving from the fuller
+/// series-page title, attaches to this same canonical series in the common case where the
+/// titles agree after normalisation.
+pub async fn register_source_stub(
+    pool: &sqlx::PgPool,
+    provider_id: ProviderId,
+    source_path: &str,
+    title: &str,
+) -> DbResult<()> {
+    let mut tx = pool.begin().await?;
+
+    // Already registered (this or an earlier scan) — leave the enriched row untouched.
+    let existing: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM series_sources WHERE provider_id = $1 AND source_path = $2",
+    )
+    .bind(provider_id.as_uuid())
+    .bind(source_path)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if existing.is_some() {
+        return Ok(());
+    }
+
+    let meta = SeriesUpsert {
+        canonical_title: title.to_owned(),
+        normalized_title: normalize_title(title),
+        description: None,
+        cover_url: None,
+        content_type: ContentType::Unknown,
+        status: SeriesStatus::Unknown,
+        release_year: None,
+    };
+    let series_id = resolve_canonical_series(&mut tx, &meta).await?;
+    upsert_source(&mut *tx, series_id, provider_id, source_path, Some(title)).await?;
+
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Record the result of a source scan: content hash + chapter count + timestamp.

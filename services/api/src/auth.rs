@@ -126,8 +126,9 @@ async fn issue_session(
     user: &User,
     family_id: Uuid,
 ) -> ApiResult<(CookieJar, Json<TokenResponse>)> {
-    let access = issue_access_token(&state.jwt_secret, user.id, user.role, state.access_ttl)
-        .map_err(|_| ApiError::Internal)?;
+    let access =
+        issue_access_token(&state.jwt_secret, user.id, &user.username, user.role, state.access_ttl)
+            .map_err(|_| ApiError::Internal)?;
 
     let raw_refresh = generate_refresh_token();
     let refresh_hash = hash_refresh_token(&raw_refresh);

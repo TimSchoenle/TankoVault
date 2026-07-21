@@ -130,8 +130,13 @@ fn ProfilePanel(name: String, role: &'static str) -> Element {
                 let e = (!new_email.is_empty()).then_some(new_email.as_str());
                 match api::patch_profile(&t, u, e).await {
                     Ok(p) => {
+                        // Reflect the server's canonical values immediately — both in this
+                        // form and, crucially, across the whole app (header, greeting, …) by
+                        // overriding the session display name. No relog required.
                         username.set(p.username.clone());
-                        result.set(Some(Ok("Saved. New sign-ins will reflect the change.".to_owned())));
+                        session.set_display_name(p.username.clone());
+                        email.set(String::new());
+                        result.set(Some(Ok("Profile updated.".to_owned())));
                     }
                     Err(msg) => result.set(Some(Err(msg))),
                 }

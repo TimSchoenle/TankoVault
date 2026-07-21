@@ -13,16 +13,72 @@
 //! RBAC-gated server-side (create/delete require Admin; the rest require Operator).
 
 use crate::api;
-use crate::components::ErrorBox;
+use crate::components::{rel_time, Cover, ErrorBox};
+use crate::icons::{Ic, Icon};
 use crate::models::{
-    AuditEntry, FailedTask, MergeCandidate, Provider, ProviderStat, RunState, ScanMode, ScanRun,
-    SystemStats,
+    AdminSyncAccount, AdminSyncMapping, AuditEntry, FailedTask, MergeCandidate, Provider,
+    ProviderInfo, ProviderStat, RunState, ScanMode, ScanRun, SeriesSummary, SuggestedMatch,
+    SystemStats, UnmappedSeries, UnmatchedRemoteEntry,
 };
 use crate::state::use_session;
 use dioxus::prelude::*;
 
 /// Auto-refresh cadence for the read-only dashboard panels.
 const REFRESH_MS: u32 = 4000;
+
+/// The operator console's top-level tabs (DESIGN_SPEC §7.8), in order.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ConsoleTab {
+    Overview,
+    LiveScans,
+    Providers,
+    Solver,
+    AdapterTest,
+    Merge,
+    Sync,
+    Users,
+    Audit,
+}
+
+impl ConsoleTab {
+    const ALL: [ConsoleTab; 9] = [
+        Self::Overview,
+        Self::LiveScans,
+        Self::Providers,
+        Self::Solver,
+        Self::AdapterTest,
+        Self::Merge,
+        Self::Sync,
+        Self::Users,
+        Self::Audit,
+    ];
+    fn label(self) -> &'static str {
+        match self {
+            Self::Overview => "Overview",
+            Self::LiveScans => "Live scans",
+            Self::Providers => "Providers",
+            Self::Solver => "Challenge & solver",
+            Self::AdapterTest => "Adapter test",
+            Self::Merge => "Merge queue",
+            Self::Sync => "Sync",
+            Self::Users => "Users",
+            Self::Audit => "Audit",
+        }
+    }
+    fn icon(self) -> Icon {
+        match self {
+            Self::Overview => Icon::Dashboard,
+            Self::LiveScans => Icon::Radar,
+            Self::Providers => Icon::Public,
+            Self::Solver => Icon::ShieldLock,
+            Self::AdapterTest => Icon::Code,
+            Self::Merge => Icon::Merge,
+            Self::Sync => Icon::CloudSync,
+            Self::Users => Icon::Group,
+            Self::Audit => Icon::History,
+        }
+    }
+}
 
 /// Selectable adapter implementations (token, human label). Mirrors `AdapterKind`.
 const ADAPTER_KINDS: &[(&str, &str)] = &[
@@ -46,6 +102,7 @@ pub fn Console() -> Element {
     // a cadence while `auto` is on, and the "Refresh" control bumps it on demand.
     let mut tick = use_signal(|| 0u32);
     let auto = use_signal(|| true);
+    let mut tab = use_signal(|| ConsoleTab::Overview);
     use_future(move || async move {
         loop {
             gloo_timers::future::TimeoutFuture::new(REFRESH_MS).await;
@@ -55,17 +112,42 @@ pub fn Console() -> Element {
         }
     });
 
+    let current = *tab.read();
+    let panel = match current {
+        ConsoleTab::Overview => rsx! {
+            SystemOverview { tick }
+            ProviderStatsTable { tick }
+        },
+        ConsoleTab::LiveScans => rsx! { ScanQueue { tick } },
+        ConsoleTab::Providers => rsx! { ProvidersPanel {} },
+        ConsoleTab::Solver => rsx! { SolverPanel { tick } },
+        ConsoleTab::AdapterTest => rsx! { AdapterTestTab {} },
+        ConsoleTab::Merge => rsx! { MergeQueue {} },
+        ConsoleTab::Sync => rsx! { SyncAdminPanel {} },
+        ConsoleTab::Users => rsx! { UsersPanel { tick } },
+        ConsoleTab::Audit => rsx! { AuditPanel { tick } },
+    };
+
     rsx! {
         div { class: "ik-flex", style: "justify-content:space-between;align-items:center;flex-wrap:wrap;",
-            h1 { class: "ik-page-title", style: "margin:0;", "Operator Console" }
+            div { class: "ik-flex", style: "gap:9px;",
+                Ic { icon: Icon::Dashboard, size: 22 }
+                h1 { class: "ik-page-title", style: "margin:0;", "Operator Console" }
+            }
             LiveControls { tick, auto }
         }
-        SystemOverview { tick }
-        ScanQueue { tick }
-        ProviderStatsTable { tick }
-        ProvidersPanel {}
-        MergeQueue {}
-        AuditPanel { tick }
+        div { class: "ik-tabs", style: "margin-top:14px;",
+            for t in ConsoleTab::ALL {
+                button {
+                    class: if current == t { "ik-tab active" } else { "ik-tab" },
+                    style: "display:inline-flex;align-items:center;gap:6px;",
+                    onclick: move |_| tab.set(t),
+                    Ic { icon: t.icon(), size: 15 }
+                    span { "{t.label()}" }
+                }
+            }
+        }
+        {panel}
     }
 }
 
@@ -1027,6 +1109,265 @@ fn AdapterTestPanel(provider_id: String) -> Element {
     }
 }
 
+/// Challenge & solver (DESIGN_SPEC §7.8.4). The challenge back-end (FlareSolverr) is shown as
+/// an informational card; per-provider solve-success metrics need a dedicated endpoint
+/// (TODO(api) §9.5), so this lists provider health with a **Re-solve** (fast re-scan) action
+/// and a **Re-enable** toggle for blocked/disabled providers.
+#[component]
+fn SolverPanel(tick: Signal<u32>) -> Element {
+    let session = use_session();
+    let mut reload = use_signal(|| 0u32);
+    let res = use_resource(move || {
+        let _ = (tick.read(), reload.read());
+        async move {
+            match session.token_value() {
+                Some(t) => api::providers(&t).await,
+                None => Ok(Vec::new()),
+            }
+        }
+    });
+
+    let body = match &*res.read_unchecked() {
+        None => rsx! { div { class: "ik-skeleton", style: "height:100px;" } },
+        Some(Err(e)) => {
+            let msg = e.clone();
+            rsx! {
+                ErrorBox { message: msg, on_retry: move |()| reload += 1 }
+            }
+        }
+        Some(Ok(list)) if list.is_empty() => rsx! {
+            div { class: "ik-empty", "No providers configured." }
+        },
+        Some(Ok(list)) => {
+            let rows = list.clone();
+            rsx! {
+                for p in rows {
+                    SolverRow { key: "{p.id}", provider: p, reload }
+                }
+            }
+        }
+    };
+
+    rsx! {
+        section { style: "margin-bottom:18px;",
+            div { class: "ik-tile", style: "margin-bottom:14px;",
+                div { class: "ik-flex", style: "justify-content:space-between;flex-wrap:wrap;",
+                    div { class: "ik-flex", style: "gap:9px;",
+                        Ic { icon: Icon::ShieldLock, size: 20 }
+                        div {
+                            div { style: "font-weight:600;", "Challenge solver" }
+                            div { class: "ik-mono ik-muted", style: "font-size:12px;", "Backend: FlareSolverr" }
+                        }
+                    }
+                    span { class: "ik-pill jade", "active" }
+                }
+                p { class: "ik-muted", style: "font-size:13px;margin:10px 0 0;",
+                    "Per-provider solve-success rates need the solver-metrics endpoint (TODO(api) §9.5). Until then, re-solve queues a fast re-scan that re-attempts any challenged sources."
+                }
+            }
+            h3 { "Provider states" }
+            {body}
+        }
+    }
+}
+
+#[component]
+fn SolverRow(provider: Provider, reload: Signal<u32>) -> Element {
+    let session = use_session();
+    let id = provider.id.clone();
+    let blocked = matches!(
+        provider.state.as_str(),
+        "blocked" | "disabled" | "challenged"
+    );
+
+    let resolve = {
+        let id = id.clone();
+        move |_| {
+            let id = id.clone();
+            let mut reload = reload;
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::resolve_provider(&t, &id).await.is_ok() {
+                        reload += 1;
+                    }
+                }
+            });
+        }
+    };
+    let reenable = {
+        let id = id.clone();
+        move |_| {
+            let id = id.clone();
+            let mut reload = reload;
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::set_provider_state(&t, &id, "active").await.is_ok() {
+                        reload += 1;
+                    }
+                }
+            });
+        }
+    };
+
+    rsx! {
+        div { class: "ik-row",
+            div { class: "grow",
+                div { style: "font-weight:600;", "{provider.name}" }
+                div { class: "ik-mono ik-muted", style: "font-size:12px;", "{provider.base_url}" }
+            }
+            HealthPill { state: provider.state.clone() }
+            if blocked {
+                button { class: "ik-btn", onclick: reenable, "Re-enable" }
+            }
+            button { class: "ik-btn primary", onclick: resolve,
+                Ic { icon: Icon::Refresh, size: 15 }
+                "Re-solve"
+            }
+        }
+    }
+}
+
+/// Standalone Adapter-test tab (DESIGN_SPEC §7.8.5): pick a provider, then dry-run its
+/// adapter against the live site and inspect the parsed sample (reuses `AdapterTestPanel`).
+#[component]
+fn AdapterTestTab() -> Element {
+    let session = use_session();
+    let res = use_resource(move || async move {
+        match session.token_value() {
+            Some(t) => api::providers(&t).await,
+            None => Ok(Vec::new()),
+        }
+    });
+    let mut chosen = use_signal(|| Option::<String>::None);
+
+    let body = match &*res.read_unchecked() {
+        None => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
+        Some(Err(e)) => rsx! {
+            p { class: "ik-muted", style: "font-size:13px;", "Could not load providers: {e}" }
+        },
+        Some(Ok(list)) if list.is_empty() => rsx! {
+            div { class: "ik-empty", "No providers to test yet." }
+        },
+        Some(Ok(list)) => {
+            let opts = list.clone();
+            let sel = chosen.read().clone();
+            rsx! {
+                div { class: "ik-flex", style: "margin-bottom:4px;",
+                    label { class: "ik-muted", style: "font-size:13px;", "Provider" }
+                    select {
+                        class: "ik-input",
+                        style: "width:auto;",
+                        onchange: move |e| {
+                            let v = e.value();
+                            chosen.set(if v.is_empty() { None } else { Some(v) });
+                        },
+                        option { value: "", selected: sel.is_none(), "— choose a provider —" }
+                        for p in opts {
+                            option { value: "{p.id}", selected: sel.as_deref() == Some(p.id.as_str()), "{p.name}" }
+                        }
+                    }
+                }
+                if let Some(pid) = chosen.read().clone() {
+                    AdapterTestPanel { provider_id: pid }
+                }
+            }
+        }
+    };
+
+    rsx! {
+        section { style: "margin-bottom:18px;",
+            h3 { "Adapter test" }
+            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
+                "Dry-run a provider's adapter against the live site without deploying — validate selectors and pagination."
+            }
+            {body}
+        }
+    }
+}
+
+/// Users tab (DESIGN_SPEC §7.8.7): the registered-user directory from `GET /v1/admin/users`
+/// (§9.5) — identity, RBAC role, and how many series each user tracks — plus the aggregate
+/// count. Read-only (role management has no endpoint yet).
+#[component]
+fn UsersPanel(tick: Signal<u32>) -> Element {
+    let session = use_session();
+    let res = use_resource(move || {
+        let _ = tick.read();
+        async move {
+            match session.token_value() {
+                Some(t) => Some(api::admin_users(&t).await),
+                None => None,
+            }
+        }
+    });
+
+    let body = match &*res.read_unchecked() {
+        None | Some(None) => rsx! { div { class: "ik-skeleton", style: "height:120px;" } },
+        Some(Some(Err(e))) => rsx! {
+            p { class: "ik-muted", style: "font-size:13px;", "Could not load users: {e}" }
+        },
+        Some(Some(Ok(list))) if list.is_empty() => rsx! {
+            div { class: "ik-empty", "No users registered yet." }
+        },
+        Some(Some(Ok(list))) => {
+            let count = list.len();
+            let rows = list.clone();
+            rsx! {
+                div { class: "ik-kpis", style: "margin-bottom:14px;",
+                    div { class: "ik-kpi",
+                        div { class: "ik-kpi-label", "Registered users" }
+                        div { class: "ik-kpi-value", "{fmt_int(count as i64)}" }
+                    }
+                }
+                div { class: "ik-tablewrap",
+                    table { class: "ik-table ik-table-compact",
+                        thead {
+                            tr {
+                                th { "User" }
+                                th { "Email" }
+                                th { "Role" }
+                                th { style: "text-align:right;", "Tracked" }
+                                th { "Joined" }
+                            }
+                        }
+                        tbody {
+                            for u in rows {
+                                UserRowView { key: "{u.id}", user: u }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    rsx! {
+        section { style: "margin-bottom:18px;",
+            h3 { "Users" }
+            {body}
+        }
+    }
+}
+
+#[component]
+fn UserRowView(user: crate::models::UserRow) -> Element {
+    let joined = user.created_at.get(0..10).unwrap_or("").to_owned();
+    let role_class = match user.role.as_str() {
+        "admin" => "ik-pill acc",
+        "operator" => "ik-pill jade",
+        _ => "ik-pill",
+    };
+    rsx! {
+        tr {
+            td { "{user.username}" }
+            td { class: "ik-mono ik-muted", style: "font-size:12px;", "{user.email}" }
+            td { span { class: "{role_class}", "{user.role}" } }
+            td { class: "ik-mono", style: "text-align:right;", "{fmt_int(user.tracked_count)}" }
+            td { class: "ik-mono ik-muted", style: "font-size:12px;", "{joined}" }
+        }
+    }
+}
+
 /// Per-provider statistics table (read-only, auto-refreshing): catalogue footprint,
 /// content freshness, and last-scan health for every provider at a glance.
 #[component]
@@ -1257,11 +1598,26 @@ fn MergeRow(candidate: MergeCandidate, reload: Signal<u32>) -> Element {
     let id = candidate.id.clone();
     let a = candidate.series_id.clone();
     let b = candidate.candidate_id.clone();
+    let mut open = use_signal(|| false);
+    let mut busy = use_signal(|| false);
+
+    // Higher-confidence matches get a warmer pill so operators can triage at a glance.
+    let score_class = if pct >= 90 {
+        "ik-mono acc"
+    } else if pct >= 75 {
+        "ik-mono jade"
+    } else {
+        "ik-mono ik-muted"
+    };
 
     let merge = {
         let (a, b) = (a.clone(), b.clone());
         let mut reload = reload;
         move |_| {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
             let (a, b) = (a.clone(), b.clone());
             spawn(async move {
                 if let Some(t) = session.token_value() {
@@ -1269,6 +1625,7 @@ fn MergeRow(candidate: MergeCandidate, reload: Signal<u32>) -> Element {
                         reload += 1;
                     }
                 }
+                busy.set(false);
             });
         }
     };
@@ -1277,6 +1634,10 @@ fn MergeRow(candidate: MergeCandidate, reload: Signal<u32>) -> Element {
         let id = id.clone();
         let mut reload = reload;
         move |_| {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
             let id = id.clone();
             spawn(async move {
                 if let Some(t) = session.token_value() {
@@ -1284,6 +1645,252 @@ fn MergeRow(candidate: MergeCandidate, reload: Signal<u32>) -> Element {
                         reload += 1;
                     }
                 }
+                busy.set(false);
+            });
+        }
+    };
+
+    let keep_id = a.clone();
+    let drop_id = b.clone();
+    let reason = candidate.reason.clone();
+
+    rsx! {
+        div { class: "ik-card", style: "margin-bottom:10px;",
+            div { class: "ik-row",
+                div { class: "grow",
+                    div { class: "ik-flex", style: "justify-content:space-between;align-items:center;",
+                        span { style: "font-weight:600;", "{candidate.series_title}" }
+                        span { class: "{score_class}", "{pct}% match" }
+                    }
+                    div { class: "ik-muted", style: "font-size:13px;", "↔ {candidate.candidate_title}" }
+                    if let Some(r) = &reason {
+                        div { class: "ik-muted", style: "font-size:12px;", "reason: {r}" }
+                    }
+                }
+                button {
+                    class: "ik-btn",
+                    onclick: move |_| { let v = *open.peek(); open.set(!v); },
+                    if *open.read() { "Hide" } else { "Compare" }
+                }
+                button { class: "ik-btn primary", disabled: *busy.read(), onclick: merge, "Merge →" }
+                button { class: "ik-btn", disabled: *busy.read(), onclick: dismiss, "Distinct" }
+            }
+            if *open.read() {
+                div { class: "ik-flex", style: "gap:14px;margin-top:12px;align-items:stretch;flex-wrap:wrap;",
+                    div { style: "flex:1;min-width:240px;",
+                        div { class: "ik-pill jade", style: "margin-bottom:6px;", "Keep (canonical)" }
+                        SeriesMiniCard { series_id: keep_id }
+                    }
+                    div { style: "flex:1;min-width:240px;",
+                        div { class: "ik-pill", style: "margin-bottom:6px;", "Merge in & delete" }
+                        SeriesMiniCard { series_id: drop_id }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Compact read-only "manga info" card for a single series, used by the merge compare view
+/// and the Sync inspector. Fetches the public series detail so operators can eyeball cover,
+/// type/status, sources and tags before acting.
+#[component]
+fn SeriesMiniCard(series_id: String) -> Element {
+    let sid = series_id.clone();
+    let res = use_resource(move || {
+        let sid = sid.clone();
+        async move { api::series_detail(&sid).await }
+    });
+
+    match &*res.read_unchecked() {
+        None => rsx! { div { class: "ik-skeleton", style: "height:120px;" } },
+        Some(Err(e)) => rsx! {
+            div { class: "ik-empty", style: "font-size:12px;", "Could not load series: {e}" }
+        },
+        Some(Ok(d)) => {
+            let d = d.clone();
+            let year = d.release_year.map(|y| y.to_string()).unwrap_or_default();
+            let tags: Vec<String> = d.tags.iter().take(6).map(|t| t.name.clone()).collect();
+            rsx! {
+                div { class: "ik-card", style: "padding:10px;",
+                    div { class: "ik-flex", style: "gap:10px;align-items:flex-start;",
+                        div { style: "width:56px;flex:0 0 auto;",
+                            Cover { url: d.cover_url.clone(), title: d.title.clone() }
+                        }
+                        div { class: "grow",
+                            div { style: "font-weight:600;", "{d.title}" }
+                            div { class: "ik-flex", style: "gap:6px;margin-top:4px;flex-wrap:wrap;",
+                                span { class: "ik-pill", "{d.content_type.label()}" }
+                                span { class: "ik-pill", "{d.status.label()}" }
+                                if !year.is_empty() {
+                                    span { class: "ik-pill", "{year}" }
+                                }
+                                span { class: "ik-pill", "{d.sources.len()} sources" }
+                            }
+                            div { class: "ik-mono ik-muted", style: "font-size:11px;margin-top:4px;word-break:break-all;",
+                                "{d.id}"
+                            }
+                        }
+                    }
+                    if !d.sources.is_empty() {
+                        div { style: "margin-top:8px;",
+                            for s in d.sources.iter().take(5) {
+                                div { class: "ik-muted", style: "font-size:12px;",
+                                    "· {s.provider_name} — {s.chapter_count} ch"
+                                }
+                            }
+                        }
+                    }
+                    if !tags.is_empty() {
+                        div { class: "ik-flex", style: "gap:4px;margin-top:8px;flex-wrap:wrap;",
+                            for t in tags {
+                                span { class: "ik-pill", style: "font-size:11px;", "{t}" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn SyncAdminPanel() -> Element {
+    let session = use_session();
+    let mut reload = use_signal(|| 0u32);
+    // The series currently open in the "manga info" inspector, shared with the assign queue
+    // so "Inspect" jumps straight to the editable per-provider mapping view.
+    let selected = use_signal(|| Option::<String>::None);
+
+    let accounts = use_resource(move || {
+        let _ = reload.read();
+        async move {
+            match session.token_value() {
+                Some(t) => api::admin_sync_accounts(&t).await,
+                None => Ok(Vec::new()),
+            }
+        }
+    });
+
+    let accounts_body = match &*accounts.read_unchecked() {
+        None => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
+        Some(Err(e)) => {
+            let msg = e.clone();
+            rsx! { ErrorBox { message: msg, on_retry: move |()| reload += 1 } }
+        }
+        Some(Ok(list)) if list.is_empty() => rsx! {
+            div { class: "ik-empty", "No linked external accounts." }
+        },
+        Some(Ok(list)) => {
+            let list = list.clone();
+            rsx! {
+                for a in list {
+                    SyncAccountRow { key: "{a.user_id}-{a.provider}", account: a, reload }
+                }
+            }
+        }
+    };
+
+    rsx! {
+        section { style: "margin-bottom:24px;",
+            h3 { "Linked accounts" }
+            {accounts_body}
+        }
+        section { style: "margin-bottom:24px;",
+            h3 { "Series sync inspector" }
+            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
+                "Open any series to see its info and what it is synced to. Fix a wrong external id or add a missing one by hand."
+            }
+            SeriesSyncInspector { selected, reload }
+        }
+        section { style: "margin-bottom:24px;",
+            h3 { "Assign queue" }
+            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
+                "Series with no mapping for the selected provider yet — the ones auto-matching was not confident about. Assign an id or open the inspector."
+            }
+            AssignQueue { selected, reload }
+        }
+        section {
+            h3 { "Match every loaded entry" }
+            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
+                "Fetched remote entries the auto-matcher could not confidently link. Each one comes with ranked suggestions and a link to open it on the provider; inspect any candidate, then match it — this maps it, imports it onto the user's watchlist, and clears it here."
+            }
+            UnmatchedRemoteQueue { reload }
+        }
+    }
+}
+
+#[component]
+fn SyncAccountRow(account: AdminSyncAccount, reload: Signal<u32>) -> Element {
+    let session = use_session();
+    let mut busy = use_signal(|| false);
+    let last_sync = rel_time(account.last_synced_at.as_deref());
+
+    let pull = {
+        let user_id = account.user_id.clone();
+        let provider = account.provider.clone();
+        let mut reload = reload;
+        move |_| {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
+            let user_id = user_id.clone();
+            let provider = provider.clone();
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::admin_sync_pull(&t, &user_id, &provider).await.is_ok() {
+                        reload += 1;
+                    }
+                }
+                busy.set(false);
+            });
+        }
+    };
+
+    let push = {
+        let user_id = account.user_id.clone();
+        let provider = account.provider.clone();
+        let mut reload = reload;
+        move |_| {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
+            let user_id = user_id.clone();
+            let provider = provider.clone();
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::admin_sync_push(&t, &user_id, &provider).await.is_ok() {
+                        reload += 1;
+                    }
+                }
+                busy.set(false);
+            });
+        }
+    };
+
+    let unlink = {
+        let user_id = account.user_id.clone();
+        let provider = account.provider.clone();
+        let mut reload = reload;
+        move |_| {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
+            let user_id = user_id.clone();
+            let provider = provider.clone();
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::admin_sync_unlink(&t, &user_id, &provider)
+                        .await
+                        .is_ok()
+                    {
+                        reload += 1;
+                    }
+                }
+                busy.set(false);
             });
         }
     };
@@ -1292,13 +1899,798 @@ fn MergeRow(candidate: MergeCandidate, reload: Signal<u32>) -> Element {
         div { class: "ik-row",
             div { class: "grow",
                 div { class: "ik-flex", style: "justify-content:space-between;",
-                    span { style: "font-weight:600;", "{candidate.series_title}" }
-                    span { class: "ik-mono ik-muted", "{pct}% match" }
+                    span { style: "font-weight:600;", "{account.username}" }
+                    span { class: "ik-pill", "{account.provider}" }
                 }
-                div { class: "ik-muted", style: "font-size:13px;", "↔ {candidate.candidate_title}" }
+                div { class: "ik-muted", style: "font-size:13px;",
+                    if let Some(u) = &account.external_username {
+                        "Connected as {u} · last sync {last_sync}"
+                    } else {
+                        "last sync {last_sync}"
+                    }
+                }
+                if let Some(err) = &account.last_error {
+                    div { style: "font-size:12px;color:var(--acc);", "{err}" }
+                }
             }
-            button { class: "ik-btn primary", onclick: merge, "Merge" }
-            button { class: "ik-btn", onclick: dismiss, "Distinct" }
+            button { class: "ik-btn", disabled: *busy.read(), onclick: pull, "Force pull" }
+            button { class: "ik-btn", disabled: *busy.read(), onclick: push, "Force push" }
+            button { class: "ik-btn", disabled: *busy.read(), onclick: unlink, "Unlink" }
+        }
+    }
+}
+
+/// Either the editable per-series "manga info" view (when a series is selected) or a title
+/// search + recently-mapped list to open one.
+#[component]
+fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Signal<u32>) -> Element {
+    let session = use_session();
+    let mut query = use_signal(String::new);
+
+    // All hooks are declared unconditionally (Rules of Hooks) before we branch on whether a
+    // series is currently open in the editor.
+    let results = use_resource(move || {
+        let q = query.read().clone();
+        async move {
+            if q.trim().len() < 2 {
+                return Ok(Vec::new());
+            }
+            api::list_series(Some(&q), 12).await
+        }
+    });
+
+    let mappings = use_resource(move || {
+        let _ = reload.read();
+        async move {
+            match session.token_value() {
+                Some(t) => api::admin_sync_mappings(&t).await,
+                None => Ok(Vec::new()),
+            }
+        }
+    });
+
+    if let Some(sid) = selected.read().clone() {
+        return rsx! {
+            SeriesSyncEditor { key: "{sid}", series_id: sid, selected, reload }
+        };
+    }
+
+    let results_body = match &*results.read_unchecked() {
+        Some(Ok(list)) if !list.is_empty() => {
+            let list = list.clone();
+            rsx! {
+                div { style: "margin-top:8px;",
+                    for s in list {
+                        SeriesPickRow { key: "{s.id}", series: s, selected }
+                    }
+                }
+            }
+        }
+        Some(Err(e)) => rsx! {
+            div { class: "ik-empty", style: "font-size:12px;", "Search failed: {e}" }
+        },
+        _ => rsx! {},
+    };
+
+    let mappings_body = match &*mappings.read_unchecked() {
+        None => rsx! { div { class: "ik-skeleton", style: "height:40px;" } },
+        Some(Err(e)) => {
+            let msg = e.clone();
+            rsx! { ErrorBox { message: msg, on_retry: move |()| reload += 1 } }
+        }
+        Some(Ok(list)) if list.is_empty() => rsx! {
+            div { class: "ik-empty", "No series↔external mappings yet." }
+        },
+        Some(Ok(list)) => {
+            let list = list.clone();
+            rsx! {
+                for m in list {
+                    MappingPickRow { key: "{m.series_id}-{m.provider}", mapping: m, selected }
+                }
+            }
+        }
+    };
+
+    rsx! {
+        input {
+            class: "ik-input",
+            style: "width:100%;",
+            r#type: "text",
+            placeholder: "Search a series by title to open its info…",
+            value: "{query}",
+            oninput: move |e| query.set(e.value()),
+        }
+        {results_body}
+        div { class: "ik-muted", style: "font-size:12px;margin:14px 0 6px;", "Recently mapped" }
+        {mappings_body}
+    }
+}
+
+/// A search-result row that opens the series in the inspector.
+#[component]
+fn SeriesPickRow(series: SeriesSummary, selected: Signal<Option<String>>) -> Element {
+    let sid = series.id.clone();
+    rsx! {
+        div { class: "ik-row",
+            div { class: "grow",
+                span { style: "font-weight:600;", "{series.title}" }
+                div { class: "ik-muted", style: "font-size:12px;", "{series.source_count} sources" }
+            }
+            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.clone())), "Open" }
+        }
+    }
+}
+
+/// A recently-mapped row that opens the series in the inspector.
+#[component]
+fn MappingPickRow(mapping: AdminSyncMapping, selected: Signal<Option<String>>) -> Element {
+    let updated = rel_time(Some(&mapping.updated_at));
+    let sid = mapping.series_id.clone();
+    rsx! {
+        div { class: "ik-row",
+            div { class: "grow",
+                div { class: "ik-flex", style: "justify-content:space-between;",
+                    span { style: "font-weight:600;", "{mapping.series_title}" }
+                    span { class: "ik-pill", "{mapping.provider}" }
+                }
+                div { class: "ik-mono ik-muted", style: "font-size:12px;",
+                    "id {mapping.external_id} · updated {updated}"
+                }
+            }
+            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.clone())), "Open" }
+        }
+    }
+}
+
+/// The editable per-series "manga info" view: the series card plus one editor row per known
+/// sync provider (prefilled with its current external id), so an operator can add, correct
+/// or clear a mapping by hand.
+#[component]
+fn SeriesSyncEditor(
+    series_id: String,
+    selected: Signal<Option<String>>,
+    reload: Signal<u32>,
+) -> Element {
+    let session = use_session();
+
+    let sid_map = series_id.clone();
+    let mappings = use_resource(move || {
+        let sid = sid_map.clone();
+        let _ = reload.read();
+        async move {
+            match session.token_value() {
+                Some(t) => api::admin_sync_mappings_for_series(&t, &sid).await,
+                None => Ok(Vec::new()),
+            }
+        }
+    });
+
+    let providers = use_resource(move || async move {
+        match session.token_value() {
+            Some(t) => api::sync_providers(&t).await,
+            None => Ok(Vec::new()),
+        }
+    });
+
+    let map_list: Vec<AdminSyncMapping> = match &*mappings.read_unchecked() {
+        Some(Ok(l)) => l.clone(),
+        _ => Vec::new(),
+    };
+    let prov_list: Vec<ProviderInfo> = match &*providers.read_unchecked() {
+        Some(Ok(l)) => l.clone(),
+        _ => Vec::new(),
+    };
+
+    let card_id = series_id.clone();
+    rsx! {
+        div { class: "ik-flex", style: "justify-content:space-between;align-items:center;margin-bottom:10px;",
+            button { class: "ik-btn", onclick: move |_| selected.set(None), "← Back to search" }
+            button { class: "ik-btn", onclick: move |_| reload += 1, "Refresh" }
+        }
+        SeriesMiniCard { series_id: card_id }
+        div { class: "ik-muted", style: "font-size:12px;margin:14px 0 6px;", "External sync mappings" }
+        if prov_list.is_empty() && map_list.is_empty() {
+            div { class: "ik-empty", "No sync providers registered." }
+        }
+        for p in prov_list.clone() {
+            {
+                let current = map_list
+                    .iter()
+                    .find(|m| m.provider == p.slug)
+                    .map(|m| m.external_id.clone());
+                rsx! {
+                    MappingEditorRow {
+                        key: "{p.slug}",
+                        series_id: series_id.clone(),
+                        provider: p.slug.clone(),
+                        provider_name: p.name.clone(),
+                        current,
+                        reload,
+                    }
+                }
+            }
+        }
+        for m in map_list.clone() {
+            if !prov_list.iter().any(|p| p.slug == m.provider) {
+                MappingEditorRow {
+                    key: "orphan-{m.provider}",
+                    series_id: series_id.clone(),
+                    provider: m.provider.clone(),
+                    provider_name: m.provider.clone(),
+                    current: Some(m.external_id.clone()),
+                    reload,
+                }
+            }
+        }
+    }
+}
+
+/// One provider's mapping editor: an input prefilled with the current external id, plus
+/// Save (upsert) and, when a mapping exists, Clear (delete).
+#[component]
+fn MappingEditorRow(
+    series_id: String,
+    provider: String,
+    provider_name: String,
+    current: Option<String>,
+    reload: Signal<u32>,
+) -> Element {
+    let session = use_session();
+    let has_current = current.is_some();
+    let mut value = use_signal(|| current.clone().unwrap_or_default());
+    let mut busy = use_signal(|| false);
+    let pill_class = if has_current { "ik-pill jade" } else { "ik-pill" };
+
+    let save = {
+        let series_id = series_id.clone();
+        let provider = provider.clone();
+        let mut reload = reload;
+        move |_| {
+            if *busy.peek() {
+                return;
+            }
+            let ext = value.peek().trim().to_string();
+            if ext.is_empty() {
+                return;
+            }
+            busy.set(true);
+            let series_id = series_id.clone();
+            let provider = provider.clone();
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::admin_upsert_sync_mapping(&t, &series_id, &provider, &ext)
+                        .await
+                        .is_ok()
+                    {
+                        reload += 1;
+                    }
+                }
+                busy.set(false);
+            });
+        }
+    };
+
+    let clear = {
+        let series_id = series_id.clone();
+        let provider = provider.clone();
+        let mut reload = reload;
+        move |_| {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
+            let series_id = series_id.clone();
+            let provider = provider.clone();
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::admin_clear_sync_mapping(&t, &series_id, &provider)
+                        .await
+                        .is_ok()
+                    {
+                        reload += 1;
+                    }
+                }
+                busy.set(false);
+            });
+        }
+    };
+
+    rsx! {
+        div { class: "ik-row",
+            div { style: "min-width:120px;",
+                span { class: "{pill_class}", "{provider_name}" }
+            }
+            input {
+                class: "ik-input ik-mono",
+                style: "flex:1;",
+                r#type: "text",
+                placeholder: "external id (e.g. AniList media id)",
+                value: "{value}",
+                oninput: move |e| value.set(e.value()),
+            }
+            button { class: "ik-btn primary", disabled: *busy.read(), onclick: save, "Save" }
+            if has_current {
+                button { class: "ik-btn", disabled: *busy.read(), onclick: clear, "Clear" }
+            }
+        }
+    }
+}
+
+/// The assign queue: pick a provider, optionally filter by title, and hand-assign an external
+/// id to any series the automatic matcher left unmapped (or open it in the inspector).
+#[component]
+fn AssignQueue(selected: Signal<Option<String>>, reload: Signal<u32>) -> Element {
+    let session = use_session();
+    let mut provider = use_signal(|| "anilist".to_string());
+    let mut query = use_signal(String::new);
+
+    let providers = use_resource(move || async move {
+        match session.token_value() {
+            Some(t) => api::sync_providers(&t).await,
+            None => Ok(Vec::new()),
+        }
+    });
+
+    let list = use_resource(move || {
+        let p = provider.read().clone();
+        let q = query.read().clone();
+        let _ = reload.read();
+        async move {
+            match session.token_value() {
+                Some(t) => api::admin_unmapped_series(&t, &p, Some(&q)).await,
+                None => Ok(Vec::new()),
+            }
+        }
+    });
+
+    let prov_list: Vec<ProviderInfo> = match &*providers.read_unchecked() {
+        Some(Ok(l)) => l.clone(),
+        _ => Vec::new(),
+    };
+
+    let body = match &*list.read_unchecked() {
+        None => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
+        Some(Err(e)) => {
+            let msg = e.clone();
+            rsx! { ErrorBox { message: msg, on_retry: move |()| reload += 1 } }
+        }
+        Some(Ok(l)) if l.is_empty() => rsx! {
+            div { class: "ik-empty", "Nothing unmapped for this provider — nice." }
+        },
+        Some(Ok(l)) => {
+            let l = l.clone();
+            let prov = provider.read().clone();
+            rsx! {
+                for s in l {
+                    AssignRow { key: "{s.series_id}", series: s, provider: prov.clone(), selected, reload }
+                }
+            }
+        }
+    };
+
+    rsx! {
+        div { class: "ik-flex", style: "gap:8px;margin-bottom:10px;flex-wrap:wrap;",
+            select {
+                class: "ik-input",
+                value: "{provider}",
+                onchange: move |e| provider.set(e.value()),
+                if prov_list.is_empty() {
+                    option { value: "anilist", "anilist" }
+                }
+                for p in prov_list.clone() {
+                    option { value: "{p.slug}", "{p.name}" }
+                }
+            }
+            input {
+                class: "ik-input",
+                style: "flex:1;",
+                r#type: "text",
+                placeholder: "Filter unmapped by title…",
+                value: "{query}",
+                oninput: move |e| query.set(e.value()),
+            }
+        }
+        {body}
+    }
+}
+
+/// One assign-queue row: title + source count, an external-id input to Assign, and Inspect
+/// to open the full editor.
+#[component]
+fn AssignRow(
+    series: UnmappedSeries,
+    provider: String,
+    selected: Signal<Option<String>>,
+    reload: Signal<u32>,
+) -> Element {
+    let session = use_session();
+    let mut value = use_signal(String::new);
+    let mut busy = use_signal(|| false);
+
+    let assign = {
+        let series_id = series.series_id.clone();
+        let provider = provider.clone();
+        let mut reload = reload;
+        move |_| {
+            if *busy.peek() {
+                return;
+            }
+            let ext = value.peek().trim().to_string();
+            if ext.is_empty() {
+                return;
+            }
+            busy.set(true);
+            let series_id = series_id.clone();
+            let provider = provider.clone();
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::admin_upsert_sync_mapping(&t, &series_id, &provider, &ext)
+                        .await
+                        .is_ok()
+                    {
+                        reload += 1;
+                    }
+                }
+                busy.set(false);
+            });
+        }
+    };
+
+    let sid = series.series_id.clone();
+    rsx! {
+        div { class: "ik-row",
+            div { class: "grow",
+                div { style: "font-weight:600;", "{series.series_title}" }
+                div { class: "ik-muted", style: "font-size:12px;", "{series.source_count} sources · {provider}" }
+            }
+            input {
+                class: "ik-input ik-mono",
+                style: "width:200px;",
+                r#type: "text",
+                placeholder: "external id",
+                value: "{value}",
+                oninput: move |e| value.set(e.value()),
+            }
+            button { class: "ik-btn primary", disabled: *busy.read(), onclick: assign, "Assign" }
+            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.clone())), "Inspect" }
+        }
+    }
+}
+
+/// The reverse assign queue: pick a provider, optionally filter, and match every fetched
+/// remote entry the auto-matcher could not confidently link to a local series.
+#[component]
+fn UnmatchedRemoteQueue(reload: Signal<u32>) -> Element {
+    let session = use_session();
+    let mut provider = use_signal(|| "anilist".to_string());
+    let mut query = use_signal(String::new);
+
+    let providers = use_resource(move || async move {
+        match session.token_value() {
+            Some(t) => api::sync_providers(&t).await,
+            None => Ok(Vec::new()),
+        }
+    });
+
+    let list = use_resource(move || {
+        let p = provider.read().clone();
+        let q = query.read().clone();
+        let _ = reload.read();
+        async move {
+            match session.token_value() {
+                Some(t) => api::admin_unmatched_remote(&t, &p, Some(&q)).await,
+                None => Ok(Vec::new()),
+            }
+        }
+    });
+
+    let prov_list: Vec<ProviderInfo> = match &*providers.read_unchecked() {
+        Some(Ok(l)) => l.clone(),
+        _ => Vec::new(),
+    };
+
+    let body = match &*list.read_unchecked() {
+        None => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
+        Some(Err(e)) => {
+            let msg = e.clone();
+            rsx! { ErrorBox { message: msg, on_retry: move |()| reload += 1 } }
+        }
+        Some(Ok(l)) if l.is_empty() => rsx! {
+            div { class: "ik-empty", "Every fetched entry for this provider is matched — nice." }
+        },
+        Some(Ok(l)) => {
+            let l = l.clone();
+            rsx! {
+                for e in l {
+                    UnmatchedRemoteRow { key: "{e.user_id}-{e.external_id}", entry: e, reload }
+                }
+            }
+        }
+    };
+
+    rsx! {
+        div { class: "ik-flex", style: "gap:8px;margin-bottom:10px;flex-wrap:wrap;",
+            select {
+                class: "ik-input",
+                value: "{provider}",
+                onchange: move |e| provider.set(e.value()),
+                if prov_list.is_empty() {
+                    option { value: "anilist", "anilist" }
+                }
+                for p in prov_list.clone() {
+                    option { value: "{p.slug}", "{p.name}" }
+                }
+            }
+            input {
+                class: "ik-input",
+                style: "flex:1;",
+                r#type: "text",
+                placeholder: "Filter unmatched by title…",
+                value: "{query}",
+                oninput: move |e| query.set(e.value()),
+            }
+        }
+        {body}
+    }
+}
+
+/// The canonical web URL for a fetched remote entry, so an operator can open the original
+/// listing on the provider's site to compare it against local candidates. Only providers with
+/// a known URL scheme return `Some`; `external_id` is the provider's media id.
+fn provider_entry_url(provider: &str, external_id: &str) -> Option<String> {
+    match provider {
+        // AniList media ids resolve under /manga/ for every reading medium (manga/manhwa/
+        // manhua/novel all live there), so a single scheme covers the tracker's content.
+        "anilist" => Some(format!("https://anilist.co/manga/{external_id}")),
+        _ => None,
+    }
+}
+
+/// One reverse-queue row: shows the remote entry (with a link to open it on the provider),
+/// automatic ranked match suggestions, and a manual search fallback. Every candidate can be
+/// inspected in place (a full "manga info" card) before matching.
+#[component]
+fn UnmatchedRemoteRow(entry: UnmatchedRemoteEntry, reload: Signal<u32>) -> Element {
+    let session = use_session();
+    let mut search = use_signal(String::new);
+
+    // Automatic suggestions from the server-side matcher, loaded once for this entry.
+    let entry_title = entry.title.clone();
+    let entry_ct = entry.content_type.clone();
+    let entry_year = entry.start_year;
+    let suggestions = use_resource(move || {
+        let title = entry_title.clone();
+        let ct = entry_ct.clone();
+        async move {
+            match session.token_value() {
+                Some(t) => {
+                    api::admin_suggest_matches(&t, &title, Some(&ct), entry_year).await
+                }
+                None => Ok(Vec::new()),
+            }
+        }
+    });
+
+    // Manual search fallback for the cases the matcher misses entirely.
+    let results = use_resource(move || {
+        let q = search.read().clone();
+        async move {
+            let q = q.trim().to_string();
+            if q.len() < 3 {
+                return Ok(Vec::new());
+            }
+            api::list_series(Some(&q), 8).await
+        }
+    });
+
+    let suggested: Vec<SuggestedMatch> = match &*suggestions.read_unchecked() {
+        Some(Ok(l)) => l.clone(),
+        _ => Vec::new(),
+    };
+    let manual: Vec<SeriesSummary> = match &*results.read_unchecked() {
+        Some(Ok(l)) => l.clone(),
+        _ => Vec::new(),
+    };
+
+    let type_line = {
+        let mut parts = vec![entry.status.clone()];
+        if !entry.content_type.is_empty() && entry.content_type != "unknown" {
+            parts.push(entry.content_type.clone());
+        }
+        if let Some(y) = entry.start_year {
+            parts.push(y.to_string());
+        }
+        parts.push(format!("#{}", entry.external_id));
+        parts.join(" · ")
+    };
+
+    let entry_url = provider_entry_url(&entry.provider, &entry.external_id);
+    let suggestions_pending = matches!(&*suggestions.read_unchecked(), None);
+
+    rsx! {
+        div { class: "ik-row", style: "flex-direction:column;align-items:stretch;gap:8px;",
+            div { class: "ik-flex", style: "justify-content:space-between;gap:8px;align-items:flex-start;",
+                div { style: "min-width:0;",
+                    div { style: "font-weight:600;", "{entry.title}" }
+                    div { class: "ik-muted", style: "font-size:12px;", "{entry.username} · {type_line}" }
+                }
+                if let Some(url) = entry_url {
+                    a {
+                        class: "ik-btn",
+                        style: "flex:0 0 auto;",
+                        href: "{url}",
+                        target: "_blank",
+                        rel: "noopener noreferrer",
+                        "Open on {entry.provider} ↗"
+                    }
+                }
+            }
+
+            div { class: "ik-muted", style: "font-size:11px;text-transform:uppercase;letter-spacing:.04em;",
+                "Suggested matches"
+            }
+            if suggestions_pending {
+                div { class: "ik-skeleton", style: "height:40px;" }
+            } else if suggested.is_empty() {
+                div { class: "ik-muted", style: "font-size:12px;",
+                    "No automatic suggestions — search below to match by hand."
+                }
+            } else {
+                div { class: "ik-flex", style: "flex-direction:column;gap:6px;",
+                    for s in suggested {
+                        CandidateMatchRow {
+                            key: "sug-{s.series_id}",
+                            series_id: s.series_id.clone(),
+                            title: s.title.clone(),
+                            meta: suggestion_meta(&s),
+                            score: Some(s.score),
+                            user_id: entry.user_id.clone(),
+                            provider: entry.provider.clone(),
+                            external_id: entry.external_id.clone(),
+                            reload,
+                        }
+                    }
+                }
+            }
+
+            input {
+                class: "ik-input",
+                r#type: "text",
+                placeholder: "Or search local series to match by hand…",
+                value: "{search}",
+                oninput: move |e| search.set(e.value()),
+            }
+            if !manual.is_empty() {
+                div { class: "ik-flex", style: "flex-direction:column;gap:6px;",
+                    for c in manual {
+                        CandidateMatchRow {
+                            key: "man-{c.id}",
+                            series_id: c.id.clone(),
+                            title: c.title.clone(),
+                            meta: format!("{} · {} src", c.content_type.label(), c.source_count),
+                            score: None,
+                            user_id: entry.user_id.clone(),
+                            provider: entry.provider.clone(),
+                            external_id: entry.external_id.clone(),
+                            reload,
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A short one-line descriptor for a suggested series (type · year · sources).
+fn suggestion_meta(s: &SuggestedMatch) -> String {
+    let mut parts = Vec::new();
+    if !s.content_type.is_empty() && s.content_type != "unknown" {
+        parts.push(s.content_type.clone());
+    }
+    if let Some(y) = s.release_year {
+        parts.push(y.to_string());
+    }
+    parts.push(format!("{} src", s.source_count));
+    parts.join(" · ")
+}
+
+/// One matchable candidate (from suggestions or manual search): shows the series, an optional
+/// confidence score, an "Inspect" toggle that expands the full series info card so the entries
+/// behind the suggested id can actually be reviewed, and a "Match" button that assigns it.
+#[component]
+fn CandidateMatchRow(
+    series_id: String,
+    title: String,
+    meta: String,
+    score: Option<f32>,
+    user_id: String,
+    provider: String,
+    external_id: String,
+    reload: Signal<u32>,
+) -> Element {
+    let session = use_session();
+    let mut busy = use_signal(|| false);
+    let mut show = use_signal(|| false);
+
+    let match_it = {
+        let series_id = series_id.clone();
+        let user_id = user_id.clone();
+        let provider = provider.clone();
+        let external_id = external_id.clone();
+        move |_| {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
+            let series_id = series_id.clone();
+            let user_id = user_id.clone();
+            let provider = provider.clone();
+            let external_id = external_id.clone();
+            let mut reload = reload;
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::admin_assign_remote_entry(
+                        &t,
+                        &user_id,
+                        &provider,
+                        &external_id,
+                        &series_id,
+                    )
+                    .await
+                    .is_ok()
+                    {
+                        reload += 1;
+                    }
+                }
+                busy.set(false);
+            });
+        }
+    };
+
+    let score_badge = score.map(|s| {
+        let pct = (s.clamp(0.0, 1.0) * 100.0).round() as i32;
+        let cls = if s >= 0.85 {
+            "ik-pill jade"
+        } else if s >= 0.6 {
+            "ik-pill"
+        } else {
+            "ik-pill vermilion"
+        };
+        (cls, pct)
+    });
+
+    let sid_for_card = series_id.clone();
+    let show_now = *show.read();
+
+    rsx! {
+        div { class: "ik-card", style: "padding:8px;",
+            div { class: "ik-flex", style: "justify-content:space-between;gap:8px;align-items:center;",
+                div { style: "min-width:0;",
+                    div { style: "font-weight:600;", "{title}" }
+                    div { class: "ik-muted", style: "font-size:11px;", "{meta}" }
+                }
+                div { class: "ik-flex", style: "gap:4px;align-items:center;flex:0 0 auto;",
+                    if let Some((cls, pct)) = score_badge {
+                        span { class: "{cls}", style: "font-size:11px;", "{pct}%" }
+                    }
+                    button {
+                        class: "ik-btn",
+                        onclick: move |_| show.set(!show_now),
+                        if show_now { "Hide" } else { "Inspect" }
+                    }
+                    button {
+                        class: "ik-btn primary",
+                        disabled: *busy.read(),
+                        onclick: match_it,
+                        "Match"
+                    }
+                }
+            }
+            if show_now {
+                div { style: "margin-top:8px;",
+                    SeriesMiniCard { series_id: sid_for_card }
+                }
+            }
         }
     }
 }
@@ -1337,44 +2729,7 @@ fn run_state_pill(state: RunState) -> (&'static str, &'static str) {
     }
 }
 
-/// Format an RFC-3339 timestamp as a coarse "time ago" string, using the browser's own
-/// date parser so no date crate is pulled into the wasm bundle. `None`/empty → `—`; an
-/// unparseable value falls back to the raw string.
-fn rel_time(ts: Option<&str>) -> String {
-    let Some(s) = ts.filter(|s| !s.is_empty()) else {
-        return "—".to_owned();
-    };
-    let parsed = js_sys::Date::parse(s);
-    if parsed.is_nan() {
-        return s.to_owned();
-    }
-    humanize_ms(js_sys::Date::now() - parsed)
-}
 
-/// Humanise a millisecond age into a compact relative label.
-fn humanize_ms(diff_ms: f64) -> String {
-    if diff_ms < 45_000.0 {
-        return "just now".to_owned();
-    }
-    let secs = (diff_ms / 1000.0) as i64;
-    let mins = secs / 60;
-    if mins < 60 {
-        return format!("{mins}m ago");
-    }
-    let hours = mins / 60;
-    if hours < 24 {
-        return format!("{hours}h ago");
-    }
-    let days = hours / 24;
-    if days < 30 {
-        return format!("{days}d ago");
-    }
-    let months = days / 30;
-    if months < 12 {
-        return format!("{months}mo ago");
-    }
-    format!("{}y ago", days / 365)
-}
 
 /// Build the politeness JSON payload from the editor's string fields, or a human error.
 fn politeness_json(

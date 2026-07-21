@@ -7,22 +7,23 @@ use crate::state::{AppState, AuthUser};
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
+use serde::{Deserialize, Serialize};
+use std::convert::Infallible;
+use std::sync::Arc;
+use std::time::Duration;
 use tankovault_adapters::{Ctx, SourceAdapter, build_adapter};
 use tankovault_db::repo::matching::MergeCandidateView;
 use tankovault_db::repo::providers::NewProvider;
+use std::str::FromStr;
 use tankovault_domain::{
     AdapterKind, Politeness, Provider, ProviderId, ProviderState, ScanMode, ScanRun, ScanRunId,
-    SeriesId, UserRole,
+    SeriesId, UserId, UserRole, WatchStatus,
 };
 use tankovault_fetch::{
     HttpChallengeSolver, InMemorySessionStore, ProviderFetchConfig, RobotsRules, SessionStore,
     build_provider_fetcher,
 };
 use tankovault_solver::ChallengeSolver;
-use serde::{Deserialize, Serialize};
-use std::convert::Infallible;
-use std::sync::Arc;
-use std::time::Duration;
 use tokio_stream::StreamExt as _;
 use tokio_stream::wrappers::IntervalStream;
 use uuid::Uuid;
@@ -182,6 +183,58 @@ pub async fn set_provider_state(
     )
     .await;
     Ok(Json(provider))
+}
+
+/// `POST /v1/admin/providers/:id/resolve` — re-solve/refresh a single provider by queuing a
+/// **fast** re-scan (frontend §9.5). This is the console "Re-solve" action; it is proxied to
+/// the control-plane planner exactly like [`trigger_scan`], scoped to one provider.
+pub async fn resolve_provider(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<ProviderId>,
+) -> ApiResult<Json<serde_json::Value>> {
+    user.require(UserRole::Operator)?;
+    // Confirm the provider exists (and surface a clean 404 otherwise) before queuing work.
+    let provider = tankovault_db::repo::providers::get(&state.pool, id).await?;
+
+    let req = TriggerScan {
+        provider_id: Some(id),
+        mode: ScanMode::Fast,
+    };
+    let url = format!(
+        "{}/internal/scans",
+        state.control_plane_url.trim_end_matches('/')
+    );
+    let resp = state.http.post(url).json(&req).send().await.map_err(|e| {
+        tracing::error!(error = %e, "control-plane unreachable");
+        ApiError::Internal
+    })?;
+    if !resp.status().is_success() {
+        return Err(ApiError::Internal);
+    }
+    let body: serde_json::Value = resp.json().await.map_err(|_| ApiError::Internal)?;
+
+    audit(
+        &state,
+        &user,
+        "provider.resolve",
+        &id.to_string(),
+        &serde_json::json!({ "slug": provider.slug, "mode": "fast" }),
+    )
+    .await;
+    Ok(Json(body))
+}
+
+/// `GET /v1/admin/users` — the operator Users directory: identity, role, and tracked-series
+/// count per user (frontend §9.5 Users tab).
+pub async fn list_users(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<tankovault_db::repo::users::UserRow2>>> {
+    user.require(UserRole::Operator)?;
+    Ok(Json(
+        tankovault_db::repo::users::list_users(&state.pool, 200).await?,
+    ))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -501,6 +554,414 @@ fn build_test_context(
             fetcher,
         },
     ))
+}
+
+// ---------------------------------------------------------------------------
+// External sync — admin visibility + operator actions (design: admin Sync console tab)
+// ---------------------------------------------------------------------------
+
+/// `GET /v1/admin/sync/accounts` — every linked external account across all users.
+pub async fn list_sync_accounts(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<tankovault_db::repo::sync::AdminAccountRow>>> {
+    user.require(UserRole::Operator)?;
+    Ok(Json(
+        tankovault_db::repo::sync::admin_list_accounts(&state.pool, 200).await?,
+    ))
+}
+
+/// `GET /v1/admin/sync/mappings` — every series↔external mapping across all providers.
+pub async fn list_sync_mappings(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<tankovault_db::repo::sync::AdminMappingRow>>> {
+    user.require(UserRole::Operator)?;
+    Ok(Json(
+        tankovault_db::repo::sync::admin_list_mappings(&state.pool, 200).await?,
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SyncAccountTarget {
+    pub user_id: UserId,
+    pub provider: String,
+}
+
+/// `POST /v1/admin/sync/pull` — operator-forced pull for another user's linked account.
+pub async fn admin_sync_pull(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<SyncAccountTarget>,
+) -> ApiResult<Json<serde_json::Value>> {
+    user.require(UserRole::Operator)?;
+    let body = crate::me::sync_proxy(
+        &state,
+        &format!("/v1/sync/{}/pull", req.provider),
+        serde_json::json!({ "user_id": req.user_id }),
+    )
+    .await?;
+    audit(
+        &state,
+        &user,
+        "sync.pull",
+        &format!("{}:{}", req.provider, req.user_id.as_uuid()),
+        &serde_json::json!({}),
+    )
+    .await;
+    Ok(body)
+}
+
+/// `POST /v1/admin/sync/push` — operator-forced push for another user's linked account.
+pub async fn admin_sync_push(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<SyncAccountTarget>,
+) -> ApiResult<Json<serde_json::Value>> {
+    user.require(UserRole::Operator)?;
+    let body = crate::me::sync_proxy(
+        &state,
+        &format!("/v1/sync/{}/push", req.provider),
+        serde_json::json!({ "user_id": req.user_id }),
+    )
+    .await?;
+    audit(
+        &state,
+        &user,
+        "sync.push",
+        &format!("{}:{}", req.provider, req.user_id.as_uuid()),
+        &serde_json::json!({}),
+    )
+    .await;
+    Ok(body)
+}
+
+/// `POST /v1/admin/sync/unlink` — operator-forced unlink of another user's linked account.
+pub async fn admin_sync_unlink(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<SyncAccountTarget>,
+) -> ApiResult<Json<serde_json::Value>> {
+    user.require(UserRole::Operator)?;
+    let url = format!(
+        "{}/v1/sync/{}/link",
+        state.sync_url.trim_end_matches('/'),
+        req.provider
+    );
+    let resp = state
+        .http
+        .delete(url)
+        .json(&serde_json::json!({ "user_id": req.user_id }))
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "sync service unreachable");
+            ApiError::Internal
+        })?;
+    if !resp.status().is_success() {
+        return Err(ApiError::Internal);
+    }
+    let value: serde_json::Value = resp.json().await.map_err(|_| ApiError::Internal)?;
+    audit(
+        &state,
+        &user,
+        "sync.unlink",
+        &format!("{}:{}", req.provider, req.user_id.as_uuid()),
+        &value,
+    )
+    .await;
+    Ok(Json(value))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SyncMappingTarget {
+    pub series_id: SeriesId,
+    pub provider: String,
+}
+
+/// `POST /v1/admin/sync/mappings/clear` — remove a bad series↔external mapping; the next
+/// pull/push (or targeted push) re-resolves it from scratch.
+pub async fn clear_sync_mapping(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<SyncMappingTarget>,
+) -> ApiResult<Json<serde_json::Value>> {
+    user.require(UserRole::Operator)?;
+    let removed =
+        tankovault_db::repo::sync::delete_mapping(&state.pool, req.series_id, &req.provider)
+            .await?;
+    audit(
+        &state,
+        &user,
+        "sync.mapping.clear",
+        &format!("{}:{}", req.provider, req.series_id.as_uuid()),
+        &serde_json::json!({ "removed": removed }),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "removed": removed })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpsertMapping {
+    pub series_id: SeriesId,
+    pub provider: String,
+    pub external_id: String,
+}
+
+/// `POST /v1/admin/sync/mappings` — manually create or correct a series↔external mapping
+/// (design: admin Sync console tab). Lets an operator fix a wrong external id or add a
+/// missing one by hand from the per-series "manga info" editor and the assign queue.
+pub async fn upsert_sync_mapping(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<UpsertMapping>,
+) -> ApiResult<Json<serde_json::Value>> {
+    user.require(UserRole::Operator)?;
+    let provider = req.provider.trim();
+    let external_id = req.external_id.trim();
+    if provider.is_empty() || external_id.is_empty() {
+        return Err(ApiError::BadRequest(
+            "provider and external_id are required".to_owned(),
+        ));
+    }
+    tankovault_db::repo::sync::upsert_mapping(&state.pool, req.series_id, provider, external_id)
+        .await?;
+    audit(
+        &state,
+        &user,
+        "sync.mapping.upsert",
+        &format!("{}:{}", provider, req.series_id.as_uuid()),
+        &serde_json::json!({ "external_id": external_id }),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// `GET /v1/admin/sync/series/{id}` — every external mapping recorded for one series, so the
+/// console can render a per-series "manga info" panel showing what it is (and is not) synced to.
+pub async fn list_sync_mappings_for_series(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(series_id): Path<SeriesId>,
+) -> ApiResult<Json<Vec<tankovault_db::repo::sync::AdminMappingRow>>> {
+    user.require(UserRole::Operator)?;
+    Ok(Json(
+        tankovault_db::repo::sync::admin_list_mappings_for_series(&state.pool, series_id).await?,
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UnmappedQuery {
+    /// External provider to check membership against (e.g. `anilist`).
+    pub provider: String,
+    /// Optional case-insensitive title filter.
+    #[serde(default)]
+    pub query: Option<String>,
+}
+
+/// `GET /v1/admin/sync/unmapped` — the assign queue: canonical series without a mapping for
+/// the given provider, richest first, so operators can review and hand-assign the ones the
+/// automatic matcher was not confident enough to link.
+pub async fn list_unmapped_series(
+    State(state): State<AppState>,
+    user: AuthUser,
+    axum::extract::Query(q): axum::extract::Query<UnmappedQuery>,
+) -> ApiResult<Json<Vec<tankovault_db::repo::sync::UnmappedSeriesRow>>> {
+    user.require(UserRole::Operator)?;
+    let provider = q.provider.trim();
+    if provider.is_empty() {
+        return Err(ApiError::BadRequest("provider is required".to_owned()));
+    }
+    Ok(Json(
+        tankovault_db::repo::sync::admin_list_unmapped(
+            &state.pool,
+            provider,
+            q.query.as_deref(),
+            100,
+        )
+        .await?,
+    ))
+}
+
+/// `GET /v1/admin/sync/unmatched` — the reverse assign queue: remote provider entries a pull
+/// fetched but the auto-matcher could not confidently link to a local series, so an operator
+/// can reconcile **every** loaded entry by hand (not just the confident matches).
+pub async fn list_unmatched_remote(
+    State(state): State<AppState>,
+    user: AuthUser,
+    axum::extract::Query(q): axum::extract::Query<UnmappedQuery>,
+) -> ApiResult<Json<Vec<tankovault_db::repo::sync::RemoteEntryRow>>> {
+    user.require(UserRole::Operator)?;
+    let provider = q.provider.trim();
+    if provider.is_empty() {
+        return Err(ApiError::BadRequest("provider is required".to_owned()));
+    }
+    Ok(Json(
+        tankovault_db::repo::sync::admin_list_unmatched_remote(
+            &state.pool,
+            provider,
+            q.query.as_deref(),
+            200,
+        )
+        .await?,
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SuggestQuery {
+    /// The remote entry's title to match against the local catalogue.
+    pub title: String,
+    /// Optional local content-type token (`manga`/`manhwa`/…) to sharpen scoring.
+    #[serde(default)]
+    pub content_type: Option<String>,
+    /// Optional release year to sharpen scoring.
+    #[serde(default)]
+    pub start_year: Option<i32>,
+}
+
+/// One ranked suggestion for the admin "match every loaded entry" screen: a local series the
+/// matcher thinks the remote entry could be, with enough info (title, type, sources) to
+/// eyeball it and its confidence `score` in `[0,1]`.
+#[derive(Debug, Serialize)]
+pub struct SuggestedMatch {
+    pub series_id: Uuid,
+    pub title: String,
+    pub content_type: String,
+    pub release_year: Option<i32>,
+    pub source_count: i64,
+    pub score: f32,
+}
+
+/// `GET /v1/admin/sync/suggest` — rank local catalogue series as likely matches for a fetched
+/// remote entry, so the operator gets automatic suggestions instead of blind-searching. Uses
+/// the same trigram candidates as auto-matching but returns the *full* ranked list (with
+/// scores) rather than only confident ones, so even weak-but-plausible matches are offered.
+pub async fn list_suggestions(
+    State(state): State<AppState>,
+    user: AuthUser,
+    axum::extract::Query(q): axum::extract::Query<SuggestQuery>,
+) -> ApiResult<Json<Vec<SuggestedMatch>>> {
+    user.require(UserRole::Operator)?;
+    let normalized = tankovault_domain::normalize_title(&q.title);
+    if normalized.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
+    let content_type = q
+        .content_type
+        .as_deref()
+        .and_then(|c| tankovault_domain::ContentType::from_str(c).ok())
+        .unwrap_or(tankovault_domain::ContentType::Unknown);
+
+    let rows =
+        tankovault_db::repo::sync::suggest_series_candidates(&state.pool, &normalized, 25).await?;
+    let query = tankovault_matcher::Query {
+        normalized_title: normalized,
+        content_type,
+        release_year: q.start_year,
+    };
+    let mut out: Vec<SuggestedMatch> = rows
+        .into_iter()
+        .map(|r| {
+            let ct = tankovault_domain::ContentType::from_str(&r.content_type)
+                .unwrap_or(tankovault_domain::ContentType::Unknown);
+            let candidate = tankovault_matcher::Candidate {
+                series_id: SeriesId::from_uuid(r.series_id),
+                normalized_title: r.normalized_title,
+                similarity: r.similarity,
+                content_type: ct,
+                release_year: r.release_year,
+            };
+            let score = tankovault_matcher::score(&query, &candidate);
+            SuggestedMatch {
+                series_id: r.series_id,
+                title: r.title,
+                content_type: r.content_type,
+                release_year: r.release_year,
+                source_count: r.source_count,
+                score,
+            }
+        })
+        .collect();
+    // Best score first; the matcher can reorder relative to raw trigram similarity.
+    out.sort_by(|a, b| b.score.total_cmp(&a.score));
+    out.truncate(8);
+    Ok(Json(out))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AssignRemoteEntry {
+    pub user_id: UserId,
+    pub provider: String,
+    pub external_id: String,
+    pub series_id: SeriesId,
+}
+
+/// `POST /v1/admin/sync/assign` — hand-assign a fetched remote entry to a local series. It
+/// records the mapping, imports the entry onto the user's watchlist (status + progress from
+/// the stored snapshot) so the result shows immediately, and clears it from the unmatched
+/// queue — no fresh pull required.
+pub async fn assign_remote_entry(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<AssignRemoteEntry>,
+) -> ApiResult<Json<serde_json::Value>> {
+    user.require(UserRole::Operator)?;
+    let provider = req.provider.trim();
+    let external_id = req.external_id.trim();
+    if provider.is_empty() || external_id.is_empty() {
+        return Err(ApiError::BadRequest(
+            "provider and external_id are required".to_owned(),
+        ));
+    }
+
+    let snapshot = tankovault_db::repo::sync::get_remote_entry(
+        &state.pool,
+        req.user_id,
+        provider,
+        external_id,
+    )
+    .await?
+    .ok_or_else(|| ApiError::BadRequest("no such remote entry".to_owned()))?;
+    let status = WatchStatus::from_str(&snapshot.status)
+        .map_err(|_| ApiError::BadRequest("stored entry has an invalid status".to_owned()))?;
+
+    tankovault_db::repo::sync::upsert_mapping(&state.pool, req.series_id, provider, external_id)
+        .await?;
+    tankovault_db::repo::tracking::watchlist_set_status(
+        &state.pool,
+        req.user_id,
+        req.series_id,
+        status,
+    )
+    .await?;
+    tankovault_db::repo::tracking::progress_set(
+        &state.pool,
+        req.user_id,
+        req.series_id,
+        snapshot.progress,
+    )
+    .await?;
+    tankovault_db::repo::sync::mark_remote_entry_matched(
+        &state.pool,
+        req.user_id,
+        provider,
+        external_id,
+        req.series_id,
+    )
+    .await?;
+
+    audit(
+        &state,
+        &user,
+        "sync.remote.assign",
+        &format!("{provider}:{external_id}"),
+        &serde_json::json!({
+            "series_id": req.series_id.as_uuid(),
+            "user_id": req.user_id.as_uuid(),
+        }),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 /// Best-effort audit record; a logging failure must not fail the action.

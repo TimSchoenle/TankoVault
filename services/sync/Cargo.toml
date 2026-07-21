@@ -18,6 +18,7 @@ tankovault-domain = { workspace = true }
 tankovault-auth = { workspace = true }
 tankovault-matcher = { workspace = true }
 axum = { workspace = true }
+async-trait = { workspace = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }

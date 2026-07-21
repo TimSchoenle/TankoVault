@@ -206,3 +206,164 @@ pub async fn revoke_family<'e, E: PgExecutor<'e>>(exec: E, family_id: Uuid) -> D
     .await?;
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Account settings (frontend §9.4)
+// ---------------------------------------------------------------------------
+
+/// Update a user's editable profile fields (username / email). `None` leaves a field
+/// unchanged (`COALESCE`). Returns the refreshed user.
+///
+/// # Errors
+/// [`DbError::Conflict`] if the new email or username is already taken.
+pub async fn update_profile<'e, E: PgExecutor<'e>>(
+    exec: E,
+    id: UserId,
+    username: Option<&str>,
+    email: Option<&str>,
+) -> DbResult<User> {
+    let row: UserRow = sqlx::query_as(
+        "UPDATE users SET \
+            username = COALESCE($2, username), \
+            email = COALESCE($3, email) \
+         WHERE id = $1 \
+         RETURNING id, email, username, role::text AS role, created_at",
+    )
+    .bind(id.as_uuid())
+    .bind(username)
+    .bind(email)
+    .fetch_one(exec)
+    .await
+    .map_err(|e| {
+        let de = DbError::from(e);
+        if de.is_unique_violation() {
+            DbError::Conflict("email or username already registered".to_owned())
+        } else {
+            de
+        }
+    })?;
+    row.try_into()
+}
+
+/// An active login session, derived from a live (unrevoked, unexpired) refresh token
+/// (frontend §9.4 `GET /v1/me/sessions`). Only non-secret metadata is exposed.
+#[derive(Debug, Clone)]
+pub struct SessionInfo {
+    pub id: Uuid,
+    pub family_id: Uuid,
+    pub created_at: OffsetDateTime,
+    pub expires_at: OffsetDateTime,
+}
+
+/// List a user's active sessions (live refresh tokens), newest first.
+pub async fn list_sessions<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+) -> DbResult<Vec<SessionInfo>> {
+    #[derive(FromRow)]
+    struct Row {
+        id: Uuid,
+        family_id: Uuid,
+        created_at: OffsetDateTime,
+        expires_at: OffsetDateTime,
+    }
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT id, family_id, created_at, expires_at FROM refresh_tokens \
+         WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now() \
+         ORDER BY created_at DESC",
+    )
+    .bind(user_id.as_uuid())
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| SessionInfo {
+            id: r.id,
+            family_id: r.family_id,
+            created_at: r.created_at,
+            expires_at: r.expires_at,
+        })
+        .collect())
+}
+
+/// Revoke one of the user's own sessions (its whole rotation family), scoped to ownership.
+/// Returns the number of tokens revoked (0 if the session id was not the caller's).
+pub async fn revoke_session<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    session_id: Uuid,
+) -> DbResult<u64> {
+    let result = sqlx::query(
+        "UPDATE refresh_tokens SET revoked_at = now() \
+         WHERE revoked_at IS NULL AND family_id = ( \
+             SELECT family_id FROM refresh_tokens WHERE id = $2 AND user_id = $1 \
+         )",
+    )
+    .bind(user_id.as_uuid())
+    .bind(session_id)
+    .execute(exec)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// Read a user's notification preferences JSON (frontend §9.4). `{}` means "defaults".
+pub async fn get_notification_prefs<'e, E: PgExecutor<'e>>(
+    exec: E,
+    id: UserId,
+) -> DbResult<serde_json::Value> {
+    let prefs: Option<serde_json::Value> =
+        sqlx::query_scalar("SELECT notification_prefs FROM users WHERE id = $1")
+            .bind(id.as_uuid())
+            .fetch_optional(exec)
+            .await?;
+    Ok(prefs.unwrap_or_else(|| serde_json::json!({})))
+}
+
+/// Replace a user's notification preferences JSON (frontend §9.4).
+pub async fn set_notification_prefs<'e, E: PgExecutor<'e>>(
+    exec: E,
+    id: UserId,
+    prefs: &serde_json::Value,
+) -> DbResult<()> {
+    let result = sqlx::query("UPDATE users SET notification_prefs = $2 WHERE id = $1")
+        .bind(id.as_uuid())
+        .bind(prefs)
+        .execute(exec)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(DbError::NotFound);
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Admin: user directory (frontend §9.5 Console Users tab)
+// ---------------------------------------------------------------------------
+
+/// One row of the operator Users table: identity, role, and how many series the user
+/// tracks (frontend §9.5 `GET /v1/admin/users`).
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
+pub struct UserRow2 {
+    pub id: Uuid,
+    pub email: String,
+    pub username: String,
+    /// RBAC role token (`user` | `operator` | `admin`).
+    pub role: String,
+    pub tracked_count: i64,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: OffsetDateTime,
+}
+
+/// List users for the operator console, newest first.
+pub async fn list_users<'e, E: PgExecutor<'e>>(exec: E, limit: i64) -> DbResult<Vec<UserRow2>> {
+    let rows: Vec<UserRow2> = sqlx::query_as(
+        "SELECT u.id, u.email::text AS email, u.username::text AS username, \
+                u.role::text AS role, u.created_at, \
+                (SELECT count(*) FROM watchlist_entries w WHERE w.user_id = u.id) AS tracked_count \
+         FROM users u ORDER BY u.created_at DESC LIMIT $1",
+    )
+    .bind(limit)
+    .fetch_all(exec)
+    .await?;
+    Ok(rows)
+}

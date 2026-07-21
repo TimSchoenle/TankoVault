@@ -150,20 +150,102 @@ pub async fn list_series(query: Option<&str>, limit: i64) -> ApiResult<Vec<Serie
     get(&path, None).await
 }
 
+/// Filter/sort/paginate the browse list server-side (§9.1). The JSON body is a plain
+/// `SeriesSummary[]`; the match total and next page ride on the `X-Total-Count` /
+/// `X-Next-Cursor` response headers, which we surface as [`SeriesPage`].
+pub async fn list_series_filtered(filter: &SeriesFilter) -> ApiResult<SeriesPage> {
+    let mut qs: Vec<String> = Vec::new();
+    qs.push(format!("limit={}", filter.limit.clamp(1, 100)));
+    qs.push(format!("page={}", filter.page.max(0)));
+    if let Some(q) = filter.query.as_deref().filter(|q| !q.trim().is_empty()) {
+        qs.push(format!("query={}", urlencode(q)));
+    }
+    if let Some(ct) = filter.content_type {
+        qs.push(format!("content_type={}", ct.token()));
+    }
+    if let Some(st) = filter.status {
+        qs.push(format!("status={}", st.token()));
+    }
+    if let Some(p) = filter.provider.as_deref().filter(|p| !p.is_empty()) {
+        qs.push(format!("provider={}", urlencode(p)));
+    }
+    for t in &filter.tags {
+        qs.push(format!("tag={}", urlencode(t)));
+    }
+    for t in &filter.exclude_tags {
+        qs.push(format!("exclude_tag={}", urlencode(t)));
+    }
+    if let Some(y) = filter.year_min {
+        qs.push(format!("year_min={y}"));
+    }
+    if let Some(y) = filter.year_max {
+        qs.push(format!("year_max={y}"));
+    }
+    if let Some(c) = filter.min_chapters.filter(|c| *c > 0) {
+        qs.push(format!("min_chapters={c}"));
+    }
+    if let Some(s) = filter.sort.as_deref().filter(|s| !s.is_empty()) {
+        qs.push(format!("sort={s}"));
+    }
+    let path = format!("/v1/series?{}", qs.join("&"));
+
+    let resp = Request::get(&url(&path))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {e}"))?;
+    if !resp.ok() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(friendly_error(status, &body));
+    }
+    let headers = resp.headers();
+    let total = headers
+        .get("x-total-count")
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(0);
+    let next_cursor = headers
+        .get("x-next-cursor")
+        .and_then(|v| v.parse::<i64>().ok());
+    let items = resp
+        .json::<Vec<SeriesSummary>>()
+        .await
+        .map_err(|e| format!("Could not read the server response ({e})."))?;
+    let total = if total == 0 {
+        i64::try_from(items.len()).unwrap_or(0)
+    } else {
+        total
+    };
+    Ok(SeriesPage {
+        items,
+        total,
+        next_cursor,
+    })
+}
+
+/// Public provider list + per-provider series counts for the Discover filter (§9.3).
+pub async fn public_providers() -> ApiResult<Vec<PublicProvider>> {
+    get("/v1/providers", None).await
+}
+
 pub async fn series_detail(id: &str) -> ApiResult<SeriesDetail> {
     get(&format!("/v1/series/{id}"), None).await
 }
 
-pub async fn series_chapters(id: &str, source: Option<&str>) -> ApiResult<Vec<ChapterDto>> {
+/// Chapter list for a series' source. When `token` is supplied the per-chapter `read`
+/// flag is populated from the user's progress (§9.2); anonymous callers omit it.
+pub async fn series_chapters(
+    id: &str,
+    source: Option<&str>,
+    token: Option<&str>,
+) -> ApiResult<Vec<ChapterDto>> {
     let mut path = format!("/v1/series/{id}/chapters");
     if let Some(s) = source {
         path.push_str(&format!("?source={s}"));
     }
-    get(&path, None).await
+    get(&path, token).await
 }
 
-/// All genres/tags (public). Reserved for the Search screen's tag grouping (§17.2.6).
-#[allow(dead_code)]
+/// All genres/tags (public). Used by the Discover filter and Series tag chips.
 pub async fn tags() -> ApiResult<Vec<Tag>> {
     get("/v1/tags", None).await
 }
@@ -212,6 +294,54 @@ pub async fn feed(token: &str) -> ApiResult<Vec<FeedEntry>> {
     get("/v1/me/feed", Some(token)).await
 }
 
+/// Continue-reading cards for Home / the Series CTA (§9.3).
+pub async fn continue_reading(token: &str) -> ApiResult<Vec<ContinueItem>> {
+    get("/v1/me/continue", Some(token)).await
+}
+
+/// "Because you read" recommendations (§9.3).
+pub async fn recommendations(token: &str) -> ApiResult<Vec<SeriesSummary>> {
+    get("/v1/me/recommendations", Some(token)).await
+}
+
+/// Lifetime tracking stats for the Home / Profile headline (§9.3).
+pub async fn me_stats(token: &str) -> ApiResult<MeStats> {
+    get("/v1/me/stats", Some(token)).await
+}
+
+/// Update the caller's username and/or email (§9.4). A duplicate surfaces as `409`.
+pub async fn patch_profile(
+    token: &str,
+    username: Option<&str>,
+    email: Option<&str>,
+) -> ApiResult<ProfileDto> {
+    let body = serde_json::json!({ "username": username, "email": email });
+    send_json(Method::Patch, "/v1/me/profile", &body, Some(token)).await
+}
+
+/// The caller's active login sessions (§9.4).
+pub async fn sessions(token: &str) -> ApiResult<Vec<SessionDto>> {
+    get("/v1/me/sessions", Some(token)).await
+}
+
+/// Revoke one of the caller's own sessions (§9.4).
+pub async fn delete_session(token: &str, id: &str) -> ApiResult<()> {
+    delete_empty(&format!("/v1/me/sessions/{id}"), Some(token)).await
+}
+
+/// Read the caller's notification preferences JSON (§9.4).
+pub async fn notification_prefs(token: &str) -> ApiResult<serde_json::Value> {
+    get("/v1/me/notification-prefs", Some(token)).await
+}
+
+/// Replace the caller's notification preferences JSON (§9.4).
+pub async fn set_notification_prefs(
+    token: &str,
+    prefs: &serde_json::Value,
+) -> ApiResult<serde_json::Value> {
+    send_json(Method::Put, "/v1/me/notification-prefs", prefs, Some(token)).await
+}
+
 pub async fn notifications(token: &str) -> ApiResult<Vec<Notification>> {
     get("/v1/me/notifications", Some(token)).await
 }
@@ -233,11 +363,267 @@ pub async fn mark_read(token: &str, ids: &[String]) -> ApiResult<serde_json::Val
 }
 
 // ---------------------------------------------------------------------------
+// External sync (Sync & integrations panel, header pill, Watchlist, Series tracking card).
+// Provider-parameterized (design: generalized multi-provider sync) — AniList is the only
+// registered provider today, reached via `provider: "anilist"`.
+// ---------------------------------------------------------------------------
+
+/// The registered external sync providers.
+pub async fn sync_providers(token: &str) -> ApiResult<Vec<ProviderInfo>> {
+    get("/v1/me/sync/providers", Some(token)).await
+}
+
+/// `provider`'s OAuth consent URL to send the browser to.
+pub async fn sync_authorize_url(token: &str, provider: &str) -> ApiResult<String> {
+    let v: serde_json::Value =
+        get(&format!("/v1/me/sync/{provider}/authorize"), Some(token)).await?;
+    v.get("url")
+        .and_then(|u| u.as_str())
+        .map(str::to_owned)
+        .ok_or_else(|| "The provider did not return an authorize URL.".to_owned())
+}
+
+/// Whether the caller has a linked `provider` account, plus username/last-sync.
+pub async fn sync_status(token: &str, provider: &str) -> ApiResult<SyncStatus> {
+    get(&format!("/v1/me/sync/{provider}/status"), Some(token)).await
+}
+
+/// Exchange an OAuth `code` (captured from `provider`'s redirect) for a linked account.
+pub async fn sync_link(token: &str, provider: &str, code: &str) -> ApiResult<()> {
+    let _: serde_json::Value = get(
+        &format!("/v1/me/sync/{provider}/callback?code={}", urlencode(code)),
+        Some(token),
+    )
+    .await?;
+    Ok(())
+}
+
+/// Unlink the caller's `provider` account.
+pub async fn sync_disconnect(token: &str, provider: &str) -> ApiResult<()> {
+    delete_empty(&format!("/v1/me/sync/{provider}"), Some(token)).await
+}
+
+/// Import `provider`'s list into the local watchlist/progress under `policy`.
+pub async fn sync_pull(
+    token: &str,
+    provider: &str,
+    policy: ConflictPolicy,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        &format!("/v1/me/sync/{provider}/pull"),
+        &serde_json::json!({ "policy": policy.token() }),
+        Some(token),
+    )
+    .await
+}
+
+/// Reflect the local watchlist/progress to `provider` under `policy`.
+pub async fn sync_push(
+    token: &str,
+    provider: &str,
+    policy: ConflictPolicy,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        &format!("/v1/me/sync/{provider}/push"),
+        &serde_json::json!({ "policy": policy.token() }),
+        Some(token),
+    )
+    .await
+}
+
+// ---------------------------------------------------------------------------
+// Admin / operator console — Sync tab (design: admin Sync console tab)
+// ---------------------------------------------------------------------------
+
+pub async fn admin_sync_accounts(token: &str) -> ApiResult<Vec<AdminSyncAccount>> {
+    get("/v1/admin/sync/accounts", Some(token)).await
+}
+
+pub async fn admin_sync_mappings(token: &str) -> ApiResult<Vec<AdminSyncMapping>> {
+    get("/v1/admin/sync/mappings", Some(token)).await
+}
+
+pub async fn admin_sync_pull(
+    token: &str,
+    user_id: &str,
+    provider: &str,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        "/v1/admin/sync/pull",
+        &serde_json::json!({ "user_id": user_id, "provider": provider }),
+        Some(token),
+    )
+    .await
+}
+
+pub async fn admin_sync_push(
+    token: &str,
+    user_id: &str,
+    provider: &str,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        "/v1/admin/sync/push",
+        &serde_json::json!({ "user_id": user_id, "provider": provider }),
+        Some(token),
+    )
+    .await
+}
+
+pub async fn admin_sync_unlink(
+    token: &str,
+    user_id: &str,
+    provider: &str,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        "/v1/admin/sync/unlink",
+        &serde_json::json!({ "user_id": user_id, "provider": provider }),
+        Some(token),
+    )
+    .await
+}
+
+pub async fn admin_clear_sync_mapping(
+    token: &str,
+    series_id: &str,
+    provider: &str,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        "/v1/admin/sync/mappings/clear",
+        &serde_json::json!({ "series_id": series_id, "provider": provider }),
+        Some(token),
+    )
+    .await
+}
+
+/// Every external mapping recorded for one series — powers the per-series "manga info"
+/// editor in the admin Sync tab.
+pub async fn admin_sync_mappings_for_series(
+    token: &str,
+    series_id: &str,
+) -> ApiResult<Vec<AdminSyncMapping>> {
+    get(&format!("/v1/admin/sync/series/{series_id}"), Some(token)).await
+}
+
+/// Manually create or correct a series↔external mapping (fix a wrong id or add a missing one).
+pub async fn admin_upsert_sync_mapping(
+    token: &str,
+    series_id: &str,
+    provider: &str,
+    external_id: &str,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        "/v1/admin/sync/mappings",
+        &serde_json::json!({
+            "series_id": series_id,
+            "provider": provider,
+            "external_id": external_id,
+        }),
+        Some(token),
+    )
+    .await
+}
+
+/// The assign queue: series lacking a mapping for `provider`, richest first (optionally
+/// title-filtered by `query`).
+pub async fn admin_unmapped_series(
+    token: &str,
+    provider: &str,
+    query: Option<&str>,
+) -> ApiResult<Vec<UnmappedSeries>> {
+    let mut path = format!("/v1/admin/sync/unmapped?provider={}", urlencode(provider));
+    if let Some(q) = query.filter(|q| !q.trim().is_empty()) {
+        path.push_str(&format!("&query={}", urlencode(q)));
+    }
+    get(&path, Some(token)).await
+}
+
+/// The reverse assign queue: fetched remote entries that auto-matching could not confidently
+/// link to a local series, so an operator can match *every* loaded entry (optionally filtered
+/// by title).
+pub async fn admin_unmatched_remote(
+    token: &str,
+    provider: &str,
+    query: Option<&str>,
+) -> ApiResult<Vec<UnmatchedRemoteEntry>> {
+    let mut path = format!("/v1/admin/sync/unmatched?provider={}", urlencode(provider));
+    if let Some(q) = query.filter(|q| !q.trim().is_empty()) {
+        path.push_str(&format!("&query={}", urlencode(q)));
+    }
+    get(&path, Some(token)).await
+}
+
+/// Ranked local-series suggestions for a fetched remote entry, so the operator gets automatic
+/// candidates (with confidence scores) instead of blind-searching. `content_type`/`year`
+/// sharpen the matcher score when known.
+pub async fn admin_suggest_matches(
+    token: &str,
+    title: &str,
+    content_type: Option<&str>,
+    start_year: Option<i32>,
+) -> ApiResult<Vec<SuggestedMatch>> {
+    let mut path = format!("/v1/admin/sync/suggest?title={}", urlencode(title));
+    if let Some(ct) = content_type.filter(|c| !c.trim().is_empty() && *c != "unknown") {
+        path.push_str(&format!("&content_type={}", urlencode(ct)));
+    }
+    if let Some(y) = start_year {
+        path.push_str(&format!("&start_year={y}"));
+    }
+    get(&path, Some(token)).await
+}
+
+/// Hand-assign a fetched remote entry to a local series: records the mapping, imports the
+/// entry onto the user's watchlist, and clears it from the unmatched queue.
+pub async fn admin_assign_remote_entry(
+    token: &str,
+    user_id: &str,
+    provider: &str,
+    external_id: &str,
+    series_id: &str,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        "/v1/admin/sync/assign",
+        &serde_json::json!({
+            "user_id": user_id,
+            "provider": provider,
+            "external_id": external_id,
+            "series_id": series_id,
+        }),
+        Some(token),
+    )
+    .await
+}
+
+// ---------------------------------------------------------------------------
 // Admin / operator console
 // ---------------------------------------------------------------------------
 
 pub async fn providers(token: &str) -> ApiResult<Vec<Provider>> {
     get("/v1/admin/providers", Some(token)).await
+}
+
+/// The operator Users directory: identity, role, and tracked-series count (§9.5).
+pub async fn admin_users(token: &str) -> ApiResult<Vec<UserRow>> {
+    get("/v1/admin/users", Some(token)).await
+}
+
+/// Operator "Re-solve" — queue a fast re-scan that re-attempts challenged sources (§9.5,
+/// audited server-side as `provider.resolve`).
+pub async fn resolve_provider(token: &str, id: &str) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        &format!("/v1/admin/providers/{id}/resolve"),
+        &serde_json::json!({}),
+        Some(token),
+    )
+    .await
 }
 
 /// Full provider edit (PATCH). Changing `base_url` performs the domain migration; `config`

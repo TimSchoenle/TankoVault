@@ -3,16 +3,89 @@
 
 use crate::api;
 use crate::components::{EmptyBox, ErrorBox, SignInGate, UnreadBadge};
+use crate::icons::{Ic, Icon};
 use crate::models::Notification;
 use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
+
+/// Filter tabs (DESIGN_SPEC §7.5). Filters the loaded list client-side by `kind`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    All,
+    Unread,
+    Chapters,
+    Sync,
+}
+
+impl Tab {
+    const ALL: [Tab; 4] = [Self::All, Self::Unread, Self::Chapters, Self::Sync];
+    fn label(self) -> &'static str {
+        match self {
+            Self::All => "All",
+            Self::Unread => "Unread",
+            Self::Chapters => "Chapters",
+            Self::Sync => "Sync",
+        }
+    }
+    fn matches(self, n: &Notification) -> bool {
+        match self {
+            Self::All => true,
+            Self::Unread => n.read_at.is_none(),
+            Self::Chapters => matches!(kind_of(n), NotifKind::NewChapter | NotifKind::SourceAdded),
+            Self::Sync => matches!(kind_of(n), NotifKind::Sync),
+        }
+    }
+}
+
+/// Normalised notification kind → icon + tint.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NotifKind {
+    NewChapter,
+    SourceAdded,
+    Completed,
+    Sync,
+    Unknown,
+}
+
+fn kind_of(n: &Notification) -> NotifKind {
+    match n.kind.as_str() {
+        "new_chapter" | "chapter" => NotifKind::NewChapter,
+        "source_added" | "source" => NotifKind::SourceAdded,
+        "completed" | "series_completed" => NotifKind::Completed,
+        "sync" | "sync_event" => NotifKind::Sync,
+        _ if n.payload.get("chapter_number").is_some() => NotifKind::NewChapter,
+        _ => NotifKind::Unknown,
+    }
+}
+
+impl NotifKind {
+    fn icon(self) -> Icon {
+        match self {
+            Self::NewChapter => Icon::AutoAwesome,
+            Self::SourceAdded => Icon::ArrowForward,
+            Self::Completed => Icon::Check,
+            Self::Sync => Icon::CloudDone,
+            Self::Unknown => Icon::Circle,
+        }
+    }
+    /// Icon-tile tint color (matches the design's kind→color map).
+    fn color(self) -> &'static str {
+        match self {
+            Self::NewChapter => "var(--acc)",
+            Self::SourceAdded => "#6FA8DC",
+            Self::Completed | Self::Sync => "var(--jade-bright)",
+            Self::Unknown => "var(--muted)",
+        }
+    }
+}
 
 #[component]
 pub fn Notifications() -> Element {
     let session = use_session();
     let badge = use_context::<UnreadBadge>();
     let mut reload = use_signal(|| 0u32);
+    let mut tab = use_signal(|| Tab::All);
 
     let resource = use_resource(move || {
         let _ = reload.read();
@@ -62,6 +135,12 @@ pub fn Notifications() -> Element {
         });
     };
 
+    let current = *tab.read();
+    let unread_total = match &*resource.read_unchecked() {
+        Some(Ok(list)) => list.iter().filter(|n| n.read_at.is_none()).count(),
+        _ => 0,
+    };
+
     let body = match &*resource.read_unchecked() {
         None => rsx! {
             for _ in 0..5 {
@@ -78,19 +157,41 @@ pub fn Notifications() -> Element {
             EmptyBox { message: "No notifications yet. We'll ping you when a watched series updates.".to_string() }
         },
         Some(Ok(items)) => {
-            let items = items.clone();
-            rsx! {
-                for n in items {
-                    NotifRow { key: "{n.id}", notif: n }
+            let filtered: Vec<Notification> = items
+                .iter()
+                .filter(|n| current.matches(n))
+                .cloned()
+                .collect();
+            if filtered.is_empty() {
+                rsx! {
+                    EmptyBox { message: "Nothing in this filter.".to_string() }
+                }
+            } else {
+                rsx! {
+                    for n in filtered {
+                        NotifRow { key: "{n.id}", notif: n }
+                    }
                 }
             }
         }
     };
 
     rsx! {
-        div { class: "ik-flex", style: "justify-content:space-between;",
-            h1 { class: "ik-page-title", "Notifications" }
+        div { class: "ik-flex", style: "justify-content:space-between;align-items:flex-end;",
+            div {
+                h1 { class: "ik-page-title", style: "margin-bottom:2px;", "Notifications" }
+                div { class: "ik-mono ik-muted", style: "font-size:12px;", "{unread_total} unread · live push via SSE" }
+            }
             button { class: "ik-btn", onclick: mark_all, "Mark all read" }
+        }
+        div { class: "ik-tabs",
+            for t in Tab::ALL {
+                button {
+                    class: if current == t { "ik-tab active" } else { "ik-tab" },
+                    onclick: move |_| tab.set(t),
+                    "{t.label()}"
+                }
+            }
         }
         {body}
     }
@@ -102,8 +203,16 @@ fn NotifRow(notif: Notification) -> Element {
     let class = if unread { "ik-row unread" } else { "ik-row" };
     let (title, series_id) = describe(&notif);
     let when = notif.created_at.get(0..10).unwrap_or("").to_owned();
+    let kind = kind_of(&notif);
+    let tile_style = format!(
+        "background:color-mix(in srgb, {c} 16%, transparent);color:{c};",
+        c = kind.color()
+    );
 
     let inner = rsx! {
+        div { class: "ik-kind", style: "{tile_style}",
+            Ic { icon: kind.icon(), size: 18 }
+        }
         div { class: "grow",
             div { style: "font-weight:600;", "{title}" }
             div { class: "ik-muted", style: "font-size:12px;", "{when}" }

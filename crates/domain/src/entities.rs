@@ -131,7 +131,9 @@ pub struct Notification {
     pub user_id: UserId,
     pub kind: String,
     pub payload: serde_json::Value,
+    #[serde(with = "time::serde::rfc3339::option")]
     pub read_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }
 

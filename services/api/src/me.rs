@@ -6,10 +6,10 @@ use crate::state::{AppState, AuthUser};
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
-use tankovault_contracts::UserNotification;
-use tankovault_domain::{SeriesId, WatchStatus, resolve_link};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
+use tankovault_contracts::UserNotification;
+use tankovault_domain::{SeriesId, UserId, WatchStatus, resolve_link};
 use time::OffsetDateTime;
 use tokio_stream::StreamExt as _;
 use uuid::Uuid;
@@ -21,21 +21,34 @@ pub struct WatchlistItem {
     pub notify: bool,
     #[serde(with = "time::serde::rfc3339")]
     pub added_at: time::OffsetDateTime,
+    /// Embedded series title so the Watchlist board renders without a per-card detail
+    /// fetch (frontend §9.3, kills the N+1).
+    pub series_title: String,
+    pub cover_url: Option<String>,
+    /// The user's last-read chapter number, if any.
+    pub last_read_number: Option<f64>,
+    /// Unread chapters above the user's progress.
+    pub unread: i64,
 }
 
-/// `GET /v1/me/watchlist`
+/// `GET /v1/me/watchlist` — the user's watchlist with embedded title/cover/progress
+/// (frontend §9.3). Extra fields are additive; older clients ignore them.
 pub async fn watchlist(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> ApiResult<Json<Vec<WatchlistItem>>> {
-    let entries = tankovault_db::repo::tracking::watchlist_list(&state.pool, user.user_id).await?;
-    let out = entries
+    let cards = tankovault_db::repo::tracking::watchlist_detailed(&state.pool, user.user_id).await?;
+    let out = cards
         .into_iter()
-        .map(|e| WatchlistItem {
-            series_id: e.series_id,
-            status: e.status,
-            notify: e.notify,
-            added_at: e.added_at,
+        .map(|c| WatchlistItem {
+            series_id: c.series_id,
+            status: c.status,
+            notify: c.notify,
+            added_at: c.added_at,
+            series_title: c.series_title,
+            cover_url: c.cover_url,
+            last_read_number: c.last_read_number,
+            unread: c.unread,
         })
         .collect();
     Ok(Json(out))
@@ -68,6 +81,7 @@ pub async fn put_watchlist(
         body.notify,
     )
     .await?;
+    spawn_targeted_push(&state, user.user_id, series_id);
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -100,7 +114,37 @@ pub async fn put_progress(
         body.last_read_number,
     )
     .await?;
+    spawn_targeted_push(&state, user.user_id, series_id);
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// Best-effort background push of `series_id` to every provider `user_id` has linked. Mirrors
+/// this codebase's existing "best-effort side effect" convention (notifier channels, the sync
+/// engine's viewer-name lookup on link): logged on failure, never surfaced to the caller, never
+/// blocks the response (design: immediate targeted push — marking a chapter/series read locally
+/// reflects to `AniList` without a manual "Push" click).
+fn spawn_targeted_push(state: &AppState, user_id: UserId, series_id: SeriesId) {
+    let http = state.http.clone();
+    let sync_url = state.sync_url.clone();
+    tokio::spawn(async move {
+        let url = format!("{}/v1/sync/push-series", sync_url.trim_end_matches('/'));
+        let body = serde_json::json!({ "user_id": user_id, "series_id": series_id });
+        match http.post(url).json(&body).send().await {
+            Ok(resp) if resp.status().is_success() => {}
+            Ok(resp) => tracing::warn!(
+                status = %resp.status(),
+                %user_id,
+                %series_id,
+                "targeted sync push returned an error"
+            ),
+            Err(e) => tracing::warn!(
+                error = %e,
+                %user_id,
+                %series_id,
+                "targeted sync push unreachable"
+            ),
+        }
+    });
 }
 
 /// `GET /v1/me/notifications`
@@ -166,6 +210,186 @@ pub async fn feed(
     Ok(Json(out))
 }
 
+// ---------------------------------------------------------------------------
+// Reading dashboard (frontend §9.3)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+pub struct ContinueItem {
+    pub series_id: SeriesId,
+    pub series_title: String,
+    pub cover_url: Option<String>,
+    pub last_read_number: f64,
+    /// The lowest unread chapter number above the user's progress, if any.
+    pub next_number: Option<f64>,
+    pub unread: i64,
+}
+
+/// `GET /v1/me/continue` — continue-reading cards for Home / the Series CTA (frontend §9.3):
+/// tracked, in-progress series that have unread chapters, freshest activity first.
+pub async fn continue_reading(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<ContinueItem>>> {
+    let cards =
+        tankovault_db::repo::tracking::continue_reading(&state.pool, user.user_id, 24).await?;
+    let out = cards
+        .into_iter()
+        .map(|c| ContinueItem {
+            series_id: c.series_id,
+            series_title: c.series_title,
+            cover_url: c.cover_url,
+            last_read_number: c.last_read_number,
+            next_number: c.next_number,
+            unread: c.unread,
+        })
+        .collect();
+    Ok(Json(out))
+}
+
+/// `GET /v1/me/recommendations` — "Because you read" suggestions (frontend §9.3, *Stub*):
+/// unwatched series sharing tags with the user's list. Falls back to the most-recent catalog
+/// when the user has no tagged watchlist yet, so the shelf is never empty for signed-in users.
+pub async fn recommendations(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<crate::series::SeriesSummary>>> {
+    let mut items =
+        tankovault_db::repo::tracking::recommendations(&state.pool, user.user_id, 12).await?;
+    if items.is_empty() {
+        items = tankovault_db::repo::catalog::list_series(&state.pool, None, 12).await?;
+    }
+    let out = items
+        .into_iter()
+        .map(|it| crate::series::SeriesSummary {
+            id: it.series.id,
+            title: it.series.canonical_title,
+            cover_url: it.series.cover_url,
+            content_type: it.series.content_type,
+            status: it.series.status,
+            source_count: it.source_count,
+        })
+        .collect();
+    Ok(Json(out))
+}
+
+/// `GET /v1/me/stats` — lifetime tracking stats for the Home / Profile headline
+/// (frontend §9.3, *Stub*). See `tankovault_db::repo::tracking::MeStats` for the honest
+/// definition of `chapters_read` and why no "streak" is returned.
+pub async fn stats(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<tankovault_db::repo::tracking::MeStats>> {
+    Ok(Json(
+        tankovault_db::repo::tracking::me_stats(&state.pool, user.user_id).await?,
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// Account settings (frontend §9.4)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct ProfileUpdate {
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProfileDto {
+    pub id: uuid::Uuid,
+    pub email: String,
+    pub username: String,
+    pub role: String,
+}
+
+/// `PATCH /v1/me/profile` — update the caller's username and/or email (frontend §9.4).
+/// A duplicate email/username surfaces as `409 Conflict`.
+pub async fn patch_profile(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(body): Json<ProfileUpdate>,
+) -> ApiResult<Json<ProfileDto>> {
+    let username = body.username.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let email = body.email.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let updated =
+        tankovault_db::repo::users::update_profile(&state.pool, user.user_id, username, email)
+            .await?;
+    Ok(Json(ProfileDto {
+        id: updated.id.as_uuid(),
+        email: updated.email,
+        username: updated.username,
+        role: updated.role.as_str().to_owned(),
+    }))
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionDto {
+    pub id: String,
+    pub family_id: String,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    pub expires_at: OffsetDateTime,
+}
+
+/// `GET /v1/me/sessions` — the caller's active login sessions (frontend §9.4).
+pub async fn sessions(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<SessionDto>>> {
+    let list = tankovault_db::repo::users::list_sessions(&state.pool, user.user_id).await?;
+    let out = list
+        .into_iter()
+        .map(|s| SessionDto {
+            id: s.id.to_string(),
+            family_id: s.family_id.to_string(),
+            created_at: s.created_at,
+            expires_at: s.expires_at,
+        })
+        .collect();
+    Ok(Json(out))
+}
+
+/// `DELETE /v1/me/sessions/:id` — revoke one of the caller's own sessions (frontend §9.4).
+/// Scoped to ownership; a foreign/unknown id yields `404`.
+pub async fn delete_session(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let revoked =
+        tankovault_db::repo::users::revoke_session(&state.pool, user.user_id, id).await?;
+    if revoked == 0 {
+        return Err(ApiError::NotFound);
+    }
+    Ok(Json(serde_json::json!({ "revoked": revoked })))
+}
+
+/// `GET /v1/me/notification-prefs` — the caller's notification preferences JSON (frontend
+/// §9.4). `{}` means "product defaults".
+pub async fn notification_prefs(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<serde_json::Value>> {
+    Ok(Json(
+        tankovault_db::repo::users::get_notification_prefs(&state.pool, user.user_id).await?,
+    ))
+}
+
+/// `PUT /v1/me/notification-prefs` — replace the caller's notification preferences (frontend
+/// §9.4). The body is stored verbatim as an open JSON document.
+pub async fn put_notification_prefs(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(body): Json<serde_json::Value>,
+) -> ApiResult<Json<serde_json::Value>> {
+    tankovault_db::repo::users::set_notification_prefs(&state.pool, user.user_id, &body).await?;
+    Ok(Json(body))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct StreamQuery {
     /// Access token, passed as a query parameter because the browser `EventSource` API
@@ -209,13 +433,32 @@ pub async fn stream(
     Ok(Sse::new(events).keep_alive(KeepAlive::default()))
 }
 
-/// `GET /v1/me/sync/anilist/authorize` — returns the `AniList` consent URL (proxied).
-pub async fn sync_authorize_url(
+/// `GET /v1/me/sync/providers` — the registered external providers (design: generalized
+/// multi-provider sync). Drives the Account "Sync & integrations" panel, which renders one
+/// card per entry instead of a single hardcoded `AniList` block.
+pub async fn sync_providers(
     State(state): State<AppState>,
     _user: AuthUser,
 ) -> ApiResult<Json<serde_json::Value>> {
+    let url = format!("{}/v1/sync/providers", state.sync_url.trim_end_matches('/'));
+    let resp = state.http.get(url).send().await.map_err(|e| {
+        tracing::error!(error = %e, "sync service unreachable");
+        ApiError::Internal
+    })?;
+    if !resp.status().is_success() {
+        return Err(ApiError::Internal);
+    }
+    Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
+}
+
+/// `GET /v1/me/sync/:provider/authorize` — returns the provider's consent URL (proxied).
+pub async fn sync_authorize_url(
+    State(state): State<AppState>,
+    _user: AuthUser,
+    Path(provider): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
     let url = format!(
-        "{}/v1/anilist/authorize-url",
+        "{}/v1/sync/{provider}/authorize-url",
         state.sync_url.trim_end_matches('/')
     );
     let resp = state.http.get(url).send().await.map_err(|e| {
@@ -228,20 +471,71 @@ pub async fn sync_authorize_url(
     Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
 }
 
+/// `GET /v1/me/sync/:provider/status` — whether the caller has a linked account at `provider`,
+/// plus the connected display name and most recent sync time (Sync & integrations panel,
+/// header pill, Series tracking card). Always `200`; an unlinked account reads
+/// `{ "linked": false }`.
+pub async fn sync_status(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(provider): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let url = format!(
+        "{}/v1/sync/{provider}/status/{}",
+        state.sync_url.trim_end_matches('/'),
+        user.user_id.as_uuid()
+    );
+    let resp = state.http.get(url).send().await.map_err(|e| {
+        tracing::error!(error = %e, "sync service unreachable");
+        ApiError::Internal
+    })?;
+    if !resp.status().is_success() {
+        return Err(ApiError::Internal);
+    }
+    Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
+}
+
+/// `DELETE /v1/me/sync/:provider` — unlink the caller's account at `provider`.
+pub async fn sync_disconnect(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(provider): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let url = format!(
+        "{}/v1/sync/{provider}/link",
+        state.sync_url.trim_end_matches('/')
+    );
+    let resp = state
+        .http
+        .delete(url)
+        .json(&serde_json::json!({ "user_id": user.user_id }))
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "sync service unreachable");
+            ApiError::Internal
+        })?;
+    if !resp.status().is_success() {
+        return Err(ApiError::Internal);
+    }
+    Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct AniListCallback {
     pub code: String,
 }
 
-/// `GET /v1/me/sync/anilist/callback?code=…` — exchanges the code and links the account.
+/// `GET /v1/me/sync/:provider/callback?code=…` — exchanges the code and links the account.
 pub async fn sync_callback(
     State(state): State<AppState>,
     user: AuthUser,
+    Path(provider): Path<String>,
     Query(q): Query<AniListCallback>,
 ) -> ApiResult<Json<serde_json::Value>> {
     sync_proxy(
         &state,
-        "/v1/anilist/link",
+        &format!("/v1/sync/{provider}/link"),
         serde_json::json!({ "user_id": user.user_id, "code": q.code }),
     )
     .await
@@ -254,39 +548,44 @@ pub struct SyncOpts {
     pub policy: Option<String>,
 }
 
-/// `POST /v1/me/sync/anilist/push` — reflect local watchlist/progress to `AniList`.
+/// `POST /v1/me/sync/:provider/push` — reflect local watchlist/progress to `provider`
+/// (bulk, full-reconciliation walk — see `spawn_targeted_push` for the fast per-series path
+/// used automatically when marking a chapter/series read).
 pub async fn sync_push(
     State(state): State<AppState>,
     user: AuthUser,
+    Path(provider): Path<String>,
     body: Option<Json<SyncOpts>>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let opts = body.map(|b| b.0).unwrap_or_default();
     sync_proxy(
         &state,
-        "/v1/anilist/push",
+        &format!("/v1/sync/{provider}/push"),
         serde_json::json!({ "user_id": user.user_id, "policy": opts.policy }),
     )
     .await
 }
 
-/// `POST /v1/me/sync/anilist/pull` — import the `AniList` list into the local watchlist.
+/// `POST /v1/me/sync/:provider/pull` — import `provider`'s list into the local watchlist.
 pub async fn sync_pull(
     State(state): State<AppState>,
     user: AuthUser,
+    Path(provider): Path<String>,
     body: Option<Json<SyncOpts>>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let opts = body.map(|b| b.0).unwrap_or_default();
     sync_proxy(
         &state,
-        "/v1/anilist/pull",
+        &format!("/v1/sync/{provider}/pull"),
         serde_json::json!({ "user_id": user.user_id, "policy": opts.policy }),
     )
     .await
 }
 
 /// POST a JSON body to the sync service, tolerating an empty (`204`) response and mapping
-/// a "not linked" conflict through to the caller.
-async fn sync_proxy(
+/// a "not linked" conflict through to the caller. `pub(crate)` so `admin.rs` can reuse it for
+/// operator-triggered force pull/push (design: admin Sync console tab).
+pub(crate) async fn sync_proxy(
     state: &AppState,
     path: &str,
     body: serde_json::Value,
@@ -304,7 +603,10 @@ async fn sync_proxy(
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
         if status.as_u16() == 409 {
-            return Err(ApiError::Conflict("AniList account not linked".to_owned()));
+            return Err(ApiError::Conflict("Account not linked".to_owned()));
+        }
+        if status.as_u16() == 404 {
+            return Err(ApiError::NotFound);
         }
         tracing::warn!(%status, body = %text, "sync service returned an error");
         return Err(ApiError::Internal);

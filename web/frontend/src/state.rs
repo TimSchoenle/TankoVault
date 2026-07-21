@@ -44,6 +44,9 @@ pub struct Session {
     pub token: Signal<Option<String>>,
     /// Decoded RBAC role (defaults to `User`).
     pub role: Signal<Role>,
+    /// The live display name. Seeded from the JWT on sign-in, but freely overridable so a
+    /// profile rename reflects everywhere *instantly*, without waiting for a new token.
+    pub name: Signal<Option<String>>,
     /// Whether the boot-time silent refresh has completed (guards the initial flash).
     pub ready: Signal<bool>,
 }
@@ -54,6 +57,7 @@ impl Session {
         Self {
             token: Signal::new(None),
             role: Signal::new(Role::User),
+            name: Signal::new(None),
             ready: Signal::new(false),
         }
     }
@@ -67,18 +71,35 @@ impl Session {
         self.token.read().clone()
     }
 
-    /// The signed-in user's display name, decoded from the JWT (`username`/`name`/`sub`
-    /// claim, whichever is present). Purely cosmetic — the server is authoritative.
+    /// The signed-in user's display name. Prefers a locally-set override (e.g. straight
+    /// after a profile rename) and otherwise falls back to the JWT claim
+    /// (`username`/`name`/`sub`, whichever is present). Purely cosmetic — the server is
+    /// authoritative.
     pub fn username(&self) -> Option<String> {
+        if let Some(name) = self.name.read().clone() {
+            return Some(name);
+        }
         self.token.read().as_deref().and_then(username_from_jwt)
     }
 
-    /// Record a freshly-minted access token and decode its role claim.
+    /// Override the display name shown across the UI, e.g. right after the profile PATCH
+    /// succeeds. Ignores blank names so a stale token claim keeps showing instead.
+    pub fn set_display_name(self, name: impl Into<String>) {
+        let name = name.into();
+        let mut n = self.name;
+        n.set((!name.trim().is_empty()).then_some(name));
+    }
+
+    /// Record a freshly-minted access token, decoding its role claim and seeding the display
+    /// name from it (a fresh token is authoritative, so any earlier override is replaced).
     pub fn set_token(self, token: String) {
         let role = role_from_jwt(&token);
+        let name = username_from_jwt(&token);
         let mut r = self.role;
         let mut t = self.token;
+        let mut n = self.name;
         r.set(role);
+        n.set(name);
         t.set(Some(token));
     }
 
@@ -86,8 +107,10 @@ impl Session {
     pub fn clear(self) {
         let mut t = self.token;
         let mut r = self.role;
+        let mut n = self.name;
         t.set(None);
         r.set(Role::User);
+        n.set(None);
     }
 
     pub fn mark_ready(self) {
@@ -136,5 +159,7 @@ fn username_from_jwt(token: &str) -> Option<String> {
     ["username", "name", "sub"]
         .iter()
         .find_map(|k| value.get(*k).and_then(|v| v.as_str()))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
         .map(str::to_owned)
 }

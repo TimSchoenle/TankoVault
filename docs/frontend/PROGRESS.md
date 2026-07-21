@@ -6,9 +6,31 @@
 > [`../IMPLEMENTATION_STATUS.md`](../IMPLEMENTATION_STATUS.md). Update it at the end of every
 > session so the next agent can pick up without re-deriving context.
 
-**Last updated:** 2026-07-21 (Frontend Session 7)
+**Last updated:** 2026-07-21 (Frontend Session 8)
 
 Legend: ✅ done & compiling · 🟡 partial/in-progress · ⬜ not started · 🔒 blocked on backend
+
+> **Session 8 (Account — instant display-name change, no relog).** The Profile panel used to
+> tell the user "New sign-ins will reflect the change", i.e. it forced a relog — which never
+> actually worked, because the access JWT carried **no** name claim at all (`AccessClaims` was
+> just `sub`/`role`/`exp`/`iat`/`jti`), so `Session::username()` fell back to the UUID `sub`
+> and a relog re-minted the same nameless token. Fixed end-to-end:
+> - **Backend (`crates/auth`, `services/api`).** `AccessClaims` gains a cosmetic `name`
+>   (`#[serde(default)]`, so legacy tokens still verify), `issue_access_token` takes the
+>   `username`, and `issue_session` (login/register/refresh) passes `user.username`. Now the
+>   JWT is self-describing and the name is correct after any token mint.
+> - **Client (`state.rs`).** `Session` gains an overridable `name: Signal<Option<String>>`,
+>   seeded from the JWT on `set_token`, cleared on `clear`, and settable via the new
+>   `set_display_name`. `username()` prefers the override, then the JWT claim
+>   (`username`/`name`/`sub`), now trimming/ignoring empty values.
+> - **Client (`views/account.rs`).** On a successful `PATCH /v1/me/profile` the panel calls
+>   `session.set_display_name(p.username)` so the header greeting, avatar and every
+>   `session.username()` consumer update **instantly** — no relog — clears the email field and
+>   shows a plain "Profile updated." confirmation.
+> - **Verified.** `cargo test -p tankovault-auth` (14/14, incl. the updated round-trip that
+>   asserts the `name` claim), `cargo check -p tankovault-api`, and
+>   `cargo check --target wasm32-unknown-unknown` (frontend) all pass. No styles changed, so
+>   the committed `assets/main.css` is untouched.
 
 > **Session 7 (F6 frontend rewire — consume the §9 endpoints).** The optional follow-up from
 > Session 6 is now done: every screen consumes its matching new endpoint, so no `TODO(api)`

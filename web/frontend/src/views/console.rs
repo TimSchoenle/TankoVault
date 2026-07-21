@@ -16,8 +16,8 @@ use crate::api;
 use crate::components::{rel_time, ErrorBox};
 use crate::icons::{Ic, Icon};
 use crate::models::{
-    AuditEntry, FailedTask, MergeCandidate, Provider, ProviderStat, RunState, ScanMode, ScanRun,
-    SystemStats,
+    AdminSyncAccount, AdminSyncMapping, AuditEntry, FailedTask, MergeCandidate, Provider,
+    ProviderStat, RunState, ScanMode, ScanRun, SystemStats,
 };
 use crate::state::use_session;
 use dioxus::prelude::*;
@@ -34,18 +34,20 @@ enum ConsoleTab {
     Solver,
     AdapterTest,
     Merge,
+    Sync,
     Users,
     Audit,
 }
 
 impl ConsoleTab {
-    const ALL: [ConsoleTab; 8] = [
+    const ALL: [ConsoleTab; 9] = [
         Self::Overview,
         Self::LiveScans,
         Self::Providers,
         Self::Solver,
         Self::AdapterTest,
         Self::Merge,
+        Self::Sync,
         Self::Users,
         Self::Audit,
     ];
@@ -57,6 +59,7 @@ impl ConsoleTab {
             Self::Solver => "Challenge & solver",
             Self::AdapterTest => "Adapter test",
             Self::Merge => "Merge queue",
+            Self::Sync => "Sync",
             Self::Users => "Users",
             Self::Audit => "Audit",
         }
@@ -69,6 +72,7 @@ impl ConsoleTab {
             Self::Solver => Icon::ShieldLock,
             Self::AdapterTest => Icon::Code,
             Self::Merge => Icon::Merge,
+            Self::Sync => Icon::CloudSync,
             Self::Users => Icon::Group,
             Self::Audit => Icon::History,
         }
@@ -118,6 +122,7 @@ pub fn Console() -> Element {
         ConsoleTab::Solver => rsx! { SolverPanel { tick } },
         ConsoleTab::AdapterTest => rsx! { AdapterTestTab {} },
         ConsoleTab::Merge => rsx! { MergeQueue {} },
+        ConsoleTab::Sync => rsx! { SyncAdminPanel {} },
         ConsoleTab::Users => rsx! { UsersPanel { tick } },
         ConsoleTab::Audit => rsx! { AuditPanel { tick } },
     };
@@ -1634,6 +1639,231 @@ fn MergeRow(candidate: MergeCandidate, reload: Signal<u32>) -> Element {
             }
             button { class: "ik-btn primary", onclick: merge, "Merge" }
             button { class: "ik-btn", onclick: dismiss, "Distinct" }
+        }
+    }
+}
+
+/// Sync admin tab (design: admin Sync console tab) — linked-account + series-mapping tables
+/// with operator actions (force pull/push/unlink; clear a bad mapping). Uses a local `reload`
+/// signal bumped after each action, not the shared tick, since operator actions must be
+/// reflected immediately (mirrors `MergeQueue`).
+#[component]
+fn SyncAdminPanel() -> Element {
+    let session = use_session();
+    let mut reload = use_signal(|| 0u32);
+
+    let accounts = use_resource(move || {
+        let _ = reload.read();
+        async move {
+            match session.token_value() {
+                Some(t) => api::admin_sync_accounts(&t).await,
+                None => Ok(Vec::new()),
+            }
+        }
+    });
+    let mappings = use_resource(move || {
+        let _ = reload.read();
+        async move {
+            match session.token_value() {
+                Some(t) => api::admin_sync_mappings(&t).await,
+                None => Ok(Vec::new()),
+            }
+        }
+    });
+
+    let accounts_body = match &*accounts.read_unchecked() {
+        None => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
+        Some(Err(e)) => {
+            let msg = e.clone();
+            rsx! { ErrorBox { message: msg, on_retry: move |()| reload += 1 } }
+        }
+        Some(Ok(list)) if list.is_empty() => rsx! {
+            div { class: "ik-empty", "No linked external accounts." }
+        },
+        Some(Ok(list)) => {
+            let list = list.clone();
+            rsx! {
+                for a in list {
+                    SyncAccountRow { key: "{a.user_id}-{a.provider}", account: a, reload }
+                }
+            }
+        }
+    };
+
+    let mappings_body = match &*mappings.read_unchecked() {
+        None => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
+        Some(Err(e)) => {
+            let msg = e.clone();
+            rsx! { ErrorBox { message: msg, on_retry: move |()| reload += 1 } }
+        }
+        Some(Ok(list)) if list.is_empty() => rsx! {
+            div { class: "ik-empty", "No series↔external mappings yet." }
+        },
+        Some(Ok(list)) => {
+            let list = list.clone();
+            rsx! {
+                for m in list {
+                    SyncMappingRow { key: "{m.series_id}-{m.provider}", mapping: m, reload }
+                }
+            }
+        }
+    };
+
+    rsx! {
+        section { style: "margin-bottom:24px;",
+            h3 { "Linked accounts" }
+            {accounts_body}
+        }
+        section {
+            h3 { "Series mappings" }
+            {mappings_body}
+        }
+    }
+}
+
+#[component]
+fn SyncAccountRow(account: AdminSyncAccount, reload: Signal<u32>) -> Element {
+    let session = use_session();
+    let mut busy = use_signal(|| false);
+    let last_sync = rel_time(account.last_synced_at.as_deref());
+
+    let pull = {
+        let user_id = account.user_id.clone();
+        let provider = account.provider.clone();
+        let mut reload = reload;
+        move |_| {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
+            let user_id = user_id.clone();
+            let provider = provider.clone();
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::admin_sync_pull(&t, &user_id, &provider).await.is_ok() {
+                        reload += 1;
+                    }
+                }
+                busy.set(false);
+            });
+        }
+    };
+
+    let push = {
+        let user_id = account.user_id.clone();
+        let provider = account.provider.clone();
+        let mut reload = reload;
+        move |_| {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
+            let user_id = user_id.clone();
+            let provider = provider.clone();
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::admin_sync_push(&t, &user_id, &provider).await.is_ok() {
+                        reload += 1;
+                    }
+                }
+                busy.set(false);
+            });
+        }
+    };
+
+    let unlink = {
+        let user_id = account.user_id.clone();
+        let provider = account.provider.clone();
+        let mut reload = reload;
+        move |_| {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
+            let user_id = user_id.clone();
+            let provider = provider.clone();
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::admin_sync_unlink(&t, &user_id, &provider)
+                        .await
+                        .is_ok()
+                    {
+                        reload += 1;
+                    }
+                }
+                busy.set(false);
+            });
+        }
+    };
+
+    rsx! {
+        div { class: "ik-row",
+            div { class: "grow",
+                div { class: "ik-flex", style: "justify-content:space-between;",
+                    span { style: "font-weight:600;", "{account.username}" }
+                    span { class: "ik-pill", "{account.provider}" }
+                }
+                div { class: "ik-muted", style: "font-size:13px;",
+                    if let Some(u) = &account.external_username {
+                        "Connected as {u} · last sync {last_sync}"
+                    } else {
+                        "last sync {last_sync}"
+                    }
+                }
+                if let Some(err) = &account.last_error {
+                    div { style: "font-size:12px;color:var(--acc);", "{err}" }
+                }
+            }
+            button { class: "ik-btn", disabled: *busy.read(), onclick: pull, "Force pull" }
+            button { class: "ik-btn", disabled: *busy.read(), onclick: push, "Force push" }
+            button { class: "ik-btn", disabled: *busy.read(), onclick: unlink, "Unlink" }
+        }
+    }
+}
+
+#[component]
+fn SyncMappingRow(mapping: AdminSyncMapping, reload: Signal<u32>) -> Element {
+    let session = use_session();
+    let mut busy = use_signal(|| false);
+    let updated = rel_time(Some(&mapping.updated_at));
+
+    let clear = {
+        let series_id = mapping.series_id.clone();
+        let provider = mapping.provider.clone();
+        let mut reload = reload;
+        move |_| {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
+            let series_id = series_id.clone();
+            let provider = provider.clone();
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::admin_clear_sync_mapping(&t, &series_id, &provider)
+                        .await
+                        .is_ok()
+                    {
+                        reload += 1;
+                    }
+                }
+                busy.set(false);
+            });
+        }
+    };
+
+    rsx! {
+        div { class: "ik-row",
+            div { class: "grow",
+                div { class: "ik-flex", style: "justify-content:space-between;",
+                    span { style: "font-weight:600;", "{mapping.series_title}" }
+                    span { class: "ik-pill", "{mapping.provider}" }
+                }
+                div { class: "ik-mono ik-muted", style: "font-size:12px;",
+                    "id {mapping.external_id} · updated {updated}"
+                }
+            }
+            button { class: "ik-btn", disabled: *busy.read(), onclick: clear, "Clear mapping" }
         }
     }
 }

@@ -363,55 +363,139 @@ pub async fn mark_read(token: &str, ids: &[String]) -> ApiResult<serde_json::Val
 }
 
 // ---------------------------------------------------------------------------
-// AniList sync (Sync & integrations panel, header pill, Watchlist, Series tracking card)
+// External sync (Sync & integrations panel, header pill, Watchlist, Series tracking card).
+// Provider-parameterized (design: generalized multi-provider sync) — AniList is the only
+// registered provider today, reached via `provider: "anilist"`.
 // ---------------------------------------------------------------------------
 
-/// The `AniList` consent URL to send the browser to.
-pub async fn anilist_authorize_url(token: &str) -> ApiResult<String> {
-    let v: serde_json::Value = get("/v1/me/sync/anilist/authorize", Some(token)).await?;
+/// The registered external sync providers.
+pub async fn sync_providers(token: &str) -> ApiResult<Vec<ProviderInfo>> {
+    get("/v1/me/sync/providers", Some(token)).await
+}
+
+/// `provider`'s OAuth consent URL to send the browser to.
+pub async fn sync_authorize_url(token: &str, provider: &str) -> ApiResult<String> {
+    let v: serde_json::Value =
+        get(&format!("/v1/me/sync/{provider}/authorize"), Some(token)).await?;
     v.get("url")
         .and_then(|u| u.as_str())
         .map(str::to_owned)
-        .ok_or_else(|| "AniList did not return an authorize URL.".to_owned())
+        .ok_or_else(|| "The provider did not return an authorize URL.".to_owned())
 }
 
-/// Whether the caller has a linked `AniList` account, plus username/last-sync.
-pub async fn anilist_status(token: &str) -> ApiResult<SyncStatus> {
-    get("/v1/me/sync/anilist/status", Some(token)).await
+/// Whether the caller has a linked `provider` account, plus username/last-sync.
+pub async fn sync_status(token: &str, provider: &str) -> ApiResult<SyncStatus> {
+    get(&format!("/v1/me/sync/{provider}/status"), Some(token)).await
 }
 
-/// Exchange an OAuth `code` (captured from the `AniList` redirect) for a linked account.
-pub async fn anilist_link(token: &str, code: &str) -> ApiResult<()> {
+/// Exchange an OAuth `code` (captured from `provider`'s redirect) for a linked account.
+pub async fn sync_link(token: &str, provider: &str, code: &str) -> ApiResult<()> {
     let _: serde_json::Value = get(
-        &format!("/v1/me/sync/anilist/callback?code={}", urlencode(code)),
+        &format!("/v1/me/sync/{provider}/callback?code={}", urlencode(code)),
         Some(token),
     )
     .await?;
     Ok(())
 }
 
-/// Unlink the caller's `AniList` account.
-pub async fn anilist_disconnect(token: &str) -> ApiResult<()> {
-    delete_empty("/v1/me/sync/anilist", Some(token)).await
+/// Unlink the caller's `provider` account.
+pub async fn sync_disconnect(token: &str, provider: &str) -> ApiResult<()> {
+    delete_empty(&format!("/v1/me/sync/{provider}"), Some(token)).await
 }
 
-/// Import the `AniList` list into the local watchlist/progress under `policy`.
-pub async fn anilist_pull(token: &str, policy: ConflictPolicy) -> ApiResult<serde_json::Value> {
+/// Import `provider`'s list into the local watchlist/progress under `policy`.
+pub async fn sync_pull(
+    token: &str,
+    provider: &str,
+    policy: ConflictPolicy,
+) -> ApiResult<serde_json::Value> {
     send_json(
         Method::Post,
-        "/v1/me/sync/anilist/pull",
+        &format!("/v1/me/sync/{provider}/pull"),
         &serde_json::json!({ "policy": policy.token() }),
         Some(token),
     )
     .await
 }
 
-/// Reflect the local watchlist/progress to `AniList` under `policy`.
-pub async fn anilist_push(token: &str, policy: ConflictPolicy) -> ApiResult<serde_json::Value> {
+/// Reflect the local watchlist/progress to `provider` under `policy`.
+pub async fn sync_push(
+    token: &str,
+    provider: &str,
+    policy: ConflictPolicy,
+) -> ApiResult<serde_json::Value> {
     send_json(
         Method::Post,
-        "/v1/me/sync/anilist/push",
+        &format!("/v1/me/sync/{provider}/push"),
         &serde_json::json!({ "policy": policy.token() }),
+        Some(token),
+    )
+    .await
+}
+
+// ---------------------------------------------------------------------------
+// Admin / operator console — Sync tab (design: admin Sync console tab)
+// ---------------------------------------------------------------------------
+
+pub async fn admin_sync_accounts(token: &str) -> ApiResult<Vec<AdminSyncAccount>> {
+    get("/v1/admin/sync/accounts", Some(token)).await
+}
+
+pub async fn admin_sync_mappings(token: &str) -> ApiResult<Vec<AdminSyncMapping>> {
+    get("/v1/admin/sync/mappings", Some(token)).await
+}
+
+pub async fn admin_sync_pull(
+    token: &str,
+    user_id: &str,
+    provider: &str,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        "/v1/admin/sync/pull",
+        &serde_json::json!({ "user_id": user_id, "provider": provider }),
+        Some(token),
+    )
+    .await
+}
+
+pub async fn admin_sync_push(
+    token: &str,
+    user_id: &str,
+    provider: &str,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        "/v1/admin/sync/push",
+        &serde_json::json!({ "user_id": user_id, "provider": provider }),
+        Some(token),
+    )
+    .await
+}
+
+pub async fn admin_sync_unlink(
+    token: &str,
+    user_id: &str,
+    provider: &str,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        "/v1/admin/sync/unlink",
+        &serde_json::json!({ "user_id": user_id, "provider": provider }),
+        Some(token),
+    )
+    .await
+}
+
+pub async fn admin_clear_sync_mapping(
+    token: &str,
+    series_id: &str,
+    provider: &str,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        "/v1/admin/sync/mappings/clear",
+        &serde_json::json!({ "series_id": series_id, "provider": provider }),
         Some(token),
     )
     .await

@@ -172,6 +172,24 @@ pub async fn watchlist_set_status<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
+/// A user's current watch status for a series, if tracked. Used by the targeted single-series
+/// sync push (design: immediate targeted push) to read local state without fetching the whole
+/// watchlist.
+pub async fn watchlist_status_get<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    series_id: SeriesId,
+) -> DbResult<Option<WatchStatus>> {
+    let status: Option<String> = sqlx::query_scalar(
+        "SELECT status::text FROM watchlist_entries WHERE user_id = $1 AND series_id = $2",
+    )
+    .bind(user_id.as_uuid())
+    .bind(series_id.as_uuid())
+    .fetch_optional(exec)
+    .await?;
+    status.map(|s| s.parse().map_err(DbError::Enum)).transpose()
+}
+
 // ---------------------------------------------------------------------------
 // Notifications
 // ---------------------------------------------------------------------------

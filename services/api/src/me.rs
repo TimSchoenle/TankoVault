@@ -6,10 +6,10 @@ use crate::state::{AppState, AuthUser};
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
-use tankovault_contracts::UserNotification;
-use tankovault_domain::{SeriesId, WatchStatus, resolve_link};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
+use tankovault_contracts::UserNotification;
+use tankovault_domain::{SeriesId, UserId, WatchStatus, resolve_link};
 use time::OffsetDateTime;
 use tokio_stream::StreamExt as _;
 use uuid::Uuid;
@@ -81,6 +81,7 @@ pub async fn put_watchlist(
         body.notify,
     )
     .await?;
+    spawn_targeted_push(&state, user.user_id, series_id);
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -113,7 +114,37 @@ pub async fn put_progress(
         body.last_read_number,
     )
     .await?;
+    spawn_targeted_push(&state, user.user_id, series_id);
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// Best-effort background push of `series_id` to every provider `user_id` has linked. Mirrors
+/// this codebase's existing "best-effort side effect" convention (notifier channels, the sync
+/// engine's viewer-name lookup on link): logged on failure, never surfaced to the caller, never
+/// blocks the response (design: immediate targeted push — marking a chapter/series read locally
+/// reflects to `AniList` without a manual "Push" click).
+fn spawn_targeted_push(state: &AppState, user_id: UserId, series_id: SeriesId) {
+    let http = state.http.clone();
+    let sync_url = state.sync_url.clone();
+    tokio::spawn(async move {
+        let url = format!("{}/v1/sync/push-series", sync_url.trim_end_matches('/'));
+        let body = serde_json::json!({ "user_id": user_id, "series_id": series_id });
+        match http.post(url).json(&body).send().await {
+            Ok(resp) if resp.status().is_success() => {}
+            Ok(resp) => tracing::warn!(
+                status = %resp.status(),
+                %user_id,
+                %series_id,
+                "targeted sync push returned an error"
+            ),
+            Err(e) => tracing::warn!(
+                error = %e,
+                %user_id,
+                %series_id,
+                "targeted sync push unreachable"
+            ),
+        }
+    });
 }
 
 /// `GET /v1/me/notifications`
@@ -402,13 +433,32 @@ pub async fn stream(
     Ok(Sse::new(events).keep_alive(KeepAlive::default()))
 }
 
-/// `GET /v1/me/sync/anilist/authorize` — returns the `AniList` consent URL (proxied).
-pub async fn sync_authorize_url(
+/// `GET /v1/me/sync/providers` — the registered external providers (design: generalized
+/// multi-provider sync). Drives the Account "Sync & integrations" panel, which renders one
+/// card per entry instead of a single hardcoded `AniList` block.
+pub async fn sync_providers(
     State(state): State<AppState>,
     _user: AuthUser,
 ) -> ApiResult<Json<serde_json::Value>> {
+    let url = format!("{}/v1/sync/providers", state.sync_url.trim_end_matches('/'));
+    let resp = state.http.get(url).send().await.map_err(|e| {
+        tracing::error!(error = %e, "sync service unreachable");
+        ApiError::Internal
+    })?;
+    if !resp.status().is_success() {
+        return Err(ApiError::Internal);
+    }
+    Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
+}
+
+/// `GET /v1/me/sync/:provider/authorize` — returns the provider's consent URL (proxied).
+pub async fn sync_authorize_url(
+    State(state): State<AppState>,
+    _user: AuthUser,
+    Path(provider): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
     let url = format!(
-        "{}/v1/anilist/authorize-url",
+        "{}/v1/sync/{provider}/authorize-url",
         state.sync_url.trim_end_matches('/')
     );
     let resp = state.http.get(url).send().await.map_err(|e| {
@@ -421,15 +471,17 @@ pub async fn sync_authorize_url(
     Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
 }
 
-/// `GET /v1/me/sync/anilist/status` — whether the caller has a linked `AniList` account, plus
-/// the connected display name and most recent sync time (Sync & integrations panel, header
-/// pill, Series tracking card). Always `200`; an unlinked account reads `{ "linked": false }`.
+/// `GET /v1/me/sync/:provider/status` — whether the caller has a linked account at `provider`,
+/// plus the connected display name and most recent sync time (Sync & integrations panel,
+/// header pill, Series tracking card). Always `200`; an unlinked account reads
+/// `{ "linked": false }`.
 pub async fn sync_status(
     State(state): State<AppState>,
     user: AuthUser,
+    Path(provider): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let url = format!(
-        "{}/v1/anilist/status/{}",
+        "{}/v1/sync/{provider}/status/{}",
         state.sync_url.trim_end_matches('/'),
         user.user_id.as_uuid()
     );
@@ -443,12 +495,16 @@ pub async fn sync_status(
     Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
 }
 
-/// `DELETE /v1/me/sync/anilist` — unlink the caller's `AniList` account.
+/// `DELETE /v1/me/sync/:provider` — unlink the caller's account at `provider`.
 pub async fn sync_disconnect(
     State(state): State<AppState>,
     user: AuthUser,
+    Path(provider): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let url = format!("{}/v1/anilist/link", state.sync_url.trim_end_matches('/'));
+    let url = format!(
+        "{}/v1/sync/{provider}/link",
+        state.sync_url.trim_end_matches('/')
+    );
     let resp = state
         .http
         .delete(url)
@@ -470,15 +526,16 @@ pub struct AniListCallback {
     pub code: String,
 }
 
-/// `GET /v1/me/sync/anilist/callback?code=…` — exchanges the code and links the account.
+/// `GET /v1/me/sync/:provider/callback?code=…` — exchanges the code and links the account.
 pub async fn sync_callback(
     State(state): State<AppState>,
     user: AuthUser,
+    Path(provider): Path<String>,
     Query(q): Query<AniListCallback>,
 ) -> ApiResult<Json<serde_json::Value>> {
     sync_proxy(
         &state,
-        "/v1/anilist/link",
+        &format!("/v1/sync/{provider}/link"),
         serde_json::json!({ "user_id": user.user_id, "code": q.code }),
     )
     .await
@@ -491,39 +548,44 @@ pub struct SyncOpts {
     pub policy: Option<String>,
 }
 
-/// `POST /v1/me/sync/anilist/push` — reflect local watchlist/progress to `AniList`.
+/// `POST /v1/me/sync/:provider/push` — reflect local watchlist/progress to `provider`
+/// (bulk, full-reconciliation walk — see `spawn_targeted_push` for the fast per-series path
+/// used automatically when marking a chapter/series read).
 pub async fn sync_push(
     State(state): State<AppState>,
     user: AuthUser,
+    Path(provider): Path<String>,
     body: Option<Json<SyncOpts>>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let opts = body.map(|b| b.0).unwrap_or_default();
     sync_proxy(
         &state,
-        "/v1/anilist/push",
+        &format!("/v1/sync/{provider}/push"),
         serde_json::json!({ "user_id": user.user_id, "policy": opts.policy }),
     )
     .await
 }
 
-/// `POST /v1/me/sync/anilist/pull` — import the `AniList` list into the local watchlist.
+/// `POST /v1/me/sync/:provider/pull` — import `provider`'s list into the local watchlist.
 pub async fn sync_pull(
     State(state): State<AppState>,
     user: AuthUser,
+    Path(provider): Path<String>,
     body: Option<Json<SyncOpts>>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let opts = body.map(|b| b.0).unwrap_or_default();
     sync_proxy(
         &state,
-        "/v1/anilist/pull",
+        &format!("/v1/sync/{provider}/pull"),
         serde_json::json!({ "user_id": user.user_id, "policy": opts.policy }),
     )
     .await
 }
 
 /// POST a JSON body to the sync service, tolerating an empty (`204`) response and mapping
-/// a "not linked" conflict through to the caller.
-async fn sync_proxy(
+/// a "not linked" conflict through to the caller. `pub(crate)` so `admin.rs` can reuse it for
+/// operator-triggered force pull/push (design: admin Sync console tab).
+pub(crate) async fn sync_proxy(
     state: &AppState,
     path: &str,
     body: serde_json::Value,
@@ -541,7 +603,10 @@ async fn sync_proxy(
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
         if status.as_u16() == 409 {
-            return Err(ApiError::Conflict("AniList account not linked".to_owned()));
+            return Err(ApiError::Conflict("Account not linked".to_owned()));
+        }
+        if status.as_u16() == 404 {
+            return Err(ApiError::NotFound);
         }
         tracing::warn!(%status, body = %text, "sync service returned an error");
         return Err(ApiError::Internal);

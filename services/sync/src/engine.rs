@@ -1,9 +1,12 @@
-//! Sync engine: OAuth linking plus `AniList` ⇆ local pull/push (design §15).
+//! Sync engine: OAuth linking plus provider ⇆ local pull/push, a targeted single-series push,
+//! and the multi-provider registry (design: generalized multi-provider sync).
 //!
 //! Tokens are sealed with [`SecretBox`] before persistence and only ever decrypted here.
 //! Series are mapped to canonical works by reusing [`tankovault_matcher`] over trigram
 //! candidates, then cached in `sync_mappings` so later syncs skip re-matching. Reconciling
-//! progress across the two sides is delegated to the pure [`crate::mapping`] logic.
+//! progress across the two sides is delegated to the pure [`crate::mapping`] logic. Status
+//! crosses the provider boundary as [`WatchStatus`] — provider-specific vocabularies (e.g.
+//! `AniListStatus`) never leave their own provider module.
 
 use std::collections::HashMap;
 
@@ -14,16 +17,16 @@ use time::OffsetDateTime;
 use tankovault_auth::SecretBox;
 use tankovault_db::PgPool;
 use tankovault_db::repo::{catalog, matching, sync, tracking};
-use tankovault_domain::{SeriesId, UserId, normalize_title};
+use tankovault_domain::{SeriesId, UserId, WatchStatus, normalize_title};
 use tankovault_matcher::{Candidate, Decision, Query, Thresholds, decide};
 
-use crate::anilist::{AniListClient, OAuthTokens, PROVIDER, RemoteEntry};
-use crate::mapping::{AniListStatus, ConflictPolicy, ProgressState, Side, reconcile_progress};
+use crate::mapping::{ConflictPolicy, ProgressState, Side, reconcile_progress};
+use crate::provider::{ExternalProvider, OAuthTokens, ProviderInfo, RemoteEntry};
 
-/// Outcome of a pull (`AniList` → local).
+/// Outcome of a pull (provider → local).
 #[derive(Debug, Default, Serialize)]
 pub(crate) struct PullReport {
-    /// Entries returned by `AniList`.
+    /// Entries returned by the provider.
     pub(crate) fetched: usize,
     /// Entries resolved to a canonical local series.
     pub(crate) matched: usize,
@@ -33,18 +36,18 @@ pub(crate) struct PullReport {
     pub(crate) unmatched: usize,
 }
 
-/// Outcome of a push (local → `AniList`).
+/// Outcome of a push (local → provider).
 #[derive(Debug, Default, Serialize)]
 pub(crate) struct PushReport {
     /// Local watchlist entries examined.
     pub(crate) considered: usize,
     /// Remote entries created or updated.
     pub(crate) pushed: usize,
-    /// Watchlist entries with no resolvable `AniList` media (skipped).
+    /// Watchlist entries with no resolvable remote media (skipped).
     pub(crate) unmapped: usize,
 }
 
-/// Whether a user has linked `AniList`, and (when linked) the connected display name and the
+/// Whether a user has linked a provider, and (when linked) the connected display name and the
 /// most recent sync time — the shape the "Sync & integrations" panel and status pill render.
 #[derive(Debug, Default, Serialize)]
 pub(crate) struct AccountStatus {
@@ -54,10 +57,19 @@ pub(crate) struct AccountStatus {
     pub(crate) last_synced_at: Option<OffsetDateTime>,
 }
 
-/// The stateful sync engine, shared behind an `Arc` in service state.
+/// One provider's outcome from a targeted single-series push (design: immediate targeted push).
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ProviderPushOutcome {
+    pub(crate) provider: String,
+    pub(crate) ok: bool,
+    pub(crate) error: Option<String>,
+}
+
+/// The stateful sync engine, shared behind an `Arc` in service state. Holds every registered
+/// provider (`AniList` today; a second provider is a drop-in registry entry).
 pub(crate) struct SyncEngine {
     pool: PgPool,
-    client: AniListClient,
+    providers: HashMap<&'static str, Box<dyn ExternalProvider>>,
     secret: SecretBox,
     default_policy: ConflictPolicy,
     thresholds: Thresholds,
@@ -67,13 +79,13 @@ pub(crate) struct SyncEngine {
 impl SyncEngine {
     pub(crate) fn new(
         pool: PgPool,
-        client: AniListClient,
         secret: SecretBox,
         default_policy: ConflictPolicy,
+        providers: HashMap<&'static str, Box<dyn ExternalProvider>>,
     ) -> Self {
         Self {
             pool,
-            client,
+            providers,
             secret,
             default_policy,
             thresholds: Thresholds::default(),
@@ -81,20 +93,41 @@ impl SyncEngine {
         }
     }
 
-    /// The `AniList` consent URL to redirect a user to.
+    fn provider(&self, slug: &str) -> anyhow::Result<&dyn ExternalProvider> {
+        self.providers
+            .get(slug)
+            .map(Box::as_ref)
+            .ok_or_else(|| anyhow!("unknown sync provider: {slug}"))
+    }
+
+    /// The registered providers, for `GET /v1/sync/providers`.
     #[must_use]
-    pub(crate) fn authorize_url(&self) -> String {
-        self.client.authorize_url()
+    pub(crate) fn registry(&self) -> Vec<ProviderInfo> {
+        let mut list: Vec<_> = self
+            .providers
+            .values()
+            .map(|p| ProviderInfo {
+                slug: p.slug(),
+                name: p.display_name(),
+            })
+            .collect();
+        list.sort_by_key(|p| p.slug);
+        list
+    }
+
+    /// The `provider`'s consent URL to redirect a user to.
+    pub(crate) fn authorize_url(&self, slug: &str) -> anyhow::Result<String> {
+        Ok(self.provider(slug)?.authorize_url())
     }
 
     /// Exchange an OAuth `code` and persist the (encrypted) tokens for `user_id`.
-    pub(crate) async fn link(&self, user_id: UserId, code: &str) -> anyhow::Result<()> {
-        let tokens = self.client.exchange_code(code).await?;
-        self.store_tokens(user_id, &tokens).await?;
-        // Best-effort: capture the AniList display name for the status card. A lookup
-        // failure must not fail the link itself — the tokens are already safely stored.
-        let username = self
-            .client
+    pub(crate) async fn link(&self, slug: &str, user_id: UserId, code: &str) -> anyhow::Result<()> {
+        let provider = self.provider(slug)?;
+        let tokens = provider.exchange_code(code).await?;
+        self.store_tokens(slug, user_id, &tokens).await?;
+        // Best-effort: capture the display name for the status card. A lookup failure must
+        // not fail the link itself — the tokens are already safely stored.
+        let username = provider
             .viewer(&tokens.access_token)
             .await
             .ok()
@@ -102,7 +135,7 @@ impl SyncEngine {
         sync::mark_synced(
             &self.pool,
             user_id,
-            PROVIDER,
+            slug,
             username.as_deref(),
             OffsetDateTime::now_utc(),
         )
@@ -110,16 +143,22 @@ impl SyncEngine {
         Ok(())
     }
 
-    /// Remove a user's `AniList` link. Returns `true` if an account was removed.
-    pub(crate) async fn unlink(&self, user_id: UserId) -> anyhow::Result<bool> {
-        Ok(sync::delete_account(&self.pool, user_id, PROVIDER).await?)
+    /// Remove a user's link to `provider`. Returns `true` if an account was removed.
+    pub(crate) async fn unlink(&self, slug: &str, user_id: UserId) -> anyhow::Result<bool> {
+        self.provider(slug)?;
+        Ok(sync::delete_account(&self.pool, user_id, slug).await?)
     }
 
-    /// Whether `user_id` has a linked `AniList` account, plus its display name and most
+    /// Whether `user_id` has a linked `provider` account, plus its display name and most
     /// recent sync time — read straight from storage, never from the live API, so a page
-    /// load never spends `AniList`'s rate-limit budget.
-    pub(crate) async fn status(&self, user_id: UserId) -> anyhow::Result<AccountStatus> {
-        let account = sync::get_account(&self.pool, user_id, PROVIDER).await?;
+    /// load never spends the provider's rate-limit budget.
+    pub(crate) async fn status(
+        &self,
+        slug: &str,
+        user_id: UserId,
+    ) -> anyhow::Result<AccountStatus> {
+        self.provider(slug)?;
+        let account = sync::get_account(&self.pool, user_id, slug).await?;
         Ok(match account {
             Some(a) => AccountStatus {
                 linked: true,
@@ -130,7 +169,12 @@ impl SyncEngine {
         })
     }
 
-    async fn store_tokens(&self, user_id: UserId, tokens: &OAuthTokens) -> anyhow::Result<()> {
+    async fn store_tokens(
+        &self,
+        slug: &str,
+        user_id: UserId,
+        tokens: &OAuthTokens,
+    ) -> anyhow::Result<()> {
         let access_ct = self.secret.seal(tokens.access_token.as_bytes())?;
         let refresh_ct = tokens
             .refresh_token
@@ -140,7 +184,7 @@ impl SyncEngine {
         sync::upsert_account(
             &self.pool,
             user_id,
-            PROVIDER,
+            slug,
             &access_ct,
             refresh_ct.as_deref(),
             tokens.expires_at,
@@ -149,12 +193,17 @@ impl SyncEngine {
         Ok(())
     }
 
-    /// Decrypt a usable access token for `user_id`, refreshing it first if expired and a
-    /// refresh token is available.
-    async fn access_token(&self, user_id: UserId) -> anyhow::Result<String> {
-        let account = sync::get_account(&self.pool, user_id, PROVIDER)
+    /// Decrypt a usable access token for `user_id` at `provider`, refreshing it first if
+    /// expired and a refresh token is available.
+    async fn access_token(
+        &self,
+        slug: &str,
+        provider: &dyn ExternalProvider,
+        user_id: UserId,
+    ) -> anyhow::Result<String> {
+        let account = sync::get_account(&self.pool, user_id, slug)
             .await?
-            .ok_or_else(|| anyhow!("no AniList account linked for user"))?;
+            .ok_or_else(|| anyhow!("no {} account linked for user", provider.display_name()))?;
 
         if let (Some(expiry), Some(refresh_ct)) =
             (account.expires_at, account.refresh_token.as_ref())
@@ -162,8 +211,8 @@ impl SyncEngine {
             if expiry <= OffsetDateTime::now_utc() {
                 let refresh = String::from_utf8(self.secret.open(refresh_ct)?)
                     .context("decoded refresh token was not valid UTF-8")?;
-                if let Ok(tokens) = self.client.refresh(&refresh).await {
-                    self.store_tokens(user_id, &tokens).await?;
+                if let Ok(tokens) = provider.refresh(&refresh).await {
+                    self.store_tokens(slug, user_id, &tokens).await?;
                     return Ok(tokens.access_token);
                 }
             }
@@ -173,29 +222,45 @@ impl SyncEngine {
             .context("decoded access token was not valid UTF-8")
     }
 
-    /// Pull the user's `AniList` list into the local watchlist/progress.
+    /// Pull the user's `provider` list into the local watchlist/progress.
     pub(crate) async fn pull(
         &self,
+        slug: &str,
         user_id: UserId,
         policy: Option<ConflictPolicy>,
     ) -> anyhow::Result<PullReport> {
+        match self.pull_inner(slug, user_id, policy).await {
+            Ok(report) => Ok(report),
+            Err(e) => {
+                let _ = sync::record_sync_error(&self.pool, user_id, slug, &e.to_string()).await;
+                Err(e)
+            }
+        }
+    }
+
+    async fn pull_inner(
+        &self,
+        slug: &str,
+        user_id: UserId,
+        policy: Option<ConflictPolicy>,
+    ) -> anyhow::Result<PullReport> {
+        let provider = self.provider(slug)?;
         let policy = policy.unwrap_or(self.default_policy);
-        let access = self.access_token(user_id).await?;
-        let viewer = self.client.viewer(&access).await?;
-        let entries = self.client.fetch_media_list(&access, viewer.id).await?;
+        let access = self.access_token(slug, provider, user_id).await?;
+        let viewer = provider.viewer(&access).await?;
+        let entries = provider.fetch_list(&access, &viewer).await?;
 
         let mut report = PullReport {
             fetched: entries.len(),
             ..Default::default()
         };
         for entry in &entries {
-            let Some(series_id) = self.resolve_series(entry).await? else {
+            let Some(series_id) = self.resolve_series(slug, entry).await? else {
                 report.unmatched += 1;
                 continue;
             };
             report.matched += 1;
-            sync::upsert_mapping(&self.pool, series_id, PROVIDER, &entry.media_id.to_string())
-                .await?;
+            sync::upsert_mapping(&self.pool, series_id, slug, &entry.external_id).await?;
 
             let local = self.local_state(user_id, series_id).await?;
             let remote = Some(ProgressState {
@@ -207,13 +272,8 @@ impl SyncEngine {
             // Adopt the remote status only when the remote side is authoritative (this also
             // imports the entry onto the watchlist on first pull); `notify` is preserved.
             if rec.winner == Side::Remote {
-                tracking::watchlist_set_status(
-                    &self.pool,
-                    user_id,
-                    series_id,
-                    entry.status.to_watch_status(),
-                )
-                .await?;
+                tracking::watchlist_set_status(&self.pool, user_id, series_id, entry.status)
+                    .await?;
             }
             if rec.update_local {
                 tracking::progress_set(&self.pool, user_id, series_id, rec.agreed_progress).await?;
@@ -223,7 +283,7 @@ impl SyncEngine {
         sync::mark_synced(
             &self.pool,
             user_id,
-            PROVIDER,
+            slug,
             Some(&viewer.name),
             OffsetDateTime::now_utc(),
         )
@@ -231,44 +291,62 @@ impl SyncEngine {
         Ok(report)
     }
 
-    /// Push the local watchlist/progress to `AniList`.
+    /// Push the local watchlist/progress to `provider`.
     pub(crate) async fn push(
         &self,
+        slug: &str,
         user_id: UserId,
         policy: Option<ConflictPolicy>,
     ) -> anyhow::Result<PushReport> {
+        match self.push_inner(slug, user_id, policy).await {
+            Ok(report) => Ok(report),
+            Err(e) => {
+                let _ = sync::record_sync_error(&self.pool, user_id, slug, &e.to_string()).await;
+                Err(e)
+            }
+        }
+    }
+
+    async fn push_inner(
+        &self,
+        slug: &str,
+        user_id: UserId,
+        policy: Option<ConflictPolicy>,
+    ) -> anyhow::Result<PushReport> {
+        let provider = self.provider(slug)?;
         let policy = policy.unwrap_or(self.default_policy);
-        let access = self.access_token(user_id).await?;
-        let viewer = self.client.viewer(&access).await?;
-        let remote_entries = self.client.fetch_media_list(&access, viewer.id).await?;
-        let remote_by_id: HashMap<i64, &RemoteEntry> =
-            remote_entries.iter().map(|e| (e.media_id, e)).collect();
+        let access = self.access_token(slug, provider, user_id).await?;
+        let viewer = provider.viewer(&access).await?;
+        let remote_entries = provider.fetch_list(&access, &viewer).await?;
+        let remote_by_id: HashMap<&str, &RemoteEntry> = remote_entries
+            .iter()
+            .map(|e| (e.external_id.as_str(), e))
+            .collect();
 
         let watchlist = tracking::watchlist_list(&self.pool, user_id).await?;
         let mut report = PushReport::default();
         for entry in &watchlist {
             report.considered += 1;
-            let Some(media_id) = self.resolve_media_id(&access, entry.series_id).await? else {
+            let Some(external_id) = self
+                .resolve_media_id(provider, slug, &access, entry.series_id)
+                .await?
+            else {
                 report.unmapped += 1;
                 continue;
             };
 
-            let remote = remote_by_id.get(&media_id).map(|e| ProgressState {
-                progress: e.progress,
-                updated_at: e.updated_at,
-            });
+            let remote = remote_by_id
+                .get(external_id.as_str())
+                .map(|e| ProgressState {
+                    progress: e.progress,
+                    updated_at: e.updated_at,
+                });
             let local = self.local_state(user_id, entry.series_id).await?;
             let rec = reconcile_progress(local, remote, policy);
 
             if remote.is_none() || rec.update_remote {
-                let status = AniListStatus::from_watch_status(entry.status);
-                self.client
-                    .save_entry(
-                        &access,
-                        media_id,
-                        status,
-                        progress_to_int(rec.agreed_progress),
-                    )
+                provider
+                    .save_entry(&access, &external_id, entry.status, rec.agreed_progress)
                     .await?;
                 report.pushed += 1;
             }
@@ -276,12 +354,115 @@ impl SyncEngine {
         sync::mark_synced(
             &self.pool,
             user_id,
-            PROVIDER,
+            slug,
             Some(&viewer.name),
             OffsetDateTime::now_utc(),
         )
         .await?;
         Ok(report)
+    }
+
+    /// Targeted single-series push (design: immediate targeted push): fans out to every
+    /// provider `user_id` has linked. Fast path — no full remote-list fetch/reconciliation;
+    /// local state wins outright since this is a direct, deliberate user action (e.g. marking
+    /// a chapter read), not a bulk reconciliation. Never fails the caller; every outcome
+    /// (including failures) is best-effort logged and recorded via `record_sync_error`.
+    pub(crate) async fn push_series(
+        &self,
+        user_id: UserId,
+        series_id: SeriesId,
+    ) -> Vec<ProviderPushOutcome> {
+        let linked = match sync::list_linked_providers(&self.pool, user_id).await {
+            Ok(l) => l,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    %user_id,
+                    "could not list linked providers for targeted push"
+                );
+                return Vec::new();
+            }
+        };
+        let mut outcomes = Vec::with_capacity(linked.len());
+        for slug in linked {
+            let Some(provider) = self.providers.get(slug.as_str()).map(Box::as_ref) else {
+                continue;
+            };
+            outcomes.push(
+                self.push_series_one(provider, &slug, user_id, series_id)
+                    .await,
+            );
+        }
+        outcomes
+    }
+
+    async fn push_series_one(
+        &self,
+        provider: &dyn ExternalProvider,
+        slug: &str,
+        user_id: UserId,
+        series_id: SeriesId,
+    ) -> ProviderPushOutcome {
+        match self
+            .push_series_inner(provider, slug, user_id, series_id)
+            .await
+        {
+            Ok(()) => {
+                let _ =
+                    sync::mark_synced(&self.pool, user_id, slug, None, OffsetDateTime::now_utc())
+                        .await;
+                ProviderPushOutcome {
+                    provider: slug.to_owned(),
+                    ok: true,
+                    error: None,
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    provider = slug,
+                    %user_id,
+                    %series_id,
+                    "targeted sync push failed"
+                );
+                let _ = sync::record_sync_error(&self.pool, user_id, slug, &e.to_string()).await;
+                ProviderPushOutcome {
+                    provider: slug.to_owned(),
+                    ok: false,
+                    error: Some(e.to_string()),
+                }
+            }
+        }
+    }
+
+    async fn push_series_inner(
+        &self,
+        provider: &dyn ExternalProvider,
+        slug: &str,
+        user_id: UserId,
+        series_id: SeriesId,
+    ) -> anyhow::Result<()> {
+        let access = self.access_token(slug, provider, user_id).await?;
+        let external_id = self
+            .resolve_media_id(provider, slug, &access, series_id)
+            .await?
+            .ok_or_else(|| {
+                anyhow!(
+                    "no resolvable {} entry for this series",
+                    provider.display_name()
+                )
+            })?;
+        let status = tracking::watchlist_status_get(&self.pool, user_id, series_id)
+            .await?
+            .unwrap_or(WatchStatus::Reading);
+        let progress = tracking::progress_state(&self.pool, user_id, series_id)
+            .await?
+            .map_or(0.0, |(p, _)| p);
+        provider
+            .save_entry(&access, &external_id, status, progress)
+            .await?;
+        sync::upsert_mapping(&self.pool, series_id, slug, &external_id).await?;
+        Ok(())
     }
 
     async fn local_state(
@@ -299,10 +480,13 @@ impl SyncEngine {
 
     /// Resolve a remote entry to a canonical series: first via an existing mapping, then by
     /// confident title match against the local catalogue.
-    async fn resolve_series(&self, entry: &RemoteEntry) -> anyhow::Result<Option<SeriesId>> {
+    async fn resolve_series(
+        &self,
+        slug: &str,
+        entry: &RemoteEntry,
+    ) -> anyhow::Result<Option<SeriesId>> {
         if let Some(id) =
-            sync::mapping_series_for_external(&self.pool, PROVIDER, &entry.media_id.to_string())
-                .await?
+            sync::mapping_series_for_external(&self.pool, slug, &entry.external_id).await?
         {
             return Ok(Some(id));
         }
@@ -336,35 +520,23 @@ impl SyncEngine {
         Ok(None)
     }
 
-    /// Resolve a local series to an `AniList` media id: via an existing mapping, else by a
+    /// Resolve a local series to a `provider` external id: via an existing mapping, else by a
     /// title search (whose result is cached as a mapping).
     async fn resolve_media_id(
         &self,
+        provider: &dyn ExternalProvider,
+        slug: &str,
         access: &str,
         series_id: SeriesId,
-    ) -> anyhow::Result<Option<i64>> {
-        if let Some(ext) =
-            sync::mapping_external_for_series(&self.pool, series_id, PROVIDER).await?
-        {
-            if let Ok(id) = ext.parse::<i64>() {
-                return Ok(Some(id));
-            }
+    ) -> anyhow::Result<Option<String>> {
+        if let Some(ext) = sync::mapping_external_for_series(&self.pool, series_id, slug).await? {
+            return Ok(Some(ext));
         }
         let series = catalog::get_series(&self.pool, series_id).await?;
-        if let Some(id) = self
-            .client
-            .search_media(access, &series.canonical_title)
-            .await?
-        {
-            sync::upsert_mapping(&self.pool, series_id, PROVIDER, &id.to_string()).await?;
+        if let Some(id) = provider.search(access, &series.canonical_title).await? {
+            sync::upsert_mapping(&self.pool, series_id, slug, &id).await?;
             return Ok(Some(id));
         }
         Ok(None)
     }
-}
-
-/// Round a fractional local progress to the whole-chapter count `AniList` expects.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn progress_to_int(progress: f64) -> i64 {
-    progress.max(0.0).round() as i64
 }

@@ -16,6 +16,7 @@ use crate::models::{
     ContentType, SeriesStatus, SourceDto, WatchStatus, WatchlistItem, WatchlistUpsert,
 };
 use crate::state::use_session;
+use crate::Route;
 use dioxus::prelude::*;
 
 #[component]
@@ -47,6 +48,13 @@ pub fn Series(id: String) -> Element {
                 Some(t) => api::watchlist(&t).await,
                 None => Ok(Vec::new()),
             }
+        }
+    });
+
+    let sync_status = use_resource(move || async move {
+        match session.token_value() {
+            Some(t) => api::anilist_status(&t).await.ok(),
+            None => None,
         }
     });
 
@@ -198,10 +206,23 @@ pub fn Series(id: String) -> Element {
                         authed: session.is_authenticated(),
                         reload: reload_wl,
                     }
-                    // TODO(api) §9.4: AniList sync status has no endpoint yet.
-                    div { class: "ik-flex", style: "margin-top:12px;font-size:13px;",
-                        Ic { icon: Icon::CloudDone, size: 15 }
-                        span { class: "ik-muted", "AniList sync arrives with the integrations endpoint." }
+                    div { class: "ik-flex", style: "margin-top:12px;font-size:13px;justify-content:space-between;",
+                        span { "AniList" }
+                        match &*sync_status.read_unchecked() {
+                            Some(Some(s)) if s.linked => rsx! {
+                                span { class: "ik-flex", style: "gap:4px;color:var(--jade,#3DA88F);",
+                                    Ic { icon: Icon::CloudDone, size: 15 }
+                                    "Synced"
+                                }
+                            },
+                            Some(_) => rsx! {
+                                Link { to: Route::Account {}, class: "ik-flex", style: "gap:4px;color:inherit;text-decoration:none;",
+                                    Ic { icon: Icon::CloudOff, size: 15 }
+                                    span { class: "ik-muted", "Not connected" }
+                                }
+                            },
+                            None => rsx! { span { class: "ik-muted", "…" } },
+                        }
                     }
                 }
                 div { class: "ik-sidebar-card",

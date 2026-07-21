@@ -13,7 +13,7 @@
 //! RBAC-gated server-side (create/delete require Admin; the rest require Operator).
 
 use crate::api;
-use crate::components::ErrorBox;
+use crate::components::{rel_time, ErrorBox};
 use crate::icons::{Ic, Icon};
 use crate::models::{
     AuditEntry, FailedTask, MergeCandidate, Provider, ProviderStat, RunState, ScanMode, ScanRun,
@@ -1672,44 +1672,7 @@ fn run_state_pill(state: RunState) -> (&'static str, &'static str) {
     }
 }
 
-/// Format an RFC-3339 timestamp as a coarse "time ago" string, using the browser's own
-/// date parser so no date crate is pulled into the wasm bundle. `None`/empty → `—`; an
-/// unparseable value falls back to the raw string.
-fn rel_time(ts: Option<&str>) -> String {
-    let Some(s) = ts.filter(|s| !s.is_empty()) else {
-        return "—".to_owned();
-    };
-    let parsed = js_sys::Date::parse(s);
-    if parsed.is_nan() {
-        return s.to_owned();
-    }
-    humanize_ms(js_sys::Date::now() - parsed)
-}
 
-/// Humanise a millisecond age into a compact relative label.
-fn humanize_ms(diff_ms: f64) -> String {
-    if diff_ms < 45_000.0 {
-        return "just now".to_owned();
-    }
-    let secs = (diff_ms / 1000.0) as i64;
-    let mins = secs / 60;
-    if mins < 60 {
-        return format!("{mins}m ago");
-    }
-    let hours = mins / 60;
-    if hours < 24 {
-        return format!("{hours}h ago");
-    }
-    let days = hours / 24;
-    if days < 30 {
-        return format!("{days}d ago");
-    }
-    let months = days / 30;
-    if months < 12 {
-        return format!("{months}mo ago");
-    }
-    format!("{}y ago", days / 365)
-}
 
 /// Build the politeness JSON payload from the editor's string fields, or a human error.
 fn politeness_json(

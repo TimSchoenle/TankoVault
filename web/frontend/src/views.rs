@@ -10,7 +10,7 @@ mod notifications;
 mod series;
 mod watchlist;
 
-pub use account::Account;
+pub use account::{Account, AnilistCallback};
 pub use auth::Login;
 pub use console::Console;
 pub use discover::{Discover, Search};

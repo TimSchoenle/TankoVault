@@ -20,7 +20,8 @@ use components::{Shell, UnreadBadge};
 use dioxus::prelude::*;
 use state::Session;
 use views::{
-    Account, Console, Discover, Home, Login, NotFound, Notifications, Search, Series, Watchlist,
+    Account, AnilistCallback, Console, Discover, Home, Login, NotFound, Notifications, Search,
+    Series, Watchlist,
 };
 
 /// The type-safe route table (design §17.4). All screens live under the persistent `Shell`
@@ -43,6 +44,10 @@ pub enum Route {
         Notifications {},
         #[route("/account")]
         Account {},
+        // `AniList` OAuth redirect target (sync service `redirect_uri`); reads `?code=` and
+        // exchanges it via the Bearer-authenticated `/v1/me/sync/anilist/callback`.
+        #[route("/account/anilist-callback?:code")]
+        AnilistCallback { code: String },
         #[route("/search?:q")]
         Search { q: String },
         #[route("/login")]

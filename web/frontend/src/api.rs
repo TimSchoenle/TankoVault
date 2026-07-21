@@ -363,6 +363,61 @@ pub async fn mark_read(token: &str, ids: &[String]) -> ApiResult<serde_json::Val
 }
 
 // ---------------------------------------------------------------------------
+// AniList sync (Sync & integrations panel, header pill, Watchlist, Series tracking card)
+// ---------------------------------------------------------------------------
+
+/// The `AniList` consent URL to send the browser to.
+pub async fn anilist_authorize_url(token: &str) -> ApiResult<String> {
+    let v: serde_json::Value = get("/v1/me/sync/anilist/authorize", Some(token)).await?;
+    v.get("url")
+        .and_then(|u| u.as_str())
+        .map(str::to_owned)
+        .ok_or_else(|| "AniList did not return an authorize URL.".to_owned())
+}
+
+/// Whether the caller has a linked `AniList` account, plus username/last-sync.
+pub async fn anilist_status(token: &str) -> ApiResult<SyncStatus> {
+    get("/v1/me/sync/anilist/status", Some(token)).await
+}
+
+/// Exchange an OAuth `code` (captured from the `AniList` redirect) for a linked account.
+pub async fn anilist_link(token: &str, code: &str) -> ApiResult<()> {
+    let _: serde_json::Value = get(
+        &format!("/v1/me/sync/anilist/callback?code={}", urlencode(code)),
+        Some(token),
+    )
+    .await?;
+    Ok(())
+}
+
+/// Unlink the caller's `AniList` account.
+pub async fn anilist_disconnect(token: &str) -> ApiResult<()> {
+    delete_empty("/v1/me/sync/anilist", Some(token)).await
+}
+
+/// Import the `AniList` list into the local watchlist/progress under `policy`.
+pub async fn anilist_pull(token: &str, policy: ConflictPolicy) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        "/v1/me/sync/anilist/pull",
+        &serde_json::json!({ "policy": policy.token() }),
+        Some(token),
+    )
+    .await
+}
+
+/// Reflect the local watchlist/progress to `AniList` under `policy`.
+pub async fn anilist_push(token: &str, policy: ConflictPolicy) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        "/v1/me/sync/anilist/push",
+        &serde_json::json!({ "policy": policy.token() }),
+        Some(token),
+    )
+    .await
+}
+
+// ---------------------------------------------------------------------------
 // Admin / operator console
 // ---------------------------------------------------------------------------
 

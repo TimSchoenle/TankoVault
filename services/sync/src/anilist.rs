@@ -31,6 +31,13 @@ pub(crate) struct OAuthTokens {
     pub(crate) expires_at: Option<OffsetDateTime>,
 }
 
+/// The authenticated viewer's `AniList` id and display name.
+#[derive(Debug, Clone)]
+pub(crate) struct Viewer {
+    pub(crate) id: i64,
+    pub(crate) name: String,
+}
+
 /// One entry from a user's `AniList` manga list, normalised for local matching.
 #[derive(Debug, Clone)]
 pub(crate) struct RemoteEntry {
@@ -150,16 +157,26 @@ impl AniListClient {
         })
     }
 
-    /// Resolve the authenticated viewer's `AniList` user id.
-    pub(crate) async fn viewer_id(&self, access_token: &str) -> anyhow::Result<i64> {
-        const QUERY: &str = "query { Viewer { id } }";
+    /// Resolve the authenticated viewer's `AniList` user id and display name (the latter is
+    /// cached against the linked account so the UI can show "Connected as X").
+    pub(crate) async fn viewer(&self, access_token: &str) -> anyhow::Result<Viewer> {
+        const QUERY: &str = "query { Viewer { id name } }";
         let data = self
             .graphql(access_token, QUERY, serde_json::json!({}))
             .await?;
-        data.get("Viewer")
-            .and_then(|v| v.get("id"))
+        let viewer = data
+            .get("Viewer")
+            .ok_or_else(|| anyhow!("AniList Viewer query returned no data"))?;
+        let id = viewer
+            .get("id")
             .and_then(serde_json::Value::as_i64)
-            .ok_or_else(|| anyhow!("AniList Viewer query returned no id"))
+            .ok_or_else(|| anyhow!("AniList Viewer query returned no id"))?;
+        let name = viewer
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        Ok(Viewer { id, name })
     }
 
     /// Fetch the viewer's full manga list.

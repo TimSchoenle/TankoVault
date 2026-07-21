@@ -129,6 +129,36 @@ pub enum ScanMode {
     Fast,
 }
 
+/// The reconciliation policy for `AniList` pull/push when a series exists on both sides
+/// (Sync & integrations panel; mirrors `services/sync`'s `mapping::ConflictPolicy`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(clippy::enum_variant_names)]
+pub enum ConflictPolicy {
+    LocalWins,
+    RemoteWins,
+    NewestWins,
+}
+
+impl ConflictPolicy {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::LocalWins => "Local wins",
+            Self::RemoteWins => "Remote wins",
+            Self::NewestWins => "Newest wins",
+        }
+    }
+    /// The token the API expects in a sync request body.
+    pub fn token(self) -> &'static str {
+        match self {
+            Self::LocalWins => "local_wins",
+            Self::RemoteWins => "remote_wins",
+            Self::NewestWins => "newest_wins",
+        }
+    }
+    pub const ALL: [ConflictPolicy; 3] = [Self::LocalWins, Self::RemoteWins, Self::NewestWins];
+}
+
 // ----- auth -----
 
 #[derive(Debug, Clone, Serialize)]
@@ -267,6 +297,18 @@ pub struct ProfileDto {
     pub email: String,
     pub username: String,
     pub role: String,
+}
+
+/// `AniList` link status (`GET /v1/me/sync/anilist/status`): whether the caller has a linked
+/// account, its display name, and the most recent sync time. Always present — `linked: false`
+/// means unlinked rather than a missing resource.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+pub struct SyncStatus {
+    pub linked: bool,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub last_synced_at: Option<String>,
 }
 
 /// One active login session (`GET /v1/me/sessions`, §9.4).

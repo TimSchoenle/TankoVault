@@ -421,6 +421,50 @@ pub async fn sync_authorize_url(
     Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
 }
 
+/// `GET /v1/me/sync/anilist/status` — whether the caller has a linked `AniList` account, plus
+/// the connected display name and most recent sync time (Sync & integrations panel, header
+/// pill, Series tracking card). Always `200`; an unlinked account reads `{ "linked": false }`.
+pub async fn sync_status(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<serde_json::Value>> {
+    let url = format!(
+        "{}/v1/anilist/status/{}",
+        state.sync_url.trim_end_matches('/'),
+        user.user_id.as_uuid()
+    );
+    let resp = state.http.get(url).send().await.map_err(|e| {
+        tracing::error!(error = %e, "sync service unreachable");
+        ApiError::Internal
+    })?;
+    if !resp.status().is_success() {
+        return Err(ApiError::Internal);
+    }
+    Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
+}
+
+/// `DELETE /v1/me/sync/anilist` — unlink the caller's `AniList` account.
+pub async fn sync_disconnect(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<serde_json::Value>> {
+    let url = format!("{}/v1/anilist/link", state.sync_url.trim_end_matches('/'));
+    let resp = state
+        .http
+        .delete(url)
+        .json(&serde_json::json!({ "user_id": user.user_id }))
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "sync service unreachable");
+            ApiError::Internal
+        })?;
+    if !resp.status().is_success() {
+        return Err(ApiError::Internal);
+    }
+    Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct AniListCallback {
     pub code: String,

@@ -21,6 +21,12 @@ pub struct ExternalAccount {
     pub access_token: Vec<u8>,
     pub refresh_token: Option<Vec<u8>>,
     pub expires_at: Option<OffsetDateTime>,
+    /// The provider's display name for the linked account (e.g. an `AniList` username), kept
+    /// current on link and on every sync so the UI can show "Connected as X" without an
+    /// extra round-trip.
+    pub external_username: Option<String>,
+    /// When this account last completed a pull or push.
+    pub last_synced_at: Option<OffsetDateTime>,
 }
 
 /// Insert or replace a user's account for `provider`. Idempotent on `(user_id, provider)`,
@@ -65,9 +71,12 @@ pub async fn get_account<'e, E: PgExecutor<'e>>(
         access_token: Vec<u8>,
         refresh_token: Option<Vec<u8>>,
         expires_at: Option<OffsetDateTime>,
+        external_username: Option<String>,
+        last_synced_at: Option<OffsetDateTime>,
     }
     let row: Option<Row> = sqlx::query_as(
-        "SELECT user_id, provider, access_token, refresh_token, expires_at \
+        "SELECT user_id, provider, access_token, refresh_token, expires_at, \
+                external_username, last_synced_at \
          FROM external_accounts WHERE user_id = $1 AND provider = $2",
     )
     .bind(user_id.as_uuid())
@@ -80,7 +89,34 @@ pub async fn get_account<'e, E: PgExecutor<'e>>(
         access_token: r.access_token,
         refresh_token: r.refresh_token,
         expires_at: r.expires_at,
+        external_username: r.external_username,
+        last_synced_at: r.last_synced_at,
     }))
+}
+
+/// Record a fresh sync timestamp and (when known) the provider's display name for a linked
+/// account. Called after linking (captures the username) and after every pull/push (bumps
+/// `last_synced_at`), so the UI can render "Connected as X - last sync Ym ago" without ever
+/// calling the external provider on page load. A `None` username leaves the stored one as-is.
+pub async fn mark_synced<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    provider: &str,
+    username: Option<&str>,
+    synced_at: OffsetDateTime,
+) -> DbResult<()> {
+    sqlx::query(
+        "UPDATE external_accounts \
+         SET external_username = COALESCE($3, external_username), last_synced_at = $4 \
+         WHERE user_id = $1 AND provider = $2",
+    )
+    .bind(user_id.as_uuid())
+    .bind(provider)
+    .bind(username)
+    .bind(synced_at)
+    .execute(exec)
+    .await?;
+    Ok(())
 }
 
 /// Unlink a user's account for `provider`. Returns `true` if a row was removed.

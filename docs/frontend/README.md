@@ -1,5 +1,14 @@
 # CODING AGENTS: READ THIS FIRST
 
+> **This raw bundle has been distilled into implementation-ready docs — start there:**
+> - **[`DESIGN_SPEC.md`](./DESIGN_SPEC.md)** — cleaned design tokens, component inventory, and
+>   per-screen breakdowns extracted from `project/TankoVault.dc.html`.
+> - **[`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)** — how to build it into the current
+>   Dioxus + Tailwind app (`web/frontend/`), phased, with the required backend/API deltas.
+>
+> Note: `project/_ds/nocturne-*/` is boilerplate scaffolding whose look does **not** match the
+> actual TankoVault mockup — ignore it (see `DESIGN_SPEC.md` header).
+
 This is a **handoff bundle** from Claude Design (claude.ai/design).
 
 A user mocked up designs in HTML/CSS/JS using an AI design tool, then exported this bundle so a coding agent can implement the designs for real.

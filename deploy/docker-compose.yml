@@ -160,12 +160,14 @@ services:
       <<: *telemetry
       TANKOVAULT_TELEMETRY__SERVICE_NAME: sync
       TANKOVAULT_DATABASE__URL: *db-url
-      TANKOVAULT_ANILIST__CLIENT_ID: ""
-      TANKOVAULT_ANILIST__CLIENT_SECRET: ""
+      TANKOVAULT_ANILIST__CLIENT_ID: "${TANKOVAULT_ANILIST__CLIENT_ID:-}"
+      TANKOVAULT_ANILIST__CLIENT_SECRET: "${TANKOVAULT_ANILIST__CLIENT_SECRET:-}"
       # OAuth returns the browser to the frontend origin, which proxies /v1/* to the api.
-      TANKOVAULT_ANILIST__REDIRECT_URI: http://localhost:3000/v1/me/sync/anilist/callback
+      # Must point at the frontend's callback route, not the API: the API's callback needs the
+      # SPA's in-memory Bearer token, which a raw browser OAuth redirect cannot carry.
+      TANKOVAULT_ANILIST__REDIRECT_URI: http://localhost:3000/account/anilist-callback
       # DEV key only: 32 zero bytes, base64. Generate a real one with `openssl rand -base64 32`.
-      TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY: "${TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
     ports: ["8083:8083"]
     depends_on:
       migrate: { condition: service_completed_successfully }

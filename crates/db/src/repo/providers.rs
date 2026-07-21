@@ -208,6 +208,32 @@ pub async fn set_robots<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
+/// A public-facing provider entry for the Discover filter list (frontend §9.3
+/// `GET /v1/providers`): identity plus how many distinct series it carries, so the UI can
+/// show "Provider (N)" options without exposing operator-only config/politeness.
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
+pub struct PublicProvider {
+    pub id: Uuid,
+    pub slug: String,
+    pub name: String,
+    /// Distinct canonical series with at least one source on this provider.
+    pub series_count: i64,
+}
+
+/// List providers for the public Discover filter, richest first, hiding disabled ones.
+pub async fn list_public<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<PublicProvider>> {
+    let rows: Vec<PublicProvider> = sqlx::query_as(
+        "SELECT p.id, p.slug, p.name, \
+                (SELECT count(DISTINCT ss.series_id) FROM series_sources ss \
+                   WHERE ss.provider_id = p.id) AS series_count \
+         FROM providers p WHERE p.state <> 'disabled' \
+         ORDER BY series_count DESC, p.name ASC",
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows)
+}
+
 /// Stamp the completion time of a full scan.
 pub async fn mark_full_scanned<'e, E: PgExecutor<'e>>(exec: E, id: ProviderId) -> DbResult<()> {
     sqlx::query("UPDATE providers SET last_full_scan_at = now(), updated_at = now() WHERE id = $1")

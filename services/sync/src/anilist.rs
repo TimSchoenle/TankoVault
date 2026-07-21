@@ -8,13 +8,15 @@ use std::fmt::Write as _;
 use std::time::Duration;
 
 use anyhow::{Context, anyhow};
+use async_trait::async_trait;
 use serde::Deserialize;
 use time::OffsetDateTime;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
-
+use tracing::info;
 use crate::mapping::{AniListStatus, content_type_from_country};
-use tankovault_domain::ContentType;
+use crate::provider::{ExternalProvider, OAuthTokens, RemoteEntry, Viewer};
+use tankovault_domain::{ContentType, WatchStatus};
 
 /// Default `AniList` GraphQL endpoint.
 pub(crate) const DEFAULT_GRAPHQL_URL: &str = "https://graphql.anilist.co";
@@ -23,17 +25,11 @@ pub(crate) const DEFAULT_OAUTH_BASE: &str = "https://anilist.co/api/v2/oauth";
 /// The provider key used in `external_accounts` / `sync_mappings`.
 pub(crate) const PROVIDER: &str = "anilist";
 
-/// OAuth tokens returned by the `AniList` token endpoint.
+/// One entry from a user's `AniList` manga list, `AniList`-shaped (numeric id, `AniList`'s own
+/// status vocabulary). Converted to the provider-agnostic [`RemoteEntry`] via `From` below —
+/// `crate::engine::SyncEngine` only ever sees the shared type.
 #[derive(Debug, Clone)]
-pub(crate) struct OAuthTokens {
-    pub(crate) access_token: String,
-    pub(crate) refresh_token: Option<String>,
-    pub(crate) expires_at: Option<OffsetDateTime>,
-}
-
-/// One entry from a user's `AniList` manga list, normalised for local matching.
-#[derive(Debug, Clone)]
-pub(crate) struct RemoteEntry {
+pub(crate) struct AniListEntry {
     pub(crate) media_id: i64,
     /// Candidate titles (romaji/english/native), non-empty ones only.
     pub(crate) titles: Vec<String>,
@@ -42,6 +38,20 @@ pub(crate) struct RemoteEntry {
     pub(crate) updated_at: OffsetDateTime,
     pub(crate) start_year: Option<i32>,
     pub(crate) content_type: ContentType,
+}
+
+impl From<AniListEntry> for RemoteEntry {
+    fn from(e: AniListEntry) -> Self {
+        Self {
+            external_id: e.media_id.to_string(),
+            titles: e.titles,
+            status: e.status.to_watch_status(),
+            progress: e.progress,
+            updated_at: e.updated_at,
+            start_year: e.start_year,
+            content_type: e.content_type,
+        }
+    }
 }
 
 /// `AniList` API client. Cheap to share behind an `Arc`.
@@ -150,27 +160,46 @@ impl AniListClient {
         })
     }
 
-    /// Resolve the authenticated viewer's `AniList` user id.
-    pub(crate) async fn viewer_id(&self, access_token: &str) -> anyhow::Result<i64> {
-        const QUERY: &str = "query { Viewer { id } }";
+    /// Resolve the authenticated viewer's `AniList` user id and display name (the latter is
+    /// cached against the linked account so the UI can show "Connected as X").
+    pub(crate) async fn viewer(&self, access_token: &str) -> anyhow::Result<Viewer> {
+        const QUERY: &str = "query { Viewer { id name } }";
         let data = self
             .graphql(access_token, QUERY, serde_json::json!({}))
             .await?;
-        data.get("Viewer")
-            .and_then(|v| v.get("id"))
+        let viewer = data
+            .get("Viewer")
+            .ok_or_else(|| anyhow!("AniList Viewer query returned no data"))?;
+        let id = viewer
+            .get("id")
             .and_then(serde_json::Value::as_i64)
-            .ok_or_else(|| anyhow!("AniList Viewer query returned no id"))
+            .ok_or_else(|| anyhow!("AniList Viewer query returned no id"))?;
+        let name = viewer
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        Ok(Viewer {
+            id: id.to_string(),
+            name,
+        })
     }
 
     /// Fetch the viewer's full manga list.
+    ///
+    /// `AniList` returns a user's list in *chunks* (`perChunk` is capped at 500 by the API);
+    /// a large list therefore spans several responses. We page through every chunk via the
+    /// `hasNextChunk` flag and concatenate the results, so the whole list is returned rather
+    /// than only its first page.
     pub(crate) async fn fetch_media_list(
         &self,
         access_token: &str,
         user_id: i64,
-    ) -> anyhow::Result<Vec<RemoteEntry>> {
+    ) -> anyhow::Result<Vec<AniListEntry>> {
         const QUERY: &str = "\
-            query ($userId: Int) { \
-              MediaListCollection(userId: $userId, type: MANGA) { \
+            query ($userId: Int, $chunk: Int, $perChunk: Int) { \
+              MediaListCollection(userId: $userId, type: MANGA, chunk: $chunk, perChunk: $perChunk) { \
+                hasNextChunk \
                 lists { entries { \
                   status progress updatedAt \
                   media { id countryOfOrigin startDate { year } \
@@ -178,14 +207,30 @@ impl AniListClient {
                 } } \
               } \
             }";
-        let data = self
-            .graphql(
-                access_token,
-                QUERY,
-                serde_json::json!({ "userId": user_id }),
-            )
-            .await?;
-        Ok(parse_media_list(&data))
+        const PER_CHUNK: i64 = 500;
+
+        let mut all = Vec::new();
+        let mut chunk = 1;
+        loop {
+            let data = self
+                .graphql(
+                    access_token,
+                    QUERY,
+                    serde_json::json!({
+                        "userId": user_id,
+                        "chunk": chunk,
+                        "perChunk": PER_CHUNK,
+                    }),
+                )
+                .await?;
+            all.extend(parse_media_list(&data));
+            if !has_next_chunk(&data) {
+                break;
+            }
+            chunk += 1;
+        }
+        info!("Fetched all manga list {}", all.len());
+        Ok(all)
     }
 
     /// Create or update a remote list entry.
@@ -277,10 +322,86 @@ impl AniListClient {
     }
 }
 
-/// Extract [`RemoteEntry`]s from a `MediaListCollection` GraphQL `data` object. Entries
+/// Round a fractional local progress to the whole-chapter count `AniList` expects.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+pub(crate) fn progress_to_int(progress: f64) -> i64 {
+    progress.max(0.0).round() as i64
+}
+
+#[async_trait]
+impl ExternalProvider for AniListClient {
+    fn slug(&self) -> &'static str {
+        PROVIDER
+    }
+
+    fn display_name(&self) -> &'static str {
+        "AniList"
+    }
+
+    fn authorize_url(&self) -> String {
+        self.authorize_url()
+    }
+
+    async fn exchange_code(&self, code: &str) -> anyhow::Result<OAuthTokens> {
+        self.exchange_code(code).await
+    }
+
+    async fn refresh(&self, refresh_token: &str) -> anyhow::Result<OAuthTokens> {
+        self.refresh(refresh_token).await
+    }
+
+    async fn viewer(&self, access_token: &str) -> anyhow::Result<Viewer> {
+        self.viewer(access_token).await
+    }
+
+    async fn fetch_list(
+        &self,
+        access_token: &str,
+        viewer: &Viewer,
+    ) -> anyhow::Result<Vec<RemoteEntry>> {
+        let user_id: i64 = viewer
+            .id
+            .parse()
+            .context("AniList viewer id was not numeric")?;
+        Ok(self
+            .fetch_media_list(access_token, user_id)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    async fn search(&self, access_token: &str, title: &str) -> anyhow::Result<Option<String>> {
+        Ok(self
+            .search_media(access_token, title)
+            .await?
+            .map(|id| id.to_string()))
+    }
+
+    async fn save_entry(
+        &self,
+        access_token: &str,
+        external_id: &str,
+        status: WatchStatus,
+        progress: f64,
+    ) -> anyhow::Result<()> {
+        let media_id: i64 = external_id
+            .parse()
+            .context("AniList external id was not numeric")?;
+        self.save_entry(
+            access_token,
+            media_id,
+            AniListStatus::from_watch_status(status),
+            progress_to_int(progress),
+        )
+        .await
+    }
+}
+
+/// Extract [`AniListEntry`]s from a `MediaListCollection` GraphQL `data` object. Entries
 /// with an unrecognised status or no usable title are skipped rather than failing the run.
 #[must_use]
-pub(crate) fn parse_media_list(data: &serde_json::Value) -> Vec<RemoteEntry> {
+pub(crate) fn parse_media_list(data: &serde_json::Value) -> Vec<AniListEntry> {
     let Some(lists) = data
         .get("MediaListCollection")
         .and_then(|c| c.get("lists"))
@@ -303,7 +424,17 @@ pub(crate) fn parse_media_list(data: &serde_json::Value) -> Vec<RemoteEntry> {
     out
 }
 
-fn parse_entry(entry: &serde_json::Value) -> Option<RemoteEntry> {
+/// Whether the `MediaListCollection` in this response reports a further chunk to fetch.
+/// A missing flag is treated as "no more chunks" so pagination terminates safely.
+#[must_use]
+pub(crate) fn has_next_chunk(data: &serde_json::Value) -> bool {
+    data.get("MediaListCollection")
+        .and_then(|c| c.get("hasNextChunk"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn parse_entry(entry: &serde_json::Value) -> Option<AniListEntry> {
     let media = entry.get("media")?;
     let media_id = media.get("id").and_then(serde_json::Value::as_i64)?;
     let status = AniListStatus::parse(entry.get("status").and_then(serde_json::Value::as_str)?)?;
@@ -342,7 +473,7 @@ fn parse_entry(entry: &serde_json::Value) -> Option<RemoteEntry> {
             .and_then(serde_json::Value::as_str),
     );
 
-    Some(RemoteEntry {
+    Some(AniListEntry {
         media_id,
         titles,
         status,
@@ -473,6 +604,21 @@ mod tests {
             }))
             .is_empty()
         );
+    }
+
+    #[test]
+    fn has_next_chunk_reads_the_flag() {
+        assert!(has_next_chunk(&serde_json::json!({
+            "MediaListCollection": { "hasNextChunk": true, "lists": [] }
+        })));
+        assert!(!has_next_chunk(&serde_json::json!({
+            "MediaListCollection": { "hasNextChunk": false, "lists": [] }
+        })));
+        // A missing flag terminates pagination.
+        assert!(!has_next_chunk(&serde_json::json!({
+            "MediaListCollection": { "lists": [] }
+        })));
+        assert!(!has_next_chunk(&serde_json::json!({})));
     }
 
     #[test]

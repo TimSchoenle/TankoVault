@@ -1,6 +1,6 @@
 //! # tankovault-domain
 //!
-//! Pure domain types for the TankoVault manga aggregator: entities, typed ids, enums, the
+//! Pure domain types for the `TankoVault` manga aggregator: entities, typed ids, enums, the
 //! migration-safe [`resolve_link`] resolver, crawl [`Politeness`], and title
 //! [`normalize_title`]. No I/O, no async, no persistence — this crate is the shared
 //! vocabulary every other crate speaks.

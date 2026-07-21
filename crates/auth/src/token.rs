@@ -17,6 +17,10 @@ use uuid::Uuid;
 pub struct AccessClaims {
     /// Subject — the user id (UUID string).
     pub sub: String,
+    /// Human-facing display name (username). Cosmetic only — lets the client show the
+    /// current name without a round-trip. Absent on legacy tokens (defaults to empty).
+    #[serde(default)]
+    pub name: String,
     /// RBAC role token (`user`/`operator`/`admin`).
     pub role: String,
     /// Expiry (unix seconds).
@@ -48,12 +52,14 @@ impl AccessClaims {
 pub fn issue_access_token(
     secret: &[u8],
     user_id: UserId,
+    username: &str,
     role: UserRole,
     ttl: Duration,
 ) -> Result<String, AuthError> {
     let now = OffsetDateTime::now_utc();
     let claims = AccessClaims {
         sub: user_id.to_string(),
+        name: username.to_owned(),
         role: role.as_str().to_owned(),
         iat: now.unix_timestamp(),
         exp: (now + ttl).unix_timestamp(),
@@ -109,9 +115,11 @@ mod tests {
         let secret = b"test-secret-please-rotate";
         let uid = UserId::new();
         let token =
-            issue_access_token(secret, uid, UserRole::Operator, Duration::minutes(15)).unwrap();
+            issue_access_token(secret, uid, "aster", UserRole::Operator, Duration::minutes(15))
+                .unwrap();
         let claims = verify_access_token(secret, &token).unwrap();
         assert_eq!(claims.user_id(), Some(uid));
+        assert_eq!(claims.name, "aster");
         assert_eq!(claims.role(), UserRole::Operator);
     }
 
@@ -120,6 +128,7 @@ mod tests {
         let token = issue_access_token(
             b"secret-a",
             UserId::new(),
+            "aster",
             UserRole::User,
             Duration::minutes(5),
         )
@@ -133,6 +142,7 @@ mod tests {
         let token = issue_access_token(
             b"secret",
             UserId::new(),
+            "aster",
             UserRole::User,
             Duration::seconds(-120),
         )

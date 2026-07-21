@@ -129,6 +129,36 @@ pub enum ScanMode {
     Fast,
 }
 
+/// The reconciliation policy for `AniList` pull/push when a series exists on both sides
+/// (Sync & integrations panel; mirrors `services/sync`'s `mapping::ConflictPolicy`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(clippy::enum_variant_names)]
+pub enum ConflictPolicy {
+    LocalWins,
+    RemoteWins,
+    NewestWins,
+}
+
+impl ConflictPolicy {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::LocalWins => "Local wins",
+            Self::RemoteWins => "Remote wins",
+            Self::NewestWins => "Newest wins",
+        }
+    }
+    /// The token the API expects in a sync request body.
+    pub fn token(self) -> &'static str {
+        match self {
+            Self::LocalWins => "local_wins",
+            Self::RemoteWins => "remote_wins",
+            Self::NewestWins => "newest_wins",
+        }
+    }
+    pub const ALL: [ConflictPolicy; 3] = [Self::LocalWins, Self::RemoteWins, Self::NewestWins];
+}
+
 // ----- auth -----
 
 #[derive(Debug, Clone, Serialize)]
@@ -173,6 +203,9 @@ pub struct SourceDto {
     pub provider_slug: String,
     pub url: String,
     pub chapter_count: i32,
+    /// True for the richest source (most chapters) — the reader should prefer it (§9.2).
+    #[serde(default)]
+    pub is_primary: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -185,6 +218,12 @@ pub struct SeriesDetail {
     pub status: SeriesStatus,
     pub release_year: Option<i32>,
     pub sources: Vec<SourceDto>,
+    /// Alternative titles gathered across providers (§9.2; empty when none).
+    #[serde(default)]
+    pub alt_titles: Vec<String>,
+    /// Genre/tags attached to the series (§9.2; empty when none).
+    #[serde(default)]
+    pub tags: Vec<Tag>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -193,10 +232,12 @@ pub struct ChapterDto {
     pub title: Option<String>,
     pub url: String,
     pub published_at: Option<String>,
+    /// Whether the requesting user has read this chapter (§9.2). `None` when anonymous.
+    #[serde(default)]
+    pub read: Option<bool>,
 }
 
-/// Genre/tag (reserved for Search's tag grouping — see `api::tags`).
-#[allow(dead_code)]
+/// Genre/tag (Discover filter + Series tag chips — see `api::tags`).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Tag {
     pub id: String,
@@ -212,6 +253,151 @@ pub struct WatchlistItem {
     pub status: WatchStatus,
     pub notify: bool,
     pub added_at: String,
+    /// Embedded series title so boards render without a per-card detail fetch (§9.3).
+    #[serde(default)]
+    pub series_title: String,
+    #[serde(default)]
+    pub cover_url: Option<String>,
+    /// The user's last-read chapter number, if any.
+    #[serde(default)]
+    pub last_read_number: Option<f64>,
+    /// Unread chapters above the user's progress.
+    #[serde(default)]
+    pub unread: i64,
+}
+
+/// A continue-reading card (`GET /v1/me/continue`, §9.3): tracked, in-progress series with
+/// unread chapters, freshest activity first.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ContinueItem {
+    pub series_id: String,
+    pub series_title: String,
+    #[serde(default)]
+    pub cover_url: Option<String>,
+    pub last_read_number: f64,
+    #[serde(default)]
+    pub next_number: Option<f64>,
+    pub unread: i64,
+}
+
+/// Lifetime tracking stats for the Home / Profile headline (`GET /v1/me/stats`, §9.3).
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+pub struct MeStats {
+    pub tracking: i64,
+    pub reading: i64,
+    pub completed: i64,
+    pub chapters_read: i64,
+    pub unread: i64,
+}
+
+/// The caller's identity (`PATCH /v1/me/profile`, §9.4).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ProfileDto {
+    pub id: String,
+    pub email: String,
+    pub username: String,
+    pub role: String,
+}
+
+/// `AniList` link status (`GET /v1/me/sync/anilist/status`): whether the caller has a linked
+/// account, its display name, and the most recent sync time. Always present — `linked: false`
+/// means unlinked rather than a missing resource.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+pub struct SyncStatus {
+    pub linked: bool,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub last_synced_at: Option<String>,
+}
+
+/// A registered external sync provider (`GET /v1/me/sync/providers`). Drives the Account
+/// "Sync & integrations" panel, which renders one card per entry instead of a hardcoded
+/// AniList block (design: generalized multi-provider sync).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ProviderInfo {
+    pub slug: String,
+    pub name: String,
+}
+
+/// One row of the admin Console's "Linked accounts" table (`GET /v1/admin/sync/accounts`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct AdminSyncAccount {
+    pub user_id: String,
+    pub username: String,
+    pub provider: String,
+    #[serde(default)]
+    pub external_username: Option<String>,
+    #[serde(default)]
+    pub last_synced_at: Option<String>,
+    #[serde(default)]
+    pub last_error: Option<String>,
+    pub created_at: String,
+}
+
+/// One row of the admin Console's "Series mappings" table (`GET /v1/admin/sync/mappings`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct AdminSyncMapping {
+    pub series_id: String,
+    pub series_title: String,
+    pub provider: String,
+    pub external_id: String,
+    pub updated_at: String,
+}
+
+/// One row of the admin Console's Sync "Assign queue" (`GET /v1/admin/sync/unmapped`): a
+/// series with no external mapping for the selected provider yet, awaiting a manual link.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct UnmappedSeries {
+    pub series_id: String,
+    pub series_title: String,
+    #[serde(default)]
+    pub source_count: i64,
+}
+
+/// One row of the admin Console's Sync "Match every loaded entry" queue
+/// (`GET /v1/admin/sync/unmatched`): a fetched remote entry the auto-matcher could not
+/// confidently link to a local series, awaiting a manual assignment.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct UnmatchedRemoteEntry {
+    pub user_id: String,
+    pub username: String,
+    pub provider: String,
+    pub external_id: String,
+    pub title: String,
+    pub status: String,
+    #[serde(default)]
+    pub progress: f64,
+    #[serde(default)]
+    pub content_type: String,
+    #[serde(default)]
+    pub start_year: Option<i32>,
+}
+
+/// A ranked suggestion for the admin "match every loaded entry" screen
+/// (`GET /v1/admin/sync/suggest`): a local series the matcher thinks a fetched remote entry
+/// could be, with a confidence `score` in `[0,1]` and enough info to eyeball and inspect it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct SuggestedMatch {
+    pub series_id: String,
+    pub title: String,
+    #[serde(default)]
+    pub content_type: String,
+    #[serde(default)]
+    pub release_year: Option<i32>,
+    #[serde(default)]
+    pub source_count: i64,
+    #[serde(default)]
+    pub score: f32,
+}
+
+/// One active login session (`GET /v1/me/sessions`, §9.4).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct SessionDto {
+    pub id: String,
+    pub family_id: String,
+    pub created_at: String,
+    pub expires_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -435,4 +621,82 @@ pub struct MergeCandidate {
     pub reason: Option<String>,
     #[serde(default)]
     pub created_at: String,
+}
+
+/// A public-facing provider entry for the Discover filter (`GET /v1/providers`, §9.3):
+/// identity + how many distinct series it carries.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct PublicProvider {
+    pub id: String,
+    pub slug: String,
+    pub name: String,
+    #[serde(default)]
+    pub series_count: i64,
+}
+
+/// One row of the operator Users directory (`GET /v1/admin/users`, §9.5).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct UserRow {
+    pub id: String,
+    pub email: String,
+    pub username: String,
+    /// RBAC role token (`user` | `operator` | `admin`).
+    pub role: String,
+    #[serde(default)]
+    pub tracked_count: i64,
+    #[serde(default)]
+    pub created_at: String,
+}
+
+/// Server-side Discover filter (§9.1). Serialised to a `GET /v1/series` query string by
+/// `api::list_series_filtered`; every field is optional so it degrades to a plain browse.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SeriesFilter {
+    pub query: Option<String>,
+    pub content_type: Option<ContentType>,
+    pub status: Option<SeriesStatus>,
+    pub provider: Option<String>,
+    pub tags: Vec<String>,
+    pub exclude_tags: Vec<String>,
+    pub year_min: Option<i32>,
+    pub year_max: Option<i32>,
+    pub min_chapters: Option<i32>,
+    pub sort: Option<String>,
+    pub page: i64,
+    pub limit: i64,
+}
+
+/// One page of Discover results (`GET /v1/series`, §9.1): the array body plus the
+/// `X-Total-Count` / `X-Next-Cursor` header metadata for the pager.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SeriesPage {
+    pub items: Vec<SeriesSummary>,
+    pub total: i64,
+    pub next_cursor: Option<i64>,
+}
+
+impl ContentType {
+    /// The lowercase token the API expects in the `content_type` query param.
+    pub fn token(self) -> &'static str {
+        match self {
+            Self::Manga => "manga",
+            Self::Manhwa => "manhwa",
+            Self::Manhua => "manhua",
+            Self::Webtoon => "webtoon",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+impl SeriesStatus {
+    /// The lowercase token the API expects in the `status` query param.
+    pub fn token(self) -> &'static str {
+        match self {
+            Self::Ongoing => "ongoing",
+            Self::Completed => "completed",
+            Self::Hiatus => "hiatus",
+            Self::Cancelled => "cancelled",
+            Self::Unknown => "unknown",
+        }
+    }
 }

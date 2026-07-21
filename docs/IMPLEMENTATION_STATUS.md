@@ -4,7 +4,51 @@ This file tracks the build state of the system described in [`design.md`](./desi
 Update it at the end of every coding session: mark what landed, and leave a precise
 "pick up next" list so the next session starts without re-deriving context.
 
-**Last updated:** 2026-07-20 (Session 13)
+**Last updated:** 2026-07-21 (Session 14)
+
+> Session 14 landed: the external-sync feature was **massively improved** end to end — a
+> generalized multi-provider architecture, an immediate per-chapter push to AniList, and full
+> admin visibility. `services/sync` gained a new `provider.rs`: an `ExternalProvider`
+> `#[async_trait]` (matching the existing `SourceAdapter`/`ChallengeSolver` dyn-trait
+> precedent) with shared `OAuthTokens`/`Viewer`/`RemoteEntry` types (status crosses the
+> boundary as the shared `WatchStatus`, never a provider-specific enum). `AniListClient` now
+> implements it; `SyncEngine` holds a `HashMap<&'static str, Box<dyn ExternalProvider>>`
+> registry instead of one hardcoded client, and every method (`link`/`unlink`/`status`/
+> `pull`/`push`) takes a `provider` slug. AniList remains the only registered provider — the
+> registry is a drop-in seam for a second one, not built speculatively. Routes moved from
+> `/v1/anilist/*` to `/v1/sync/{provider}/*` (+ `GET /v1/sync/providers`); the API's proxy
+> layer (`services/api/src/me.rs`) followed to `/v1/me/sync/{provider}/*` (+
+> `GET /v1/me/sync/providers`). **New: `SyncEngine::push_series`** — a fast, non-reconciling
+> targeted push (local state wins outright, no remote-list fetch) fanned out to every provider
+> a user has linked, exposed as `POST /v1/sync/push-series`; the API's `put_progress` and
+> `put_watchlist` handlers fire it via a best-effort `tokio::spawn` (`me::spawn_targeted_push`)
+> after their local write commits — never blocking the response, logged-only on failure. This
+> is what makes "mark a chapter read" reach AniList without a manual "Push" click. The Series
+> page's chapter rows gained a real **Mark read / Mark unread** action (`PUT
+> /v1/me/progress/:id`, wired to the existing but previously-unused `api::set_progress`) —
+> previously the "Read" button only opened the external chapter URL (now relabelled "Open");
+> mark-unread steps back to the *previous* rendered row's number, not `number - 1`, since
+> chapter numbers aren't guaranteed contiguous integers. **New admin Console "Sync" tab**:
+> linked-accounts + series-mappings tables with operator actions — force pull/push/unlink an
+> account, clear a bad mapping — every mutation audited (`sync.pull`/`sync.push`/
+> `sync.unlink`/`sync.mapping.clear`) via the existing `audit()` helper, mirroring
+> `MergeQueue`'s pattern. Migration `0011_sync_generalize.sql` adds
+> `external_accounts.last_error` (cleared on success, set on any pull/push/targeted-push
+> failure — the admin table's only failure signal, deliberately not a full log table) and
+> `sync_mappings.updated_at`. New `db::repo::sync` reads: `list_linked_providers`,
+> `delete_mapping`, `admin_list_accounts`, `admin_list_mappings`; `tracking` gained
+> `watchlist_status_get`. Frontend: the Account "Sync & integrations" panel is now
+> provider-driven (`GET /v1/me/sync/providers` → one `ProviderSyncCard` per entry) instead of
+> a hardcoded AniList block; the Watchlist "Sync now" quick action and the Series page's
+> AniList status pill stay intentionally hardcoded to `"anilist"` (not generalized — no UI
+> need for it yet). Also fixed two pre-existing `clippy::doc_markdown` failures (`TankoVault`
+> without backticks in `crates/domain`/`crates/db` doc comments) that were blocking a clean
+> `-D warnings` run, unrelated to this feature. Gates green: workspace `fmt`- and
+> `clippy -D warnings`-clean (both `cargo fmt --check` and `clippy` scoped to every touched
+> file — a large pre-existing import-ordering `fmt` drift across untouched files elsewhere in
+> the repo, likely a local `rustfmt` version bump, was left alone rather than mass-reformatted);
+> **135 tests green** (sync's own suite unchanged at 15 after the `RemoteEntry`→`AniListEntry`
+> rename); wasm frontend `cargo check`/`clippy -D warnings` clean.
 
 > Session 13 landed: the operator **Console is now a full admin control surface** (design
 > §17.2.7). New backend read models: `db::repo::stats` (`system_overview` → catalogue/scan
@@ -246,42 +290,63 @@ Legend: ✅ done & compiling · 🟡 partial/skeleton · ⬜ not started
 ### Services (`services/`)
 | Service | Status | Notes |
 |---|---|---|
-| `api` | ✅ | **Full §11 contract.** Auth (register/login/refresh/logout), series browse/detail/chapters (resolved links), `/v1/tags`, admin provider CRUD + `base_url` migration + trigger-scan + **`providers/:id/test`** (dry-run adapter via the injected fetch stack) + **`scans/stream`** (SSE, DB-poll), `merge-candidates` list/dismiss + `series/merge`, **operator dashboard reads** (`admin/stats`, `admin/providers/stats`, `admin/scans` list, `admin/scan-failures`, `admin/audit`), `/me` watchlist/progress/feed/notifications, and the `/me/sync/anilist/*` proxy. Now also depends on `adapters`/`fetch`/`solver` for the test endpoint. **+ `GET /v1/me/stream`** (SSE live notifications; token-in-query auth; core-NATS relay via `AppState.bus: Option<Bus>`, degrades to `503` if NATS is down). |
+| `api` | ✅ | **Full §11 contract.** Auth (register/login/refresh/logout), series browse/detail/chapters (resolved links), `/v1/tags`, admin provider CRUD + `base_url` migration + trigger-scan + **`providers/:id/test`** (dry-run adapter via the injected fetch stack) + **`scans/stream`** (SSE, DB-poll), `merge-candidates` list/dismiss + `series/merge`, **operator dashboard reads** (`admin/stats`, `admin/providers/stats`, `admin/scans` list, `admin/scan-failures`, `admin/audit`), `/me` watchlist/progress/feed/notifications, and the **provider-keyed** `/me/sync/{provider}/*` proxy (+ `/me/sync/providers`). Now also depends on `adapters`/`fetch`/`solver` for the test endpoint. **+ `GET /v1/me/stream`** (SSE live notifications; token-in-query auth; core-NATS relay via `AppState.bus: Option<Bus>`, degrades to `503` if NATS is down). **+ admin Sync endpoints** (`admin/sync/accounts`, `admin/sync/mappings` list; `admin/sync/{pull,push,unlink}`, `admin/sync/mappings/clear` — all audited). **+ `spawn_targeted_push`**: `put_progress`/`put_watchlist` fire a best-effort background `POST {sync}/v1/sync/push-series` after their local write, so marking a chapter read reflects to every linked provider without a manual sync (design: immediate targeted push, §7). |
 | `worker` | ✅ | One-shot inline full/fast scan **and** JetStream consumer (consumer-group scale); idempotent `ingest_series`, emits `chapter.discovered`. |
 | `control-plane` | ✅ | Scheduler (interval sweeps) + planner (run→tasks→JetStream) + `/internal/scans` trigger. **+ progress aggregator** (`scan.progress` consumer → atomic `finalize_if_complete` → republished terminal event) **+ Redis leader election** (`SET NX PX` lock w/ `GET`/`PEXPIRE` renewal; `Leadership` flag gates every sweep; fails open to sole-leader without Redis, stands down on Redis error). 5 tests. |
 | `notifier` | ✅ | Consumes `chapter.discovered`, fans out to watchers (partial-index lookup), dedup, in-app rows. **+ pluggable external channels** (`NotificationChannel` trait): config-driven generic JSON webhook + Discord incoming-webhook **+ email (SMTP via `lettre`, rustls/ring)**, delivered once per genuinely-new chapter (best-effort, failures logged not fatal). **+ live push**: after each in-app row it publishes a best-effort core-NATS `UserNotification` (with the fresh unread count) to `notify.user.<id>`, relayed to connected clients by the API's `/v1/me/stream`. Pure payload/message builders tested (13 tests). |
 | `challenge-solver` | ✅ | `POST /v1/solve` HTTP contract, FlareSolverr-backed default, config-selected back-end. |
-| `sync` | ✅ | **NEW this session.** AniList OAuth link/unlink, pull (AniList→local) and push (local→AniList) reusing `matcher`; tokens encrypted at rest; user-selectable conflict policy (local/remote/newest-wins). 15 tests. See §7. |
+| `sync` | ✅ | **Generalized this session** to a multi-provider registry (`ExternalProvider` trait; AniList is the only registered implementation). OAuth link/unlink, pull (remote→local) and push (local→remote) reusing `matcher`; tokens encrypted at rest; user-selectable conflict policy (local/remote/newest-wins). **+ `push_series`**: a fast, non-reconciling targeted single-series push fanned out to every provider a user has linked (backs the API's immediate-push-on-mark-read flow). 15 tests. See §7. |
 | `render` | ✅ | **Real this session.** Lazily-launched `chromiumoxide` headless browser. `POST /v1/render` → rendered DOM + final URL + cookies + UA (JS-rendered listings, §9). Doubles as a `ChallengeSolver` back-end: `POST /v1/solve` mirrors the challenge-solver contract for a FlareSolverr-free bypass path. Browser launches on first use (health up without Chrome; renders `502` cleanly). Chromium-provisioned via the `runtime-browser` Docker stage. 4 browser-free tests (config + solve-outcome shaping). |
 | `xtask` | ✅ | `migrate` / `reset` (drop+recreate schema, re-migrate; guarded by `TANKOVAULT_CONFIRM_RESET=1`) / `seed` (demo admin + the three built-in provider presets via `tankovault_adapters::builtin_presets()`). Reads `DATABASE_URL`. |
 
 ### Frontend (`web/frontend/`)
-🟡 **Substantial (Phase 2).** Dioxus 0.7 WASM SPA + `dioxus-router`, Inkstone design system
-(self-contained `assets/main.css`; `tailwind.config.js`/`input.css` mirror the tokens for a
-CLI build). Screens: Discover (type/status chips + sort), Series detail (sources strip +
-chapter list + watchlist/notify), Reading feed (day-grouped + mark-read), Watchlist board,
-Notifications (mark-all + rail badge), Search, Login/Register, operator Console (global scan
-trigger + run-progress poll, provider health tiles, **full provider management** — Admin
-create/delete, per-provider editor for name/`base_url` migration/adapter config/politeness,
-enable-disable, per-provider scan, live adapter "Test" dry-run — and the merge queue). Typed
-`gloo-net` API client; in-memory token + silent refresh; role-gated
-Console. **+ live unread badge**: `live.rs` opens an `EventSource` to `/v1/me/stream` from
-the `Shell` (keyed on the token via `use_resource`, so sign-out/refresh tears down + re-opens
-it) and updates the rail badge on each push. **+ operator Console admin dashboard** (Session 13):
-a shared pausable auto-refresh tick drives a system-overview KPI header, a live scan queue
-(active-run progress + recent-runs table + failure triage feed), a per-provider statistics
-table, and the audit trail — all polling the new `/v1/admin/{stats,providers/stats,scans,
-scan-failures,audit}` reads via `gloo-timers`, kept separate from the (manual-reload) editing
-surfaces. Excluded from the workspace; builds via `dx` / `cargo check --target wasm32` (also
-`clippy -D warnings`-clean now). **Pending:** operator scan-progress could move from polling to
-an SSE relay (the `/v1/admin/scans/stream` endpoint exists but needs token-in-query auth to be
-`EventSource`-consumable); masonry virtualisation + blur-up covers; drag-between-columns;
-AniList sync controls in the UI; tag-grouped search; tests.
+✅ **TankoVault redesign complete (frontend F0–F5).** The Dioxus 0.7 WASM SPA + `dioxus-router`
+has been fully rebuilt to the `docs/frontend/DESIGN_SPEC.md` mockup (the "Inkstone" evolution).
+Tailwind is now the **real** build (`input.css` + `tailwind.config.js` → committed, minified
+`assets/main.css` via `npm run css:build`); the full design-token ramp, role/state colors, and
+theme knobs (accent/density/cover-style) ship as CSS-variable swaps. Inline-SVG icon module
+(`src/icons.rs`, ~45 glyphs, no web font). Self-hosted latin `.woff2` subsets (Bricolage
+Grotesque + IBM Plex Sans/Mono) are vendored under `assets/fonts/` and bundled via `asset!()`
+`@font-face` rules emitted from `FontFaces` in `src/main.rs` (a plain `url()` in the Tailwind CSS
+is not processed by manganis, so it must not live there). **All 9 screens** are built and render
+against **today's** API: Home dashboard (`/`), Discover (filter panel + 3-state tag chips +
+provider checkboxes + dual year/min-chapter ranges + 6-option sort + removable active-filter
+chips + pagination), blurred-hero Series detail + `1fr 340px` sidebar, Watchlist kanban with
+HTML5 drag-and-drop (+`<select>` keyboard fallback), Notifications (filter tabs + kind icons),
+Search, Account (settings shell with **Appearance fully wired**: theme/accent/density/cover
+persisted to `localStorage` + OS `prefers-color-scheme` fallback; other panels are honest
+`TODO(api)` stubs), 8-tab operator Console (Overview / Live scans / Providers / Challenge &
+solver / Adapter test / Merge / Users / Audit), and the reskinned Auth card. Typed `gloo-net`
+API client; in-memory token + silent refresh; role-gated Console; live unread badge via
+`live.rs` `EventSource` → `/v1/me/stream`. Quality floor held: `:focus-visible` rings,
+`prefers-reduced-motion` degrade, skeletons/empty/error states, optimistic watchlist moves,
+responsive rail-collapse + 2-up grid reflow. **Verified this session:** `cargo check --target
+wasm32-unknown-unknown` clean and `dx build --release --platform web` produces a working bundle
+with all 8 fonts + `main.css` copied into `.../public/assets/` (the `wasm-opt failed` log on
+Windows is the known non-fatal size-pass issue, not an app error). **Every backend gap is a
+visible, honest `TODO(api)` stub — never a fabricated value.** Full per-screen status and the
+build/verify recipe live in the frontend-only handoff tracker `docs/frontend/PROGRESS.md`.
+**F6 backend enrichment — DONE.** The additive `docs/frontend/IMPLEMENTATION_PLAN.md` §9.1–9.5
+endpoints now ship in `services/api` + `crates/db` (runtime-checked SQL; migration
+`0009_account.sql`): server-side series filter/sort/paginate on `GET /v1/series` (total/next via
+`X-Total-Count`/`X-Next-Cursor` headers, body still `SeriesSummary[]`), `SeriesDetail` enrichment
+(`alt_titles`/`tags`/`is_primary`) + auth-scoped `ChapterDto.read`, `/v1/me/{continue,
+recommendations,stats}` + a watchlist that embeds title/cover/progress/unread (kills the N+1),
+public `GET /v1/providers`, Account (`PATCH /v1/me/profile`, `GET/DELETE /v1/me/sessions`,
+`GET/PUT /v1/me/notification-prefs`; 2FA deferred), and Console `GET /v1/admin/users` +
+`POST /v1/admin/providers/{id}/resolve` (live-scan SSE already existed). **F6 frontend rewire —
+DONE (Session 7):** every screen now consumes its matching endpoint — Discover filters/sorts/
+paginates server-side (`api::list_series_filtered` + `X-Total-Count`/`X-Next-Cursor`) with a
+provider facet from `/v1/providers`; Series renders `alt_titles`/`tags`/`is_primary` + per-chapter
+read-state; Home shows continue/stats/recommendations; Account edits profile + manages sessions +
+notification-prefs; Console lists `/v1/admin/users` and wires Re-solve. `cargo check --target
+wasm32-unknown-unknown` clean. The only honest stubs left are features with no endpoint at all
+(AniList sync, series "related", 2FA).
 
 ### Infra
 | Item | Status | Notes |
 |---|---|---|
-| Migrations (`migrations/`) | ✅ | 7 files (`0001_extensions` … `0007_moderation`), apply cleanly on Postgres 16. |
+| Migrations (`migrations/`) | ✅ | 9 files (`0001_extensions` … `0008_scan_task_dedup`, `0009_account`), apply cleanly on Postgres 16. `0009` adds `users.notification_prefs jsonb` for the frontend §9.4 account settings. |
 | Dockerfiles / `docker-compose.yml` | ✅ | `deploy/docker/Dockerfile` (parameterised cargo-chef + distroless) builds any backend via `--build-arg BIN`; the optional `render` tier uses the extra `runtime-browser` target (Debian slim + Chromium). **`deploy/docker/Dockerfile.frontend`** builds the Dioxus WASM SPA + serves it via nginx (`frontend.nginx.conf`), reverse-proxying `/v1/*`→`api`. `deploy/docker-compose.yml` runs the **full E2E stack**: Postgres/Redis/NATS/FlareSolverr + migrate/seed + every backend service + the frontend (front door on `:3000`). Redis is wired to `control-plane` (leader election); NATS is healthchecked. **Frontend image build + serve + `/v1` proxy verified this session; backend images not rebuilt.** k8s/Helm still pending. |
 | CI | ✅ | `.github/workflows/ci.yml`: parallel `fmt --check`, `clippy -D warnings`, `cargo test --workspace`, `wasm32` frontend check, `cargo-deny` (`deny.toml`), `cargo-audit`, and a `docker build` matrix over every service `BIN`. |
 | Config | ✅ (env) | Services are configured via `TANKOVAULT_*` env in compose; no standalone sample TOMLs. |
@@ -340,16 +405,22 @@ PG16.
 
 ## 6. Pick up next (ordered)
 
-1. **`web/frontend/` polish (Phase 2 continued)** — the scaffold + all core screens landed
-   in Session 4; the **live notification badge** landed in Session 9 (`EventSource` →
-   `/v1/me/stream`, token in query). Remaining: the operator **scan-progress SSE** over the
-   same token-in-query transport (the console still DB-polls; the API's `/v1/admin/scans/
-   stream` also still DB-polls — relay the NATS `scan.progress` there next); masonry
-   virtualisation with blur-up covers; drag-between-columns on the Watchlist; the AniList
-   link/pull/push controls in the UI (`/v1/me/sync/anilist/*` already proxied); tag-grouped
-   search; and frontend tests. (The full **provider management + adapter "Test" panel**
-   landed in Session 11.) Consider generating the client DTOs from `contracts` to replace the
-   hand-mirrored `models.rs`.
+1. **`web/frontend/` — TankoVault redesign is DONE (frontend F0–F5).** The full mockup
+   (`docs/frontend/DESIGN_SPEC.md`) is implemented and shipping: all 9 screens, the Tailwind
+   CLI build, tokens/icons/self-hosted fonts, kanban drag-between-columns, the Account shell +
+   wired Appearance knobs, and the 8-tab operator Console. Per-screen status + the build/verify
+   recipe live in `docs/frontend/PROGRESS.md`. **F6 backend is now DONE** — the additive
+   `docs/frontend/IMPLEMENTATION_PLAN.md` §9.1–9.5 endpoints shipped in `services/api` +
+   `crates/db` (server-side Discover filter/sort/paginate, `SeriesDetail`/`ChapterDto` enrichment,
+   `/v1/me/{continue,recommendations,stats}` + embedded watchlist title/cover, public
+   `/v1/providers`, Account profile/sessions/notification-prefs, Console `/v1/admin/users` +
+   provider re-solve). **F6 frontend rewire is now DONE (Session 7):** every screen consumes its
+   matching endpoint (Discover server-side filtering + provider facet, Series read-state/alt-titles/
+   tags/primary-source, Home continue/recs/stats, Account profile/sessions/notification-prefs,
+   Console Users list + Re-solve); `cargo check --target wasm32-unknown-unknown` is clean. Only
+   endpointless features remain (AniList sync, series "related", 2FA). Still open elsewhere:
+   scan-progress SSE still DB-polls (relay NATS `scan.progress`), frontend tests, and generating
+   the client DTOs from `contracts` to replace the hand-mirrored `models.rs`.
 2. ~~**Control-plane:** progress aggregator + Redis leader election.~~ **DONE (Session 5).**
    The aggregator now finalises runs (`finalize_if_complete`) and republishes one terminal
    `scan.progress` over NATS; the singleton scheduler is guarded by a Redis `SET NX PX`
@@ -382,28 +453,50 @@ PG16.
 
 ---
 
-## 7. The sync service (AniList) — how it works
+## 7. The sync service — how it works (generalized multi-provider, Session 14)
 
-- **Modules:** `mapping` (pure status/conflict logic, fully unit-tested), `anilist`
-  (OAuth2 + GraphQL client; pure `parse_media_list` is tested, network methods are not),
-  `engine` (orchestration over `db` + `matcher` + `SecretBox`), `main` (Axum contract).
-- **Contract:** `GET /v1/anilist/authorize-url`, `POST/DELETE /v1/anilist/link`,
-  `POST /v1/anilist/pull`, `POST /v1/anilist/push`, plus `/health` `/ready`.
+- **Modules:** `provider` (the `ExternalProvider` `#[async_trait]` contract + shared
+  `OAuthTokens`/`Viewer`/`RemoteEntry`/`ProviderInfo` types — status crosses this boundary as
+  the shared `WatchStatus`), `mapping` (pure status/conflict logic, fully unit-tested — still
+  AniList-only: `AniListStatus` never leaves `anilist`), `anilist` (`impl ExternalProvider for
+  AniListClient`; `AniListEntry` is the AniList-shaped wire type, converted to the shared
+  `RemoteEntry` via `From`), `engine` (`SyncEngine` holds the provider registry + orchestrates
+  over `db` + `matcher` + `SecretBox`), `main` (Axum contract + `build_providers` registry
+  wiring). AniList is the only registered provider; a second one is a new `ExternalProvider`
+  impl inserted into `build_providers`, no other wiring changes.
+- **Contract:** `GET /v1/sync/providers`, `POST /v1/sync/push-series` (targeted push, always
+  `200`), `GET /v1/sync/{provider}/authorize-url`, `GET /v1/sync/{provider}/status/{user_id}`,
+  `POST`/`DELETE /v1/sync/{provider}/link`, `POST /v1/sync/{provider}/pull`,
+  `POST /v1/sync/{provider}/push`, plus `/health` `/ready`.
 - **Linking:** `exchange_code` → seal access/refresh with `SecretBox` →
-  `db::repo::sync::upsert_account` (ciphertext). `access_token()` decrypts and, if expired
-  with a refresh token present, refreshes first.
-- **Series ↔ media resolution:** existing `sync_mappings` first; else trigram
-  `find_candidates` + `matcher::decide` (pull) or an AniList title search (push). Resolved
-  ids are cached back into `sync_mappings`.
-- **Reconciliation:** `reconcile_progress(local, remote, policy)` returns the agreed
-  progress, the authoritative side, and which side to write. Pull applies `update_local`
-  (and adopts the remote status, preserving each user's `notify`); push applies
-  `update_remote`. Policy is `local_wins | remote_wins | newest_wins` (default newest).
-- **Rate/robustness:** a per-client pacer floors the gap between AniList requests
-  (~700 ms default) and GraphQL calls retry once on `429` (honouring `Retry-After`).
-- **Config keys:** `anilist.client_id/client_secret/redirect_uri/token_encryption_key`
-  (base64 32-byte), optional `graphql_url`, `oauth_base`, `default_conflict_policy`,
-  `min_request_interval_ms`.
+  `db::repo::sync::upsert_account` (ciphertext, keyed by `provider` slug). `access_token()`
+  decrypts and, if expired with a refresh token present, refreshes first.
+- **Series ↔ media resolution:** existing `sync_mappings` first (keyed by `provider`); else
+  trigram `find_candidates` + `matcher::decide` (pull) or a provider title search (push).
+  Resolved ids are cached back into `sync_mappings`.
+- **Full reconciliation (`pull`/`push`):** `reconcile_progress(local, remote, policy)` returns
+  the agreed progress, the authoritative side, and which side to write. Pull applies
+  `update_local` (and adopts the remote status, preserving each user's `notify`); push applies
+  `update_remote`. Policy is `local_wins | remote_wins | newest_wins` (default newest). Both
+  now record `external_accounts.last_error` on failure (cleared by the next success).
+- **Targeted push (`push_series`, design: immediate targeted push):** the fast path behind
+  "mark a chapter read" — reads local progress/status as-is (no remote-list fetch, no
+  reconciliation: a direct user action is authoritative by construction), resolves/caches the
+  external id, and calls `save_entry` for every provider the user has linked
+  (`db::repo::sync::list_linked_providers`). Never fails its caller; every outcome is
+  best-effort logged and written to `last_error`/`last_synced_at`.
+- **Rate/robustness:** AniList's client paces requests (~700 ms default floor) and retries
+  GraphQL once on `429` (honouring `Retry-After`) — a per-provider concern, not shared engine
+  logic.
+- **Config keys:** unchanged env-var shape, `anilist.client_id/client_secret/redirect_uri/
+  token_encryption_key` (base64 32-byte), optional `graphql_url`, `oauth_base`,
+  `default_conflict_policy`, `min_request_interval_ms` — kept as-is deliberately (no reason to
+  touch deployed `TANKOVAULT_ANILIST__*` env names for a purely internal registry refactor).
+- **Admin visibility (design: admin Sync console tab):** `db::repo::sync::admin_list_accounts`/
+  `admin_list_mappings` back `GET /v1/admin/sync/{accounts,mappings}`; operators can force a
+  pull/push/unlink for any user's linked account or clear a bad mapping
+  (`POST /v1/admin/sync/{pull,push,unlink}`, `POST /v1/admin/sync/mappings/clear`), each
+  audited. Frontend: Console → **Sync** tab (`SyncAdminPanel`, between Merge and Users).
 
 ---
 

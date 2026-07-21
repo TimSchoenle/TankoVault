@@ -851,9 +851,10 @@ Deliberately **not** the default AI palette (no cream+terracotta, no acid-green-
 the one bold move — used only for unread counts, the primary CTA, and the active-nav brush stroke.
 
 **Typography (2 roles + data):**
-- Display: a strong grotesque/antique for the wordmark and screen titles (e.g. *Zodiak* or *Clash
-  Display*), used with restraint.
-- Body/UI: a clean humanist sans (*Inter* or *IBM Plex Sans*).
+- Display: **Bricolage Grotesque** (variable, 400–800) for the wordmark and screen titles, used
+  with restraint. (Supersedes the earlier *Zodiak / Clash Display* placeholder; the TankoVault
+  redesign standardises on Bricolage Grotesque — see `docs/frontend/DESIGN_SPEC.md` §3.)
+- Body/UI: a clean humanist sans (*IBM Plex Sans*).
 - Data/labels: a mono (*IBM Plex Mono*) for chapter numbers and counts — makes numeric scanning fast.
 - Type scale: 12 / 14 / 16 / 20 / 28 / 40, generous line-height on descriptions.
 

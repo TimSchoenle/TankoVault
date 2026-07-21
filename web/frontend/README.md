@@ -9,8 +9,11 @@ This crate is intentionally **excluded from the host Cargo workspace** (it targe
 ## Develop
 
 ```bash
-# From this directory (web/frontend):
-dx serve                 # dev server with hot reload
+# From this directory (web/frontend). Two terminals for the full dev loop:
+npm install              # first time only (dev-only Tailwind tooling)
+npm run css:watch        # terminal 1: input.css -> assets/main.css on change
+dx serve                 # terminal 2: dev server with hot reload
+
 dx build --release       # static WASM + assets for CDN/API hosting
 
 # Plain type-check (what CI can gate on without the dx CLI):
@@ -22,18 +25,25 @@ The API is called at the **same origin** under `/v1/...` (see `src/api.rs`,
 
 ## Styling
 
-`assets/main.css` is a **self-contained, hand-authored** Inkstone stylesheet — the app is
-fully styled with no build step. `tailwind.config.js` + `input.css` mirror the same tokens
-for anyone who prefers to author utility classes with the Tailwind CLI.
+`assets/main.css` is **generated** by the Tailwind CLI from `input.css` + `tailwind.config.js`
+(`npm run css:build`, minified) and **committed** so `cargo`/CI builds need no Node. The
+bespoke component/`ik-*` classes are authored as plain CSS *below* the `@tailwind` directives
+in `input.css` (so they are never content-purged); utilities remain available for one-off
+layout. Design tokens (DESIGN_SPEC §2–5) live as `:root` CSS vars in `input.css` and as the
+Tailwind `theme` in the config. If you edit either, re-run `css:build` and commit the result.
+
+The redesign is tracked phase-by-phase in
+[`../../docs/frontend/PROGRESS.md`](../../docs/frontend/PROGRESS.md).
 
 ## Layout
 
 - `src/models.rs` — DTOs mirroring the API JSON contract + domain enum tokens.
 - `src/api.rs` — typed `gloo-net` client (Bearer auth, friendly error mapping).
 - `src/state.rs` — in-memory session (token + JWT-decoded role) provided via context.
-- `src/components.rs` — app shell (left rail + command bar), cover cards, skeletons, states.
-- `src/views/` — the screens: Discover, Series detail, Reading, Watchlist, Notifications,
-  Search, Login/Register, and the operator Console.
+- `src/icons.rs` — inline-SVG icon module (`Icon` enum + `Ic` component; no web font).
+- `src/components.rs` — app shell (grouped left rail + command bar), cover cards, skeletons.
+- `src/views/` — the screens: Home, Discover, Series detail, Watchlist, Notifications,
+  Search, Account, Login/Register, and the operator Console.
 
 ## Known follow-ups
 

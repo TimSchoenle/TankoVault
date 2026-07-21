@@ -570,6 +570,199 @@ pub async fn list_series<'e, E: PgExecutor<'e>>(
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// Read model: filtered/sorted/paginated series listing (GET /v1/series, §9.1)
+// ---------------------------------------------------------------------------
+
+/// Server-side filter/sort/paginate criteria for the Discover grid (frontend §9.1).
+///
+/// Every field is optional; `None`/empty means "no constraint". Enum filters match on the
+/// text token (`content_type::text` / `status::text`) so callers never touch the Postgres
+/// enum types. `tags` requires the series to carry **all** listed slugs; `exclude_tags`
+/// removes any series carrying **any** listed slug.
+#[derive(Debug, Default, Clone)]
+pub struct SeriesFilter {
+    pub query: Option<String>,
+    pub content_type: Option<String>,
+    pub status: Option<String>,
+    pub provider_slug: Option<String>,
+    pub tags: Vec<String>,
+    pub exclude_tags: Vec<String>,
+    pub year_min: Option<i32>,
+    pub year_max: Option<i32>,
+    pub min_chapters: Option<i32>,
+    /// `updated | title | chapters | sources | year`; anything else falls back to `updated`.
+    pub sort: Option<String>,
+    pub limit: i64,
+    pub offset: i64,
+}
+
+/// A page of the filtered browse list plus the total number of matching rows (via the
+/// window `count(*) OVER()`), so the API can render `{ items, total, next_cursor }` from a
+/// single query.
+pub struct SeriesPage {
+    pub items: Vec<SeriesListItem>,
+    pub total: i64,
+}
+
+#[derive(FromRow)]
+struct FilteredRow {
+    id: Uuid,
+    canonical_title: String,
+    normalized_title: String,
+    description: Option<String>,
+    cover_url: Option<String>,
+    content_type: String,
+    status: String,
+    release_year: Option<i32>,
+    created_at: OffsetDateTime,
+    updated_at: OffsetDateTime,
+    source_count: i64,
+    total: i64,
+}
+
+/// Build the full filtered query with a static `ORDER BY` clause spliced in. Every filter
+/// is expressed as an `($n IS NULL OR …)` guard so the one SQL string stays `'static`
+/// (`SQLx` 0.9 rejects dynamically-built SQL) while binds toggle each constraint on or off.
+macro_rules! filtered_series_sql {
+    ($order:literal) => {
+        concat!(
+            "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
+                    s.content_type::text AS content_type, s.status::text AS status, s.release_year, \
+                    s.created_at, s.updated_at, \
+                    (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS source_count, \
+                    (SELECT COALESCE(sum(ss.chapter_count),0)::int8 FROM series_sources ss \
+                       WHERE ss.series_id = s.id) AS chapter_total, \
+                    count(*) OVER() AS total \
+             FROM series s \
+             WHERE ($1::text IS NULL OR s.normalized_title % $1 \
+                     OR s.search_vec @@ plainto_tsquery('simple', $1)) \
+               AND ($2::text IS NULL OR s.content_type::text = $2) \
+               AND ($3::text IS NULL OR s.status::text = $3) \
+               AND ($4::int IS NULL OR s.release_year >= $4) \
+               AND ($5::int IS NULL OR s.release_year <= $5) \
+               AND ($6::text IS NULL OR EXISTS ( \
+                     SELECT 1 FROM series_sources ss JOIN providers p ON p.id = ss.provider_id \
+                     WHERE ss.series_id = s.id AND p.slug = $6)) \
+               AND ($7::int IS NULL OR ( \
+                     SELECT COALESCE(sum(ss.chapter_count),0) FROM series_sources ss \
+                     WHERE ss.series_id = s.id) >= $7) \
+               AND (cardinality($8::text[]) = 0 OR NOT EXISTS ( \
+                     SELECT unnest($8::text[]) \
+                     EXCEPT \
+                     SELECT t.slug FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                     WHERE stg.series_id = s.id)) \
+               AND (cardinality($9::text[]) = 0 OR NOT EXISTS ( \
+                     SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                     WHERE stg.series_id = s.id AND t.slug = ANY($9::text[]))) ",
+            $order,
+            " LIMIT $10 OFFSET $11"
+        )
+    };
+}
+
+/// Query the browse list with server-side filtering, sorting, and offset pagination
+/// (frontend §9.1). Returns the page plus the total match count for the pager.
+pub async fn list_series_filtered<'e, E: PgExecutor<'e>>(
+    exec: E,
+    filter: &SeriesFilter,
+) -> DbResult<SeriesPage> {
+    let query = filter
+        .query
+        .as_deref()
+        .map(str::trim)
+        .filter(|q| !q.is_empty());
+    let sql = match filter.sort.as_deref() {
+        Some("title") => filtered_series_sql!("ORDER BY s.canonical_title ASC"),
+        Some("chapters") => filtered_series_sql!("ORDER BY chapter_total DESC, s.updated_at DESC"),
+        Some("sources") => filtered_series_sql!("ORDER BY source_count DESC, s.updated_at DESC"),
+        Some("year") => {
+            filtered_series_sql!("ORDER BY s.release_year DESC NULLS LAST, s.updated_at DESC")
+        }
+        // `updated` and design-only `rating` (no column) both fall back to recency.
+        _ => filtered_series_sql!("ORDER BY s.updated_at DESC"),
+    };
+
+    let rows: Vec<FilteredRow> = sqlx::query_as(sql)
+        .bind(query)
+        .bind(filter.content_type.as_deref())
+        .bind(filter.status.as_deref())
+        .bind(filter.year_min)
+        .bind(filter.year_max)
+        .bind(filter.provider_slug.as_deref())
+        .bind(filter.min_chapters)
+        .bind(&filter.tags)
+        .bind(&filter.exclude_tags)
+        .bind(filter.limit)
+        .bind(filter.offset)
+        .fetch_all(exec)
+        .await?;
+
+    let total = rows.first().map_or(0, |r| r.total);
+    let items = rows
+        .into_iter()
+        .map(|r| {
+            Ok(SeriesListItem {
+                series: Series {
+                    id: SeriesId::from_uuid(r.id),
+                    canonical_title: r.canonical_title,
+                    normalized_title: r.normalized_title,
+                    description: r.description,
+                    cover_url: r.cover_url,
+                    content_type: ContentType::from_str(&r.content_type)?,
+                    status: SeriesStatus::from_str(&r.status)?,
+                    release_year: r.release_year,
+                    created_at: r.created_at,
+                    updated_at: r.updated_at,
+                },
+                source_count: r.source_count,
+            })
+        })
+        .collect::<DbResult<Vec<_>>>()?;
+    Ok(SeriesPage { items, total })
+}
+
+/// Alternative titles of a series (design §9.2 enrichment). Empty when none are recorded.
+pub async fn list_series_titles<'e, E: PgExecutor<'e>>(
+    exec: E,
+    series_id: SeriesId,
+) -> DbResult<Vec<String>> {
+    let rows: Vec<(String,)> =
+        sqlx::query_as("SELECT title FROM series_titles WHERE series_id = $1 ORDER BY title")
+            .bind(series_id.as_uuid())
+            .fetch_all(exec)
+            .await?;
+    Ok(rows.into_iter().map(|r| r.0).collect())
+}
+
+/// Tags attached to a series, alphabetically (design §9.2 enrichment).
+pub async fn list_series_tags<'e, E: PgExecutor<'e>>(
+    exec: E,
+    series_id: SeriesId,
+) -> DbResult<Vec<tankovault_domain::Tag>> {
+    #[derive(FromRow)]
+    struct Row {
+        id: Uuid,
+        slug: String,
+        name: String,
+    }
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT t.id, t.slug, t.name FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+         WHERE stg.series_id = $1 ORDER BY t.name",
+    )
+    .bind(series_id.as_uuid())
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| tankovault_domain::Tag {
+            id: tankovault_domain::TagId::from_uuid(r.id),
+            slug: r.slug,
+            name: r.name,
+        })
+        .collect())
+}
+
 /// List all tags/genres, alphabetically (design §11 `GET /v1/tags`).
 pub async fn list_tags<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<tankovault_domain::Tag>> {
     #[derive(FromRow)]

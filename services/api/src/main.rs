@@ -169,7 +169,21 @@ fn build_router(state: AppState) -> Router {
         .route("/v1/me/sync/{provider}/pull", post(me::sync_pull))
         // admin — sync visibility + operator actions (design: admin Sync console tab)
         .route("/v1/admin/sync/accounts", get(admin::list_sync_accounts))
-        .route("/v1/admin/sync/mappings", get(admin::list_sync_mappings))
+        .route(
+            "/v1/admin/sync/mappings",
+            get(admin::list_sync_mappings).post(admin::upsert_sync_mapping),
+        )
+        .route(
+            "/v1/admin/sync/series/{id}",
+            get(admin::list_sync_mappings_for_series),
+        )
+        .route("/v1/admin/sync/unmapped", get(admin::list_unmapped_series))
+        .route(
+            "/v1/admin/sync/unmatched",
+            get(admin::list_unmatched_remote),
+        )
+        .route("/v1/admin/sync/suggest", get(admin::list_suggestions))
+        .route("/v1/admin/sync/assign", post(admin::assign_remote_entry))
         .route("/v1/admin/sync/pull", post(admin::admin_sync_pull))
         .route("/v1/admin/sync/push", post(admin::admin_sync_push))
         .route("/v1/admin/sync/unlink", post(admin::admin_sync_unlink))

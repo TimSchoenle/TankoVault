@@ -13,7 +13,7 @@ use serde::Deserialize;
 use time::OffsetDateTime;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
-
+use tracing::info;
 use crate::mapping::{AniListStatus, content_type_from_country};
 use crate::provider::{ExternalProvider, OAuthTokens, RemoteEntry, Viewer};
 use tankovault_domain::{ContentType, WatchStatus};
@@ -186,14 +186,20 @@ impl AniListClient {
     }
 
     /// Fetch the viewer's full manga list.
+    ///
+    /// `AniList` returns a user's list in *chunks* (`perChunk` is capped at 500 by the API);
+    /// a large list therefore spans several responses. We page through every chunk via the
+    /// `hasNextChunk` flag and concatenate the results, so the whole list is returned rather
+    /// than only its first page.
     pub(crate) async fn fetch_media_list(
         &self,
         access_token: &str,
         user_id: i64,
     ) -> anyhow::Result<Vec<AniListEntry>> {
         const QUERY: &str = "\
-            query ($userId: Int) { \
-              MediaListCollection(userId: $userId, type: MANGA) { \
+            query ($userId: Int, $chunk: Int, $perChunk: Int) { \
+              MediaListCollection(userId: $userId, type: MANGA, chunk: $chunk, perChunk: $perChunk) { \
+                hasNextChunk \
                 lists { entries { \
                   status progress updatedAt \
                   media { id countryOfOrigin startDate { year } \
@@ -201,14 +207,30 @@ impl AniListClient {
                 } } \
               } \
             }";
-        let data = self
-            .graphql(
-                access_token,
-                QUERY,
-                serde_json::json!({ "userId": user_id }),
-            )
-            .await?;
-        Ok(parse_media_list(&data))
+        const PER_CHUNK: i64 = 500;
+
+        let mut all = Vec::new();
+        let mut chunk = 1;
+        loop {
+            let data = self
+                .graphql(
+                    access_token,
+                    QUERY,
+                    serde_json::json!({
+                        "userId": user_id,
+                        "chunk": chunk,
+                        "perChunk": PER_CHUNK,
+                    }),
+                )
+                .await?;
+            all.extend(parse_media_list(&data));
+            if !has_next_chunk(&data) {
+                break;
+            }
+            chunk += 1;
+        }
+        info!("Fetched all manga list {}", all.len());
+        Ok(all)
     }
 
     /// Create or update a remote list entry.
@@ -402,6 +424,16 @@ pub(crate) fn parse_media_list(data: &serde_json::Value) -> Vec<AniListEntry> {
     out
 }
 
+/// Whether the `MediaListCollection` in this response reports a further chunk to fetch.
+/// A missing flag is treated as "no more chunks" so pagination terminates safely.
+#[must_use]
+pub(crate) fn has_next_chunk(data: &serde_json::Value) -> bool {
+    data.get("MediaListCollection")
+        .and_then(|c| c.get("hasNextChunk"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
 fn parse_entry(entry: &serde_json::Value) -> Option<AniListEntry> {
     let media = entry.get("media")?;
     let media_id = media.get("id").and_then(serde_json::Value::as_i64)?;
@@ -572,6 +604,21 @@ mod tests {
             }))
             .is_empty()
         );
+    }
+
+    #[test]
+    fn has_next_chunk_reads_the_flag() {
+        assert!(has_next_chunk(&serde_json::json!({
+            "MediaListCollection": { "hasNextChunk": true, "lists": [] }
+        })));
+        assert!(!has_next_chunk(&serde_json::json!({
+            "MediaListCollection": { "hasNextChunk": false, "lists": [] }
+        })));
+        // A missing flag terminates pagination.
+        assert!(!has_next_chunk(&serde_json::json!({
+            "MediaListCollection": { "lists": [] }
+        })));
+        assert!(!has_next_chunk(&serde_json::json!({})));
     }
 
     #[test]

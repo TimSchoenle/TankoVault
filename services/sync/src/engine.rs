@@ -18,7 +18,7 @@ use tankovault_auth::SecretBox;
 use tankovault_db::PgPool;
 use tankovault_db::repo::{catalog, matching, sync, tracking};
 use tankovault_domain::{SeriesId, UserId, WatchStatus, normalize_title};
-use tankovault_matcher::{Candidate, Decision, Query, Thresholds, decide};
+use tankovault_matcher::{Candidate, Query, Thresholds, best_match};
 
 use crate::mapping::{ConflictPolicy, ProgressState, Side, reconcile_progress};
 use crate::provider::{ExternalProvider, OAuthTokens, ProviderInfo, RemoteEntry};
@@ -255,7 +255,28 @@ impl SyncEngine {
             ..Default::default()
         };
         for entry in &entries {
-            let Some(series_id) = self.resolve_series(slug, entry).await? else {
+            let matched = self.resolve_series(slug, entry).await?;
+
+            // Snapshot every fetched entry (matched or not) so the admin console can review
+            // and hand-assign the ones the auto-matcher missed — the whole list is reconciled,
+            // not just the confident matches.
+            let title = entry.titles.first().map_or("", String::as_str);
+            sync::upsert_remote_entry(
+                &self.pool,
+                user_id,
+                slug,
+                &entry.external_id,
+                title,
+                entry.status.as_str(),
+                entry.progress,
+                entry.content_type.as_str(),
+                entry.start_year,
+                entry.updated_at,
+                matched,
+            )
+            .await?;
+
+            let Some(series_id) = matched else {
                 report.unmatched += 1;
                 continue;
             };
@@ -479,7 +500,11 @@ impl SyncEngine {
     }
 
     /// Resolve a remote entry to a canonical series: first via an existing mapping, then by
-    /// confident title match against the local catalogue.
+    /// the best confident title match against the local catalogue.
+    ///
+    /// Every candidate title (romaji/english/native) is scored against its own trigram
+    /// candidates and the **global** best is taken, so an entry attaches when *any* of its
+    /// titles matches confidently — not just the first one tried.
     async fn resolve_series(
         &self,
         slug: &str,
@@ -491,6 +516,7 @@ impl SyncEngine {
             return Ok(Some(id));
         }
 
+        let mut best: Option<(SeriesId, f32)> = None;
         for title in &entry.titles {
             let normalized = normalize_title(title);
             if normalized.is_empty() {
@@ -513,11 +539,16 @@ impl SyncEngine {
                 content_type: entry.content_type,
                 release_year: entry.start_year,
             };
-            if let Decision::Attach(id) = decide(&query, &candidates, self.thresholds) {
-                return Ok(Some(id));
+            if let Some((id, score)) = best_match(&query, &candidates) {
+                if best.is_none_or(|(_, b)| score > b) {
+                    best = Some((id, score));
+                }
             }
         }
-        Ok(None)
+
+        Ok(best
+            .filter(|(_, score)| *score >= self.thresholds.high)
+            .map(|(id, _)| id))
     }
 
     /// Resolve a local series to a `provider` external id: via an existing mapping, else by a

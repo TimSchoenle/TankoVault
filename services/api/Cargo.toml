@@ -17,6 +17,7 @@ tankovault-db = { workspace = true }
 tankovault-domain = { workspace = true }
 tankovault-auth = { workspace = true }
 tankovault-adapters = { workspace = true }
+tankovault-matcher = { workspace = true }
 tankovault-fetch = { workspace = true }
 tankovault-solver = { workspace = true }
 tankovault-bus = { workspace = true }

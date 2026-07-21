@@ -501,6 +501,106 @@ pub async fn admin_clear_sync_mapping(
     .await
 }
 
+/// Every external mapping recorded for one series — powers the per-series "manga info"
+/// editor in the admin Sync tab.
+pub async fn admin_sync_mappings_for_series(
+    token: &str,
+    series_id: &str,
+) -> ApiResult<Vec<AdminSyncMapping>> {
+    get(&format!("/v1/admin/sync/series/{series_id}"), Some(token)).await
+}
+
+/// Manually create or correct a series↔external mapping (fix a wrong id or add a missing one).
+pub async fn admin_upsert_sync_mapping(
+    token: &str,
+    series_id: &str,
+    provider: &str,
+    external_id: &str,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        "/v1/admin/sync/mappings",
+        &serde_json::json!({
+            "series_id": series_id,
+            "provider": provider,
+            "external_id": external_id,
+        }),
+        Some(token),
+    )
+    .await
+}
+
+/// The assign queue: series lacking a mapping for `provider`, richest first (optionally
+/// title-filtered by `query`).
+pub async fn admin_unmapped_series(
+    token: &str,
+    provider: &str,
+    query: Option<&str>,
+) -> ApiResult<Vec<UnmappedSeries>> {
+    let mut path = format!("/v1/admin/sync/unmapped?provider={}", urlencode(provider));
+    if let Some(q) = query.filter(|q| !q.trim().is_empty()) {
+        path.push_str(&format!("&query={}", urlencode(q)));
+    }
+    get(&path, Some(token)).await
+}
+
+/// The reverse assign queue: fetched remote entries that auto-matching could not confidently
+/// link to a local series, so an operator can match *every* loaded entry (optionally filtered
+/// by title).
+pub async fn admin_unmatched_remote(
+    token: &str,
+    provider: &str,
+    query: Option<&str>,
+) -> ApiResult<Vec<UnmatchedRemoteEntry>> {
+    let mut path = format!("/v1/admin/sync/unmatched?provider={}", urlencode(provider));
+    if let Some(q) = query.filter(|q| !q.trim().is_empty()) {
+        path.push_str(&format!("&query={}", urlencode(q)));
+    }
+    get(&path, Some(token)).await
+}
+
+/// Ranked local-series suggestions for a fetched remote entry, so the operator gets automatic
+/// candidates (with confidence scores) instead of blind-searching. `content_type`/`year`
+/// sharpen the matcher score when known.
+pub async fn admin_suggest_matches(
+    token: &str,
+    title: &str,
+    content_type: Option<&str>,
+    start_year: Option<i32>,
+) -> ApiResult<Vec<SuggestedMatch>> {
+    let mut path = format!("/v1/admin/sync/suggest?title={}", urlencode(title));
+    if let Some(ct) = content_type.filter(|c| !c.trim().is_empty() && *c != "unknown") {
+        path.push_str(&format!("&content_type={}", urlencode(ct)));
+    }
+    if let Some(y) = start_year {
+        path.push_str(&format!("&start_year={y}"));
+    }
+    get(&path, Some(token)).await
+}
+
+/// Hand-assign a fetched remote entry to a local series: records the mapping, imports the
+/// entry onto the user's watchlist, and clears it from the unmatched queue.
+pub async fn admin_assign_remote_entry(
+    token: &str,
+    user_id: &str,
+    provider: &str,
+    external_id: &str,
+    series_id: &str,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        "/v1/admin/sync/assign",
+        &serde_json::json!({
+            "user_id": user_id,
+            "provider": provider,
+            "external_id": external_id,
+            "series_id": series_id,
+        }),
+        Some(token),
+    )
+    .await
+}
+
 // ---------------------------------------------------------------------------
 // Admin / operator console
 // ---------------------------------------------------------------------------

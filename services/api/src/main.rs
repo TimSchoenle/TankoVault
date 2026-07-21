@@ -152,16 +152,31 @@ fn build_router(state: AppState) -> Router {
         .route("/v1/me/notifications/read", post(me::mark_read))
         // live per-user notification stream (SSE; token in query — EventSource cannot set headers)
         .route("/v1/me/stream", get(me::stream))
-        // me — AniList external sync (proxied to the sync service)
-        .route("/v1/me/sync/anilist/authorize", get(me::sync_authorize_url))
-        .route("/v1/me/sync/anilist/status", get(me::sync_status))
+        // me — external sync, provider-keyed (proxied to the sync service; design: generalized
+        // multi-provider sync)
+        .route("/v1/me/sync/providers", get(me::sync_providers))
         .route(
-            "/v1/me/sync/anilist",
+            "/v1/me/sync/{provider}/authorize",
+            get(me::sync_authorize_url),
+        )
+        .route("/v1/me/sync/{provider}/status", get(me::sync_status))
+        .route(
+            "/v1/me/sync/{provider}",
             axum::routing::delete(me::sync_disconnect),
         )
-        .route("/v1/me/sync/anilist/callback", get(me::sync_callback))
-        .route("/v1/me/sync/anilist/push", post(me::sync_push))
-        .route("/v1/me/sync/anilist/pull", post(me::sync_pull))
+        .route("/v1/me/sync/{provider}/callback", get(me::sync_callback))
+        .route("/v1/me/sync/{provider}/push", post(me::sync_push))
+        .route("/v1/me/sync/{provider}/pull", post(me::sync_pull))
+        // admin — sync visibility + operator actions (design: admin Sync console tab)
+        .route("/v1/admin/sync/accounts", get(admin::list_sync_accounts))
+        .route("/v1/admin/sync/mappings", get(admin::list_sync_mappings))
+        .route("/v1/admin/sync/pull", post(admin::admin_sync_pull))
+        .route("/v1/admin/sync/push", post(admin::admin_sync_push))
+        .route("/v1/admin/sync/unlink", post(admin::admin_sync_unlink))
+        .route(
+            "/v1/admin/sync/mappings/clear",
+            post(admin::clear_sync_mapping),
+        )
         // admin
         .route("/v1/admin/stats", get(admin::system_stats))
         .route("/v1/admin/audit", get(admin::audit_log))

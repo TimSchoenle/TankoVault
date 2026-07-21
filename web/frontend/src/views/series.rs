@@ -25,6 +25,7 @@ pub fn Series(id: String) -> Element {
     let nav = use_navigator();
     let selected = use_signal(|| Option::<String>::None);
     let mut reload_wl = use_signal(|| 0u32);
+    let reload_chapters = use_signal(|| 0u32);
 
     let detail_id = id.clone();
     let detail = use_resource(move || {
@@ -37,6 +38,7 @@ pub fn Series(id: String) -> Element {
         let id = chapters_id.clone();
         let src = selected.read().clone();
         let token = session.token_value();
+        let _ = reload_chapters.read();
         async move { api::series_chapters(&id, src.as_deref(), token.as_deref()).await }
     });
 
@@ -53,7 +55,7 @@ pub fn Series(id: String) -> Element {
 
     let sync_status = use_resource(move || async move {
         match session.token_value() {
-            Some(t) => api::anilist_status(&t).await.ok(),
+            Some(t) => api::sync_status(&t, "anilist").await.ok(),
             None => None,
         }
     });
@@ -164,10 +166,21 @@ pub fn Series(id: String) -> Element {
         },
         Some(Ok(list)) => {
             let list = list.clone();
+            // Rows are newest-first (`ORDER BY number DESC`); "Mark unread" steps back to the
+            // *next* row's number rather than assuming contiguous integers.
+            let prevs: Vec<Option<f64>> = (0..list.len())
+                .map(|i| list.get(i + 1).map(|c| c.number))
+                .collect();
             rsx! {
                 div { class: "ik-chapter-list",
                     for (i , c) in list.into_iter().enumerate() {
-                        ChapterRow { key: "{i}", chapter: c }
+                        ChapterRow {
+                            key: "{i}",
+                            chapter: c,
+                            series_id: id.clone(),
+                            prev_number: prevs[i],
+                            reload: reload_chapters,
+                        }
                     }
                 }
             }
@@ -407,7 +420,16 @@ fn WatchControls(
 }
 
 #[component]
-fn ChapterRow(chapter: crate::models::ChapterDto) -> Element {
+fn ChapterRow(
+    chapter: crate::models::ChapterDto,
+    series_id: String,
+    prev_number: Option<f64>,
+    reload: Signal<u32>,
+) -> Element {
+    let session = use_session();
+    let mut reload = reload;
+    let mut busy = use_signal(|| false);
+
     let num = trim_num(chapter.number);
     let label = chapter
         .title
@@ -422,9 +444,40 @@ fn ChapterRow(chapter: crate::models::ChapterDto) -> Element {
         .to_owned();
     let url = chapter.url.clone();
     // Auth-scoped read-state (§9.2): `Some(true)` dims the row + shows a check; anonymous
-    // callers get `None` and the row renders unmarked.
+    // callers get `None` and the row renders unmarked with no mark-read control — there's
+    // nothing to track without a signed-in session.
     let is_read = chapter.read.unwrap_or(false);
+    let can_track = chapter.read.is_some();
     let row_style = if is_read { "opacity:.55;" } else { "" };
+
+    // "Mark read" sets progress to this chapter's number — safe because it's only shown on
+    // unread rows, which are always above the current threshold. "Mark unread" must NOT assume
+    // contiguous integer numbering (`chapter.number - 1`); it steps back to the *previous*
+    // row's number (rows render newest-first) or 0 if this is the first chapter.
+    let target = if is_read {
+        prev_number.unwrap_or(0.0)
+    } else {
+        chapter.number
+    };
+    let mark = {
+        let series_id = series_id.clone();
+        move |_| {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
+            let series_id = series_id.clone();
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::set_progress(&t, &series_id, target).await.is_ok() {
+                        reload += 1;
+                    }
+                }
+                busy.set(false);
+            });
+        }
+    };
+
     rsx! {
         div { class: "ik-chapter", style: "{row_style}",
             span { class: "num", "#{num}" }
@@ -436,13 +489,22 @@ fn ChapterRow(chapter: crate::models::ChapterDto) -> Element {
                 }
             }
             span { class: "date", "{date}" }
+            if can_track {
+                button {
+                    class: "ik-btn",
+                    style: "margin-left:12px;padding:4px 10px;",
+                    disabled: *busy.read(),
+                    onclick: mark,
+                    if is_read { "Mark unread" } else { "Mark read" }
+                }
+            }
             a {
                 class: "ik-btn",
-                style: "margin-left:12px;padding:4px 10px;",
+                style: "margin-left:8px;padding:4px 10px;",
                 href: "{url}",
                 target: "_blank",
                 rel: "noopener",
-                if is_read { "Re-read" } else { "Read" }
+                "Open"
             }
         }
     }

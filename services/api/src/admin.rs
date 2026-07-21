@@ -7,22 +7,22 @@ use crate::state::{AppState, AuthUser};
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
+use serde::{Deserialize, Serialize};
+use std::convert::Infallible;
+use std::sync::Arc;
+use std::time::Duration;
 use tankovault_adapters::{Ctx, SourceAdapter, build_adapter};
 use tankovault_db::repo::matching::MergeCandidateView;
 use tankovault_db::repo::providers::NewProvider;
 use tankovault_domain::{
     AdapterKind, Politeness, Provider, ProviderId, ProviderState, ScanMode, ScanRun, ScanRunId,
-    SeriesId, UserRole,
+    SeriesId, UserId, UserRole,
 };
 use tankovault_fetch::{
     HttpChallengeSolver, InMemorySessionStore, ProviderFetchConfig, RobotsRules, SessionStore,
     build_provider_fetcher,
 };
 use tankovault_solver::ChallengeSolver;
-use serde::{Deserialize, Serialize};
-use std::convert::Infallible;
-use std::sync::Arc;
-use std::time::Duration;
 use tokio_stream::StreamExt as _;
 use tokio_stream::wrappers::IntervalStream;
 use uuid::Uuid;
@@ -553,6 +553,151 @@ fn build_test_context(
             fetcher,
         },
     ))
+}
+
+// ---------------------------------------------------------------------------
+// External sync — admin visibility + operator actions (design: admin Sync console tab)
+// ---------------------------------------------------------------------------
+
+/// `GET /v1/admin/sync/accounts` — every linked external account across all users.
+pub async fn list_sync_accounts(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<tankovault_db::repo::sync::AdminAccountRow>>> {
+    user.require(UserRole::Operator)?;
+    Ok(Json(
+        tankovault_db::repo::sync::admin_list_accounts(&state.pool, 200).await?,
+    ))
+}
+
+/// `GET /v1/admin/sync/mappings` — every series↔external mapping across all providers.
+pub async fn list_sync_mappings(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<tankovault_db::repo::sync::AdminMappingRow>>> {
+    user.require(UserRole::Operator)?;
+    Ok(Json(
+        tankovault_db::repo::sync::admin_list_mappings(&state.pool, 200).await?,
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SyncAccountTarget {
+    pub user_id: UserId,
+    pub provider: String,
+}
+
+/// `POST /v1/admin/sync/pull` — operator-forced pull for another user's linked account.
+pub async fn admin_sync_pull(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<SyncAccountTarget>,
+) -> ApiResult<Json<serde_json::Value>> {
+    user.require(UserRole::Operator)?;
+    let body = crate::me::sync_proxy(
+        &state,
+        &format!("/v1/sync/{}/pull", req.provider),
+        serde_json::json!({ "user_id": req.user_id }),
+    )
+    .await?;
+    audit(
+        &state,
+        &user,
+        "sync.pull",
+        &format!("{}:{}", req.provider, req.user_id.as_uuid()),
+        &serde_json::json!({}),
+    )
+    .await;
+    Ok(body)
+}
+
+/// `POST /v1/admin/sync/push` — operator-forced push for another user's linked account.
+pub async fn admin_sync_push(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<SyncAccountTarget>,
+) -> ApiResult<Json<serde_json::Value>> {
+    user.require(UserRole::Operator)?;
+    let body = crate::me::sync_proxy(
+        &state,
+        &format!("/v1/sync/{}/push", req.provider),
+        serde_json::json!({ "user_id": req.user_id }),
+    )
+    .await?;
+    audit(
+        &state,
+        &user,
+        "sync.push",
+        &format!("{}:{}", req.provider, req.user_id.as_uuid()),
+        &serde_json::json!({}),
+    )
+    .await;
+    Ok(body)
+}
+
+/// `POST /v1/admin/sync/unlink` — operator-forced unlink of another user's linked account.
+pub async fn admin_sync_unlink(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<SyncAccountTarget>,
+) -> ApiResult<Json<serde_json::Value>> {
+    user.require(UserRole::Operator)?;
+    let url = format!(
+        "{}/v1/sync/{}/link",
+        state.sync_url.trim_end_matches('/'),
+        req.provider
+    );
+    let resp = state
+        .http
+        .delete(url)
+        .json(&serde_json::json!({ "user_id": req.user_id }))
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "sync service unreachable");
+            ApiError::Internal
+        })?;
+    if !resp.status().is_success() {
+        return Err(ApiError::Internal);
+    }
+    let value: serde_json::Value = resp.json().await.map_err(|_| ApiError::Internal)?;
+    audit(
+        &state,
+        &user,
+        "sync.unlink",
+        &format!("{}:{}", req.provider, req.user_id.as_uuid()),
+        &value,
+    )
+    .await;
+    Ok(Json(value))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SyncMappingTarget {
+    pub series_id: SeriesId,
+    pub provider: String,
+}
+
+/// `POST /v1/admin/sync/mappings/clear` — remove a bad series↔external mapping; the next
+/// pull/push (or targeted push) re-resolves it from scratch.
+pub async fn clear_sync_mapping(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<SyncMappingTarget>,
+) -> ApiResult<Json<serde_json::Value>> {
+    user.require(UserRole::Operator)?;
+    let removed =
+        tankovault_db::repo::sync::delete_mapping(&state.pool, req.series_id, &req.provider)
+            .await?;
+    audit(
+        &state,
+        &user,
+        "sync.mapping.clear",
+        &format!("{}:{}", req.provider, req.series_id.as_uuid()),
+        &serde_json::json!({ "removed": removed }),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "removed": removed })))
 }
 
 /// Best-effort audit record; a logging failure must not fail the action.

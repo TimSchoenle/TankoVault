@@ -34,9 +34,10 @@ pub fn Watchlist() -> Element {
         sync_msg.set(None);
         spawn(async move {
             if let Some(t) = session.token_value() {
-                match api::anilist_pull(&t, ConflictPolicy::NewestWins).await {
+                match api::sync_pull(&t, "anilist", ConflictPolicy::NewestWins).await {
                     Ok(_) => {
-                        let pushed = api::anilist_push(&t, ConflictPolicy::NewestWins).await;
+                        let pushed =
+                            api::sync_push(&t, "anilist", ConflictPolicy::NewestWins).await;
                         sync_msg.set(Some(pushed.map(|_| "Synced with AniList.".to_owned())));
                         reload += 1;
                     }

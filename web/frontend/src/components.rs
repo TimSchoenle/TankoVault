@@ -175,7 +175,7 @@ fn TopBar() -> Element {
     // `GET /v1/me/sync/anilist/status` rather than a hardcoded "synced" claim.
     let sync_status = use_resource(move || async move {
         match session.token_value() {
-            Some(t) => api::anilist_status(&t).await.ok(),
+            Some(t) => api::sync_status(&t, "anilist").await.ok(),
             None => None,
         }
     });

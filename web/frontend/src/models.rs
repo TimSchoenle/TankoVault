@@ -311,6 +311,40 @@ pub struct SyncStatus {
     pub last_synced_at: Option<String>,
 }
 
+/// A registered external sync provider (`GET /v1/me/sync/providers`). Drives the Account
+/// "Sync & integrations" panel, which renders one card per entry instead of a hardcoded
+/// AniList block (design: generalized multi-provider sync).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ProviderInfo {
+    pub slug: String,
+    pub name: String,
+}
+
+/// One row of the admin Console's "Linked accounts" table (`GET /v1/admin/sync/accounts`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct AdminSyncAccount {
+    pub user_id: String,
+    pub username: String,
+    pub provider: String,
+    #[serde(default)]
+    pub external_username: Option<String>,
+    #[serde(default)]
+    pub last_synced_at: Option<String>,
+    #[serde(default)]
+    pub last_error: Option<String>,
+    pub created_at: String,
+}
+
+/// One row of the admin Console's "Series mappings" table (`GET /v1/admin/sync/mappings`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct AdminSyncMapping {
+    pub series_id: String,
+    pub series_title: String,
+    pub provider: String,
+    pub external_id: String,
+    pub updated_at: String,
+}
+
 /// One active login session (`GET /v1/me/sessions`, §9.4).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct SessionDto {

@@ -191,8 +191,14 @@ async fn plan_run(
         ScanMode::Fast => ("latest_feed", TaskKind::LatestFeed, serde_json::json!({})),
     };
 
-    let task_id =
-        tankovault_db::repo::scans::create_task(&state.pool, run_id, kind_str, &target).await?;
+    let Some(task_id) =
+        tankovault_db::repo::scans::create_task(&state.pool, run_id, kind_str, &target).await?
+    else {
+        // A task with this exact target already exists for the run (idempotent replan);
+        // the run is already dispatched, so there is nothing further to publish.
+        tracing::info!(%run_id, provider = %provider.slug, ?mode, "planned scan run (initial task already existed)");
+        return Ok(run_id);
+    };
     tankovault_db::repo::scans::add_total_tasks(&state.pool, run_id, 1).await?;
 
     state

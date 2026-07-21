@@ -11,6 +11,7 @@ use tankovault_contracts::{
     subjects,
 };
 use serde::Serialize;
+use std::time::Duration;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -183,6 +184,11 @@ impl Bus {
             subjects::TASKS_STREAM,
             subjects::WORKER_CONSUMER,
             subjects::TASKS_SUBJECT_WILDCARD,
+            // A `catalog_page` task fans out one child per catalogue entry (many DB writes +
+            // publishes), so its processing can outlast the JetStream default ack deadline.
+            // A generous window prevents mid-processing redelivery (which would re-run the
+            // fan-out); the idempotent child insert is the correctness backstop.
+            Duration::from_secs(300),
         )
         .await
     }
@@ -197,8 +203,13 @@ impl Bus {
         durable: &str,
         filter_subject: &str,
     ) -> Result<PullConsumer, BusError> {
-        self.durable_consumer(subjects::EVENTS_STREAM, durable, filter_subject)
-            .await
+        self.durable_consumer(
+            subjects::EVENTS_STREAM,
+            durable,
+            filter_subject,
+            Duration::from_secs(30),
+        )
+        .await
     }
 
     async fn durable_consumer(
@@ -206,6 +217,7 @@ impl Bus {
         stream_name: &str,
         durable: &str,
         filter_subject: &str,
+        ack_wait: Duration,
     ) -> Result<PullConsumer, BusError> {
         let stream = self
             .js
@@ -219,6 +231,7 @@ impl Bus {
                     durable_name: Some(durable.to_owned()),
                     filter_subject: filter_subject.to_owned(),
                     ack_policy: async_nats::jetstream::consumer::AckPolicy::Explicit,
+                    ack_wait,
                     ..Default::default()
                 },
             )

@@ -44,6 +44,16 @@ pub(crate) struct PushReport {
     pub(crate) unmapped: usize,
 }
 
+/// Whether a user has linked `AniList`, and (when linked) the connected display name and the
+/// most recent sync time — the shape the "Sync & integrations" panel and status pill render.
+#[derive(Debug, Default, Serialize)]
+pub(crate) struct AccountStatus {
+    pub(crate) linked: bool,
+    pub(crate) username: Option<String>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub(crate) last_synced_at: Option<OffsetDateTime>,
+}
+
 /// The stateful sync engine, shared behind an `Arc` in service state.
 pub(crate) struct SyncEngine {
     pool: PgPool,
@@ -80,12 +90,44 @@ impl SyncEngine {
     /// Exchange an OAuth `code` and persist the (encrypted) tokens for `user_id`.
     pub(crate) async fn link(&self, user_id: UserId, code: &str) -> anyhow::Result<()> {
         let tokens = self.client.exchange_code(code).await?;
-        self.store_tokens(user_id, &tokens).await
+        self.store_tokens(user_id, &tokens).await?;
+        // Best-effort: capture the AniList display name for the status card. A lookup
+        // failure must not fail the link itself — the tokens are already safely stored.
+        let username = self
+            .client
+            .viewer(&tokens.access_token)
+            .await
+            .ok()
+            .map(|v| v.name);
+        sync::mark_synced(
+            &self.pool,
+            user_id,
+            PROVIDER,
+            username.as_deref(),
+            OffsetDateTime::now_utc(),
+        )
+        .await?;
+        Ok(())
     }
 
     /// Remove a user's `AniList` link. Returns `true` if an account was removed.
     pub(crate) async fn unlink(&self, user_id: UserId) -> anyhow::Result<bool> {
         Ok(sync::delete_account(&self.pool, user_id, PROVIDER).await?)
+    }
+
+    /// Whether `user_id` has a linked `AniList` account, plus its display name and most
+    /// recent sync time — read straight from storage, never from the live API, so a page
+    /// load never spends `AniList`'s rate-limit budget.
+    pub(crate) async fn status(&self, user_id: UserId) -> anyhow::Result<AccountStatus> {
+        let account = sync::get_account(&self.pool, user_id, PROVIDER).await?;
+        Ok(match account {
+            Some(a) => AccountStatus {
+                linked: true,
+                username: a.external_username,
+                last_synced_at: a.last_synced_at,
+            },
+            None => AccountStatus::default(),
+        })
     }
 
     async fn store_tokens(&self, user_id: UserId, tokens: &OAuthTokens) -> anyhow::Result<()> {
@@ -139,8 +181,8 @@ impl SyncEngine {
     ) -> anyhow::Result<PullReport> {
         let policy = policy.unwrap_or(self.default_policy);
         let access = self.access_token(user_id).await?;
-        let viewer = self.client.viewer_id(&access).await?;
-        let entries = self.client.fetch_media_list(&access, viewer).await?;
+        let viewer = self.client.viewer(&access).await?;
+        let entries = self.client.fetch_media_list(&access, viewer.id).await?;
 
         let mut report = PullReport {
             fetched: entries.len(),
@@ -178,6 +220,14 @@ impl SyncEngine {
                 report.updated += 1;
             }
         }
+        sync::mark_synced(
+            &self.pool,
+            user_id,
+            PROVIDER,
+            Some(&viewer.name),
+            OffsetDateTime::now_utc(),
+        )
+        .await?;
         Ok(report)
     }
 
@@ -189,8 +239,8 @@ impl SyncEngine {
     ) -> anyhow::Result<PushReport> {
         let policy = policy.unwrap_or(self.default_policy);
         let access = self.access_token(user_id).await?;
-        let viewer = self.client.viewer_id(&access).await?;
-        let remote_entries = self.client.fetch_media_list(&access, viewer).await?;
+        let viewer = self.client.viewer(&access).await?;
+        let remote_entries = self.client.fetch_media_list(&access, viewer.id).await?;
         let remote_by_id: HashMap<i64, &RemoteEntry> =
             remote_entries.iter().map(|e| (e.media_id, e)).collect();
 
@@ -223,6 +273,14 @@ impl SyncEngine {
                 report.pushed += 1;
             }
         }
+        sync::mark_synced(
+            &self.pool,
+            user_id,
+            PROVIDER,
+            Some(&viewer.name),
+            OffsetDateTime::now_utc(),
+        )
+        .await?;
         Ok(report)
     }
 

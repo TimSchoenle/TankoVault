@@ -1,13 +1,15 @@
 //! Account & settings (DESIGN_SPEC §7.7) — a settings shell with a sub-nav and panels.
 //! **Profile** (`PATCH /v1/me/profile`), **Appearance** (`localStorage` + `data-*`),
-//! **Security & sessions** (`GET`/`DELETE /v1/me/sessions`) and **Notification prefs**
-//! (`GET`/`PUT /v1/me/notification-prefs`) are wired for real (§9.4); **Sync & integrations**
-//! remains an honest stub (no endpoint yet).
+//! **Security & sessions** (`GET`/`DELETE /v1/me/sessions`), **Notification prefs**
+//! (`GET`/`PUT /v1/me/notification-prefs`) and **Sync & integrations** (`GET/DELETE
+//! /v1/me/sync/anilist`, `POST /v1/me/sync/anilist/{pull,push}`) are all wired for real.
 
 use crate::api;
-use crate::components::SignInGate;
+use crate::components::{rel_time, SignInGate};
 use crate::icons::{Ic, Icon};
+use crate::models::ConflictPolicy;
 use crate::state::use_session;
+use crate::Route;
 use dioxus::prelude::*;
 use serde_json::Value;
 
@@ -89,9 +91,7 @@ pub fn Account() -> Element {
             Panel::Profile => rsx! { ProfilePanel { name: name.clone(), role: role_label } },
             Panel::Appearance => rsx! { AppearancePanel {} },
             Panel::Security => rsx! { SecurityPanel {} },
-            Panel::Sync => rsx! {
-                StubPanel { title: "Sync & integrations", note: "AniList connect + pull/push and conflict policy need the /v1/me/sync endpoints (not yet available)." }
-            },
+            Panel::Sync => rsx! { SyncPanel {} },
             Panel::Notifications => rsx! { NotificationsPanel {} },
         }
     }
@@ -488,15 +488,236 @@ fn apply_pref(
     let _ = document::eval(&js);
 }
 
+/// Sync & integrations: connect/disconnect `AniList`, pick a conflict policy, and run a pull
+/// or push on demand. Status (`linked`, username, last sync) always comes from
+/// `GET /v1/me/sync/anilist/status` — nothing here is claimed while actually unlinked.
 #[component]
-fn StubPanel(title: &'static str, note: &'static str) -> Element {
+fn SyncPanel() -> Element {
+    let session = use_session();
+    let mut reload = use_signal(|| 0u32);
+    let status = use_resource(move || {
+        let _ = reload.read();
+        async move {
+            match session.token_value() {
+                Some(t) => Some(api::anilist_status(&t).await),
+                None => None,
+            }
+        }
+    });
+    let mut policy = use_signal(|| ConflictPolicy::NewestWins);
+    let mut busy = use_signal(|| false);
+    let mut message: Signal<Option<Result<String, String>>> = use_signal(|| None);
+
+    let connect = move |_| {
+        spawn(async move {
+            if let Some(t) = session.token_value() {
+                match api::anilist_authorize_url(&t).await {
+                    Ok(url) => {
+                        let js = format!(
+                            "window.location.href = {};",
+                            serde_json::to_string(&url).unwrap_or_default()
+                        );
+                        let _ = document::eval(&js);
+                    }
+                    Err(e) => message.set(Some(Err(e))),
+                }
+            }
+        });
+    };
+
+    let disconnect = move |_| {
+        if *busy.peek() {
+            return;
+        }
+        busy.set(true);
+        message.set(None);
+        spawn(async move {
+            if let Some(t) = session.token_value() {
+                match api::anilist_disconnect(&t).await {
+                    Ok(()) => {
+                        message.set(Some(Ok("Disconnected from AniList.".to_owned())));
+                        reload += 1;
+                    }
+                    Err(e) => message.set(Some(Err(e))),
+                }
+            }
+            busy.set(false);
+        });
+    };
+
+    let mut run = move |pull: bool| {
+        if *busy.peek() {
+            return;
+        }
+        busy.set(true);
+        message.set(None);
+        let policy = *policy.peek();
+        spawn(async move {
+            if let Some(t) = session.token_value() {
+                let outcome = if pull {
+                    api::anilist_pull(&t, policy).await
+                } else {
+                    api::anilist_push(&t, policy).await
+                };
+                match outcome {
+                    Ok(v) => {
+                        message.set(Some(Ok(summarize_sync(pull, &v))));
+                        reload += 1;
+                    }
+                    Err(e) => message.set(Some(Err(e))),
+                }
+            }
+            busy.set(false);
+        });
+    };
+
+    let body = match &*status.read_unchecked() {
+        None | Some(None) => rsx! { div { class: "ik-skeleton", style: "height:80px;" } },
+        Some(Some(Err(e))) => rsx! {
+            p { style: "font-size:13px;color:var(--acc);", "Could not load sync status: {e}" }
+        },
+        Some(Some(Ok(s))) if s.linked => {
+            let username = s.username.clone().unwrap_or_else(|| "AniList reader".to_owned());
+            let last_sync = rel_time(s.last_synced_at.as_deref());
+            rsx! {
+                div { class: "ik-flex", style: "gap:14px;margin-bottom:16px;",
+                    div { class: "ik-source-tile", style: "width:46px;height:46px;",
+                        Ic { icon: Icon::CloudDone, size: 22 }
+                    }
+                    div { class: "grow",
+                        div { style: "font-weight:700;font-size:16px;", "AniList" }
+                        div { class: "ik-flex", style: "gap:5px;font-size:13px;color:var(--jade,#3DA88F);",
+                            Ic { icon: Icon::CloudDone, size: 15 }
+                            "Connected as {username} · last sync {last_sync}"
+                        }
+                    }
+                    button { class: "ik-btn", disabled: *busy.read(), onclick: disconnect, "Disconnect" }
+                }
+                div { class: "ik-subhead", style: "margin-bottom:8px;", "Conflict resolution policy" }
+                div { class: "ik-chips",
+                    for p in ConflictPolicy::ALL {
+                        button {
+                            key: "{p.label()}",
+                            class: if *policy.read() == p { "ik-chip active" } else { "ik-chip" },
+                            onclick: move |_| policy.set(p),
+                            "{p.label()}"
+                        }
+                    }
+                }
+                div { class: "ik-flex", style: "gap:10px;flex-wrap:wrap;",
+                    button {
+                        class: "ik-btn",
+                        disabled: *busy.read(),
+                        onclick: move |_| run(true),
+                        Ic { icon: Icon::CloudSync, size: 16 }
+                        "Pull from AniList"
+                    }
+                    button {
+                        class: "ik-btn",
+                        disabled: *busy.read(),
+                        onclick: move |_| run(false),
+                        Ic { icon: Icon::CloudSync, size: 16 }
+                        "Push to AniList"
+                    }
+                }
+            }
+        }
+        Some(Some(Ok(_))) => rsx! {
+            div { class: "ik-flex", style: "gap:14px;",
+                div { class: "ik-source-tile", style: "width:46px;height:46px;",
+                    Ic { icon: Icon::CloudOff, size: 22 }
+                }
+                div { class: "grow",
+                    div { style: "font-weight:700;font-size:16px;", "AniList" }
+                    div { class: "ik-muted", style: "font-size:13px;", "Not connected" }
+                }
+                button { class: "ik-btn primary", onclick: connect, "Connect AniList" }
+            }
+        },
+    };
+
     rsx! {
         div { class: "ik-sidebar-card", style: "max-width:560px;",
-            strong { "{title}" }
-            div { class: "ik-empty", style: "margin-top:12px;",
-                p { "Not yet available." }
-                p { class: "ik-muted", style: "font-size:13px;", "{note}" }
+            div { class: "ik-flex", style: "margin-bottom:14px;",
+                Ic { icon: Icon::CloudDone, size: 18 }
+                strong { "Sync & integrations" }
+            }
+            {body}
+            match &*message.read() {
+                Some(Ok(m)) => rsx! { p { style: "font-size:13px;color:var(--jade,#3DA88F);margin-top:12px;", "{m}" } },
+                Some(Err(m)) => rsx! { p { style: "font-size:13px;color:var(--acc);margin-top:12px;", "{m}" } },
+                None => rsx! {},
             }
         }
     }
+}
+
+/// One summary line from a pull's/push's report JSON (`engine::PullReport`/`PushReport`
+/// shape, forwarded verbatim by the API).
+fn summarize_sync(pull: bool, v: &Value) -> String {
+    let n = |k: &str| v.get(k).and_then(Value::as_i64).unwrap_or(0);
+    if pull {
+        format!(
+            "Pulled {} AniList entries — {} matched, {} updated, {} unmatched.",
+            n("fetched"),
+            n("matched"),
+            n("updated"),
+            n("unmatched")
+        )
+    } else {
+        format!(
+            "Pushed {} of {} watchlist entries to AniList ({} unmapped).",
+            n("pushed"),
+            n("considered"),
+            n("unmapped")
+        )
+    }
+}
+
+/// Lands after the user approves (or declines) the `AniList` OAuth consent screen — the
+/// `redirect_uri` configured on the sync service. That full-page browser round trip wipes the
+/// SPA's in-memory session, so this waits for the boot-time silent refresh (`Shell`) to
+/// restore the access token before calling the Bearer-authenticated link endpoint.
+#[component]
+pub fn AnilistCallback(code: String) -> Element {
+    let session = use_session();
+    let nav = use_navigator();
+    let mut result: Signal<Option<Result<(), String>>> = use_signal(|| None);
+
+    use_effect(move || {
+        if !*session.ready.read() || result.peek().is_some() {
+            return;
+        }
+        let code = code.clone();
+        spawn(async move {
+            let outcome = match session.token_value() {
+                None => Err(
+                    "Sign in, then connect AniList again from Account → Sync & integrations."
+                        .to_owned(),
+                ),
+                Some(_) if code.trim().is_empty() => {
+                    Err("AniList did not return an authorization code.".to_owned())
+                }
+                Some(t) => api::anilist_link(&t, &code).await,
+            };
+            let ok = outcome.is_ok();
+            result.set(Some(outcome));
+            if ok {
+                nav.push(Route::Account {});
+            }
+        });
+    });
+
+    let elem = match &*result.read() {
+        Some(Err(e)) => rsx! {
+            div { class: "ik-empty",
+                p { "Couldn't connect AniList: {e}" }
+                Link { to: Route::Account {}, class: "ik-btn primary", "Back to Account" }
+            }
+        },
+        _ => rsx! {
+            div { class: "ik-empty", "Connecting to AniList…" }
+        },
+    };
+    elem
 }

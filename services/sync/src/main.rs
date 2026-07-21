@@ -8,11 +8,18 @@
 //! ```text
 //! GET    /health | /ready
 //! GET    /v1/anilist/authorize-url        -> { url }
+//! GET    /v1/anilist/status/{user_id}                     -> AccountStatus
 //! POST   /v1/anilist/link    { user_id, code }            -> 204
 //! DELETE /v1/anilist/link    { user_id }                  -> { removed }
 //! POST   /v1/anilist/pull    { user_id, policy? }         -> PullReport
 //! POST   /v1/anilist/push    { user_id, policy? }         -> PushReport
 //! ```
+//!
+//! `anilist.redirect_uri` (config) must point at a **frontend** page, not at this service or
+//! the API directly: the API's `/v1/me/sync/anilist/callback` requires the caller's Bearer
+//! access token, which only exists in the SPA's in-memory session and cannot ride along on
+//! the browser's raw OAuth redirect. The frontend's callback route reads `?code=` from the
+//! URL and then calls that API endpoint itself, attaching the token like any other request.
 
 mod anilist;
 mod engine;
@@ -21,7 +28,7 @@ mod mapping;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
@@ -47,6 +54,7 @@ struct Config {
 
 #[derive(Debug, Deserialize)]
 struct AniListConfig {
+    #[serde(deserialize_with = "string_or_number")]
     client_id: String,
     client_secret: String,
     redirect_uri: String,
@@ -73,6 +81,29 @@ fn default_oauth_base() -> String {
 }
 fn default_min_interval_ms() -> u64 {
     700
+}
+
+/// `figment`'s `Env` provider infers numeric-looking values (e.g. `TANKOVAULT_ANILIST__CLIENT_ID`)
+/// as numbers rather than strings, so accept either and coerce to `String`.
+fn string_or_number<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrNumber {
+        String(String),
+        Int(i64),
+        UInt(u64),
+        Float(f64),
+    }
+
+    Ok(match StringOrNumber::deserialize(deserializer)? {
+        StringOrNumber::String(s) => s,
+        StringOrNumber::Int(i) => i.to_string(),
+        StringOrNumber::UInt(u) => u.to_string(),
+        StringOrNumber::Float(f) => f.to_string(),
+    })
 }
 
 #[derive(Clone)]
@@ -116,6 +147,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(|| async { "ok" }))
         .route("/ready", get(|| async { "ok" }))
         .route("/v1/anilist/authorize-url", get(authorize_url))
+        .route("/v1/anilist/status/{user_id}", get(status))
         .route("/v1/anilist/link", post(link).delete(unlink))
         .route("/v1/anilist/pull", post(pull))
         .route("/v1/anilist/push", post(push))
@@ -155,6 +187,14 @@ async fn link(
 #[derive(Debug, Deserialize)]
 struct UserRequest {
     user_id: UserId,
+}
+
+/// `GET /v1/anilist/status/{user_id}` — always `200`; `linked: false` when unlinked.
+async fn status(
+    State(state): State<AppState>,
+    Path(user_id): Path<UserId>,
+) -> Result<Json<engine::AccountStatus>, AppError> {
+    Ok(Json(state.engine.status(user_id).await?))
 }
 
 #[derive(Debug, Serialize)]

@@ -154,6 +154,11 @@ fn build_router(state: AppState) -> Router {
         .route("/v1/me/stream", get(me::stream))
         // me — AniList external sync (proxied to the sync service)
         .route("/v1/me/sync/anilist/authorize", get(me::sync_authorize_url))
+        .route("/v1/me/sync/anilist/status", get(me::sync_status))
+        .route(
+            "/v1/me/sync/anilist",
+            axum::routing::delete(me::sync_disconnect),
+        )
         .route("/v1/me/sync/anilist/callback", get(me::sync_callback))
         .route("/v1/me/sync/anilist/push", post(me::sync_push))
         .route("/v1/me/sync/anilist/pull", post(me::sync_pull))

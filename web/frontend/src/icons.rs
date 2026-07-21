@@ -30,6 +30,8 @@ pub enum Icon {
     Bookmark,
     Notify,
     CloudDone,
+    CloudOff,
+    CloudSync,
     ArrowForward,
     ChevronRight,
     Close,
@@ -135,6 +137,12 @@ fn path_for(icon: Icon) -> &'static str {
         }
         Icon::CloudDone => {
             r#"<path d="M7 18a4 4 0 0 1 0-8 5 5 0 0 1 9.6-1.5A3.5 3.5 0 0 1 18 18z"/><path d="m9 14 2 2 4-4"/>"#
+        }
+        Icon::CloudOff => {
+            r#"<path d="M16 16.9a4 4 0 0 0-1.4-7.9 5 5 0 0 0-9.3-1.7"/><path d="M4.4 5 3 6.4 6.8 10.2A4 4 0 0 0 7 18h9a3.5 3.5 0 0 0 1.3-.3L19.6 20 21 18.6z"/>"#
+        }
+        Icon::CloudSync => {
+            r#"<path d="M7 17a4 4 0 0 1 0-8 5 5 0 0 1 9.6-1.5A3.5 3.5 0 0 1 18 17"/><path d="M9 14.5 12 12l3 2.5M12 12v6"/>"#
         }
         Icon::ArrowForward => r#"<path d="M5 12h14M13 6l6 6-6 6"/>"#,
         Icon::ChevronRight => r#"<path d="m9 6 6 6-6 6"/>"#,

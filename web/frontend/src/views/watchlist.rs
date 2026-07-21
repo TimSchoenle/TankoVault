@@ -7,7 +7,7 @@
 use crate::api;
 use crate::components::{Cover, EmptyBox, ErrorBox, SignInGate};
 use crate::icons::{Ic, Icon};
-use crate::models::{WatchStatus, WatchlistItem, WatchlistUpsert};
+use crate::models::{ConflictPolicy, WatchStatus, WatchlistItem, WatchlistUpsert};
 use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
@@ -23,6 +23,29 @@ pub fn Watchlist() -> Element {
     // Drag state shared between the source cards and the drop-target columns.
     let dragging = use_signal(|| Dragging::None);
     let dragover = use_signal(|| Option::<WatchStatus>::None);
+
+    let mut syncing = use_signal(|| false);
+    let mut sync_msg: Signal<Option<Result<String, String>>> = use_signal(|| None);
+    let sync_now = move |_| {
+        if *syncing.peek() {
+            return;
+        }
+        syncing.set(true);
+        sync_msg.set(None);
+        spawn(async move {
+            if let Some(t) = session.token_value() {
+                match api::anilist_pull(&t, ConflictPolicy::NewestWins).await {
+                    Ok(_) => {
+                        let pushed = api::anilist_push(&t, ConflictPolicy::NewestWins).await;
+                        sync_msg.set(Some(pushed.map(|_| "Synced with AniList.".to_owned())));
+                        reload += 1;
+                    }
+                    Err(e) => sync_msg.set(Some(Err(e))),
+                }
+            }
+            syncing.set(false);
+        });
+    };
 
     let resource = use_resource(move || {
         let _ = reload.read();
@@ -83,13 +106,22 @@ pub fn Watchlist() -> Element {
     };
 
     rsx! {
-        div { class: "ik-flex", style: "justify-content:space-between;align-items:flex-end;flex-wrap:wrap;",
+        div { class: "ik-flex", style: "justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;",
             div {
                 h1 { class: "ik-page-title", style: "margin-bottom:2px;", "Watchlist" }
                 div { class: "ik-muted", style: "font-size:13px;",
                     "Drag a title between columns to change its status — or use the picker on each card."
                 }
             }
+            button { class: "ik-btn", disabled: *syncing.read(), onclick: sync_now,
+                Ic { icon: Icon::CloudSync, size: 16 }
+                if *syncing.read() { "Syncing…" } else { "Sync AniList" }
+            }
+        }
+        match &*sync_msg.read() {
+            Some(Ok(m)) => rsx! { p { style: "font-size:13px;color:var(--jade,#3DA88F);margin:8px 0 0;", "{m}" } },
+            Some(Err(m)) => rsx! { p { style: "font-size:13px;color:var(--acc);margin:8px 0 0;", "Sync failed: {m}" } },
+            None => rsx! {},
         }
         {board}
     }

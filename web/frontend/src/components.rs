@@ -171,6 +171,19 @@ fn TopBar() -> Element {
 
     let signed_in = session.is_authenticated();
 
+    // AniList link status for the header pill: real, not a stub — reflects
+    // `GET /v1/me/sync/anilist/status` rather than a hardcoded "synced" claim.
+    let sync_status = use_resource(move || async move {
+        match session.token_value() {
+            Some(t) => api::anilist_status(&t).await.ok(),
+            None => None,
+        }
+    });
+    let synced = matches!(
+        &*sync_status.read_unchecked(),
+        Some(Some(s)) if s.linked
+    );
+
     rsx! {
         header { class: "ik-topbar",
             div { class: "ik-search",
@@ -195,10 +208,12 @@ fn TopBar() -> Element {
             }
             div { class: "ik-topbar-actions",
                 if signed_in {
-                    // TODO(api): GET /v1/me/integrations — static until sync status has an endpoint.
-                    span { class: "ik-pill jade", style: "display:inline-flex;align-items:center;gap:6px;",
-                        Ic { icon: Icon::CloudDone, size: 13 }
-                        "AniList synced"
+                    Link {
+                        to: Route::Account {},
+                        class: if synced { "ik-pill jade" } else { "ik-pill" },
+                        style: "display:inline-flex;align-items:center;gap:6px;text-decoration:none;",
+                        Ic { icon: if synced { Icon::CloudDone } else { Icon::CloudOff }, size: 13 }
+                        if synced { "AniList synced" } else { "Connect AniList" }
                     }
                     Link { to: Route::Notifications {}, class: "ik-bell",
                         Ic { icon: Icon::Notifications, size: 18 }
@@ -336,6 +351,45 @@ pub fn Brush() -> Element {
     rsx! {
         div { class: "ik-brush" }
     }
+}
+
+/// Format an RFC-3339 timestamp as a coarse "time ago" string, using the browser's own
+/// date parser so no date crate is pulled into the wasm bundle. `None`/empty → `—`; an
+/// unparseable value falls back to the raw string.
+pub fn rel_time(ts: Option<&str>) -> String {
+    let Some(s) = ts.filter(|s| !s.is_empty()) else {
+        return "—".to_owned();
+    };
+    let parsed = js_sys::Date::parse(s);
+    if parsed.is_nan() {
+        return s.to_owned();
+    }
+    humanize_ms(js_sys::Date::now() - parsed)
+}
+
+/// Humanise a millisecond age into a compact relative label.
+fn humanize_ms(diff_ms: f64) -> String {
+    if diff_ms < 45_000.0 {
+        return "just now".to_owned();
+    }
+    let secs = (diff_ms / 1000.0) as i64;
+    let mins = secs / 60;
+    if mins < 60 {
+        return format!("{mins}m ago");
+    }
+    let hours = mins / 60;
+    if hours < 24 {
+        return format!("{hours}h ago");
+    }
+    let days = hours / 24;
+    if days < 30 {
+        return format!("{days}d ago");
+    }
+    let months = days / 30;
+    if months < 12 {
+        return format!("{months}mo ago");
+    }
+    format!("{}y ago", days / 365)
 }
 
 /// Global unread-notifications badge count, provided at the app root and updated by the

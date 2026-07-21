@@ -2,6 +2,7 @@
 //! is set as an httpOnly cookie by the API. On success we route to Discover.
 
 use crate::api;
+use crate::icons::{Ic, Icon};
 use crate::models::{LoginRequest, RegisterRequest};
 use crate::state::use_session;
 use crate::Route;
@@ -74,10 +75,27 @@ pub fn Login() -> Element {
         "New here? Create an account"
     };
 
+    let subtitle = if is_register {
+        "Create an account to sync your library across every device."
+    } else {
+        "Sign in to sync your library."
+    };
+
     rsx! {
         div { class: "ik-auth",
+            // Wordmark lockup (§7.9): gradient tile + TankōVault + tagline.
+            div { class: "ik-auth-brand",
+                div { class: "ik-brand-tile", Ic { icon: Icon::MenuBook, size: 22 } }
+                div {
+                    div { class: "ik-wordmark",
+                        "Tankō"
+                        span { class: "acc", "Vault" }
+                    }
+                    div { class: "ik-brand-tag", "SOURCE · TRACK · SYNC" }
+                }
+            }
             h1 { "{heading}" }
-            p { class: "ik-muted", "Track manga across every provider, in one place." }
+            p { class: "ik-muted", "{subtitle}" }
 
             if let Some(msg) = error.read().clone() {
                 div { class: "ik-error", style: "padding:12px;margin:14px 0;text-align:left;",

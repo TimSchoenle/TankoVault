@@ -184,6 +184,58 @@ pub async fn set_provider_state(
     Ok(Json(provider))
 }
 
+/// `POST /v1/admin/providers/:id/resolve` — re-solve/refresh a single provider by queuing a
+/// **fast** re-scan (frontend §9.5). This is the console "Re-solve" action; it is proxied to
+/// the control-plane planner exactly like [`trigger_scan`], scoped to one provider.
+pub async fn resolve_provider(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<ProviderId>,
+) -> ApiResult<Json<serde_json::Value>> {
+    user.require(UserRole::Operator)?;
+    // Confirm the provider exists (and surface a clean 404 otherwise) before queuing work.
+    let provider = tankovault_db::repo::providers::get(&state.pool, id).await?;
+
+    let req = TriggerScan {
+        provider_id: Some(id),
+        mode: ScanMode::Fast,
+    };
+    let url = format!(
+        "{}/internal/scans",
+        state.control_plane_url.trim_end_matches('/')
+    );
+    let resp = state.http.post(url).json(&req).send().await.map_err(|e| {
+        tracing::error!(error = %e, "control-plane unreachable");
+        ApiError::Internal
+    })?;
+    if !resp.status().is_success() {
+        return Err(ApiError::Internal);
+    }
+    let body: serde_json::Value = resp.json().await.map_err(|_| ApiError::Internal)?;
+
+    audit(
+        &state,
+        &user,
+        "provider.resolve",
+        &id.to_string(),
+        &serde_json::json!({ "slug": provider.slug, "mode": "fast" }),
+    )
+    .await;
+    Ok(Json(body))
+}
+
+/// `GET /v1/admin/users` — the operator Users directory: identity, role, and tracked-series
+/// count per user (frontend §9.5 Users tab).
+pub async fn list_users(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<tankovault_db::repo::users::UserRow2>>> {
+    user.require(UserRole::Operator)?;
+    Ok(Json(
+        tankovault_db::repo::users::list_users(&state.pool, 200).await?,
+    ))
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TriggerScan {
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -14,6 +14,7 @@
 
 use crate::api;
 use crate::components::ErrorBox;
+use crate::icons::{Ic, Icon};
 use crate::models::{
     AuditEntry, FailedTask, MergeCandidate, Provider, ProviderStat, RunState, ScanMode, ScanRun,
     SystemStats,
@@ -23,6 +24,56 @@ use dioxus::prelude::*;
 
 /// Auto-refresh cadence for the read-only dashboard panels.
 const REFRESH_MS: u32 = 4000;
+
+/// The operator console's top-level tabs (DESIGN_SPEC §7.8), in order.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ConsoleTab {
+    Overview,
+    LiveScans,
+    Providers,
+    Solver,
+    AdapterTest,
+    Merge,
+    Users,
+    Audit,
+}
+
+impl ConsoleTab {
+    const ALL: [ConsoleTab; 8] = [
+        Self::Overview,
+        Self::LiveScans,
+        Self::Providers,
+        Self::Solver,
+        Self::AdapterTest,
+        Self::Merge,
+        Self::Users,
+        Self::Audit,
+    ];
+    fn label(self) -> &'static str {
+        match self {
+            Self::Overview => "Overview",
+            Self::LiveScans => "Live scans",
+            Self::Providers => "Providers",
+            Self::Solver => "Challenge & solver",
+            Self::AdapterTest => "Adapter test",
+            Self::Merge => "Merge queue",
+            Self::Users => "Users",
+            Self::Audit => "Audit",
+        }
+    }
+    fn icon(self) -> Icon {
+        match self {
+            Self::Overview => Icon::Dashboard,
+            Self::LiveScans => Icon::Radar,
+            Self::Providers => Icon::Public,
+            Self::Solver => Icon::ShieldLock,
+            Self::AdapterTest => Icon::Code,
+            Self::Merge => Icon::Merge,
+            Self::Users => Icon::Group,
+            Self::Audit => Icon::History,
+        }
+    }
+}
 
 /// Selectable adapter implementations (token, human label). Mirrors `AdapterKind`.
 const ADAPTER_KINDS: &[(&str, &str)] = &[
@@ -46,6 +97,7 @@ pub fn Console() -> Element {
     // a cadence while `auto` is on, and the "Refresh" control bumps it on demand.
     let mut tick = use_signal(|| 0u32);
     let auto = use_signal(|| true);
+    let mut tab = use_signal(|| ConsoleTab::Overview);
     use_future(move || async move {
         loop {
             gloo_timers::future::TimeoutFuture::new(REFRESH_MS).await;
@@ -55,17 +107,41 @@ pub fn Console() -> Element {
         }
     });
 
+    let current = *tab.read();
+    let panel = match current {
+        ConsoleTab::Overview => rsx! {
+            SystemOverview { tick }
+            ProviderStatsTable { tick }
+        },
+        ConsoleTab::LiveScans => rsx! { ScanQueue { tick } },
+        ConsoleTab::Providers => rsx! { ProvidersPanel {} },
+        ConsoleTab::Solver => rsx! { SolverPanel { tick } },
+        ConsoleTab::AdapterTest => rsx! { AdapterTestTab {} },
+        ConsoleTab::Merge => rsx! { MergeQueue {} },
+        ConsoleTab::Users => rsx! { UsersPanel { tick } },
+        ConsoleTab::Audit => rsx! { AuditPanel { tick } },
+    };
+
     rsx! {
         div { class: "ik-flex", style: "justify-content:space-between;align-items:center;flex-wrap:wrap;",
-            h1 { class: "ik-page-title", style: "margin:0;", "Operator Console" }
+            div { class: "ik-flex", style: "gap:9px;",
+                Ic { icon: Icon::Dashboard, size: 22 }
+                h1 { class: "ik-page-title", style: "margin:0;", "Operator Console" }
+            }
             LiveControls { tick, auto }
         }
-        SystemOverview { tick }
-        ScanQueue { tick }
-        ProviderStatsTable { tick }
-        ProvidersPanel {}
-        MergeQueue {}
-        AuditPanel { tick }
+        div { class: "ik-tabs", style: "margin-top:14px;",
+            for t in ConsoleTab::ALL {
+                button {
+                    class: if current == t { "ik-tab active" } else { "ik-tab" },
+                    style: "display:inline-flex;align-items:center;gap:6px;",
+                    onclick: move |_| tab.set(t),
+                    Ic { icon: t.icon(), size: 15 }
+                    span { "{t.label()}" }
+                }
+            }
+        }
+        {panel}
     }
 }
 
@@ -1023,6 +1099,265 @@ fn AdapterTestPanel(provider_id: String) -> Element {
                 }
             }
             {output}
+        }
+    }
+}
+
+/// Challenge & solver (DESIGN_SPEC §7.8.4). The challenge back-end (FlareSolverr) is shown as
+/// an informational card; per-provider solve-success metrics need a dedicated endpoint
+/// (TODO(api) §9.5), so this lists provider health with a **Re-solve** (fast re-scan) action
+/// and a **Re-enable** toggle for blocked/disabled providers.
+#[component]
+fn SolverPanel(tick: Signal<u32>) -> Element {
+    let session = use_session();
+    let mut reload = use_signal(|| 0u32);
+    let res = use_resource(move || {
+        let _ = (tick.read(), reload.read());
+        async move {
+            match session.token_value() {
+                Some(t) => api::providers(&t).await,
+                None => Ok(Vec::new()),
+            }
+        }
+    });
+
+    let body = match &*res.read_unchecked() {
+        None => rsx! { div { class: "ik-skeleton", style: "height:100px;" } },
+        Some(Err(e)) => {
+            let msg = e.clone();
+            rsx! {
+                ErrorBox { message: msg, on_retry: move |()| reload += 1 }
+            }
+        }
+        Some(Ok(list)) if list.is_empty() => rsx! {
+            div { class: "ik-empty", "No providers configured." }
+        },
+        Some(Ok(list)) => {
+            let rows = list.clone();
+            rsx! {
+                for p in rows {
+                    SolverRow { key: "{p.id}", provider: p, reload }
+                }
+            }
+        }
+    };
+
+    rsx! {
+        section { style: "margin-bottom:18px;",
+            div { class: "ik-tile", style: "margin-bottom:14px;",
+                div { class: "ik-flex", style: "justify-content:space-between;flex-wrap:wrap;",
+                    div { class: "ik-flex", style: "gap:9px;",
+                        Ic { icon: Icon::ShieldLock, size: 20 }
+                        div {
+                            div { style: "font-weight:600;", "Challenge solver" }
+                            div { class: "ik-mono ik-muted", style: "font-size:12px;", "Backend: FlareSolverr" }
+                        }
+                    }
+                    span { class: "ik-pill jade", "active" }
+                }
+                p { class: "ik-muted", style: "font-size:13px;margin:10px 0 0;",
+                    "Per-provider solve-success rates need the solver-metrics endpoint (TODO(api) §9.5). Until then, re-solve queues a fast re-scan that re-attempts any challenged sources."
+                }
+            }
+            h3 { "Provider states" }
+            {body}
+        }
+    }
+}
+
+#[component]
+fn SolverRow(provider: Provider, reload: Signal<u32>) -> Element {
+    let session = use_session();
+    let id = provider.id.clone();
+    let blocked = matches!(
+        provider.state.as_str(),
+        "blocked" | "disabled" | "challenged"
+    );
+
+    let resolve = {
+        let id = id.clone();
+        move |_| {
+            let id = id.clone();
+            let mut reload = reload;
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::resolve_provider(&t, &id).await.is_ok() {
+                        reload += 1;
+                    }
+                }
+            });
+        }
+    };
+    let reenable = {
+        let id = id.clone();
+        move |_| {
+            let id = id.clone();
+            let mut reload = reload;
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::set_provider_state(&t, &id, "active").await.is_ok() {
+                        reload += 1;
+                    }
+                }
+            });
+        }
+    };
+
+    rsx! {
+        div { class: "ik-row",
+            div { class: "grow",
+                div { style: "font-weight:600;", "{provider.name}" }
+                div { class: "ik-mono ik-muted", style: "font-size:12px;", "{provider.base_url}" }
+            }
+            HealthPill { state: provider.state.clone() }
+            if blocked {
+                button { class: "ik-btn", onclick: reenable, "Re-enable" }
+            }
+            button { class: "ik-btn primary", onclick: resolve,
+                Ic { icon: Icon::Refresh, size: 15 }
+                "Re-solve"
+            }
+        }
+    }
+}
+
+/// Standalone Adapter-test tab (DESIGN_SPEC §7.8.5): pick a provider, then dry-run its
+/// adapter against the live site and inspect the parsed sample (reuses `AdapterTestPanel`).
+#[component]
+fn AdapterTestTab() -> Element {
+    let session = use_session();
+    let res = use_resource(move || async move {
+        match session.token_value() {
+            Some(t) => api::providers(&t).await,
+            None => Ok(Vec::new()),
+        }
+    });
+    let mut chosen = use_signal(|| Option::<String>::None);
+
+    let body = match &*res.read_unchecked() {
+        None => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
+        Some(Err(e)) => rsx! {
+            p { class: "ik-muted", style: "font-size:13px;", "Could not load providers: {e}" }
+        },
+        Some(Ok(list)) if list.is_empty() => rsx! {
+            div { class: "ik-empty", "No providers to test yet." }
+        },
+        Some(Ok(list)) => {
+            let opts = list.clone();
+            let sel = chosen.read().clone();
+            rsx! {
+                div { class: "ik-flex", style: "margin-bottom:4px;",
+                    label { class: "ik-muted", style: "font-size:13px;", "Provider" }
+                    select {
+                        class: "ik-input",
+                        style: "width:auto;",
+                        onchange: move |e| {
+                            let v = e.value();
+                            chosen.set(if v.is_empty() { None } else { Some(v) });
+                        },
+                        option { value: "", selected: sel.is_none(), "— choose a provider —" }
+                        for p in opts {
+                            option { value: "{p.id}", selected: sel.as_deref() == Some(p.id.as_str()), "{p.name}" }
+                        }
+                    }
+                }
+                if let Some(pid) = chosen.read().clone() {
+                    AdapterTestPanel { provider_id: pid }
+                }
+            }
+        }
+    };
+
+    rsx! {
+        section { style: "margin-bottom:18px;",
+            h3 { "Adapter test" }
+            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
+                "Dry-run a provider's adapter against the live site without deploying — validate selectors and pagination."
+            }
+            {body}
+        }
+    }
+}
+
+/// Users tab (DESIGN_SPEC §7.8.7): the registered-user directory from `GET /v1/admin/users`
+/// (§9.5) — identity, RBAC role, and how many series each user tracks — plus the aggregate
+/// count. Read-only (role management has no endpoint yet).
+#[component]
+fn UsersPanel(tick: Signal<u32>) -> Element {
+    let session = use_session();
+    let res = use_resource(move || {
+        let _ = tick.read();
+        async move {
+            match session.token_value() {
+                Some(t) => Some(api::admin_users(&t).await),
+                None => None,
+            }
+        }
+    });
+
+    let body = match &*res.read_unchecked() {
+        None | Some(None) => rsx! { div { class: "ik-skeleton", style: "height:120px;" } },
+        Some(Some(Err(e))) => rsx! {
+            p { class: "ik-muted", style: "font-size:13px;", "Could not load users: {e}" }
+        },
+        Some(Some(Ok(list))) if list.is_empty() => rsx! {
+            div { class: "ik-empty", "No users registered yet." }
+        },
+        Some(Some(Ok(list))) => {
+            let count = list.len();
+            let rows = list.clone();
+            rsx! {
+                div { class: "ik-kpis", style: "margin-bottom:14px;",
+                    div { class: "ik-kpi",
+                        div { class: "ik-kpi-label", "Registered users" }
+                        div { class: "ik-kpi-value", "{fmt_int(count as i64)}" }
+                    }
+                }
+                div { class: "ik-tablewrap",
+                    table { class: "ik-table ik-table-compact",
+                        thead {
+                            tr {
+                                th { "User" }
+                                th { "Email" }
+                                th { "Role" }
+                                th { style: "text-align:right;", "Tracked" }
+                                th { "Joined" }
+                            }
+                        }
+                        tbody {
+                            for u in rows {
+                                UserRowView { key: "{u.id}", user: u }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    rsx! {
+        section { style: "margin-bottom:18px;",
+            h3 { "Users" }
+            {body}
+        }
+    }
+}
+
+#[component]
+fn UserRowView(user: crate::models::UserRow) -> Element {
+    let joined = user.created_at.get(0..10).unwrap_or("").to_owned();
+    let role_class = match user.role.as_str() {
+        "admin" => "ik-pill acc",
+        "operator" => "ik-pill jade",
+        _ => "ik-pill",
+    };
+    rsx! {
+        tr {
+            td { "{user.username}" }
+            td { class: "ik-mono ik-muted", style: "font-size:12px;", "{user.email}" }
+            td { span { class: "{role_class}", "{user.role}" } }
+            td { class: "ik-mono", style: "text-align:right;", "{fmt_int(user.tracked_count)}" }
+            td { class: "ik-mono ik-muted", style: "font-size:12px;", "{joined}" }
         }
     }
 }

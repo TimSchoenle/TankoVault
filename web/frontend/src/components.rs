@@ -2,6 +2,7 @@
 //! command bar), cover cards, loading skeletons, and named empty/error states.
 
 use crate::api;
+use crate::icons::{Ic, Icon};
 use crate::models::SeriesSummary;
 use crate::state::use_session;
 use crate::Route;
@@ -42,29 +43,65 @@ pub fn Shell() -> Element {
         }
     });
 
+    // Apply the persisted appearance knobs once on boot (the Appearance panel writes the
+    // `tv-*` keys; DESIGN_SPEC §8). Theme falls back to the OS `prefers-color-scheme` on the
+    // first visit; accent/density/cover stay unset (→ vermilion/standard/ink defaults).
+    use_effect(|| {
+        let _ = document::eval(
+            "var d=document.documentElement;\
+             var t=localStorage.getItem('tv-theme');\
+             if(!t){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}\
+             d.setAttribute('data-theme',t);\
+             var a=localStorage.getItem('tv-accent'); if(a){d.setAttribute('data-accent',a);}\
+             var de=localStorage.getItem('tv-density'); if(de){d.setAttribute('data-density',de);}\
+             var c=localStorage.getItem('tv-cover'); if(c){d.setAttribute('data-cover',c);}",
+        );
+    });
+
     let unread_count = *unread.0.read();
+    let is_operator = session.role.read().is_operator();
 
     rsx! {
         div { class: "ik-app",
             nav { class: "ik-rail",
-                div { class: "ik-wordmark",
-                    span { "TankoVault" }
-                    span { class: "dot", "•" }
+                // Brand lockup.
+                div { class: "ik-brand",
+                    div { class: "ik-brand-tile", Ic { icon: Icon::MenuBook, size: 22 } }
+                    div {
+                        div { class: "ik-wordmark",
+                            "Tankō"
+                            span { class: "acc", "Vault" }
+                        }
+                        div { class: "ik-brand-tag", "SOURCE · TRACK · SYNC" }
+                    }
                 }
-                NavLink { to: Route::Discover {}, label: "Discover", current: route.clone(), badge: 0 }
-                NavLink { to: Route::Reading {}, label: "Reading", current: route.clone(), badge: 0 }
-                NavLink { to: Route::Watchlist {}, label: "Watchlist", current: route.clone(), badge: 0 }
+
+                NavGroup { label: "MAIN" }
+                NavLink { to: Route::Home {}, label: "Home", icon: Icon::Home, current: route.clone(), badge: 0 }
+                NavLink { to: Route::Discover {}, label: "Discover", icon: Icon::Explore, current: route.clone(), badge: 0 }
+                NavLink { to: Route::Search { q: String::new() }, label: "Search", icon: Icon::Search, current: route.clone(), badge: 0 }
+
+                NavGroup { label: "LIBRARY" }
+                NavLink { to: Route::Watchlist {}, label: "Watchlist", icon: Icon::Watchlist, current: route.clone(), badge: 0 }
                 NavLink {
                     to: Route::Notifications {},
                     label: "Notifications",
+                    icon: Icon::Notifications,
                     current: route.clone(),
                     badge: unread_count,
                 }
-                if session.role.read().is_operator() {
-                    NavLink { to: Route::Console {}, label: "Console", current: route.clone(), badge: 0 }
+
+                if is_operator {
+                    NavGroup { label: "OPERATOR" }
+                    NavLink { to: Route::Console {}, label: "Console", icon: Icon::Console, current: route.clone(), badge: 0 }
+                    NavLink { to: Route::Account {}, label: "Account", icon: Icon::Account, current: route.clone(), badge: 0 }
+                } else {
+                    NavGroup { label: "ACCOUNT" }
+                    NavLink { to: Route::Account {}, label: "Account", icon: Icon::Account, current: route.clone(), badge: 0 }
                 }
+
                 div { class: "ik-rail-spacer" }
-                SessionButton {}
+                UserFooter {}
             }
             main { class: "ik-main",
                 TopBar {}
@@ -74,10 +111,19 @@ pub fn Shell() -> Element {
     }
 }
 
-/// A left-rail navigation entry; renders the active brush stroke when it matches the
-/// current route's top-level screen.
+/// A kicker heading that groups rail destinations (`MAIN` / `LIBRARY` / `OPERATOR`).
 #[component]
-fn NavLink(to: Route, label: String, current: Route, badge: i64) -> Element {
+fn NavGroup(label: String) -> Element {
+    rsx! {
+        div { class: "ik-navgroup",
+            div { class: "ik-navgroup-label", "{label}" }
+        }
+    }
+}
+
+/// A left-rail navigation entry with an icon, label and the animated active bar.
+#[component]
+fn NavLink(to: Route, label: String, icon: Icon, current: Route, badge: i64) -> Element {
     let is_active = same_screen(&to, &current);
     let class = if is_active {
         "ik-nav-link active"
@@ -86,7 +132,8 @@ fn NavLink(to: Route, label: String, current: Route, badge: i64) -> Element {
     };
     rsx! {
         Link { to: to.clone(), class: "{class}",
-            span { "{label}" }
+            Ic { icon, size: 18 }
+            span { class: "label", "{label}" }
             if badge > 0 {
                 span { class: "ik-nav-badge", "{badge}" }
             }
@@ -105,18 +152,34 @@ fn same_screen(a: &Route, b: &Route) -> bool {
     discriminant(&norm(a)) == discriminant(&norm(b))
 }
 
-/// Top command bar with instant-search that routes to the Search screen on submit.
+/// Top command bar: instant-search (Enter → Search, `⌘K`/`Ctrl+K` focuses it), an
+/// AniList-sync status pill (stub — no endpoint yet), and the notifications bell.
 #[component]
 fn TopBar() -> Element {
     let nav = use_navigator();
+    let session = use_session();
+    let unread = use_context::<UnreadBadge>();
+    let unread_count = *unread.0.read();
     let mut query = use_signal(String::new);
+
+    // Global ⌘K / Ctrl+K focuses the search field.
+    use_effect(|| {
+        let _ = document::eval(
+            "document.addEventListener('keydown',function(e){if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();var el=document.getElementById('tv-search');if(el){el.focus();}}});",
+        );
+    });
+
+    let signed_in = session.is_authenticated();
+
     rsx! {
         header { class: "ik-topbar",
             div { class: "ik-search",
+                span { class: "lead", Ic { icon: Icon::Search, size: 16 } }
                 input {
+                    id: "tv-search",
                     class: "ik-input",
                     r#type: "search",
-                    placeholder: "Search series and tags…",
+                    placeholder: "Search series, tags, authors…",
                     value: "{query}",
                     oninput: move |e| query.set(e.value()),
                     onkeydown: move |e| {
@@ -128,31 +191,65 @@ fn TopBar() -> Element {
                         }
                     },
                 }
+                span { class: "kbd", "⌘K" }
+            }
+            div { class: "ik-topbar-actions",
+                if signed_in {
+                    // TODO(api): GET /v1/me/integrations — static until sync status has an endpoint.
+                    span { class: "ik-pill jade", style: "display:inline-flex;align-items:center;gap:6px;",
+                        Ic { icon: Icon::CloudDone, size: 13 }
+                        "AniList synced"
+                    }
+                    Link { to: Route::Notifications {}, class: "ik-bell",
+                        Ic { icon: Icon::Notifications, size: 18 }
+                        if unread_count > 0 {
+                            span { class: "dot", "{unread_count}" }
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-/// Sign-in / sign-out affordance in the rail footer.
+/// The rail user footer: avatar + identity + settings gear when signed in; a "Sign in"
+/// primary button otherwise. Sign-out lives on the Account screen.
 #[component]
-fn SessionButton() -> Element {
+fn UserFooter() -> Element {
     let session = use_session();
     if session.is_authenticated() {
-        rsx! {
-            button {
-                class: "ik-btn",
-                onclick: move |_| {
-                    spawn(async move {
-                        let _ = api::logout().await;
-                        session.clear();
-                    });
-                },
-                "Sign out"
+        let name = session.username().unwrap_or_else(|| "reader".to_owned());
+        let initial = name
+            .chars()
+            .next()
+            .unwrap_or('?')
+            .to_uppercase()
+            .to_string();
+        let role = *session.role.read();
+        let status = if role.is_admin() {
+            "admin · synced"
+        } else if role.is_operator() {
+            "operator · synced"
+        } else {
+            "reader · synced"
+        };
+        return rsx! {
+            div { class: "ik-userbox",
+                div { class: "ik-avatar", "{initial}" }
+                div { class: "who",
+                    div { class: "name", "{name}" }
+                    div { class: "sub",
+                        span { class: "ik-status-dot" }
+                        "{status}"
+                    }
+                }
+                Link { to: Route::Account {}, class: "gear", Ic { icon: Icon::Settings, size: 18 } }
             }
-        }
-    } else {
-        rsx! {
-            Link { to: Route::Login {}, class: "ik-btn primary", "Sign in" }
+        };
+    }
+    rsx! {
+        div { style: "padding:8px;",
+            Link { to: Route::Login {}, class: "ik-btn primary block", "Sign in" }
         }
     }
 }

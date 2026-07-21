@@ -1,9 +1,14 @@
 //! User tracking: watchlist, read progress, and notifications (with fan-out helpers).
 
 use crate::error::{DbError, DbResult};
-use tankovault_domain::{Notification, NotificationId, SeriesId, UserId, WatchStatus, WatchlistEntry};
+use crate::repo::catalog::SeriesListItem;
+use tankovault_domain::{
+    ContentType, Notification, NotificationId, Series, SeriesId, SeriesStatus, UserId, WatchStatus,
+    WatchlistEntry,
+};
 use serde_json::Value as Json;
 use sqlx::{FromRow, PgExecutor};
+use std::str::FromStr;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -381,4 +386,247 @@ pub async fn dedup_claim<'e, E: PgExecutor<'e>>(
     .await?
     .rows_affected();
     Ok(inserted == 1)
+}
+
+
+// ---------------------------------------------------------------------------
+// Enriched read models for the redesigned Home / Watchlist (frontend §9.3)
+// ---------------------------------------------------------------------------
+
+/// A watchlist row enriched with the series title + cover and the user's progress, so the
+/// Watchlist board renders each card without an N+1 `series_detail` fetch (frontend §9.3).
+#[derive(Debug, Clone)]
+pub struct WatchlistCard {
+    pub series_id: SeriesId,
+    pub series_title: String,
+    pub cover_url: Option<String>,
+    pub status: WatchStatus,
+    pub notify: bool,
+    pub added_at: OffsetDateTime,
+    pub last_read_number: Option<f64>,
+    /// Distinct chapters strictly above the user's progress, across all sources.
+    pub unread: i64,
+}
+
+/// List a user's watchlist with the embedded title/cover/progress each card needs.
+pub async fn watchlist_detailed<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+) -> DbResult<Vec<WatchlistCard>> {
+    #[derive(FromRow)]
+    struct Row {
+        series_id: Uuid,
+        series_title: String,
+        cover_url: Option<String>,
+        status: String,
+        notify: bool,
+        added_at: OffsetDateTime,
+        last_read_number: Option<f64>,
+        unread: i64,
+    }
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT w.series_id, s.canonical_title AS series_title, s.cover_url, \
+                w.status::text AS status, w.notify, w.added_at, \
+                rp.last_read_number::float8 AS last_read_number, \
+                (SELECT COALESCE(count(DISTINCT c.number),0) \
+                   FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+                   WHERE ss.series_id = w.series_id \
+                     AND c.number > COALESCE(rp.last_read_number, 0)) AS unread \
+         FROM watchlist_entries w \
+         JOIN series s ON s.id = w.series_id \
+         LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
+         WHERE w.user_id = $1 \
+         ORDER BY w.added_at DESC",
+    )
+    .bind(user_id.as_uuid())
+    .fetch_all(exec)
+    .await?;
+    rows.into_iter()
+        .map(|r| {
+            Ok(WatchlistCard {
+                series_id: SeriesId::from_uuid(r.series_id),
+                series_title: r.series_title,
+                cover_url: r.cover_url,
+                status: r.status.parse().map_err(DbError::Enum)?,
+                notify: r.notify,
+                added_at: r.added_at,
+                last_read_number: r.last_read_number,
+                unread: r.unread,
+            })
+        })
+        .collect()
+}
+
+/// A "continue reading" card: a tracked, in-progress series with unread chapters, ordered
+/// by the most recent chapter activity (frontend §9.3 `GET /v1/me/continue`).
+#[derive(Debug, Clone)]
+pub struct ContinueCard {
+    pub series_id: SeriesId,
+    pub series_title: String,
+    pub cover_url: Option<String>,
+    pub last_read_number: f64,
+    /// The lowest unread chapter number above the user's progress, if any.
+    pub next_number: Option<f64>,
+    pub unread: i64,
+}
+
+/// Continue-reading cards: watched series (`reading`/`planned`/`paused`) that have at least
+/// one unread chapter, freshest activity first.
+pub async fn continue_reading<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    limit: i64,
+) -> DbResult<Vec<ContinueCard>> {
+    #[derive(FromRow)]
+    struct Row {
+        series_id: Uuid,
+        series_title: String,
+        cover_url: Option<String>,
+        last_read_number: f64,
+        next_number: Option<f64>,
+        unread: i64,
+    }
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT w.series_id, s.canonical_title AS series_title, s.cover_url, \
+                COALESCE(rp.last_read_number, 0)::float8 AS last_read_number, \
+                (SELECT min(c.number)::float8 \
+                   FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+                   WHERE ss.series_id = w.series_id \
+                     AND c.number > COALESCE(rp.last_read_number, 0)) AS next_number, \
+                (SELECT COALESCE(count(DISTINCT c.number),0) \
+                   FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+                   WHERE ss.series_id = w.series_id \
+                     AND c.number > COALESCE(rp.last_read_number, 0)) AS unread, \
+                (SELECT max(c.discovered_at) \
+                   FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+                   WHERE ss.series_id = w.series_id) AS last_activity \
+         FROM watchlist_entries w \
+         JOIN series s ON s.id = w.series_id \
+         LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
+         WHERE w.user_id = $1 AND w.status IN ('reading','planned','paused') \
+         ORDER BY last_activity DESC NULLS LAST \
+         LIMIT $2",
+    )
+    .bind(user_id.as_uuid())
+    .bind(limit)
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .filter(|r| r.unread > 0)
+        .map(|r| ContinueCard {
+            series_id: SeriesId::from_uuid(r.series_id),
+            series_title: r.series_title,
+            cover_url: r.cover_url,
+            last_read_number: r.last_read_number,
+            next_number: r.next_number,
+            unread: r.unread,
+        })
+        .collect())
+}
+
+/// Lifetime reading stats for the Home/Profile headline (frontend §9.3 `GET /v1/me/stats`).
+/// `chapters_read` is the sum of whole chapters below each series' last-read marker — an
+/// honest proxy over stored progress (there is no per-chapter read-event log, so a daily
+/// "streak" is intentionally omitted rather than fabricated).
+#[derive(Debug, Clone, Default, serde::Serialize, FromRow)]
+pub struct MeStats {
+    pub tracking: i64,
+    pub reading: i64,
+    pub completed: i64,
+    pub chapters_read: i64,
+    pub unread: i64,
+}
+
+/// Compute a user's lifetime tracking stats in a single round trip.
+pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<MeStats> {
+    let stats: MeStats = sqlx::query_as(
+        "SELECT \
+           (SELECT count(*) FROM watchlist_entries WHERE user_id = $1) AS tracking, \
+           (SELECT count(*) FROM watchlist_entries WHERE user_id = $1 AND status = 'reading') AS reading, \
+           (SELECT count(*) FROM watchlist_entries WHERE user_id = $1 AND status = 'completed') AS completed, \
+           (SELECT COALESCE(sum(floor(last_read_number)),0)::int8 FROM read_progress \
+              WHERE user_id = $1) AS chapters_read, \
+           (SELECT count(*) FROM ( \
+               SELECT DISTINCT w.series_id, c.number \
+               FROM watchlist_entries w \
+               JOIN series_sources ss ON ss.series_id = w.series_id \
+               JOIN chapters c ON c.series_source_id = ss.id \
+               LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
+               WHERE w.user_id = $1 AND c.number > COALESCE(rp.last_read_number, 0) \
+           ) q) AS unread",
+    )
+    .bind(user_id.as_uuid())
+    .fetch_one(exec)
+    .await?;
+    Ok(stats)
+}
+
+/// "Because you read" recommendations (frontend §9.3, *Stub*): series that share a tag with
+/// the user's watchlist and are not already tracked, most shared tags first. Returns an
+/// empty vec when the user has no tagged watchlist yet (the API falls back to recent series).
+pub async fn recommendations<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    limit: i64,
+) -> DbResult<Vec<SeriesListItem>> {
+    #[derive(FromRow)]
+    struct Row {
+        id: Uuid,
+        canonical_title: String,
+        normalized_title: String,
+        description: Option<String>,
+        cover_url: Option<String>,
+        content_type: String,
+        status: String,
+        release_year: Option<i32>,
+        created_at: OffsetDateTime,
+        updated_at: OffsetDateTime,
+        source_count: i64,
+    }
+    let rows: Vec<Row> = sqlx::query_as(
+        "WITH liked_tags AS ( \
+            SELECT DISTINCT stg.tag_id \
+            FROM series_tags stg \
+            JOIN watchlist_entries w ON w.series_id = stg.series_id \
+            WHERE w.user_id = $1 \
+         ) \
+         SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
+                s.content_type::text AS content_type, s.status::text AS status, s.release_year, \
+                s.created_at, s.updated_at, \
+                (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS source_count \
+         FROM series s \
+         WHERE EXISTS (SELECT 1 FROM series_tags stg \
+                        WHERE stg.series_id = s.id AND stg.tag_id IN (SELECT tag_id FROM liked_tags)) \
+           AND NOT EXISTS (SELECT 1 FROM watchlist_entries w \
+                            WHERE w.user_id = $1 AND w.series_id = s.id) \
+         ORDER BY (SELECT count(*) FROM series_tags stg \
+                    WHERE stg.series_id = s.id \
+                      AND stg.tag_id IN (SELECT tag_id FROM liked_tags)) DESC, \
+                  s.updated_at DESC \
+         LIMIT $2",
+    )
+    .bind(user_id.as_uuid())
+    .bind(limit)
+    .fetch_all(exec)
+    .await?;
+    rows.into_iter()
+        .map(|r| {
+            Ok(SeriesListItem {
+                series: Series {
+                    id: SeriesId::from_uuid(r.id),
+                    canonical_title: r.canonical_title,
+                    normalized_title: r.normalized_title,
+                    description: r.description,
+                    cover_url: r.cover_url,
+                    content_type: ContentType::from_str(&r.content_type)?,
+                    status: SeriesStatus::from_str(&r.status)?,
+                    release_year: r.release_year,
+                    created_at: r.created_at,
+                    updated_at: r.updated_at,
+                },
+                source_count: r.source_count,
+            })
+        })
+        .collect()
 }

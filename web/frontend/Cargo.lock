@@ -1627,22 +1627,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tankovault-frontend"
-version = "0.1.0"
-dependencies = [
- "base64",
- "dioxus",
- "futures-util",
- "gloo-net",
- "gloo-timers",
- "js-sys",
- "serde",
- "serde_json",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
 name = "keyboard-types"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2695,6 +2679,22 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "tankovault-frontend"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "dioxus",
+ "futures-util",
+ "gloo-net",
+ "gloo-timers",
+ "js-sys",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

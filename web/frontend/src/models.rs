@@ -345,6 +345,52 @@ pub struct AdminSyncMapping {
     pub updated_at: String,
 }
 
+/// One row of the admin Console's Sync "Assign queue" (`GET /v1/admin/sync/unmapped`): a
+/// series with no external mapping for the selected provider yet, awaiting a manual link.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct UnmappedSeries {
+    pub series_id: String,
+    pub series_title: String,
+    #[serde(default)]
+    pub source_count: i64,
+}
+
+/// One row of the admin Console's Sync "Match every loaded entry" queue
+/// (`GET /v1/admin/sync/unmatched`): a fetched remote entry the auto-matcher could not
+/// confidently link to a local series, awaiting a manual assignment.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct UnmatchedRemoteEntry {
+    pub user_id: String,
+    pub username: String,
+    pub provider: String,
+    pub external_id: String,
+    pub title: String,
+    pub status: String,
+    #[serde(default)]
+    pub progress: f64,
+    #[serde(default)]
+    pub content_type: String,
+    #[serde(default)]
+    pub start_year: Option<i32>,
+}
+
+/// A ranked suggestion for the admin "match every loaded entry" screen
+/// (`GET /v1/admin/sync/suggest`): a local series the matcher thinks a fetched remote entry
+/// could be, with a confidence `score` in `[0,1]` and enough info to eyeball and inspect it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct SuggestedMatch {
+    pub series_id: String,
+    pub title: String,
+    #[serde(default)]
+    pub content_type: String,
+    #[serde(default)]
+    pub release_year: Option<i32>,
+    #[serde(default)]
+    pub source_count: i64,
+    #[serde(default)]
+    pub score: f32,
+}
+
 /// One active login session (`GET /v1/me/sessions`, §9.4).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct SessionDto {

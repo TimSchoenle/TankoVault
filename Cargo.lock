@@ -3781,6 +3781,7 @@ dependencies = [
  "tankovault-db",
  "tankovault-domain",
  "tankovault-fetch",
+ "tankovault-matcher",
  "tankovault-observability",
  "tankovault-solver",
  "thiserror 2.0.19",

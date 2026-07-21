@@ -150,20 +150,102 @@ pub async fn list_series(query: Option<&str>, limit: i64) -> ApiResult<Vec<Serie
     get(&path, None).await
 }
 
+/// Filter/sort/paginate the browse list server-side (§9.1). The JSON body is a plain
+/// `SeriesSummary[]`; the match total and next page ride on the `X-Total-Count` /
+/// `X-Next-Cursor` response headers, which we surface as [`SeriesPage`].
+pub async fn list_series_filtered(filter: &SeriesFilter) -> ApiResult<SeriesPage> {
+    let mut qs: Vec<String> = Vec::new();
+    qs.push(format!("limit={}", filter.limit.clamp(1, 100)));
+    qs.push(format!("page={}", filter.page.max(0)));
+    if let Some(q) = filter.query.as_deref().filter(|q| !q.trim().is_empty()) {
+        qs.push(format!("query={}", urlencode(q)));
+    }
+    if let Some(ct) = filter.content_type {
+        qs.push(format!("content_type={}", ct.token()));
+    }
+    if let Some(st) = filter.status {
+        qs.push(format!("status={}", st.token()));
+    }
+    if let Some(p) = filter.provider.as_deref().filter(|p| !p.is_empty()) {
+        qs.push(format!("provider={}", urlencode(p)));
+    }
+    for t in &filter.tags {
+        qs.push(format!("tag={}", urlencode(t)));
+    }
+    for t in &filter.exclude_tags {
+        qs.push(format!("exclude_tag={}", urlencode(t)));
+    }
+    if let Some(y) = filter.year_min {
+        qs.push(format!("year_min={y}"));
+    }
+    if let Some(y) = filter.year_max {
+        qs.push(format!("year_max={y}"));
+    }
+    if let Some(c) = filter.min_chapters.filter(|c| *c > 0) {
+        qs.push(format!("min_chapters={c}"));
+    }
+    if let Some(s) = filter.sort.as_deref().filter(|s| !s.is_empty()) {
+        qs.push(format!("sort={s}"));
+    }
+    let path = format!("/v1/series?{}", qs.join("&"));
+
+    let resp = Request::get(&url(&path))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {e}"))?;
+    if !resp.ok() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(friendly_error(status, &body));
+    }
+    let headers = resp.headers();
+    let total = headers
+        .get("x-total-count")
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(0);
+    let next_cursor = headers
+        .get("x-next-cursor")
+        .and_then(|v| v.parse::<i64>().ok());
+    let items = resp
+        .json::<Vec<SeriesSummary>>()
+        .await
+        .map_err(|e| format!("Could not read the server response ({e})."))?;
+    let total = if total == 0 {
+        i64::try_from(items.len()).unwrap_or(0)
+    } else {
+        total
+    };
+    Ok(SeriesPage {
+        items,
+        total,
+        next_cursor,
+    })
+}
+
+/// Public provider list + per-provider series counts for the Discover filter (§9.3).
+pub async fn public_providers() -> ApiResult<Vec<PublicProvider>> {
+    get("/v1/providers", None).await
+}
+
 pub async fn series_detail(id: &str) -> ApiResult<SeriesDetail> {
     get(&format!("/v1/series/{id}"), None).await
 }
 
-pub async fn series_chapters(id: &str, source: Option<&str>) -> ApiResult<Vec<ChapterDto>> {
+/// Chapter list for a series' source. When `token` is supplied the per-chapter `read`
+/// flag is populated from the user's progress (§9.2); anonymous callers omit it.
+pub async fn series_chapters(
+    id: &str,
+    source: Option<&str>,
+    token: Option<&str>,
+) -> ApiResult<Vec<ChapterDto>> {
     let mut path = format!("/v1/series/{id}/chapters");
     if let Some(s) = source {
         path.push_str(&format!("?source={s}"));
     }
-    get(&path, None).await
+    get(&path, token).await
 }
 
-/// All genres/tags (public). Reserved for the Search screen's tag grouping (§17.2.6).
-#[allow(dead_code)]
+/// All genres/tags (public). Used by the Discover filter and Series tag chips.
 pub async fn tags() -> ApiResult<Vec<Tag>> {
     get("/v1/tags", None).await
 }
@@ -212,6 +294,54 @@ pub async fn feed(token: &str) -> ApiResult<Vec<FeedEntry>> {
     get("/v1/me/feed", Some(token)).await
 }
 
+/// Continue-reading cards for Home / the Series CTA (§9.3).
+pub async fn continue_reading(token: &str) -> ApiResult<Vec<ContinueItem>> {
+    get("/v1/me/continue", Some(token)).await
+}
+
+/// "Because you read" recommendations (§9.3).
+pub async fn recommendations(token: &str) -> ApiResult<Vec<SeriesSummary>> {
+    get("/v1/me/recommendations", Some(token)).await
+}
+
+/// Lifetime tracking stats for the Home / Profile headline (§9.3).
+pub async fn me_stats(token: &str) -> ApiResult<MeStats> {
+    get("/v1/me/stats", Some(token)).await
+}
+
+/// Update the caller's username and/or email (§9.4). A duplicate surfaces as `409`.
+pub async fn patch_profile(
+    token: &str,
+    username: Option<&str>,
+    email: Option<&str>,
+) -> ApiResult<ProfileDto> {
+    let body = serde_json::json!({ "username": username, "email": email });
+    send_json(Method::Patch, "/v1/me/profile", &body, Some(token)).await
+}
+
+/// The caller's active login sessions (§9.4).
+pub async fn sessions(token: &str) -> ApiResult<Vec<SessionDto>> {
+    get("/v1/me/sessions", Some(token)).await
+}
+
+/// Revoke one of the caller's own sessions (§9.4).
+pub async fn delete_session(token: &str, id: &str) -> ApiResult<()> {
+    delete_empty(&format!("/v1/me/sessions/{id}"), Some(token)).await
+}
+
+/// Read the caller's notification preferences JSON (§9.4).
+pub async fn notification_prefs(token: &str) -> ApiResult<serde_json::Value> {
+    get("/v1/me/notification-prefs", Some(token)).await
+}
+
+/// Replace the caller's notification preferences JSON (§9.4).
+pub async fn set_notification_prefs(
+    token: &str,
+    prefs: &serde_json::Value,
+) -> ApiResult<serde_json::Value> {
+    send_json(Method::Put, "/v1/me/notification-prefs", prefs, Some(token)).await
+}
+
 pub async fn notifications(token: &str) -> ApiResult<Vec<Notification>> {
     get("/v1/me/notifications", Some(token)).await
 }
@@ -238,6 +368,23 @@ pub async fn mark_read(token: &str, ids: &[String]) -> ApiResult<serde_json::Val
 
 pub async fn providers(token: &str) -> ApiResult<Vec<Provider>> {
     get("/v1/admin/providers", Some(token)).await
+}
+
+/// The operator Users directory: identity, role, and tracked-series count (§9.5).
+pub async fn admin_users(token: &str) -> ApiResult<Vec<UserRow>> {
+    get("/v1/admin/users", Some(token)).await
+}
+
+/// Operator "Re-solve" — queue a fast re-scan that re-attempts challenged sources (§9.5,
+/// audited server-side as `provider.resolve`).
+pub async fn resolve_provider(token: &str, id: &str) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        &format!("/v1/admin/providers/{id}/resolve"),
+        &serde_json::json!({}),
+        Some(token),
+    )
+    .await
 }
 
 /// Full provider edit (PATCH). Changing `base_url` performs the domain migration; `config`

@@ -67,6 +67,12 @@ impl Session {
         self.token.read().clone()
     }
 
+    /// The signed-in user's display name, decoded from the JWT (`username`/`name`/`sub`
+    /// claim, whichever is present). Purely cosmetic — the server is authoritative.
+    pub fn username(&self) -> Option<String> {
+        self.token.read().as_deref().and_then(username_from_jwt)
+    }
+
     /// Record a freshly-minted access token and decode its role claim.
     pub fn set_token(self, token: String) {
         let role = role_from_jwt(&token);
@@ -118,4 +124,17 @@ fn role_from_jwt(token: &str) -> Role {
         .and_then(|r| r.as_str())
         .map(Role::parse)
         .unwrap_or(Role::User)
+}
+
+/// Decode a human-facing display name from a JWT payload without verifying the signature.
+fn username_from_jwt(token: &str) -> Option<String> {
+    let payload_b64 = token.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload_b64)
+        .ok()?;
+    let value = serde_json::from_slice::<serde_json::Value>(&bytes).ok()?;
+    ["username", "name", "sub"]
+        .iter()
+        .find_map(|k| value.get(*k).and_then(|v| v.as_str()))
+        .map(str::to_owned)
 }

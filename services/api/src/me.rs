@@ -21,21 +21,34 @@ pub struct WatchlistItem {
     pub notify: bool,
     #[serde(with = "time::serde::rfc3339")]
     pub added_at: time::OffsetDateTime,
+    /// Embedded series title so the Watchlist board renders without a per-card detail
+    /// fetch (frontend §9.3, kills the N+1).
+    pub series_title: String,
+    pub cover_url: Option<String>,
+    /// The user's last-read chapter number, if any.
+    pub last_read_number: Option<f64>,
+    /// Unread chapters above the user's progress.
+    pub unread: i64,
 }
 
-/// `GET /v1/me/watchlist`
+/// `GET /v1/me/watchlist` — the user's watchlist with embedded title/cover/progress
+/// (frontend §9.3). Extra fields are additive; older clients ignore them.
 pub async fn watchlist(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> ApiResult<Json<Vec<WatchlistItem>>> {
-    let entries = tankovault_db::repo::tracking::watchlist_list(&state.pool, user.user_id).await?;
-    let out = entries
+    let cards = tankovault_db::repo::tracking::watchlist_detailed(&state.pool, user.user_id).await?;
+    let out = cards
         .into_iter()
-        .map(|e| WatchlistItem {
-            series_id: e.series_id,
-            status: e.status,
-            notify: e.notify,
-            added_at: e.added_at,
+        .map(|c| WatchlistItem {
+            series_id: c.series_id,
+            status: c.status,
+            notify: c.notify,
+            added_at: c.added_at,
+            series_title: c.series_title,
+            cover_url: c.cover_url,
+            last_read_number: c.last_read_number,
+            unread: c.unread,
         })
         .collect();
     Ok(Json(out))
@@ -164,6 +177,186 @@ pub async fn feed(
         })
         .collect::<ApiResult<Vec<_>>>()?;
     Ok(Json(out))
+}
+
+// ---------------------------------------------------------------------------
+// Reading dashboard (frontend §9.3)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+pub struct ContinueItem {
+    pub series_id: SeriesId,
+    pub series_title: String,
+    pub cover_url: Option<String>,
+    pub last_read_number: f64,
+    /// The lowest unread chapter number above the user's progress, if any.
+    pub next_number: Option<f64>,
+    pub unread: i64,
+}
+
+/// `GET /v1/me/continue` — continue-reading cards for Home / the Series CTA (frontend §9.3):
+/// tracked, in-progress series that have unread chapters, freshest activity first.
+pub async fn continue_reading(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<ContinueItem>>> {
+    let cards =
+        tankovault_db::repo::tracking::continue_reading(&state.pool, user.user_id, 24).await?;
+    let out = cards
+        .into_iter()
+        .map(|c| ContinueItem {
+            series_id: c.series_id,
+            series_title: c.series_title,
+            cover_url: c.cover_url,
+            last_read_number: c.last_read_number,
+            next_number: c.next_number,
+            unread: c.unread,
+        })
+        .collect();
+    Ok(Json(out))
+}
+
+/// `GET /v1/me/recommendations` — "Because you read" suggestions (frontend §9.3, *Stub*):
+/// unwatched series sharing tags with the user's list. Falls back to the most-recent catalog
+/// when the user has no tagged watchlist yet, so the shelf is never empty for signed-in users.
+pub async fn recommendations(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<crate::series::SeriesSummary>>> {
+    let mut items =
+        tankovault_db::repo::tracking::recommendations(&state.pool, user.user_id, 12).await?;
+    if items.is_empty() {
+        items = tankovault_db::repo::catalog::list_series(&state.pool, None, 12).await?;
+    }
+    let out = items
+        .into_iter()
+        .map(|it| crate::series::SeriesSummary {
+            id: it.series.id,
+            title: it.series.canonical_title,
+            cover_url: it.series.cover_url,
+            content_type: it.series.content_type,
+            status: it.series.status,
+            source_count: it.source_count,
+        })
+        .collect();
+    Ok(Json(out))
+}
+
+/// `GET /v1/me/stats` — lifetime tracking stats for the Home / Profile headline
+/// (frontend §9.3, *Stub*). See `tankovault_db::repo::tracking::MeStats` for the honest
+/// definition of `chapters_read` and why no "streak" is returned.
+pub async fn stats(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<tankovault_db::repo::tracking::MeStats>> {
+    Ok(Json(
+        tankovault_db::repo::tracking::me_stats(&state.pool, user.user_id).await?,
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// Account settings (frontend §9.4)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct ProfileUpdate {
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProfileDto {
+    pub id: uuid::Uuid,
+    pub email: String,
+    pub username: String,
+    pub role: String,
+}
+
+/// `PATCH /v1/me/profile` — update the caller's username and/or email (frontend §9.4).
+/// A duplicate email/username surfaces as `409 Conflict`.
+pub async fn patch_profile(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(body): Json<ProfileUpdate>,
+) -> ApiResult<Json<ProfileDto>> {
+    let username = body.username.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let email = body.email.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let updated =
+        tankovault_db::repo::users::update_profile(&state.pool, user.user_id, username, email)
+            .await?;
+    Ok(Json(ProfileDto {
+        id: updated.id.as_uuid(),
+        email: updated.email,
+        username: updated.username,
+        role: updated.role.as_str().to_owned(),
+    }))
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionDto {
+    pub id: String,
+    pub family_id: String,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    pub expires_at: OffsetDateTime,
+}
+
+/// `GET /v1/me/sessions` — the caller's active login sessions (frontend §9.4).
+pub async fn sessions(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<SessionDto>>> {
+    let list = tankovault_db::repo::users::list_sessions(&state.pool, user.user_id).await?;
+    let out = list
+        .into_iter()
+        .map(|s| SessionDto {
+            id: s.id.to_string(),
+            family_id: s.family_id.to_string(),
+            created_at: s.created_at,
+            expires_at: s.expires_at,
+        })
+        .collect();
+    Ok(Json(out))
+}
+
+/// `DELETE /v1/me/sessions/:id` — revoke one of the caller's own sessions (frontend §9.4).
+/// Scoped to ownership; a foreign/unknown id yields `404`.
+pub async fn delete_session(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let revoked =
+        tankovault_db::repo::users::revoke_session(&state.pool, user.user_id, id).await?;
+    if revoked == 0 {
+        return Err(ApiError::NotFound);
+    }
+    Ok(Json(serde_json::json!({ "revoked": revoked })))
+}
+
+/// `GET /v1/me/notification-prefs` — the caller's notification preferences JSON (frontend
+/// §9.4). `{}` means "product defaults".
+pub async fn notification_prefs(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<serde_json::Value>> {
+    Ok(Json(
+        tankovault_db::repo::users::get_notification_prefs(&state.pool, user.user_id).await?,
+    ))
+}
+
+/// `PUT /v1/me/notification-prefs` — replace the caller's notification preferences (frontend
+/// §9.4). The body is stored verbatim as an open JSON document.
+pub async fn put_notification_prefs(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(body): Json<serde_json::Value>,
+) -> ApiResult<Json<serde_json::Value>> {
+    tankovault_db::repo::users::set_notification_prefs(&state.pool, user.user_id, &body).await?;
+    Ok(Json(body))
 }
 
 #[derive(Debug, Deserialize)]

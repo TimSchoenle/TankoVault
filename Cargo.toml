@@ -67,7 +67,7 @@ tokio-stream = "0.1"
 async-trait = "0.1"
 futures = "0.3"
 axum = { version = "0.8", features = ["macros", "json", "query"] }
-axum-extra = { version = "0.12", features = ["cookie", "typed-header"] }
+axum-extra = { version = "0.12", features = ["cookie", "typed-header", "query"] }
 tower = { version = "0.5", features = ["util", "timeout", "limit"] }
 tower-http = { version = "0.7", features = ["trace", "cors", "compression-full", "timeout", "request-id", "set-header"] }
 hyper = "1.5"

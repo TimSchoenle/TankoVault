@@ -38,6 +38,11 @@ pub(crate) struct AniListEntry {
     pub(crate) updated_at: OffsetDateTime,
     pub(crate) start_year: Option<i32>,
     pub(crate) content_type: ContentType,
+    /// Genres, used as an extra local-matching signal alongside title (design: make
+    /// AniList matching use the metadata adapters now capture).
+    pub(crate) tags: Vec<String>,
+    /// Staff names (story/art credits), matched against locally-scraped authors.
+    pub(crate) authors: Vec<String>,
 }
 
 impl From<AniListEntry> for RemoteEntry {
@@ -50,6 +55,8 @@ impl From<AniListEntry> for RemoteEntry {
             updated_at: e.updated_at,
             start_year: e.start_year,
             content_type: e.content_type,
+            tags: e.tags,
+            authors: e.authors,
         }
     }
 }
@@ -203,7 +210,9 @@ impl AniListClient {
                 lists { entries { \
                   status progress updatedAt \
                   media { id countryOfOrigin startDate { year } \
-                          title { romaji english native } } \
+                          title { romaji english native } \
+                          genres \
+                          staff(sort: RELEVANCE, perPage: 5) { edges { node { name { full } } } } } \
                 } } \
               } \
             }";
@@ -473,6 +482,31 @@ fn parse_entry(entry: &serde_json::Value) -> Option<AniListEntry> {
             .and_then(serde_json::Value::as_str),
     );
 
+    let tags = media
+        .get("genres")
+        .and_then(serde_json::Value::as_array)
+        .map(|genres| {
+            genres
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let authors = media
+        .get("staff")
+        .and_then(|s| s.get("edges"))
+        .and_then(serde_json::Value::as_array)
+        .map(|edges| {
+            edges
+                .iter()
+                .filter_map(|e| e.get("node")?.get("name")?.get("full")?.as_str())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+
     Some(AniListEntry {
         media_id,
         titles,
@@ -481,6 +515,8 @@ fn parse_entry(entry: &serde_json::Value) -> Option<AniListEntry> {
         updated_at,
         start_year,
         content_type,
+        tags,
+        authors,
     })
 }
 
@@ -548,7 +584,12 @@ mod tests {
                             "id": 105_778, "countryOfOrigin": "KR",
                             "startDate": { "year": 2018 },
                             "title": { "romaji": "Na Honjaman Level Up",
-                                       "english": "Solo Leveling", "native": null }
+                                       "english": "Solo Leveling", "native": null },
+                            "genres": ["Action", "Fantasy"],
+                            "staff": { "edges": [
+                                { "node": { "name": { "full": "Chugong" } } },
+                                { "node": { "name": { "full": "Redice Studio" } } }
+                            ] }
                         }
                     },
                     {
@@ -573,11 +614,16 @@ mod tests {
         assert_eq!(solo.start_year, Some(2018));
         assert_eq!(solo.content_type, ContentType::Manhwa);
         assert_eq!(solo.titles, vec!["Na Honjaman Level Up", "Solo Leveling"]);
+        assert_eq!(solo.tags, vec!["Action", "Fantasy"]);
+        assert_eq!(solo.authors, vec!["Chugong", "Redice Studio"]);
 
         let berserk = &entries[1];
         assert_eq!(berserk.content_type, ContentType::Manga);
         assert_eq!(berserk.start_year, None);
         assert_eq!(berserk.titles, vec!["Berserk", "ベルセルク"]);
+        // No genres/staff in the fixture: both default to empty, not a parse failure.
+        assert!(berserk.tags.is_empty());
+        assert!(berserk.authors.is_empty());
     }
 
     #[test]

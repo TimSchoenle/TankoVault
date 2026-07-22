@@ -858,6 +858,10 @@ pub async fn list_suggestions(
         normalized_title: normalized,
         content_type,
         release_year: q.start_year,
+        // No tag/author signal from this query shape yet — an operator is eyeballing the
+        // ranked list anyway, so this stays title/type/year-only for now.
+        tags: Vec::new(),
+        authors: Vec::new(),
     };
     let mut out: Vec<SuggestedMatch> = rows
         .into_iter()
@@ -870,6 +874,8 @@ pub async fn list_suggestions(
                 similarity: r.similarity,
                 content_type: ct,
                 release_year: r.release_year,
+                tags: Vec::new(),
+                authors: Vec::new(),
             };
             let score = tankovault_matcher::score(&query, &candidate);
             SuggestedMatch {

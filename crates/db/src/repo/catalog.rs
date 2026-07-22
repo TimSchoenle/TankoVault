@@ -95,13 +95,20 @@ pub async fn resolve_canonical_series(
             similarity: c.similarity,
             content_type: c.content_type,
             release_year: c.release_year,
+            tags: c.tags,
+            authors: c.authors,
         })
         .collect::<Vec<_>>();
 
+    // No tag/author signal on the query side here: a scanned source's own tags/authors
+    // aren't threaded into `SeriesUpsert` (they're written separately in `ingest_series`).
+    // The bonus simply never fires — unchanged behaviour from before this field existed.
     let query = tankovault_matcher::Query {
         normalized_title: meta.normalized_title.clone(),
         content_type: meta.content_type,
         release_year: meta.release_year,
+        tags: Vec::new(),
+        authors: Vec::new(),
     };
 
     match tankovault_matcher::decide(&query, &candidates, tankovault_matcher::Thresholds::default()) {
@@ -202,6 +209,88 @@ pub async fn add_series_titles(
         .bind(series_id.as_uuid())
         .bind(title)
         .bind(normalized)
+        .execute(&mut *conn)
+        .await?;
+    }
+    Ok(())
+}
+
+/// A URL-safe, lowercase identity key for a display name (tag or author). Deliberately
+/// distinct from [`normalize_title`] — that function drops "noise" words like "scan" or
+/// "comic" which would wrongly mangle a genre or a person's name.
+fn slugify(name: &str) -> String {
+    let mut slug = String::with_capacity(name.len());
+    let mut last_was_dash = true; // suppresses a leading dash
+    for c in name.to_lowercase().chars() {
+        if c.is_alphanumeric() {
+            slug.push(c);
+            last_was_dash = false;
+        } else if !last_was_dash {
+            slug.push('-');
+            last_was_dash = true;
+        }
+    }
+    slug.trim_end_matches('-').to_owned()
+}
+
+/// Add genre/tag names to a series (idempotent, additive-only — never removes a tag a
+/// different source contributed). Empty/unslugifiable names are skipped.
+pub async fn add_series_tags(
+    conn: &mut sqlx::PgConnection,
+    series_id: SeriesId,
+    tags: &[String],
+) -> DbResult<()> {
+    for name in tags {
+        let slug = slugify(name);
+        if slug.is_empty() {
+            continue;
+        }
+        let tag_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO tags (slug, name) VALUES ($1,$2) \
+             ON CONFLICT (slug) DO UPDATE SET name = tags.name RETURNING id",
+        )
+        .bind(&slug)
+        .bind(name)
+        .fetch_one(&mut *conn)
+        .await?;
+        sqlx::query(
+            "INSERT INTO series_tags (series_id, tag_id) VALUES ($1,$2) \
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(series_id.as_uuid())
+        .bind(tag_id)
+        .execute(&mut *conn)
+        .await?;
+    }
+    Ok(())
+}
+
+/// Add author/artist credits to a series (idempotent, additive-only — mirrors
+/// [`add_series_tags`]).
+pub async fn add_series_authors(
+    conn: &mut sqlx::PgConnection,
+    series_id: SeriesId,
+    authors: &[String],
+) -> DbResult<()> {
+    for name in authors {
+        let slug = slugify(name);
+        if slug.is_empty() {
+            continue;
+        }
+        let author_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO authors (slug, name) VALUES ($1,$2) \
+             ON CONFLICT (slug) DO UPDATE SET name = authors.name RETURNING id",
+        )
+        .bind(&slug)
+        .bind(name)
+        .fetch_one(&mut *conn)
+        .await?;
+        sqlx::query(
+            "INSERT INTO series_authors (series_id, author_id) VALUES ($1,$2) \
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(series_id.as_uuid())
+        .bind(author_id)
         .execute(&mut *conn)
         .await?;
     }
@@ -735,6 +824,34 @@ pub async fn list_series_titles<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(|r| r.0).collect())
 }
 
+/// Author/artist credits attached to a series, alphabetically (mirrors [`list_series_tags`]).
+pub async fn list_series_authors<'e, E: PgExecutor<'e>>(
+    exec: E,
+    series_id: SeriesId,
+) -> DbResult<Vec<tankovault_domain::Author>> {
+    #[derive(FromRow)]
+    struct Row {
+        id: Uuid,
+        slug: String,
+        name: String,
+    }
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT a.id, a.slug, a.name FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
+         WHERE sa.series_id = $1 ORDER BY a.name",
+    )
+    .bind(series_id.as_uuid())
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| tankovault_domain::Author {
+            id: tankovault_domain::AuthorId::from_uuid(r.id),
+            slug: r.slug,
+            name: r.name,
+        })
+        .collect())
+}
+
 /// Tags attached to a series, alphabetically (design §9.2 enrichment).
 pub async fn list_series_tags<'e, E: PgExecutor<'e>>(
     exec: E,
@@ -814,6 +931,8 @@ pub struct ScannedSeries {
     pub provider_title: Option<String>,
     pub meta: SeriesUpsert,
     pub alt_titles: Vec<(String, String)>,
+    pub tags: Vec<String>,
+    pub authors: Vec<String>,
     pub chapters: Vec<ChapterUpsert>,
     pub content_hash: Vec<u8>,
 }
@@ -837,6 +956,12 @@ pub async fn ingest_series(pool: &sqlx::PgPool, scanned: ScannedSeries) -> DbRes
     update_series_meta(&mut *tx, series_id, &scanned.meta).await?;
     if !scanned.alt_titles.is_empty() {
         add_series_titles(&mut tx, series_id, &scanned.alt_titles).await?;
+    }
+    if !scanned.tags.is_empty() {
+        add_series_tags(&mut tx, series_id, &scanned.tags).await?;
+    }
+    if !scanned.authors.is_empty() {
+        add_series_authors(&mut tx, series_id, &scanned.authors).await?;
     }
 
     let source_id = upsert_source(

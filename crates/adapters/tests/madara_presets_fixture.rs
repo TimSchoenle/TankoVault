@@ -138,6 +138,8 @@ async fn kunmanga_series_metadata_from_html() {
     assert_eq!(meta.title, "It's Just Business");
     assert_eq!(meta.status, SeriesStatus::Completed);
     assert!(meta.tags.iter().any(|t| t == "Romance"));
+    // The `release` override reads the year from the manga-release archive link.
+    assert_eq!(meta.release_year, Some(2025));
     // kunmanga serves the real cover URL directly on src.
     assert_eq!(
         meta.cover_url.as_deref(),

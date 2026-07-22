@@ -30,7 +30,9 @@ pub fn madara_default_config() -> Value {
             "cover": "div.summary_image img@src",
             "tags": "div.genres-content a",
             "status": "div.post-status .summary-content",
-            "alt": "div.summary-heading"
+            "alt": "div.summary-heading",
+            "author": "div.author-content a",
+            "artist": "div.artist-content a"
         },
         "chapters": {
             "container": "li.wp-manga-chapter",

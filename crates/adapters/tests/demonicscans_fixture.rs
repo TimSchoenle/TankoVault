@@ -86,6 +86,8 @@ async fn parses_series_metadata() {
     assert_eq!(meta.status, SeriesStatus::Ongoing);
     assert!(meta.tags.iter().any(|t| t == "Seinen"));
     assert!(meta.tags.iter().any(|t| t == "Action"));
+    // Author cell reuses the same "," split as Alternatives.
+    assert_eq!(meta.authors, vec!["Nemeton".to_owned(), "Mangamuse".to_owned()]);
     // Description keeps only the synopsis after the "The Summary is" boilerplate marker.
     let desc = meta.description.expect("description present");
     assert!(desc.starts_with("Yuto Kanzaki"));

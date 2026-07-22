@@ -224,6 +224,9 @@ pub struct SeriesDetail {
     /// Genre/tags attached to the series (§9.2; empty when none).
     #[serde(default)]
     pub tags: Vec<Tag>,
+    /// Author/artist credits attached to the series; empty when none.
+    #[serde(default)]
+    pub authors: Vec<Author>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -240,6 +243,14 @@ pub struct ChapterDto {
 /// Genre/tag (Discover filter + Series tag chips — see `api::tags`).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Tag {
+    pub id: String,
+    pub slug: String,
+    pub name: String,
+}
+
+/// Author/artist credit (Series hero byline).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Author {
     pub id: String,
     pub slug: String,
     pub name: String,

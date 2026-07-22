@@ -76,6 +76,11 @@ pub fn builtin() -> Vec<ProviderPreset> {
                     // "Next" control marks additional pages.
                     "item": "div.page-item-detail:not(.custom-item-ad)",
                     "next": "a[aria-label=\"Next\"]"
+                },
+                "series": {
+                    // The only reliable release-year signal found on this site: a single
+                    // link per series page into the year archive.
+                    "release": "a[href*=\"manga-release\"]"
                 }
             }),
         },

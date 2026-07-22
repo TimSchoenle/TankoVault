@@ -7,8 +7,8 @@ use crate::enums::{
     WatchStatus,
 };
 use crate::ids::{
-    ChapterId, NotificationId, ProviderId, ScanRunId, ScanTaskId, SeriesId, SeriesSourceId, TagId,
-    UserId,
+    AuthorId, ChapterId, NotificationId, ProviderId, ScanRunId, ScanTaskId, SeriesId,
+    SeriesSourceId, TagId, UserId,
 };
 use crate::politeness::Politeness;
 use serde::{Deserialize, Serialize};
@@ -61,6 +61,14 @@ pub struct SeriesTitle {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tag {
     pub id: TagId,
+    pub slug: String,
+    pub name: String,
+}
+
+/// An author/artist credit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Author {
+    pub id: AuthorId,
     pub slug: String,
     pub name: String,
 }

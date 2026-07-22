@@ -96,6 +96,19 @@ pub fn parse_number(text: &str) -> Option<f64> {
     num.trim_end_matches('.').parse::<f64>().ok()
 }
 
+/// Parse a bare release year (e.g. `"2025"`) from extracted text, discarding anything
+/// outside a representable `i32` range rather than silently wrapping.
+#[must_use]
+#[allow(clippy::cast_possible_truncation)]
+pub fn parse_year(text: &str) -> Option<i32> {
+    let y = parse_number(text)?;
+    if y.is_finite() && y >= f64::from(i32::MIN) && y <= f64::from(i32::MAX) {
+        Some(y as i32)
+    } else {
+        None
+    }
+}
+
 /// Parse a chapter number from listing text, preferring the number after a
 /// chapter/episode marker so `"Volume 2 Chapter 10.5"` yields `10.5`, not `2`.
 #[must_use]

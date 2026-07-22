@@ -86,6 +86,10 @@ id_type!(
     TagId
 );
 id_type!(
+    /// Identifies an author/artist credit.
+    AuthorId
+);
+id_type!(
     /// Identifies a scan run.
     ScanRunId
 );

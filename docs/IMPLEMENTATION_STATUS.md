@@ -4,7 +4,36 @@ This file tracks the build state of the system described in [`design.md`](./desi
 Update it at the end of every coding session: mark what landed, and leave a precise
 "pick up next" list so the next session starts without re-deriving context.
 
-**Last updated:** 2026-07-21 (Session 14)
+**Last updated:** 2026-07-22 (Session 15 — design only, no code)
+
+> Session 15: **no code shipped** — a design pass on the two weakest areas of user tracking.
+> New `docs/READING_PROGRESS_AND_SYNC.md` (RFC, proposed/not implemented) fully redesigns:
+> **(A) local read tracking** — deliberately stays **scalar** (no per-chapter ledger table):
+> splits the `read_progress` high-water-mark into two independent scalar frontiers,
+> `last_read_whole_number` (renamed from `last_read_number`) and a new nullable
+> `last_read_part_number`, fixing a real bug where marking a sub-chapter part (e.g. `152.3`)
+> read would silently mark the later whole chapter `152` as read too once scanned in; a
+> part-number write can now only ever advance the part scalar, never the whole one.
+> `last_read_whole_number` is directly the external-service-shaped progress integer — no
+> derivation needed. Also adds a per-series `sync_excluded` opt-out flag (+ optional
+> per-provider override) so a title can be tracked locally without ever touching AniList.
+> Explicitly accepts the same monotonic-frontier trade-off the as-built system already has
+> (no arbitrary non-contiguous per-chapter marking) — this redesign fixes the whole/part
+> conflation bug, it does not add ledger-style granularity. **(B) external sync** — moves
+> `conflict_policy` from a process env var to a persisted per-`external_accounts`-row setting
+> with a new `auto_sync_enabled` toggle; replaces the current two-way `reconcile_progress`
+> (current-vs-current + timestamp) with a three-way merge against a `last_synced_*` snapshot
+> on `sync_mappings` (distinguishes "only local changed" / "only remote changed" / "both,
+> agree" / "both, disagree"); adds a fourth `ask_me` policy backed by a new `sync_conflicts`
+> review queue, a user-facing `sync_history` log, and a new *scheduled* reconciliation loop
+> (the `sync` service, control-plane-cron-shaped) alongside the existing reactive
+> push-on-write — closing the gap where a change made directly on AniList's site never flowed
+> back automatically. Added superseding pointers in `design.md` §6/§15 (as-built stays
+> documented as such; the new doc's rollout plan is additive/phased, non-breaking). Pick up
+> next: implement Part A first (a single column-rename-plus-add migration + the two-scalar
+> repo rewrite + API + frontend per-chapter toggle — no backfill needed), then Part B
+> (three-way merge + scheduler + settings/conflict UI) — see the doc's §2 rollout plan for the
+> exact ordered steps.
 
 > Session 14 landed: the external-sync feature was **massively improved** end to end — a
 > generalized multi-provider architecture, an immediate per-chapter push to AniList, and full
@@ -405,6 +434,14 @@ PG16.
 
 ## 6. Pick up next (ordered)
 
+0. **Implement `docs/READING_PROGRESS_AND_SYNC.md` (Session 15 design, not yet coded).**
+   Highest-priority pickup: Part A (split `read_progress.last_read_number` into scalar
+   `last_read_whole_number`/`last_read_part_number` — no ledger table, just a rename + one
+   added column — fixes the part-vs-whole-chapter read bug) should land before Part B
+   (persisted per-account `auto_sync_enabled`/`conflict_policy`, three-way merge, scheduled
+   reconciliation, `sync_excluded`) since Part B's progress push reads Part A's
+   `last_read_whole_number` directly. Follow the doc's own §2 rollout plan (schema → Part A
+   backend → Part B backend → frontend → cleanup).
 1. **`web/frontend/` — TankoVault redesign is DONE (frontend F0–F5).** The full mockup
    (`docs/frontend/DESIGN_SPEC.md`) is implemented and shipping: all 9 screens, the Tailwind
    CLI build, tokens/icons/self-hosted fonts, kanban drag-between-columns, the Account shell +

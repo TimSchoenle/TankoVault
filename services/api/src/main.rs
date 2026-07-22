@@ -134,7 +134,23 @@ fn build_router(state: AppState) -> Router {
             "/v1/me/watchlist/{series_id}",
             put(me::put_watchlist).delete(me::delete_watchlist),
         )
-        .route("/v1/me/progress/{series_id}", put(me::put_progress))
+        .route(
+            "/v1/me/progress/{series_id}",
+            get(me::get_progress).put(me::put_progress),
+        )
+        .route(
+            "/v1/me/progress/{series_id}/chapters/{number}",
+            put(me::put_chapter_progress),
+        )
+        .route(
+            "/v1/me/progress/{series_id}/mark-read-to",
+            post(me::mark_read_to),
+        )
+        .route("/v1/me/watchlist/{series_id}/sync", put(me::put_sync_excluded))
+        .route(
+            "/v1/me/watchlist/{series_id}/sync/{provider}",
+            put(me::put_sync_override),
+        )
         .route("/v1/me/feed", get(me::feed))
         // reading dashboard + recommendations + stats (§9.3)
         .route("/v1/me/continue", get(me::continue_reading))
@@ -167,6 +183,17 @@ fn build_router(state: AppState) -> Router {
         .route("/v1/me/sync/{provider}/callback", get(me::sync_callback))
         .route("/v1/me/sync/{provider}/push", post(me::sync_push))
         .route("/v1/me/sync/{provider}/pull", post(me::sync_pull))
+        // me — automatic-sync policy, conflicts and history (design v2 §B.6)
+        .route(
+            "/v1/me/sync/{provider}/settings",
+            get(me::sync_settings).patch(me::sync_settings_patch),
+        )
+        .route("/v1/me/sync/conflicts", get(me::sync_conflicts))
+        .route(
+            "/v1/me/sync/conflicts/{id}/resolve",
+            post(me::sync_resolve_conflict),
+        )
+        .route("/v1/me/sync/history", get(me::sync_history))
         // admin — sync visibility + operator actions (design: admin Sync console tab)
         .route("/v1/admin/sync/accounts", get(admin::list_sync_accounts))
         .route(

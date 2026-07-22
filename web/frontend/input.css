@@ -286,6 +286,11 @@ a { color: inherit; text-decoration: none; }
 
 .ik-btn:focus-visible, .ik-nav-link:focus-visible, .ik-chip:focus-visible, .ik-tagchip:focus-visible, .ik-tab:focus-visible, .ik-bell:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
 
+/* Inline link that stays the surrounding row's text color at rest, e.g. a label that
+ * doubles as a "jump to external entry" link — only the hover state signals interactivity. */
+.ik-icon-link { display: inline-flex; color: inherit; transition: color 120ms ease; }
+.ik-icon-link:hover { color: var(--acc); }
+
 /* Tabs (notifications / console / settings). */
 .ik-tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
 .ik-tab { font: inherit; font-size: 13px; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 8px 8px 0 0; padding: 8px 14px; cursor: pointer; }

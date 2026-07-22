@@ -154,6 +154,9 @@ pub struct SeriesDetail {
     pub tags: Vec<tankovault_domain::Tag>,
     /// Author/artist credits attached to the series; empty when none.
     pub authors: Vec<tankovault_domain::Author>,
+    /// AniList media id, if this series is mapped (`sync_mappings`); lets the frontend
+    /// link out to the canonical AniList entry regardless of whether the viewer has synced.
+    pub anilist_id: Option<String>,
 }
 
 pub async fn detail(
@@ -176,7 +179,7 @@ pub async fn detail(
         let url =
             resolve_link(&provider.base_url, &src.source_path).map_err(|_| ApiError::Internal)?;
         // Reader-facing count: whole chapters only (§ chapter grouping) — part releases
-        // don't inflate what the "Read on" card / hero stat report.
+        // don't inflate what the \"Read on\" card / hero stat report.
         let chapter_count =
             tankovault_db::repo::catalog::count_full_chapters(&state.pool, src.id).await?;
         source_dtos.push(SourceDto {
@@ -192,6 +195,9 @@ pub async fn detail(
     let alt_titles = tankovault_db::repo::catalog::list_series_titles(&state.pool, id).await?;
     let tags = tankovault_db::repo::catalog::list_series_tags(&state.pool, id).await?;
     let authors = tankovault_db::repo::catalog::list_series_authors(&state.pool, id).await?;
+    let anilist_id =
+        tankovault_db::repo::sync::mapping_external_for_series(&state.pool, id, "anilist")
+            .await?;
 
     Ok(Json(SeriesDetail {
         id: series.id,
@@ -205,6 +211,7 @@ pub async fn detail(
         alt_titles,
         tags,
         authors,
+        anilist_id,
     }))
 }
 
@@ -249,8 +256,12 @@ pub async fn chapters(
         tankovault_db::repo::catalog::source_provider_base_url(&state.pool, source_id).await?;
     let chapters = tankovault_db::repo::catalog::list_chapters(&state.pool, source_id).await?;
 
-    // Read-state is opt-in: only when a valid token identifies the user.
-    let progress = match optional_user(&state, &headers) {
+    // Read-state is opt-in: only when a valid token identifies the user. An authenticated
+    // user with no progress row yet still gets `Some(false)` per chapter (they simply
+    // haven't read anything), so the frontend shows the mark-read control; only anonymous
+    // callers get `None`. This is independent of any external (AniList) link.
+    let user = optional_user(&state, &headers);
+    let progress = match user {
         Some(user_id) => {
             tankovault_db::repo::tracking::progress_get(&state.pool, user_id, id).await?
         }
@@ -265,7 +276,9 @@ pub async fn chapters(
                 title: c.title,
                 url: resolve_link(&base_url, &c.path).map_err(|_| ApiError::Internal)?,
                 published_at: c.published_at,
-                read: progress.map(|last| c.number <= last),
+                read: user
+                    .is_some()
+                    .then(|| progress.is_some_and(|last| c.number <= last)),
             })
         })
         .collect::<ApiResult<Vec<_>>>()?;

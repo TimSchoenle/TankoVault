@@ -1,8 +1,18 @@
 # Reading Progress & External Sync — Design v2
 
-**Status:** proposed (not yet implemented). Supersedes `design.md` §6 (the `read_progress` /
-`sync_mappings` / `external_accounts` tables) and §15 (external sync service) for the areas
-covered here. Everything else in `design.md` stands.
+**Status:** implemented end-to-end (backend, API, and frontend UI). Supersedes `design.md` §6
+(the `read_progress` / `sync_mappings` / `external_accounts` tables) and §15 (external sync
+service) for the areas covered here. Everything else in `design.md` stands.
+
+> **Implementation note.** Delivered in migration `0014_progress_sync_v2.sql` plus the
+> `tankovault-db` repo (`tracking.rs`, `sync.rs`), the `sync` service (three-way merge in
+> `mapping.rs`, engine reconciliation + scheduled loop in `engine.rs`, endpoints in
+> `main.rs`), and the API (`services/api/src/me.rs` + routes). The Dioxus frontend is fully
+> wired (§B.8): the account Sync panel exposes the automatic-sync toggle, the plain-language
+> conflict-policy picker, a pending-conflicts badge, a conflict-resolution inbox, and a
+> recent-sync-activity log (`views/account.rs`); the series page has a per-title sync opt-out
+> and per-chapter mark read/unread via the two-scalar endpoint (`views/series.rs`); and the
+> admin console surfaces the read-only per-account policy columns (§B.7, `views/console.rs`).
 
 **Why this doc exists.** The current tracking model (`read_progress(user_id, series_id,
 last_read_number)`) uses one undifferentiated scalar for both whole chapters and sub-chapter

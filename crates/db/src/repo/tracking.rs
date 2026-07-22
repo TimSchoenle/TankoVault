@@ -28,7 +28,7 @@ pub async fn watchlist_upsert<'e, E: PgExecutor<'e>>(
         "INSERT INTO watchlist_entries (user_id, series_id, status, notify) \
          VALUES ($1,$2,$3::watch_status,$4) \
          ON CONFLICT (user_id, series_id) DO UPDATE \
-            SET status = EXCLUDED.status, notify = EXCLUDED.notify",
+            SET status = EXCLUDED.status, notify = EXCLUDED.notify, updated_at = now()",
     )
     .bind(user_id.as_uuid())
     .bind(series_id.as_uuid())
@@ -90,35 +90,86 @@ pub async fn watchlist_list<'e, E: PgExecutor<'e>>(
 // Read progress
 // ---------------------------------------------------------------------------
 
-/// Set a user's last-read chapter number for a series.
+/// A user's two independent read frontiers for a series (design v2 §A.1): the highest whole
+/// chapter read, plus an optional part-release frontier ahead of it.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ReadProgress {
+    /// Highest WHOLE chapter number read (integer-valued).
+    pub last_read_whole_number: f64,
+    /// Highest PART release read ahead of the whole frontier, if any (always fractional).
+    pub last_read_part_number: Option<f64>,
+}
+
+/// Whether `number` denotes a whole chapter (integer-valued) rather than a part release.
+#[must_use]
+fn is_whole(number: f64) -> bool {
+    number == number.floor()
+}
+
+/// Set a user's whole-chapter frontier for a series outright, clearing any now-stale part
+/// frontier (design v2 §A.3 / §B.5). Used by the renamed `PUT /v1/me/progress/:series_id`
+/// endpoint (which keeps its "set progress to N" semantics) and by external-sync pulls that
+/// adopt a remote integer progress.
 pub async fn progress_set<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
     series_id: SeriesId,
-    last_read_number: f64,
+    last_read_whole_number: f64,
 ) -> DbResult<()> {
     sqlx::query(
-        "INSERT INTO read_progress (user_id, series_id, last_read_number) \
+        "INSERT INTO read_progress (user_id, series_id, last_read_whole_number) \
          VALUES ($1,$2,$3::numeric(10,4)) \
          ON CONFLICT (user_id, series_id) DO UPDATE \
-            SET last_read_number = EXCLUDED.last_read_number, updated_at = now()",
+            SET last_read_whole_number = EXCLUDED.last_read_whole_number, \
+                last_read_part_number = CASE \
+                    WHEN read_progress.last_read_part_number IS NOT NULL \
+                     AND floor(read_progress.last_read_part_number) <= EXCLUDED.last_read_whole_number \
+                    THEN NULL ELSE read_progress.last_read_part_number END, \
+                updated_at = now()",
     )
     .bind(user_id.as_uuid())
     .bind(series_id.as_uuid())
-    .bind(last_read_number)
+    .bind(last_read_whole_number)
     .execute(exec)
     .await?;
     Ok(())
 }
 
-/// Get a user's last-read number for a series, if tracked.
+/// Low-level write of both frontiers at once. Callers are responsible for upholding the
+/// §A.1 invariant (`last_read_part_number IS NULL OR floor(part) >= whole`).
+async fn progress_write<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    series_id: SeriesId,
+    whole: f64,
+    part: Option<f64>,
+) -> DbResult<()> {
+    sqlx::query(
+        "INSERT INTO read_progress (user_id, series_id, last_read_whole_number, last_read_part_number) \
+         VALUES ($1,$2,$3::numeric(10,4),$4::numeric(10,4)) \
+         ON CONFLICT (user_id, series_id) DO UPDATE \
+            SET last_read_whole_number = EXCLUDED.last_read_whole_number, \
+                last_read_part_number  = EXCLUDED.last_read_part_number, \
+                updated_at = now()",
+    )
+    .bind(user_id.as_uuid())
+    .bind(series_id.as_uuid())
+    .bind(whole)
+    .bind(part)
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+/// Get a user's whole-chapter frontier for a series, if tracked.
 pub async fn progress_get<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
     series_id: SeriesId,
 ) -> DbResult<Option<f64>> {
     let n: Option<f64> = sqlx::query_scalar(
-        "SELECT last_read_number::float8 FROM read_progress WHERE user_id = $1 AND series_id = $2",
+        "SELECT last_read_whole_number::float8 FROM read_progress \
+         WHERE user_id = $1 AND series_id = $2",
     )
     .bind(user_id.as_uuid())
     .bind(series_id.as_uuid())
@@ -127,8 +178,35 @@ pub async fn progress_get<'e, E: PgExecutor<'e>>(
     Ok(n)
 }
 
-/// Get a user's last-read number together with when it last changed, if tracked. Used by
-/// external sync to reconcile progress under a `NewestWins` conflict policy (design §15).
+/// Get both of a user's read frontiers for a series, if tracked (design v2 §A.6
+/// `GET /v1/me/progress/:series_id`).
+pub async fn progress_get_full<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    series_id: SeriesId,
+) -> DbResult<Option<ReadProgress>> {
+    #[derive(FromRow)]
+    struct Row {
+        whole: f64,
+        part: Option<f64>,
+    }
+    let row: Option<Row> = sqlx::query_as(
+        "SELECT last_read_whole_number::float8 AS whole, \
+                last_read_part_number::float8 AS part \
+         FROM read_progress WHERE user_id = $1 AND series_id = $2",
+    )
+    .bind(user_id.as_uuid())
+    .bind(series_id.as_uuid())
+    .fetch_optional(exec)
+    .await?;
+    Ok(row.map(|r| ReadProgress {
+        last_read_whole_number: r.whole,
+        last_read_part_number: r.part,
+    }))
+}
+
+/// Get a user's whole-chapter frontier together with when it last changed, if tracked. Used
+/// by external sync to reconcile progress under a `NewestWins` conflict policy (design §B.3).
 pub async fn progress_state<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -140,7 +218,7 @@ pub async fn progress_state<'e, E: PgExecutor<'e>>(
         updated_at: OffsetDateTime,
     }
     let row: Option<Row> = sqlx::query_as(
-        "SELECT last_read_number::float8 AS last, updated_at FROM read_progress \
+        "SELECT last_read_whole_number::float8 AS last, updated_at FROM read_progress \
          WHERE user_id = $1 AND series_id = $2",
     )
     .bind(user_id.as_uuid())
@@ -148,6 +226,84 @@ pub async fn progress_state<'e, E: PgExecutor<'e>>(
     .fetch_optional(exec)
     .await?;
     Ok(row.map(|r| (r.last, r.updated_at)))
+}
+
+/// Apply the §A.3 "mark chapter read" rule for a single chapter `number`, advancing whichever
+/// frontier is appropriate and never letting a part release corrupt whole-chapter progress.
+pub async fn progress_mark_read(
+    pool: &sqlx::PgPool,
+    user_id: UserId,
+    series_id: SeriesId,
+    number: f64,
+) -> DbResult<()> {
+    let cur = progress_get_full(pool, user_id, series_id)
+        .await?
+        .unwrap_or_default();
+    let mut whole = cur.last_read_whole_number;
+    let mut part = cur.last_read_part_number;
+
+    if is_whole(number) {
+        whole = whole.max(number);
+        if let Some(p) = part {
+            if p.floor() <= whole {
+                part = None; // now stale, superseded by whole-chapter progress
+            }
+        }
+    } else if number.floor() > whole {
+        // Ahead of the whole frontier: advance the part frontier only.
+        part = Some(part.map_or(number, |p| p.max(number)));
+    }
+    // else: already covered by whole-chapter progress; no-op.
+
+    progress_write(pool, user_id, series_id, whole, part).await
+}
+
+/// Apply the §A.3 "mark chapter unread" rule for a single chapter `number`, retreating the
+/// relevant frontier to just before it. Retreating the whole frontier also clears any part
+/// frontier (everything after `number` is un-read).
+pub async fn progress_mark_unread(
+    pool: &sqlx::PgPool,
+    user_id: UserId,
+    series_id: SeriesId,
+    number: f64,
+) -> DbResult<()> {
+    let cur = progress_get_full(pool, user_id, series_id)
+        .await?
+        .unwrap_or_default();
+    let mut whole = cur.last_read_whole_number;
+    let mut part = cur.last_read_part_number;
+
+    if is_whole(number) {
+        // The previous whole chapter that exists for this series strictly below `number`.
+        whole = sqlx::query_scalar::<_, Option<f64>>(
+            "SELECT max(floor(c.number))::float8 \
+               FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+              WHERE ss.series_id = $1 AND floor(c.number) < $2",
+        )
+        .bind(series_id.as_uuid())
+        .bind(number)
+        .fetch_one(pool)
+        .await?
+        .unwrap_or(0.0);
+        part = None;
+    } else if part == Some(number) {
+        part = None;
+    } else {
+        // The previous part strictly below `number` that is still ahead of the whole frontier.
+        part = sqlx::query_scalar::<_, Option<f64>>(
+            "SELECT max(c.number)::float8 \
+               FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+              WHERE ss.series_id = $1 AND c.number < $2 AND c.number > $3 \
+                AND c.number <> floor(c.number)",
+        )
+        .bind(series_id.as_uuid())
+        .bind(number)
+        .bind(whole)
+        .fetch_one(pool)
+        .await?;
+    }
+
+    progress_write(pool, user_id, series_id, whole, part).await
 }
 
 /// Set a watchlist entry's status without disturbing its `notify` flag, inserting the
@@ -162,7 +318,8 @@ pub async fn watchlist_set_status<'e, E: PgExecutor<'e>>(
     sqlx::query(
         "INSERT INTO watchlist_entries (user_id, series_id, status) \
          VALUES ($1,$2,$3::watch_status) \
-         ON CONFLICT (user_id, series_id) DO UPDATE SET status = EXCLUDED.status",
+         ON CONFLICT (user_id, series_id) DO UPDATE \
+            SET status = EXCLUDED.status, updated_at = now()",
     )
     .bind(user_id.as_uuid())
     .bind(series_id.as_uuid())
@@ -188,6 +345,79 @@ pub async fn watchlist_status_get<'e, E: PgExecutor<'e>>(
     .fetch_optional(exec)
     .await?;
     status.map(|s| s.parse().map_err(DbError::Enum)).transpose()
+}
+
+// ---------------------------------------------------------------------------
+// Per-series external-sync exclusion (design v2 §A.5)
+// ---------------------------------------------------------------------------
+
+/// Set (or clear) the blanket per-series sync-exclusion flag on a watchlist entry. The entry
+/// must already exist; a series can only be excluded from sync once it is being tracked.
+pub async fn set_sync_excluded<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    series_id: SeriesId,
+    excluded: bool,
+) -> DbResult<()> {
+    sqlx::query(
+        "UPDATE watchlist_entries SET sync_excluded = $3, updated_at = now() \
+         WHERE user_id = $1 AND series_id = $2",
+    )
+    .bind(user_id.as_uuid())
+    .bind(series_id.as_uuid())
+    .bind(excluded)
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+/// Upsert a per-provider override of the blanket exclusion flag (design v2 §A.5): a specific
+/// provider's inclusion/exclusion, taking precedence over `watchlist_entries.sync_excluded`.
+pub async fn set_sync_override<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    series_id: SeriesId,
+    provider: &str,
+    excluded: bool,
+) -> DbResult<()> {
+    sqlx::query(
+        "INSERT INTO series_sync_overrides (user_id, series_id, provider, excluded) \
+         VALUES ($1,$2,$3,$4) \
+         ON CONFLICT (user_id, series_id, provider) DO UPDATE SET excluded = EXCLUDED.excluded",
+    )
+    .bind(user_id.as_uuid())
+    .bind(series_id.as_uuid())
+    .bind(provider)
+    .bind(excluded)
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+/// The single choke point every sync path calls before touching a series (design v2 §A.5).
+/// Precedence: a per-provider override wins outright; otherwise the blanket `sync_excluded`
+/// flag; otherwise included. A series not on the watchlist at all is treated as included
+/// (there is nothing to exclude yet).
+pub async fn is_sync_excluded<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    series_id: SeriesId,
+    provider: &str,
+) -> DbResult<bool> {
+    let excluded: Option<bool> = sqlx::query_scalar(
+        "SELECT COALESCE( \
+                  (SELECT excluded FROM series_sync_overrides \
+                    WHERE user_id = $1 AND series_id = $2 AND provider = $3), \
+                  (SELECT sync_excluded FROM watchlist_entries \
+                    WHERE user_id = $1 AND series_id = $2), \
+                  false)",
+    )
+    .bind(user_id.as_uuid())
+    .bind(series_id.as_uuid())
+    .bind(provider)
+    .fetch_one(exec)
+    .await?;
+    Ok(excluded.unwrap_or(false))
 }
 
 // ---------------------------------------------------------------------------
@@ -301,7 +531,7 @@ pub async fn watchers_for_series<'e, E: PgExecutor<'e>>(
         last_read_number: Option<f64>,
     }
     let rows: Vec<Row> = sqlx::query_as(
-        "SELECT w.user_id, rp.last_read_number::float8 AS last_read_number \
+        "SELECT w.user_id, rp.last_read_whole_number::float8 AS last_read_number \
          FROM watchlist_entries w \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
          WHERE w.series_id = $1 AND w.notify",
@@ -361,7 +591,10 @@ pub async fn feed<'e, E: PgExecutor<'e>>(
          JOIN providers p ON p.id = ss.provider_id \
          JOIN chapters c ON c.series_source_id = ss.id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
-         WHERE w.user_id = $1 AND c.number > COALESCE(rp.last_read_number, 0) \
+         WHERE w.user_id = $1 AND NOT ( \
+               floor(c.number) <= COALESCE(rp.last_read_whole_number, 0) \
+               OR (c.number <> floor(c.number) AND rp.last_read_part_number IS NOT NULL \
+                   AND c.number <= rp.last_read_part_number)) \
          ORDER BY c.discovered_at DESC \
          LIMIT $2",
     )
@@ -424,6 +657,8 @@ pub struct WatchlistCard {
     pub last_read_number: Option<f64>,
     /// Distinct chapters strictly above the user's progress, across all sources.
     pub unread: i64,
+    /// Whether this series is opted out of external sync (design v2 §A.5).
+    pub sync_excluded: bool,
 }
 
 /// List a user's watchlist with the embedded title/cover/progress each card needs. `unread`
@@ -442,15 +677,16 @@ pub async fn watchlist_detailed<'e, E: PgExecutor<'e>>(
         added_at: OffsetDateTime,
         last_read_number: Option<f64>,
         unread: i64,
+        sync_excluded: bool,
     }
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT w.series_id, s.canonical_title AS series_title, s.cover_url, \
-                w.status::text AS status, w.notify, w.added_at, \
-                rp.last_read_number::float8 AS last_read_number, \
+                w.status::text AS status, w.notify, w.added_at, w.sync_excluded, \
+                rp.last_read_whole_number::float8 AS last_read_number, \
                 (SELECT COALESCE(count(DISTINCT floor(c.number)),0) \
                    FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
                    WHERE ss.series_id = w.series_id \
-                     AND c.number > COALESCE(rp.last_read_number, 0)) AS unread \
+                     AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0)) AS unread \
          FROM watchlist_entries w \
          JOIN series s ON s.id = w.series_id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
@@ -471,6 +707,7 @@ pub async fn watchlist_detailed<'e, E: PgExecutor<'e>>(
                 added_at: r.added_at,
                 last_read_number: r.last_read_number,
                 unread: r.unread,
+                sync_excluded: r.sync_excluded,
             })
         })
         .collect()
@@ -509,15 +746,15 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
     }
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT w.series_id, s.canonical_title AS series_title, s.cover_url, \
-                COALESCE(rp.last_read_number, 0)::float8 AS last_read_number, \
+                COALESCE(rp.last_read_whole_number, 0)::float8 AS last_read_number, \
                 (SELECT min(c.number)::float8 \
                    FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
                    WHERE ss.series_id = w.series_id \
-                     AND c.number > COALESCE(rp.last_read_number, 0)) AS next_number, \
+                     AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0)) AS next_number, \
                 (SELECT COALESCE(count(DISTINCT floor(c.number)),0) \
                    FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
                    WHERE ss.series_id = w.series_id \
-                     AND c.number > COALESCE(rp.last_read_number, 0)) AS unread, \
+                     AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0)) AS unread, \
                 (SELECT max(c.discovered_at) \
                    FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
                    WHERE ss.series_id = w.series_id) AS last_activity \
@@ -568,7 +805,7 @@ pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResu
            (SELECT count(*) FROM watchlist_entries WHERE user_id = $1) AS tracking, \
            (SELECT count(*) FROM watchlist_entries WHERE user_id = $1 AND status = 'reading') AS reading, \
            (SELECT count(*) FROM watchlist_entries WHERE user_id = $1 AND status = 'completed') AS completed, \
-           (SELECT COALESCE(sum(floor(last_read_number)),0)::int8 FROM read_progress \
+           (SELECT COALESCE(sum(floor(last_read_whole_number)),0)::int8 FROM read_progress \
               WHERE user_id = $1) AS chapters_read, \
            (SELECT count(*) FROM ( \
                SELECT DISTINCT w.series_id, floor(c.number) \
@@ -576,7 +813,7 @@ pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResu
                JOIN series_sources ss ON ss.series_id = w.series_id \
                JOIN chapters c ON c.series_source_id = ss.id \
                LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
-               WHERE w.user_id = $1 AND c.number > COALESCE(rp.last_read_number, 0) \
+               WHERE w.user_id = $1 AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
            ) q) AS unread",
     )
     .bind(user_id.as_uuid())

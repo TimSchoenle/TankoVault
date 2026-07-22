@@ -8,10 +8,267 @@
 
 use crate::error::DbResult;
 use serde::Serialize;
+use serde_json::Value as Json;
 use sqlx::{FromRow, PgExecutor};
 use tankovault_domain::{SeriesId, UserId};
 use time::OffsetDateTime;
 use uuid::Uuid;
+
+// ---------------------------------------------------------------------------
+// Three-way merge snapshot, conflicts and history (design v2 §B.2/§B.3)
+// ---------------------------------------------------------------------------
+
+/// The "common ancestor" snapshot recorded at the last successful reconciliation of a mapped
+/// series, so the engine can tell which side(s) actually changed since (design v2 §B.3).
+#[derive(Debug, Clone, FromRow)]
+pub struct SyncSnapshot {
+    pub last_synced_local_progress: Option<f64>,
+    pub last_synced_remote_progress: Option<f64>,
+    pub last_synced_local_status: Option<String>,
+    pub last_synced_remote_status: Option<String>,
+    pub last_synced_at: Option<OffsetDateTime>,
+}
+
+/// Fetch the stored three-way-merge snapshot for a mapped series, if any.
+pub async fn get_snapshot<'e, E: PgExecutor<'e>>(
+    exec: E,
+    series_id: SeriesId,
+    provider: &str,
+) -> DbResult<Option<SyncSnapshot>> {
+    let row = sqlx::query_as::<_, SyncSnapshot>(
+        "SELECT last_synced_local_progress, last_synced_remote_progress, \
+                last_synced_local_status, last_synced_remote_status, last_synced_at \
+         FROM sync_mappings WHERE series_id = $1 AND provider = $2",
+    )
+    .bind(series_id.as_uuid())
+    .bind(provider)
+    .fetch_optional(exec)
+    .await?;
+    Ok(row)
+}
+
+/// Record the agreed values as the new three-way-merge snapshot after a reconciliation
+/// (design v2 §B.3). The `sync_mappings` row must already exist.
+#[allow(clippy::too_many_arguments)]
+pub async fn record_snapshot<'e, E: PgExecutor<'e>>(
+    exec: E,
+    series_id: SeriesId,
+    provider: &str,
+    local_progress: f64,
+    remote_progress: f64,
+    local_status: &str,
+    remote_status: &str,
+) -> DbResult<()> {
+    sqlx::query(
+        "UPDATE sync_mappings SET \
+            last_synced_local_progress  = $3, \
+            last_synced_remote_progress = $4, \
+            last_synced_local_status    = $5, \
+            last_synced_remote_status   = $6, \
+            last_synced_at              = now() \
+         WHERE series_id = $1 AND provider = $2",
+    )
+    .bind(series_id.as_uuid())
+    .bind(provider)
+    .bind(local_progress)
+    .bind(remote_progress)
+    .bind(local_status)
+    .bind(remote_status)
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+/// Queue a genuine, unresolved conflict for the `ask_me` policy (design v2 §B.3). Idempotent:
+/// the unique partial index guarantees at most one pending row per
+/// `(user, series, provider, field)`, so re-detection never double-queues.
+#[allow(clippy::too_many_arguments)]
+pub async fn insert_conflict<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    series_id: SeriesId,
+    provider: &str,
+    field: &str,
+    local_value: &str,
+    remote_value: &str,
+) -> DbResult<()> {
+    sqlx::query(
+        "INSERT INTO sync_conflicts \
+            (user_id, series_id, provider, field, local_value, remote_value) \
+         VALUES ($1,$2,$3,$4,$5,$6) \
+         ON CONFLICT (user_id, series_id, provider, field) WHERE resolved_at IS NULL \
+         DO NOTHING",
+    )
+    .bind(user_id.as_uuid())
+    .bind(series_id.as_uuid())
+    .bind(provider)
+    .bind(field)
+    .bind(local_value)
+    .bind(remote_value)
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+/// One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct ConflictRow {
+    pub id: Uuid,
+    pub series_id: Uuid,
+    pub series_title: String,
+    pub provider: String,
+    pub field: String,
+    pub local_value: String,
+    pub remote_value: String,
+    #[serde(with = "time::serde::rfc3339")]
+    pub detected_at: OffsetDateTime,
+}
+
+/// Every pending (unresolved) conflict for a user, across all providers, newest first.
+pub async fn list_pending_conflicts<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+) -> DbResult<Vec<ConflictRow>> {
+    let rows = sqlx::query_as::<_, ConflictRow>(
+        "SELECT c.id, c.series_id, s.canonical_title AS series_title, c.provider, c.field, \
+                c.local_value, c.remote_value, c.detected_at \
+         FROM sync_conflicts c JOIN series s ON s.id = c.series_id \
+         WHERE c.user_id = $1 AND c.resolved_at IS NULL \
+         ORDER BY c.detected_at DESC",
+    )
+    .bind(user_id.as_uuid())
+    .fetch_all(exec)
+    .await?;
+    Ok(rows)
+}
+
+/// A pending conflict's identity + values, used to apply a user's resolution.
+#[derive(Debug, Clone, FromRow)]
+pub struct ConflictDetail {
+    pub series_id: Uuid,
+    pub provider: String,
+    pub field: String,
+    pub local_value: String,
+    pub remote_value: String,
+}
+
+/// Fetch a single pending conflict scoped to its owner, if it exists and is unresolved.
+pub async fn get_pending_conflict<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    conflict_id: Uuid,
+) -> DbResult<Option<ConflictDetail>> {
+    let row = sqlx::query_as::<_, ConflictDetail>(
+        "SELECT series_id, provider, field, local_value, remote_value \
+         FROM sync_conflicts \
+         WHERE id = $1 AND user_id = $2 AND resolved_at IS NULL",
+    )
+    .bind(conflict_id)
+    .bind(user_id.as_uuid())
+    .fetch_optional(exec)
+    .await?;
+    Ok(row)
+}
+
+/// Mark a conflict resolved with the chosen side (`local` | `remote`). Returns `true` if a
+/// pending row was updated.
+pub async fn resolve_conflict<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    conflict_id: Uuid,
+    resolution: &str,
+) -> DbResult<bool> {
+    let result = sqlx::query(
+        "UPDATE sync_conflicts SET resolved_at = now(), resolution = $3 \
+         WHERE id = $1 AND user_id = $2 AND resolved_at IS NULL",
+    )
+    .bind(conflict_id)
+    .bind(user_id.as_uuid())
+    .bind(resolution)
+    .execute(exec)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+/// Count a user's pending conflicts, for the account panel badge and the admin console.
+pub async fn count_pending_conflicts<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+) -> DbResult<i64> {
+    let (n,): (i64,) = sqlx::query_as(
+        "SELECT count(*) FROM sync_conflicts WHERE user_id = $1 AND resolved_at IS NULL",
+    )
+    .bind(user_id.as_uuid())
+    .fetch_one(exec)
+    .await?;
+    Ok(n)
+}
+
+/// Append one row to the user-facing sync history (design v2 §B.2): a transparency log of what
+/// the automatic engine actually did.
+pub async fn append_history<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    series_id: SeriesId,
+    provider: &str,
+    action: &str,
+    detail: &Json,
+) -> DbResult<()> {
+    sqlx::query(
+        "INSERT INTO sync_history (user_id, series_id, provider, action, detail) \
+         VALUES ($1,$2,$3,$4,$5)",
+    )
+    .bind(user_id.as_uuid())
+    .bind(series_id.as_uuid())
+    .bind(provider)
+    .bind(action)
+    .bind(detail)
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+/// One row of the user-facing sync history (design v2 §B.6 `GET /v1/me/sync/history`).
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct HistoryRow {
+    pub id: Uuid,
+    pub series_id: Uuid,
+    pub series_title: String,
+    pub provider: String,
+    pub action: String,
+    pub detail: Json,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: OffsetDateTime,
+}
+
+/// A page of a user's sync history, newest first, optionally filtered by series and/or provider.
+pub async fn list_history<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    series_id: Option<SeriesId>,
+    provider: Option<&str>,
+    limit: i64,
+    offset: i64,
+) -> DbResult<Vec<HistoryRow>> {
+    let rows = sqlx::query_as::<_, HistoryRow>(
+        "SELECT h.id, h.series_id, s.canonical_title AS series_title, h.provider, h.action, \
+                h.detail, h.created_at \
+         FROM sync_history h JOIN series s ON s.id = h.series_id \
+         WHERE h.user_id = $1 \
+           AND ($2::uuid IS NULL OR h.series_id = $2) \
+           AND ($3::text IS NULL OR h.provider = $3) \
+         ORDER BY h.created_at DESC \
+         LIMIT $4 OFFSET $5",
+    )
+    .bind(user_id.as_uuid())
+    .bind(series_id.map(|s| s.as_uuid()))
+    .bind(provider)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(exec)
+    .await?;
+    Ok(rows)
+}
 
 /// A stored external-provider account. `access_token`/`refresh_token` are AES-GCM
 /// ciphertext (see module docs); callers decrypt with the sync service's data key.
@@ -32,6 +289,13 @@ pub struct ExternalAccount {
     /// (`mark_synced`); set by `record_sync_error`. Admin-visible only (design: Sync console
     /// tab) — never surfaced on the user-facing status endpoint.
     pub last_error: Option<String>,
+    /// Whether automatic sync (reactive push + scheduled reconciliation) is enabled for this
+    /// account (design v2 §B.2). Seeded `true` on link.
+    pub auto_sync_enabled: bool,
+    /// The persisted per-account conflict policy token (design v2 §B.3): one of
+    /// `local_wins` | `remote_wins` | `newest_wins` | `ask_me`. Seeded from the service
+    /// default on link.
+    pub conflict_policy: String,
 }
 
 /// Insert or replace a user's account for `provider`. Idempotent on `(user_id, provider)`,
@@ -79,10 +343,13 @@ pub async fn get_account<'e, E: PgExecutor<'e>>(
         external_username: Option<String>,
         last_synced_at: Option<OffsetDateTime>,
         last_error: Option<String>,
+        auto_sync_enabled: bool,
+        conflict_policy: String,
     }
     let row: Option<Row> = sqlx::query_as(
         "SELECT user_id, provider, access_token, refresh_token, expires_at, \
-                external_username, last_synced_at, last_error \
+                external_username, last_synced_at, last_error, \
+                auto_sync_enabled, conflict_policy \
          FROM external_accounts WHERE user_id = $1 AND provider = $2",
     )
     .bind(user_id.as_uuid())
@@ -98,7 +365,76 @@ pub async fn get_account<'e, E: PgExecutor<'e>>(
         external_username: r.external_username,
         last_synced_at: r.last_synced_at,
         last_error: r.last_error,
+        auto_sync_enabled: r.auto_sync_enabled,
+        conflict_policy: r.conflict_policy,
     }))
+}
+
+/// Update a linked account's automatic-sync policy (design v2 §B.2/§B.6). Either field may be
+/// left `None` to keep its current value. Seeds are set at link time via `seed_account_policy`.
+pub async fn update_account_settings<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    provider: &str,
+    auto_sync_enabled: Option<bool>,
+    conflict_policy: Option<&str>,
+) -> DbResult<()> {
+    sqlx::query(
+        "UPDATE external_accounts \
+         SET auto_sync_enabled = COALESCE($3, auto_sync_enabled), \
+             conflict_policy   = COALESCE($4, conflict_policy) \
+         WHERE user_id = $1 AND provider = $2",
+    )
+    .bind(user_id.as_uuid())
+    .bind(provider)
+    .bind(auto_sync_enabled)
+    .bind(conflict_policy)
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+/// Seed the per-account conflict policy from the service default the first time an account is
+/// linked, without disturbing an existing user choice (design v2 §B.1: the env default is only
+/// the seed). No-op once the user has set anything.
+pub async fn seed_account_policy<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    provider: &str,
+    default_policy: &str,
+) -> DbResult<()> {
+    sqlx::query(
+        "UPDATE external_accounts SET conflict_policy = $3 \
+         WHERE user_id = $1 AND provider = $2 AND conflict_policy = 'newest_wins'",
+    )
+    .bind(user_id.as_uuid())
+    .bind(provider)
+    .bind(default_policy)
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+/// Every linked account with automatic sync enabled, as `(user_id, provider)` pairs, for the
+/// scheduled reconciliation loop (design v2 §B.4).
+pub async fn list_auto_sync_accounts<'e, E: PgExecutor<'e>>(
+    exec: E,
+) -> DbResult<Vec<(UserId, String)>> {
+    #[derive(FromRow)]
+    struct Row {
+        user_id: Uuid,
+        provider: String,
+    }
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT user_id, provider FROM external_accounts \
+         WHERE auto_sync_enabled ORDER BY user_id, provider",
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (UserId::from_uuid(r.user_id), r.provider))
+        .collect())
 }
 
 /// Record a fresh sync timestamp and (when known) the provider's display name for a linked
@@ -247,7 +583,9 @@ pub async fn delete_mapping<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected() > 0)
 }
 
-/// One row of the admin Sync console's "Linked accounts" table.
+/// One row of the admin Sync console's "Linked accounts" table. The automatic-sync policy
+/// columns and pending-conflict count (design v2 §B.7) are read-only operator visibility —
+/// they are user settings, never operator-overridable.
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct AdminAccountRow {
     pub user_id: Uuid,
@@ -257,6 +595,9 @@ pub struct AdminAccountRow {
     #[serde(with = "time::serde::rfc3339::option")]
     pub last_synced_at: Option<OffsetDateTime>,
     pub last_error: Option<String>,
+    pub auto_sync_enabled: bool,
+    pub conflict_policy: String,
+    pub pending_conflicts: i64,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }
@@ -269,7 +610,10 @@ pub async fn admin_list_accounts<'e, E: PgExecutor<'e>>(
 ) -> DbResult<Vec<AdminAccountRow>> {
     let rows = sqlx::query_as::<_, AdminAccountRow>(
         "SELECT ea.user_id, u.username, ea.provider, ea.external_username, \
-                ea.last_synced_at, ea.last_error, ea.created_at \
+                ea.last_synced_at, ea.last_error, ea.auto_sync_enabled, ea.conflict_policy, \
+                (SELECT count(*) FROM sync_conflicts sc \
+                   WHERE sc.user_id = ea.user_id AND sc.resolved_at IS NULL) AS pending_conflicts, \
+                ea.created_at \
          FROM external_accounts ea JOIN users u ON u.id = ea.user_id \
          ORDER BY (ea.last_error IS NOT NULL) DESC, ea.last_synced_at DESC NULLS LAST \
          LIMIT $1",

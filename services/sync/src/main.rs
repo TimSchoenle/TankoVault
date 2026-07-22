@@ -57,6 +57,10 @@ struct Config {
     anilist: AniListConfig,
     #[serde(default = "default_bind")]
     bind_addr: String,
+    /// Interval (seconds) between scheduled reconciliation ticks (design v2 §B.4). `0`
+    /// disables the loop (e.g. in tests or when a separate scheduler owns it).
+    #[serde(default = "default_reconcile_interval")]
+    reconcile_interval_secs: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -88,6 +92,9 @@ fn default_oauth_base() -> String {
 }
 fn default_min_interval_ms() -> u64 {
     700
+}
+fn default_reconcile_interval() -> u64 {
+    900
 }
 
 /// `figment`'s `Env` provider infers numeric-looking values (e.g. `TANKOVAULT_ANILIST__CLIENT_ID`)
@@ -154,7 +161,25 @@ async fn main() -> anyhow::Result<()> {
     let providers = build_providers(cfg.anilist)?;
 
     let engine = Arc::new(SyncEngine::new(pool, secret, default_policy, providers));
-    let state = AppState { engine };
+    let state = AppState {
+        engine: engine.clone(),
+    };
+
+    // Scheduled reconciliation loop (design v2 §B.4): pulls remote-side changes back
+    // automatically, closing the reactive-push-only gap. Disabled when the interval is 0.
+    if cfg.reconcile_interval_secs > 0 {
+        let sched = engine.clone();
+        let interval = Duration::from_secs(cfg.reconcile_interval_secs);
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(interval);
+            // Skip the immediate first tick so boot isn't a thundering herd against providers.
+            tick.tick().await;
+            loop {
+                tick.tick().await;
+                sched.reconcile_all_accounts().await;
+            }
+        });
+    }
 
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
@@ -166,6 +191,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/sync/{provider}/link", post(link).delete(unlink))
         .route("/v1/sync/{provider}/pull", post(pull))
         .route("/v1/sync/{provider}/push", post(push))
+        .route(
+            "/v1/sync/{provider}/settings/{user_id}",
+            get(get_settings).patch(patch_settings),
+        )
+        .route("/v1/sync/conflicts/{user_id}", get(list_conflicts))
+        .route("/v1/sync/conflicts/{id}/resolve", post(resolve_conflict))
+        .route("/v1/sync/history/{user_id}", get(list_history))
         .with_state(state);
 
     let listener = TcpListener::bind(&cfg.bind_addr).await?;
@@ -279,6 +311,96 @@ async fn push(
         .push(&provider, req.user_id, req.policy)
         .await?;
     Ok(Json(report))
+}
+
+/// `GET /v1/sync/{provider}/settings/{user_id}` — the account's automatic-sync settings.
+async fn get_settings(
+    State(state): State<AppState>,
+    Path((provider, user_id)): Path<(String, UserId)>,
+) -> Result<Json<engine::AccountSettings>, AppError> {
+    Ok(Json(state.engine.settings(&provider, user_id).await?))
+}
+
+#[derive(Debug, Deserialize)]
+struct SettingsPatch {
+    user_id: UserId,
+    #[serde(default)]
+    auto_sync_enabled: Option<bool>,
+    #[serde(default)]
+    conflict_policy: Option<String>,
+}
+
+/// `PATCH /v1/sync/{provider}/settings/{user_id}` — update automatic-sync settings.
+async fn patch_settings(
+    State(state): State<AppState>,
+    Path((provider, _user_id)): Path<(String, UserId)>,
+    Json(req): Json<SettingsPatch>,
+) -> Result<StatusCode, AppError> {
+    state
+        .engine
+        .update_settings(
+            &provider,
+            req.user_id,
+            req.auto_sync_enabled,
+            req.conflict_policy.as_deref(),
+        )
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `GET /v1/sync/conflicts/{user_id}` — the user's pending conflicts across all providers.
+async fn list_conflicts(
+    State(state): State<AppState>,
+    Path(user_id): Path<UserId>,
+) -> Result<Json<Vec<tankovault_db::repo::sync::ConflictRow>>, AppError> {
+    Ok(Json(state.engine.list_conflicts(user_id).await?))
+}
+
+#[derive(Debug, Deserialize)]
+struct ResolveRequest {
+    user_id: UserId,
+    resolution: String,
+}
+
+#[derive(Debug, Serialize)]
+struct Resolved {
+    resolved: bool,
+}
+
+/// `POST /v1/sync/conflicts/{id}/resolve` — apply a user's chosen resolution.
+async fn resolve_conflict(
+    State(state): State<AppState>,
+    Path(id): Path<uuid::Uuid>,
+    Json(req): Json<ResolveRequest>,
+) -> Result<Json<Resolved>, AppError> {
+    let resolved = state
+        .engine
+        .resolve_conflict(req.user_id, id, &req.resolution)
+        .await?;
+    Ok(Json(Resolved { resolved }))
+}
+
+#[derive(Debug, Deserialize)]
+struct HistoryQuery {
+    #[serde(default)]
+    series_id: Option<SeriesId>,
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    page: Option<i64>,
+}
+
+/// `GET /v1/sync/history/{user_id}` — a page of the user's sync history.
+async fn list_history(
+    State(state): State<AppState>,
+    Path(user_id): Path<UserId>,
+    axum::extract::Query(q): axum::extract::Query<HistoryQuery>,
+) -> Result<Json<Vec<tankovault_db::repo::sync::HistoryRow>>, AppError> {
+    let rows = state
+        .engine
+        .history(user_id, q.series_id, q.provider.as_deref(), q.page.unwrap_or(0))
+        .await?;
+    Ok(Json(rows))
 }
 
 /// Thin error wrapper: surfaces the message to the caller (the API) and a `502` since most

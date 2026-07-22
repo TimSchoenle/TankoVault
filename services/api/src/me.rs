@@ -29,6 +29,8 @@ pub struct WatchlistItem {
     pub last_read_number: Option<f64>,
     /// Unread chapters above the user's progress.
     pub unread: i64,
+    /// Whether this series is opted out of external sync (design v2 §A.5).
+    pub sync_excluded: bool,
 }
 
 /// `GET /v1/me/watchlist` — the user's watchlist with embedded title/cover/progress
@@ -49,6 +51,7 @@ pub async fn watchlist(
             cover_url: c.cover_url,
             last_read_number: c.last_read_number,
             unread: c.unread,
+            sync_excluded: c.sync_excluded,
         })
         .collect();
     Ok(Json(out))
@@ -97,10 +100,12 @@ pub async fn delete_watchlist(
 
 #[derive(Debug, Deserialize)]
 pub struct ProgressUpdate {
-    pub last_read_number: f64,
+    /// The whole-chapter frontier to set outright (design v2 §A.6 — renamed from
+    /// `last_read_number`, same semantics).
+    pub last_read_whole_number: f64,
 }
 
-/// `PUT /v1/me/progress/:series_id`
+/// `PUT /v1/me/progress/:series_id` — set the whole-chapter frontier outright (design v2 §A.6).
 pub async fn put_progress(
     State(state): State<AppState>,
     user: AuthUser,
@@ -111,10 +116,132 @@ pub async fn put_progress(
         &state.pool,
         user.user_id,
         series_id,
-        body.last_read_number,
+        body.last_read_whole_number,
     )
     .await?;
     spawn_targeted_push(&state, user.user_id, series_id);
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProgressDto {
+    pub last_read_whole_number: f64,
+    pub last_read_part_number: Option<f64>,
+}
+
+/// `GET /v1/me/progress/:series_id` — both read frontiers for the series (design v2 §A.6).
+pub async fn get_progress(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(series_id): Path<SeriesId>,
+) -> ApiResult<Json<ProgressDto>> {
+    let p = tankovault_db::repo::tracking::progress_get_full(&state.pool, user.user_id, series_id)
+        .await?
+        .unwrap_or_default();
+    Ok(Json(ProgressDto {
+        last_read_whole_number: p.last_read_whole_number,
+        last_read_part_number: p.last_read_part_number,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChapterRead {
+    pub read: bool,
+}
+
+/// `PUT /v1/me/progress/:series_id/chapters/:number` — apply the §A.3 mark-read/mark-unread
+/// rule for one chapter number. Unmarking an older (non-frontier) chapter retreats progress
+/// past it too; the client must confirm with the user first in that case (design v2 §A.6).
+pub async fn put_chapter_progress(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path((series_id, number)): Path<(SeriesId, f64)>,
+    Json(body): Json<ChapterRead>,
+) -> ApiResult<Json<serde_json::Value>> {
+    if body.read {
+        tankovault_db::repo::tracking::progress_mark_read(
+            &state.pool,
+            user.user_id,
+            series_id,
+            number,
+        )
+        .await?;
+    } else {
+        tankovault_db::repo::tracking::progress_mark_unread(
+            &state.pool,
+            user.user_id,
+            series_id,
+            number,
+        )
+        .await?;
+    }
+    spawn_targeted_push(&state, user.user_id, series_id);
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MarkReadTo {
+    pub number: f64,
+}
+
+/// `POST /v1/me/progress/:series_id/mark-read-to` — "mark read to here" (design v2 §A.6);
+/// equivalent to marking `number` read.
+pub async fn mark_read_to(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(series_id): Path<SeriesId>,
+    Json(body): Json<MarkReadTo>,
+) -> ApiResult<Json<serde_json::Value>> {
+    tankovault_db::repo::tracking::progress_mark_read(
+        &state.pool,
+        user.user_id,
+        series_id,
+        body.number,
+    )
+    .await?;
+    spawn_targeted_push(&state, user.user_id, series_id);
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SyncExcluded {
+    pub excluded: bool,
+}
+
+/// `PUT /v1/me/watchlist/:series_id/sync` — set the blanket per-series sync-exclusion flag
+/// (design v2 §A.5).
+pub async fn put_sync_excluded(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(series_id): Path<SeriesId>,
+    Json(body): Json<SyncExcluded>,
+) -> ApiResult<Json<serde_json::Value>> {
+    tankovault_db::repo::tracking::set_sync_excluded(
+        &state.pool,
+        user.user_id,
+        series_id,
+        body.excluded,
+    )
+    .await?;
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// `PUT /v1/me/watchlist/:series_id/sync/:provider` — per-provider override of the blanket
+/// exclusion flag (design v2 §A.5).
+pub async fn put_sync_override(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path((series_id, provider)): Path<(SeriesId, String)>,
+    Json(body): Json<SyncExcluded>,
+) -> ApiResult<Json<serde_json::Value>> {
+    tankovault_db::repo::tracking::set_sync_override(
+        &state.pool,
+        user.user_id,
+        series_id,
+        &provider,
+        body.excluded,
+    )
+    .await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -580,6 +707,140 @@ pub async fn sync_pull(
         serde_json::json!({ "user_id": user.user_id, "policy": opts.policy }),
     )
     .await
+}
+
+/// `GET /v1/me/sync/:provider/settings` — the caller's automatic-sync settings (design v2 §B.6).
+pub async fn sync_settings(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(provider): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    sync_get(
+        &state,
+        &format!(
+            "/v1/sync/{provider}/settings/{}",
+            user.user_id.as_uuid()
+        ),
+    )
+    .await
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SyncSettingsPatch {
+    #[serde(default)]
+    pub auto_sync_enabled: Option<bool>,
+    #[serde(default)]
+    pub conflict_policy: Option<String>,
+}
+
+/// `PATCH /v1/me/sync/:provider/settings` — update automatic sync + conflict policy (design v2
+/// §B.6).
+pub async fn sync_settings_patch(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(provider): Path<String>,
+    Json(body): Json<SyncSettingsPatch>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let url = format!(
+        "{}/v1/sync/{provider}/settings/{}",
+        state.sync_url.trim_end_matches('/'),
+        user.user_id.as_uuid()
+    );
+    let payload = serde_json::json!({
+        "user_id": user.user_id,
+        "auto_sync_enabled": body.auto_sync_enabled,
+        "conflict_policy": body.conflict_policy,
+    });
+    let resp = state.http.patch(url).json(&payload).send().await.map_err(|e| {
+        tracing::error!(error = %e, "sync service unreachable");
+        ApiError::Internal
+    })?;
+    if !resp.status().is_success() {
+        return Err(ApiError::Internal);
+    }
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// `GET /v1/me/sync/conflicts` — the caller's pending conflicts across all providers (§B.6).
+pub async fn sync_conflicts(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<serde_json::Value>> {
+    sync_get(
+        &state,
+        &format!("/v1/sync/conflicts/{}", user.user_id.as_uuid()),
+    )
+    .await
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResolveConflict {
+    pub resolution: String,
+}
+
+/// `POST /v1/me/sync/conflicts/:id/resolve` — apply the caller's chosen resolution (§B.6).
+pub async fn sync_resolve_conflict(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+    Json(body): Json<ResolveConflict>,
+) -> ApiResult<Json<serde_json::Value>> {
+    sync_proxy(
+        &state,
+        &format!("/v1/sync/conflicts/{id}/resolve"),
+        serde_json::json!({ "user_id": user.user_id, "resolution": body.resolution }),
+    )
+    .await
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HistoryParams {
+    #[serde(default)]
+    pub series_id: Option<Uuid>,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub page: Option<i64>,
+}
+
+/// `GET /v1/me/sync/history` — a page of the caller's sync history (§B.6).
+pub async fn sync_history(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Query(q): Query<HistoryParams>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let mut path = format!("/v1/sync/history/{}?", user.user_id.as_uuid());
+    if let Some(s) = q.series_id {
+        path.push_str(&format!("series_id={s}&"));
+    }
+    if let Some(p) = &q.provider {
+        path.push_str(&format!("provider={p}&"));
+    }
+    path.push_str(&format!("page={}", q.page.unwrap_or(0)));
+    sync_get(&state, &path).await
+}
+
+/// GET a JSON body from the sync service, mapping upstream errors like `sync_proxy`.
+pub(crate) async fn sync_get(
+    state: &AppState,
+    path: &str,
+) -> ApiResult<Json<serde_json::Value>> {
+    let url = format!(
+        "{}/{}",
+        state.sync_url.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    );
+    let resp = state.http.get(url).send().await.map_err(|e| {
+        tracing::error!(error = %e, "sync service unreachable");
+        ApiError::Internal
+    })?;
+    if !resp.status().is_success() {
+        if resp.status().as_u16() == 404 {
+            return Err(ApiError::NotFound);
+        }
+        return Err(ApiError::Internal);
+    }
+    Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
 }
 
 /// POST a JSON body to the sync service, tolerating an empty (`204`) response and mapping

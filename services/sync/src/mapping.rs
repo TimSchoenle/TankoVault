@@ -6,7 +6,6 @@
 
 use tankovault_domain::{ContentType, WatchStatus};
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
 
 /// `AniList` `MediaListStatus` enum values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,13 +97,33 @@ pub(crate) enum ConflictPolicy {
     /// Whichever side was updated most recently wins.
     #[default]
     NewestWins,
+    /// Genuine conflicts are queued for the user to resolve rather than auto-picked
+    /// (design v2 §B.3).
+    AskMe,
 }
 
-/// One side's progress plus when it last changed, used for `NewestWins`.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct ProgressState {
-    pub(crate) progress: f64,
-    pub(crate) updated_at: OffsetDateTime,
+impl ConflictPolicy {
+    /// The persisted token for this policy (matches `serde` `snake_case`).
+    #[must_use]
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::LocalWins => "local_wins",
+            Self::RemoteWins => "remote_wins",
+            Self::NewestWins => "newest_wins",
+            Self::AskMe => "ask_me",
+        }
+    }
+
+    /// Parse a persisted policy token, falling back to `NewestWins` for anything unknown.
+    #[must_use]
+    pub(crate) fn parse(token: &str) -> Self {
+        match token {
+            "local_wins" => Self::LocalWins,
+            "remote_wins" => Self::RemoteWins,
+            "ask_me" => Self::AskMe,
+            _ => Self::NewestWins,
+        }
+    }
 }
 
 /// Which side a reconciliation deemed authoritative.
@@ -114,78 +133,113 @@ pub(crate) enum Side {
     Remote,
 }
 
-/// The result of reconciling a single series across the two sides. The engine applies
-/// `update_local` on a pull and `update_remote` on a push.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct Reconciliation {
-    /// The progress value both sides should converge to.
-    pub(crate) agreed_progress: f64,
-    /// The authoritative side (drives which side's *status* is adopted on pull).
-    pub(crate) winner: Side,
-    /// The local store should be written to `agreed_progress`.
-    pub(crate) update_local: bool,
-    /// The remote (`AniList`) entry should be written to `agreed_progress`.
-    pub(crate) update_remote: bool,
+/// What the three-way merge decided should happen to one field of one mapped series.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MergeAction {
+    /// Neither side changed since the last agreement; nothing to write.
+    Noop,
+    /// Push the local value to the remote.
+    PushLocal,
+    /// Pull the remote value into the local store.
+    PullRemote,
+    /// A genuine conflict under `AskMe`: touch neither side, queue for the user.
+    Conflict,
 }
 
-/// Reconcile a series' progress across local and remote states under `policy`.
+/// The outcome of a single field's three-way merge.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct MergeDecision {
+    pub(crate) action: MergeAction,
+    /// The side deemed authoritative for a real conflict / directional write.
+    pub(crate) winner: Side,
+}
+
+/// Three-way merge for one field of one series (design v2 §B.3).
 ///
-/// At least one side must be present (the engine only reconciles series that exist
-/// somewhere). When only one side is present, the other is brought into agreement with it.
+/// `last_*` is the value that side held at the last successful reconciliation (the common
+/// ancestor); `None` means "no snapshot yet" (first reconciliation), in which case there is no
+/// memory of what changed, so equal values converge silently and unequal values are treated as
+/// a real conflict resolved by `policy`. `newer` names the side whose *own* last-modified time
+/// is later, consulted only by `NewestWins`.
 #[must_use]
-pub(crate) fn reconcile_progress(
-    local: Option<ProgressState>,
-    remote: Option<ProgressState>,
+pub(crate) fn three_way<T: PartialEq + Copy>(
+    current_local: T,
+    current_remote: T,
+    last_local: Option<T>,
+    last_remote: Option<T>,
     policy: ConflictPolicy,
-) -> Reconciliation {
-    match (local, remote) {
-        (Some(l), None) => Reconciliation {
-            agreed_progress: l.progress,
+    newer: Side,
+) -> MergeDecision {
+    let local_changed = last_local != Some(current_local);
+    let remote_changed = last_remote != Some(current_remote);
+    let have_ancestor = last_local.is_some() && last_remote.is_some();
+
+    // With no common ancestor we cannot tell what changed: agreement is a no-op, disagreement
+    // is a real conflict resolved by policy.
+    if !have_ancestor {
+        if current_local == current_remote {
+            return MergeDecision {
+                action: MergeAction::Noop,
+                winner: Side::Local,
+            };
+        }
+        return resolve_conflict(policy, newer);
+    }
+
+    match (local_changed, remote_changed) {
+        (false, false) => MergeDecision {
+            action: MergeAction::Noop,
             winner: Side::Local,
-            update_local: false,
-            update_remote: true,
         },
-        (None, Some(r)) => Reconciliation {
-            agreed_progress: r.progress,
+        (true, false) => MergeDecision {
+            action: MergeAction::PushLocal,
+            winner: Side::Local,
+        },
+        (false, true) => MergeDecision {
+            action: MergeAction::PullRemote,
             winner: Side::Remote,
-            update_local: true,
-            update_remote: false,
         },
-        (None, None) => Reconciliation {
-            agreed_progress: 0.0,
-            winner: Side::Local,
-            update_local: false,
-            update_remote: false,
-        },
-        (Some(l), Some(r)) => {
-            let winner = match policy {
-                ConflictPolicy::LocalWins => Side::Local,
-                ConflictPolicy::RemoteWins => Side::Remote,
-                ConflictPolicy::NewestWins => {
-                    if r.updated_at > l.updated_at {
-                        Side::Remote
-                    } else if l.updated_at > r.updated_at {
-                        Side::Local
-                    } else if r.progress > l.progress {
-                        // Same timestamp: prefer the further-along side (reading is monotonic).
-                        Side::Remote
-                    } else {
-                        Side::Local
-                    }
+        (true, true) => {
+            if current_local == current_remote {
+                // Both moved to the same value: converged, just refresh the snapshot.
+                MergeDecision {
+                    action: MergeAction::Noop,
+                    winner: Side::Local,
                 }
-            };
-            let agreed = match winner {
-                Side::Local => l.progress,
-                Side::Remote => r.progress,
-            };
-            Reconciliation {
-                agreed_progress: agreed,
-                winner,
-                // Only write a side that actually differs from the agreed value.
-                update_local: (l.progress - agreed).abs() > f64::EPSILON,
-                update_remote: (r.progress - agreed).abs() > f64::EPSILON,
+            } else {
+                resolve_conflict(policy, newer)
             }
         }
+    }
+}
+
+/// Resolve a genuine conflict (both sides changed to different values, or first-sync
+/// disagreement) under `policy`.
+#[must_use]
+fn resolve_conflict(policy: ConflictPolicy, newer: Side) -> MergeDecision {
+    match policy {
+        ConflictPolicy::LocalWins => MergeDecision {
+            action: MergeAction::PushLocal,
+            winner: Side::Local,
+        },
+        ConflictPolicy::RemoteWins => MergeDecision {
+            action: MergeAction::PullRemote,
+            winner: Side::Remote,
+        },
+        ConflictPolicy::NewestWins => match newer {
+            Side::Local => MergeDecision {
+                action: MergeAction::PushLocal,
+                winner: Side::Local,
+            },
+            Side::Remote => MergeDecision {
+                action: MergeAction::PullRemote,
+                winner: Side::Remote,
+            },
+        },
+        ConflictPolicy::AskMe => MergeDecision {
+            action: MergeAction::Conflict,
+            winner: Side::Local,
+        },
     }
 }
 
@@ -197,8 +251,11 @@ mod tests {
 
     use super::*;
 
-    fn ts(secs: i64) -> OffsetDateTime {
-        OffsetDateTime::from_unix_timestamp(secs).unwrap()
+    fn newer_local() -> Side {
+        Side::Local
+    }
+    fn newer_remote() -> Side {
+        Side::Remote
     }
 
     #[test]
@@ -242,121 +299,80 @@ mod tests {
     }
 
     #[test]
-    fn only_local_pushes_to_remote() {
-        let r = reconcile_progress(
-            Some(ProgressState {
-                progress: 12.0,
-                updated_at: ts(100),
-            }),
-            None,
-            ConflictPolicy::NewestWins,
-        );
-        assert_eq!(r.agreed_progress, 12.0);
-        assert!(r.update_remote && !r.update_local);
-        assert_eq!(r.winner, Side::Local);
+    fn no_change_since_ancestor_is_noop() {
+        let d = three_way(5.0, 5.0, Some(5.0), Some(5.0), ConflictPolicy::NewestWins, newer_local());
+        assert_eq!(d.action, MergeAction::Noop);
     }
 
     #[test]
-    fn only_remote_pulls_to_local() {
-        let r = reconcile_progress(
-            None,
-            Some(ProgressState {
-                progress: 5.0,
-                updated_at: ts(100),
-            }),
+    fn only_local_changed_pushes() {
+        let d = three_way(7.0, 5.0, Some(5.0), Some(5.0), ConflictPolicy::NewestWins, newer_local());
+        assert_eq!(d.action, MergeAction::PushLocal);
+        assert_eq!(d.winner, Side::Local);
+    }
+
+    #[test]
+    fn only_remote_changed_pulls() {
+        // Only remote changed: not a conflict, so policy is irrelevant — pull it.
+        let d = three_way(5.0, 9.0, Some(5.0), Some(5.0), ConflictPolicy::LocalWins, newer_local());
+        assert_eq!(d.action, MergeAction::PullRemote);
+        assert_eq!(d.winner, Side::Remote);
+    }
+
+    #[test]
+    fn both_changed_to_same_value_converges() {
+        let d = three_way(8.0, 8.0, Some(5.0), Some(6.0), ConflictPolicy::AskMe, newer_local());
+        assert_eq!(d.action, MergeAction::Noop);
+    }
+
+    #[test]
+    fn real_conflict_local_wins() {
+        let d = three_way(7.0, 9.0, Some(5.0), Some(5.0), ConflictPolicy::LocalWins, newer_remote());
+        assert_eq!(d.action, MergeAction::PushLocal);
+    }
+
+    #[test]
+    fn real_conflict_remote_wins() {
+        let d = three_way(7.0, 9.0, Some(5.0), Some(5.0), ConflictPolicy::RemoteWins, newer_local());
+        assert_eq!(d.action, MergeAction::PullRemote);
+    }
+
+    #[test]
+    fn real_conflict_newest_wins_follows_newer_side() {
+        let d = three_way(7.0, 9.0, Some(5.0), Some(5.0), ConflictPolicy::NewestWins, newer_remote());
+        assert_eq!(d.action, MergeAction::PullRemote);
+        let d = three_way(7.0, 9.0, Some(5.0), Some(5.0), ConflictPolicy::NewestWins, newer_local());
+        assert_eq!(d.action, MergeAction::PushLocal);
+    }
+
+    #[test]
+    fn real_conflict_ask_me_queues() {
+        let d = three_way(7.0, 9.0, Some(5.0), Some(5.0), ConflictPolicy::AskMe, newer_local());
+        assert_eq!(d.action, MergeAction::Conflict);
+    }
+
+    #[test]
+    fn no_ancestor_agreement_is_noop() {
+        let d = three_way(4.0, 4.0, None, None, ConflictPolicy::AskMe, newer_local());
+        assert_eq!(d.action, MergeAction::Noop);
+    }
+
+    #[test]
+    fn no_ancestor_disagreement_is_conflict_under_ask_me() {
+        let d = three_way(4.0, 8.0, None, None, ConflictPolicy::AskMe, newer_local());
+        assert_eq!(d.action, MergeAction::Conflict);
+    }
+
+    #[test]
+    fn policy_tokens_round_trip() {
+        for p in [
             ConflictPolicy::LocalWins,
-        );
-        assert_eq!(r.agreed_progress, 5.0);
-        assert!(r.update_local && !r.update_remote);
-        assert_eq!(r.winner, Side::Remote);
-    }
-
-    #[test]
-    fn local_wins_overrides_newer_remote() {
-        let r = reconcile_progress(
-            Some(ProgressState {
-                progress: 3.0,
-                updated_at: ts(100),
-            }),
-            Some(ProgressState {
-                progress: 9.0,
-                updated_at: ts(200),
-            }),
-            ConflictPolicy::LocalWins,
-        );
-        assert_eq!(r.winner, Side::Local);
-        assert_eq!(r.agreed_progress, 3.0);
-        assert!(r.update_remote); // remote differs, must be corrected down
-        assert!(!r.update_local);
-    }
-
-    #[test]
-    fn remote_wins_overrides_newer_local() {
-        let r = reconcile_progress(
-            Some(ProgressState {
-                progress: 9.0,
-                updated_at: ts(200),
-            }),
-            Some(ProgressState {
-                progress: 3.0,
-                updated_at: ts(100),
-            }),
             ConflictPolicy::RemoteWins,
-        );
-        assert_eq!(r.winner, Side::Remote);
-        assert_eq!(r.agreed_progress, 3.0);
-        assert!(r.update_local);
-        assert!(!r.update_remote);
-    }
-
-    #[test]
-    fn newest_wins_picks_the_later_timestamp() {
-        let r = reconcile_progress(
-            Some(ProgressState {
-                progress: 3.0,
-                updated_at: ts(100),
-            }),
-            Some(ProgressState {
-                progress: 9.0,
-                updated_at: ts(200),
-            }),
             ConflictPolicy::NewestWins,
-        );
-        assert_eq!(r.winner, Side::Remote);
-        assert_eq!(r.agreed_progress, 9.0);
-        assert!(r.update_local && !r.update_remote);
-    }
-
-    #[test]
-    fn equal_progress_needs_no_writes() {
-        let r = reconcile_progress(
-            Some(ProgressState {
-                progress: 7.0,
-                updated_at: ts(100),
-            }),
-            Some(ProgressState {
-                progress: 7.0,
-                updated_at: ts(300),
-            }),
-            ConflictPolicy::NewestWins,
-        );
-        assert!(!r.update_local && !r.update_remote);
-    }
-
-    #[test]
-    fn newest_wins_tie_prefers_further_along() {
-        let r = reconcile_progress(
-            Some(ProgressState {
-                progress: 4.0,
-                updated_at: ts(100),
-            }),
-            Some(ProgressState {
-                progress: 10.0,
-                updated_at: ts(100),
-            }),
-            ConflictPolicy::NewestWins,
-        );
-        assert_eq!(r.winner, Side::Remote);
-        assert_eq!(r.agreed_progress, 10.0);
+            ConflictPolicy::AskMe,
+        ] {
+            assert_eq!(ConflictPolicy::parse(p.as_str()), p);
+        }
+        assert_eq!(ConflictPolicy::parse("nonsense"), ConflictPolicy::NewestWins);
     }
 }

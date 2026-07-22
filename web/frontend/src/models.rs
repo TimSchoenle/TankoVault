@@ -138,14 +138,17 @@ pub enum ConflictPolicy {
     LocalWins,
     RemoteWins,
     NewestWins,
+    AskMe,
 }
 
 impl ConflictPolicy {
+    /// Plain-language label for the account Sync panel (design v2 §B.8).
     pub fn label(self) -> &'static str {
         match self {
-            Self::LocalWins => "Local wins",
-            Self::RemoteWins => "Remote wins",
-            Self::NewestWins => "Newest wins",
+            Self::LocalWins => "Always keep my local progress",
+            Self::RemoteWins => "Always trust AniList",
+            Self::NewestWins => "Use whichever changed most recently",
+            Self::AskMe => "Ask me when they disagree",
         }
     }
     /// The token the API expects in a sync request body.
@@ -154,9 +157,21 @@ impl ConflictPolicy {
             Self::LocalWins => "local_wins",
             Self::RemoteWins => "remote_wins",
             Self::NewestWins => "newest_wins",
+            Self::AskMe => "ask_me",
         }
     }
-    pub const ALL: [ConflictPolicy; 3] = [Self::LocalWins, Self::RemoteWins, Self::NewestWins];
+    /// Parse a policy token from the API, falling back to `NewestWins` (the zero-config
+    /// default, design v2 §B.8).
+    pub fn parse(token: &str) -> Self {
+        match token {
+            "local_wins" => Self::LocalWins,
+            "remote_wins" => Self::RemoteWins,
+            "ask_me" => Self::AskMe,
+            _ => Self::NewestWins,
+        }
+    }
+    pub const ALL: [ConflictPolicy; 4] =
+        [Self::LocalWins, Self::RemoteWins, Self::NewestWins, Self::AskMe];
 }
 
 // ----- auth -----
@@ -227,6 +242,9 @@ pub struct SeriesDetail {
     /// Author/artist credits attached to the series; empty when none.
     #[serde(default)]
     pub authors: Vec<Author>,
+    /// AniList media id, if this series is mapped; used to link out to the AniList page.
+    #[serde(default)]
+    pub anilist_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -275,6 +293,9 @@ pub struct WatchlistItem {
     /// Unread chapters above the user's progress.
     #[serde(default)]
     pub unread: i64,
+    /// Whether this series is opted out of external sync (design v2 §A.5).
+    #[serde(default)]
+    pub sync_excluded: bool,
 }
 
 /// A continue-reading card (`GET /v1/me/continue`, §9.3): tracked, in-progress series with
@@ -331,6 +352,44 @@ pub struct ProviderInfo {
     pub name: String,
 }
 
+/// A provider's automatic-sync settings for the account panel (design v2 §B.6/§B.8).
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+pub struct SyncSettings {
+    pub linked: bool,
+    #[serde(default)]
+    pub auto_sync_enabled: bool,
+    #[serde(default)]
+    pub conflict_policy: String,
+    #[serde(default)]
+    pub pending_conflicts: i64,
+}
+
+/// One pending sync conflict awaiting the user's decision (design v2 §B.6).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct SyncConflict {
+    pub id: String,
+    pub series_id: String,
+    pub series_title: String,
+    pub provider: String,
+    pub field: String,
+    pub local_value: String,
+    pub remote_value: String,
+    pub detected_at: String,
+}
+
+/// One entry of the user-facing sync history (design v2 §B.6).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct SyncHistoryEntry {
+    pub id: String,
+    pub series_id: String,
+    pub series_title: String,
+    pub provider: String,
+    pub action: String,
+    #[serde(default)]
+    pub detail: serde_json::Value,
+    pub created_at: String,
+}
+
 /// One row of the admin Console's "Linked accounts" table (`GET /v1/admin/sync/accounts`).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct AdminSyncAccount {
@@ -343,6 +402,13 @@ pub struct AdminSyncAccount {
     pub last_synced_at: Option<String>,
     #[serde(default)]
     pub last_error: Option<String>,
+    /// Automatic-sync policy visibility (design v2 §B.7) — read-only for operators.
+    #[serde(default)]
+    pub auto_sync_enabled: bool,
+    #[serde(default)]
+    pub conflict_policy: String,
+    #[serde(default)]
+    pub pending_conflicts: i64,
     pub created_at: String,
 }
 
@@ -419,7 +485,9 @@ pub struct WatchlistUpsert {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProgressUpdate {
-    pub last_read_number: f64,
+    /// The whole-chapter frontier to set outright (design v2 §A.6 — renamed from
+    /// `last_read_number`).
+    pub last_read_whole_number: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

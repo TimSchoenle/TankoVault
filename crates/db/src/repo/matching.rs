@@ -267,10 +267,22 @@ pub async fn merge_series(
     .await?;
 
     sqlx::query(
-        "INSERT INTO read_progress (user_id, series_id, last_read_number, updated_at) \
-         SELECT user_id, $1, last_read_number, updated_at FROM read_progress WHERE series_id = $2 \
+        "INSERT INTO read_progress \
+            (user_id, series_id, last_read_whole_number, last_read_part_number, updated_at) \
+         SELECT user_id, $1, last_read_whole_number, last_read_part_number, updated_at \
+            FROM read_progress WHERE series_id = $2 \
          ON CONFLICT (user_id, series_id) DO UPDATE \
-            SET last_read_number = GREATEST(read_progress.last_read_number, EXCLUDED.last_read_number), \
+            SET last_read_whole_number = \
+                    GREATEST(read_progress.last_read_whole_number, EXCLUDED.last_read_whole_number), \
+                last_read_part_number = CASE \
+                    WHEN GREATEST(read_progress.last_read_whole_number, EXCLUDED.last_read_whole_number) \
+                         >= floor(GREATEST(COALESCE(read_progress.last_read_part_number, 0), \
+                                           COALESCE(EXCLUDED.last_read_part_number, 0))) \
+                     AND GREATEST(COALESCE(read_progress.last_read_part_number, 0), \
+                                  COALESCE(EXCLUDED.last_read_part_number, 0)) = 0 \
+                    THEN NULL \
+                    ELSE NULLIF(GREATEST(COALESCE(read_progress.last_read_part_number, 0), \
+                                         COALESCE(EXCLUDED.last_read_part_number, 0)), 0) END, \
                 updated_at = now()",
     )
     .bind(keep)

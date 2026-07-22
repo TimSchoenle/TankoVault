@@ -1909,6 +1909,13 @@ fn SyncAccountRow(account: AdminSyncAccount, reload: Signal<u32>) -> Element {
                         "last sync {last_sync}"
                     }
                 }
+                div { class: "ik-mono ik-muted", style: "font-size:11px;",
+                    if account.auto_sync_enabled { "auto-sync on" } else { "auto-sync off" }
+                    " · policy {account.conflict_policy}"
+                    if account.pending_conflicts > 0 {
+                        span { style: "color:var(--acc);", " · {account.pending_conflicts} pending conflicts" }
+                    }
+                }
                 if let Some(err) = &account.last_error {
                     div { style: "font-size:12px;color:var(--acc);", "{err}" }
                 }

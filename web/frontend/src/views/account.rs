@@ -551,8 +551,49 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
         }
     });
     let mut policy = use_signal(|| ConflictPolicy::NewestWins);
+    let mut auto_sync = use_signal(|| true);
+    let mut show_conflicts = use_signal(|| false);
     let mut busy = use_signal(|| false);
     let mut message: Signal<Option<Result<String, String>>> = use_signal(|| None);
+
+    // The account's persisted automatic-sync settings (design v2 §B.6/§B.8): drives the
+    // "Automatic sync" toggle, the conflict-policy picker's initial value, and the pending
+    // conflicts badge. Reloaded alongside `status` whenever `reload` bumps.
+    let settings = use_resource({
+        let slug = slug.clone();
+        move || {
+            let _ = reload.read();
+            let slug = slug.clone();
+            async move {
+                match session.token_value() {
+                    Some(t) => Some(api::sync_settings(&t, &slug).await),
+                    None => None,
+                }
+            }
+        }
+    });
+    // Initialise the local controls from the server's persisted values once loaded.
+    use_effect(move || {
+        if let Some(Some(Ok(s))) = &*settings.read_unchecked() {
+            policy.set(ConflictPolicy::parse(&s.conflict_policy));
+            auto_sync.set(s.auto_sync_enabled);
+        }
+    });
+
+    let toggle_auto = {
+        let slug = slug.clone();
+        move |_| {
+            let next = !*auto_sync.peek();
+            auto_sync.set(next);
+            let slug = slug.clone();
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    let _ = api::patch_sync_settings(&t, &slug, Some(next), None).await;
+                    reload += 1;
+                }
+            });
+        }
+    };
 
     let connect = {
         let slug = slug.clone();
@@ -654,6 +695,12 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
         }
     };
 
+    let pending = match &*settings.read_unchecked() {
+        Some(Some(Ok(s))) => s.pending_conflicts,
+        _ => 0,
+    };
+    let linked = matches!(&*status.read_unchecked(), Some(Some(Ok(s))) if s.linked);
+
     let body = match &*status.read_unchecked() {
         None | Some(None) => rsx! { div { class: "ik-skeleton", style: "height:80px;" } },
         Some(Some(Err(e))) => rsx! {
@@ -679,14 +726,51 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                     }
                     button { class: "ik-btn", disabled: *busy.read(), onclick: disconnect, "Disconnect" }
                 }
-                div { class: "ik-subhead", style: "margin-bottom:8px;", "Conflict resolution policy" }
+                div { class: "ik-row", style: "margin-bottom:12px;",
+                    div { class: "grow",
+                        div { style: "font-weight:600;font-size:13px;", "Automatic sync" }
+                        div { class: "ik-muted", style: "font-size:12px;", "Keep this account in sync in the background." }
+                    }
+                    button {
+                        class: if *auto_sync.read() { "ik-btn primary" } else { "ik-btn" },
+                        onclick: toggle_auto,
+                        if *auto_sync.read() { "On" } else { "Off" }
+                    }
+                }
+                if pending > 0 {
+                    div { class: "ik-row", style: "margin-bottom:12px;",
+                        span { class: "grow", style: "font-size:13px;color:var(--acc);",
+                            "{pending} need your review"
+                        }
+                        button {
+                            class: "ik-btn",
+                            onclick: move |_| show_conflicts.set(true),
+                            "Review conflicts"
+                        }
+                    }
+                }
+                div { class: "ik-subhead", style: "margin-bottom:8px;", "When local and AniList disagree" }
                 div { class: "ik-chips",
                     for p in ConflictPolicy::ALL {
-                        button {
-                            key: "{p.label()}",
-                            class: if *policy.read() == p { "ik-chip active" } else { "ik-chip" },
-                            onclick: move |_| policy.set(p),
-                            "{p.label()}"
+                        {
+                            let slug = slug.clone();
+                            rsx! {
+                                button {
+                                    key: "{p.label()}",
+                                    class: if *policy.read() == p { "ik-chip active" } else { "ik-chip" },
+                                    onclick: move |_| {
+                                        policy.set(p);
+                                        let slug = slug.clone();
+                                        spawn(async move {
+                                            if let Some(t) = session.token_value() {
+                                                let _ = api::patch_sync_settings(&t, &slug, None, Some(p.token())).await;
+                                                reload += 1;
+                                            }
+                                        });
+                                    },
+                                    "{p.label()}"
+                                }
+                            }
                         }
                     }
                 }
@@ -729,7 +813,202 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
             Some(Err(m)) => rsx! { p { style: "font-size:13px;color:var(--acc);margin-top:12px;", "{m}" } },
             None => rsx! {},
         }
+        if *show_conflicts.read() {
+            ConflictInbox { provider: slug.clone(), show: show_conflicts, parent_reload: reload }
+        }
+        if linked {
+            SyncHistory { provider: slug.clone(), refresh: reload }
+        }
     }
+}
+
+/// A compact "recent sync activity" log for one provider (design v2 §B.4/§B.6): what the
+/// automatic engine actually did, so "automatic" never means "invisible." Reloads whenever
+/// the parent card's `refresh` bumps (after a pull/push/settings change).
+#[component]
+fn SyncHistory(provider: String, refresh: Signal<u32>) -> Element {
+    let session = use_session();
+    let prov = provider.clone();
+    let entries = use_resource(move || {
+        let _ = refresh.read();
+        let prov = prov.clone();
+        async move {
+            match session.token_value() {
+                Some(t) => match api::sync_history(&t, 0).await {
+                    Ok(list) => Some(
+                        list.into_iter()
+                            .filter(|e| e.provider == prov)
+                            .take(8)
+                            .collect::<Vec<_>>(),
+                    ),
+                    Err(_) => None,
+                },
+                None => None,
+            }
+        }
+    });
+
+    let body = match &*entries.read_unchecked() {
+        None => rsx! {},
+        Some(None) => rsx! {},
+        Some(Some(list)) if list.is_empty() => rsx! {
+            div { class: "ik-muted", style: "font-size:13px;", "No automatic sync activity yet." }
+        },
+        Some(Some(list)) => {
+            let rows = list.clone();
+            rsx! {
+                for e in rows {
+                    div { class: "ik-row", key: "{e.id}",
+                        div { class: "grow",
+                            div { style: "font-weight:600;font-size:13px;", "{e.series_title}" }
+                            div { class: "ik-mono ik-muted", style: "font-size:11px;", "{e.action}" }
+                        }
+                        span { class: "ik-mono ik-muted", style: "font-size:11px;",
+                            {rel_time(Some(e.created_at.as_str()))}
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    rsx! {
+        div { class: "ik-sidebar-card", style: "max-width:560px;margin-top:14px;",
+            div { class: "ik-flex", style: "margin-bottom:12px;",
+                Ic { icon: Icon::CloudSync, size: 16 }
+                strong { "Recent sync activity" }
+            }
+            {body}
+        }
+    }
+}
+
+/// The user-facing conflict-resolution inbox (design v2 §B.8): every pending `sync_conflict`
+/// for `provider`, each with a plain-language "keep mine / take AniList's" choice. Reused
+/// interaction shape as the operator merge-candidates queue, for a reader audience.
+#[component]
+fn ConflictInbox(provider: String, show: Signal<bool>, parent_reload: Signal<u32>) -> Element {
+    let session = use_session();
+    let reload = use_signal(|| 0u32);
+    let list = use_resource(move || {
+        let _ = reload.read();
+        async move {
+            match session.token_value() {
+                Some(t) => Some(api::sync_conflicts(&t).await),
+                None => None,
+            }
+        }
+    });
+
+    let prov = provider.clone();
+    let body = match &*list.read_unchecked() {
+        None | Some(None) => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
+        Some(Some(Err(e))) => rsx! {
+            p { style: "font-size:13px;color:var(--acc);", "Could not load conflicts: {e}" }
+        },
+        Some(Some(Ok(all))) => {
+            let rows: Vec<_> = all
+                .iter()
+                .filter(|c| c.provider == prov)
+                .cloned()
+                .collect();
+            if rows.is_empty() {
+                rsx! { div { class: "ik-empty", "No conflicts need your review." } }
+            } else {
+                rsx! {
+                    for c in rows {
+                        ConflictRow { key: "{c.id}", conflict: c, reload, parent_reload }
+                    }
+                }
+            }
+        }
+    };
+
+    rsx! {
+        div { class: "ik-sidebar-card", style: "max-width:560px;margin-top:14px;",
+            div { class: "ik-flex", style: "margin-bottom:12px;",
+                strong { class: "grow", "Conflicts to review" }
+                button { class: "ik-btn", onclick: move |_| show.set(false), "Close" }
+            }
+            {body}
+        }
+    }
+}
+
+/// One conflict row: shows the disagreeing values and the two resolution buttons.
+#[component]
+fn ConflictRow(
+    conflict: crate::models::SyncConflict,
+    reload: Signal<u32>,
+    parent_reload: Signal<u32>,
+) -> Element {
+    let session = use_session();
+    let busy = use_signal(|| false);
+
+    // Each button gets its own closure with its own `id` clone (a shared `FnMut` capturing the
+    // non-`Copy` `id` can't be moved into both buttons).
+    let resolve_local = {
+        let id = conflict.id.clone();
+        move |_| {
+            if *busy.peek() {
+                return;
+            }
+            resolve_conflict(session, busy, reload, parent_reload, id.clone(), "local");
+        }
+    };
+    let resolve_remote = {
+        let id = conflict.id.clone();
+        move |_| {
+            if *busy.peek() {
+                return;
+            }
+            resolve_conflict(session, busy, reload, parent_reload, id.clone(), "remote");
+        }
+    };
+
+    rsx! {
+        div { class: "ik-row",
+            div { class: "grow",
+                div { style: "font-weight:600;font-size:13px;", "{conflict.series_title}" }
+                div { class: "ik-mono ik-muted", style: "font-size:11px;",
+                    "{conflict.field}: local {conflict.local_value} · AniList {conflict.remote_value}"
+                }
+            }
+            button {
+                class: "ik-btn",
+                disabled: *busy.read(),
+                onclick: resolve_local,
+                "Keep mine"
+            }
+            button {
+                class: "ik-btn",
+                disabled: *busy.read(),
+                onclick: resolve_remote,
+                "Take AniList's"
+            }
+        }
+    }
+}
+
+/// Fire a conflict resolution and refresh both the inbox and the parent card's badge.
+fn resolve_conflict(
+    session: crate::state::Session,
+    mut busy: Signal<bool>,
+    mut reload: Signal<u32>,
+    mut parent_reload: Signal<u32>,
+    id: String,
+    resolution: &'static str,
+) {
+    busy.set(true);
+    spawn(async move {
+        if let Some(t) = session.token_value() {
+            if api::resolve_conflict(&t, &id, resolution).await.is_ok() {
+                reload += 1;
+                parent_reload += 1;
+            }
+        }
+        busy.set(false);
+    });
 }
 
 /// One summary line from a pull's/push's report JSON (`engine::PullReport`/`PushReport`

@@ -369,6 +369,9 @@ CREATE TABLE watchlist_entries (
 );
 CREATE INDEX watchlist_series_notify ON watchlist_entries (series_id) WHERE notify;
 
+-- Superseded by a two-scalar split (last_read_whole_number / last_read_part_number, still
+-- scalar, no ledger) — see docs/READING_PROGRESS_AND_SYNC.md Part A. Kept here as the
+-- as-built v1 shape (single last_read_number column).
 CREATE TABLE read_progress (
   user_id           uuid NOT NULL REFERENCES users(id)  ON DELETE CASCADE,
   series_id         uuid NOT NULL REFERENCES series(id) ON DELETE CASCADE,
@@ -793,6 +796,13 @@ POST   /v1/admin/series/merge             { keep, merge }
 - **Push**: reflect local watch status/progress to AniList (`SaveMediaListEntry`).
 - Mapping cache in `sync_mappings`. Rate-limited to AniList's published limits; backoff on 429.
 - Conflict policy is explicit and user-selectable (local-wins / remote-wins / newest-wins).
+
+> **Superseded by `docs/READING_PROGRESS_AND_SYNC.md` Part B**: persisted (not env-config)
+> per-account `auto_sync_enabled` + `conflict_policy`, a three-way merge (not two-way) with an
+> `ask_me` policy and a conflict-review queue, a scheduled reconciliation loop in addition to
+> the reactive targeted push, and a per-series (opt-out) sync-exclusion flag. As-built v1
+> (env-only policy, two-way `reconcile_progress`, reactive push only) is described in
+> `IMPLEMENTATION_STATUS.md` §7.
 
 ---
 

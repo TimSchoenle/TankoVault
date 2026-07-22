@@ -155,6 +155,10 @@ pub fn Series(id: String) -> Element {
         _ => None,
     };
     let wl_entry_side = current_entry(&watchlist, &id);
+    let anilist_id: Option<String> = match &*detail.read_unchecked() {
+        Some(Ok(d)) => d.anilist_id.clone(),
+        _ => None,
+    };
 
     let chapter_body = match &*chapters.read_unchecked() {
         None => rsx! {
@@ -173,12 +177,7 @@ pub fn Series(id: String) -> Element {
         },
         Some(Ok(list)) => {
             let list = list.clone();
-            // Rows are newest-first (`ORDER BY number DESC`); "Mark unread" steps back to the
-            // *next* row's number rather than assuming contiguous integers.
-            let prevs: Vec<Option<f64>> = (0..list.len())
-                .map(|i| list.get(i + 1).map(|c| c.number))
-                .collect();
-            let groups = group_chapters(&list, &prevs);
+            let groups = group_chapters(&list);
             rsx! {
                 div { class: "ik-chapter-list",
                     for (i , g) in groups.into_iter().enumerate() {
@@ -227,7 +226,21 @@ pub fn Series(id: String) -> Element {
                         reload: reload_wl,
                     }
                     div { class: "ik-flex", style: "margin-top:12px;font-size:13px;justify-content:space-between;",
-                        span { "AniList" }
+                        match anilist_id {
+                            Some(aid) => rsx! {
+                                a {
+                                    class: "ik-flex ik-icon-link",
+                                    style: "gap:6px;",
+                                    href: "https://anilist.co/manga/{aid}",
+                                    target: "_blank",
+                                    rel: "noopener",
+                                    title: "View on AniList",
+                                    "AniList"
+                                    Ic { icon: Icon::OpenInNew, size: 13 }
+                                }
+                            },
+                            None => rsx! { span { "AniList" } },
+                        }
                         match &*sync_status.read_unchecked() {
                             Some(Some(s)) if s.linked => rsx! {
                                 span { class: "ik-flex", style: "gap:4px;color:var(--jade,#3DA88F);",
@@ -345,10 +358,48 @@ fn WatchControls(
 
     let in_list = entry.is_some();
     let notify = entry.as_ref().map(|e| e.notify).unwrap_or(true);
+    let sync_excluded = entry.as_ref().map(|e| e.sync_excluded).unwrap_or(false);
     let status = entry
         .as_ref()
         .map(|e| e.status)
         .unwrap_or(WatchStatus::Reading);
+
+    // The per-title sync opt-out (design v2 §B.8) is only meaningful once the user has linked
+    // at least one external provider — otherwise there is nothing to opt out of.
+    let has_linked = use_resource(move || async move {
+        match session.token_value() {
+            Some(t) => match api::sync_providers(&t).await {
+                Ok(list) => {
+                    for p in list {
+                        if let Ok(s) = api::sync_status(&t, &p.slug).await {
+                            if s.linked {
+                                return true;
+                            }
+                        }
+                    }
+                    false
+                }
+                Err(_) => false,
+            },
+            None => false,
+        }
+    });
+    let show_sync_toggle = in_list && matches!(&*has_linked.read_unchecked(), Some(true));
+
+    let toggle_sync = {
+        let sid = series_id.clone();
+        let mut reload = reload;
+        move |_| {
+            let sid = sid.clone();
+            spawn(async move {
+                if let Some(t) = session.token_value() {
+                    if api::set_sync_excluded(&t, &sid, !sync_excluded).await.is_ok() {
+                        reload += 1;
+                    }
+                }
+            });
+        }
+    };
 
     let add = {
         let sid = series_id.clone();
@@ -422,6 +473,14 @@ fn WatchControls(
                     "Add to watchlist"
                 }
             }
+            if show_sync_toggle {
+                button {
+                    class: if sync_excluded { "ik-btn" } else { "ik-btn primary" },
+                    onclick: toggle_sync,
+                    Ic { icon: Icon::CloudSync, size: 16 }
+                    if sync_excluded { "Sync off" } else { "Sync on" }
+                }
+            }
         }
     }
 }
@@ -430,7 +489,6 @@ fn WatchControls(
 fn ChapterRow(
     chapter: crate::models::ChapterDto,
     series_id: String,
-    prev_number: Option<f64>,
     reload: Signal<u32>,
     /// True for a sub-chapter part release (fractional `number`, e.g. `152.6`) — sources
     /// sometimes ship these ahead of the compiled full chapter. Styled distinctly and never
@@ -473,15 +531,11 @@ fn ChapterRow(
         "ik-chapter"
     };
 
-    // "Mark read" sets progress to this chapter's number — safe because it's only shown on
-    // unread rows, which are always above the current threshold. "Mark unread" must NOT assume
-    // contiguous integer numbering (`chapter.number - 1`); it steps back to the *previous*
-    // row's number (rows render newest-first) or 0 if this is the first chapter.
-    let target = if is_read {
-        prev_number.unwrap_or(0.0)
-    } else {
-        chapter.number
-    };
+    // Per-chapter mark read/unread (design v2 §A.3): the dedicated endpoint applies the
+    // two-scalar rule server-side, correctly advancing/retreating either the whole-chapter or
+    // the part frontier for this exact `number` — a part release never corrupts whole-chapter
+    // progress, and unmarking retreats to the previous chapter without assuming contiguity.
+    let number = chapter.number;
     let mark = {
         let series_id = series_id.clone();
         move |_| {
@@ -492,7 +546,7 @@ fn ChapterRow(
             let series_id = series_id.clone();
             spawn(async move {
                 if let Some(t) = session.token_value() {
-                    if api::set_progress(&t, &series_id, target).await.is_ok() {
+                    if api::mark_chapter(&t, &series_id, number, !is_read).await.is_ok() {
                         reload += 1;
                     }
                 }
@@ -543,26 +597,25 @@ fn ChapterRow(
 /// dropdown nested under it rather than cluttering the main list.
 #[derive(Clone, PartialEq)]
 struct ChapterGroup {
-    full: Option<(crate::models::ChapterDto, Option<f64>)>,
+    full: Option<crate::models::ChapterDto>,
     /// Part releases sharing this group's whole-chapter number, newest (highest) first.
-    parts: Vec<(crate::models::ChapterDto, Option<f64>)>,
+    parts: Vec<crate::models::ChapterDto>,
 }
 
-/// Groups a newest-first chapter list (paired with each row's precomputed "mark unread"
-/// target) by `floor(number)`. Relies on the list being sorted descending by `number`, which
-/// guarantees every part release sorts directly above its whole chapter (e.g. `152.6` >
-/// `152.1` > `152`), so same-group rows are always contiguous.
-fn group_chapters(list: &[crate::models::ChapterDto], prevs: &[Option<f64>]) -> Vec<ChapterGroup> {
+/// Groups a newest-first chapter list by `floor(number)`. Relies on the list being sorted
+/// descending by `number`, which guarantees every part release sorts directly above its whole
+/// chapter (e.g. `152.6` > `152.1` > `152`), so same-group rows are always contiguous.
+fn group_chapters(list: &[crate::models::ChapterDto]) -> Vec<ChapterGroup> {
     let mut groups: Vec<(i64, ChapterGroup)> = Vec::new();
-    for (chapter, prev) in list.iter().cloned().zip(prevs.iter().copied()) {
+    for chapter in list.iter().cloned() {
         let key = chapter.number.floor() as i64;
         let is_full = chapter.number.fract() == 0.0;
         match groups.last_mut() {
             Some((k, g)) if *k == key => {
                 if is_full {
-                    g.full = Some((chapter, prev));
+                    g.full = Some(chapter);
                 } else {
-                    g.parts.push((chapter, prev));
+                    g.parts.push(chapter);
                 }
             }
             _ => {
@@ -571,9 +624,9 @@ fn group_chapters(list: &[crate::models::ChapterDto], prevs: &[Option<f64>]) -> 
                     parts: Vec::new(),
                 };
                 if is_full {
-                    g.full = Some((chapter, prev));
+                    g.full = Some(chapter);
                 } else {
-                    g.parts.push((chapter, prev));
+                    g.parts.push(chapter);
                 }
                 groups.push((key, g));
             }
@@ -590,8 +643,8 @@ fn ChapterGroupRow(group: ChapterGroup, series_id: String, reload: Signal<u32>) 
 
     // Ascending range for the toggle label ("152.1–152.6"): `parts` is newest-first, so the
     // lowest number is last and the highest is first.
-    let lo = parts.last().map(|(c, _)| c.number).unwrap_or_default();
-    let hi = parts.first().map(|(c, _)| c.number).unwrap_or_default();
+    let lo = parts.last().map(|c| c.number).unwrap_or_default();
+    let hi = parts.first().map(|c| c.number).unwrap_or_default();
     let count = parts.len();
     let toggle_label = format!(
         "{count} early part release{} ({}\u{2013}{})",
@@ -601,11 +654,10 @@ fn ChapterGroupRow(group: ChapterGroup, series_id: String, reload: Signal<u32>) 
     );
 
     rsx! {
-        if let Some((c, prev)) = group.full.clone() {
+        if let Some(c) = group.full.clone() {
             ChapterRow {
                 chapter: c,
                 series_id: series_id.clone(),
-                prev_number: prev,
                 reload,
                 is_part: false,
             }
@@ -627,12 +679,11 @@ fn ChapterGroupRow(group: ChapterGroup, series_id: String, reload: Signal<u32>) 
         // No full chapter yet: the parts are the reading frontier, so they stay visible
         // rather than collapsed.
         if !has_full || *expanded.read() {
-            for (c , prev) in parts.iter().cloned() {
+            for c in parts.iter().cloned() {
                 ChapterRow {
                     key: "{c.number}",
                     chapter: c,
                     series_id: series_id.clone(),
-                    prev_number: prev,
                     reload,
                     is_part: true,
                 }

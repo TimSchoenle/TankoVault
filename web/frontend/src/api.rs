@@ -279,15 +279,134 @@ pub async fn remove_watchlist(token: &str, series_id: &str) -> ApiResult<()> {
 pub async fn set_progress(
     token: &str,
     series_id: &str,
-    last_read_number: f64,
+    last_read_whole_number: f64,
 ) -> ApiResult<serde_json::Value> {
     send_json(
         Method::Put,
         &format!("/v1/me/progress/{series_id}"),
-        &ProgressUpdate { last_read_number },
+        &ProgressUpdate {
+            last_read_whole_number,
+        },
         Some(token),
     )
     .await
+}
+
+/// Mark a single chapter read/unread (design v2 §A.6). Unmarking an older chapter retreats
+/// progress past it too, so the caller should confirm with the user first in that case.
+pub async fn mark_chapter(
+    token: &str,
+    series_id: &str,
+    number: f64,
+    read: bool,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Put,
+        &format!("/v1/me/progress/{series_id}/chapters/{number}"),
+        &serde_json::json!({ "read": read }),
+        Some(token),
+    )
+    .await
+}
+
+/// "Mark read to here" for a series (design v2 §A.6). API-complete; reserved for a future
+/// bulk "mark read to here" affordance (per-chapter mark read/unread covers today's UI).
+#[allow(dead_code)]
+pub async fn mark_read_to(
+    token: &str,
+    series_id: &str,
+    number: f64,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        &format!("/v1/me/progress/{series_id}/mark-read-to"),
+        &serde_json::json!({ "number": number }),
+        Some(token),
+    )
+    .await
+}
+
+/// Toggle a series' blanket exclusion from external sync (design v2 §A.5).
+pub async fn set_sync_excluded(
+    token: &str,
+    series_id: &str,
+    excluded: bool,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Put,
+        &format!("/v1/me/watchlist/{series_id}/sync"),
+        &serde_json::json!({ "excluded": excluded }),
+        Some(token),
+    )
+    .await
+}
+
+/// Per-provider override of a series' sync exclusion (design v2 §A.5). API-complete; reserved
+/// for finer multi-provider control (the blanket per-series toggle covers today's UI).
+#[allow(dead_code)]
+pub async fn set_sync_override(
+    token: &str,
+    series_id: &str,
+    provider: &str,
+    excluded: bool,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Put,
+        &format!("/v1/me/watchlist/{series_id}/sync/{provider}"),
+        &serde_json::json!({ "excluded": excluded }),
+        Some(token),
+    )
+    .await
+}
+
+/// The caller's automatic-sync settings for a provider (design v2 §B.6).
+pub async fn sync_settings(token: &str, provider: &str) -> ApiResult<SyncSettings> {
+    get(&format!("/v1/me/sync/{provider}/settings"), Some(token)).await
+}
+
+/// Update automatic sync + conflict policy for a provider (design v2 §B.6).
+pub async fn patch_sync_settings(
+    token: &str,
+    provider: &str,
+    auto_sync_enabled: Option<bool>,
+    conflict_policy: Option<&str>,
+) -> ApiResult<serde_json::Value> {
+    let body = serde_json::json!({
+        "auto_sync_enabled": auto_sync_enabled,
+        "conflict_policy": conflict_policy,
+    });
+    send_json(
+        Method::Patch,
+        &format!("/v1/me/sync/{provider}/settings"),
+        &body,
+        Some(token),
+    )
+    .await
+}
+
+/// The caller's pending sync conflicts across all providers (design v2 §B.6).
+pub async fn sync_conflicts(token: &str) -> ApiResult<Vec<SyncConflict>> {
+    get("/v1/me/sync/conflicts", Some(token)).await
+}
+
+/// Apply a resolution (`"local"` | `"remote"`) to a pending conflict (design v2 §B.6).
+pub async fn resolve_conflict(
+    token: &str,
+    id: &str,
+    resolution: &str,
+) -> ApiResult<serde_json::Value> {
+    send_json(
+        Method::Post,
+        &format!("/v1/me/sync/conflicts/{id}/resolve"),
+        &serde_json::json!({ "resolution": resolution }),
+        Some(token),
+    )
+    .await
+}
+
+/// A page of the caller's sync history (design v2 §B.6).
+pub async fn sync_history(token: &str, page: i64) -> ApiResult<Vec<SyncHistoryEntry>> {
+    get(&format!("/v1/me/sync/history?page={page}"), Some(token)).await
 }
 
 pub async fn feed(token: &str) -> ApiResult<Vec<FeedEntry>> {

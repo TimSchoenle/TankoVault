@@ -426,7 +426,8 @@ pub struct WatchlistCard {
     pub unread: i64,
 }
 
-/// List a user's watchlist with the embedded title/cover/progress each card needs.
+/// List a user's watchlist with the embedded title/cover/progress each card needs. `unread`
+/// counts distinct whole chapters (`floor(number)`) so part releases don't inflate it.
 pub async fn watchlist_detailed<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -446,7 +447,7 @@ pub async fn watchlist_detailed<'e, E: PgExecutor<'e>>(
         "SELECT w.series_id, s.canonical_title AS series_title, s.cover_url, \
                 w.status::text AS status, w.notify, w.added_at, \
                 rp.last_read_number::float8 AS last_read_number, \
-                (SELECT COALESCE(count(DISTINCT c.number),0) \
+                (SELECT COALESCE(count(DISTINCT floor(c.number)),0) \
                    FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
                    WHERE ss.series_id = w.series_id \
                      AND c.number > COALESCE(rp.last_read_number, 0)) AS unread \
@@ -489,7 +490,9 @@ pub struct ContinueCard {
 }
 
 /// Continue-reading cards: watched series (`reading`/`planned`/`paused`) that have at least
-/// one unread chapter, freshest activity first.
+/// one unread chapter, freshest activity first. `unread` counts distinct **whole** chapters
+/// (`floor(number)`) — sub-chapter part releases (e.g. `152.1`..`152.6`) collapse into the
+/// one chapter they belong to rather than inflating the badge.
 pub async fn continue_reading<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -511,7 +514,7 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
                    FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
                    WHERE ss.series_id = w.series_id \
                      AND c.number > COALESCE(rp.last_read_number, 0)) AS next_number, \
-                (SELECT COALESCE(count(DISTINCT c.number),0) \
+                (SELECT COALESCE(count(DISTINCT floor(c.number)),0) \
                    FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
                    WHERE ss.series_id = w.series_id \
                      AND c.number > COALESCE(rp.last_read_number, 0)) AS unread, \
@@ -556,7 +559,9 @@ pub struct MeStats {
     pub unread: i64,
 }
 
-/// Compute a user's lifetime tracking stats in a single round trip.
+/// Compute a user's lifetime tracking stats in a single round trip. Both `chapters_read`
+/// and `unread` are floored to whole chapters — sub-chapter part releases (e.g. `152.6`)
+/// are not "full chapters" for tracking purposes and don't count as extra ones.
 pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<MeStats> {
     let stats: MeStats = sqlx::query_as(
         "SELECT \
@@ -566,7 +571,7 @@ pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResu
            (SELECT COALESCE(sum(floor(last_read_number)),0)::int8 FROM read_progress \
               WHERE user_id = $1) AS chapters_read, \
            (SELECT count(*) FROM ( \
-               SELECT DISTINCT w.series_id, c.number \
+               SELECT DISTINCT w.series_id, floor(c.number) \
                FROM watchlist_entries w \
                JOIN series_sources ss ON ss.series_id = w.series_id \
                JOIN chapters c ON c.series_source_id = ss.id \

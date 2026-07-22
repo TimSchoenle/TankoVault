@@ -558,6 +558,25 @@ pub async fn max_chapter_number<'e, E: PgExecutor<'e>>(
     Ok(max)
 }
 
+/// The number of distinct **whole** chapters a source has — sub-chapter part releases
+/// (e.g. `152.1`..`152.6`, fractional `number`) collapse into the one whole chapter they
+/// belong to instead of each counting as its own chapter (frontend §9.2 "Read on" +
+/// hero stat; mirrors the `floor(number)` tracking-count convention in
+/// `repo::tracking`). Deliberately distinct from `series_sources.chapter_count`, which
+/// stays a raw scanned-row count used for scan/sync bookkeeping.
+pub async fn count_full_chapters<'e, E: PgExecutor<'e>>(
+    exec: E,
+    source_id: SeriesSourceId,
+) -> DbResult<i32> {
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(DISTINCT floor(number)) FROM chapters WHERE series_source_id = $1",
+    )
+    .bind(source_id.as_uuid())
+    .fetch_one(exec)
+    .await?;
+    Ok(i32::try_from(count).unwrap_or(i32::MAX))
+}
+
 /// List chapters of a source, newest first (resolved to absolute links by the caller).
 pub async fn list_chapters<'e, E: PgExecutor<'e>>(
     exec: E,

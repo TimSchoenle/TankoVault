@@ -502,9 +502,12 @@ impl SyncEngine {
     /// Resolve a remote entry to a canonical series: first via an existing mapping, then by
     /// the best confident title match against the local catalogue.
     ///
-    /// Every candidate title (romaji/english/native) is scored against its own trigram
-    /// candidates and the **global** best is taken, so an entry attaches when *any* of its
-    /// titles matches confidently — not just the first one tried.
+    /// Every candidate title (romaji/english/native, plus every AniList synonym) is scored
+    /// against its own trigram candidates and the **global** best is taken, so an entry
+    /// attaches when *any* of its titles matches confidently — not just the first one tried.
+    /// Synonym lists routinely duplicate the official titles or each other once normalized
+    /// (case, punctuation, a "manga"/"webtoon" suffix), so titles are deduplicated by their
+    /// normalized form first — one DB round trip per distinct key, not per raw string.
     async fn resolve_series(
         &self,
         slug: &str,
@@ -516,12 +519,16 @@ impl SyncEngine {
             return Ok(Some(id));
         }
 
+        let mut seen = std::collections::HashSet::with_capacity(entry.titles.len());
+        let normalized_titles: Vec<String> = entry
+            .titles
+            .iter()
+            .map(|title| normalize_title(title))
+            .filter(|normalized| !normalized.is_empty() && seen.insert(normalized.clone()))
+            .collect();
+
         let mut best: Option<(SeriesId, f32)> = None;
-        for title in &entry.titles {
-            let normalized = normalize_title(title);
-            if normalized.is_empty() {
-                continue;
-            }
+        for normalized in normalized_titles {
             let candidates: Vec<Candidate> =
                 matching::find_candidates(&self.pool, &normalized, self.candidate_limit)
                     .await?

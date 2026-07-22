@@ -178,14 +178,14 @@ pub fn Series(id: String) -> Element {
             let prevs: Vec<Option<f64>> = (0..list.len())
                 .map(|i| list.get(i + 1).map(|c| c.number))
                 .collect();
+            let groups = group_chapters(&list, &prevs);
             rsx! {
                 div { class: "ik-chapter-list",
-                    for (i , c) in list.into_iter().enumerate() {
-                        ChapterRow {
+                    for (i , g) in groups.into_iter().enumerate() {
+                        ChapterGroupRow {
                             key: "{i}",
-                            chapter: c,
+                            group: g,
                             series_id: id.clone(),
-                            prev_number: prevs[i],
                             reload: reload_chapters,
                         }
                     }
@@ -432,6 +432,11 @@ fn ChapterRow(
     series_id: String,
     prev_number: Option<f64>,
     reload: Signal<u32>,
+    /// True for a sub-chapter part release (fractional `number`, e.g. `152.6`) — sources
+    /// sometimes ship these ahead of the compiled full chapter. Styled distinctly and never
+    /// counted as a full chapter for tracking (§ chapter grouping).
+    #[props(default = false)]
+    is_part: bool,
 ) -> Element {
     let session = use_session();
     let mut reload = reload;
@@ -442,7 +447,13 @@ fn ChapterRow(
         .title
         .clone()
         .filter(|t| !t.is_empty())
-        .unwrap_or_else(|| format!("Chapter {num}"));
+        .unwrap_or_else(|| {
+            if is_part {
+                format!("Part {num}")
+            } else {
+                format!("Chapter {num}")
+            }
+        });
     let date = chapter
         .published_at
         .as_deref()
@@ -456,6 +467,11 @@ fn ChapterRow(
     let is_read = chapter.read.unwrap_or(false);
     let can_track = chapter.read.is_some();
     let row_style = if is_read { "opacity:.55;" } else { "" };
+    let row_class = if is_part {
+        "ik-chapter part"
+    } else {
+        "ik-chapter"
+    };
 
     // "Mark read" sets progress to this chapter's number — safe because it's only shown on
     // unread rows, which are always above the current threshold. "Mark unread" must NOT assume
@@ -486,8 +502,11 @@ fn ChapterRow(
     };
 
     rsx! {
-        div { class: "ik-chapter", style: "{row_style}",
+        div { class: "{row_class}", style: "{row_style}",
             span { class: "num", "#{num}" }
+            if is_part {
+                span { class: "ik-part-pill", "Part" }
+            }
             span { "{label}" }
             if is_read {
                 span { class: "ik-flex ik-muted", style: "gap:4px;font-size:11px;",
@@ -512,6 +531,111 @@ fn ChapterRow(
                 target: "_blank",
                 rel: "noopener",
                 "Open"
+            }
+        }
+    }
+}
+
+/// One visual row-group in the chapter list, keyed by whole chapter number. Sources
+/// sometimes ship sub-chapter part releases (fractional `number`, e.g. `152.1`..`152.6`)
+/// ahead of the compiled full chapter. Until the full chapter appears, its parts render
+/// directly as the visible frontier; once it appears, the parts collapse into a
+/// dropdown nested under it rather than cluttering the main list.
+#[derive(Clone, PartialEq)]
+struct ChapterGroup {
+    full: Option<(crate::models::ChapterDto, Option<f64>)>,
+    /// Part releases sharing this group's whole-chapter number, newest (highest) first.
+    parts: Vec<(crate::models::ChapterDto, Option<f64>)>,
+}
+
+/// Groups a newest-first chapter list (paired with each row's precomputed "mark unread"
+/// target) by `floor(number)`. Relies on the list being sorted descending by `number`, which
+/// guarantees every part release sorts directly above its whole chapter (e.g. `152.6` >
+/// `152.1` > `152`), so same-group rows are always contiguous.
+fn group_chapters(list: &[crate::models::ChapterDto], prevs: &[Option<f64>]) -> Vec<ChapterGroup> {
+    let mut groups: Vec<(i64, ChapterGroup)> = Vec::new();
+    for (chapter, prev) in list.iter().cloned().zip(prevs.iter().copied()) {
+        let key = chapter.number.floor() as i64;
+        let is_full = chapter.number.fract() == 0.0;
+        match groups.last_mut() {
+            Some((k, g)) if *k == key => {
+                if is_full {
+                    g.full = Some((chapter, prev));
+                } else {
+                    g.parts.push((chapter, prev));
+                }
+            }
+            _ => {
+                let mut g = ChapterGroup {
+                    full: None,
+                    parts: Vec::new(),
+                };
+                if is_full {
+                    g.full = Some((chapter, prev));
+                } else {
+                    g.parts.push((chapter, prev));
+                }
+                groups.push((key, g));
+            }
+        }
+    }
+    groups.into_iter().map(|(_, g)| g).collect()
+}
+
+#[component]
+fn ChapterGroupRow(group: ChapterGroup, series_id: String, reload: Signal<u32>) -> Element {
+    let mut expanded = use_signal(|| false);
+    let has_full = group.full.is_some();
+    let parts = group.parts.clone();
+
+    // Ascending range for the toggle label ("152.1–152.6"): `parts` is newest-first, so the
+    // lowest number is last and the highest is first.
+    let lo = parts.last().map(|(c, _)| c.number).unwrap_or_default();
+    let hi = parts.first().map(|(c, _)| c.number).unwrap_or_default();
+    let count = parts.len();
+    let toggle_label = format!(
+        "{count} early part release{} ({}\u{2013}{})",
+        if count == 1 { "" } else { "s" },
+        trim_num(lo),
+        trim_num(hi)
+    );
+
+    rsx! {
+        if let Some((c, prev)) = group.full.clone() {
+            ChapterRow {
+                chapter: c,
+                series_id: series_id.clone(),
+                prev_number: prev,
+                reload,
+                is_part: false,
+            }
+        }
+        // Only a whole chapter with parts nested under it gets a toggle — a lone full
+        // chapter or lone parts (no full chapter released yet) render with no affordance.
+        if has_full && !parts.is_empty() {
+            div {
+                class: "ik-chapter-toggle",
+                onclick: move |_| { let v = !*expanded.read(); expanded.set(v); },
+                Ic {
+                    icon: Icon::ChevronRight,
+                    size: 14,
+                    class: if *expanded.read() { "ik-chevron open" } else { "ik-chevron" },
+                }
+                span { "{toggle_label}" }
+            }
+        }
+        // No full chapter yet: the parts are the reading frontier, so they stay visible
+        // rather than collapsed.
+        if !has_full || *expanded.read() {
+            for (c , prev) in parts.iter().cloned() {
+                ChapterRow {
+                    key: "{c.number}",
+                    chapter: c,
+                    series_id: series_id.clone(),
+                    prev_number: prev,
+                    reload,
+                    is_part: true,
+                }
             }
         }
     }

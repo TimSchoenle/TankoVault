@@ -318,6 +318,48 @@ a { color: inherit; text-decoration: none; }
 .ik-chapter .num { font-family: var(--font-mono); color: var(--acc); min-width: 64px; }
 .ik-chapter .date { margin-left: auto; color: var(--muted); font-family: var(--font-mono); font-size: 12px; }
 
+/* Sub-chapter part releases (e.g. "152.6") — visually subordinate to full chapters. */
+.ik-chapter.part { padding-left: 30px; background: var(--surface-2); position: relative; }
+.ik-chapter.part .num { color: var(--muted); font-size: 13px; min-width: 56px; }
+.ik-chapter.part::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-soft);
+}
+.ik-part-pill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 2px 7px;
+  border-radius: 20px;
+  border: 1px solid var(--border-ctl);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  flex: none;
+}
+
+/* Collapsed-by-default row exposing a full chapter's early part releases. */
+.ik-chapter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-row);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+  user-select: none;
+}
+.ik-chapter-toggle:hover { color: var(--text); }
+.ik-chapter-toggle:last-child { border-bottom: none; }
+.ik-chevron { transition: transform 140ms ease; flex: none; }
+.ik-chevron.open { transform: rotate(90deg); }
+
 /* ============================================================================
  * Feed / notifications / watchlist kanban
  * ========================================================================== */

@@ -130,6 +130,8 @@ pub struct SourceDto {
     pub provider_slug: String,
     /// Resolved absolute URL to open the series on the provider.
     pub url: String,
+    /// Count of distinct **whole** chapters (`floor(number)`-deduped) — sub-chapter part
+    /// releases don't inflate this (§ chapter grouping).
     pub chapter_count: i32,
     /// True for the richest source (most chapters) — the one the reader should prefer
     /// (frontend §9.2). Exactly one source per series is flagged.
@@ -154,9 +156,6 @@ pub struct SeriesDetail {
     pub authors: Vec<tankovault_domain::Author>,
 }
 
-/// `GET /v1/series/:id` — canonical detail enriched with alt-titles, tags, authors, and a
-/// primary source flag (frontend §9.2). Rating has no source anywhere in the pipeline and
-/// stays deliberately omitted rather than fabricated.
 pub async fn detail(
     State(state): State<AppState>,
     Path(id): Path<SeriesId>,
@@ -176,12 +175,16 @@ pub async fn detail(
         let provider = tankovault_db::repo::providers::get(&state.pool, src.provider_id).await?;
         let url =
             resolve_link(&provider.base_url, &src.source_path).map_err(|_| ApiError::Internal)?;
+        // Reader-facing count: whole chapters only (§ chapter grouping) — part releases
+        // don't inflate what the "Read on" card / hero stat report.
+        let chapter_count =
+            tankovault_db::repo::catalog::count_full_chapters(&state.pool, src.id).await?;
         source_dtos.push(SourceDto {
             id: src.id,
             provider_name: provider.name,
             provider_slug: provider.slug,
             url,
-            chapter_count: src.chapter_count,
+            chapter_count,
             is_primary: Some(i) == primary_idx,
         });
     }

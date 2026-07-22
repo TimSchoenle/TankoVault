@@ -31,7 +31,10 @@ pub(crate) const PROVIDER: &str = "anilist";
 #[derive(Debug, Clone)]
 pub(crate) struct AniListEntry {
     pub(crate) media_id: i64,
-    /// Candidate titles (romaji/english/native), non-empty ones only.
+    /// Candidate titles (romaji/english/native, then every AniList synonym), non-empty
+    /// ones only. `titles[0]` is always the first non-empty of romaji/english/native, so
+    /// callers relying on "the primary title" (e.g. the remote-entry snapshot) still see
+    /// the same value as before synonyms were added.
     pub(crate) titles: Vec<String>,
     pub(crate) status: AniListStatus,
     pub(crate) progress: f64,
@@ -211,6 +214,7 @@ impl AniListClient {
                   status progress updatedAt \
                   media { id countryOfOrigin startDate { year } \
                           title { romaji english native } \
+                          synonyms \
                           genres \
                           staff(sort: RELEVANCE, perPage: 5) { edges { node { name { full } } } } } \
                 } } \
@@ -462,6 +466,21 @@ fn parse_entry(entry: &serde_json::Value) -> Option<AniListEntry> {
         return None;
     }
 
+    // Alternate titles AniList tracks alongside the "official" romaji/english/native trio
+    // (abbreviations, fan-translation names, other-language releases). Appended after those
+    // three so `titles[0]` is unchanged; `SyncEngine::resolve_series` tries every one of
+    // them against the local catalogue, which is what actually lets a locally-scraped
+    // series with an unusual scanlator title still match.
+    if let Some(synonyms) = media.get("synonyms").and_then(serde_json::Value::as_array) {
+        for s in synonyms {
+            if let Some(t) = s.as_str() {
+                if !t.trim().is_empty() {
+                    titles.push(t.to_owned());
+                }
+            }
+        }
+    }
+
     let progress = entry
         .get("progress")
         .and_then(serde_json::Value::as_f64)
@@ -585,6 +604,7 @@ mod tests {
                             "startDate": { "year": 2018 },
                             "title": { "romaji": "Na Honjaman Level Up",
                                        "english": "Solo Leveling", "native": null },
+                            "synonyms": ["Only I Level Up", "I Level Up Alone"],
                             "genres": ["Action", "Fantasy"],
                             "staff": { "edges": [
                                 { "node": { "name": { "full": "Chugong" } } },
@@ -613,17 +633,42 @@ mod tests {
         assert_eq!(solo.progress, 42.0);
         assert_eq!(solo.start_year, Some(2018));
         assert_eq!(solo.content_type, ContentType::Manhwa);
-        assert_eq!(solo.titles, vec!["Na Honjaman Level Up", "Solo Leveling"]);
+        assert_eq!(
+            solo.titles,
+            vec![
+                "Na Honjaman Level Up",
+                "Solo Leveling",
+                "Only I Level Up",
+                "I Level Up Alone",
+            ]
+        );
         assert_eq!(solo.tags, vec!["Action", "Fantasy"]);
         assert_eq!(solo.authors, vec!["Chugong", "Redice Studio"]);
 
         let berserk = &entries[1];
         assert_eq!(berserk.content_type, ContentType::Manga);
         assert_eq!(berserk.start_year, None);
+        // No `synonyms` field at all in this fixture: falls back to just romaji/native,
+        // not a parse failure.
         assert_eq!(berserk.titles, vec!["Berserk", "ベルセルク"]);
         // No genres/staff in the fixture: both default to empty, not a parse failure.
         assert!(berserk.tags.is_empty());
         assert!(berserk.authors.is_empty());
+    }
+
+    #[test]
+    fn blank_and_non_string_synonyms_are_skipped() {
+        let data = serde_json::json!({
+            "MediaListCollection": { "lists": [
+                { "entries": [
+                    { "status": "CURRENT", "progress": 1, "updatedAt": 1,
+                      "media": { "id": 1, "title": { "romaji": "x" },
+                                 "synonyms": ["  ", "Valid Synonym", null, 5] } }
+                ] }
+            ] }
+        });
+        let entries = parse_media_list(&data);
+        assert_eq!(entries[0].titles, vec!["x", "Valid Synonym"]);
     }
 
     #[test]

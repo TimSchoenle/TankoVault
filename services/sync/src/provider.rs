@@ -38,6 +38,10 @@ pub(crate) struct RemoteEntry {
     pub(crate) updated_at: OffsetDateTime,
     pub(crate) start_year: Option<i32>,
     pub(crate) content_type: ContentType,
+    /// Genres, matched against a local series' tags for extra matching confidence.
+    pub(crate) tags: Vec<String>,
+    /// Story/art staff names, matched against a local series' authors.
+    pub(crate) authors: Vec<String>,
 }
 
 /// A registered provider's identity, as listed by `GET /v1/sync/providers`.

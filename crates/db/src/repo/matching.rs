@@ -17,6 +17,8 @@ pub struct MatchCandidate {
     pub similarity: f32,
     pub content_type: ContentType,
     pub release_year: Option<i32>,
+    pub tags: Vec<String>,
+    pub authors: Vec<String>,
 }
 
 /// Find existing series whose canonical or alternative normalized titles are
@@ -33,6 +35,8 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
         content_type: String,
         release_year: Option<i32>,
         sim: f32,
+        tags: Option<Vec<String>>,
+        authors: Option<Vec<String>>,
     }
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT s.id, s.normalized_title, s.content_type::text AS content_type, s.release_year, \
@@ -40,7 +44,11 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
                   similarity(s.normalized_title, $1), \
                   COALESCE((SELECT MAX(similarity(st.normalized, $1)) \
                             FROM series_titles st WHERE st.series_id = s.id), 0) \
-                ) AS sim \
+                ) AS sim, \
+                (SELECT array_agg(t.name) FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                 WHERE stg.series_id = s.id) AS tags, \
+                (SELECT array_agg(a.name) FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
+                 WHERE sa.series_id = s.id) AS authors \
          FROM series s \
          WHERE s.normalized_title % $1 \
             OR EXISTS (SELECT 1 FROM series_titles st \
@@ -61,6 +69,8 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
                 similarity: r.sim,
                 content_type: ContentType::from_str(&r.content_type)?,
                 release_year: r.release_year,
+                tags: r.tags.unwrap_or_default(),
+                authors: r.authors.unwrap_or_default(),
             })
         })
         .collect()
@@ -171,6 +181,9 @@ pub async fn dismiss_merge_candidate<'e, E: PgExecutor<'e>>(
 /// and external mappings, resolve any related merge candidates, then delete it. All
 /// child-table moves are idempotent (`ON CONFLICT`), and read-progress keeps the furthest
 /// point.
+// A straight-line sequence of per-table union inserts reads more clearly as one function
+// than split across arbitrary helpers just to dodge the line-count lint.
+#[allow(clippy::too_many_lines)]
 pub async fn merge_series(
     pool: &sqlx::PgPool,
     keep_id: SeriesId,
@@ -226,6 +239,16 @@ pub async fn merge_series(
     sqlx::query(
         "INSERT INTO series_tags (series_id, tag_id) \
          SELECT $1, tag_id FROM series_tags WHERE series_id = $2 \
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(keep)
+    .bind(drop)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO series_authors (series_id, author_id) \
+         SELECT $1, author_id FROM series_authors WHERE series_id = $2 \
          ON CONFLICT DO NOTHING",
     )
     .bind(keep)

@@ -56,6 +56,12 @@ pub struct SeriesCfg {
     pub status: Option<String>,
     #[serde(default)]
     pub alt: Option<String>,
+    #[serde(default)]
+    pub author: Option<String>,
+    #[serde(default)]
+    pub artist: Option<String>,
+    #[serde(default)]
+    pub release: Option<String>,
 }
 
 /// Chapter list.

@@ -150,11 +150,13 @@ pub struct SeriesDetail {
     pub alt_titles: Vec<String>,
     /// Genre/tags attached to the series (frontend §9.2; empty when none).
     pub tags: Vec<tankovault_domain::Tag>,
+    /// Author/artist credits attached to the series; empty when none.
+    pub authors: Vec<tankovault_domain::Author>,
 }
 
-/// `GET /v1/series/:id` — canonical detail enriched with alt-titles, tags, and a primary
-/// source flag (frontend §9.2). Rating/author are design-only (not in the domain) and are
-/// deliberately omitted rather than fabricated.
+/// `GET /v1/series/:id` — canonical detail enriched with alt-titles, tags, authors, and a
+/// primary source flag (frontend §9.2). Rating has no source anywhere in the pipeline and
+/// stays deliberately omitted rather than fabricated.
 pub async fn detail(
     State(state): State<AppState>,
     Path(id): Path<SeriesId>,
@@ -186,6 +188,7 @@ pub async fn detail(
 
     let alt_titles = tankovault_db::repo::catalog::list_series_titles(&state.pool, id).await?;
     let tags = tankovault_db::repo::catalog::list_series_tags(&state.pool, id).await?;
+    let authors = tankovault_db::repo::catalog::list_series_authors(&state.pool, id).await?;
 
     Ok(Json(SeriesDetail {
         id: series.id,
@@ -198,6 +201,7 @@ pub async fn detail(
         sources: source_dtos,
         alt_titles,
         tags,
+        authors,
     }))
 }
 

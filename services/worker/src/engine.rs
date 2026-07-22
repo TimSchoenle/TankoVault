@@ -92,13 +92,15 @@ impl Engine {
                 cover_url: meta.cover_url.clone(),
                 content_type: meta.content_type,
                 status: meta.status,
-                release_year: None,
+                release_year: meta.release_year,
             },
             alt_titles: meta
                 .alt_titles
                 .iter()
                 .map(|t| (t.clone(), normalize_title(t)))
                 .collect(),
+            tags: meta.tags.clone(),
+            authors: meta.authors.clone(),
             chapters: chapters
                 .iter()
                 .map(|c| ChapterUpsert {

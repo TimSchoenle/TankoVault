@@ -532,12 +532,18 @@ impl SyncEngine {
                         similarity: c.similarity,
                         content_type: c.content_type,
                         release_year: c.release_year,
+                        tags: c.tags,
+                        authors: c.authors,
                     })
                     .collect();
+            // AniList's own genres/staff, matched against each candidate's locally-scraped
+            // tags/authors — the extra signal that makes ambiguous title matches confident.
             let query = Query {
                 normalized_title: normalized,
                 content_type: entry.content_type,
                 release_year: entry.start_year,
+                tags: entry.tags.clone(),
+                authors: entry.authors.clone(),
             };
             if let Some((id, score)) = best_match(&query, &candidates) {
                 if best.is_none_or(|(_, b)| score > b) {

@@ -66,8 +66,10 @@ pub struct SeriesMeta {
     pub description: Option<String>,
     pub cover_url: Option<String>,
     pub tags: Vec<String>,
+    pub authors: Vec<String>,
     pub status: SeriesStatus,
     pub content_type: ContentType,
+    pub release_year: Option<i32>,
 }
 
 /// One chapter entry: number, optional title, and the **relative** chapter-page link.

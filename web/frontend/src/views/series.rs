@@ -3,11 +3,10 @@
 //! chapter list on the left; a **Read on** source list, a **Tracking** card, and a
 //! **Readers also follow** slot in the right sidebar.
 //!
-//! Fields the current API does not expose — rating, author, alt-titles, tags, per-source
-//! `is_primary`, per-chapter read-state and read-% — are **omitted gracefully** (never
-//! fabricated, per the links-&-metadata invariant); they light up once the enrichment
-//! endpoints (§9.2) land. Related series need `/v1/series/:id/related` (§9.3), so that slot
-//! is an honest placeholder.
+//! Fields the current API does not expose — rating, per-chapter read-state and read-% —
+//! are **omitted gracefully** (never fabricated, per the links-&-metadata invariant).
+//! Alt-titles, tags, and authors (§9.2) render when present. Related series need
+//! `/v1/series/:id/related` (§9.3), so that slot is an honest placeholder.
 
 use crate::api;
 use crate::components::{Cover, ErrorBox};
@@ -109,6 +108,14 @@ pub fn Series(id: String) -> Element {
                                 }
                             }
                             h1 { style: "font-family:var(--font-display);font-size:38px;font-weight:800;letter-spacing:-.02em;line-height:1.05;margin:0 0 6px;", "{d.title}" }
+                            // Author/artist byline (§9.2) — shown only when present.
+                            if !d.authors.is_empty() {
+                                div {
+                                    class: "ik-muted",
+                                    style: "font-size:14px;margin:0 0 4px;",
+                                    "by {d.authors.iter().map(|a| a.name.clone()).collect::<Vec<_>>().join(\", \")}"
+                                }
+                            }
                             // Alternative titles (§9.2) — shown only when present.
                             if !d.alt_titles.is_empty() {
                                 div { class: "ik-muted", style: "font-size:14px;margin:0 0 8px;", "{d.alt_titles.join(\" · \")}" }

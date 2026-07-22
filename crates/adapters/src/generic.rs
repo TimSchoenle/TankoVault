@@ -5,7 +5,7 @@ use crate::config::AdapterConfig;
 use crate::error::AdapterError;
 use crate::html::{
     absolutize, extract_all, extract_first, map_status, parse_chapter_number, parse_selector,
-    relativize, split_attr,
+    parse_year, relativize, split_attr,
 };
 use crate::types::{
     CatalogItem, CatalogPage, ChapterMeta, Ctx, LatestUpdate, SeriesMeta, SourceAdapter,
@@ -25,6 +25,18 @@ impl GenericConfigAdapter {
     pub fn new(config: AdapterConfig) -> Self {
         Self { config }
     }
+}
+
+/// Append `extra` onto `base`, skipping case-insensitive duplicates. Used to fold an
+/// "Artist" selector's results into the "Author" list without repeating a credit that
+/// lists the same person under both roles.
+fn merge_unique(mut base: Vec<String>, extra: Vec<String>) -> Vec<String> {
+    for item in extra {
+        if !base.iter().any(|b: &String| b.eq_ignore_ascii_case(&item)) {
+            base.push(item);
+        }
+    }
+    base
 }
 
 /// Extract the first link href under `root` matching `spec` (`@attr` defaults to `href`),
@@ -167,14 +179,44 @@ impl SourceAdapter for GenericConfigAdapter {
             .transpose()?
             .unwrap_or_default();
 
+        let authors = self
+            .config
+            .series
+            .author
+            .as_ref()
+            .map(|s| extract_all(root, s))
+            .transpose()?
+            .unwrap_or_default();
+        let artists = self
+            .config
+            .series
+            .artist
+            .as_ref()
+            .map(|s| extract_all(root, s))
+            .transpose()?
+            .unwrap_or_default();
+        let authors = merge_unique(authors, artists);
+
+        let release_year = self
+            .config
+            .series
+            .release
+            .as_ref()
+            .map(|s| extract_first(root, s))
+            .transpose()?
+            .flatten()
+            .and_then(|t| parse_year(&t));
+
         Ok(SeriesMeta {
             title,
             alt_titles,
             description,
             cover_url,
             tags,
+            authors,
             status,
             content_type: ContentType::Unknown,
+            release_year,
         })
     }
 
@@ -214,5 +256,36 @@ impl SourceAdapter for GenericConfigAdapter {
             });
         }
         Ok(chapters)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_unique;
+
+    #[test]
+    fn merges_artist_into_author_list() {
+        let authors = vec!["Chugong".to_owned()];
+        let artists = vec!["Redice Studio".to_owned()];
+        assert_eq!(
+            merge_unique(authors, artists),
+            vec!["Chugong".to_owned(), "Redice Studio".to_owned()]
+        );
+    }
+
+    #[test]
+    fn drops_a_case_insensitive_duplicate_between_author_and_artist() {
+        let authors = vec!["Chugong".to_owned()];
+        let artists = vec!["CHUGONG".to_owned(), "Redice Studio".to_owned()];
+        assert_eq!(
+            merge_unique(authors, artists),
+            vec!["Chugong".to_owned(), "Redice Studio".to_owned()]
+        );
+    }
+
+    #[test]
+    fn empty_artist_list_leaves_authors_untouched() {
+        let authors = vec!["Chugong".to_owned()];
+        assert_eq!(merge_unique(authors.clone(), Vec::new()), authors);
     }
 }

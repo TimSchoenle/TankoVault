@@ -67,8 +67,9 @@ fn clean_description(root: ElementRef<'_>) -> Option<String> {
     (!body.is_empty()).then(|| body.to_owned())
 }
 
-/// Split an "Alternatives" cell into individual titles on `,`/`;` separators.
-fn split_alt_titles(value: &str) -> Vec<String> {
+/// Split a label/value cell (Alternatives, Author) into individual entries on `,`/`;`
+/// separators.
+fn split_list(value: &str) -> Vec<String> {
     value
         .split([',', ';'])
         .map(str::trim)
@@ -179,7 +180,11 @@ impl SourceAdapter for DemonicScansAdapter {
         let status = stat_value(root, "Status").map_or(SeriesStatus::Unknown, |s| map_status(&s));
 
         let alt_titles = stat_value(root, "Alternatives")
-            .map(|v| split_alt_titles(&v))
+            .map(|v| split_list(&v))
+            .unwrap_or_default();
+
+        let authors = stat_value(root, "Author")
+            .map(|v| split_list(&v))
             .unwrap_or_default();
 
         let genre_sel = parse_selector("div.genres-list li")?;
@@ -195,8 +200,10 @@ impl SourceAdapter for DemonicScansAdapter {
             description,
             cover_url,
             tags,
+            authors,
             status,
             content_type: ContentType::Unknown,
+            release_year: None,
         })
     }
 
@@ -243,16 +250,16 @@ impl SourceAdapter for DemonicScansAdapter {
 
 #[cfg(test)]
 mod tests {
-    use super::split_alt_titles;
+    use super::split_list;
 
     #[test]
     fn splits_alternatives_on_comma_and_semicolon() {
         assert_eq!(
-            split_alt_titles("Shibuya Noir, 시부야 느와르; Shibuya Nowaru"),
+            split_list("Shibuya Noir, 시부야 느와르; Shibuya Nowaru"),
             vec!["Shibuya Noir", "시부야 느와르", "Shibuya Nowaru"]
         );
         // An empty / whitespace-only cell yields no alternatives.
-        assert!(split_alt_titles("   ").is_empty());
-        assert!(split_alt_titles("").is_empty());
+        assert!(split_list("   ").is_empty());
+        assert!(split_list("").is_empty());
     }
 }

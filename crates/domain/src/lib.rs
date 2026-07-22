@@ -17,16 +17,16 @@ pub mod normalize;
 pub mod politeness;
 
 pub use entities::{
-    Chapter, Notification, Provider, ReadProgress, ScanRun, ScanTask, Series, SeriesSource,
-    SeriesTitle, Tag, User, WatchlistEntry,
+    Author, Chapter, Notification, Provider, ReadProgress, ScanRun, ScanTask, Series,
+    SeriesSource, SeriesTitle, Tag, User, WatchlistEntry,
 };
 pub use enums::{
     AdapterKind, ContentType, ParseEnumError, ProviderState, RunState, ScanMode, SeriesStatus,
     TaskState, UserRole, WatchStatus,
 };
 pub use ids::{
-    ChapterId, NotificationId, ProviderId, ScanRunId, ScanTaskId, SeriesId, SeriesSourceId, TagId,
-    UserId,
+    AuthorId, ChapterId, NotificationId, ProviderId, ScanRunId, ScanTaskId, SeriesId,
+    SeriesSourceId, TagId, UserId,
 };
 pub use link::{ResolveError, resolve_link};
 pub use normalize::normalize_title;

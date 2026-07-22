@@ -21,6 +21,11 @@ pub struct Candidate {
     pub similarity: f32,
     pub content_type: ContentType,
     pub release_year: Option<i32>,
+    /// Genre/tag names attached to this series. Empty when unavailable to the caller —
+    /// the tag-overlap bonus in [`score`] simply never fires, no different from today.
+    pub tags: Vec<String>,
+    /// Author/artist credits attached to this series (same empty-means-no-signal contract).
+    pub authors: Vec<String>,
 }
 
 /// The incoming source's identifying attributes.
@@ -29,6 +34,8 @@ pub struct Query {
     pub normalized_title: String,
     pub content_type: ContentType,
     pub release_year: Option<i32>,
+    pub tags: Vec<String>,
+    pub authors: Vec<String>,
 }
 
 /// Confidence thresholds for the decision bands.
@@ -104,13 +111,54 @@ pub fn score(query: &Query, candidate: &Candidate) -> f32 {
         s += 0.05;
     }
 
+    // Genre/tag overlap. A weak signal on its own (genres are coarse and inconsistently
+    // tagged across sites), so the bonus is small and scales with how much the two sets
+    // actually agree rather than firing at full strength on a single shared genre.
+    if let Some(overlap) = name_set_overlap(&query.tags, &candidate.tags) {
+        s += 0.05 * overlap;
+    }
+
+    // A shared author/artist credit is a strong, low-false-positive signal: two unrelated
+    // works with a similar title essentially never share a real person's name too.
+    if shares_a_name(&query.authors, &candidate.authors) {
+        s += 0.1;
+    }
+
     s.clamp(0.0, 1.0)
+}
+
+/// The Jaccard overlap of two case-insensitive name sets, in `[0,1]`, or `None` when either
+/// side has nothing to compare (so the caller can skip the bonus entirely rather than
+/// treating "no data" as "no overlap").
+#[must_use]
+#[allow(clippy::cast_precision_loss)] // name-set sizes are tiny (tag/author counts)
+fn name_set_overlap(a: &[String], b: &[String]) -> Option<f32> {
+    if a.is_empty() || b.is_empty() {
+        return None;
+    }
+    let sa: std::collections::BTreeSet<String> = a.iter().map(|s| s.to_lowercase()).collect();
+    let sb: std::collections::BTreeSet<String> = b.iter().map(|s| s.to_lowercase()).collect();
+    let inter = sa.intersection(&sb).count();
+    let union = sa.union(&sb).count();
+    Some(if union == 0 {
+        0.0
+    } else {
+        inter as f32 / union as f32
+    })
+}
+
+/// Whether `a` and `b` share at least one name, compared case-insensitively.
+#[must_use]
+fn shares_a_name(a: &[String], b: &[String]) -> bool {
+    a.iter()
+        .any(|x| b.iter().any(|y| x.eq_ignore_ascii_case(y)))
 }
 
 /// Token-set ratio: the Jaccard overlap of the two titles' word sets, in `[0,1]`. Order- and
 /// duplicate-insensitive, so "life starting in another world" and "another world starting
 /// life" score identically. Pure and DB-free.
 #[must_use]
+#[allow(clippy::cast_precision_loss)] // word-set sizes are tiny (title token counts)
 pub fn token_set_ratio(a: &str, b: &str) -> f32 {
     if a.is_empty() || b.is_empty() {
         return 0.0;
@@ -175,6 +223,9 @@ pub fn decide(query: &Query, candidates: &[Candidate], thresholds: Thresholds) -
 
 #[cfg(test)]
 mod tests {
+    // Tests assert exact equality of small, exactly-representable score values.
+    #![allow(clippy::float_cmp)]
+
     use super::*;
 
     fn cand(sim: f32, ct: ContentType, year: Option<i32>, title: &str) -> Candidate {
@@ -184,6 +235,8 @@ mod tests {
             similarity: sim,
             content_type: ct,
             release_year: year,
+            tags: Vec::new(),
+            authors: Vec::new(),
         }
     }
 
@@ -192,6 +245,8 @@ mod tests {
             normalized_title: title.to_owned(),
             content_type: ct,
             release_year: year,
+            tags: Vec::new(),
+            authors: Vec::new(),
         }
     }
 
@@ -229,6 +284,32 @@ mod tests {
         let same = cand(0.8, ContentType::Manga, None, "title");
         let diff = cand(0.8, ContentType::Manhwa, None, "title");
         assert!(score(&q, &same) > score(&q, &diff));
+    }
+
+    #[test]
+    fn shared_author_lifts_an_ambiguous_match() {
+        let mut q = query("solo max leveler", ContentType::Unknown, None);
+        q.authors = vec!["Chugong".to_owned()];
+        let mut c = cand(0.62, ContentType::Unknown, None, "solo max levelling");
+        c.authors = vec!["chugong".to_owned()]; // case-insensitive match
+        let without_author = cand(0.62, ContentType::Unknown, None, "solo max levelling");
+        assert!(score(&q, &c) > score(&q, &without_author));
+    }
+
+    #[test]
+    fn tag_overlap_scales_with_agreement() {
+        // A moderate, non-saturating base score (dissimilar-enough titles) so the tag
+        // bonus is visible rather than swallowed by the 1.0 clamp.
+        let mut q = query("silent night guardian tale", ContentType::Unknown, None);
+        q.tags = vec!["Action".to_owned(), "Fantasy".to_owned()];
+        let mut full_overlap = cand(0.3, ContentType::Unknown, None, "silent night watcher");
+        full_overlap.tags = vec!["Action".to_owned(), "Fantasy".to_owned()];
+        let mut partial_overlap = cand(0.3, ContentType::Unknown, None, "silent night watcher");
+        partial_overlap.tags = vec!["Action".to_owned(), "Romance".to_owned()];
+        let no_data = cand(0.3, ContentType::Unknown, None, "silent night watcher");
+
+        assert!(score(&q, &full_overlap) > score(&q, &partial_overlap));
+        assert!(score(&q, &partial_overlap) > score(&q, &no_data));
     }
 
     #[test]

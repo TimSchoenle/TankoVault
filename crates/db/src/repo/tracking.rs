@@ -2,13 +2,13 @@
 
 use crate::error::{DbError, DbResult};
 use crate::repo::catalog::SeriesListItem;
+use serde_json::Value as Json;
+use sqlx::{FromRow, PgExecutor};
+use std::str::FromStr;
 use tankovault_domain::{
     ContentType, Notification, NotificationId, Series, SeriesId, SeriesStatus, UserId, WatchStatus,
     WatchlistEntry,
 };
-use serde_json::Value as Json;
-use sqlx::{FromRow, PgExecutor};
-use std::str::FromStr;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -639,7 +639,6 @@ pub async fn dedup_claim<'e, E: PgExecutor<'e>>(
     Ok(inserted == 1)
 }
 
-
 // ---------------------------------------------------------------------------
 // Enriched read models for the redesigned Home / Watchlist (frontend §9.3)
 // ---------------------------------------------------------------------------
@@ -787,7 +786,7 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
 /// `chapters_read` is the sum of whole chapters below each series' last-read marker — an
 /// honest proxy over stored progress (there is no per-chapter read-event log, so a daily
 /// "streak" is intentionally omitted rather than fabricated).
-#[derive(Debug, Clone, Default, serde::Serialize, FromRow)]
+#[derive(Debug, Clone, Default, serde::Serialize, FromRow, utoipa::ToSchema)]
 pub struct MeStats {
     pub tracking: i64,
     pub reading: i64,

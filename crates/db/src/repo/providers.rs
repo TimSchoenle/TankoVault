@@ -1,11 +1,11 @@
 //! Provider repository: the single source of truth for a site's domain + config.
 
 use crate::error::{DbError, DbResult};
-use tankovault_domain::{AdapterKind, Politeness, Provider, ProviderId, ProviderState};
 use serde_json::Value as Json;
 use sqlx::types::Json as SqlxJson;
 use sqlx::{FromRow, PgExecutor};
 use std::str::FromStr;
+use tankovault_domain::{AdapterKind, Politeness, Provider, ProviderId, ProviderState};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -211,7 +211,7 @@ pub async fn set_robots<'e, E: PgExecutor<'e>>(
 /// A public-facing provider entry for the Discover filter list (frontend §9.3
 /// `GET /v1/providers`): identity plus how many distinct series it carries, so the UI can
 /// show "Provider (N)" options without exposing operator-only config/politeness.
-#[derive(Debug, Clone, serde::Serialize, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow, utoipa::ToSchema)]
 pub struct PublicProvider {
     pub id: Uuid,
     pub slug: String,

@@ -119,7 +119,9 @@ fn ProfilePanel(name: String, role: &'static str) -> Element {
         let new_username = username.peek().trim().to_owned();
         let new_email = email.peek().trim().to_owned();
         if new_username.is_empty() && new_email.is_empty() {
-            result.set(Some(Err("Enter a new display name or email first.".to_owned())));
+            result.set(Some(Err(
+                "Enter a new display name or email first.".to_owned()
+            )));
             return;
         }
         saving.set(true);
@@ -907,11 +909,7 @@ fn ConflictInbox(provider: String, show: Signal<bool>, parent_reload: Signal<u32
             p { style: "font-size:13px;color:var(--acc);", "Could not load conflicts: {e}" }
         },
         Some(Some(Ok(all))) => {
-            let rows: Vec<_> = all
-                .iter()
-                .filter(|c| c.provider == prov)
-                .cloned()
-                .collect();
+            let rows: Vec<_> = all.iter().filter(|c| c.provider == prov).cloned().collect();
             if rows.is_empty() {
                 rsx! { div { class: "ik-empty", "No conflicts need your review." } }
             } else {

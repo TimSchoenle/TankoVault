@@ -5,8 +5,8 @@
 //! identical whether the solver runs in-process or over the network.
 
 use async_trait::async_trait;
-use tankovault_solver::{ChallengeSolver, SolveError, SolveOutcome, SolveRequest};
 use std::time::Duration;
+use tankovault_solver::{ChallengeSolver, SolveError, SolveOutcome, SolveRequest};
 
 /// Client for the `challenge-solver` service `POST /v1/solve` endpoint.
 pub struct HttpChallengeSolver {

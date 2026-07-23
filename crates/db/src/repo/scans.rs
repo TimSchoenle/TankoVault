@@ -4,12 +4,12 @@
 //! mechanism when the broker is unavailable.
 
 use crate::error::{DbError, DbResult};
-use tankovault_domain::{
-    ProviderId, RunState, ScanMode, ScanRun, ScanRunId, ScanTask, ScanTaskId, TaskState,
-};
 use serde_json::Value as Json;
 use sqlx::{FromRow, PgExecutor};
 use std::str::FromStr;
+use tankovault_domain::{
+    ProviderId, RunState, ScanMode, ScanRun, ScanRunId, ScanTask, ScanTaskId, TaskState,
+};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -311,7 +311,7 @@ pub async fn fail_task<'e, E: PgExecutor<'e>>(
 }
 
 /// A failed scan task enriched with its run's provider + mode, for the console error feed.
-#[derive(Debug, Clone, serde::Serialize, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow, utoipa::ToSchema)]
 pub struct FailedTaskView {
     pub id: Uuid,
     pub run_id: Uuid,
@@ -322,6 +322,7 @@ pub struct FailedTaskView {
     pub error: Option<String>,
     pub attempts: i16,
     #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
     pub finished_at: Option<OffsetDateTime>,
 }
 

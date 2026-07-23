@@ -37,6 +37,7 @@ time = { workspace = true }
 reqwest = { workspace = true }
 metrics = { workspace = true }
 uuid = { workspace = true }
+utoipa = { workspace = true }
 
 [lints]
 workspace = true

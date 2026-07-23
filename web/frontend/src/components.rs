@@ -307,7 +307,7 @@ fn UserFooter() -> Element {
 #[component]
 pub fn CoverCard(series: SeriesSummary) -> Element {
     rsx! {
-        Link { to: Route::Series { id: series.id.clone() }, class: "ik-card",
+        Link { to: Route::Series { id: series.id.to_string() }, class: "ik-card",
             Cover { url: series.cover_url.clone(), title: series.title.clone() }
             div { class: "ik-card-body",
                 div { class: "ik-card-title", "{series.title}" }

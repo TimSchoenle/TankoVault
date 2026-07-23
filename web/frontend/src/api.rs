@@ -227,14 +227,14 @@ pub async fn public_providers() -> ApiResult<Vec<PublicProvider>> {
     get("/v1/providers", None).await
 }
 
-pub async fn series_detail(id: &str) -> ApiResult<SeriesDetail> {
+pub async fn series_detail(id: SeriesId) -> ApiResult<SeriesDetail> {
     get(&format!("/v1/series/{id}"), None).await
 }
 
 /// Chapter list for a series' source. When `token` is supplied the per-chapter `read`
 /// flag is populated from the user's progress (§9.2); anonymous callers omit it.
 pub async fn series_chapters(
-    id: &str,
+    id: SeriesId,
     source: Option<&str>,
     token: Option<&str>,
 ) -> ApiResult<Vec<ChapterDto>> {
@@ -260,7 +260,7 @@ pub async fn watchlist(token: &str) -> ApiResult<Vec<WatchlistItem>> {
 
 pub async fn set_watchlist(
     token: &str,
-    series_id: &str,
+    series_id: SeriesId,
     body: &WatchlistUpsert,
 ) -> ApiResult<serde_json::Value> {
     send_json(
@@ -272,13 +272,13 @@ pub async fn set_watchlist(
     .await
 }
 
-pub async fn remove_watchlist(token: &str, series_id: &str) -> ApiResult<()> {
+pub async fn remove_watchlist(token: &str, series_id: SeriesId) -> ApiResult<()> {
     delete_empty(&format!("/v1/me/watchlist/{series_id}"), Some(token)).await
 }
 
 pub async fn set_progress(
     token: &str,
-    series_id: &str,
+    series_id: SeriesId,
     last_read_whole_number: f64,
 ) -> ApiResult<serde_json::Value> {
     send_json(
@@ -296,7 +296,7 @@ pub async fn set_progress(
 /// progress past it too, so the caller should confirm with the user first in that case.
 pub async fn mark_chapter(
     token: &str,
-    series_id: &str,
+    series_id: SeriesId,
     number: f64,
     read: bool,
 ) -> ApiResult<serde_json::Value> {
@@ -314,7 +314,7 @@ pub async fn mark_chapter(
 #[allow(dead_code)]
 pub async fn mark_read_to(
     token: &str,
-    series_id: &str,
+    series_id: SeriesId,
     number: f64,
 ) -> ApiResult<serde_json::Value> {
     send_json(
@@ -329,7 +329,7 @@ pub async fn mark_read_to(
 /// Toggle a series' blanket exclusion from external sync (design v2 §A.5).
 pub async fn set_sync_excluded(
     token: &str,
-    series_id: &str,
+    series_id: SeriesId,
     excluded: bool,
 ) -> ApiResult<serde_json::Value> {
     send_json(
@@ -346,7 +346,7 @@ pub async fn set_sync_excluded(
 #[allow(dead_code)]
 pub async fn set_sync_override(
     token: &str,
-    series_id: &str,
+    series_id: SeriesId,
     provider: &str,
     excluded: bool,
 ) -> ApiResult<serde_json::Value> {
@@ -566,7 +566,7 @@ pub async fn admin_sync_mappings(token: &str) -> ApiResult<Vec<AdminSyncMapping>
 
 pub async fn admin_sync_pull(
     token: &str,
-    user_id: &str,
+    user_id: UserId,
     provider: &str,
 ) -> ApiResult<serde_json::Value> {
     send_json(
@@ -580,7 +580,7 @@ pub async fn admin_sync_pull(
 
 pub async fn admin_sync_push(
     token: &str,
-    user_id: &str,
+    user_id: UserId,
     provider: &str,
 ) -> ApiResult<serde_json::Value> {
     send_json(
@@ -594,7 +594,7 @@ pub async fn admin_sync_push(
 
 pub async fn admin_sync_unlink(
     token: &str,
-    user_id: &str,
+    user_id: UserId,
     provider: &str,
 ) -> ApiResult<serde_json::Value> {
     send_json(
@@ -608,7 +608,7 @@ pub async fn admin_sync_unlink(
 
 pub async fn admin_clear_sync_mapping(
     token: &str,
-    series_id: &str,
+    series_id: SeriesId,
     provider: &str,
 ) -> ApiResult<serde_json::Value> {
     send_json(
@@ -624,7 +624,7 @@ pub async fn admin_clear_sync_mapping(
 /// editor in the admin Sync tab.
 pub async fn admin_sync_mappings_for_series(
     token: &str,
-    series_id: &str,
+    series_id: SeriesId,
 ) -> ApiResult<Vec<AdminSyncMapping>> {
     get(&format!("/v1/admin/sync/series/{series_id}"), Some(token)).await
 }
@@ -632,7 +632,7 @@ pub async fn admin_sync_mappings_for_series(
 /// Manually create or correct a series↔external mapping (fix a wrong id or add a missing one).
 pub async fn admin_upsert_sync_mapping(
     token: &str,
-    series_id: &str,
+    series_id: SeriesId,
     provider: &str,
     external_id: &str,
 ) -> ApiResult<serde_json::Value> {
@@ -701,10 +701,10 @@ pub async fn admin_suggest_matches(
 /// entry onto the user's watchlist, and clears it from the unmatched queue.
 pub async fn admin_assign_remote_entry(
     token: &str,
-    user_id: &str,
+    user_id: UserId,
     provider: &str,
     external_id: &str,
-    series_id: &str,
+    series_id: SeriesId,
 ) -> ApiResult<serde_json::Value> {
     send_json(
         Method::Post,
@@ -735,7 +735,7 @@ pub async fn admin_users(token: &str) -> ApiResult<Vec<UserRow>> {
 
 /// Operator "Re-solve" — queue a fast re-scan that re-attempts challenged sources (§9.5,
 /// audited server-side as `provider.resolve`).
-pub async fn resolve_provider(token: &str, id: &str) -> ApiResult<serde_json::Value> {
+pub async fn resolve_provider(token: &str, id: ProviderId) -> ApiResult<serde_json::Value> {
     send_json(
         Method::Post,
         &format!("/v1/admin/providers/{id}/resolve"),
@@ -749,7 +749,7 @@ pub async fn resolve_provider(token: &str, id: &str) -> ApiResult<serde_json::Va
 /// and `politeness` are JSON objects validated (and politeness-clamped) server-side.
 pub async fn update_provider(
     token: &str,
-    id: &str,
+    id: ProviderId,
     name: &str,
     base_url: &str,
     config: &serde_json::Value,
@@ -794,12 +794,12 @@ pub async fn create_provider(
 }
 
 /// Delete a provider (admin only). Its source links cascade-delete server-side.
-pub async fn delete_provider(token: &str, id: &str) -> ApiResult<()> {
+pub async fn delete_provider(token: &str, id: ProviderId) -> ApiResult<()> {
     delete_empty(&format!("/v1/admin/providers/{id}"), Some(token)).await
 }
 
 /// Override a provider's health state (`disabled` to pause crawling, `active` to re-enable).
-pub async fn set_provider_state(token: &str, id: &str, state: &str) -> ApiResult<Provider> {
+pub async fn set_provider_state(token: &str, id: ProviderId, state: &str) -> ApiResult<Provider> {
     send_json(
         Method::Post,
         &format!("/v1/admin/providers/{id}/state"),
@@ -813,7 +813,7 @@ pub async fn set_provider_state(token: &str, id: &str, state: &str) -> ApiResult
 /// fetches one series' metadata + chapters. Returns the raw sample JSON for display.
 pub async fn test_adapter(
     token: &str,
-    id: &str,
+    id: ProviderId,
     path: Option<&str>,
 ) -> ApiResult<serde_json::Value> {
     let body = match path {
@@ -831,7 +831,7 @@ pub async fn test_adapter(
 
 pub async fn trigger_scan(
     token: &str,
-    provider_id: Option<&str>,
+    provider_id: Option<ProviderId>,
     mode: ScanMode,
 ) -> ApiResult<serde_json::Value> {
     let mode = match mode {
@@ -874,7 +874,7 @@ pub async fn merge_candidates(token: &str) -> ApiResult<Vec<MergeCandidate>> {
     get("/v1/admin/merge-candidates", Some(token)).await
 }
 
-pub async fn dismiss_candidate(token: &str, id: &str) -> ApiResult<serde_json::Value> {
+pub async fn dismiss_candidate(token: &str, id: uuid::Uuid) -> ApiResult<serde_json::Value> {
     send_json(
         Method::Post,
         "/v1/admin/merge-candidates/dismiss",
@@ -884,7 +884,11 @@ pub async fn dismiss_candidate(token: &str, id: &str) -> ApiResult<serde_json::V
     .await
 }
 
-pub async fn merge_series(token: &str, keep: &str, merge: &str) -> ApiResult<serde_json::Value> {
+pub async fn merge_series(
+    token: &str,
+    keep: SeriesId,
+    merge: SeriesId,
+) -> ApiResult<serde_json::Value> {
     send_json(
         Method::Post,
         "/v1/admin/series/merge",

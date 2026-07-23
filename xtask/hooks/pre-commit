@@ -1,0 +1,24 @@
+#!/bin/sh
+# tankovault: managed by xtask/build.rs — edit xtask/hooks/pre-commit, not
+# .git/hooks/pre-commit directly; that copy is overwritten on the next build.
+#
+# Regenerates web/frontend/wire_schema.json from the api service's utoipa schemas
+# whenever a commit touches a crate that contributes to it, and stages the result
+# so a commit never carries a stale wire schema. Mirrors the CI check ("wire
+# schema is up to date" in .github/workflows/ci.yml), which stays in place as a
+# backstop for commits made without this hook installed (e.g. a fresh clone's
+# very first commit, before any `cargo build` has run).
+set -e
+
+changed=$(git diff --cached --name-only --diff-filter=ACMR -- services/api/src crates/domain/src crates/db/src)
+if [ -z "$changed" ]; then
+    exit 0
+fi
+
+echo "pre-commit: regenerating web/frontend/wire_schema.json (utoipa schema changed)"
+if ! cargo run -p xtask -- openapi > /dev/null; then
+    echo "pre-commit: xtask openapi failed; aborting commit" >&2
+    exit 1
+fi
+
+git add web/frontend/wire_schema.json

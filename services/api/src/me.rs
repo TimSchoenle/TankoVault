@@ -12,14 +12,16 @@ use tankovault_contracts::UserNotification;
 use tankovault_domain::{SeriesId, UserId, WatchStatus, resolve_link};
 use time::OffsetDateTime;
 use tokio_stream::StreamExt as _;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct WatchlistItem {
     pub series_id: SeriesId,
     pub status: WatchStatus,
     pub notify: bool,
     #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
     pub added_at: time::OffsetDateTime,
     /// Embedded series title so the Watchlist board renders without a per-card detail
     /// fetch (frontend §9.3, kills the N+1).
@@ -39,7 +41,8 @@ pub async fn watchlist(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> ApiResult<Json<Vec<WatchlistItem>>> {
-    let cards = tankovault_db::repo::tracking::watchlist_detailed(&state.pool, user.user_id).await?;
+    let cards =
+        tankovault_db::repo::tracking::watchlist_detailed(&state.pool, user.user_id).await?;
     let out = cards
         .into_iter()
         .map(|c| WatchlistItem {
@@ -57,7 +60,7 @@ pub async fn watchlist(
     Ok(Json(out))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct WatchlistUpsert {
     #[serde(default)]
     pub status: WatchStatus,
@@ -98,7 +101,7 @@ pub async fn delete_watchlist(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct ProgressUpdate {
     /// The whole-chapter frontier to set outright (design v2 §A.6 — renamed from
     /// `last_read_number`, same semantics).
@@ -123,7 +126,7 @@ pub async fn put_progress(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ProgressDto {
     pub last_read_whole_number: f64,
     pub last_read_part_number: Option<f64>,
@@ -144,7 +147,7 @@ pub async fn get_progress(
     }))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct ChapterRead {
     pub read: bool,
 }
@@ -179,7 +182,7 @@ pub async fn put_chapter_progress(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct MarkReadTo {
     pub number: f64,
 }
@@ -203,7 +206,7 @@ pub async fn mark_read_to(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct SyncExcluded {
     pub excluded: bool,
 }
@@ -284,7 +287,7 @@ pub async fn notifications(
     Ok(Json(serde_json::to_value(list).unwrap_or_default()))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct MarkRead {
     pub ids: Vec<Uuid>,
 }
@@ -295,13 +298,16 @@ pub async fn mark_read(
     user: AuthUser,
     Json(body): Json<MarkRead>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let n =
-        tankovault_db::repo::tracking::notifications_mark_read(&state.pool, user.user_id, &body.ids)
-            .await?;
+    let n = tankovault_db::repo::tracking::notifications_mark_read(
+        &state.pool,
+        user.user_id,
+        &body.ids,
+    )
+    .await?;
     Ok(Json(serde_json::json!({ "marked": n })))
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct FeedEntry {
     pub series_id: SeriesId,
     pub series_title: String,
@@ -311,6 +317,7 @@ pub struct FeedEntry {
     /// Ready-to-open absolute URL, resolved from the provider base + relative path.
     pub url: String,
     #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
     pub discovered_at: OffsetDateTime,
 }
 
@@ -341,7 +348,7 @@ pub async fn feed(
 // Reading dashboard (frontend §9.3)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ContinueItem {
     pub series_id: SeriesId,
     pub series_title: String,
@@ -416,7 +423,7 @@ pub async fn stats(
 // Account settings (frontend §9.4)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct ProfileUpdate {
     #[serde(default)]
     pub username: Option<String>,
@@ -424,7 +431,7 @@ pub struct ProfileUpdate {
     pub email: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ProfileDto {
     pub id: uuid::Uuid,
     pub email: String,
@@ -439,8 +446,16 @@ pub async fn patch_profile(
     user: AuthUser,
     Json(body): Json<ProfileUpdate>,
 ) -> ApiResult<Json<ProfileDto>> {
-    let username = body.username.as_deref().map(str::trim).filter(|s| !s.is_empty());
-    let email = body.email.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let username = body
+        .username
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let email = body
+        .email
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     let updated =
         tankovault_db::repo::users::update_profile(&state.pool, user.user_id, username, email)
             .await?;
@@ -452,13 +467,15 @@ pub async fn patch_profile(
     }))
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct SessionDto {
     pub id: String,
     pub family_id: String,
     #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
     pub expires_at: OffsetDateTime,
 }
 
@@ -487,8 +504,7 @@ pub async fn delete_session(
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let revoked =
-        tankovault_db::repo::users::revoke_session(&state.pool, user.user_id, id).await?;
+    let revoked = tankovault_db::repo::users::revoke_session(&state.pool, user.user_id, id).await?;
     if revoked == 0 {
         return Err(ApiError::NotFound);
     }
@@ -717,10 +733,7 @@ pub async fn sync_settings(
 ) -> ApiResult<Json<serde_json::Value>> {
     sync_get(
         &state,
-        &format!(
-            "/v1/sync/{provider}/settings/{}",
-            user.user_id.as_uuid()
-        ),
+        &format!("/v1/sync/{provider}/settings/{}", user.user_id.as_uuid()),
     )
     .await
 }
@@ -751,10 +764,16 @@ pub async fn sync_settings_patch(
         "auto_sync_enabled": body.auto_sync_enabled,
         "conflict_policy": body.conflict_policy,
     });
-    let resp = state.http.patch(url).json(&payload).send().await.map_err(|e| {
-        tracing::error!(error = %e, "sync service unreachable");
-        ApiError::Internal
-    })?;
+    let resp = state
+        .http
+        .patch(url)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "sync service unreachable");
+            ApiError::Internal
+        })?;
     if !resp.status().is_success() {
         return Err(ApiError::Internal);
     }
@@ -821,10 +840,7 @@ pub async fn sync_history(
 }
 
 /// GET a JSON body from the sync service, mapping upstream errors like `sync_proxy`.
-pub(crate) async fn sync_get(
-    state: &AppState,
-    path: &str,
-) -> ApiResult<Json<serde_json::Value>> {
+pub(crate) async fn sync_get(state: &AppState, path: &str) -> ApiResult<Json<serde_json::Value>> {
     let url = format!(
         "{}/{}",
         state.sync_url.trim_end_matches('/'),

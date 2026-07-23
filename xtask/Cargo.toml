@@ -16,9 +16,11 @@ tankovault-db = { workspace = true }
 tankovault-domain = { workspace = true }
 tankovault-auth = { workspace = true }
 tankovault-adapters = { workspace = true }
+tankovault-api = { path = "../services/api" }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
+utoipa = { workspace = true }
 
 [lints]
 workspace = true

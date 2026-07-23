@@ -3,10 +3,10 @@
 //! serves checked-in HTML fixtures, so no network is touched.
 
 use async_trait::async_trait;
+use std::sync::Arc;
 use tankovault_adapters::{Ctx, build_adapter};
 use tankovault_domain::{AdapterKind, SeriesStatus};
 use tankovault_fetch::{FetchError, FetchRequest, FetchResponse, Fetcher};
-use std::sync::Arc;
 
 const CATALOG_HTML: &str = include_str!("../fixtures/madara-sample/catalog.html");
 const SERIES_HTML: &str = include_str!("../fixtures/madara-sample/series.html");

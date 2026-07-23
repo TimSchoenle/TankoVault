@@ -4,14 +4,23 @@
 //! - `xtask reset`   — drop & recreate the `public` schema, then re-migrate (DESTRUCTIVE,
 //!   local dev only; guarded by `TANKOVAULT_CONFIRM_RESET=1`).
 //! - `xtask seed`    — insert a demo admin user and the built-in provider presets.
+//! - `xtask openapi` — regenerate `web/frontend/wire_schema.json` from the api service's
+//!   `utoipa` schemas (the frontend's `typify` codegen input). No database needed.
 //!
-//! Reads `DATABASE_URL` from the environment.
+//! `migrate`/`reset`/`seed` read `DATABASE_URL` from the environment; `openapi` does not.
 
 use tankovault_domain::{Politeness, UserRole};
+use utoipa::OpenApi as _;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cmd = std::env::args().nth(1).unwrap_or_default();
+
+    if cmd == "openapi" {
+        let check = std::env::args().nth(2).as_deref() == Some("--check");
+        return openapi(check);
+    }
+
     let url =
         std::env::var("DATABASE_URL").map_err(|_| anyhow::anyhow!("DATABASE_URL must be set"))?;
     let pool = tankovault_db::connect(&url, 5, 10).await?;
@@ -24,11 +33,79 @@ async fn main() -> anyhow::Result<()> {
         "reset" => reset(&pool).await?,
         "seed" => seed(&pool).await?,
         other => {
-            eprintln!("unknown command {other:?}; usage: xtask <migrate|reset|seed>");
+            eprintln!(
+                "unknown command {other:?}; usage: xtask <migrate|reset|seed|openapi [--check]>"
+            );
             std::process::exit(2);
         }
     }
     Ok(())
+}
+
+/// Dump the api service's `utoipa` component schemas as a plain JSON Schema document (no
+/// `OpenAPI` envelope — just `$defs`), so `typify` can consume it directly on the frontend
+/// side. `#/components/schemas/X` refs (`OpenAPI` convention) are rewritten to `#/$defs/X`
+/// (JSON Schema 2020-12 convention, what `typify` resolves).
+///
+/// With `check = true`, nothing is written: the freshly generated document is compared
+/// against the file on disk and the command exits non-zero if they differ. Used by CI
+/// (`.github/workflows/ci.yml`) and the pre-commit hook (`hooks/pre-commit`) instead of a
+/// generate-then-`git diff` dance.
+fn openapi(check: bool) -> anyhow::Result<()> {
+    let doc = tankovault_api::openapi::ApiDoc::openapi();
+    let mut schemas = serde_json::to_value(
+        doc.components
+            .ok_or_else(|| anyhow::anyhow!("ApiDoc has no components"))?
+            .schemas,
+    )?;
+    rewrite_refs(&mut schemas);
+
+    let wrapped = serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": schemas,
+    });
+    let rendered = serde_json::to_string_pretty(&wrapped)? + "\n";
+
+    let out_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../web/frontend/wire_schema.json");
+
+    if check {
+        let current = std::fs::read_to_string(&out_path).unwrap_or_default();
+        if current != rendered {
+            anyhow::bail!(
+                "{} is out of date; run `cargo run -p xtask -- openapi` and commit the result",
+                out_path.display()
+            );
+        }
+        println!("{} is up to date", out_path.display());
+        return Ok(());
+    }
+
+    std::fs::write(&out_path, rendered)?;
+    println!("wrote {}", out_path.display());
+    Ok(())
+}
+
+/// Recursively rewrite every `"#/components/schemas/X"` `$ref` to `"#/$defs/X"` in place.
+fn rewrite_refs(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            if let Some(serde_json::Value::String(s)) = map.get_mut("$ref") {
+                if let Some(name) = s.strip_prefix("#/components/schemas/") {
+                    *s = format!("#/$defs/{name}");
+                }
+            }
+            for v in map.values_mut() {
+                rewrite_refs(v);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for v in items {
+                rewrite_refs(v);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Drop the whole schema and re-migrate from scratch. Refuses to run unless

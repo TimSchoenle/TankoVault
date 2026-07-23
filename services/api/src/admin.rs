@@ -9,12 +9,12 @@ use axum::extract::{Path, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tankovault_adapters::{Ctx, SourceAdapter, build_adapter};
 use tankovault_db::repo::matching::MergeCandidateView;
 use tankovault_db::repo::providers::NewProvider;
-use std::str::FromStr;
 use tankovault_domain::{
     AdapterKind, Politeness, Provider, ProviderId, ProviderState, ScanMode, ScanRun, ScanRunId,
     SeriesId, UserId, UserRole, WatchStatus,
@@ -26,6 +26,7 @@ use tankovault_fetch::{
 use tankovault_solver::ChallengeSolver;
 use tokio_stream::StreamExt as _;
 use tokio_stream::wrappers::IntervalStream;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// `GET /v1/admin/providers`
@@ -34,10 +35,12 @@ pub async fn list_providers(
     user: AuthUser,
 ) -> ApiResult<Json<Vec<Provider>>> {
     user.require(UserRole::Operator)?;
-    Ok(Json(tankovault_db::repo::providers::list(&state.pool).await?))
+    Ok(Json(
+        tankovault_db::repo::providers::list(&state.pool).await?,
+    ))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateProvider {
     pub slug: String,
     pub name: String,
@@ -88,7 +91,7 @@ pub async fn create_provider(
     Ok(Json(provider))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateProvider {
     pub name: String,
     pub base_url: String,
@@ -157,7 +160,7 @@ pub async fn delete_provider(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct SetProviderState {
     pub state: ProviderState,
 }
@@ -237,7 +240,7 @@ pub async fn list_users(
     ))
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct TriggerScan {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_id: Option<ProviderId>,
@@ -358,7 +361,7 @@ pub async fn list_merge_candidates(
     ))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct MergeRequest {
     /// The surviving canonical series.
     pub keep: SeriesId,
@@ -373,8 +376,13 @@ pub async fn merge_series(
     Json(req): Json<MergeRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
     user.require(UserRole::Operator)?;
-    tankovault_db::repo::matching::merge_series(&state.pool, req.keep, req.merge, Some(user.user_id))
-        .await?;
+    tankovault_db::repo::matching::merge_series(
+        &state.pool,
+        req.keep,
+        req.merge,
+        Some(user.user_id),
+    )
+    .await?;
     audit(
         &state,
         &user,
@@ -386,7 +394,7 @@ pub async fn merge_series(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct DismissRequest {
     pub id: Uuid,
 }
@@ -398,9 +406,12 @@ pub async fn dismiss_merge_candidate(
     Json(req): Json<DismissRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
     user.require(UserRole::Operator)?;
-    let dismissed =
-        tankovault_db::repo::matching::dismiss_merge_candidate(&state.pool, req.id, Some(user.user_id))
-            .await?;
+    let dismissed = tankovault_db::repo::matching::dismiss_merge_candidate(
+        &state.pool,
+        req.id,
+        Some(user.user_id),
+    )
+    .await?;
     audit(
         &state,
         &user,
@@ -438,7 +449,7 @@ pub async fn scan_stream(
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, ToSchema)]
 pub struct TestAdapterRequest {
     /// Optional relative series path to also fetch metadata + chapters for.
     #[serde(default)]
@@ -582,7 +593,7 @@ pub async fn list_sync_mappings(
     ))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct SyncAccountTarget {
     pub user_id: UserId,
     pub provider: String,
@@ -673,7 +684,7 @@ pub async fn admin_sync_unlink(
     Ok(Json(value))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct SyncMappingTarget {
     pub series_id: SeriesId,
     pub provider: String,
@@ -701,7 +712,7 @@ pub async fn clear_sync_mapping(
     Ok(Json(serde_json::json!({ "removed": removed })))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpsertMapping {
     pub series_id: SeriesId,
     pub provider: String,
@@ -822,7 +833,7 @@ pub struct SuggestQuery {
 /// One ranked suggestion for the admin "match every loaded entry" screen: a local series the
 /// matcher thinks the remote entry could be, with enough info (title, type, sources) to
 /// eyeball it and its confidence `score` in `[0,1]`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct SuggestedMatch {
     pub series_id: Uuid,
     pub title: String,
@@ -894,7 +905,7 @@ pub async fn list_suggestions(
     Ok(Json(out))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct AssignRemoteEntry {
     pub user_id: UserId,
     pub provider: String,

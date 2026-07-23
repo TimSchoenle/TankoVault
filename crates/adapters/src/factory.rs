@@ -7,8 +7,8 @@ use crate::generic::GenericConfigAdapter;
 use crate::kunmanga::KunMangaAdapter;
 use crate::madara::madara_default_config;
 use crate::types::SourceAdapter;
-use tankovault_domain::AdapterKind;
 use serde_json::Value;
+use tankovault_domain::AdapterKind;
 
 /// Deep-merge `over` into `base` (object keys recurse; other values replace).
 fn merge(base: &mut Value, over: &Value) {

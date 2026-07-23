@@ -13,6 +13,7 @@ uuid = { workspace = true }
 time = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
+utoipa = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

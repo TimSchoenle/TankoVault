@@ -15,6 +15,7 @@ mod live;
 mod models;
 mod state;
 mod views;
+mod wire;
 
 use components::{Shell, UnreadBadge};
 use dioxus::prelude::*;

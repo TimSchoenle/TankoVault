@@ -60,6 +60,9 @@ tankovault-auth = { path = "crates/auth" }
 tankovault-matcher = { path = "crates/matcher" }
 tankovault-bus = { path = "crates/bus" }
 
+# --- wire schema (OpenAPI -> frontend typify codegen) ---
+utoipa = { version = "5", features = ["uuid"] }
+
 # --- async runtime & web ---
 tokio = { version = "1.43", features = ["full"] }
 tokio-util = { version = "0.7", features = ["rt"] }

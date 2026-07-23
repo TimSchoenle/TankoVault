@@ -299,7 +299,9 @@ impl SyncEngine {
                 let status = tracking::watchlist_status_get(&self.pool, user_id, series_id)
                     .await?
                     .unwrap_or(WatchStatus::Reading);
-                provider.save_entry(&access, &external_id, status, v).await?;
+                provider
+                    .save_entry(&access, &external_id, status, v)
+                    .await?;
             }
             ("status", "remote") => {
                 let s = c
@@ -316,7 +318,9 @@ impl SyncEngine {
                 let progress = tracking::progress_state(&self.pool, user_id, series_id)
                     .await?
                     .map_or(0.0, |(p, _)| p);
-                provider.save_entry(&access, &external_id, s, progress).await?;
+                provider
+                    .save_entry(&access, &external_id, s, progress)
+                    .await?;
             }
             _ => {}
         }
@@ -421,7 +425,9 @@ impl SyncEngine {
         user_id: UserId,
         policy: Option<ConflictPolicy>,
     ) -> anyhow::Result<PullReport> {
-        let c = self.reconcile_account_guarded(slug, user_id, policy).await?;
+        let c = self
+            .reconcile_account_guarded(slug, user_id, policy)
+            .await?;
         Ok(PullReport {
             fetched: c.fetched,
             matched: c.matched,
@@ -438,7 +444,9 @@ impl SyncEngine {
         user_id: UserId,
         policy: Option<ConflictPolicy>,
     ) -> anyhow::Result<PushReport> {
-        let c = self.reconcile_account_guarded(slug, user_id, policy).await?;
+        let c = self
+            .reconcile_account_guarded(slug, user_id, policy)
+            .await?;
         Ok(PushReport {
             considered: c.considered,
             pushed: c.pushed,
@@ -665,7 +673,14 @@ impl SyncEngine {
         }
         let local_status = local_status_opt.unwrap_or(remote.status);
 
-        let pd = three_way(local_progress, remote.progress, snap_lp, snap_rp, policy, newer);
+        let pd = three_way(
+            local_progress,
+            remote.progress,
+            snap_lp,
+            snap_rp,
+            policy,
+            newer,
+        );
         let sd = three_way(local_status, remote.status, snap_ls, snap_rs, policy, newer);
 
         let mut conflict = false;
@@ -925,7 +940,6 @@ impl SyncEngine {
         Ok(())
     }
 
-
     /// Resolve a remote entry to a canonical series: first via an existing mapping, then by
     /// the best confident title match against the local catalogue.
     ///
@@ -1027,7 +1041,11 @@ impl SyncEngine {
         max_series: usize,
     ) -> anyhow::Result<EnrichReport> {
         let mut report = EnrichReport::default();
-        if !self.providers.values().any(|p| p.supports_public_metadata()) {
+        if !self
+            .providers
+            .values()
+            .any(|p| p.supports_public_metadata())
+        {
             return Ok(report);
         }
         let mut offset: i64 = 0;

@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
+use utoipa::ToSchema;
 
 /// Generates a string-backed enum with lowercase serde tokens plus `as_str` /
 /// `FromStr` implementations that agree byte-for-byte with the SQL enum.
@@ -16,7 +17,7 @@ macro_rules! str_enum {
         default = $default:ident
     ) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
         #[serde(rename_all = "snake_case")]
         $vis enum $name {
             $( #[serde(rename = $token)] $variant ),+

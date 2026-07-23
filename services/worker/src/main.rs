@@ -10,14 +10,14 @@ mod engine;
 
 use engine::Engine;
 use futures::StreamExt;
+use serde::Deserialize;
+use std::sync::Arc;
+use std::time::Duration;
 use tankovault_bus::Bus;
 use tankovault_config::{DatabaseConfig, NatsConfig, TelemetryConfig};
 use tankovault_contracts::ScanTaskMessage;
 use tankovault_fetch::{HttpChallengeSolver, InMemorySessionStore, SessionStore};
 use tankovault_solver::ChallengeSolver;
-use serde::Deserialize;
-use std::sync::Arc;
-use std::time::Duration;
 
 #[derive(Debug, Deserialize)]
 struct Config {

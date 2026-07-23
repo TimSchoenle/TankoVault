@@ -4,11 +4,11 @@ use crate::error::ApiError;
 use axum::extract::FromRequestParts;
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
+use std::sync::Arc;
 use tankovault_auth::verify_access_token;
 use tankovault_db::PgPool;
 use tankovault_domain::{UserId, UserRole};
 use tankovault_observability::PrometheusHandle;
-use std::sync::Arc;
 
 /// Application state shared across handlers.
 #[derive(Clone)]

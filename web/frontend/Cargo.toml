@@ -31,6 +31,14 @@ web-sys = { version = "0.3", features = ["MessageEvent"] }
 wasm-bindgen = "0.2"
 # Relative-time formatting on the console uses the browser's own ISO-8601 date parser.
 js-sys = "0.3"
+# Generates the wire DTOs (src/wire.rs) from wire_schema.json at compile time. A
+# proc-macro dependency: it runs on the host during macro expansion, never compiled
+# into (or shipped in) the wasm bundle.
+typify = "0.7"
+# Typed ids in the generated wire types (`typify` maps `format: uuid` to this). No "v4"/"v7"
+# feature: the frontend only parses/displays ids, never mints new ones, so it doesn't need
+# `getrandom`'s wasm backend.
+uuid = { version = "1", features = ["serde"] }
 
 [features]
 default = ["web"]

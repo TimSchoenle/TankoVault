@@ -4,8 +4,8 @@
 //! conflict policy — are exhaustively unit-tested. The engine layer wires these to the
 //! database and the `AniList` GraphQL client.
 
-use tankovault_domain::{ContentType, WatchStatus};
 use serde::{Deserialize, Serialize};
+use tankovault_domain::{ContentType, WatchStatus};
 
 /// `AniList` `MediaListStatus` enum values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -300,13 +300,27 @@ mod tests {
 
     #[test]
     fn no_change_since_ancestor_is_noop() {
-        let d = three_way(5.0, 5.0, Some(5.0), Some(5.0), ConflictPolicy::NewestWins, newer_local());
+        let d = three_way(
+            5.0,
+            5.0,
+            Some(5.0),
+            Some(5.0),
+            ConflictPolicy::NewestWins,
+            newer_local(),
+        );
         assert_eq!(d.action, MergeAction::Noop);
     }
 
     #[test]
     fn only_local_changed_pushes() {
-        let d = three_way(7.0, 5.0, Some(5.0), Some(5.0), ConflictPolicy::NewestWins, newer_local());
+        let d = three_way(
+            7.0,
+            5.0,
+            Some(5.0),
+            Some(5.0),
+            ConflictPolicy::NewestWins,
+            newer_local(),
+        );
         assert_eq!(d.action, MergeAction::PushLocal);
         assert_eq!(d.winner, Side::Local);
     }
@@ -314,40 +328,89 @@ mod tests {
     #[test]
     fn only_remote_changed_pulls() {
         // Only remote changed: not a conflict, so policy is irrelevant — pull it.
-        let d = three_way(5.0, 9.0, Some(5.0), Some(5.0), ConflictPolicy::LocalWins, newer_local());
+        let d = three_way(
+            5.0,
+            9.0,
+            Some(5.0),
+            Some(5.0),
+            ConflictPolicy::LocalWins,
+            newer_local(),
+        );
         assert_eq!(d.action, MergeAction::PullRemote);
         assert_eq!(d.winner, Side::Remote);
     }
 
     #[test]
     fn both_changed_to_same_value_converges() {
-        let d = three_way(8.0, 8.0, Some(5.0), Some(6.0), ConflictPolicy::AskMe, newer_local());
+        let d = three_way(
+            8.0,
+            8.0,
+            Some(5.0),
+            Some(6.0),
+            ConflictPolicy::AskMe,
+            newer_local(),
+        );
         assert_eq!(d.action, MergeAction::Noop);
     }
 
     #[test]
     fn real_conflict_local_wins() {
-        let d = three_way(7.0, 9.0, Some(5.0), Some(5.0), ConflictPolicy::LocalWins, newer_remote());
+        let d = three_way(
+            7.0,
+            9.0,
+            Some(5.0),
+            Some(5.0),
+            ConflictPolicy::LocalWins,
+            newer_remote(),
+        );
         assert_eq!(d.action, MergeAction::PushLocal);
     }
 
     #[test]
     fn real_conflict_remote_wins() {
-        let d = three_way(7.0, 9.0, Some(5.0), Some(5.0), ConflictPolicy::RemoteWins, newer_local());
+        let d = three_way(
+            7.0,
+            9.0,
+            Some(5.0),
+            Some(5.0),
+            ConflictPolicy::RemoteWins,
+            newer_local(),
+        );
         assert_eq!(d.action, MergeAction::PullRemote);
     }
 
     #[test]
     fn real_conflict_newest_wins_follows_newer_side() {
-        let d = three_way(7.0, 9.0, Some(5.0), Some(5.0), ConflictPolicy::NewestWins, newer_remote());
+        let d = three_way(
+            7.0,
+            9.0,
+            Some(5.0),
+            Some(5.0),
+            ConflictPolicy::NewestWins,
+            newer_remote(),
+        );
         assert_eq!(d.action, MergeAction::PullRemote);
-        let d = three_way(7.0, 9.0, Some(5.0), Some(5.0), ConflictPolicy::NewestWins, newer_local());
+        let d = three_way(
+            7.0,
+            9.0,
+            Some(5.0),
+            Some(5.0),
+            ConflictPolicy::NewestWins,
+            newer_local(),
+        );
         assert_eq!(d.action, MergeAction::PushLocal);
     }
 
     #[test]
     fn real_conflict_ask_me_queues() {
-        let d = three_way(7.0, 9.0, Some(5.0), Some(5.0), ConflictPolicy::AskMe, newer_local());
+        let d = three_way(
+            7.0,
+            9.0,
+            Some(5.0),
+            Some(5.0),
+            ConflictPolicy::AskMe,
+            newer_local(),
+        );
         assert_eq!(d.action, MergeAction::Conflict);
     }
 
@@ -373,6 +436,9 @@ mod tests {
         ] {
             assert_eq!(ConflictPolicy::parse(p.as_str()), p);
         }
-        assert_eq!(ConflictPolicy::parse("nonsense"), ConflictPolicy::NewestWins);
+        assert_eq!(
+            ConflictPolicy::parse("nonsense"),
+            ConflictPolicy::NewestWins
+        );
     }
 }

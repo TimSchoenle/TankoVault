@@ -5,32 +5,33 @@ use crate::state::AppState;
 use axum::Json;
 use axum::extract::State;
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
+use serde::{Deserialize, Serialize};
 use tankovault_auth::{
     generate_refresh_token, hash_password, hash_refresh_token, issue_access_token, verify_password,
 };
 use tankovault_domain::{User, UserRole};
-use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 const REFRESH_COOKIE: &str = "refresh_token";
 const REFRESH_PATH: &str = "/v1/auth";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct RegisterRequest {
     pub email: String,
     pub username: String,
     pub password: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct LoginRequest {
     /// Email or username.
     pub login: String,
     pub password: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct TokenResponse {
     pub access_token: String,
     pub token_type: &'static str,
@@ -126,9 +127,14 @@ async fn issue_session(
     user: &User,
     family_id: Uuid,
 ) -> ApiResult<(CookieJar, Json<TokenResponse>)> {
-    let access =
-        issue_access_token(&state.jwt_secret, user.id, &user.username, user.role, state.access_ttl)
-            .map_err(|_| ApiError::Internal)?;
+    let access = issue_access_token(
+        &state.jwt_secret,
+        user.id,
+        &user.username,
+        user.role,
+        state.access_ttl,
+    )
+    .map_err(|_| ApiError::Internal)?;
 
     let raw_refresh = generate_refresh_token();
     let refresh_hash = hash_refresh_token(&raw_refresh);

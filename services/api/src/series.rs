@@ -7,11 +7,12 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue};
 use axum_extra::extract::Query as MultiQuery;
+use serde::{Deserialize, Serialize};
 use tankovault_db::repo::catalog::SeriesFilter;
 use tankovault_domain::{
     ContentType, SeriesId, SeriesSourceId, SeriesStatus, UserId, resolve_link,
 };
-use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 /// Query parameters for the Discover browse list (frontend §9.1). All filters are optional;
 /// `tag`/`exclude_tag` may repeat (`?tag=action&tag=drama`). Sorting and offset pagination
@@ -56,7 +57,7 @@ fn default_limit() -> i64 {
     40
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct SeriesSummary {
     pub id: SeriesId,
     pub title: String,
@@ -123,7 +124,7 @@ pub async fn list(
     Ok((headers, Json(items)))
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct SourceDto {
     pub id: SeriesSourceId,
     pub provider_name: String,
@@ -138,7 +139,7 @@ pub struct SourceDto {
     pub is_primary: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct SeriesDetail {
     pub id: SeriesId,
     pub title: String,
@@ -196,8 +197,7 @@ pub async fn detail(
     let tags = tankovault_db::repo::catalog::list_series_tags(&state.pool, id).await?;
     let authors = tankovault_db::repo::catalog::list_series_authors(&state.pool, id).await?;
     let anilist_id =
-        tankovault_db::repo::sync::mapping_external_for_series(&state.pool, id, "anilist")
-            .await?;
+        tankovault_db::repo::sync::mapping_external_for_series(&state.pool, id, "anilist").await?;
 
     Ok(Json(SeriesDetail {
         id: series.id,
@@ -221,13 +221,14 @@ pub struct ChapterParams {
     pub source: Option<SeriesSourceId>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ChapterDto {
     pub number: f64,
     pub title: Option<String>,
     /// Resolved absolute URL to open the chapter page on the provider.
     pub url: String,
     #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
     pub published_at: Option<time::OffsetDateTime>,
     /// Whether the requesting user has read this chapter (number ≤ their progress).
     /// `None` for anonymous requests; `Some(bool)` when a valid `Bearer` token is present
@@ -248,7 +249,8 @@ pub async fn chapters(
     let source_id = if let Some(s) = params.source {
         s
     } else {
-        let sources = tankovault_db::repo::catalog::list_sources_for_series(&state.pool, id).await?;
+        let sources =
+            tankovault_db::repo::catalog::list_sources_for_series(&state.pool, id).await?;
         sources.first().map(|s| s.id).ok_or(ApiError::NotFound)?
     };
 

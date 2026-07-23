@@ -7,14 +7,14 @@
 use crate::api;
 use crate::components::{Cover, EmptyBox, ErrorBox, SignInGate};
 use crate::icons::{Ic, Icon};
-use crate::models::{ConflictPolicy, WatchStatus, WatchlistItem, WatchlistUpsert};
+use crate::models::{ConflictPolicy, SeriesId, WatchStatus, WatchlistItem, WatchlistUpsert};
 use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
 
 /// The card currently being dragged: `(series_id, notify)` — notify is preserved across the
 /// status move so a drop only changes the column.
-type Dragging = Option<(String, bool)>;
+type Dragging = Option<(SeriesId, bool)>;
 
 #[component]
 pub fn Watchlist() -> Element {
@@ -158,15 +158,18 @@ fn Column(
         evt.prevent_default();
         let mut dragover = dragover;
         dragover.set(None);
-        let payload = dragging.read().clone();
+        let payload = *dragging.read();
         let mut dragging = dragging;
         dragging.set(None);
         if let Some((sid, notify)) = payload {
             let mut reload = reload;
             spawn(async move {
                 if let Some(t) = session.token_value() {
-                    let body = WatchlistUpsert { status, notify };
-                    if api::set_watchlist(&t, &sid, &body).await.is_ok() {
+                    let body = WatchlistUpsert {
+                        status: Some(status),
+                        notify: Some(notify),
+                    };
+                    if api::set_watchlist(&t, sid, &body).await.is_ok() {
                         reload += 1;
                     }
                 }
@@ -208,35 +211,35 @@ fn Column(
 #[component]
 fn WatchCard(item: WatchlistItem, reload: Signal<u32>, dragging: Signal<Dragging>) -> Element {
     let session = use_session();
-    let series_id = item.series_id.clone();
+    let series_id = item.series_id;
     let detail = use_resource({
-        let id = series_id.clone();
+        let id = series_id;
         move || {
-            let id = id.clone();
-            async move { api::series_detail(&id).await }
+            let id = id;
+            async move { api::series_detail(id).await }
         }
     });
 
     let (title, cover) = match &*detail.read_unchecked() {
         Some(Ok(d)) => (d.title.clone(), d.cover_url.clone()),
-        _ => (short_id(&item.series_id), None),
+        _ => (short_id(item.series_id), None),
     };
 
     let notify = item.notify;
     let status = item.status;
 
     let toggle_notify = {
-        let sid = series_id.clone();
+        let sid = series_id;
         let mut reload = reload;
         move |_| {
-            let sid = sid.clone();
+            let sid = sid;
             spawn(async move {
                 if let Some(t) = session.token_value() {
                     let body = WatchlistUpsert {
-                        status,
-                        notify: !notify,
+                        status: Some(status),
+                        notify: Some(!notify),
                     };
-                    if api::set_watchlist(&t, &sid, &body).await.is_ok() {
+                    if api::set_watchlist(&t, sid, &body).await.is_ok() {
                         reload += 1;
                     }
                 }
@@ -245,18 +248,18 @@ fn WatchCard(item: WatchlistItem, reload: Signal<u32>, dragging: Signal<Dragging
     };
 
     let move_status = {
-        let sid = series_id.clone();
+        let sid = series_id;
         let mut reload = reload;
         move |ev: Event<FormData>| {
-            let sid = sid.clone();
+            let sid = sid;
             let new_status = parse_status(&ev.value());
             spawn(async move {
                 if let Some(t) = session.token_value() {
                     let body = WatchlistUpsert {
-                        status: new_status,
-                        notify,
+                        status: Some(new_status),
+                        notify: Some(notify),
                     };
-                    if api::set_watchlist(&t, &sid, &body).await.is_ok() {
+                    if api::set_watchlist(&t, sid, &body).await.is_ok() {
                         reload += 1;
                     }
                 }
@@ -265,13 +268,13 @@ fn WatchCard(item: WatchlistItem, reload: Signal<u32>, dragging: Signal<Dragging
     };
 
     let remove = {
-        let sid = series_id.clone();
+        let sid = series_id;
         let mut reload = reload;
         move |_| {
-            let sid = sid.clone();
+            let sid = sid;
             spawn(async move {
                 if let Some(t) = session.token_value() {
-                    if api::remove_watchlist(&t, &sid).await.is_ok() {
+                    if api::remove_watchlist(&t, sid).await.is_ok() {
                         reload += 1;
                     }
                 }
@@ -284,7 +287,7 @@ fn WatchCard(item: WatchlistItem, reload: Signal<u32>, dragging: Signal<Dragging
     } else {
         "ik-pill"
     };
-    let drag_sid = series_id.clone();
+    let drag_sid = series_id;
 
     rsx! {
         div {
@@ -292,13 +295,13 @@ fn WatchCard(item: WatchlistItem, reload: Signal<u32>, dragging: Signal<Dragging
             draggable: true,
             ondragstart: move |_| {
                 let mut dragging = dragging;
-                dragging.set(Some((drag_sid.clone(), notify)));
+                dragging.set(Some((drag_sid, notify)));
             },
             ondragend: move |_| {
                 let mut dragging = dragging;
                 dragging.set(None);
             },
-            Link { to: Route::Series { id: series_id.clone() }, class: "ik-flex",
+            Link { to: Route::Series { id: series_id.to_string() }, class: "ik-flex",
                 div { style: "width:40px;flex:none;",
                     Cover { url: cover, title: title.clone() }
                 }
@@ -353,6 +356,7 @@ fn parse_status(v: &str) -> WatchStatus {
     }
 }
 
-fn short_id(id: &str) -> String {
-    id.get(0..8).unwrap_or(id).to_owned()
+fn short_id(id: SeriesId) -> String {
+    let s = id.to_string();
+    s.get(0..8).unwrap_or(&s).to_owned()
 }

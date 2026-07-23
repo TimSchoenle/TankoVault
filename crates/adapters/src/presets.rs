@@ -6,8 +6,8 @@
 //! data, not code (design §7). A site with a bespoke layout instead ships a custom Rust
 //! adapter and an empty config. See `docs/PROVIDERS.md` for the config-vs-code split.
 
-use tankovault_domain::AdapterKind;
 use serde_json::{Value, json};
+use tankovault_domain::AdapterKind;
 
 /// A ready-to-seed provider definition: identity, domain, adapter kind, and the selector
 /// overrides merged onto the adapter defaults (empty for a fully custom adapter).

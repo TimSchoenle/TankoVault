@@ -5,6 +5,7 @@
 //! system permits (design §9 "operator-tunable downward … bounded by hard ceilings").
 
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 /// Hard upper bound on requests-per-second for any single provider.
 pub const MAX_RPS: f64 = 4.0;
@@ -15,7 +16,7 @@ pub const DEFAULT_USER_AGENT: &str =
     "TankoVaultBot/0.1 (+https://github.com/tankovault; metadata-aggregator; contact: operator)";
 
 /// Crawl politeness parameters for one provider.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct Politeness {
     /// Requests per second, aggregate across the worker pool.
     #[serde(default = "Politeness::default_rps")]

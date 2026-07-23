@@ -72,12 +72,10 @@ pub fn score(query: &Query, candidate: &Candidate) -> f32 {
     // stronger. Trigram similarity is brittle when a title reorders words or carries extra
     // ones (romaji vs. english word order, season/part suffixes, sub-titles); the token-set
     // ratio recovers many of those cases so the auto-matcher links far more entries.
-    let mut s = candidate
-        .similarity
-        .max(token_set_ratio(
-            &query.normalized_title,
-            &candidate.normalized_title,
-        ));
+    let mut s = candidate.similarity.max(token_set_ratio(
+        &query.normalized_title,
+        &candidate.normalized_title,
+    ));
 
     // Content-type agreement is a strong signal (a manhwa vs. manga split matters).
     if query.content_type != ContentType::Unknown && candidate.content_type != ContentType::Unknown

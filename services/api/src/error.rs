@@ -3,9 +3,9 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use serde_json::json;
 use tankovault_auth::AuthError;
 use tankovault_db::DbError;
-use serde_json::json;
 
 /// The single error type all handlers return.
 #[derive(Debug, thiserror::Error)]

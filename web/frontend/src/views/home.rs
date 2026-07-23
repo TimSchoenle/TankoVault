@@ -70,8 +70,14 @@ pub fn Home() -> Element {
         Some(Some(s)) => Some(s.clone()),
         _ => None,
     };
-    let reading_count = me.as_ref().map(|s| s.reading.to_string()).unwrap_or_else(|| "—".to_owned());
-    let chapters_read = me.as_ref().map(|s| s.chapters_read.to_string()).unwrap_or_else(|| "—".to_owned());
+    let reading_count = me
+        .as_ref()
+        .map(|s| s.reading.to_string())
+        .unwrap_or_else(|| "—".to_owned());
+    let chapters_read = me
+        .as_ref()
+        .map(|s| s.chapters_read.to_string())
+        .unwrap_or_else(|| "—".to_owned());
 
     let feed_body = match &*feed.read_unchecked() {
         None => rsx! {
@@ -207,7 +213,7 @@ fn ContinueCard(item: ContinueItem) -> Element {
     let next = item.next_number.map(trim_num);
     let unread = item.unread;
     rsx! {
-        Link { to: Route::Series { id: item.series_id.clone() }, class: "ik-card",
+        Link { to: Route::Series { id: item.series_id.to_string() }, class: "ik-card",
             Cover { url: item.cover_url.clone(), title: item.series_title.clone() }
             div { class: "ik-card-body",
                 div { class: "ik-card-title", "{item.series_title}" }
@@ -231,7 +237,7 @@ fn ContinueCard(item: ContinueItem) -> Element {
 fn FeedRow(entry: FeedEntry, reload: Signal<u32>) -> Element {
     let session = use_session();
     let mut reload = reload;
-    let series_id = entry.series_id.clone();
+    let series_id = entry.series_id;
     let number = entry.chapter_number;
     let chapter_label = entry
         .chapter_title
@@ -240,10 +246,9 @@ fn FeedRow(entry: FeedEntry, reload: Signal<u32>) -> Element {
         .unwrap_or_else(|| format!("Chapter {}", trim_num(number)));
 
     let mark = move |_| {
-        let sid = series_id.clone();
         spawn(async move {
             if let Some(t) = session.token_value() {
-                if api::set_progress(&t, &sid, number).await.is_ok() {
+                if api::set_progress(&t, series_id, number).await.is_ok() {
                     reload += 1;
                 }
             }

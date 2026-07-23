@@ -4,10 +4,10 @@
 //! transport is a fake serving the fixtures.
 
 use async_trait::async_trait;
+use std::sync::Arc;
 use tankovault_adapters::{Ctx, DemonicScansAdapter, SourceAdapter};
 use tankovault_domain::SeriesStatus;
 use tankovault_fetch::{FetchError, FetchRequest, FetchResponse, Fetcher};
-use std::sync::Arc;
 
 const CATALOG_HTML: &str = include_str!("../fixtures/demonicscans/catalog.html");
 const LATEST_HTML: &str = include_str!("../fixtures/demonicscans/latest.html");
@@ -87,7 +87,10 @@ async fn parses_series_metadata() {
     assert!(meta.tags.iter().any(|t| t == "Seinen"));
     assert!(meta.tags.iter().any(|t| t == "Action"));
     // Author cell reuses the same "," split as Alternatives.
-    assert_eq!(meta.authors, vec!["Nemeton".to_owned(), "Mangamuse".to_owned()]);
+    assert_eq!(
+        meta.authors,
+        vec!["Nemeton".to_owned(), "Mangamuse".to_owned()]
+    );
     // Description keeps only the synopsis after the "The Summary is" boilerplate marker.
     let desc = meta.description.expect("description present");
     assert!(desc.starts_with("Yuto Kanzaki"));

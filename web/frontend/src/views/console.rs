@@ -17,10 +17,11 @@ use crate::components::{rel_time, Cover, ErrorBox};
 use crate::icons::{Ic, Icon};
 use crate::models::{
     AdminSyncAccount, AdminSyncMapping, AuditEntry, FailedTask, MergeCandidate, Provider,
-    ProviderInfo, ProviderStat, RunState, ScanMode, ScanRun, SeriesSummary, SuggestedMatch,
-    SystemStats, UnmappedSeries, UnmatchedRemoteEntry,
+    ProviderId, ProviderInfo, ProviderStat, RunState, ScanMode, ScanRun, SeriesId, SeriesSummary,
+    SuggestedMatch, SystemStats, UnmappedSeries, UnmatchedRemoteEntry, UserId,
 };
 use crate::state::use_session;
+use crate::wire::{AdapterKind, ProviderState};
 use dioxus::prelude::*;
 
 /// Auto-refresh cadence for the read-only dashboard panels.
@@ -86,6 +87,15 @@ const ADAPTER_KINDS: &[(&str, &str)] = &[
     ("madara", "Madara / WordPress"),
     ("custom", "Custom (built-in)"),
 ];
+
+/// The wire token for a loaded provider's adapter kind (matches the SQL enum / `ADAPTER_KINDS`).
+fn adapter_token(a: AdapterKind) -> &'static str {
+    match a {
+        AdapterKind::GenericConfig => "generic_config",
+        AdapterKind::Madara => "madara",
+        AdapterKind::Custom => "custom",
+    }
+}
 
 #[component]
 pub fn Console() -> Element {
@@ -551,7 +561,7 @@ fn ProvidersPanel() -> Element {
                         for p in tiles {
                             div { class: "ik-tile",
                                 div { style: "font-weight:600;", "{p.name}" }
-                                HealthPill { state: p.state.clone() }
+                                HealthPill { state: provider_state_token(p.state).to_owned() }
                             }
                         }
                     }
@@ -588,6 +598,18 @@ fn HealthPill(state: String) -> Element {
     };
     rsx! {
         span { class: "{class}", "{label}" }
+    }
+}
+
+/// The wire token for a loaded provider's health state (matches the SQL enum / `HealthPill`).
+fn provider_state_token(s: ProviderState) -> &'static str {
+    match s {
+        ProviderState::Active => "active",
+        ProviderState::Degraded => "degraded",
+        ProviderState::Challenged => "challenged",
+        ProviderState::Solving => "solving",
+        ProviderState::Blocked => "blocked",
+        ProviderState::Disabled => "disabled",
     }
 }
 
@@ -742,9 +764,9 @@ fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
     let session = use_session();
     let is_admin = session.role.read().is_admin();
 
-    let id = provider.id.clone();
+    let id = provider.id;
     let original_base = provider.base_url.clone();
-    let is_disabled = provider.state == "disabled";
+    let is_disabled = provider.state == ProviderState::Disabled;
 
     let mut expanded = use_signal(|| false);
     let mut show_test = use_signal(|| false);
@@ -757,15 +779,15 @@ fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
     let mut name = use_signal(|| provider.name.clone());
     let mut base_url = use_signal(|| provider.base_url.clone());
     let mut config = use_signal(|| config_editor_text(&provider.config));
-    let mut rps = use_signal(|| provider.politeness.rps.to_string());
-    let mut concurrency = use_signal(|| provider.politeness.concurrency.to_string());
-    let mut crawl_delay_ms = use_signal(|| provider.politeness.crawl_delay_ms.to_string());
-    let mut user_agent = use_signal(|| provider.politeness.user_agent.clone());
+    let mut rps = use_signal(|| provider.politeness.rps.unwrap_or(1.0).to_string());
+    let mut concurrency = use_signal(|| provider.politeness.concurrency.unwrap_or(2).to_string());
+    let mut crawl_delay_ms =
+        use_signal(|| provider.politeness.crawl_delay_ms.unwrap_or(0).to_string());
+    let mut user_agent = use_signal(|| provider.politeness.user_agent.clone().unwrap_or_default());
 
     // Commits the edit. Cloneable so both the direct-save and the confirm-migration
     // buttons can drive it without duplicating the request logic.
     let saver = {
-        let id = id.clone();
         move || {
             let cfg = match serde_json::from_str::<serde_json::Value>(&config.read()) {
                 Ok(v) => v,
@@ -788,14 +810,13 @@ fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
             };
             let name_v = name.read().clone();
             let base_v = base_url.read().clone();
-            let id = id.clone();
             confirm_migrate.set(false);
             busy.set(true);
             msg.set(None);
             let mut reload = reload;
             spawn(async move {
                 let outcome = match session.token_value() {
-                    Some(t) => api::update_provider(&t, &id, &name_v, &base_v, &cfg, &pol).await,
+                    Some(t) => api::update_provider(&t, id, &name_v, &base_v, &cfg, &pol).await,
                     None => Err("You are signed out.".to_owned()),
                 };
                 match outcome {
@@ -810,7 +831,7 @@ fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
     };
 
     let on_save = {
-        let mut saver = saver.clone();
+        let mut saver = saver;
         let original_base = original_base.clone();
         move |_| {
             if *base_url.read() != original_base && !*confirm_migrate.read() {
@@ -821,21 +842,19 @@ fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
         }
     };
     let on_confirm_migrate = {
-        let mut saver = saver.clone();
+        let mut saver = saver;
         move |_| saver()
     };
 
     let toggle_state = {
-        let id = id.clone();
         move |_| {
-            let id = id.clone();
             let target = if is_disabled { "active" } else { "disabled" };
             let mut reload = reload;
             busy.set(true);
             msg.set(None);
             spawn(async move {
                 if let Some(t) = session.token_value() {
-                    if let Err(e) = api::set_provider_state(&t, &id, target).await {
+                    if let Err(e) = api::set_provider_state(&t, id, target).await {
                         msg.set(Some(e));
                         busy.set(false);
                         return;
@@ -847,14 +866,12 @@ fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
     };
 
     let scan = {
-        let id = id.clone();
         move |_| {
-            let id = id.clone();
             let m = *scan_mode.read();
             msg.set(None);
             spawn(async move {
                 if let Some(t) = session.token_value() {
-                    match api::trigger_scan(&t, Some(&id), m).await {
+                    match api::trigger_scan(&t, Some(id), m).await {
                         Ok(_) => msg.set(Some("Scan queued for this provider.".to_owned())),
                         Err(e) => msg.set(Some(e)),
                     }
@@ -864,14 +881,12 @@ fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
     };
 
     let delete = {
-        let id = id.clone();
         move |_| {
-            let id = id.clone();
             let mut reload = reload;
             busy.set(true);
             spawn(async move {
                 let outcome = match session.token_value() {
-                    Some(t) => api::delete_provider(&t, &id).await,
+                    Some(t) => api::delete_provider(&t, id).await,
                     None => Err("You are signed out.".to_owned()),
                 };
                 match outcome {
@@ -887,7 +902,7 @@ fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
     };
 
     let base_changed = *base_url.read() != original_base;
-    let test_id = id.clone();
+    let test_id = id;
 
     rsx! {
         div { class: "ik-tile", style: "margin-bottom:12px;",
@@ -895,10 +910,10 @@ fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
                 div { class: "grow",
                     div { class: "ik-flex",
                         span { style: "font-weight:600;", "{provider.name}" }
-                        HealthPill { state: provider.state.clone() }
+                        HealthPill { state: provider_state_token(provider.state).to_owned() }
                     }
                     div { class: "ik-muted ik-mono", style: "font-size:12px;margin-top:2px;word-break:break-all;",
-                        "{provider.slug} · {provider.adapter} · {provider.base_url}"
+                        "{provider.slug} · {adapter_token(provider.adapter)} · {provider.base_url}"
                     }
                 }
                 div { class: "ik-flex", style: "flex-wrap:wrap;justify-content:flex-end;",
@@ -1043,30 +1058,26 @@ fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
 /// Live adapter dry-run against the provider's site. Runs on demand only; shows the raw
 /// parsed sample so operators can validate selectors without a deploy.
 #[component]
-fn AdapterTestPanel(provider_id: String) -> Element {
+fn AdapterTestPanel(provider_id: ProviderId) -> Element {
     let session = use_session();
     let mut path = use_signal(String::new);
     let mut running = use_signal(|| false);
     let mut result = use_signal(|| Option::<Result<serde_json::Value, String>>::None);
 
-    let run = {
-        let provider_id = provider_id.clone();
-        move |_| {
-            let provider_id = provider_id.clone();
-            let p = path.read().trim().to_owned();
-            running.set(true);
-            spawn(async move {
-                let out = match session.token_value() {
-                    Some(t) => {
-                        let path_opt = if p.is_empty() { None } else { Some(p.as_str()) };
-                        api::test_adapter(&t, &provider_id, path_opt).await
-                    }
-                    None => Err("You are signed out.".to_owned()),
-                };
-                result.set(Some(out));
-                running.set(false);
-            });
-        }
+    let run = move |_| {
+        let p = path.read().trim().to_owned();
+        running.set(true);
+        spawn(async move {
+            let out = match session.token_value() {
+                Some(t) => {
+                    let path_opt = if p.is_empty() { None } else { Some(p.as_str()) };
+                    api::test_adapter(&t, provider_id, path_opt).await
+                }
+                None => Err("You are signed out.".to_owned()),
+            };
+            result.set(Some(out));
+            running.set(false);
+        });
     };
 
     let output = match &*result.read() {
@@ -1174,39 +1185,31 @@ fn SolverPanel(tick: Signal<u32>) -> Element {
 #[component]
 fn SolverRow(provider: Provider, reload: Signal<u32>) -> Element {
     let session = use_session();
-    let id = provider.id.clone();
+    let id = provider.id;
     let blocked = matches!(
-        provider.state.as_str(),
-        "blocked" | "disabled" | "challenged"
+        provider.state,
+        ProviderState::Blocked | ProviderState::Disabled | ProviderState::Challenged
     );
 
-    let resolve = {
-        let id = id.clone();
-        move |_| {
-            let id = id.clone();
-            let mut reload = reload;
-            spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::resolve_provider(&t, &id).await.is_ok() {
-                        reload += 1;
-                    }
+    let resolve = move |_| {
+        let mut reload = reload;
+        spawn(async move {
+            if let Some(t) = session.token_value() {
+                if api::resolve_provider(&t, id).await.is_ok() {
+                    reload += 1;
                 }
-            });
-        }
+            }
+        });
     };
-    let reenable = {
-        let id = id.clone();
-        move |_| {
-            let id = id.clone();
-            let mut reload = reload;
-            spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::set_provider_state(&t, &id, "active").await.is_ok() {
-                        reload += 1;
-                    }
+    let reenable = move |_| {
+        let mut reload = reload;
+        spawn(async move {
+            if let Some(t) = session.token_value() {
+                if api::set_provider_state(&t, id, "active").await.is_ok() {
+                    reload += 1;
                 }
-            });
-        }
+            }
+        });
     };
 
     rsx! {
@@ -1215,7 +1218,7 @@ fn SolverRow(provider: Provider, reload: Signal<u32>) -> Element {
                 div { style: "font-weight:600;", "{provider.name}" }
                 div { class: "ik-mono ik-muted", style: "font-size:12px;", "{provider.base_url}" }
             }
-            HealthPill { state: provider.state.clone() }
+            HealthPill { state: provider_state_token(provider.state).to_owned() }
             if blocked {
                 button { class: "ik-btn", onclick: reenable, "Re-enable" }
             }
@@ -1263,11 +1266,11 @@ fn AdapterTestTab() -> Element {
                         },
                         option { value: "", selected: sel.is_none(), "— choose a provider —" }
                         for p in opts {
-                            option { value: "{p.id}", selected: sel.as_deref() == Some(p.id.as_str()), "{p.name}" }
+                            option { value: "{p.id}", selected: sel.as_deref() == Some(p.id.to_string().as_str()), "{p.name}" }
                         }
                     }
                 }
-                if let Some(pid) = chosen.read().clone() {
+                if let Some(pid) = chosen.read().clone().and_then(|v| v.parse::<ProviderId>().ok()) {
                     AdapterTestPanel { provider_id: pid }
                 }
             }
@@ -1595,9 +1598,9 @@ fn MergeQueue() -> Element {
 fn MergeRow(candidate: MergeCandidate, reload: Signal<u32>) -> Element {
     let session = use_session();
     let pct = (candidate.score * 100.0).round() as i32;
-    let id = candidate.id.clone();
-    let a = candidate.series_id.clone();
-    let b = candidate.candidate_id.clone();
+    let id = candidate.id;
+    let a = candidate.series_id;
+    let b = candidate.candidate_id;
     let mut open = use_signal(|| false);
     let mut busy = use_signal(|| false);
 
@@ -1611,17 +1614,15 @@ fn MergeRow(candidate: MergeCandidate, reload: Signal<u32>) -> Element {
     };
 
     let merge = {
-        let (a, b) = (a.clone(), b.clone());
         let mut reload = reload;
         move |_| {
             if *busy.peek() {
                 return;
             }
             busy.set(true);
-            let (a, b) = (a.clone(), b.clone());
             spawn(async move {
                 if let Some(t) = session.token_value() {
-                    if api::merge_series(&t, &a, &b).await.is_ok() {
+                    if api::merge_series(&t, a, b).await.is_ok() {
                         reload += 1;
                     }
                 }
@@ -1631,17 +1632,15 @@ fn MergeRow(candidate: MergeCandidate, reload: Signal<u32>) -> Element {
     };
 
     let dismiss = {
-        let id = id.clone();
         let mut reload = reload;
         move |_| {
             if *busy.peek() {
                 return;
             }
             busy.set(true);
-            let id = id.clone();
             spawn(async move {
                 if let Some(t) = session.token_value() {
-                    if api::dismiss_candidate(&t, &id).await.is_ok() {
+                    if api::dismiss_candidate(&t, id).await.is_ok() {
                         reload += 1;
                     }
                 }
@@ -1650,8 +1649,8 @@ fn MergeRow(candidate: MergeCandidate, reload: Signal<u32>) -> Element {
         }
     };
 
-    let keep_id = a.clone();
-    let drop_id = b.clone();
+    let keep_id = a;
+    let drop_id = b;
     let reason = candidate.reason.clone();
 
     rsx! {
@@ -1695,12 +1694,8 @@ fn MergeRow(candidate: MergeCandidate, reload: Signal<u32>) -> Element {
 /// and the Sync inspector. Fetches the public series detail so operators can eyeball cover,
 /// type/status, sources and tags before acting.
 #[component]
-fn SeriesMiniCard(series_id: String) -> Element {
-    let sid = series_id.clone();
-    let res = use_resource(move || {
-        let sid = sid.clone();
-        async move { api::series_detail(&sid).await }
-    });
+fn SeriesMiniCard(series_id: SeriesId) -> Element {
+    let res = use_resource(move || async move { api::series_detail(series_id).await });
 
     match &*res.read_unchecked() {
         None => rsx! { div { class: "ik-skeleton", style: "height:120px;" } },
@@ -1827,7 +1822,7 @@ fn SyncAccountRow(account: AdminSyncAccount, reload: Signal<u32>) -> Element {
     let last_sync = rel_time(account.last_synced_at.as_deref());
 
     let pull = {
-        let user_id = account.user_id.clone();
+        let user_id = UserId(account.user_id);
         let provider = account.provider.clone();
         let mut reload = reload;
         move |_| {
@@ -1835,11 +1830,10 @@ fn SyncAccountRow(account: AdminSyncAccount, reload: Signal<u32>) -> Element {
                 return;
             }
             busy.set(true);
-            let user_id = user_id.clone();
             let provider = provider.clone();
             spawn(async move {
                 if let Some(t) = session.token_value() {
-                    if api::admin_sync_pull(&t, &user_id, &provider).await.is_ok() {
+                    if api::admin_sync_pull(&t, user_id, &provider).await.is_ok() {
                         reload += 1;
                     }
                 }
@@ -1849,7 +1843,7 @@ fn SyncAccountRow(account: AdminSyncAccount, reload: Signal<u32>) -> Element {
     };
 
     let push = {
-        let user_id = account.user_id.clone();
+        let user_id = UserId(account.user_id);
         let provider = account.provider.clone();
         let mut reload = reload;
         move |_| {
@@ -1857,11 +1851,10 @@ fn SyncAccountRow(account: AdminSyncAccount, reload: Signal<u32>) -> Element {
                 return;
             }
             busy.set(true);
-            let user_id = user_id.clone();
             let provider = provider.clone();
             spawn(async move {
                 if let Some(t) = session.token_value() {
-                    if api::admin_sync_push(&t, &user_id, &provider).await.is_ok() {
+                    if api::admin_sync_push(&t, user_id, &provider).await.is_ok() {
                         reload += 1;
                     }
                 }
@@ -1871,7 +1864,7 @@ fn SyncAccountRow(account: AdminSyncAccount, reload: Signal<u32>) -> Element {
     };
 
     let unlink = {
-        let user_id = account.user_id.clone();
+        let user_id = UserId(account.user_id);
         let provider = account.provider.clone();
         let mut reload = reload;
         move |_| {
@@ -1879,14 +1872,10 @@ fn SyncAccountRow(account: AdminSyncAccount, reload: Signal<u32>) -> Element {
                 return;
             }
             busy.set(true);
-            let user_id = user_id.clone();
             let provider = provider.clone();
             spawn(async move {
                 if let Some(t) = session.token_value() {
-                    if api::admin_sync_unlink(&t, &user_id, &provider)
-                        .await
-                        .is_ok()
-                    {
+                    if api::admin_sync_unlink(&t, user_id, &provider).await.is_ok() {
                         reload += 1;
                     }
                 }
@@ -2016,14 +2005,14 @@ fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Signal<u32>) ->
 /// A search-result row that opens the series in the inspector.
 #[component]
 fn SeriesPickRow(series: SeriesSummary, selected: Signal<Option<String>>) -> Element {
-    let sid = series.id.clone();
+    let sid = series.id;
     rsx! {
         div { class: "ik-row",
             div { class: "grow",
                 span { style: "font-weight:600;", "{series.title}" }
                 div { class: "ik-muted", style: "font-size:12px;", "{series.source_count} sources" }
             }
-            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.clone())), "Open" }
+            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.to_string())), "Open" }
         }
     }
 }
@@ -2032,7 +2021,7 @@ fn SeriesPickRow(series: SeriesSummary, selected: Signal<Option<String>>) -> Ele
 #[component]
 fn MappingPickRow(mapping: AdminSyncMapping, selected: Signal<Option<String>>) -> Element {
     let updated = rel_time(Some(&mapping.updated_at));
-    let sid = mapping.series_id.clone();
+    let sid = mapping.series_id;
     rsx! {
         div { class: "ik-row",
             div { class: "grow",
@@ -2044,7 +2033,7 @@ fn MappingPickRow(mapping: AdminSyncMapping, selected: Signal<Option<String>>) -
                     "id {mapping.external_id} · updated {updated}"
                 }
             }
-            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.clone())), "Open" }
+            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.to_string())), "Open" }
         }
     }
 }
@@ -2059,14 +2048,17 @@ fn SeriesSyncEditor(
     reload: Signal<u32>,
 ) -> Element {
     let session = use_session();
+    // `selected` (and therefore this component's `series_id` prop) is a plain `String` shared
+    // with the search/pick-row flow above; parse it once here at the boundary.
+    let Ok(sid) = series_id.parse::<SeriesId>() else {
+        return rsx! { div { class: "ik-empty", "That series id doesn't look right." } };
+    };
 
-    let sid_map = series_id.clone();
     let mappings = use_resource(move || {
-        let sid = sid_map.clone();
         let _ = reload.read();
         async move {
             match session.token_value() {
-                Some(t) => api::admin_sync_mappings_for_series(&t, &sid).await,
+                Some(t) => api::admin_sync_mappings_for_series(&t, sid).await,
                 None => Ok(Vec::new()),
             }
         }
@@ -2088,13 +2080,12 @@ fn SeriesSyncEditor(
         _ => Vec::new(),
     };
 
-    let card_id = series_id.clone();
     rsx! {
         div { class: "ik-flex", style: "justify-content:space-between;align-items:center;margin-bottom:10px;",
             button { class: "ik-btn", onclick: move |_| selected.set(None), "← Back to search" }
             button { class: "ik-btn", onclick: move |_| reload += 1, "Refresh" }
         }
-        SeriesMiniCard { series_id: card_id }
+        SeriesMiniCard { series_id: sid }
         div { class: "ik-muted", style: "font-size:12px;margin:14px 0 6px;", "External sync mappings" }
         if prov_list.is_empty() && map_list.is_empty() {
             div { class: "ik-empty", "No sync providers registered." }
@@ -2108,7 +2099,7 @@ fn SeriesSyncEditor(
                 rsx! {
                     MappingEditorRow {
                         key: "{p.slug}",
-                        series_id: series_id.clone(),
+                        series_id: sid,
                         provider: p.slug.clone(),
                         provider_name: p.name.clone(),
                         current,
@@ -2121,7 +2112,7 @@ fn SeriesSyncEditor(
             if !prov_list.iter().any(|p| p.slug == m.provider) {
                 MappingEditorRow {
                     key: "orphan-{m.provider}",
-                    series_id: series_id.clone(),
+                    series_id: sid,
                     provider: m.provider.clone(),
                     provider_name: m.provider.clone(),
                     current: Some(m.external_id.clone()),
@@ -2136,7 +2127,7 @@ fn SeriesSyncEditor(
 /// Save (upsert) and, when a mapping exists, Clear (delete).
 #[component]
 fn MappingEditorRow(
-    series_id: String,
+    series_id: SeriesId,
     provider: String,
     provider_name: String,
     current: Option<String>,
@@ -2146,10 +2137,13 @@ fn MappingEditorRow(
     let has_current = current.is_some();
     let mut value = use_signal(|| current.clone().unwrap_or_default());
     let mut busy = use_signal(|| false);
-    let pill_class = if has_current { "ik-pill jade" } else { "ik-pill" };
+    let pill_class = if has_current {
+        "ik-pill jade"
+    } else {
+        "ik-pill"
+    };
 
     let save = {
-        let series_id = series_id.clone();
         let provider = provider.clone();
         let mut reload = reload;
         move |_| {
@@ -2161,11 +2155,10 @@ fn MappingEditorRow(
                 return;
             }
             busy.set(true);
-            let series_id = series_id.clone();
             let provider = provider.clone();
             spawn(async move {
                 if let Some(t) = session.token_value() {
-                    if api::admin_upsert_sync_mapping(&t, &series_id, &provider, &ext)
+                    if api::admin_upsert_sync_mapping(&t, series_id, &provider, &ext)
                         .await
                         .is_ok()
                     {
@@ -2178,7 +2171,6 @@ fn MappingEditorRow(
     };
 
     let clear = {
-        let series_id = series_id.clone();
         let provider = provider.clone();
         let mut reload = reload;
         move |_| {
@@ -2186,11 +2178,10 @@ fn MappingEditorRow(
                 return;
             }
             busy.set(true);
-            let series_id = series_id.clone();
             let provider = provider.clone();
             spawn(async move {
                 if let Some(t) = session.token_value() {
-                    if api::admin_clear_sync_mapping(&t, &series_id, &provider)
+                    if api::admin_clear_sync_mapping(&t, series_id, &provider)
                         .await
                         .is_ok()
                     {
@@ -2315,7 +2306,7 @@ fn AssignRow(
     let mut busy = use_signal(|| false);
 
     let assign = {
-        let series_id = series.series_id.clone();
+        let series_id = SeriesId(series.series_id);
         let provider = provider.clone();
         let mut reload = reload;
         move |_| {
@@ -2327,11 +2318,10 @@ fn AssignRow(
                 return;
             }
             busy.set(true);
-            let series_id = series_id.clone();
             let provider = provider.clone();
             spawn(async move {
                 if let Some(t) = session.token_value() {
-                    if api::admin_upsert_sync_mapping(&t, &series_id, &provider, &ext)
+                    if api::admin_upsert_sync_mapping(&t, series_id, &provider, &ext)
                         .await
                         .is_ok()
                     {
@@ -2343,7 +2333,7 @@ fn AssignRow(
         }
     };
 
-    let sid = series.series_id.clone();
+    let sid = series.series_id;
     rsx! {
         div { class: "ik-row",
             div { class: "grow",
@@ -2359,7 +2349,7 @@ fn AssignRow(
                 oninput: move |e| value.set(e.value()),
             }
             button { class: "ik-btn primary", disabled: *busy.read(), onclick: assign, "Assign" }
-            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.clone())), "Inspect" }
+            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.to_string())), "Inspect" }
         }
     }
 }
@@ -2470,9 +2460,7 @@ fn UnmatchedRemoteRow(entry: UnmatchedRemoteEntry, reload: Signal<u32>) -> Eleme
         let ct = entry_ct.clone();
         async move {
             match session.token_value() {
-                Some(t) => {
-                    api::admin_suggest_matches(&t, &title, Some(&ct), entry_year).await
-                }
+                Some(t) => api::admin_suggest_matches(&t, &title, Some(&ct), entry_year).await,
                 None => Ok(Vec::new()),
             }
         }
@@ -2512,7 +2500,7 @@ fn UnmatchedRemoteRow(entry: UnmatchedRemoteEntry, reload: Signal<u32>) -> Eleme
     };
 
     let entry_url = provider_entry_url(&entry.provider, &entry.external_id);
-    let suggestions_pending = matches!(&*suggestions.read_unchecked(), None);
+    let suggestions_pending = (*suggestions.read_unchecked()).is_none();
 
     rsx! {
         div { class: "ik-row", style: "flex-direction:column;align-items:stretch;gap:8px;",
@@ -2547,11 +2535,11 @@ fn UnmatchedRemoteRow(entry: UnmatchedRemoteEntry, reload: Signal<u32>) -> Eleme
                     for s in suggested {
                         CandidateMatchRow {
                             key: "sug-{s.series_id}",
-                            series_id: s.series_id.clone(),
+                            series_id: SeriesId(s.series_id),
                             title: s.title.clone(),
                             meta: suggestion_meta(&s),
                             score: Some(s.score),
-                            user_id: entry.user_id.clone(),
+                            user_id: UserId(entry.user_id),
                             provider: entry.provider.clone(),
                             external_id: entry.external_id.clone(),
                             reload,
@@ -2572,11 +2560,11 @@ fn UnmatchedRemoteRow(entry: UnmatchedRemoteEntry, reload: Signal<u32>) -> Eleme
                     for c in manual {
                         CandidateMatchRow {
                             key: "man-{c.id}",
-                            series_id: c.id.clone(),
+                            series_id: c.id,
                             title: c.title.clone(),
                             meta: format!("{} · {} src", c.content_type.label(), c.source_count),
                             score: None,
-                            user_id: entry.user_id.clone(),
+                            user_id: UserId(entry.user_id),
                             provider: entry.provider.clone(),
                             external_id: entry.external_id.clone(),
                             reload,
@@ -2606,11 +2594,11 @@ fn suggestion_meta(s: &SuggestedMatch) -> String {
 /// behind the suggested id can actually be reviewed, and a "Match" button that assigns it.
 #[component]
 fn CandidateMatchRow(
-    series_id: String,
+    series_id: SeriesId,
     title: String,
     meta: String,
     score: Option<f32>,
-    user_id: String,
+    user_id: UserId,
     provider: String,
     external_id: String,
     reload: Signal<u32>,
@@ -2620,8 +2608,6 @@ fn CandidateMatchRow(
     let mut show = use_signal(|| false);
 
     let match_it = {
-        let series_id = series_id.clone();
-        let user_id = user_id.clone();
         let provider = provider.clone();
         let external_id = external_id.clone();
         move |_| {
@@ -2629,8 +2615,6 @@ fn CandidateMatchRow(
                 return;
             }
             busy.set(true);
-            let series_id = series_id.clone();
-            let user_id = user_id.clone();
             let provider = provider.clone();
             let external_id = external_id.clone();
             let mut reload = reload;
@@ -2638,10 +2622,10 @@ fn CandidateMatchRow(
                 if let Some(t) = session.token_value() {
                     if api::admin_assign_remote_entry(
                         &t,
-                        &user_id,
+                        user_id,
                         &provider,
                         &external_id,
-                        &series_id,
+                        series_id,
                     )
                     .await
                     .is_ok()
@@ -2666,7 +2650,7 @@ fn CandidateMatchRow(
         (cls, pct)
     });
 
-    let sid_for_card = series_id.clone();
+    let sid_for_card = series_id;
     let show_now = *show.read();
 
     rsx! {
@@ -2720,9 +2704,10 @@ fn fmt_int(n: i64) -> String {
     }
 }
 
-/// Short prefix of a UUID for compact display (e.g. run scope).
-fn short_id(id: &str) -> String {
-    id.chars().take(8).collect()
+/// Short prefix of a UUID (or any id newtype wrapping one) for compact display (e.g. run
+/// scope).
+fn short_id(id: impl std::fmt::Display) -> String {
+    id.to_string().chars().take(8).collect()
 }
 
 /// The pill class + human label for a run state.
@@ -2735,8 +2720,6 @@ fn run_state_pill(state: RunState) -> (&'static str, &'static str) {
         RunState::Cancelled => ("ik-pill", "Cancelled"),
     }
 }
-
-
 
 /// Build the politeness JSON payload from the editor's string fields, or a human error.
 fn politeness_json(

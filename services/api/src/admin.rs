@@ -26,10 +26,26 @@ use tankovault_fetch::{
 use tankovault_solver::ChallengeSolver;
 use tokio_stream::StreamExt as _;
 use tokio_stream::wrappers::IntervalStream;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-/// `GET /v1/admin/providers`
+use crate::openapi::{
+    ADMIN_MATCHING_TAG, ADMIN_OVERVIEW_TAG, ADMIN_PROVIDERS_TAG, ADMIN_SCANS_TAG, ADMIN_SYNC_TAG,
+    ADMIN_USERS_TAG,
+};
+
+/// List providers
+#[utoipa::path(
+    get,
+    path = "/v1/admin/providers",
+    tag = ADMIN_PROVIDERS_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "All providers", body = Vec<Provider>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn list_providers(
     State(state): State<AppState>,
     user: AuthUser,
@@ -56,7 +72,20 @@ fn empty_object() -> serde_json::Value {
     serde_json::json!({})
 }
 
-/// `POST /v1/admin/providers`
+/// Create a provider
+#[utoipa::path(
+    post,
+    path = "/v1/admin/providers",
+    tag = ADMIN_PROVIDERS_TAG,
+    request_body = CreateProvider,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Created", body = Provider),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have the admin role", body = crate::error::ProblemDetails),
+        (status = 409, description = "Provider slug already exists", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn create_provider(
     State(state): State<AppState>,
     user: AuthUser,
@@ -101,8 +130,24 @@ pub struct UpdateProvider {
     pub politeness: Politeness,
 }
 
-/// `PATCH /v1/admin/providers/:id` — includes the domain-migration `base_url` change:
-/// one field, and every stored relative link re-resolves against the new domain.
+/// Update a provider
+///
+/// Includes the domain-migration `base_url` change: one field, and every stored relative link
+/// re-resolves against the new domain.
+#[utoipa::path(
+    patch,
+    path = "/v1/admin/providers/{id}",
+    tag = ADMIN_PROVIDERS_TAG,
+    params(("id" = ProviderId, Path, description = "Provider id")),
+    request_body = UpdateProvider,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Updated", body = Provider),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn update_provider(
     State(state): State<AppState>,
     user: AuthUser,
@@ -138,9 +183,24 @@ pub async fn update_provider(
     Ok(Json(provider))
 }
 
-/// `DELETE /v1/admin/providers/:id` — remove a provider entirely. Its stored source links
-/// cascade-delete (FK `ON DELETE CASCADE`); scan-run history is retained with a nulled
-/// provider. Admin-only because it is destructive and irreversible.
+/// Delete a provider
+///
+/// Remove a provider entirely. Its stored source links cascade-delete (FK `ON DELETE
+/// CASCADE`); scan-run history is retained with a nulled provider. Admin-only because it is
+/// destructive and irreversible.
+#[utoipa::path(
+    delete,
+    path = "/v1/admin/providers/{id}",
+    tag = ADMIN_PROVIDERS_TAG,
+    params(("id" = ProviderId, Path, description = "Provider id")),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have the admin role", body = crate::error::ProblemDetails),
+        (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn delete_provider(
     State(state): State<AppState>,
     user: AuthUser,
@@ -165,9 +225,25 @@ pub struct SetProviderState {
     pub state: ProviderState,
 }
 
-/// `POST /v1/admin/providers/:id/state` — operator override of a provider's health state:
-/// `disabled` pauses all crawling; `active` re-enables it (e.g. clearing a tripped circuit
-/// breaker). The scanner/circuit breaker may still transition it afterwards.
+/// Set a provider's health state
+///
+/// Operator override of a provider's health state: `disabled` pauses all crawling; `active`
+/// re-enables it (e.g. clearing a tripped circuit breaker). The scanner/circuit breaker may
+/// still transition it afterwards.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/providers/{id}/state",
+    tag = ADMIN_PROVIDERS_TAG,
+    params(("id" = ProviderId, Path, description = "Provider id")),
+    request_body = SetProviderState,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Updated", body = Provider),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn set_provider_state(
     State(state): State<AppState>,
     user: AuthUser,
@@ -188,9 +264,24 @@ pub async fn set_provider_state(
     Ok(Json(provider))
 }
 
-/// `POST /v1/admin/providers/:id/resolve` — re-solve/refresh a single provider by queuing a
-/// **fast** re-scan (frontend §9.5). This is the console "Re-solve" action; it is proxied to
-/// the control-plane planner exactly like [`trigger_scan`], scoped to one provider.
+/// Re-solve a provider
+///
+/// Re-solve/refresh a single provider by queuing a **fast** re-scan (frontend §9.5). This is
+/// the console "Re-solve" action; it is proxied to the control-plane planner exactly like
+/// [`trigger_scan`], scoped to one provider.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/providers/{id}/resolve",
+    tag = ADMIN_PROVIDERS_TAG,
+    params(("id" = ProviderId, Path, description = "Provider id")),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Scan queued, forwarded from the control-plane"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn resolve_provider(
     State(state): State<AppState>,
     user: AuthUser,
@@ -228,8 +319,21 @@ pub async fn resolve_provider(
     Ok(Json(body))
 }
 
-/// `GET /v1/admin/users` — the operator Users directory: identity, role, and tracked-series
-/// count per user (frontend §9.5 Users tab).
+/// List users
+///
+/// The operator Users directory: identity, role, and tracked-series count per user (frontend
+/// §9.5 Users tab).
+#[utoipa::path(
+    get,
+    path = "/v1/admin/users",
+    tag = ADMIN_USERS_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Up to 200 most relevant users", body = Vec<tankovault_db::repo::users::UserRow2>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn list_users(
     State(state): State<AppState>,
     user: AuthUser,
@@ -247,7 +351,21 @@ pub struct TriggerScan {
     pub mode: ScanMode,
 }
 
-/// `POST /v1/admin/scans` — proxied to the control-plane planner.
+/// Trigger a scan
+///
+/// Proxied to the control-plane planner.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/scans",
+    tag = ADMIN_SCANS_TAG,
+    request_body = TriggerScan,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Scan queued, forwarded from the control-plane"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn trigger_scan(
     State(state): State<AppState>,
     user: AuthUser,
@@ -280,7 +398,20 @@ pub async fn trigger_scan(
     Ok(Json(body))
 }
 
-/// `GET /v1/admin/scans/:run_id`
+/// Get a scan run
+#[utoipa::path(
+    get,
+    path = "/v1/admin/scans/{run_id}",
+    tag = ADMIN_SCANS_TAG,
+    params(("run_id" = ScanRunId, Path, description = "Scan run id")),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Scan run", body = ScanRun),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 404, description = "Scan run not found", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn get_scan(
     State(state): State<AppState>,
     user: AuthUser,
@@ -292,9 +423,22 @@ pub async fn get_scan(
     ))
 }
 
-/// `GET /v1/admin/scans` — the most recent scan runs (the console's scan-queue overview).
-/// The live variant is `/v1/admin/scans/stream`; this GET gives the console its first paint
-/// and drives its polling refresh.
+/// List recent scan runs
+///
+/// The most recent scan runs (the console's scan-queue overview). The live variant is
+/// `/v1/admin/scans/stream`; this GET gives the console its first paint and drives its
+/// polling refresh.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/scans",
+    tag = ADMIN_SCANS_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Up to 30 most recent scan runs", body = Vec<ScanRun>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn list_scans(
     State(state): State<AppState>,
     user: AuthUser,
@@ -305,8 +449,21 @@ pub async fn list_scans(
     ))
 }
 
-/// `GET /v1/admin/scan-failures` — the most recently failed scan tasks with their errors,
-/// for triaging stuck providers / broken selectors (design §17.2.7).
+/// List recent scan failures
+///
+/// The most recently failed scan tasks with their errors, for triaging stuck providers /
+/// broken selectors (design §17.2.7).
+#[utoipa::path(
+    get,
+    path = "/v1/admin/scan-failures",
+    tag = ADMIN_SCANS_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Up to 25 most recent failed tasks", body = Vec<tankovault_db::repo::scans::FailedTaskView>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn scan_failures(
     State(state): State<AppState>,
     user: AuthUser,
@@ -317,7 +474,20 @@ pub async fn scan_failures(
     ))
 }
 
-/// `GET /v1/admin/stats` — system-wide rollup for the console header.
+/// Get system stats
+///
+/// System-wide rollup for the console header.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/stats",
+    tag = ADMIN_OVERVIEW_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "System-wide stats", body = tankovault_db::repo::stats::SystemStats),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn system_stats(
     State(state): State<AppState>,
     user: AuthUser,
@@ -328,7 +498,20 @@ pub async fn system_stats(
     ))
 }
 
-/// `GET /v1/admin/providers/stats` — per-provider crawl statistics table.
+/// Get per-provider crawl stats
+///
+/// Per-provider crawl statistics table.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/providers/stats",
+    tag = ADMIN_PROVIDERS_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Per-provider stats", body = Vec<tankovault_db::repo::stats::ProviderStat>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn provider_stats(
     State(state): State<AppState>,
     user: AuthUser,
@@ -339,7 +522,20 @@ pub async fn provider_stats(
     ))
 }
 
-/// `GET /v1/admin/audit` — the most recent privileged actions (design §16 audit trail).
+/// Get the audit log
+///
+/// The most recent privileged actions (design §16 audit trail).
+#[utoipa::path(
+    get,
+    path = "/v1/admin/audit",
+    tag = ADMIN_OVERVIEW_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Up to 40 most recent audit records", body = Vec<tankovault_db::repo::audit::AuditView>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn audit_log(
     State(state): State<AppState>,
     user: AuthUser,
@@ -350,7 +546,20 @@ pub async fn audit_log(
     ))
 }
 
-/// `GET /v1/admin/merge-candidates` — the canonicalisation review queue (design §10).
+/// List merge candidates
+///
+/// The canonicalisation review queue (design §10).
+#[utoipa::path(
+    get,
+    path = "/v1/admin/merge-candidates",
+    tag = ADMIN_MATCHING_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Up to 200 open merge candidates", body = Vec<MergeCandidateView>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn list_merge_candidates(
     State(state): State<AppState>,
     user: AuthUser,
@@ -369,7 +578,23 @@ pub struct MergeRequest {
     pub merge: SeriesId,
 }
 
-/// `POST /v1/admin/series/merge` — transactional re-parent + title/tag union (design §10).
+/// Merge two series
+///
+/// Transactional re-parent + title/tag union (design §10).
+#[utoipa::path(
+    post,
+    path = "/v1/admin/series/merge",
+    tag = ADMIN_MATCHING_TAG,
+    request_body = MergeRequest,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 404, description = "One or both series not found", body = crate::error::ProblemDetails),
+        (status = 409, description = "`keep` and `merge` are the same series", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn merge_series(
     State(state): State<AppState>,
     user: AuthUser,
@@ -399,7 +624,21 @@ pub struct DismissRequest {
     pub id: Uuid,
 }
 
-/// `POST /v1/admin/merge-candidates/dismiss` — operator judged the two works distinct.
+/// Dismiss a merge candidate
+///
+/// Operator judged the two works distinct.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/merge-candidates/dismiss",
+    tag = ADMIN_MATCHING_TAG,
+    request_body = DismissRequest,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Whether a candidate was actually dismissed", body = serde_json::Value, example = json!({"dismissed": true})),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn dismiss_merge_candidate(
     State(state): State<AppState>,
     user: AuthUser,
@@ -423,9 +662,22 @@ pub async fn dismiss_merge_candidate(
     Ok(Json(serde_json::json!({ "dismissed": dismissed })))
 }
 
-/// `GET /v1/admin/scans/stream` — SSE live scan progress for the operator console. Polls
-/// the durable `scan_runs` (the system of record for progress) every 2 s and pushes a
-/// `runs` event; a `scan.progress` NATS relay is a documented enhancement.
+/// Live scan-progress stream
+///
+/// SSE live scan progress for the operator console. Polls the durable `scan_runs` (the system
+/// of record for progress) every 2 s and pushes a `runs` event; a `scan.progress` NATS relay
+/// is a documented enhancement.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/scans/stream",
+    tag = ADMIN_SCANS_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "SSE stream of `runs` events", content_type = "text/event-stream"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn scan_stream(
     State(state): State<AppState>,
     user: AuthUser,
@@ -456,10 +708,26 @@ pub struct TestAdapterRequest {
     pub path: Option<String>,
 }
 
-/// `POST /v1/admin/providers/:id/test` — dry-run the provider's adapter against the live
-/// site and return the parsed sample so operators can fix selectors without a deploy
-/// (design §11/§17). Bounded by a timeout; SSRF/robots/rate-limit are enforced by the
-/// injected fetch stack.
+/// Dry-run a provider's adapter
+///
+/// Dry-run the provider's adapter against the live site and return the parsed sample so
+/// operators can fix selectors without a deploy (design §11/§17). Bounded by a timeout;
+/// SSRF/robots/rate-limit are enforced by the injected fetch stack.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/providers/{id}/test",
+    tag = ADMIN_PROVIDERS_TAG,
+    params(("id" = ProviderId, Path, description = "Provider id")),
+    request_body(content = Option<TestAdapterRequest>, description = "Optional relative series path to also fetch metadata + chapters for"),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Dry-run sample (adapter list/fetch results, each individually ok/error)"),
+        (status = 400, description = "Adapter build failed or the dry-run timed out", body = crate::error::ProblemDetails),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn test_adapter(
     State(state): State<AppState>,
     user: AuthUser,
@@ -571,7 +839,20 @@ fn build_test_context(
 // External sync — admin visibility + operator actions (design: admin Sync console tab)
 // ---------------------------------------------------------------------------
 
-/// `GET /v1/admin/sync/accounts` — every linked external account across all users.
+/// List linked external accounts
+///
+/// Every linked external account across all users.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/sync/accounts",
+    tag = ADMIN_SYNC_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Up to 200 linked accounts", body = Vec<tankovault_db::repo::sync::AdminAccountRow>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn list_sync_accounts(
     State(state): State<AppState>,
     user: AuthUser,
@@ -582,7 +863,20 @@ pub async fn list_sync_accounts(
     ))
 }
 
-/// `GET /v1/admin/sync/mappings` — every series↔external mapping across all providers.
+/// List series↔external mappings
+///
+/// Every series↔external mapping across all providers.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/sync/mappings",
+    tag = ADMIN_SYNC_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Up to 200 mappings", body = Vec<tankovault_db::repo::sync::AdminMappingRow>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn list_sync_mappings(
     State(state): State<AppState>,
     user: AuthUser,
@@ -599,7 +893,23 @@ pub struct SyncAccountTarget {
     pub provider: String,
 }
 
-/// `POST /v1/admin/sync/pull` — operator-forced pull for another user's linked account.
+/// Force-pull another user's linked account
+///
+/// Operator-forced pull for another user's linked account. Response shape is defined by the
+/// sync service and forwarded verbatim; not tracked here.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/sync/pull",
+    tag = ADMIN_SYNC_TAG,
+    request_body = SyncAccountTarget,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Pulled, forwarded from the sync service"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn admin_sync_pull(
     State(state): State<AppState>,
     user: AuthUser,
@@ -623,7 +933,23 @@ pub async fn admin_sync_pull(
     Ok(body)
 }
 
-/// `POST /v1/admin/sync/push` — operator-forced push for another user's linked account.
+/// Force-push another user's linked account
+///
+/// Operator-forced push for another user's linked account. Response shape is defined by the
+/// sync service and forwarded verbatim; not tracked here.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/sync/push",
+    tag = ADMIN_SYNC_TAG,
+    request_body = SyncAccountTarget,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Pushed, forwarded from the sync service"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn admin_sync_push(
     State(state): State<AppState>,
     user: AuthUser,
@@ -647,7 +973,22 @@ pub async fn admin_sync_push(
     Ok(body)
 }
 
-/// `POST /v1/admin/sync/unlink` — operator-forced unlink of another user's linked account.
+/// Force-unlink another user's account
+///
+/// Operator-forced unlink of another user's linked account. Response shape is defined by the
+/// sync service and forwarded verbatim; not tracked here.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/sync/unlink",
+    tag = ADMIN_SYNC_TAG,
+    request_body = SyncAccountTarget,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Unlinked, forwarded from the sync service"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn admin_sync_unlink(
     State(state): State<AppState>,
     user: AuthUser,
@@ -690,8 +1031,22 @@ pub struct SyncMappingTarget {
     pub provider: String,
 }
 
-/// `POST /v1/admin/sync/mappings/clear` — remove a bad series↔external mapping; the next
-/// pull/push (or targeted push) re-resolves it from scratch.
+/// Clear a series↔external mapping
+///
+/// Remove a bad series↔external mapping; the next pull/push (or targeted push) re-resolves it
+/// from scratch.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/sync/mappings/clear",
+    tag = ADMIN_SYNC_TAG,
+    request_body = SyncMappingTarget,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Whether a mapping was actually removed", body = serde_json::Value, example = json!({"removed": true})),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn clear_sync_mapping(
     State(state): State<AppState>,
     user: AuthUser,
@@ -719,9 +1074,24 @@ pub struct UpsertMapping {
     pub external_id: String,
 }
 
-/// `POST /v1/admin/sync/mappings` — manually create or correct a series↔external mapping
-/// (design: admin Sync console tab). Lets an operator fix a wrong external id or add a
-/// missing one by hand from the per-series "manga info" editor and the assign queue.
+/// Create or correct a series↔external mapping
+///
+/// Manually create or correct a series↔external mapping (design: admin Sync console tab).
+/// Lets an operator fix a wrong external id or add a missing one by hand from the per-series
+/// "manga info" editor and the assign queue.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/sync/mappings",
+    tag = ADMIN_SYNC_TAG,
+    request_body = UpsertMapping,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 400, description = "provider or external_id is empty", body = crate::error::ProblemDetails),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn upsert_sync_mapping(
     State(state): State<AppState>,
     user: AuthUser,
@@ -748,8 +1118,22 @@ pub async fn upsert_sync_mapping(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-/// `GET /v1/admin/sync/series/{id}` — every external mapping recorded for one series, so the
-/// console can render a per-series "manga info" panel showing what it is (and is not) synced to.
+/// List a series' external mappings
+///
+/// Every external mapping recorded for one series, so the console can render a per-series
+/// "manga info" panel showing what it is (and is not) synced to.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/sync/series/{id}",
+    tag = ADMIN_SYNC_TAG,
+    params(("id" = SeriesId, Path, description = "Series id")),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Mappings for this series", body = Vec<tankovault_db::repo::sync::AdminMappingRow>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn list_sync_mappings_for_series(
     State(state): State<AppState>,
     user: AuthUser,
@@ -761,7 +1145,8 @@ pub async fn list_sync_mappings_for_series(
     ))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct UnmappedQuery {
     /// External provider to check membership against (e.g. `anilist`).
     pub provider: String,
@@ -770,9 +1155,24 @@ pub struct UnmappedQuery {
     pub query: Option<String>,
 }
 
-/// `GET /v1/admin/sync/unmapped` — the assign queue: canonical series without a mapping for
-/// the given provider, richest first, so operators can review and hand-assign the ones the
-/// automatic matcher was not confident enough to link.
+/// List series without a mapping
+///
+/// The assign queue: canonical series without a mapping for the given provider, richest
+/// first, so operators can review and hand-assign the ones the automatic matcher was not
+/// confident enough to link.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/sync/unmapped",
+    tag = ADMIN_SYNC_TAG,
+    params(UnmappedQuery),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Up to 100 unmapped series", body = Vec<tankovault_db::repo::sync::UnmappedSeriesRow>),
+        (status = 400, description = "provider is empty", body = crate::error::ProblemDetails),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn list_unmapped_series(
     State(state): State<AppState>,
     user: AuthUser,
@@ -794,9 +1194,24 @@ pub async fn list_unmapped_series(
     ))
 }
 
-/// `GET /v1/admin/sync/unmatched` — the reverse assign queue: remote provider entries a pull
-/// fetched but the auto-matcher could not confidently link to a local series, so an operator
-/// can reconcile **every** loaded entry by hand (not just the confident matches).
+/// List unmatched remote entries
+///
+/// The reverse assign queue: remote provider entries a pull fetched but the auto-matcher
+/// could not confidently link to a local series, so an operator can reconcile **every**
+/// loaded entry by hand (not just the confident matches).
+#[utoipa::path(
+    get,
+    path = "/v1/admin/sync/unmatched",
+    tag = ADMIN_SYNC_TAG,
+    params(UnmappedQuery),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Up to 200 unmatched remote entries", body = Vec<tankovault_db::repo::sync::RemoteEntryRow>),
+        (status = 400, description = "provider is empty", body = crate::error::ProblemDetails),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn list_unmatched_remote(
     State(state): State<AppState>,
     user: AuthUser,
@@ -818,7 +1233,8 @@ pub async fn list_unmatched_remote(
     ))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct SuggestQuery {
     /// The remote entry's title to match against the local catalogue.
     pub title: String,
@@ -843,10 +1259,24 @@ pub struct SuggestedMatch {
     pub score: f32,
 }
 
-/// `GET /v1/admin/sync/suggest` — rank local catalogue series as likely matches for a fetched
-/// remote entry, so the operator gets automatic suggestions instead of blind-searching. Uses
-/// the same trigram candidates as auto-matching but returns the *full* ranked list (with
-/// scores) rather than only confident ones, so even weak-but-plausible matches are offered.
+/// Suggest local matches for a remote entry
+///
+/// Rank local catalogue series as likely matches for a fetched remote entry, so the operator
+/// gets automatic suggestions instead of blind-searching. Uses the same trigram candidates as
+/// auto-matching but returns the *full* ranked list (with scores) rather than only confident
+/// ones, so even weak-but-plausible matches are offered.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/sync/suggest",
+    tag = ADMIN_SYNC_TAG,
+    params(SuggestQuery),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Up to 8 ranked suggestions, best score first", body = Vec<SuggestedMatch>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn list_suggestions(
     State(state): State<AppState>,
     user: AuthUser,
@@ -913,10 +1343,24 @@ pub struct AssignRemoteEntry {
     pub series_id: SeriesId,
 }
 
-/// `POST /v1/admin/sync/assign` — hand-assign a fetched remote entry to a local series. It
-/// records the mapping, imports the entry onto the user's watchlist (status + progress from
-/// the stored snapshot) so the result shows immediately, and clears it from the unmatched
-/// queue — no fresh pull required.
+/// Assign a remote entry to a local series
+///
+/// Hand-assign a fetched remote entry to a local series. It records the mapping, imports the
+/// entry onto the user's watchlist (status + progress from the stored snapshot) so the result
+/// shows immediately, and clears it from the unmatched queue — no fresh pull required.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/sync/assign",
+    tag = ADMIN_SYNC_TAG,
+    request_body = AssignRemoteEntry,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 400, description = "Missing provider/external_id, no such remote entry, or the stored entry has an invalid status", body = crate::error::ProblemDetails),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn assign_remote_entry(
     State(state): State<AppState>,
     user: AuthUser,

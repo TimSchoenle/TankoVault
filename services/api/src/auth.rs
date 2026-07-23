@@ -14,6 +14,8 @@ use time::OffsetDateTime;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::openapi::AUTH_TAG;
+
 const REFRESH_COOKIE: &str = "refresh_token";
 const REFRESH_PATH: &str = "/v1/auth";
 
@@ -38,7 +40,21 @@ pub struct TokenResponse {
     pub expires_in: i64,
 }
 
-/// `POST /v1/auth/register`
+/// Register a new account
+///
+/// Validates the request, creates the user, then issues an access token and a rotating
+/// refresh-token cookie exactly like [`login`].
+#[utoipa::path(
+    post,
+    path = "/v1/auth/register",
+    tag = AUTH_TAG,
+    request_body = RegisterRequest,
+    responses(
+        (status = 200, description = "Account created; access token issued", body = TokenResponse),
+        (status = 400, description = "Invalid email, username or password", body = crate::error::ProblemDetails),
+        (status = 409, description = "Email or username already taken", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn register(
     State(state): State<AppState>,
     jar: CookieJar,
@@ -57,7 +73,20 @@ pub async fn register(
     issue_session(&state, jar, &user, Uuid::now_v7()).await
 }
 
-/// `POST /v1/auth/login`
+/// Log in
+///
+/// Authenticates by email or username + password. Issues an access token and a rotating
+/// refresh-token cookie.
+#[utoipa::path(
+    post,
+    path = "/v1/auth/login",
+    tag = AUTH_TAG,
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Authenticated; access token issued", body = TokenResponse),
+        (status = 401, description = "Invalid email/username or password", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn login(
     State(state): State<AppState>,
     jar: CookieJar,
@@ -74,7 +103,19 @@ pub async fn login(
     issue_session(&state, jar, &creds.user, Uuid::now_v7()).await
 }
 
-/// `POST /v1/auth/refresh` — rotates the refresh token and detects reuse.
+/// Refresh the access token
+///
+/// Reads the `refresh_token` `HttpOnly` cookie, rotates it, and issues a fresh access token.
+/// Presenting a token that was already rotated (reuse) revokes the whole token family.
+#[utoipa::path(
+    post,
+    path = "/v1/auth/refresh",
+    tag = AUTH_TAG,
+    responses(
+        (status = 200, description = "Refreshed; new access token issued", body = TokenResponse),
+        (status = 401, description = "Missing, expired, or already-rotated refresh token", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn refresh(
     State(state): State<AppState>,
     jar: CookieJar,
@@ -105,7 +146,15 @@ pub async fn refresh(
     issue_session(&state, jar, &user, record.family_id).await
 }
 
-/// `POST /v1/auth/logout` — revokes the presented family and clears the cookie.
+/// Log out
+///
+/// Revokes the presented refresh-token family (if any) and clears the cookie.
+#[utoipa::path(
+    post,
+    path = "/v1/auth/logout",
+    tag = AUTH_TAG,
+    responses((status = 200, description = "Logged out; refresh cookie cleared"))
+)]
 pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> ApiResult<CookieJar> {
     if let Some(raw) = jar.get(REFRESH_COOKIE).map(|c| c.value().to_owned()) {
         if let Some(record) =

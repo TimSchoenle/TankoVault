@@ -579,6 +579,38 @@
       },
       "type": "object"
     },
+    "ProblemDetails": {
+      "description": "RFC 9457 `application/problem+json` error body shape produced by [`ApiError`]. Declared\npurely for `OpenAPI` documentation — [`ApiError::into_response`] builds the JSON by hand so\nruntime callers never construct this type.",
+      "example": {
+        "detail": "resource not found",
+        "status": 404,
+        "title": "not_found",
+        "type": "about:blank#not_found"
+      },
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "status": {
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "title",
+        "status",
+        "detail"
+      ],
+      "type": "object"
+    },
     "ProfileDto": {
       "properties": {
         "email": {
@@ -924,6 +956,17 @@
         "status",
         "progress",
         "content_type"
+      ],
+      "type": "object"
+    },
+    "ResolveConflict": {
+      "properties": {
+        "resolution": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "resolution"
       ],
       "type": "object"
     },
@@ -1298,6 +1341,35 @@
         "series_id",
         "provider"
       ],
+      "type": "object"
+    },
+    "SyncOpts": {
+      "properties": {
+        "policy": {
+          "description": "`local_wins` | `remote_wins` | `newest_wins`; omitted uses the service default.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "SyncSettingsPatch": {
+      "properties": {
+        "auto_sync_enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "conflict_policy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
       "type": "object"
     },
     "SystemStats": {

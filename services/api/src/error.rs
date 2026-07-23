@@ -3,9 +3,27 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use serde_json::json;
+use serde::Serialize;
 use tankovault_auth::AuthError;
 use tankovault_db::DbError;
+use utoipa::ToSchema;
+
+/// RFC 9457 `application/problem+json` error body shape produced by [`ApiError`]. Declared
+/// purely for `OpenAPI` documentation — [`ApiError::into_response`] builds the JSON by hand so
+/// runtime callers never construct this type.
+#[derive(Serialize, ToSchema)]
+#[schema(example = json!({
+    "type": "about:blank#not_found",
+    "title": "not_found",
+    "status": 404,
+    "detail": "resource not found",
+}))]
+pub struct ProblemDetails {
+    pub r#type: String,
+    pub title: String,
+    pub status: u16,
+    pub detail: String,
+}
 
 /// The single error type all handlers return.
 #[derive(Debug, thiserror::Error)]
@@ -63,12 +81,12 @@ impl ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, kind, detail) = self.parts();
-        let body = Json(json!({
-            "type": format!("about:blank#{kind}"),
-            "title": kind,
-            "status": status.as_u16(),
-            "detail": detail,
-        }));
+        let body = Json(ProblemDetails {
+            r#type: format!("about:blank#{kind}"),
+            title: kind.to_string(),
+            status: status.as_u16(),
+            detail,
+        });
         (status, body).into_response()
     }
 }

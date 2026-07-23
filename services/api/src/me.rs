@@ -12,8 +12,13 @@ use tankovault_contracts::UserNotification;
 use tankovault_domain::{SeriesId, UserId, WatchStatus, resolve_link};
 use time::OffsetDateTime;
 use tokio_stream::StreamExt as _;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
+
+use crate::openapi::{
+    ME_ACCOUNT_TAG, ME_DASHBOARD_TAG, ME_NOTIFICATIONS_TAG, ME_PROGRESS_TAG, ME_SYNC_TAG,
+    ME_WATCHLIST_TAG,
+};
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct WatchlistItem {
@@ -35,8 +40,20 @@ pub struct WatchlistItem {
     pub sync_excluded: bool,
 }
 
-/// `GET /v1/me/watchlist` — the user's watchlist with embedded title/cover/progress
-/// (frontend §9.3). Extra fields are additive; older clients ignore them.
+/// Get the watchlist
+///
+/// The user's watchlist with embedded title/cover/progress (frontend §9.3). Extra fields are
+/// additive; older clients ignore them.
+#[utoipa::path(
+    get,
+    path = "/v1/me/watchlist",
+    tag = ME_WATCHLIST_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "The caller's watchlist", body = Vec<WatchlistItem>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn watchlist(
     State(state): State<AppState>,
     user: AuthUser,
@@ -72,7 +89,19 @@ fn default_true() -> bool {
     true
 }
 
-/// `PUT /v1/me/watchlist/:series_id`
+/// Add or update a watchlist entry
+#[utoipa::path(
+    put,
+    path = "/v1/me/watchlist/{series_id}",
+    tag = ME_WATCHLIST_TAG,
+    params(("series_id" = SeriesId, Path, description = "Series id")),
+    request_body = WatchlistUpsert,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn put_watchlist(
     State(state): State<AppState>,
     user: AuthUser,
@@ -91,7 +120,18 @@ pub async fn put_watchlist(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-/// `DELETE /v1/me/watchlist/:series_id`
+/// Remove a watchlist entry
+#[utoipa::path(
+    delete,
+    path = "/v1/me/watchlist/{series_id}",
+    tag = ME_WATCHLIST_TAG,
+    params(("series_id" = SeriesId, Path, description = "Series id")),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn delete_watchlist(
     State(state): State<AppState>,
     user: AuthUser,
@@ -108,7 +148,21 @@ pub struct ProgressUpdate {
     pub last_read_whole_number: f64,
 }
 
-/// `PUT /v1/me/progress/:series_id` — set the whole-chapter frontier outright (design v2 §A.6).
+/// Set the read-progress frontier
+///
+/// Set the whole-chapter frontier outright (design v2 §A.6).
+#[utoipa::path(
+    put,
+    path = "/v1/me/progress/{series_id}",
+    tag = ME_PROGRESS_TAG,
+    params(("series_id" = SeriesId, Path, description = "Series id")),
+    request_body = ProgressUpdate,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn put_progress(
     State(state): State<AppState>,
     user: AuthUser,
@@ -132,7 +186,20 @@ pub struct ProgressDto {
     pub last_read_part_number: Option<f64>,
 }
 
-/// `GET /v1/me/progress/:series_id` — both read frontiers for the series (design v2 §A.6).
+/// Get read progress
+///
+/// Both read frontiers for the series (design v2 §A.6).
+#[utoipa::path(
+    get,
+    path = "/v1/me/progress/{series_id}",
+    tag = ME_PROGRESS_TAG,
+    params(("series_id" = SeriesId, Path, description = "Series id")),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Progress (defaults to zero when untracked)", body = ProgressDto),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn get_progress(
     State(state): State<AppState>,
     user: AuthUser,
@@ -152,9 +219,26 @@ pub struct ChapterRead {
     pub read: bool,
 }
 
-/// `PUT /v1/me/progress/:series_id/chapters/:number` — apply the §A.3 mark-read/mark-unread
-/// rule for one chapter number. Unmarking an older (non-frontier) chapter retreats progress
-/// past it too; the client must confirm with the user first in that case (design v2 §A.6).
+/// Mark a single chapter read or unread
+///
+/// Apply the §A.3 mark-read/mark-unread rule for one chapter number. Unmarking an older
+/// (non-frontier) chapter retreats progress past it too; the client must confirm with the user
+/// first in that case (design v2 §A.6).
+#[utoipa::path(
+    put,
+    path = "/v1/me/progress/{series_id}/chapters/{number}",
+    tag = ME_PROGRESS_TAG,
+    params(
+        ("series_id" = SeriesId, Path, description = "Series id"),
+        ("number" = f64, Path, description = "Chapter number"),
+    ),
+    request_body = ChapterRead,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn put_chapter_progress(
     State(state): State<AppState>,
     user: AuthUser,
@@ -187,8 +271,21 @@ pub struct MarkReadTo {
     pub number: f64,
 }
 
-/// `POST /v1/me/progress/:series_id/mark-read-to` — "mark read to here" (design v2 §A.6);
-/// equivalent to marking `number` read.
+/// Mark read up to a chapter
+///
+/// "Mark read to here" (design v2 §A.6); equivalent to marking `number` read.
+#[utoipa::path(
+    post,
+    path = "/v1/me/progress/{series_id}/mark-read-to",
+    tag = ME_PROGRESS_TAG,
+    params(("series_id" = SeriesId, Path, description = "Series id")),
+    request_body = MarkReadTo,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn mark_read_to(
     State(state): State<AppState>,
     user: AuthUser,
@@ -211,8 +308,21 @@ pub struct SyncExcluded {
     pub excluded: bool,
 }
 
-/// `PUT /v1/me/watchlist/:series_id/sync` — set the blanket per-series sync-exclusion flag
-/// (design v2 §A.5).
+/// Set the per-series sync-exclusion flag
+///
+/// Set the blanket per-series sync-exclusion flag (design v2 §A.5).
+#[utoipa::path(
+    put,
+    path = "/v1/me/watchlist/{series_id}/sync",
+    tag = ME_WATCHLIST_TAG,
+    params(("series_id" = SeriesId, Path, description = "Series id")),
+    request_body = SyncExcluded,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn put_sync_excluded(
     State(state): State<AppState>,
     user: AuthUser,
@@ -229,8 +339,24 @@ pub async fn put_sync_excluded(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-/// `PUT /v1/me/watchlist/:series_id/sync/:provider` — per-provider override of the blanket
-/// exclusion flag (design v2 §A.5).
+/// Set a per-provider sync-exclusion override
+///
+/// Per-provider override of the blanket exclusion flag (design v2 §A.5).
+#[utoipa::path(
+    put,
+    path = "/v1/me/watchlist/{series_id}/sync/{provider}",
+    tag = ME_WATCHLIST_TAG,
+    params(
+        ("series_id" = SeriesId, Path, description = "Series id"),
+        ("provider" = String, Path, description = "Provider slug"),
+    ),
+    request_body = SyncExcluded,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn put_sync_override(
     State(state): State<AppState>,
     user: AuthUser,
@@ -277,7 +403,17 @@ fn spawn_targeted_push(state: &AppState, user_id: UserId, series_id: SeriesId) {
     });
 }
 
-/// `GET /v1/me/notifications`
+/// List notifications
+#[utoipa::path(
+    get,
+    path = "/v1/me/notifications",
+    tag = ME_NOTIFICATIONS_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Up to 100 most recent notifications", body = serde_json::Value),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn notifications(
     State(state): State<AppState>,
     user: AuthUser,
@@ -292,7 +428,18 @@ pub struct MarkRead {
     pub ids: Vec<Uuid>,
 }
 
-/// `POST /v1/me/notifications/read`
+/// Mark notifications read
+#[utoipa::path(
+    post,
+    path = "/v1/me/notifications/read",
+    tag = ME_NOTIFICATIONS_TAG,
+    request_body = MarkRead,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Number of notifications marked read", body = serde_json::Value, example = json!({"marked": 3})),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn mark_read(
     State(state): State<AppState>,
     user: AuthUser,
@@ -321,7 +468,19 @@ pub struct FeedEntry {
     pub discovered_at: OffsetDateTime,
 }
 
-/// `GET /v1/me/feed` — unread chapters across the watchlist (the reading dashboard).
+/// Get the unread-chapters feed
+///
+/// Unread chapters across the watchlist (the reading dashboard).
+#[utoipa::path(
+    get,
+    path = "/v1/me/feed",
+    tag = ME_DASHBOARD_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Up to 100 most recent unread chapters", body = Vec<FeedEntry>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn feed(
     State(state): State<AppState>,
     user: AuthUser,
@@ -359,8 +518,20 @@ pub struct ContinueItem {
     pub unread: i64,
 }
 
-/// `GET /v1/me/continue` — continue-reading cards for Home / the Series CTA (frontend §9.3):
-/// tracked, in-progress series that have unread chapters, freshest activity first.
+/// Get continue-reading cards
+///
+/// Continue-reading cards for Home / the Series CTA (frontend §9.3): tracked, in-progress
+/// series that have unread chapters, freshest activity first.
+#[utoipa::path(
+    get,
+    path = "/v1/me/continue",
+    tag = ME_DASHBOARD_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Up to 24 continue-reading cards", body = Vec<ContinueItem>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn continue_reading(
     State(state): State<AppState>,
     user: AuthUser,
@@ -381,9 +552,21 @@ pub async fn continue_reading(
     Ok(Json(out))
 }
 
-/// `GET /v1/me/recommendations` — "Because you read" suggestions (frontend §9.3, *Stub*):
-/// unwatched series sharing tags with the user's list. Falls back to the most-recent catalog
-/// when the user has no tagged watchlist yet, so the shelf is never empty for signed-in users.
+/// Get "because you read" recommendations
+///
+/// *Stub*: unwatched series sharing tags with the user's list (frontend §9.3). Falls back to
+/// the most-recent catalog when the user has no tagged watchlist yet, so the shelf is never
+/// empty for signed-in users.
+#[utoipa::path(
+    get,
+    path = "/v1/me/recommendations",
+    tag = ME_DASHBOARD_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Up to 12 recommended series", body = Vec<crate::series::SeriesSummary>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn recommendations(
     State(state): State<AppState>,
     user: AuthUser,
@@ -407,9 +590,21 @@ pub async fn recommendations(
     Ok(Json(out))
 }
 
-/// `GET /v1/me/stats` — lifetime tracking stats for the Home / Profile headline
-/// (frontend §9.3, *Stub*). See `tankovault_db::repo::tracking::MeStats` for the honest
-/// definition of `chapters_read` and why no "streak" is returned.
+/// Get lifetime tracking stats
+///
+/// *Stub*: lifetime tracking stats for the Home / Profile headline (frontend §9.3). See
+/// [`tankovault_db::repo::tracking::MeStats`] for the honest definition of `chapters_read` and
+/// why no "streak" is returned.
+#[utoipa::path(
+    get,
+    path = "/v1/me/stats",
+    tag = ME_DASHBOARD_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Lifetime stats", body = tankovault_db::repo::tracking::MeStats),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn stats(
     State(state): State<AppState>,
     user: AuthUser,
@@ -439,8 +634,22 @@ pub struct ProfileDto {
     pub role: String,
 }
 
-/// `PATCH /v1/me/profile` — update the caller's username and/or email (frontend §9.4).
-/// A duplicate email/username surfaces as `409 Conflict`.
+/// Update the profile
+///
+/// Update the caller's username and/or email (frontend §9.4). A duplicate email/username
+/// surfaces as `409 Conflict`.
+#[utoipa::path(
+    patch,
+    path = "/v1/me/profile",
+    tag = ME_ACCOUNT_TAG,
+    request_body = ProfileUpdate,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Updated profile", body = ProfileDto),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 409, description = "Email or username already taken", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn patch_profile(
     State(state): State<AppState>,
     user: AuthUser,
@@ -479,7 +688,19 @@ pub struct SessionDto {
     pub expires_at: OffsetDateTime,
 }
 
-/// `GET /v1/me/sessions` — the caller's active login sessions (frontend §9.4).
+/// List active sessions
+///
+/// The caller's active login sessions (frontend §9.4).
+#[utoipa::path(
+    get,
+    path = "/v1/me/sessions",
+    tag = ME_ACCOUNT_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Active sessions", body = Vec<SessionDto>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn sessions(
     State(state): State<AppState>,
     user: AuthUser,
@@ -497,8 +718,22 @@ pub async fn sessions(
     Ok(Json(out))
 }
 
-/// `DELETE /v1/me/sessions/:id` — revoke one of the caller's own sessions (frontend §9.4).
-/// Scoped to ownership; a foreign/unknown id yields `404`.
+/// Revoke a session
+///
+/// Revoke one of the caller's own sessions (frontend §9.4). Scoped to ownership; a
+/// foreign/unknown id yields `404`.
+#[utoipa::path(
+    delete,
+    path = "/v1/me/sessions/{id}",
+    tag = ME_ACCOUNT_TAG,
+    params(("id" = uuid::Uuid, Path, description = "Session id")),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Revoked", body = serde_json::Value, example = json!({"revoked": 1})),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 404, description = "No such session for this caller", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn delete_session(
     State(state): State<AppState>,
     user: AuthUser,
@@ -511,8 +746,19 @@ pub async fn delete_session(
     Ok(Json(serde_json::json!({ "revoked": revoked })))
 }
 
-/// `GET /v1/me/notification-prefs` — the caller's notification preferences JSON (frontend
-/// §9.4). `{}` means "product defaults".
+/// Get notification preferences
+///
+/// The caller's notification preferences JSON (frontend §9.4). `{}` means "product defaults".
+#[utoipa::path(
+    get,
+    path = "/v1/me/notification-prefs",
+    tag = ME_NOTIFICATIONS_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Product-defined free-form preferences JSON", body = serde_json::Value),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn notification_prefs(
     State(state): State<AppState>,
     user: AuthUser,
@@ -522,8 +768,21 @@ pub async fn notification_prefs(
     ))
 }
 
-/// `PUT /v1/me/notification-prefs` — replace the caller's notification preferences (frontend
-/// §9.4). The body is stored verbatim as an open JSON document.
+/// Replace notification preferences
+///
+/// Replace the caller's notification preferences (frontend §9.4). The body is stored verbatim
+/// as an open JSON document.
+#[utoipa::path(
+    put,
+    path = "/v1/me/notification-prefs",
+    tag = ME_NOTIFICATIONS_TAG,
+    request_body = serde_json::Value,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "The stored preferences, echoed back", body = serde_json::Value),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn put_notification_prefs(
     State(state): State<AppState>,
     user: AuthUser,
@@ -533,7 +792,8 @@ pub async fn put_notification_prefs(
     Ok(Json(body))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct StreamQuery {
     /// Access token, passed as a query parameter because the browser `EventSource` API
     /// cannot attach an `Authorization` header (design §17.4). It is verified exactly like
@@ -541,11 +801,24 @@ pub struct StreamQuery {
     pub access_token: String,
 }
 
-/// `GET /v1/me/stream` — Server-Sent Events of live per-user notifications (design §14,
-/// §17.4). Authenticated by the `access_token` query parameter, it subscribes to the user's
-/// core-NATS subject and relays each [`UserNotification`] as a `notification` SSE event,
-/// with a periodic keep-alive comment so proxies keep the connection open. Ownership is
-/// implicit: the subscription is scoped to the token's own `user_id`.
+/// Live notification stream
+///
+/// Server-Sent Events of live per-user notifications (design §14, §17.4). Authenticated by the
+/// `access_token` query parameter (not the `Authorization` header — `EventSource` cannot set
+/// it), it subscribes to the user's core-NATS subject and relays each `UserNotification` as a
+/// `notification` SSE event, with a periodic keep-alive comment so proxies keep the connection
+/// open. Ownership is implicit: the subscription is scoped to the token's own `user_id`.
+#[utoipa::path(
+    get,
+    path = "/v1/me/stream",
+    tag = ME_NOTIFICATIONS_TAG,
+    params(StreamQuery),
+    responses(
+        (status = 200, description = "SSE stream of `notification` events", content_type = "text/event-stream"),
+        (status = 401, description = "missing or invalid access_token", body = crate::error::ProblemDetails),
+        (status = 503, description = "the live notification stream is temporarily unavailable", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn stream(
     State(state): State<AppState>,
     Query(q): Query<StreamQuery>,
@@ -576,9 +849,22 @@ pub async fn stream(
     Ok(Sse::new(events).keep_alive(KeepAlive::default()))
 }
 
-/// `GET /v1/me/sync/providers` — the registered external providers (design: generalized
-/// multi-provider sync). Drives the Account "Sync & integrations" panel, which renders one
-/// card per entry instead of a single hardcoded `AniList` block.
+/// List sync providers
+///
+/// The registered external providers (design: generalized multi-provider sync). Drives the
+/// Account "Sync & integrations" panel, which renders one card per entry instead of a single
+/// hardcoded `AniList` block. Response shape is defined by the sync service and forwarded
+/// verbatim; not tracked here.
+#[utoipa::path(
+    get,
+    path = "/v1/me/sync/providers",
+    tag = ME_SYNC_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Providers, forwarded from the sync service"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn sync_providers(
     State(state): State<AppState>,
     _user: AuthUser,
@@ -594,7 +880,21 @@ pub async fn sync_providers(
     Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
 }
 
-/// `GET /v1/me/sync/:provider/authorize` — returns the provider's consent URL (proxied).
+/// Get a provider's OAuth consent URL
+///
+/// Returns the provider's consent URL (proxied). Response shape is defined by the sync service
+/// and forwarded verbatim; not tracked here.
+#[utoipa::path(
+    get,
+    path = "/v1/me/sync/{provider}/authorize",
+    tag = ME_SYNC_TAG,
+    params(("provider" = String, Path, description = "Provider slug")),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Consent URL, forwarded from the sync service"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn sync_authorize_url(
     State(state): State<AppState>,
     _user: AuthUser,
@@ -614,10 +914,23 @@ pub async fn sync_authorize_url(
     Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
 }
 
-/// `GET /v1/me/sync/:provider/status` — whether the caller has a linked account at `provider`,
-/// plus the connected display name and most recent sync time (Sync & integrations panel,
-/// header pill, Series tracking card). Always `200`; an unlinked account reads
-/// `{ "linked": false }`.
+/// Get link status for a provider
+///
+/// Whether the caller has a linked account at `provider`, plus the connected display name and
+/// most recent sync time (Sync & integrations panel, header pill, Series tracking card).
+/// Always `200`; an unlinked account reads `{ "linked": false }`. Response shape is defined by
+/// the sync service and forwarded verbatim; not tracked here.
+#[utoipa::path(
+    get,
+    path = "/v1/me/sync/{provider}/status",
+    tag = ME_SYNC_TAG,
+    params(("provider" = String, Path, description = "Provider slug")),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Link status, forwarded from the sync service"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn sync_status(
     State(state): State<AppState>,
     user: AuthUser,
@@ -638,7 +951,21 @@ pub async fn sync_status(
     Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
 }
 
-/// `DELETE /v1/me/sync/:provider` — unlink the caller's account at `provider`.
+/// Unlink a provider
+///
+/// Unlink the caller's account at `provider`. Response shape is defined by the sync service
+/// and forwarded verbatim; not tracked here.
+#[utoipa::path(
+    delete,
+    path = "/v1/me/sync/{provider}",
+    tag = ME_SYNC_TAG,
+    params(("provider" = String, Path, description = "Provider slug")),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Unlinked, forwarded from the sync service"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn sync_disconnect(
     State(state): State<AppState>,
     user: AuthUser,
@@ -664,12 +991,29 @@ pub async fn sync_disconnect(
     Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct AniListCallback {
     pub code: String,
 }
 
-/// `GET /v1/me/sync/:provider/callback?code=…` — exchanges the code and links the account.
+/// Complete an OAuth link
+///
+/// Exchanges the authorization `code` and links the caller's account at `provider`. Response
+/// shape is defined by the sync service and forwarded verbatim; not tracked here.
+#[utoipa::path(
+    get,
+    path = "/v1/me/sync/{provider}/callback",
+    tag = ME_SYNC_TAG,
+    params(("provider" = String, Path, description = "Provider slug"), AniListCallback),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Linked, forwarded from the sync service"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 404, description = "Unknown provider", body = crate::error::ProblemDetails),
+        (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn sync_callback(
     State(state): State<AppState>,
     user: AuthUser,
@@ -684,16 +1028,32 @@ pub async fn sync_callback(
     .await
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, ToSchema)]
 pub struct SyncOpts {
     /// `local_wins` | `remote_wins` | `newest_wins`; omitted uses the service default.
     #[serde(default)]
     pub policy: Option<String>,
 }
 
-/// `POST /v1/me/sync/:provider/push` — reflect local watchlist/progress to `provider`
-/// (bulk, full-reconciliation walk — see `spawn_targeted_push` for the fast per-series path
-/// used automatically when marking a chapter/series read).
+/// Push local state to a provider
+///
+/// Reflect local watchlist/progress to `provider` (bulk, full-reconciliation walk — see
+/// `spawn_targeted_push` for the fast per-series path used automatically when marking a
+/// chapter/series read). Response shape is defined by the sync service and forwarded
+/// verbatim; not tracked here.
+#[utoipa::path(
+    post,
+    path = "/v1/me/sync/{provider}/push",
+    tag = ME_SYNC_TAG,
+    params(("provider" = String, Path, description = "Provider slug")),
+    request_body(content = Option<SyncOpts>, description = "Optional sync options; omitted body uses the service default"),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Pushed, forwarded from the sync service"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn sync_push(
     State(state): State<AppState>,
     user: AuthUser,
@@ -709,7 +1069,23 @@ pub async fn sync_push(
     .await
 }
 
-/// `POST /v1/me/sync/:provider/pull` — import `provider`'s list into the local watchlist.
+/// Pull a provider's list into local state
+///
+/// Import `provider`'s list into the local watchlist. Response shape is defined by the sync
+/// service and forwarded verbatim; not tracked here.
+#[utoipa::path(
+    post,
+    path = "/v1/me/sync/{provider}/pull",
+    tag = ME_SYNC_TAG,
+    params(("provider" = String, Path, description = "Provider slug")),
+    request_body(content = Option<SyncOpts>, description = "Optional sync options; omitted body uses the service default"),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Pulled, forwarded from the sync service"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn sync_pull(
     State(state): State<AppState>,
     user: AuthUser,
@@ -725,7 +1101,22 @@ pub async fn sync_pull(
     .await
 }
 
-/// `GET /v1/me/sync/:provider/settings` — the caller's automatic-sync settings (design v2 §B.6).
+/// Get automatic-sync settings
+///
+/// The caller's automatic-sync settings (design v2 §B.6). Response shape is defined by the
+/// sync service and forwarded verbatim; not tracked here.
+#[utoipa::path(
+    get,
+    path = "/v1/me/sync/{provider}/settings",
+    tag = ME_SYNC_TAG,
+    params(("provider" = String, Path, description = "Provider slug")),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Settings, forwarded from the sync service"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 404, description = "No settings for this provider", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn sync_settings(
     State(state): State<AppState>,
     user: AuthUser,
@@ -738,7 +1129,7 @@ pub async fn sync_settings(
     .await
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct SyncSettingsPatch {
     #[serde(default)]
     pub auto_sync_enabled: Option<bool>,
@@ -746,8 +1137,21 @@ pub struct SyncSettingsPatch {
     pub conflict_policy: Option<String>,
 }
 
-/// `PATCH /v1/me/sync/:provider/settings` — update automatic sync + conflict policy (design v2
-/// §B.6).
+/// Update automatic-sync settings
+///
+/// Update automatic sync + conflict policy (design v2 §B.6).
+#[utoipa::path(
+    patch,
+    path = "/v1/me/sync/{provider}/settings",
+    tag = ME_SYNC_TAG,
+    params(("provider" = String, Path, description = "Provider slug")),
+    request_body = SyncSettingsPatch,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn sync_settings_patch(
     State(state): State<AppState>,
     user: AuthUser,
@@ -780,7 +1184,20 @@ pub async fn sync_settings_patch(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-/// `GET /v1/me/sync/conflicts` — the caller's pending conflicts across all providers (§B.6).
+/// List pending sync conflicts
+///
+/// The caller's pending conflicts across all providers (§B.6). Response shape is defined by
+/// the sync service and forwarded verbatim; not tracked here.
+#[utoipa::path(
+    get,
+    path = "/v1/me/sync/conflicts",
+    tag = ME_SYNC_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Pending conflicts, forwarded from the sync service"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn sync_conflicts(
     State(state): State<AppState>,
     user: AuthUser,
@@ -792,12 +1209,28 @@ pub async fn sync_conflicts(
     .await
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct ResolveConflict {
     pub resolution: String,
 }
 
-/// `POST /v1/me/sync/conflicts/:id/resolve` — apply the caller's chosen resolution (§B.6).
+/// Resolve a sync conflict
+///
+/// Apply the caller's chosen resolution (§B.6). Response shape is defined by the sync service
+/// and forwarded verbatim; not tracked here.
+#[utoipa::path(
+    post,
+    path = "/v1/me/sync/conflicts/{id}/resolve",
+    tag = ME_SYNC_TAG,
+    params(("id" = uuid::Uuid, Path, description = "Conflict id")),
+    request_body = ResolveConflict,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Resolved, forwarded from the sync service"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 404, description = "No such conflict", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn sync_resolve_conflict(
     State(state): State<AppState>,
     user: AuthUser,
@@ -812,7 +1245,8 @@ pub async fn sync_resolve_conflict(
     .await
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct HistoryParams {
     #[serde(default)]
     pub series_id: Option<Uuid>,
@@ -822,7 +1256,21 @@ pub struct HistoryParams {
     pub page: Option<i64>,
 }
 
-/// `GET /v1/me/sync/history` — a page of the caller's sync history (§B.6).
+/// Get sync history
+///
+/// A page of the caller's sync history (§B.6). Response shape is defined by the sync service
+/// and forwarded verbatim; not tracked here.
+#[utoipa::path(
+    get,
+    path = "/v1/me/sync/history",
+    tag = ME_SYNC_TAG,
+    params(HistoryParams),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "A page of sync history, forwarded from the sync service"),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn sync_history(
     State(state): State<AppState>,
     user: AuthUser,

@@ -49,7 +49,10 @@ fn default_solver_endpoint() -> String {
     "http://challenge-solver:8090".to_owned()
 }
 fn default_max_pages() -> u32 {
-    500
+    // Purely a runaway-paginator backstop (real termination is the adapter's `has_next`
+    // marker) — some providers legitimately paginate into the thousands (e.g. kunmanga's
+    // ~6866-page catalogue), so this must sit well above any real catalogue size.
+    20_000
 }
 
 #[tokio::main]

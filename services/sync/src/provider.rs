@@ -44,6 +44,22 @@ pub(crate) struct RemoteEntry {
     pub(crate) authors: Vec<String>,
 }
 
+/// Public catalogue metadata for one remote work, fetched **without** a user token from a
+/// provider's public API. This is what the tokenless enrichment worker uses to fill in a
+/// local series' description, cover, alternative titles, genres and credits.
+#[derive(Debug, Clone)]
+pub(crate) struct RemoteMetadata {
+    pub(crate) external_id: String,
+    /// Candidate titles (primary first, then every alternative/synonym), non-blank only.
+    pub(crate) titles: Vec<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) cover_url: Option<String>,
+    pub(crate) start_year: Option<i32>,
+    pub(crate) content_type: ContentType,
+    pub(crate) tags: Vec<String>,
+    pub(crate) authors: Vec<String>,
+}
+
 /// A registered provider's identity, as listed by `GET /v1/sync/providers`.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ProviderInfo {
@@ -78,6 +94,30 @@ pub(crate) trait ExternalProvider: Send + Sync {
     ) -> anyhow::Result<Vec<RemoteEntry>>;
     /// Search for a remote entry by title, returning its external id if found.
     async fn search(&self, access_token: &str, title: &str) -> anyhow::Result<Option<String>>;
+
+    /// Whether this provider exposes a public (token-free) metadata API that the enrichment
+    /// worker can use. Defaults to `false`; providers that support it override this.
+    fn supports_public_metadata(&self) -> bool {
+        false
+    }
+
+    /// Fetch public catalogue metadata for a work by title, **without** any user token.
+    /// Returns `Ok(None)` when nothing matches (or the provider has no public API).
+    async fn fetch_public_metadata_by_title(
+        &self,
+        _title: &str,
+    ) -> anyhow::Result<Option<RemoteMetadata>> {
+        Ok(None)
+    }
+
+    /// Fetch public catalogue metadata for a known external id, **without** any user token.
+    async fn fetch_public_metadata_by_id(
+        &self,
+        _external_id: &str,
+    ) -> anyhow::Result<Option<RemoteMetadata>> {
+        Ok(None)
+    }
+
     /// Create or update a remote list entry.
     async fn save_entry(
         &self,

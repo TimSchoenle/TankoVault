@@ -15,13 +15,15 @@ use serde::Serialize;
 use time::OffsetDateTime;
 
 use tankovault_auth::SecretBox;
+use tankovault_config::{MetadataPriorityConfig, SOURCE_ADAPTER, SOURCE_ANILIST};
 use tankovault_db::PgPool;
+use tankovault_db::repo::catalog::{MetadataEnrichment, SeriesEnrichmentRow};
 use tankovault_db::repo::{catalog, matching, sync, tracking};
 use tankovault_domain::{SeriesId, UserId, WatchStatus, normalize_title};
 use tankovault_matcher::{Candidate, Query, Thresholds, best_match};
 
 use crate::mapping::{ConflictPolicy, MergeAction, Side, three_way};
-use crate::provider::{ExternalProvider, OAuthTokens, ProviderInfo, RemoteEntry};
+use crate::provider::{ExternalProvider, OAuthTokens, ProviderInfo, RemoteEntry, RemoteMetadata};
 
 /// Outcome of a pull (provider → local).
 #[derive(Debug, Default, Serialize)]
@@ -69,6 +71,17 @@ pub(crate) struct ReconcileCounts {
     pub(crate) skipped: usize,
 }
 
+/// Outcome of a tokenless metadata-enrichment sweep (public API, no user token).
+#[derive(Debug, Default, Serialize)]
+pub(crate) struct EnrichReport {
+    /// Series examined this sweep.
+    pub(crate) scanned: usize,
+    /// Series that received metadata from at least one provider.
+    pub(crate) enriched: usize,
+    /// Series no public provider could resolve.
+    pub(crate) unresolved: usize,
+}
+
 /// Whether a user has linked a provider, and (when linked) the connected display name and the
 /// most recent sync time — the shape the "Sync & integrations" panel and status pill render.
 #[derive(Debug, Default, Serialize)]
@@ -103,6 +116,8 @@ pub(crate) struct SyncEngine {
     providers: HashMap<&'static str, Box<dyn ExternalProvider>>,
     secret: SecretBox,
     default_policy: ConflictPolicy,
+    /// Which source has the final say per metadata field (default: `AniList` over adapters).
+    metadata_priority: MetadataPriorityConfig,
     thresholds: Thresholds,
     candidate_limit: i64,
 }
@@ -112,6 +127,7 @@ impl SyncEngine {
         pool: PgPool,
         secret: SecretBox,
         default_policy: ConflictPolicy,
+        metadata_priority: MetadataPriorityConfig,
         providers: HashMap<&'static str, Box<dyn ExternalProvider>>,
     ) -> Self {
         Self {
@@ -119,6 +135,7 @@ impl SyncEngine {
             providers,
             secret,
             default_policy,
+            metadata_priority,
             thresholds: Thresholds::default(),
             candidate_limit: 10,
         }
@@ -992,5 +1009,146 @@ impl SyncEngine {
             return Ok(Some(id));
         }
         Ok(None)
+    }
+
+    /// Tokenless metadata-enrichment sweep (design: worker queue syncing every existing
+    /// entry to `AniList` **without** a stored user token).
+    ///
+    /// Walks the catalogue in batches of `batch_size`, up to `max_series` series, and for
+    /// each one asks every provider that exposes a public API (`AniList`'s unauthenticated
+    /// GraphQL) for its catalogue metadata — by an already-cached external id where one
+    /// exists, else by canonical title. Resolved metadata is folded in under the
+    /// configured per-field priority (default: `AniList` wins over the scraped adapter data),
+    /// and every alternative title/synonym is persisted for merge detection and search.
+    /// Never fails the whole sweep on a single series' error — those are logged and skipped.
+    pub(crate) async fn enrich_all(
+        &self,
+        batch_size: i64,
+        max_series: usize,
+    ) -> anyhow::Result<EnrichReport> {
+        let mut report = EnrichReport::default();
+        if !self.providers.values().any(|p| p.supports_public_metadata()) {
+            return Ok(report);
+        }
+        let mut offset: i64 = 0;
+        while report.scanned < max_series {
+            let rows = catalog::list_series_for_enrichment(&self.pool, batch_size, offset).await?;
+            if rows.is_empty() {
+                break;
+            }
+            let fetched = rows.len();
+            for row in rows {
+                if report.scanned >= max_series {
+                    break;
+                }
+                report.scanned += 1;
+                match self.enrich_series(&row).await {
+                    Ok(true) => report.enriched += 1,
+                    Ok(false) => report.unresolved += 1,
+                    Err(e) => {
+                        report.unresolved += 1;
+                        tracing::warn!(error = %e, series_id = %row.id, "series enrichment failed");
+                    }
+                }
+            }
+            offset += i64::try_from(fetched).unwrap_or(i64::MAX);
+            if i64::try_from(fetched).unwrap_or(0) < batch_size {
+                break;
+            }
+        }
+        tracing::info!(
+            scanned = report.scanned,
+            enriched = report.enriched,
+            unresolved = report.unresolved,
+            "tokenless metadata enrichment sweep complete"
+        );
+        Ok(report)
+    }
+
+    /// Enrich one series from the first public provider that resolves it. Returns whether any
+    /// provider supplied metadata.
+    async fn enrich_series(&self, row: &SeriesEnrichmentRow) -> anyhow::Result<bool> {
+        for (slug, provider) in &self.providers {
+            if !provider.supports_public_metadata() {
+                continue;
+            }
+            let existing = sync::mapping_external_for_series(&self.pool, row.id, slug).await?;
+            let meta = match existing {
+                Some(ext) => provider.fetch_public_metadata_by_id(&ext).await?,
+                None => {
+                    provider
+                        .fetch_public_metadata_by_title(&row.canonical_title)
+                        .await?
+                }
+            };
+            let Some(meta) = meta else {
+                continue;
+            };
+            self.apply_metadata(row, slug, &meta).await?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    /// Persist resolved public metadata for `row`: cache the external-id mapping, fold in the
+    /// priority-resolved description/cover, and record every alternative title/synonym, genre
+    /// and credit.
+    async fn apply_metadata(
+        &self,
+        row: &SeriesEnrichmentRow,
+        slug: &str,
+        meta: &RemoteMetadata,
+    ) -> anyhow::Result<()> {
+        sync::upsert_mapping(&self.pool, row.id, slug, &meta.external_id).await?;
+
+        // Description/cover follow the configured priority: the AniList value versus the
+        // value the scraping adapters already stored on the row.
+        let description = self.metadata_priority.resolve(
+            "description",
+            &[
+                (SOURCE_ANILIST, meta.description.clone()),
+                (SOURCE_ADAPTER, row.description.clone()),
+            ],
+        );
+        let cover = self.metadata_priority.resolve(
+            "cover",
+            &[
+                (SOURCE_ANILIST, meta.cover_url.clone()),
+                (SOURCE_ADAPTER, row.cover_url.clone()),
+            ],
+        );
+
+        // Every alternative title AniList tracks (english/native/synonyms), normalized for
+        // the trigram/merge/search indexes; blanks and duplicates are dropped downstream.
+        let alt_titles: Vec<(String, String)> = meta
+            .titles
+            .iter()
+            .map(|t| (t.clone(), normalize_title(t)))
+            .filter(|(_, n)| !n.is_empty())
+            .collect();
+
+        // Content-type and release year are additive gap-fills (never overwrite a value the
+        // adapters already determined), so the AniList value only lands where local data is
+        // missing — no priority resolution needed.
+        let content_type = match meta.content_type {
+            tankovault_domain::ContentType::Unknown => None,
+            other => Some(other.as_str()),
+        };
+
+        catalog::apply_enrichment(
+            &self.pool,
+            row.id,
+            &MetadataEnrichment {
+                description: description.as_deref(),
+                cover_url: cover.as_deref(),
+                content_type,
+                release_year: meta.start_year,
+                alt_titles: &alt_titles,
+                tags: &meta.tags,
+                authors: &meta.authors,
+            },
+        )
+        .await?;
+        Ok(())
     }
 }

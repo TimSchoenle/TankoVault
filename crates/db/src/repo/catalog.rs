@@ -192,6 +192,105 @@ pub async fn get_series<'e, E: PgExecutor<'e>>(exec: E, id: SeriesId) -> DbResul
     row.ok_or(DbError::NotFound)?.try_into()
 }
 
+/// A minimal series row for the tokenless metadata-enrichment worker: enough to look the
+/// work up upstream (by mapped external id or by title) and to feed the metadata-priority
+/// resolver the current locally-scraped values.
+pub struct SeriesEnrichmentRow {
+    pub id: SeriesId,
+    pub canonical_title: String,
+    pub description: Option<String>,
+    pub cover_url: Option<String>,
+}
+
+/// List series for background metadata enrichment, oldest-updated first so a slow,
+/// rate-limited sweep eventually covers the whole catalogue. Plain offset paging is fine
+/// here — this is a background worker, not a hot path.
+pub async fn list_series_for_enrichment<'e, E: PgExecutor<'e>>(
+    exec: E,
+    limit: i64,
+    offset: i64,
+) -> DbResult<Vec<SeriesEnrichmentRow>> {
+    #[derive(FromRow)]
+    struct Row {
+        id: Uuid,
+        canonical_title: String,
+        description: Option<String>,
+        cover_url: Option<String>,
+    }
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT id, canonical_title, description, cover_url FROM series \
+         ORDER BY updated_at ASC LIMIT $1 OFFSET $2",
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| SeriesEnrichmentRow {
+            id: SeriesId::from_uuid(r.id),
+            canonical_title: r.canonical_title,
+            description: r.description,
+            cover_url: r.cover_url,
+        })
+        .collect())
+}
+
+/// A batch of metadata to fold into an existing series (the tokenless enrichment worker's
+/// output). `description`/`cover_url` are already the values chosen by the metadata-priority
+/// resolver; a `None` leaves the current value untouched. Titles/tags/authors are additive.
+pub struct MetadataEnrichment<'a> {
+    pub description: Option<&'a str>,
+    pub cover_url: Option<&'a str>,
+    /// Content-type token (e.g. `manga`/`manhwa`); only fills a currently-`unknown` series.
+    pub content_type: Option<&'a str>,
+    /// Release year; only fills a series whose year is currently null.
+    pub release_year: Option<i32>,
+    pub alt_titles: &'a [(String, String)],
+    pub tags: &'a [String],
+    pub authors: &'a [String],
+}
+
+/// Apply an enrichment batch to a series in one transaction: overwrite description/cover
+/// (priority already applied by the caller) and additively record alternative titles, tags,
+/// and authors. Idempotent — re-running converges to the same rows.
+pub async fn apply_enrichment(
+    pool: &sqlx::PgPool,
+    series_id: SeriesId,
+    enrichment: &MetadataEnrichment<'_>,
+) -> DbResult<()> {
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "UPDATE series SET \
+            description = COALESCE($2, description), \
+            cover_url = COALESCE($3, cover_url), \
+            content_type = CASE WHEN content_type = 'unknown' \
+                                THEN COALESCE($4::content_type, content_type) \
+                                ELSE content_type END, \
+            release_year = COALESCE(release_year, $5), \
+            updated_at = now() \
+         WHERE id = $1",
+    )
+    .bind(series_id.as_uuid())
+    .bind(enrichment.description)
+    .bind(enrichment.cover_url)
+    .bind(enrichment.content_type)
+    .bind(enrichment.release_year)
+    .execute(&mut *tx)
+    .await?;
+    if !enrichment.alt_titles.is_empty() {
+        add_series_titles(&mut tx, series_id, enrichment.alt_titles).await?;
+    }
+    if !enrichment.tags.is_empty() {
+        add_series_tags(&mut tx, series_id, enrichment.tags).await?;
+    }
+    if !enrichment.authors.is_empty() {
+        add_series_authors(&mut tx, series_id, enrichment.authors).await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
 /// Add alternative titles (idempotent on the natural key).
 pub async fn add_series_titles(
     conn: &mut sqlx::PgConnection,
@@ -627,13 +726,23 @@ pub async fn list_series<'e, E: PgExecutor<'e>>(
     }
 
     let sql = if query.is_some() {
+        // Search matches the canonical title, the full-text vector, **and** any alternative
+        // title/synonym (english/native/AniList synonyms recorded in `series_titles`), so a
+        // work found under a non-primary name still surfaces. Ranking takes the best trigram
+        // similarity across the canonical and alternative titles.
         "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
                 s.content_type::text AS content_type, s.status::text AS status, s.release_year, \
                 s.created_at, s.updated_at, \
                 (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS source_count \
          FROM series s \
          WHERE s.normalized_title % $1 OR s.search_vec @@ plainto_tsquery('simple', $1) \
-         ORDER BY similarity(s.normalized_title, $1) DESC \
+            OR EXISTS (SELECT 1 FROM series_titles st \
+                       WHERE st.series_id = s.id AND st.normalized % $1) \
+         ORDER BY GREATEST( \
+                    similarity(s.normalized_title, $1), \
+                    COALESCE((SELECT MAX(similarity(st.normalized, $1)) \
+                              FROM series_titles st WHERE st.series_id = s.id), 0) \
+                  ) DESC \
          LIMIT $2"
     } else {
         "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
@@ -744,7 +853,9 @@ macro_rules! filtered_series_sql {
                     count(*) OVER() AS total \
              FROM series s \
              WHERE ($1::text IS NULL OR s.normalized_title % $1 \
-                     OR s.search_vec @@ plainto_tsquery('simple', $1)) \
+                     OR s.search_vec @@ plainto_tsquery('simple', $1) \
+                     OR EXISTS (SELECT 1 FROM series_titles st \
+                                WHERE st.series_id = s.id AND st.normalized % $1)) \
                AND ($2::text IS NULL OR s.content_type::text = $2) \
                AND ($3::text IS NULL OR s.status::text = $3) \
                AND ($4::int IS NULL OR s.release_year >= $4) \

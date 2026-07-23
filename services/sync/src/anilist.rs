@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 use tokio::time::Instant;
 use tracing::info;
 use crate::mapping::{AniListStatus, content_type_from_country};
-use crate::provider::{ExternalProvider, OAuthTokens, RemoteEntry, Viewer};
+use crate::provider::{ExternalProvider, OAuthTokens, RemoteEntry, RemoteMetadata, Viewer};
 use tankovault_domain::{ContentType, WatchStatus};
 
 /// Default `AniList` GraphQL endpoint.
@@ -60,6 +60,37 @@ impl From<AniListEntry> for RemoteEntry {
             content_type: e.content_type,
             tags: e.tags,
             authors: e.authors,
+        }
+    }
+}
+
+/// Public catalogue metadata for one `AniList` media, fetched **without** any user token
+/// from the public GraphQL API. Converted to the provider-agnostic [`RemoteMetadata`] via
+/// `From` below so the enrichment worker never sees `AniList`-shaped types.
+#[derive(Debug, Clone)]
+pub(crate) struct MediaMetadata {
+    pub(crate) media_id: i64,
+    /// All titles (romaji/english/native, then every synonym), non-blank only.
+    pub(crate) titles: Vec<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) cover_url: Option<String>,
+    pub(crate) start_year: Option<i32>,
+    pub(crate) content_type: ContentType,
+    pub(crate) tags: Vec<String>,
+    pub(crate) authors: Vec<String>,
+}
+
+impl From<MediaMetadata> for RemoteMetadata {
+    fn from(m: MediaMetadata) -> Self {
+        Self {
+            external_id: m.media_id.to_string(),
+            titles: m.titles,
+            description: m.description,
+            cover_url: m.cover_url,
+            start_year: m.start_year,
+            content_type: m.content_type,
+            tags: m.tags,
+            authors: m.authors,
         }
     }
 }
@@ -288,6 +319,51 @@ impl AniListClient {
             .and_then(serde_json::Value::as_i64))
     }
 
+    /// The full public media-metadata GraphQL fragment (no user token required). Shared by
+    /// the id- and title-keyed public lookups.
+    const METADATA_QUERY: &str = "\
+        query ($id: Int, $search: String) { \
+          Media(id: $id, search: $search, type: MANGA) { \
+            id countryOfOrigin startDate { year } \
+            description(asHtml: false) \
+            coverImage { extraLarge large } \
+            title { romaji english native } \
+            synonyms \
+            genres \
+            staff(sort: RELEVANCE, perPage: 5) { edges { node { name { full } } } } \
+          } \
+        }";
+
+    /// Fetch public metadata for a known `AniList` media id — **no user token**. Returns
+    /// `None` when the id no longer resolves.
+    pub(crate) async fn fetch_metadata_by_id(
+        &self,
+        media_id: i64,
+    ) -> anyhow::Result<Option<MediaMetadata>> {
+        let Ok(data) = self
+            .graphql_public(Self::METADATA_QUERY, serde_json::json!({ "id": media_id }))
+            .await
+        else {
+            return Ok(None);
+        };
+        Ok(parse_media_metadata(&data))
+    }
+
+    /// Fetch public metadata for a work by title — **no user token**. Returns `None` when
+    /// nothing matches (a no-match search surfaces as a GraphQL error, treated as absence).
+    pub(crate) async fn fetch_metadata_by_title(
+        &self,
+        title: &str,
+    ) -> anyhow::Result<Option<MediaMetadata>> {
+        let Ok(data) = self
+            .graphql_public(Self::METADATA_QUERY, serde_json::json!({ "search": title }))
+            .await
+        else {
+            return Ok(None);
+        };
+        Ok(parse_media_metadata(&data))
+    }
+
     /// Execute a GraphQL operation, returning the `data` object. Retries once on `429`.
     async fn graphql(
         &self,
@@ -295,14 +371,34 @@ impl AniListClient {
         query: &str,
         variables: serde_json::Value,
     ) -> anyhow::Result<serde_json::Value> {
+        self.graphql_inner(Some(access_token), query, variables)
+            .await
+    }
+
+    /// Execute a GraphQL operation with **no** bearer token — used for `AniList`'s public,
+    /// unauthenticated metadata endpoint (the tokenless enrichment path).
+    async fn graphql_public(
+        &self,
+        query: &str,
+        variables: serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.graphql_inner(None, query, variables).await
+    }
+
+    async fn graphql_inner(
+        &self,
+        access_token: Option<&str>,
+        query: &str,
+        variables: serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
         let body = serde_json::json!({ "query": query, "variables": variables });
         for attempt in 0..2 {
             self.pacer.wait().await;
-            let resp = self
-                .http
-                .post(&self.graphql_url)
-                .bearer_auth(access_token)
-                .json(&body)
+            let mut req = self.http.post(&self.graphql_url).json(&body);
+            if let Some(token) = access_token {
+                req = req.bearer_auth(token);
+            }
+            let resp = req
                 .send()
                 .await
                 .context("AniList GraphQL request failed")?;
@@ -391,6 +487,27 @@ impl ExternalProvider for AniListClient {
             .map(|id| id.to_string()))
     }
 
+    fn supports_public_metadata(&self) -> bool {
+        true
+    }
+
+    async fn fetch_public_metadata_by_title(
+        &self,
+        title: &str,
+    ) -> anyhow::Result<Option<RemoteMetadata>> {
+        Ok(self.fetch_metadata_by_title(title).await?.map(Into::into))
+    }
+
+    async fn fetch_public_metadata_by_id(
+        &self,
+        external_id: &str,
+    ) -> anyhow::Result<Option<RemoteMetadata>> {
+        let media_id: i64 = external_id
+            .parse()
+            .context("AniList external id was not numeric")?;
+        Ok(self.fetch_metadata_by_id(media_id).await?.map(Into::into))
+    }
+
     async fn save_entry(
         &self,
         access_token: &str,
@@ -452,33 +569,9 @@ fn parse_entry(entry: &serde_json::Value) -> Option<AniListEntry> {
     let media_id = media.get("id").and_then(serde_json::Value::as_i64)?;
     let status = AniListStatus::parse(entry.get("status").and_then(serde_json::Value::as_str)?)?;
 
-    let mut titles = Vec::new();
-    if let Some(title) = media.get("title") {
-        for key in ["romaji", "english", "native"] {
-            if let Some(t) = title.get(key).and_then(serde_json::Value::as_str) {
-                if !t.trim().is_empty() {
-                    titles.push(t.to_owned());
-                }
-            }
-        }
-    }
+    let titles = titles_from_media(media);
     if titles.is_empty() {
         return None;
-    }
-
-    // Alternate titles AniList tracks alongside the "official" romaji/english/native trio
-    // (abbreviations, fan-translation names, other-language releases). Appended after those
-    // three so `titles[0]` is unchanged; `SyncEngine::resolve_series` tries every one of
-    // them against the local catalogue, which is what actually lets a locally-scraped
-    // series with an unusual scanlator title still match.
-    if let Some(synonyms) = media.get("synonyms").and_then(serde_json::Value::as_array) {
-        for s in synonyms {
-            if let Some(t) = s.as_str() {
-                if !t.trim().is_empty() {
-                    titles.push(t.to_owned());
-                }
-            }
-        }
     }
 
     let progress = entry
@@ -501,30 +594,8 @@ fn parse_entry(entry: &serde_json::Value) -> Option<AniListEntry> {
             .and_then(serde_json::Value::as_str),
     );
 
-    let tags = media
-        .get("genres")
-        .and_then(serde_json::Value::as_array)
-        .map(|genres| {
-            genres
-                .iter()
-                .filter_map(serde_json::Value::as_str)
-                .map(str::to_owned)
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let authors = media
-        .get("staff")
-        .and_then(|s| s.get("edges"))
-        .and_then(serde_json::Value::as_array)
-        .map(|edges| {
-            edges
-                .iter()
-                .filter_map(|e| e.get("node")?.get("name")?.get("full")?.as_str())
-                .map(str::to_owned)
-                .collect()
-        })
-        .unwrap_or_default();
+    let tags = genres_from_media(media);
+    let authors = staff_from_media(media);
 
     Some(AniListEntry {
         media_id,
@@ -537,6 +608,129 @@ fn parse_entry(entry: &serde_json::Value) -> Option<AniListEntry> {
         tags,
         authors,
     })
+}
+
+/// Candidate titles for a `media` object: the non-blank romaji/english/native trio first
+/// (so `titles[0]` is a stable "primary"), then every non-blank synonym `AniList` tracks
+/// (abbreviations, fan-translation names, other-language releases). Shared by the list
+/// parser and the public-metadata parser so both capture the full alternative-name set.
+fn titles_from_media(media: &serde_json::Value) -> Vec<String> {
+    let mut titles = Vec::new();
+    if let Some(title) = media.get("title") {
+        for key in ["romaji", "english", "native"] {
+            if let Some(t) = title.get(key).and_then(serde_json::Value::as_str) {
+                if !t.trim().is_empty() {
+                    titles.push(t.to_owned());
+                }
+            }
+        }
+    }
+    if let Some(synonyms) = media.get("synonyms").and_then(serde_json::Value::as_array) {
+        for s in synonyms {
+            if let Some(t) = s.as_str() {
+                if !t.trim().is_empty() {
+                    titles.push(t.to_owned());
+                }
+            }
+        }
+    }
+    titles
+}
+
+/// Genre names for a `media` object (empty when absent).
+fn genres_from_media(media: &serde_json::Value) -> Vec<String> {
+    media
+        .get("genres")
+        .and_then(serde_json::Value::as_array)
+        .map(|genres| {
+            genres
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Staff (story/art) credit names for a `media` object (empty when absent).
+fn staff_from_media(media: &serde_json::Value) -> Vec<String> {
+    media
+        .get("staff")
+        .and_then(|s| s.get("edges"))
+        .and_then(serde_json::Value::as_array)
+        .map(|edges| {
+            edges
+                .iter()
+                .filter_map(|e| e.get("node")?.get("name")?.get("full")?.as_str())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Extract [`MediaMetadata`] from a public `Media(...)` GraphQL `data` object (no user
+/// token). Returns `None` when there is no `Media` node or it has no usable id/title.
+#[must_use]
+pub(crate) fn parse_media_metadata(data: &serde_json::Value) -> Option<MediaMetadata> {
+    let media = data.get("Media")?;
+    let media_id = media.get("id").and_then(serde_json::Value::as_i64)?;
+    let titles = titles_from_media(media);
+    if titles.is_empty() {
+        return None;
+    }
+    // AniList wraps descriptions in light HTML (<br>, <i>, ...) even with asHtml:false in
+    // some cases; strip tags so the stored description is plain text.
+    let description = media
+        .get("description")
+        .and_then(serde_json::Value::as_str)
+        .map(strip_html)
+        .filter(|s| !s.trim().is_empty());
+    let cover_url = media
+        .get("coverImage")
+        .and_then(|c| {
+            c.get("extraLarge")
+                .and_then(serde_json::Value::as_str)
+                .or_else(|| c.get("large").and_then(serde_json::Value::as_str))
+        })
+        .map(str::to_owned)
+        .filter(|s| !s.trim().is_empty());
+    let start_year = media
+        .get("startDate")
+        .and_then(|d| d.get("year"))
+        .and_then(serde_json::Value::as_i64)
+        .and_then(|y| i32::try_from(y).ok());
+    let content_type = content_type_from_country(
+        media
+            .get("countryOfOrigin")
+            .and_then(serde_json::Value::as_str),
+    );
+    Some(MediaMetadata {
+        media_id,
+        titles,
+        description,
+        cover_url,
+        start_year,
+        content_type,
+        tags: genres_from_media(media),
+        authors: staff_from_media(media),
+    })
+}
+
+/// Strip HTML tags and collapse the common `<br>` breaks `AniList` uses in descriptions to
+/// plain text with normal line breaks. Deliberately tiny — `AniList` descriptions only ever
+/// carry simple inline markup, not arbitrary HTML.
+fn strip_html(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut in_tag = false;
+    for ch in input.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            c if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    out.trim().to_owned()
 }
 
 /// Minimal per-client request pacer: enforces a minimum gap between outbound calls.
@@ -716,5 +910,68 @@ mod tests {
     fn urlencode_escapes_reserved_characters() {
         assert_eq!(urlencode("a b/c?d"), "a%20b%2Fc%3Fd");
         assert_eq!(urlencode("safe-_.~"), "safe-_.~");
+    }
+
+    #[test]
+    fn parses_public_media_metadata() {
+        let data = serde_json::json!({
+            "Media": {
+                "id": 105_778, "countryOfOrigin": "KR",
+                "startDate": { "year": 2018 },
+                "description": "A hunter <b>rises</b>.<br>Solo.",
+                "coverImage": { "extraLarge": "https://img/xl.jpg", "large": "https://img/l.jpg" },
+                "title": { "romaji": "Na Honjaman Level Up",
+                           "english": "Solo Leveling", "native": null },
+                "synonyms": ["Only I Level Up"],
+                "genres": ["Action", "Fantasy"],
+                "staff": { "edges": [ { "node": { "name": { "full": "Chugong" } } } ] }
+            }
+        });
+        let m = parse_media_metadata(&data).expect("metadata");
+        assert_eq!(m.media_id, 105_778);
+        assert_eq!(m.content_type, ContentType::Manhwa);
+        assert_eq!(m.start_year, Some(2018));
+        assert_eq!(
+            m.titles,
+            vec!["Na Honjaman Level Up", "Solo Leveling", "Only I Level Up"]
+        );
+        // HTML stripped, prefers extraLarge cover.
+        assert_eq!(m.description.as_deref(), Some("A hunter rises.Solo."));
+        assert_eq!(m.cover_url.as_deref(), Some("https://img/xl.jpg"));
+        assert_eq!(m.tags, vec!["Action", "Fantasy"]);
+        assert_eq!(m.authors, vec!["Chugong"]);
+    }
+
+    #[test]
+    fn public_metadata_missing_or_titleless_is_none() {
+        assert!(parse_media_metadata(&serde_json::json!({})).is_none());
+        assert!(
+            parse_media_metadata(&serde_json::json!({
+                "Media": { "id": 1, "title": { "romaji": null } }
+            }))
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn public_metadata_falls_back_to_large_cover_and_blank_description() {
+        let data = serde_json::json!({
+            "Media": {
+                "id": 7, "countryOfOrigin": "JP",
+                "description": "   ",
+                "coverImage": { "large": "https://img/l.jpg" },
+                "title": { "romaji": "Berserk" }
+            }
+        });
+        let m = parse_media_metadata(&data).expect("metadata");
+        assert_eq!(m.description, None);
+        assert_eq!(m.cover_url.as_deref(), Some("https://img/l.jpg"));
+        assert_eq!(m.content_type, ContentType::Manga);
+    }
+
+    #[test]
+    fn strip_html_removes_tags_and_trims() {
+        assert_eq!(strip_html("<p>hello <i>world</i></p>"), "hello world");
+        assert_eq!(strip_html("  plain  "), "plain");
     }
 }

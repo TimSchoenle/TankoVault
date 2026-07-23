@@ -160,15 +160,18 @@ impl Engine {
         // immediately (metadata-light, no chapters).
         let mut paths: Vec<String> = Vec::new();
         let mut seen = std::collections::HashSet::new();
+        let mut truncated_by_page_cap = true;
         for page in 1..=self.max_catalog_pages {
             let catalog = match adapter.list_catalog(&ctx, page).await {
                 Ok(c) => c,
                 Err(e) => {
                     tracing::warn!(page, error = %e, "catalog page failed; stopping walk");
+                    truncated_by_page_cap = false;
                     break;
                 }
             };
             if catalog.items.is_empty() {
+                truncated_by_page_cap = false;
                 break;
             }
             for item in &catalog.items {
@@ -190,8 +193,17 @@ impl Engine {
                 paths.push(item.path.clone());
             }
             if !catalog.has_next {
+                truncated_by_page_cap = false;
                 break;
             }
+        }
+        if truncated_by_page_cap {
+            tracing::warn!(
+                provider = %provider.slug,
+                max_catalog_pages = self.max_catalog_pages,
+                "catalog walk stopped at the page safety cap while the catalogue still had more \
+                 pages; increase worker.max_catalog_pages if this is a legitimately large site"
+            );
         }
 
         // Phase 2 — enrich: fetch chapters + full metadata for every collected series.
@@ -296,14 +308,25 @@ impl Engine {
                 }
                 // Chain the next page while the catalogue has more, bounded by the same
                 // safety cap the inline walk uses so an unbounded paginator cannot loop.
-                if catalog.has_next && page < self.max_catalog_pages {
-                    self.enqueue_child(
-                        task,
-                        "catalog_page",
-                        TaskKind::CatalogPage,
-                        serde_json::json!({ "page": page + 1 }),
-                    )
-                    .await?;
+                if catalog.has_next {
+                    if page < self.max_catalog_pages {
+                        self.enqueue_child(
+                            task,
+                            "catalog_page",
+                            TaskKind::CatalogPage,
+                            serde_json::json!({ "page": page + 1 }),
+                        )
+                        .await?;
+                    } else {
+                        tracing::warn!(
+                            provider = %provider.slug,
+                            page,
+                            max_catalog_pages = self.max_catalog_pages,
+                            "catalog fan-out stopped at the page safety cap while the catalogue \
+                             still had more pages; increase worker.max_catalog_pages if this is \
+                             a legitimately large site"
+                        );
+                    }
                 }
             }
             TaskKind::LatestFeed => {

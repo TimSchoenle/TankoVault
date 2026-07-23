@@ -117,6 +117,17 @@ impl Session {
         let mut ready = self.ready;
         ready.set(true);
     }
+
+
+    /// Milliseconds remaining before the current access token's `exp` claim is reached, or
+    /// `None` when signed out or the token can't be decoded. Used to schedule the background
+    /// refresh in [`crate::components::Shell`] — purely a client-side scheduling hint, since
+    /// the server is the actual authority on expiry.
+    pub fn token_expires_in_ms(&self) -> Option<f64> {
+        let token = self.token.read().clone()?;
+        let exp = exp_from_jwt(&token)?;
+        Some(exp as f64 * 1000.0 - js_sys::Date::now())
+    }
 }
 
 impl Default for Session {
@@ -162,4 +173,15 @@ fn username_from_jwt(token: &str) -> Option<String> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
+}
+
+
+/// Decode the `exp` claim (unix seconds) from a JWT payload without verifying the signature.
+fn exp_from_jwt(token: &str) -> Option<i64> {
+    let payload_b64 = token.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload_b64)
+        .ok()?;
+    let value = serde_json::from_slice::<serde_json::Value>(&bytes).ok()?;
+    value.get("exp").and_then(|v| v.as_i64())
 }

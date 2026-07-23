@@ -8,23 +8,57 @@ use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
 
+/// How long before the access token's `exp` the background refresh in [`Shell`] fires.
+/// Comfortably inside the server's 15-minute default `access_ttl_minutes`.
+const REFRESH_BUFFER_MS: f64 = 60_000.0;
+
+/// Poll cadence for the background refresh loop while signed out (no cookie to adopt yet).
+const SIGNED_OUT_POLL_MS: u32 = 15_000;
+
 /// The persistent app shell: left rail nav + top command bar, with the routed view in the
-/// content area (via `Outlet`). Also performs the boot-time silent refresh.
+/// content area (via `Outlet`). Also performs the boot-time and recurring silent refresh.
 #[component]
 pub fn Shell() -> Element {
     let session = use_session();
     let route: Route = use_route();
 
-    // Silent refresh once on boot: adopt an access token from the httpOnly cookie if a
-    // session already exists, so a page reload keeps the user signed in (design §17.4).
-    use_effect(move || {
-        if !*session.ready.read() {
-            spawn(async move {
-                if let Ok(tok) = api::refresh().await {
-                    session.set_token(tok.access_token);
+    // Silent refresh once on boot (adopt an access token from the httpOnly cookie if a
+    // session already exists, so a page reload keeps the user signed in), then again shortly
+    // before each access token expires, for as long as the tab stays open (design §17.4).
+    //
+    // Without the recurring half, the in-memory token would go stale ~15 min after boot/sign-in
+    // (server default `access_ttl_minutes`) and every authenticated call — including the SSE
+    // stream below — starts failing with 401 until the user manually reloads the page: a
+    // reload is the only thing that re-runs the boot refresh. Worse for the SSE stream
+    // specifically, since the browser's `EventSource` bakes the token into its URL and, per
+    // spec, gives up reconnecting for good the first time a reconnect attempt gets a non-200
+    // response — so a stale-token 401 kills it permanently, not just until the next retry.
+    // Refreshing before expiry keeps `session`'s token current, which — since the stream
+    // below is keyed on it — transparently tears down and re-opens the connection with a
+    // valid token before that can happen.
+    use_future(move || async move {
+        loop {
+            let booted = *session.ready.peek();
+            let wait_ms = match session.token_expires_in_ms() {
+                Some(ms) if ms > REFRESH_BUFFER_MS => ms - REFRESH_BUFFER_MS,
+                Some(_) => 0.0,
+                // Signed out and we've already tried once: nothing to refresh; poll for a
+                // sign-in rather than hammering the endpoint.
+                None if booted => {
+                    gloo_timers::future::TimeoutFuture::new(SIGNED_OUT_POLL_MS).await;
+                    continue;
                 }
+                None => 0.0,
+            };
+            gloo_timers::future::TimeoutFuture::new(wait_ms as u32).await;
+
+            match api::refresh().await {
+                Ok(tok) => session.set_token(tok.access_token),
+                Err(_) => session.clear(),
+            }
+            if !booted {
                 session.mark_ready();
-            });
+            }
         }
     });
 

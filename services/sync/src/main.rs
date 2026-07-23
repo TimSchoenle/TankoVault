@@ -47,7 +47,7 @@ use engine::SyncEngine;
 use mapping::ConflictPolicy;
 use provider::ExternalProvider;
 use tankovault_auth::SecretBox;
-use tankovault_config::{DatabaseConfig, TelemetryConfig};
+use tankovault_config::{DatabaseConfig, MetadataPriorityConfig, TelemetryConfig};
 use tankovault_domain::{SeriesId, UserId};
 
 #[derive(Debug, Deserialize)]
@@ -55,12 +55,48 @@ struct Config {
     database: DatabaseConfig,
     telemetry: TelemetryConfig,
     anilist: AniListConfig,
+    #[serde(default)]
+    metadata: MetadataConfig,
     #[serde(default = "default_bind")]
     bind_addr: String,
     /// Interval (seconds) between scheduled reconciliation ticks (design v2 §B.4). `0`
     /// disables the loop (e.g. in tests or when a separate scheduler owns it).
     #[serde(default = "default_reconcile_interval")]
     reconcile_interval_secs: u64,
+}
+
+/// Metadata-priority + tokenless enrichment-worker settings (design: worker queue syncing
+/// every existing entry to `AniList` without a stored user token, plus a configurable
+/// authority order for description/cover/title).
+#[derive(Debug, Deserialize)]
+struct MetadataConfig {
+    /// Per-field source authority order (default: `AniList` before the adapters).
+    #[serde(default)]
+    priority: MetadataPriorityConfig,
+    /// Whether the background enrichment worker runs. On by default.
+    #[serde(default = "default_enrich_enabled")]
+    enrich_enabled: bool,
+    /// Seconds between enrichment sweeps.
+    #[serde(default = "default_enrich_interval_secs")]
+    enrich_interval_secs: u64,
+    /// Series fetched per DB page during a sweep.
+    #[serde(default = "default_enrich_batch")]
+    enrich_batch: i64,
+    /// Upper bound on series processed per sweep (paces `AniList`'s rate limit).
+    #[serde(default = "default_enrich_max")]
+    enrich_max_series: usize,
+}
+
+impl Default for MetadataConfig {
+    fn default() -> Self {
+        Self {
+            priority: MetadataPriorityConfig::default(),
+            enrich_enabled: default_enrich_enabled(),
+            enrich_interval_secs: default_enrich_interval_secs(),
+            enrich_batch: default_enrich_batch(),
+            enrich_max_series: default_enrich_max(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -95,6 +131,18 @@ fn default_min_interval_ms() -> u64 {
 }
 fn default_reconcile_interval() -> u64 {
     900
+}
+fn default_enrich_enabled() -> bool {
+    true
+}
+fn default_enrich_interval_secs() -> u64 {
+    3600
+}
+fn default_enrich_batch() -> i64 {
+    200
+}
+fn default_enrich_max() -> usize {
+    500
 }
 
 /// `figment`'s `Env` provider infers numeric-looking values (e.g. `TANKOVAULT_ANILIST__CLIENT_ID`)
@@ -141,6 +189,10 @@ fn build_providers(
 #[derive(Clone)]
 struct AppState {
     engine: Arc<SyncEngine>,
+    /// Enrichment page size for the on-demand `/v1/sync/enrich` route.
+    enrich_batch: i64,
+    /// Enrichment per-run cap for the on-demand `/v1/sync/enrich` route.
+    enrich_max: usize,
 }
 
 #[tokio::main]
@@ -158,11 +210,44 @@ async fn main() -> anyhow::Result<()> {
     let secret = SecretBox::from_base64_key(&cfg.anilist.token_encryption_key)
         .map_err(|e| anyhow::anyhow!("invalid anilist.token_encryption_key: {e}"))?;
     let default_policy = cfg.anilist.default_conflict_policy;
+    let metadata = cfg.metadata;
     let providers = build_providers(cfg.anilist)?;
 
-    let engine = Arc::new(SyncEngine::new(pool, secret, default_policy, providers));
+    let engine = Arc::new(SyncEngine::new(
+        pool,
+        secret,
+        default_policy,
+        metadata.priority.clone(),
+        providers,
+    ));
+
+    // Tokenless metadata-enrichment worker: a periodic background sweep that fills in
+    // description/cover/alternative-titles for every existing series straight from AniList's
+    // public API — no stored user token required (design: worker queue syncing all entries).
+    if metadata.enrich_enabled {
+        let worker = engine.clone();
+        let interval = Duration::from_secs(metadata.enrich_interval_secs.max(1));
+        let batch = metadata.enrich_batch.max(1);
+        let max = metadata.enrich_max_series;
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(interval);
+            loop {
+                ticker.tick().await;
+                if let Err(e) = worker.enrich_all(batch, max).await {
+                    tracing::warn!(error = %e, "tokenless metadata enrichment sweep failed");
+                }
+            }
+        });
+        tracing::info!(
+            interval_secs = metadata.enrich_interval_secs,
+            "tokenless metadata enrichment worker started"
+        );
+    }
+
     let state = AppState {
         engine: engine.clone(),
+        enrich_batch: metadata.enrich_batch.max(1),
+        enrich_max: metadata.enrich_max_series,
     };
 
     // Scheduled reconciliation loop (design v2 §B.4): pulls remote-side changes back
@@ -186,6 +271,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/ready", get(|| async { "ok" }))
         .route("/v1/sync/providers", get(providers_list))
         .route("/v1/sync/push-series", post(push_series))
+        .route("/v1/sync/enrich", post(enrich))
         .route("/v1/sync/{provider}/authorize-url", get(authorize_url))
         .route("/v1/sync/{provider}/status/{user_id}", get(status))
         .route("/v1/sync/{provider}/link", post(link).delete(unlink))
@@ -208,6 +294,17 @@ async fn main() -> anyhow::Result<()> {
 
 async fn providers_list(State(state): State<AppState>) -> Json<Vec<provider::ProviderInfo>> {
     Json(state.engine.registry())
+}
+
+/// `POST /v1/sync/enrich` — run one tokenless metadata-enrichment sweep on demand (no user
+/// token). Uses the configured batch/cap. Handy for ops and for kicking a fresh sweep after
+/// a bulk import rather than waiting for the periodic worker.
+async fn enrich(State(state): State<AppState>) -> Result<Json<engine::EnrichReport>, AppError> {
+    let report = state
+        .engine
+        .enrich_all(state.enrich_batch, state.enrich_max)
+        .await?;
+    Ok(Json(report))
 }
 
 #[derive(Debug, Deserialize)]

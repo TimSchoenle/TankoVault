@@ -7,8 +7,12 @@
 //! - `xtask openapi` — regenerate `openapi.json` (the canonical spec) and the typed Rust
 //!   API client (`crates/api-client/src/lib.rs`) from the api service's `utoipa` schemas via
 //!   `progenitor`. No database needed.
+//! - `xtask sqlx-prepare [--check]` — regenerate (or verify, with `--check`) the committed
+//!   sqlx offline query cache (`.sqlx/`) so the compile-time-checked query macros in
+//!   `tankovault-db` build without a live database. Wraps `cargo sqlx prepare` (sqlx-cli).
 //!
-//! `migrate`/`reset`/`seed` read `DATABASE_URL` from the environment; `openapi` does not.
+//! `migrate`/`reset`/`seed`/`sqlx-prepare` read `DATABASE_URL` from the environment;
+//! `openapi` does not.
 
 use progenitor_impl::{GenerationSettings, Generator, InterfaceStyle, TypePatch};
 use tankovault_domain::{Politeness, UserRole};
@@ -20,6 +24,13 @@ async fn main() -> anyhow::Result<()> {
     if cmd == "openapi" {
         let check = std::env::args().nth(2).as_deref() == Some("--check");
         return openapi(check);
+    }
+
+    // Regenerate the committed sqlx offline query cache (`.sqlx/`). Shells out to `sqlx-cli`,
+    // which manages its own `DATABASE_URL` connection, so this runs before the pool below.
+    if cmd == "sqlx-prepare" {
+        let check = std::env::args().nth(2).as_deref() == Some("--check");
+        return sqlx_prepare(check);
     }
 
     let url =
@@ -35,11 +46,61 @@ async fn main() -> anyhow::Result<()> {
         "seed" => seed(&pool).await?,
         other => {
             eprintln!(
-                "unknown command {other:?}; usage: xtask <migrate|reset|seed|openapi [--check]>"
+                "unknown command {other:?}; usage: xtask \
+                 <migrate|reset|seed|openapi [--check]|sqlx-prepare [--check]>"
             );
             std::process::exit(2);
         }
     }
+    Ok(())
+}
+
+/// Regenerate (or, with `check = true`, verify) the committed sqlx offline query cache in
+/// `.sqlx/`. The repository queries in `tankovault-db` are the compile-time-checked
+/// `query!`/`query_as!` macros; this cache lets `cargo build`/CI/Docker resolve them without
+/// a live database (`SQLX_OFFLINE=true`).
+///
+/// Shells out to `sqlx-cli` (`cargo sqlx prepare`), which connects using `DATABASE_URL` and
+/// must run from the workspace root against a migrated database. Install it once with
+/// `cargo install sqlx-cli --no-default-features --features rustls,postgres`.
+///
+/// With `check = true` (used by CI) nothing is written; the command fails if the cache is
+/// out of date relative to the current queries + schema.
+fn sqlx_prepare(check: bool) -> anyhow::Result<()> {
+    if std::env::var_os("DATABASE_URL").is_none() {
+        anyhow::bail!("DATABASE_URL must be set (point it at a migrated database)");
+    }
+
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("xtask/ has a parent directory"))?;
+
+    let mut cmd = std::process::Command::new("cargo");
+    cmd.current_dir(workspace_root)
+        .arg("sqlx")
+        .arg("prepare")
+        .arg("--workspace");
+    if check {
+        cmd.arg("--check");
+    }
+
+    let status = cmd.status().map_err(|e| {
+        anyhow::anyhow!(
+            "failed to run `cargo sqlx prepare` ({e}); install sqlx-cli with \
+             `cargo install sqlx-cli --no-default-features --features rustls,postgres`"
+        )
+    })?;
+    if !status.success() {
+        anyhow::bail!(
+            "`cargo sqlx prepare{}` failed; the offline query cache is stale — \
+             run `cargo run -p xtask -- sqlx-prepare` against a migrated database",
+            if check { " --check" } else { "" }
+        );
+    }
+    println!(
+        "sqlx offline query cache {}",
+        if check { "is up to date" } else { "written to .sqlx/" }
+    );
     Ok(())
 }
 

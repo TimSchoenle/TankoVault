@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO notification_dedup (user_id, series_id, chapter_number) VALUES ($1,$2,$3::float8::numeric(10,4)) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ec6505976154732e709405a45b90af0455b3b67a137fd28ea3010062f5dad100"
+}

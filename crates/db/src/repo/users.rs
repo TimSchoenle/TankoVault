@@ -5,7 +5,6 @@
 
 use crate::error::{DbError, DbResult};
 use sqlx::{FromRow, PgExecutor};
-use std::str::FromStr;
 use tankovault_domain::{User, UserId, UserRole};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -15,20 +14,19 @@ struct UserRow {
     id: Uuid,
     email: String,
     username: String,
-    role: String,
+    role: UserRole,
     created_at: OffsetDateTime,
 }
 
-impl TryFrom<UserRow> for User {
-    type Error = DbError;
-    fn try_from(r: UserRow) -> Result<Self, Self::Error> {
-        Ok(Self {
+impl From<UserRow> for User {
+    fn from(r: UserRow) -> Self {
+        Self {
             id: UserId::from_uuid(r.id),
             email: r.email,
             username: r.username,
-            role: UserRole::from_str(&r.role)?,
+            role: r.role,
             created_at: r.created_at,
-        })
+        }
     }
 }
 
@@ -53,16 +51,17 @@ pub async fn create<'e, E: PgExecutor<'e>>(
     role: UserRole,
 ) -> DbResult<User> {
     let id = UserId::new();
-    let row: UserRow = sqlx::query_as(
+    let row = sqlx::query_as!(
+        UserRow,
         "INSERT INTO users (id, email, username, password_hash, role) \
-         VALUES ($1,$2,$3,$4,$5::user_role) \
-         RETURNING id, email, username, role::text AS role, created_at",
+         VALUES ($1,$2,$3,$4,$5) \
+         RETURNING id, email, username, role AS \"role: UserRole\", created_at",
+        id.as_uuid(),
+        email,
+        username,
+        password_hash,
+        role as UserRole,
     )
-    .bind(id.as_uuid())
-    .bind(email)
-    .bind(username)
-    .bind(password_hash)
-    .bind(role.as_str())
     .fetch_one(exec)
     .await
     .map_err(|e| {
@@ -73,7 +72,7 @@ pub async fn create<'e, E: PgExecutor<'e>>(
             de
         }
     })?;
-    row.try_into()
+    Ok(row.into())
 }
 
 /// Look up credentials by email or username (login accepts either).
@@ -86,45 +85,44 @@ pub async fn find_credentials<'e, E: PgExecutor<'e>>(
         id: Uuid,
         email: String,
         username: String,
-        role: String,
+        role: UserRole,
         created_at: OffsetDateTime,
         password_hash: String,
         email_verified: bool,
     }
-    let row: Option<Row> = sqlx::query_as(
-        "SELECT id, email, username, role::text AS role, created_at, password_hash, \
-                (email_verified_at IS NOT NULL) AS email_verified \
+    let row = sqlx::query_as!(
+        Row,
+        "SELECT id, email, username, role AS \"role: UserRole\", created_at, password_hash, \
+                (email_verified_at IS NOT NULL) AS \"email_verified!\" \
          FROM users WHERE email = $1 OR username = $1",
+        login,
     )
-    .bind(login)
     .fetch_optional(exec)
     .await?;
 
-    row.map(|r| {
-        Ok(Credentials {
-            user: User {
-                id: UserId::from_uuid(r.id),
-                email: r.email,
-                username: r.username,
-                role: UserRole::from_str(&r.role)?,
-                created_at: r.created_at,
-            },
-            password_hash: r.password_hash,
-            email_verified: r.email_verified,
-        })
-    })
-    .transpose()
+    Ok(row.map(|r| Credentials {
+        user: User {
+            id: UserId::from_uuid(r.id),
+            email: r.email,
+            username: r.username,
+            role: r.role,
+            created_at: r.created_at,
+        },
+        password_hash: r.password_hash,
+        email_verified: r.email_verified,
+    }))
 }
 
 /// Fetch a user by id.
 pub async fn get<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<User> {
-    let row: Option<UserRow> = sqlx::query_as(
-        "SELECT id, email, username, role::text AS role, created_at FROM users WHERE id = $1",
+    let row = sqlx::query_as!(
+        UserRow,
+        "SELECT id, email, username, role AS \"role: UserRole\", created_at FROM users WHERE id = $1",
+        id.as_uuid(),
     )
-    .bind(id.as_uuid())
     .fetch_optional(exec)
     .await?;
-    row.ok_or(DbError::NotFound)?.try_into()
+    Ok(row.ok_or(DbError::NotFound)?.into())
 }
 
 // ---------------------------------------------------------------------------
@@ -148,15 +146,15 @@ pub async fn insert_refresh<'e, E: PgExecutor<'e>>(
     token_hash: &str,
     expires_at: OffsetDateTime,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO refresh_tokens (id, user_id, family_id, token_hash, expires_at) \
          VALUES ($1,$2,$3,$4,$5)",
+        Uuid::now_v7(),
+        user_id.as_uuid(),
+        family_id,
+        token_hash,
+        expires_at,
     )
-    .bind(Uuid::now_v7())
-    .bind(user_id.as_uuid())
-    .bind(family_id)
-    .bind(token_hash)
-    .bind(expires_at)
     .execute(exec)
     .await?;
     Ok(())
@@ -175,11 +173,12 @@ pub async fn find_refresh<'e, E: PgExecutor<'e>>(
         expires_at: OffsetDateTime,
         revoked_at: Option<OffsetDateTime>,
     }
-    let row: Option<Row> = sqlx::query_as(
+    let row = sqlx::query_as!(
+        Row,
         "SELECT id, user_id, family_id, expires_at, revoked_at FROM refresh_tokens \
          WHERE token_hash = $1",
+        token_hash,
     )
-    .bind(token_hash)
     .fetch_optional(exec)
     .await?;
     Ok(row.map(|r| RefreshRecord {
@@ -193,10 +192,10 @@ pub async fn find_refresh<'e, E: PgExecutor<'e>>(
 
 /// Revoke a single token by id (normal rotation).
 pub async fn revoke_token<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL",
+        id,
     )
-    .bind(id)
     .execute(exec)
     .await?;
     Ok(())
@@ -204,10 +203,10 @@ pub async fn revoke_token<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<
 
 /// Revoke an entire token family (reuse detected → invalidate the lineage).
 pub async fn revoke_family<'e, E: PgExecutor<'e>>(exec: E, family_id: Uuid) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() WHERE family_id = $1 AND revoked_at IS NULL",
+        family_id,
     )
-    .bind(family_id)
     .execute(exec)
     .await?;
     Ok(())
@@ -222,13 +221,14 @@ pub async fn revoke_family<'e, E: PgExecutor<'e>>(exec: E, family_id: Uuid) -> D
 /// Returns `None` when no account matches, letting the handler respond identically whether
 /// or not the address is registered (avoids account enumeration).
 pub async fn find_by_email<'e, E: PgExecutor<'e>>(exec: E, email: &str) -> DbResult<Option<User>> {
-    let row: Option<UserRow> = sqlx::query_as(
-        "SELECT id, email, username, role::text AS role, created_at FROM users WHERE email = $1",
+    let row = sqlx::query_as!(
+        UserRow,
+        "SELECT id, email, username, role AS \"role: UserRole\", created_at FROM users WHERE email = $1",
+        email,
     )
-    .bind(email)
     .fetch_optional(exec)
     .await?;
-    row.map(TryInto::try_into).transpose()
+    Ok(row.map(Into::into))
 }
 
 /// A stored password-reset token record (hash only; the plaintext lives only in the email).
@@ -246,14 +246,14 @@ pub async fn insert_password_reset<'e, E: PgExecutor<'e>>(
     token_hash: &str,
     expires_at: OffsetDateTime,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at) \
          VALUES ($1,$2,$3,$4)",
+        Uuid::now_v7(),
+        user_id.as_uuid(),
+        token_hash,
+        expires_at,
     )
-    .bind(Uuid::now_v7())
-    .bind(user_id.as_uuid())
-    .bind(token_hash)
-    .bind(expires_at)
     .execute(exec)
     .await?;
     Ok(())
@@ -272,11 +272,12 @@ pub async fn find_password_reset<'e, E: PgExecutor<'e>>(
         expires_at: OffsetDateTime,
         used_at: Option<OffsetDateTime>,
     }
-    let row: Option<Row> = sqlx::query_as(
+    let row = sqlx::query_as!(
+        Row,
         "SELECT id, user_id, expires_at, used_at FROM password_reset_tokens \
          WHERE token_hash = $1",
+        token_hash,
     )
-    .bind(token_hash)
     .fetch_optional(exec)
     .await?;
     Ok(row.map(|r| PasswordResetRecord {
@@ -290,10 +291,10 @@ pub async fn find_password_reset<'e, E: PgExecutor<'e>>(
 /// Atomically mark a reset token consumed (single-use). Returns the number of rows updated:
 /// `0` means it was already used, which the caller must treat as a failed reset.
 pub async fn consume_password_reset<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<u64> {
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "UPDATE password_reset_tokens SET used_at = now() WHERE id = $1 AND used_at IS NULL",
+        id,
     )
-    .bind(id)
     .execute(exec)
     .await?;
     Ok(result.rows_affected())
@@ -305,11 +306,13 @@ pub async fn update_password<'e, E: PgExecutor<'e>>(
     id: UserId,
     password_hash: &str,
 ) -> DbResult<()> {
-    let result = sqlx::query("UPDATE users SET password_hash = $2 WHERE id = $1")
-        .bind(id.as_uuid())
-        .bind(password_hash)
-        .execute(exec)
-        .await?;
+    let result = sqlx::query!(
+        "UPDATE users SET password_hash = $2 WHERE id = $1",
+        id.as_uuid(),
+        password_hash,
+    )
+    .execute(exec)
+    .await?;
     if result.rows_affected() == 0 {
         return Err(DbError::NotFound);
     }
@@ -319,10 +322,10 @@ pub async fn update_password<'e, E: PgExecutor<'e>>(
 /// Revoke every live refresh token for a user — used after a password reset so any stolen
 /// session is invalidated along with the changed credential.
 pub async fn revoke_all_for_user<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL",
+        user_id.as_uuid(),
     )
-    .bind(user_id.as_uuid())
     .execute(exec)
     .await?;
     Ok(())
@@ -346,31 +349,31 @@ pub async fn find_by_email_with_verification<'e, E: PgExecutor<'e>>(
         id: Uuid,
         email: String,
         username: String,
-        role: String,
+        role: UserRole,
         created_at: OffsetDateTime,
         email_verified: bool,
     }
-    let row: Option<Row> = sqlx::query_as(
-        "SELECT id, email, username, role::text AS role, created_at, \
-                (email_verified_at IS NOT NULL) AS email_verified \
+    let row = sqlx::query_as!(
+        Row,
+        "SELECT id, email, username, role AS \"role: UserRole\", created_at, \
+                (email_verified_at IS NOT NULL) AS \"email_verified!\" \
          FROM users WHERE email = $1",
+        email,
     )
-    .bind(email)
     .fetch_optional(exec)
     .await?;
-    row.map(|r| {
-        Ok((
+    Ok(row.map(|r| {
+        (
             User {
                 id: UserId::from_uuid(r.id),
                 email: r.email,
                 username: r.username,
-                role: UserRole::from_str(&r.role)?,
+                role: r.role,
                 created_at: r.created_at,
             },
             r.email_verified,
-        ))
-    })
-    .transpose()
+        )
+    }))
 }
 
 /// A stored email-verification token record (hash only; the plaintext lives only in the
@@ -389,14 +392,14 @@ pub async fn insert_email_verification<'e, E: PgExecutor<'e>>(
     token_hash: &str,
     expires_at: OffsetDateTime,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO email_verification_tokens (id, user_id, token_hash, expires_at) \
          VALUES ($1,$2,$3,$4)",
+        Uuid::now_v7(),
+        user_id.as_uuid(),
+        token_hash,
+        expires_at,
     )
-    .bind(Uuid::now_v7())
-    .bind(user_id.as_uuid())
-    .bind(token_hash)
-    .bind(expires_at)
     .execute(exec)
     .await?;
     Ok(())
@@ -415,11 +418,12 @@ pub async fn find_email_verification<'e, E: PgExecutor<'e>>(
         expires_at: OffsetDateTime,
         used_at: Option<OffsetDateTime>,
     }
-    let row: Option<Row> = sqlx::query_as(
+    let row = sqlx::query_as!(
+        Row,
         "SELECT id, user_id, expires_at, used_at FROM email_verification_tokens \
          WHERE token_hash = $1",
+        token_hash,
     )
-    .bind(token_hash)
     .fetch_optional(exec)
     .await?;
     Ok(row.map(|r| EmailVerificationRecord {
@@ -433,10 +437,10 @@ pub async fn find_email_verification<'e, E: PgExecutor<'e>>(
 /// Atomically mark a verification token consumed (single-use). Returns the number of rows
 /// updated: `0` means it was already used, which the caller must treat as a failed attempt.
 pub async fn consume_email_verification<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<u64> {
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "UPDATE email_verification_tokens SET used_at = now() WHERE id = $1 AND used_at IS NULL",
+        id,
     )
-    .bind(id)
     .execute(exec)
     .await?;
     Ok(result.rows_affected())
@@ -445,10 +449,10 @@ pub async fn consume_email_verification<'e, E: PgExecutor<'e>>(exec: E, id: Uuid
 /// Mark a user's email address confirmed. Idempotent: re-confirming leaves the original
 /// timestamp untouched so the "verified since" instant stays stable.
 pub async fn mark_email_verified<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1",
+        user_id.as_uuid(),
     )
-    .bind(user_id.as_uuid())
     .execute(exec)
     .await?;
     Ok(())
@@ -469,16 +473,17 @@ pub async fn update_profile<'e, E: PgExecutor<'e>>(
     username: Option<&str>,
     email: Option<&str>,
 ) -> DbResult<User> {
-    let row: UserRow = sqlx::query_as(
+    let row = sqlx::query_as!(
+        UserRow,
         "UPDATE users SET \
             username = COALESCE($2, username), \
             email = COALESCE($3, email) \
          WHERE id = $1 \
-         RETURNING id, email, username, role::text AS role, created_at",
+         RETURNING id, email, username, role AS \"role: UserRole\", created_at",
+        id.as_uuid(),
+        username,
+        email,
     )
-    .bind(id.as_uuid())
-    .bind(username)
-    .bind(email)
     .fetch_one(exec)
     .await
     .map_err(|e| {
@@ -489,7 +494,7 @@ pub async fn update_profile<'e, E: PgExecutor<'e>>(
             de
         }
     })?;
-    row.try_into()
+    Ok(row.into())
 }
 
 /// An active login session, derived from a live (unrevoked, unexpired) refresh token
@@ -514,12 +519,13 @@ pub async fn list_sessions<'e, E: PgExecutor<'e>>(
         created_at: OffsetDateTime,
         expires_at: OffsetDateTime,
     }
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows = sqlx::query_as!(
+        Row,
         "SELECT id, family_id, created_at, expires_at FROM refresh_tokens \
          WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now() \
          ORDER BY created_at DESC",
+        user_id.as_uuid(),
     )
-    .bind(user_id.as_uuid())
     .fetch_all(exec)
     .await?;
     Ok(rows
@@ -540,14 +546,14 @@ pub async fn revoke_session<'e, E: PgExecutor<'e>>(
     user_id: UserId,
     session_id: Uuid,
 ) -> DbResult<u64> {
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() \
          WHERE revoked_at IS NULL AND family_id = ( \
              SELECT family_id FROM refresh_tokens WHERE id = $2 AND user_id = $1 \
          )",
+        user_id.as_uuid(),
+        session_id,
     )
-    .bind(user_id.as_uuid())
-    .bind(session_id)
     .execute(exec)
     .await?;
     Ok(result.rows_affected())
@@ -558,11 +564,12 @@ pub async fn get_notification_prefs<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,
 ) -> DbResult<serde_json::Value> {
-    let prefs: Option<serde_json::Value> =
-        sqlx::query_scalar("SELECT notification_prefs FROM users WHERE id = $1")
-            .bind(id.as_uuid())
-            .fetch_optional(exec)
-            .await?;
+    let prefs = sqlx::query_scalar!(
+        "SELECT notification_prefs AS \"notification_prefs: serde_json::Value\" FROM users WHERE id = $1",
+        id.as_uuid(),
+    )
+    .fetch_optional(exec)
+    .await?;
     Ok(prefs.unwrap_or_else(|| serde_json::json!({})))
 }
 
@@ -572,11 +579,13 @@ pub async fn set_notification_prefs<'e, E: PgExecutor<'e>>(
     id: UserId,
     prefs: &serde_json::Value,
 ) -> DbResult<()> {
-    let result = sqlx::query("UPDATE users SET notification_prefs = $2 WHERE id = $1")
-        .bind(id.as_uuid())
-        .bind(prefs)
-        .execute(exec)
-        .await?;
+    let result = sqlx::query!(
+        "UPDATE users SET notification_prefs = $2 WHERE id = $1",
+        id.as_uuid(),
+        prefs,
+    )
+    .execute(exec)
+    .await?;
     if result.rows_affected() == 0 {
         return Err(DbError::NotFound);
     }
@@ -604,13 +613,14 @@ pub struct UserRow2 {
 
 /// List users for the operator console, newest first.
 pub async fn list_users<'e, E: PgExecutor<'e>>(exec: E, limit: i64) -> DbResult<Vec<UserRow2>> {
-    let rows: Vec<UserRow2> = sqlx::query_as(
-        "SELECT u.id, u.email::text AS email, u.username::text AS username, \
-                u.role::text AS role, u.created_at, \
-                (SELECT count(*) FROM watchlist_entries w WHERE w.user_id = u.id) AS tracked_count \
+    let rows = sqlx::query_as!(
+        UserRow2,
+        "SELECT u.id, u.email, u.username, \
+                u.role::text AS \"role!\", u.created_at, \
+                (SELECT count(*) FROM watchlist_entries w WHERE w.user_id = u.id) AS \"tracked_count!\" \
          FROM users u ORDER BY u.created_at DESC LIMIT $1",
+        limit,
     )
-    .bind(limit)
     .fetch_all(exec)
     .await?;
     Ok(rows)

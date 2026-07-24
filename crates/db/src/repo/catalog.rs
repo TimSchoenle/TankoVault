@@ -7,7 +7,6 @@
 
 use crate::error::{DbError, DbResult};
 use sqlx::{FromRow, PgExecutor};
-use std::str::FromStr;
 use tankovault_domain::{
     Chapter, ChapterId, ContentType, ProviderId, ProviderState, Series, SeriesId, SeriesSource,
     SeriesSourceId, SeriesStatus, normalize_title,
@@ -37,8 +36,8 @@ struct SeriesRow {
     normalized_title: String,
     description: Option<String>,
     cover_url: Option<String>,
-    content_type: String,
-    status: String,
+    content_type: ContentType,
+    status: SeriesStatus,
     release_year: Option<i32>,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
@@ -53,22 +52,13 @@ impl TryFrom<SeriesRow> for Series {
             normalized_title: r.normalized_title,
             description: r.description,
             cover_url: r.cover_url,
-            content_type: ContentType::from_str(&r.content_type)?,
-            status: SeriesStatus::from_str(&r.status)?,
+            content_type: r.content_type,
+            status: r.status,
             release_year: r.release_year,
             created_at: r.created_at,
             updated_at: r.updated_at,
         })
     }
-}
-
-/// `series` column projection as a literal (keeps composed queries static).
-macro_rules! series_cols {
-    () => {
-        "id, canonical_title, normalized_title, description, cover_url, \
-         content_type::text AS content_type, status::text AS status, release_year, \
-         created_at, updated_at"
-    };
 }
 
 /// Resolve the canonical series for a scanned source using the canonicalisation pipeline
@@ -136,19 +126,19 @@ pub async fn resolve_canonical_series(
 /// Insert a fresh canonical series from scanned metadata, returning its new id.
 async fn create_series(conn: &mut sqlx::PgConnection, meta: &SeriesUpsert) -> DbResult<SeriesId> {
     let id = SeriesId::new();
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO series (id, canonical_title, normalized_title, description, \
          cover_url, content_type, status, release_year) \
-         VALUES ($1,$2,$3,$4,$5,$6::content_type,$7::series_status,$8)",
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+        id.as_uuid(),
+        &meta.canonical_title,
+        &meta.normalized_title,
+        meta.description.as_deref(),
+        meta.cover_url.as_deref(),
+        meta.content_type as ContentType,
+        meta.status as SeriesStatus,
+        meta.release_year,
     )
-    .bind(id.as_uuid())
-    .bind(&meta.canonical_title)
-    .bind(&meta.normalized_title)
-    .bind(&meta.description)
-    .bind(&meta.cover_url)
-    .bind(meta.content_type.as_str())
-    .bind(meta.status.as_str())
-    .bind(meta.release_year)
     .execute(&mut *conn)
     .await?;
     Ok(id)
@@ -160,24 +150,24 @@ pub async fn update_series_meta<'e, E: PgExecutor<'e>>(
     id: SeriesId,
     meta: &SeriesUpsert,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE series SET \
             canonical_title = $2, \
             description = COALESCE($3, description), \
             cover_url = COALESCE($4, cover_url), \
-            content_type = $5::content_type, \
-            status = $6::series_status, \
+            content_type = $5, \
+            status = $6, \
             release_year = COALESCE($7, release_year), \
             updated_at = now() \
          WHERE id = $1",
+        id.as_uuid(),
+        &meta.canonical_title,
+        meta.description.as_deref(),
+        meta.cover_url.as_deref(),
+        meta.content_type as ContentType,
+        meta.status as SeriesStatus,
+        meta.release_year,
     )
-    .bind(id.as_uuid())
-    .bind(&meta.canonical_title)
-    .bind(&meta.description)
-    .bind(&meta.cover_url)
-    .bind(meta.content_type.as_str())
-    .bind(meta.status.as_str())
-    .bind(meta.release_year)
     .execute(exec)
     .await?;
     Ok(())
@@ -185,12 +175,14 @@ pub async fn update_series_meta<'e, E: PgExecutor<'e>>(
 
 /// Fetch one canonical series by id.
 pub async fn get_series<'e, E: PgExecutor<'e>>(exec: E, id: SeriesId) -> DbResult<Series> {
-    let row: Option<SeriesRow> = sqlx::query_as(concat!(
-        "SELECT ",
-        series_cols!(),
-        " FROM series WHERE id = $1"
-    ))
-    .bind(id.as_uuid())
+    let row = sqlx::query_as!(
+        SeriesRow,
+        "SELECT id, canonical_title, normalized_title, description, cover_url, \
+         content_type AS \"content_type: ContentType\", status AS \"status: SeriesStatus\", \
+         release_year, created_at, updated_at \
+         FROM series WHERE id = $1",
+        id.as_uuid(),
+    )
     .fetch_optional(exec)
     .await?;
     row.ok_or(DbError::NotFound)?.try_into()
@@ -221,12 +213,13 @@ pub async fn list_series_for_enrichment<'e, E: PgExecutor<'e>>(
         description: Option<String>,
         cover_url: Option<String>,
     }
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows = sqlx::query_as!(
+        Row,
         "SELECT id, canonical_title, description, cover_url FROM series \
          ORDER BY updated_at ASC LIMIT $1 OFFSET $2",
+        limit,
+        offset,
     )
-    .bind(limit)
-    .bind(offset)
     .fetch_all(exec)
     .await?;
     Ok(rows
@@ -264,22 +257,22 @@ pub async fn apply_enrichment(
     enrichment: &MetadataEnrichment<'_>,
 ) -> DbResult<()> {
     let mut tx = pool.begin().await?;
-    sqlx::query(
+    sqlx::query!(
         "UPDATE series SET \
             description = COALESCE($2, description), \
             cover_url = COALESCE($3, cover_url), \
             content_type = CASE WHEN content_type = 'unknown' \
-                                THEN COALESCE($4::content_type, content_type) \
+                                THEN COALESCE($4::text::content_type, content_type) \
                                 ELSE content_type END, \
             release_year = COALESCE(release_year, $5), \
             updated_at = now() \
          WHERE id = $1",
+        series_id.as_uuid(),
+        enrichment.description,
+        enrichment.cover_url,
+        enrichment.content_type,
+        enrichment.release_year,
     )
-    .bind(series_id.as_uuid())
-    .bind(enrichment.description)
-    .bind(enrichment.cover_url)
-    .bind(enrichment.content_type)
-    .bind(enrichment.release_year)
     .execute(&mut *tx)
     .await?;
     if !enrichment.alt_titles.is_empty() {
@@ -305,13 +298,13 @@ pub async fn add_series_titles(
         if normalized.is_empty() {
             continue;
         }
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO series_titles (series_id, title, normalized) VALUES ($1,$2,$3) \
              ON CONFLICT (series_id, normalized) DO UPDATE SET title = EXCLUDED.title",
+            series_id.as_uuid(),
+            title,
+            normalized,
         )
-        .bind(series_id.as_uuid())
-        .bind(title)
-        .bind(normalized)
         .execute(&mut *conn)
         .await?;
     }
@@ -348,20 +341,20 @@ pub async fn add_series_tags(
         if slug.is_empty() {
             continue;
         }
-        let tag_id: Uuid = sqlx::query_scalar(
+        let tag_id = sqlx::query_scalar!(
             "INSERT INTO tags (slug, name) VALUES ($1,$2) \
              ON CONFLICT (slug) DO UPDATE SET name = tags.name RETURNING id",
+            &slug,
+            name,
         )
-        .bind(&slug)
-        .bind(name)
         .fetch_one(&mut *conn)
         .await?;
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO series_tags (series_id, tag_id) VALUES ($1,$2) \
              ON CONFLICT DO NOTHING",
+            series_id.as_uuid(),
+            tag_id,
         )
-        .bind(series_id.as_uuid())
-        .bind(tag_id)
         .execute(&mut *conn)
         .await?;
     }
@@ -380,20 +373,20 @@ pub async fn add_series_authors(
         if slug.is_empty() {
             continue;
         }
-        let author_id: Uuid = sqlx::query_scalar(
+        let author_id = sqlx::query_scalar!(
             "INSERT INTO authors (slug, name) VALUES ($1,$2) \
              ON CONFLICT (slug) DO UPDATE SET name = authors.name RETURNING id",
+            &slug,
+            name,
         )
-        .bind(&slug)
-        .bind(name)
         .fetch_one(&mut *conn)
         .await?;
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO series_authors (series_id, author_id) VALUES ($1,$2) \
              ON CONFLICT DO NOTHING",
+            series_id.as_uuid(),
+            author_id,
         )
-        .bind(series_id.as_uuid())
-        .bind(author_id)
         .execute(&mut *conn)
         .await?;
     }
@@ -414,7 +407,7 @@ struct SourceRow {
     content_hash: Option<Vec<u8>>,
     chapter_count: i32,
     last_scanned_at: Option<OffsetDateTime>,
-    state: String,
+    state: ProviderState,
 }
 
 impl TryFrom<SourceRow> for SeriesSource {
@@ -429,17 +422,9 @@ impl TryFrom<SourceRow> for SeriesSource {
             content_hash: r.content_hash,
             chapter_count: r.chapter_count,
             last_scanned_at: r.last_scanned_at,
-            state: ProviderState::from_str(&r.state)?,
+            state: r.state,
         })
     }
-}
-
-/// `series_sources` column projection as a literal.
-macro_rules! source_cols {
-    () => {
-        "id, series_id, provider_id, source_path, provider_title, \
-         content_hash, chapter_count, last_scanned_at, state::text AS state"
-    };
 }
 
 /// Upsert the (provider, path) source for a series. Idempotent on `(provider_id, source_path)`.
@@ -450,18 +435,18 @@ pub async fn upsert_source<'e, E: PgExecutor<'e>>(
     source_path: &str,
     provider_title: Option<&str>,
 ) -> DbResult<SeriesSourceId> {
-    let id: Uuid = sqlx::query_scalar(
+    let id = sqlx::query_scalar!(
         "INSERT INTO series_sources (id, series_id, provider_id, source_path, provider_title) \
          VALUES ($1,$2,$3,$4,$5) \
          ON CONFLICT (provider_id, source_path) DO UPDATE \
             SET provider_title = EXCLUDED.provider_title \
          RETURNING id",
+        SeriesSourceId::new().as_uuid(),
+        series_id.as_uuid(),
+        provider_id.as_uuid(),
+        source_path,
+        provider_title,
     )
-    .bind(SeriesSourceId::new().as_uuid())
-    .bind(series_id.as_uuid())
-    .bind(provider_id.as_uuid())
-    .bind(source_path)
-    .bind(provider_title)
     .fetch_one(exec)
     .await?;
     Ok(SeriesSourceId::from_uuid(id))
@@ -489,11 +474,11 @@ pub async fn register_source_stub(
     let mut tx = pool.begin().await?;
 
     // Already registered (this or an earlier scan) — leave the enriched row untouched.
-    let existing: Option<Uuid> = sqlx::query_scalar(
+    let existing = sqlx::query_scalar!(
         "SELECT id FROM series_sources WHERE provider_id = $1 AND source_path = $2",
+        provider_id.as_uuid(),
+        source_path,
     )
-    .bind(provider_id.as_uuid())
-    .bind(source_path)
     .fetch_optional(&mut *tx)
     .await?;
     if existing.is_some() {
@@ -523,13 +508,13 @@ pub async fn update_source_scan<'e, E: PgExecutor<'e>>(
     content_hash: &[u8],
     chapter_count: i32,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE series_sources SET content_hash = $2, chapter_count = $3, \
          last_scanned_at = now() WHERE id = $1",
+        source_id.as_uuid(),
+        content_hash,
+        chapter_count,
     )
-    .bind(source_id.as_uuid())
-    .bind(content_hash)
-    .bind(chapter_count)
     .execute(exec)
     .await?;
     Ok(())
@@ -541,11 +526,11 @@ pub async fn source_content_hash<'e, E: PgExecutor<'e>>(
     provider_id: ProviderId,
     source_path: &str,
 ) -> DbResult<Option<Vec<u8>>> {
-    let hash: Option<Option<Vec<u8>>> = sqlx::query_scalar(
+    let hash = sqlx::query_scalar!(
         "SELECT content_hash FROM series_sources WHERE provider_id = $1 AND source_path = $2",
+        provider_id.as_uuid(),
+        source_path,
     )
-    .bind(provider_id.as_uuid())
-    .bind(source_path)
     .fetch_optional(exec)
     .await?;
     Ok(hash.flatten())
@@ -556,12 +541,13 @@ pub async fn list_sources_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
 ) -> DbResult<Vec<SeriesSource>> {
-    let rows: Vec<SourceRow> = sqlx::query_as(concat!(
-        "SELECT ",
-        source_cols!(),
-        " FROM series_sources WHERE series_id = $1 ORDER BY id"
-    ))
-    .bind(series_id.as_uuid())
+    let rows = sqlx::query_as!(
+        SourceRow,
+        "SELECT id, series_id, provider_id, source_path, provider_title, \
+         content_hash, chapter_count, last_scanned_at, state AS \"state: ProviderState\" \
+         FROM series_sources WHERE series_id = $1 ORDER BY id",
+        series_id.as_uuid(),
+    )
     .fetch_all(exec)
     .await?;
     rows.into_iter().map(SeriesSource::try_from).collect()
@@ -624,21 +610,21 @@ pub async fn upsert_chapter<'e, E: PgExecutor<'e>>(
     source_id: SeriesSourceId,
     ch: &ChapterUpsert,
 ) -> DbResult<ChapterUpsertResult> {
-    let inserted: bool = sqlx::query_scalar(
+    let inserted = sqlx::query_scalar!(
         "INSERT INTO chapters (id, series_source_id, number, volume, title, path, published_at) \
-         VALUES ($1,$2,$3::numeric(10,4),$4,$5,$6,$7) \
+         VALUES ($1,$2,$3::float8::numeric(10,4),$4,$5,$6,$7) \
          ON CONFLICT (series_source_id, number) DO UPDATE \
             SET title = EXCLUDED.title, path = EXCLUDED.path, \
                 published_at = COALESCE(EXCLUDED.published_at, chapters.published_at) \
-         RETURNING (xmax = 0) AS inserted",
+         RETURNING (xmax = 0) AS \"inserted!\"",
+        ChapterId::new().as_uuid(),
+        source_id.as_uuid(),
+        ch.number,
+        ch.volume,
+        ch.title.as_deref(),
+        &ch.path,
+        ch.published_at,
     )
-    .bind(ChapterId::new().as_uuid())
-    .bind(source_id.as_uuid())
-    .bind(ch.number)
-    .bind(ch.volume)
-    .bind(&ch.title)
-    .bind(&ch.path)
-    .bind(ch.published_at)
     .fetch_one(exec)
     .await?;
     Ok(ChapterUpsertResult {
@@ -652,11 +638,12 @@ pub async fn max_chapter_number<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
 ) -> DbResult<Option<f64>> {
-    let max: Option<f64> =
-        sqlx::query_scalar("SELECT MAX(number)::float8 FROM chapters WHERE series_source_id = $1")
-            .bind(source_id.as_uuid())
-            .fetch_one(exec)
-            .await?;
+    let max = sqlx::query_scalar!(
+        "SELECT MAX(number)::float8 AS \"max?\" FROM chapters WHERE series_source_id = $1",
+        source_id.as_uuid(),
+    )
+    .fetch_one(exec)
+    .await?;
     Ok(max)
 }
 
@@ -670,10 +657,11 @@ pub async fn count_full_chapters<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
 ) -> DbResult<i32> {
-    let count: i64 = sqlx::query_scalar(
-        "SELECT count(DISTINCT floor(number)) FROM chapters WHERE series_source_id = $1",
+    let count = sqlx::query_scalar!(
+        "SELECT count(DISTINCT floor(number)) AS \"count!\" FROM chapters \
+         WHERE series_source_id = $1",
+        source_id.as_uuid(),
     )
-    .bind(source_id.as_uuid())
     .fetch_one(exec)
     .await?;
     Ok(i32::try_from(count).unwrap_or(i32::MAX))
@@ -684,12 +672,13 @@ pub async fn list_chapters<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
 ) -> DbResult<Vec<Chapter>> {
-    let rows: Vec<ChapterRow> = sqlx::query_as(
-        "SELECT id, series_source_id, number::float8 AS number, volume, title, path, \
+    let rows = sqlx::query_as!(
+        ChapterRow,
+        "SELECT id, series_source_id, number::float8 AS \"number!\", volume, title, path, \
          published_at, discovered_at FROM chapters WHERE series_source_id = $1 \
          ORDER BY number DESC",
+        source_id.as_uuid(),
     )
-    .bind(source_id.as_uuid())
     .fetch_all(exec)
     .await?;
     Ok(rows.into_iter().map(Chapter::from).collect())
@@ -720,74 +709,74 @@ pub async fn list_series<'e, E: PgExecutor<'e>>(
         normalized_title: String,
         description: Option<String>,
         cover_url: Option<String>,
-        content_type: String,
-        status: String,
+        content_type: ContentType,
+        status: SeriesStatus,
         release_year: Option<i32>,
         created_at: OffsetDateTime,
         updated_at: OffsetDateTime,
         source_count: i64,
     }
 
-    let sql = if query.is_some() {
+    let rows = if let Some(q) = query {
         // Search matches the canonical title, the full-text vector, **and** any alternative
         // title/synonym (english/native/AniList synonyms recorded in `series_titles`), so a
         // work found under a non-primary name still surfaces. Ranking takes the best trigram
         // similarity across the canonical and alternative titles.
-        "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
-                s.content_type::text AS content_type, s.status::text AS status, s.release_year, \
-                s.created_at, s.updated_at, \
-                (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS source_count \
-         FROM series s \
-         WHERE s.normalized_title % $1 OR s.search_vec @@ plainto_tsquery('simple', $1) \
-            OR EXISTS (SELECT 1 FROM series_titles st \
-                       WHERE st.series_id = s.id AND st.normalized % $1) \
-         ORDER BY GREATEST( \
-                    similarity(s.normalized_title, $1), \
-                    COALESCE((SELECT MAX(similarity(st.normalized, $1)) \
-                              FROM series_titles st WHERE st.series_id = s.id), 0) \
-                  ) DESC \
-         LIMIT $2"
+        sqlx::query_as!(
+            ListRow,
+            "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
+                    s.content_type AS \"content_type: ContentType\", \
+                    s.status AS \"status: SeriesStatus\", s.release_year, \
+                    s.created_at, s.updated_at, \
+                    (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\" \
+             FROM series s \
+             WHERE s.normalized_title % $1 OR s.search_vec @@ plainto_tsquery('simple', $1) \
+                OR EXISTS (SELECT 1 FROM series_titles st \
+                           WHERE st.series_id = s.id AND st.normalized % $1) \
+             ORDER BY GREATEST( \
+                        similarity(s.normalized_title, $1), \
+                        COALESCE((SELECT MAX(similarity(st.normalized, $1)) \
+                                  FROM series_titles st WHERE st.series_id = s.id), 0) \
+                      ) DESC \
+             LIMIT $2",
+            q,
+            limit,
+        )
+        .fetch_all(exec)
+        .await?
     } else {
-        "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
-                s.content_type::text AS content_type, s.status::text AS status, s.release_year, \
-                s.created_at, s.updated_at, \
-                (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS source_count \
-         FROM series s ORDER BY s.updated_at DESC LIMIT $2"
+        sqlx::query_as!(
+            ListRow,
+            "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
+                    s.content_type AS \"content_type: ContentType\", \
+                    s.status AS \"status: SeriesStatus\", s.release_year, \
+                    s.created_at, s.updated_at, \
+                    (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\" \
+             FROM series s ORDER BY s.updated_at DESC LIMIT $1",
+            limit,
+        )
+        .fetch_all(exec)
+        .await?
     };
 
-    let rows: Vec<ListRow> = if let Some(q) = query {
-        sqlx::query_as(sql)
-            .bind(q)
-            .bind(limit)
-            .fetch_all(exec)
-            .await?
-    } else {
-        sqlx::query_as(sql)
-            .bind(Option::<String>::None)
-            .bind(limit)
-            .fetch_all(exec)
-            .await?
-    };
-
-    rows.into_iter()
-        .map(|r| {
-            Ok(SeriesListItem {
-                series: Series {
-                    id: SeriesId::from_uuid(r.id),
-                    canonical_title: r.canonical_title,
-                    normalized_title: r.normalized_title,
-                    description: r.description,
-                    cover_url: r.cover_url,
-                    content_type: ContentType::from_str(&r.content_type)?,
-                    status: SeriesStatus::from_str(&r.status)?,
-                    release_year: r.release_year,
-                    created_at: r.created_at,
-                    updated_at: r.updated_at,
-                },
-                source_count: r.source_count,
-            })
+    Ok(rows
+        .into_iter()
+        .map(|r| SeriesListItem {
+            series: Series {
+                id: SeriesId::from_uuid(r.id),
+                canonical_title: r.canonical_title,
+                normalized_title: r.normalized_title,
+                description: r.description,
+                cover_url: r.cover_url,
+                content_type: r.content_type,
+                status: r.status,
+                release_year: r.release_year,
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+            },
+            source_count: r.source_count,
         })
-        .collect()
+        .collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -832,8 +821,8 @@ struct FilteredRow {
     normalized_title: String,
     description: Option<String>,
     cover_url: Option<String>,
-    content_type: String,
-    status: String,
+    content_type: ContentType,
+    status: SeriesStatus,
     release_year: Option<i32>,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
@@ -841,50 +830,16 @@ struct FilteredRow {
     total: i64,
 }
 
-/// Build the full filtered query with a static `ORDER BY` clause spliced in. Every filter
-/// is expressed as an `($n IS NULL OR …)` guard so the one SQL string stays `'static`
-/// (`SQLx` 0.9 rejects dynamically-built SQL) while binds toggle each constraint on or off.
-macro_rules! filtered_series_sql {
-    ($order:literal) => {
-        concat!(
-            "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
-                    s.content_type::text AS content_type, s.status::text AS status, s.release_year, \
-                    s.created_at, s.updated_at, \
-                    (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS source_count, \
-                    (SELECT COALESCE(sum(ss.chapter_count),0)::int8 FROM series_sources ss \
-                       WHERE ss.series_id = s.id) AS chapter_total, \
-                    count(*) OVER() AS total \
-             FROM series s \
-             WHERE ($1::text IS NULL OR s.normalized_title % $1 \
-                     OR s.search_vec @@ plainto_tsquery('simple', $1) \
-                     OR EXISTS (SELECT 1 FROM series_titles st \
-                                WHERE st.series_id = s.id AND st.normalized % $1)) \
-               AND ($2::text IS NULL OR s.content_type::text = $2) \
-               AND ($3::text IS NULL OR s.status::text = $3) \
-               AND ($4::int IS NULL OR s.release_year >= $4) \
-               AND ($5::int IS NULL OR s.release_year <= $5) \
-               AND ($6::text IS NULL OR EXISTS ( \
-                     SELECT 1 FROM series_sources ss JOIN providers p ON p.id = ss.provider_id \
-                     WHERE ss.series_id = s.id AND p.slug = $6)) \
-               AND ($7::int IS NULL OR ( \
-                     SELECT COALESCE(sum(ss.chapter_count),0) FROM series_sources ss \
-                     WHERE ss.series_id = s.id) >= $7) \
-               AND (cardinality($8::text[]) = 0 OR NOT EXISTS ( \
-                     SELECT unnest($8::text[]) \
-                     EXCEPT \
-                     SELECT t.slug FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
-                     WHERE stg.series_id = s.id)) \
-               AND (cardinality($9::text[]) = 0 OR NOT EXISTS ( \
-                     SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
-                     WHERE stg.series_id = s.id AND t.slug = ANY($9::text[]))) ",
-            $order,
-            " LIMIT $10 OFFSET $11"
-        )
-    };
-}
-
 /// Query the browse list with server-side filtering, sorting, and offset pagination
 /// (frontend §9.1). Returns the page plus the total match count for the pager.
+///
+/// Every filter is expressed as an `($n IS NULL OR …)` guard so each sort variant stays a
+/// single static SQL string (`sqlx::query_as!` requires a string literal) while binds toggle
+/// each constraint on or off.
+// The compile-time-checked macros cannot take a dynamically-assembled SQL string, so each
+// sort order is spelled out as its own otherwise-identical `query_as!`; that repetition is
+// what pushes this over the line-count lint, not real complexity.
+#[allow(clippy::too_many_lines)]
 pub async fn list_series_filtered<'e, E: PgExecutor<'e>>(
     exec: E,
     filter: &SeriesFilter,
@@ -894,53 +849,280 @@ pub async fn list_series_filtered<'e, E: PgExecutor<'e>>(
         .as_deref()
         .map(str::trim)
         .filter(|q| !q.is_empty());
-    let sql = match filter.sort.as_deref() {
-        Some("title") => filtered_series_sql!("ORDER BY s.canonical_title ASC"),
-        Some("chapters") => filtered_series_sql!("ORDER BY chapter_total DESC, s.updated_at DESC"),
-        Some("sources") => filtered_series_sql!("ORDER BY source_count DESC, s.updated_at DESC"),
+
+    // Shared projection + WHERE. `source_count` is ordinal 11; `ORDER BY` variants that
+    // previously referenced the `chapter_total` select-alias inline that expression instead
+    // (compile-time macros cannot carry `!` markers into ORDER BY aliases, and an unused
+    // select column would not map onto `FilteredRow`).
+    let rows = match filter.sort.as_deref() {
+        Some("title") => {
+            sqlx::query_as!(
+                FilteredRow,
+                "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
+                        s.content_type AS \"content_type: ContentType\", \
+                        s.status AS \"status: SeriesStatus\", s.release_year, \
+                        s.created_at, s.updated_at, \
+                        (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\", \
+                        count(*) OVER() AS \"total!\" \
+                 FROM series s \
+                 WHERE ($1::text IS NULL OR s.normalized_title % $1 \
+                         OR s.search_vec @@ plainto_tsquery('simple', $1) \
+                         OR EXISTS (SELECT 1 FROM series_titles st \
+                                    WHERE st.series_id = s.id AND st.normalized % $1)) \
+                   AND ($2::text IS NULL OR s.content_type::text = $2) \
+                   AND ($3::text IS NULL OR s.status::text = $3) \
+                   AND ($4::int IS NULL OR s.release_year >= $4) \
+                   AND ($5::int IS NULL OR s.release_year <= $5) \
+                   AND ($6::text IS NULL OR EXISTS ( \
+                         SELECT 1 FROM series_sources ss JOIN providers p ON p.id = ss.provider_id \
+                         WHERE ss.series_id = s.id AND p.slug = $6)) \
+                   AND ($7::int IS NULL OR ( \
+                         SELECT COALESCE(sum(ss.chapter_count),0) FROM series_sources ss \
+                         WHERE ss.series_id = s.id) >= $7) \
+                   AND (cardinality($8::text[]) = 0 OR NOT EXISTS ( \
+                         SELECT unnest($8::text[]) \
+                         EXCEPT \
+                         SELECT t.slug FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                         WHERE stg.series_id = s.id)) \
+                   AND (cardinality($9::text[]) = 0 OR NOT EXISTS ( \
+                         SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                         WHERE stg.series_id = s.id AND t.slug = ANY($9::text[]))) \
+                 ORDER BY s.canonical_title ASC \
+                 LIMIT $10 OFFSET $11",
+                query,
+                filter.content_type.as_deref(),
+                filter.status.as_deref(),
+                filter.year_min,
+                filter.year_max,
+                filter.provider_slug.as_deref(),
+                filter.min_chapters,
+                &filter.tags as &[String],
+                &filter.exclude_tags as &[String],
+                filter.limit,
+                filter.offset,
+            )
+            .fetch_all(exec)
+            .await?
+        }
+        Some("chapters") => {
+            sqlx::query_as!(
+                FilteredRow,
+                "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
+                        s.content_type AS \"content_type: ContentType\", \
+                        s.status AS \"status: SeriesStatus\", s.release_year, \
+                        s.created_at, s.updated_at, \
+                        (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\", \
+                        count(*) OVER() AS \"total!\" \
+                 FROM series s \
+                 WHERE ($1::text IS NULL OR s.normalized_title % $1 \
+                         OR s.search_vec @@ plainto_tsquery('simple', $1) \
+                         OR EXISTS (SELECT 1 FROM series_titles st \
+                                    WHERE st.series_id = s.id AND st.normalized % $1)) \
+                   AND ($2::text IS NULL OR s.content_type::text = $2) \
+                   AND ($3::text IS NULL OR s.status::text = $3) \
+                   AND ($4::int IS NULL OR s.release_year >= $4) \
+                   AND ($5::int IS NULL OR s.release_year <= $5) \
+                   AND ($6::text IS NULL OR EXISTS ( \
+                         SELECT 1 FROM series_sources ss JOIN providers p ON p.id = ss.provider_id \
+                         WHERE ss.series_id = s.id AND p.slug = $6)) \
+                   AND ($7::int IS NULL OR ( \
+                         SELECT COALESCE(sum(ss.chapter_count),0) FROM series_sources ss \
+                         WHERE ss.series_id = s.id) >= $7) \
+                   AND (cardinality($8::text[]) = 0 OR NOT EXISTS ( \
+                         SELECT unnest($8::text[]) \
+                         EXCEPT \
+                         SELECT t.slug FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                         WHERE stg.series_id = s.id)) \
+                   AND (cardinality($9::text[]) = 0 OR NOT EXISTS ( \
+                         SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                         WHERE stg.series_id = s.id AND t.slug = ANY($9::text[]))) \
+                 ORDER BY (SELECT COALESCE(sum(ss.chapter_count),0)::int8 FROM series_sources ss \
+                             WHERE ss.series_id = s.id) DESC, s.updated_at DESC \
+                 LIMIT $10 OFFSET $11",
+                query,
+                filter.content_type.as_deref(),
+                filter.status.as_deref(),
+                filter.year_min,
+                filter.year_max,
+                filter.provider_slug.as_deref(),
+                filter.min_chapters,
+                &filter.tags as &[String],
+                &filter.exclude_tags as &[String],
+                filter.limit,
+                filter.offset,
+            )
+            .fetch_all(exec)
+            .await?
+        }
+        Some("sources") => {
+            sqlx::query_as!(
+                FilteredRow,
+                "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
+                        s.content_type AS \"content_type: ContentType\", \
+                        s.status AS \"status: SeriesStatus\", s.release_year, \
+                        s.created_at, s.updated_at, \
+                        (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\", \
+                        count(*) OVER() AS \"total!\" \
+                 FROM series s \
+                 WHERE ($1::text IS NULL OR s.normalized_title % $1 \
+                         OR s.search_vec @@ plainto_tsquery('simple', $1) \
+                         OR EXISTS (SELECT 1 FROM series_titles st \
+                                    WHERE st.series_id = s.id AND st.normalized % $1)) \
+                   AND ($2::text IS NULL OR s.content_type::text = $2) \
+                   AND ($3::text IS NULL OR s.status::text = $3) \
+                   AND ($4::int IS NULL OR s.release_year >= $4) \
+                   AND ($5::int IS NULL OR s.release_year <= $5) \
+                   AND ($6::text IS NULL OR EXISTS ( \
+                         SELECT 1 FROM series_sources ss JOIN providers p ON p.id = ss.provider_id \
+                         WHERE ss.series_id = s.id AND p.slug = $6)) \
+                   AND ($7::int IS NULL OR ( \
+                         SELECT COALESCE(sum(ss.chapter_count),0) FROM series_sources ss \
+                         WHERE ss.series_id = s.id) >= $7) \
+                   AND (cardinality($8::text[]) = 0 OR NOT EXISTS ( \
+                         SELECT unnest($8::text[]) \
+                         EXCEPT \
+                         SELECT t.slug FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                         WHERE stg.series_id = s.id)) \
+                   AND (cardinality($9::text[]) = 0 OR NOT EXISTS ( \
+                         SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                         WHERE stg.series_id = s.id AND t.slug = ANY($9::text[]))) \
+                 ORDER BY 11 DESC, s.updated_at DESC \
+                 LIMIT $10 OFFSET $11",
+                query,
+                filter.content_type.as_deref(),
+                filter.status.as_deref(),
+                filter.year_min,
+                filter.year_max,
+                filter.provider_slug.as_deref(),
+                filter.min_chapters,
+                &filter.tags as &[String],
+                &filter.exclude_tags as &[String],
+                filter.limit,
+                filter.offset,
+            )
+            .fetch_all(exec)
+            .await?
+        }
         Some("year") => {
-            filtered_series_sql!("ORDER BY s.release_year DESC NULLS LAST, s.updated_at DESC")
+            sqlx::query_as!(
+                FilteredRow,
+                "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
+                        s.content_type AS \"content_type: ContentType\", \
+                        s.status AS \"status: SeriesStatus\", s.release_year, \
+                        s.created_at, s.updated_at, \
+                        (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\", \
+                        count(*) OVER() AS \"total!\" \
+                 FROM series s \
+                 WHERE ($1::text IS NULL OR s.normalized_title % $1 \
+                         OR s.search_vec @@ plainto_tsquery('simple', $1) \
+                         OR EXISTS (SELECT 1 FROM series_titles st \
+                                    WHERE st.series_id = s.id AND st.normalized % $1)) \
+                   AND ($2::text IS NULL OR s.content_type::text = $2) \
+                   AND ($3::text IS NULL OR s.status::text = $3) \
+                   AND ($4::int IS NULL OR s.release_year >= $4) \
+                   AND ($5::int IS NULL OR s.release_year <= $5) \
+                   AND ($6::text IS NULL OR EXISTS ( \
+                         SELECT 1 FROM series_sources ss JOIN providers p ON p.id = ss.provider_id \
+                         WHERE ss.series_id = s.id AND p.slug = $6)) \
+                   AND ($7::int IS NULL OR ( \
+                         SELECT COALESCE(sum(ss.chapter_count),0) FROM series_sources ss \
+                         WHERE ss.series_id = s.id) >= $7) \
+                   AND (cardinality($8::text[]) = 0 OR NOT EXISTS ( \
+                         SELECT unnest($8::text[]) \
+                         EXCEPT \
+                         SELECT t.slug FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                         WHERE stg.series_id = s.id)) \
+                   AND (cardinality($9::text[]) = 0 OR NOT EXISTS ( \
+                         SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                         WHERE stg.series_id = s.id AND t.slug = ANY($9::text[]))) \
+                 ORDER BY s.release_year DESC NULLS LAST, s.updated_at DESC \
+                 LIMIT $10 OFFSET $11",
+                query,
+                filter.content_type.as_deref(),
+                filter.status.as_deref(),
+                filter.year_min,
+                filter.year_max,
+                filter.provider_slug.as_deref(),
+                filter.min_chapters,
+                &filter.tags as &[String],
+                &filter.exclude_tags as &[String],
+                filter.limit,
+                filter.offset,
+            )
+            .fetch_all(exec)
+            .await?
         }
         // `updated` and design-only `rating` (no column) both fall back to recency.
-        _ => filtered_series_sql!("ORDER BY s.updated_at DESC"),
+        _ => {
+            sqlx::query_as!(
+                FilteredRow,
+                "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
+                        s.content_type AS \"content_type: ContentType\", \
+                        s.status AS \"status: SeriesStatus\", s.release_year, \
+                        s.created_at, s.updated_at, \
+                        (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\", \
+                        count(*) OVER() AS \"total!\" \
+                 FROM series s \
+                 WHERE ($1::text IS NULL OR s.normalized_title % $1 \
+                         OR s.search_vec @@ plainto_tsquery('simple', $1) \
+                         OR EXISTS (SELECT 1 FROM series_titles st \
+                                    WHERE st.series_id = s.id AND st.normalized % $1)) \
+                   AND ($2::text IS NULL OR s.content_type::text = $2) \
+                   AND ($3::text IS NULL OR s.status::text = $3) \
+                   AND ($4::int IS NULL OR s.release_year >= $4) \
+                   AND ($5::int IS NULL OR s.release_year <= $5) \
+                   AND ($6::text IS NULL OR EXISTS ( \
+                         SELECT 1 FROM series_sources ss JOIN providers p ON p.id = ss.provider_id \
+                         WHERE ss.series_id = s.id AND p.slug = $6)) \
+                   AND ($7::int IS NULL OR ( \
+                         SELECT COALESCE(sum(ss.chapter_count),0) FROM series_sources ss \
+                         WHERE ss.series_id = s.id) >= $7) \
+                   AND (cardinality($8::text[]) = 0 OR NOT EXISTS ( \
+                         SELECT unnest($8::text[]) \
+                         EXCEPT \
+                         SELECT t.slug FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                         WHERE stg.series_id = s.id)) \
+                   AND (cardinality($9::text[]) = 0 OR NOT EXISTS ( \
+                         SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                         WHERE stg.series_id = s.id AND t.slug = ANY($9::text[]))) \
+                 ORDER BY s.updated_at DESC \
+                 LIMIT $10 OFFSET $11",
+                query,
+                filter.content_type.as_deref(),
+                filter.status.as_deref(),
+                filter.year_min,
+                filter.year_max,
+                filter.provider_slug.as_deref(),
+                filter.min_chapters,
+                &filter.tags as &[String],
+                &filter.exclude_tags as &[String],
+                filter.limit,
+                filter.offset,
+            )
+            .fetch_all(exec)
+            .await?
+        }
     };
-
-    let rows: Vec<FilteredRow> = sqlx::query_as(sql)
-        .bind(query)
-        .bind(filter.content_type.as_deref())
-        .bind(filter.status.as_deref())
-        .bind(filter.year_min)
-        .bind(filter.year_max)
-        .bind(filter.provider_slug.as_deref())
-        .bind(filter.min_chapters)
-        .bind(&filter.tags)
-        .bind(&filter.exclude_tags)
-        .bind(filter.limit)
-        .bind(filter.offset)
-        .fetch_all(exec)
-        .await?;
 
     let total = rows.first().map_or(0, |r| r.total);
     let items = rows
         .into_iter()
-        .map(|r| {
-            Ok(SeriesListItem {
-                series: Series {
-                    id: SeriesId::from_uuid(r.id),
-                    canonical_title: r.canonical_title,
-                    normalized_title: r.normalized_title,
-                    description: r.description,
-                    cover_url: r.cover_url,
-                    content_type: ContentType::from_str(&r.content_type)?,
-                    status: SeriesStatus::from_str(&r.status)?,
-                    release_year: r.release_year,
-                    created_at: r.created_at,
-                    updated_at: r.updated_at,
-                },
-                source_count: r.source_count,
-            })
+        .map(|r| SeriesListItem {
+            series: Series {
+                id: SeriesId::from_uuid(r.id),
+                canonical_title: r.canonical_title,
+                normalized_title: r.normalized_title,
+                description: r.description,
+                cover_url: r.cover_url,
+                content_type: r.content_type,
+                status: r.status,
+                release_year: r.release_year,
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+            },
+            source_count: r.source_count,
         })
-        .collect::<DbResult<Vec<_>>>()?;
+        .collect();
     Ok(SeriesPage { items, total })
 }
 
@@ -949,12 +1131,13 @@ pub async fn list_series_titles<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
 ) -> DbResult<Vec<String>> {
-    let rows: Vec<(String,)> =
-        sqlx::query_as("SELECT title FROM series_titles WHERE series_id = $1 ORDER BY title")
-            .bind(series_id.as_uuid())
-            .fetch_all(exec)
-            .await?;
-    Ok(rows.into_iter().map(|r| r.0).collect())
+    let rows = sqlx::query_scalar!(
+        "SELECT title FROM series_titles WHERE series_id = $1 ORDER BY title",
+        series_id.as_uuid(),
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows)
 }
 
 /// Author/artist credits attached to a series, alphabetically (mirrors [`list_series_tags`]).
@@ -968,11 +1151,12 @@ pub async fn list_series_authors<'e, E: PgExecutor<'e>>(
         slug: String,
         name: String,
     }
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows = sqlx::query_as!(
+        Row,
         "SELECT a.id, a.slug, a.name FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
          WHERE sa.series_id = $1 ORDER BY a.name",
+        series_id.as_uuid(),
     )
-    .bind(series_id.as_uuid())
     .fetch_all(exec)
     .await?;
     Ok(rows
@@ -996,11 +1180,12 @@ pub async fn list_series_tags<'e, E: PgExecutor<'e>>(
         slug: String,
         name: String,
     }
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows = sqlx::query_as!(
+        Row,
         "SELECT t.id, t.slug, t.name FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
          WHERE stg.series_id = $1 ORDER BY t.name",
+        series_id.as_uuid(),
     )
-    .bind(series_id.as_uuid())
     .fetch_all(exec)
     .await?;
     Ok(rows
@@ -1021,7 +1206,7 @@ pub async fn list_tags<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<tankovaul
         slug: String,
         name: String,
     }
-    let rows: Vec<Row> = sqlx::query_as("SELECT id, slug, name FROM tags ORDER BY name")
+    let rows = sqlx::query_as!(Row, "SELECT id, slug, name FROM tags ORDER BY name")
         .fetch_all(exec)
         .await?;
     Ok(rows
@@ -1040,15 +1225,21 @@ pub async fn source_provider_base_url<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
 ) -> DbResult<(ProviderId, String)> {
-    let row: Option<(Uuid, String)> = sqlx::query_as(
+    #[derive(FromRow)]
+    struct Row {
+        id: Uuid,
+        base_url: String,
+    }
+    let row = sqlx::query_as!(
+        Row,
         "SELECT p.id, p.base_url FROM providers p \
          JOIN series_sources ss ON ss.provider_id = p.id WHERE ss.id = $1",
+        source_id.as_uuid(),
     )
-    .bind(source_id.as_uuid())
     .fetch_optional(exec)
     .await?;
-    let (pid, base) = row.ok_or(DbError::NotFound)?;
-    Ok((ProviderId::from_uuid(pid), base))
+    let row = row.ok_or(DbError::NotFound)?;
+    Ok((ProviderId::from_uuid(row.id), row.base_url))
 }
 
 // ---------------------------------------------------------------------------

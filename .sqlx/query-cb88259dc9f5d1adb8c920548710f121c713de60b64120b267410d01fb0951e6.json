@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE merge_candidates SET resolved = true, resolved_by = $2, resolved_at = now() WHERE id = $1 AND NOT resolved",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cb88259dc9f5d1adb8c920548710f121c713de60b64120b267410d01fb0951e6"
+}

@@ -1,0 +1,133 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (SELECT count(*) FROM providers) AS \"providers_total!\", (SELECT count(*) FROM providers WHERE state = 'active') AS \"providers_active!\", (SELECT count(*) FROM providers WHERE state = 'disabled') AS \"providers_disabled!\", (SELECT count(*) FROM providers WHERE state IN ('degraded','challenged','solving','blocked')) AS \"providers_unhealthy!\", (SELECT count(*) FROM series) AS \"series_total!\", (SELECT count(*) FROM series_sources) AS \"sources_total!\", (SELECT count(*) FROM chapters) AS \"chapters_total!\", (SELECT count(*) FROM chapters WHERE discovered_at > now() - interval '1 hour') AS \"chapters_1h!\", (SELECT count(*) FROM chapters WHERE discovered_at > now() - interval '24 hours') AS \"chapters_24h!\", (SELECT count(*) FROM chapters WHERE discovered_at > now() - interval '7 days') AS \"chapters_7d!\", (SELECT count(*) FROM users) AS \"users_total!\", (SELECT count(*) FROM merge_candidates WHERE NOT resolved) AS \"pending_merges!\", (SELECT count(*) FROM scan_runs WHERE state IN ('queued','running')) AS \"runs_active!\", (SELECT count(*) FROM scan_runs WHERE state = 'running') AS \"runs_running!\", (SELECT count(*) FROM scan_tasks WHERE state = 'queued') AS \"tasks_queued!\", (SELECT count(*) FROM scan_tasks WHERE state IN ('claimed','running')) AS \"tasks_running!\", (SELECT count(*) FROM scan_tasks WHERE state = 'failed' AND finished_at > now() - interval '24 hours') AS \"tasks_failed_24h!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "providers_total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "providers_active!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "providers_disabled!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "providers_unhealthy!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "series_total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "sources_total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "chapters_total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "chapters_1h!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "chapters_24h!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "chapters_7d!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "users_total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "pending_merges!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "runs_active!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "runs_running!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "tasks_queued!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "tasks_running!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 16,
+        "name": "tasks_failed_24h!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "9c2d2ba862e2c0ed00cb858d69d78e91e85f9e4d17cdb5380c534a4d4b765731"
+}

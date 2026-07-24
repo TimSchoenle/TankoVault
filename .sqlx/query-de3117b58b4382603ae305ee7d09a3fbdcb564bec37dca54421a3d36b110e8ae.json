@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH done AS ( UPDATE scan_tasks SET state = 'done', finished_at = now() WHERE id = $1 AND state <> 'done' RETURNING run_id ) UPDATE scan_runs SET done_tasks = done_tasks + 1 WHERE id = (SELECT run_id FROM done)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "de3117b58b4382603ae305ee7d09a3fbdcb564bec37dca54421a3d36b110e8ae"
+}

@@ -1,10 +1,9 @@
 //! User tracking: watchlist, read progress, and notifications (with fan-out helpers).
 
-use crate::error::{DbError, DbResult};
+use crate::error::DbResult;
 use crate::repo::catalog::SeriesListItem;
 use serde_json::Value as Json;
 use sqlx::{FromRow, PgExecutor};
-use std::str::FromStr;
 use tankovault_domain::{
     ContentType, Notification, NotificationId, Series, SeriesId, SeriesStatus, UserId, WatchStatus,
     WatchlistEntry,
@@ -24,16 +23,16 @@ pub async fn watchlist_upsert<'e, E: PgExecutor<'e>>(
     status: WatchStatus,
     notify: bool,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO watchlist_entries (user_id, series_id, status, notify) \
-         VALUES ($1,$2,$3::watch_status,$4) \
+         VALUES ($1,$2,$3,$4) \
          ON CONFLICT (user_id, series_id) DO UPDATE \
             SET status = EXCLUDED.status, notify = EXCLUDED.notify, updated_at = now()",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
+        status as WatchStatus,
+        notify,
     )
-    .bind(user_id.as_uuid())
-    .bind(series_id.as_uuid())
-    .bind(status.as_str())
-    .bind(notify)
     .execute(exec)
     .await?;
     Ok(())
@@ -45,11 +44,13 @@ pub async fn watchlist_remove<'e, E: PgExecutor<'e>>(
     user_id: UserId,
     series_id: SeriesId,
 ) -> DbResult<()> {
-    sqlx::query("DELETE FROM watchlist_entries WHERE user_id = $1 AND series_id = $2")
-        .bind(user_id.as_uuid())
-        .bind(series_id.as_uuid())
-        .execute(exec)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM watchlist_entries WHERE user_id = $1 AND series_id = $2",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
+    )
+    .execute(exec)
+    .await?;
     Ok(())
 }
 
@@ -62,28 +63,28 @@ pub async fn watchlist_list<'e, E: PgExecutor<'e>>(
     struct Row {
         user_id: Uuid,
         series_id: Uuid,
-        status: String,
+        status: WatchStatus,
         notify: bool,
         added_at: OffsetDateTime,
     }
-    let rows: Vec<Row> = sqlx::query_as(
-        "SELECT user_id, series_id, status::text AS status, notify, added_at \
+    let rows = sqlx::query_as!(
+        Row,
+        "SELECT user_id, series_id, status AS \"status: WatchStatus\", notify, added_at \
          FROM watchlist_entries WHERE user_id = $1 ORDER BY added_at DESC",
+        user_id.as_uuid(),
     )
-    .bind(user_id.as_uuid())
     .fetch_all(exec)
     .await?;
-    rows.into_iter()
-        .map(|r| {
-            Ok(WatchlistEntry {
-                user_id: UserId::from_uuid(r.user_id),
-                series_id: SeriesId::from_uuid(r.series_id),
-                status: r.status.parse().map_err(DbError::Enum)?,
-                notify: r.notify,
-                added_at: r.added_at,
-            })
+    Ok(rows
+        .into_iter()
+        .map(|r| WatchlistEntry {
+            user_id: UserId::from_uuid(r.user_id),
+            series_id: SeriesId::from_uuid(r.series_id),
+            status: r.status,
+            notify: r.notify,
+            added_at: r.added_at,
         })
-        .collect()
+        .collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -116,9 +117,9 @@ pub async fn progress_set<'e, E: PgExecutor<'e>>(
     series_id: SeriesId,
     last_read_whole_number: f64,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO read_progress (user_id, series_id, last_read_whole_number) \
-         VALUES ($1,$2,$3::numeric(10,4)) \
+         VALUES ($1,$2,$3::float8::numeric(10,4)) \
          ON CONFLICT (user_id, series_id) DO UPDATE \
             SET last_read_whole_number = EXCLUDED.last_read_whole_number, \
                 last_read_part_number = CASE \
@@ -126,10 +127,10 @@ pub async fn progress_set<'e, E: PgExecutor<'e>>(
                      AND floor(read_progress.last_read_part_number) <= EXCLUDED.last_read_whole_number \
                     THEN NULL ELSE read_progress.last_read_part_number END, \
                 updated_at = now()",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
+        last_read_whole_number,
     )
-    .bind(user_id.as_uuid())
-    .bind(series_id.as_uuid())
-    .bind(last_read_whole_number)
     .execute(exec)
     .await?;
     Ok(())
@@ -144,18 +145,18 @@ async fn progress_write<'e, E: PgExecutor<'e>>(
     whole: f64,
     part: Option<f64>,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO read_progress (user_id, series_id, last_read_whole_number, last_read_part_number) \
-         VALUES ($1,$2,$3::numeric(10,4),$4::numeric(10,4)) \
+         VALUES ($1,$2,$3::float8::numeric(10,4),$4::float8::numeric(10,4)) \
          ON CONFLICT (user_id, series_id) DO UPDATE \
             SET last_read_whole_number = EXCLUDED.last_read_whole_number, \
                 last_read_part_number  = EXCLUDED.last_read_part_number, \
                 updated_at = now()",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
+        whole,
+        part,
     )
-    .bind(user_id.as_uuid())
-    .bind(series_id.as_uuid())
-    .bind(whole)
-    .bind(part)
     .execute(exec)
     .await?;
     Ok(())
@@ -167,12 +168,12 @@ pub async fn progress_get<'e, E: PgExecutor<'e>>(
     user_id: UserId,
     series_id: SeriesId,
 ) -> DbResult<Option<f64>> {
-    let n: Option<f64> = sqlx::query_scalar(
-        "SELECT last_read_whole_number::float8 FROM read_progress \
+    let n = sqlx::query_scalar!(
+        "SELECT last_read_whole_number::float8 AS \"last_read_whole_number!\" FROM read_progress \
          WHERE user_id = $1 AND series_id = $2",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
     )
-    .bind(user_id.as_uuid())
-    .bind(series_id.as_uuid())
     .fetch_optional(exec)
     .await?;
     Ok(n)
@@ -190,13 +191,14 @@ pub async fn progress_get_full<'e, E: PgExecutor<'e>>(
         whole: f64,
         part: Option<f64>,
     }
-    let row: Option<Row> = sqlx::query_as(
-        "SELECT last_read_whole_number::float8 AS whole, \
+    let row = sqlx::query_as!(
+        Row,
+        "SELECT last_read_whole_number::float8 AS \"whole!\", \
                 last_read_part_number::float8 AS part \
          FROM read_progress WHERE user_id = $1 AND series_id = $2",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
     )
-    .bind(user_id.as_uuid())
-    .bind(series_id.as_uuid())
     .fetch_optional(exec)
     .await?;
     Ok(row.map(|r| ReadProgress {
@@ -217,12 +219,13 @@ pub async fn progress_state<'e, E: PgExecutor<'e>>(
         last: f64,
         updated_at: OffsetDateTime,
     }
-    let row: Option<Row> = sqlx::query_as(
-        "SELECT last_read_whole_number::float8 AS last, updated_at FROM read_progress \
+    let row = sqlx::query_as!(
+        Row,
+        "SELECT last_read_whole_number::float8 AS \"last!\", updated_at FROM read_progress \
          WHERE user_id = $1 AND series_id = $2",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
     )
-    .bind(user_id.as_uuid())
-    .bind(series_id.as_uuid())
     .fetch_optional(exec)
     .await?;
     Ok(row.map(|r| (r.last, r.updated_at)))
@@ -275,13 +278,13 @@ pub async fn progress_mark_unread(
 
     if is_whole(number) {
         // The previous whole chapter that exists for this series strictly below `number`.
-        whole = sqlx::query_scalar::<_, Option<f64>>(
+        whole = sqlx::query_scalar!(
             "SELECT max(floor(c.number))::float8 \
                FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-              WHERE ss.series_id = $1 AND floor(c.number) < $2",
+              WHERE ss.series_id = $1 AND floor(c.number) < $2::float8",
+            series_id.as_uuid(),
+            number,
         )
-        .bind(series_id.as_uuid())
-        .bind(number)
         .fetch_one(pool)
         .await?
         .unwrap_or(0.0);
@@ -290,15 +293,15 @@ pub async fn progress_mark_unread(
         part = None;
     } else {
         // The previous part strictly below `number` that is still ahead of the whole frontier.
-        part = sqlx::query_scalar::<_, Option<f64>>(
+        part = sqlx::query_scalar!(
             "SELECT max(c.number)::float8 \
                FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-              WHERE ss.series_id = $1 AND c.number < $2 AND c.number > $3 \
+              WHERE ss.series_id = $1 AND c.number < $2::float8 AND c.number > $3::float8 \
                 AND c.number <> floor(c.number)",
+            series_id.as_uuid(),
+            number,
+            whole,
         )
-        .bind(series_id.as_uuid())
-        .bind(number)
-        .bind(whole)
         .fetch_one(pool)
         .await?;
     }
@@ -315,15 +318,15 @@ pub async fn watchlist_set_status<'e, E: PgExecutor<'e>>(
     series_id: SeriesId,
     status: WatchStatus,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO watchlist_entries (user_id, series_id, status) \
-         VALUES ($1,$2,$3::watch_status) \
+         VALUES ($1,$2,$3) \
          ON CONFLICT (user_id, series_id) DO UPDATE \
             SET status = EXCLUDED.status, updated_at = now()",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
+        status as WatchStatus,
     )
-    .bind(user_id.as_uuid())
-    .bind(series_id.as_uuid())
-    .bind(status.as_str())
     .execute(exec)
     .await?;
     Ok(())
@@ -337,14 +340,14 @@ pub async fn watchlist_status_get<'e, E: PgExecutor<'e>>(
     user_id: UserId,
     series_id: SeriesId,
 ) -> DbResult<Option<WatchStatus>> {
-    let status: Option<String> = sqlx::query_scalar(
-        "SELECT status::text FROM watchlist_entries WHERE user_id = $1 AND series_id = $2",
+    let status = sqlx::query_scalar!(
+        "SELECT status AS \"status: WatchStatus\" FROM watchlist_entries WHERE user_id = $1 AND series_id = $2",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
     )
-    .bind(user_id.as_uuid())
-    .bind(series_id.as_uuid())
     .fetch_optional(exec)
     .await?;
-    status.map(|s| s.parse().map_err(DbError::Enum)).transpose()
+    Ok(status)
 }
 
 // ---------------------------------------------------------------------------
@@ -359,13 +362,13 @@ pub async fn set_sync_excluded<'e, E: PgExecutor<'e>>(
     series_id: SeriesId,
     excluded: bool,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE watchlist_entries SET sync_excluded = $3, updated_at = now() \
          WHERE user_id = $1 AND series_id = $2",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
+        excluded,
     )
-    .bind(user_id.as_uuid())
-    .bind(series_id.as_uuid())
-    .bind(excluded)
     .execute(exec)
     .await?;
     Ok(())
@@ -380,15 +383,15 @@ pub async fn set_sync_override<'e, E: PgExecutor<'e>>(
     provider: &str,
     excluded: bool,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO series_sync_overrides (user_id, series_id, provider, excluded) \
          VALUES ($1,$2,$3,$4) \
          ON CONFLICT (user_id, series_id, provider) DO UPDATE SET excluded = EXCLUDED.excluded",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
+        provider,
+        excluded,
     )
-    .bind(user_id.as_uuid())
-    .bind(series_id.as_uuid())
-    .bind(provider)
-    .bind(excluded)
     .execute(exec)
     .await?;
     Ok(())
@@ -404,20 +407,20 @@ pub async fn is_sync_excluded<'e, E: PgExecutor<'e>>(
     series_id: SeriesId,
     provider: &str,
 ) -> DbResult<bool> {
-    let excluded: Option<bool> = sqlx::query_scalar(
+    let excluded = sqlx::query_scalar!(
         "SELECT COALESCE( \
                   (SELECT excluded FROM series_sync_overrides \
                     WHERE user_id = $1 AND series_id = $2 AND provider = $3), \
                   (SELECT sync_excluded FROM watchlist_entries \
                     WHERE user_id = $1 AND series_id = $2), \
-                  false)",
+                  false) AS \"excluded!\"",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
+        provider,
     )
-    .bind(user_id.as_uuid())
-    .bind(series_id.as_uuid())
-    .bind(provider)
     .fetch_one(exec)
     .await?;
-    Ok(excluded.unwrap_or(false))
+    Ok(excluded)
 }
 
 // ---------------------------------------------------------------------------
@@ -432,13 +435,15 @@ pub async fn notification_create<'e, E: PgExecutor<'e>>(
     payload: &Json,
 ) -> DbResult<NotificationId> {
     let id = NotificationId::new();
-    sqlx::query("INSERT INTO notifications (id, user_id, kind, payload) VALUES ($1,$2,$3,$4)")
-        .bind(id.as_uuid())
-        .bind(user_id.as_uuid())
-        .bind(kind)
-        .bind(payload)
-        .execute(exec)
-        .await?;
+    sqlx::query!(
+        "INSERT INTO notifications (id, user_id, kind, payload) VALUES ($1,$2,$3,$4)",
+        id.as_uuid(),
+        user_id.as_uuid(),
+        kind,
+        payload,
+    )
+    .execute(exec)
+    .await?;
     Ok(id)
 }
 
@@ -457,12 +462,13 @@ pub async fn notifications_list<'e, E: PgExecutor<'e>>(
         read_at: Option<OffsetDateTime>,
         created_at: OffsetDateTime,
     }
-    let rows: Vec<Row> = sqlx::query_as(
-        "SELECT id, user_id, kind, payload, read_at, created_at FROM notifications \
+    let rows = sqlx::query_as!(
+        Row,
+        "SELECT id, user_id, kind, payload AS \"payload: Json\", read_at, created_at FROM notifications \
          WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
+        user_id.as_uuid(),
+        limit,
     )
-    .bind(user_id.as_uuid())
-    .bind(limit)
     .fetch_all(exec)
     .await?;
     Ok(rows
@@ -484,11 +490,12 @@ pub async fn notifications_unread_count<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
 ) -> DbResult<i64> {
-    let (count,): (i64,) =
-        sqlx::query_as("SELECT count(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL")
-            .bind(user_id.as_uuid())
-            .fetch_one(exec)
-            .await?;
+    let count = sqlx::query_scalar!(
+        "SELECT count(*) AS \"count!\" FROM notifications WHERE user_id = $1 AND read_at IS NULL",
+        user_id.as_uuid(),
+    )
+    .fetch_one(exec)
+    .await?;
     Ok(count)
 }
 
@@ -498,12 +505,12 @@ pub async fn notifications_mark_read<'e, E: PgExecutor<'e>>(
     user_id: UserId,
     ids: &[Uuid],
 ) -> DbResult<u64> {
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "UPDATE notifications SET read_at = now() \
          WHERE user_id = $1 AND id = ANY($2) AND read_at IS NULL",
+        user_id.as_uuid(),
+        ids,
     )
-    .bind(user_id.as_uuid())
-    .bind(ids)
     .execute(exec)
     .await?;
     Ok(result.rows_affected())
@@ -530,13 +537,14 @@ pub async fn watchers_for_series<'e, E: PgExecutor<'e>>(
         user_id: Uuid,
         last_read_number: Option<f64>,
     }
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows = sqlx::query_as!(
+        Row,
         "SELECT w.user_id, rp.last_read_whole_number::float8 AS last_read_number \
          FROM watchlist_entries w \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
          WHERE w.series_id = $1 AND w.notify",
+        series_id.as_uuid(),
     )
-    .bind(series_id.as_uuid())
     .fetch_all(exec)
     .await?;
     Ok(rows
@@ -580,9 +588,10 @@ pub async fn feed<'e, E: PgExecutor<'e>>(
         chapter_path: String,
         discovered_at: OffsetDateTime,
     }
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows = sqlx::query_as!(
+        Row,
         "SELECT s.id AS series_id, s.canonical_title AS series_title, \
-                c.number::float8 AS chapter_number, c.title AS chapter_title, \
+                c.number::float8 AS \"chapter_number!\", c.title AS chapter_title, \
                 p.slug AS provider_slug, p.base_url AS base_url, \
                 c.path AS chapter_path, c.discovered_at \
          FROM watchlist_entries w \
@@ -597,9 +606,9 @@ pub async fn feed<'e, E: PgExecutor<'e>>(
                    AND c.number <= rp.last_read_part_number)) \
          ORDER BY c.discovered_at DESC \
          LIMIT $2",
+        user_id.as_uuid(),
+        limit,
     )
-    .bind(user_id.as_uuid())
-    .bind(limit)
     .fetch_all(exec)
     .await?;
     Ok(rows
@@ -626,13 +635,13 @@ pub async fn dedup_claim<'e, E: PgExecutor<'e>>(
     series_id: SeriesId,
     chapter_number: f64,
 ) -> DbResult<bool> {
-    let inserted = sqlx::query(
+    let inserted = sqlx::query!(
         "INSERT INTO notification_dedup (user_id, series_id, chapter_number) \
-         VALUES ($1,$2,$3::numeric(10,4)) ON CONFLICT DO NOTHING",
+         VALUES ($1,$2,$3::float8::numeric(10,4)) ON CONFLICT DO NOTHING",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
+        chapter_number,
     )
-    .bind(user_id.as_uuid())
-    .bind(series_id.as_uuid())
-    .bind(chapter_number)
     .execute(exec)
     .await?
     .rows_affected();
@@ -671,45 +680,45 @@ pub async fn watchlist_detailed<'e, E: PgExecutor<'e>>(
         series_id: Uuid,
         series_title: String,
         cover_url: Option<String>,
-        status: String,
+        status: WatchStatus,
         notify: bool,
         added_at: OffsetDateTime,
         last_read_number: Option<f64>,
         unread: i64,
         sync_excluded: bool,
     }
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows = sqlx::query_as!(
+        Row,
         "SELECT w.series_id, s.canonical_title AS series_title, s.cover_url, \
-                w.status::text AS status, w.notify, w.added_at, w.sync_excluded, \
+                w.status AS \"status: WatchStatus\", w.notify, w.added_at, w.sync_excluded, \
                 rp.last_read_whole_number::float8 AS last_read_number, \
                 (SELECT COALESCE(count(DISTINCT floor(c.number)),0) \
                    FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
                    WHERE ss.series_id = w.series_id \
-                     AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0)) AS unread \
+                     AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0)) AS \"unread!\" \
          FROM watchlist_entries w \
          JOIN series s ON s.id = w.series_id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
          WHERE w.user_id = $1 \
          ORDER BY w.added_at DESC",
+        user_id.as_uuid(),
     )
-    .bind(user_id.as_uuid())
     .fetch_all(exec)
     .await?;
-    rows.into_iter()
-        .map(|r| {
-            Ok(WatchlistCard {
-                series_id: SeriesId::from_uuid(r.series_id),
-                series_title: r.series_title,
-                cover_url: r.cover_url,
-                status: r.status.parse().map_err(DbError::Enum)?,
-                notify: r.notify,
-                added_at: r.added_at,
-                last_read_number: r.last_read_number,
-                unread: r.unread,
-                sync_excluded: r.sync_excluded,
-            })
+    Ok(rows
+        .into_iter()
+        .map(|r| WatchlistCard {
+            series_id: SeriesId::from_uuid(r.series_id),
+            series_title: r.series_title,
+            cover_url: r.cover_url,
+            status: r.status,
+            notify: r.notify,
+            added_at: r.added_at,
+            last_read_number: r.last_read_number,
+            unread: r.unread,
+            sync_excluded: r.sync_excluded,
         })
-        .collect()
+        .collect())
 }
 
 /// A "continue reading" card: a tracked, in-progress series with unread chapters, ordered
@@ -743,9 +752,10 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
         next_number: Option<f64>,
         unread: i64,
     }
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows = sqlx::query_as!(
+        Row,
         "SELECT w.series_id, s.canonical_title AS series_title, s.cover_url, \
-                COALESCE(rp.last_read_whole_number, 0)::float8 AS last_read_number, \
+                COALESCE(rp.last_read_whole_number, 0)::float8 AS \"last_read_number!\", \
                 (SELECT min(c.number)::float8 \
                    FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
                    WHERE ss.series_id = w.series_id \
@@ -753,19 +763,18 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
                 (SELECT COALESCE(count(DISTINCT floor(c.number)),0) \
                    FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
                    WHERE ss.series_id = w.series_id \
-                     AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0)) AS unread, \
-                (SELECT max(c.discovered_at) \
-                   FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-                   WHERE ss.series_id = w.series_id) AS last_activity \
+                     AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0)) AS \"unread!\" \
          FROM watchlist_entries w \
          JOIN series s ON s.id = w.series_id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
          WHERE w.user_id = $1 AND w.status IN ('reading','planned','paused') \
-         ORDER BY last_activity DESC NULLS LAST \
+         ORDER BY (SELECT max(c.discovered_at) \
+                   FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+                   WHERE ss.series_id = w.series_id) DESC NULLS LAST \
          LIMIT $2",
+        user_id.as_uuid(),
+        limit,
     )
-    .bind(user_id.as_uuid())
-    .bind(limit)
     .fetch_all(exec)
     .await?;
     Ok(rows
@@ -799,13 +808,14 @@ pub struct MeStats {
 /// and `unread` are floored to whole chapters — sub-chapter part releases (e.g. `152.6`)
 /// are not "full chapters" for tracking purposes and don't count as extra ones.
 pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<MeStats> {
-    let stats: MeStats = sqlx::query_as(
+    let stats = sqlx::query_as!(
+        MeStats,
         "SELECT \
-           (SELECT count(*) FROM watchlist_entries WHERE user_id = $1) AS tracking, \
-           (SELECT count(*) FROM watchlist_entries WHERE user_id = $1 AND status = 'reading') AS reading, \
-           (SELECT count(*) FROM watchlist_entries WHERE user_id = $1 AND status = 'completed') AS completed, \
+           (SELECT count(*) FROM watchlist_entries WHERE user_id = $1) AS \"tracking!\", \
+           (SELECT count(*) FROM watchlist_entries WHERE user_id = $1 AND status = 'reading') AS \"reading!\", \
+           (SELECT count(*) FROM watchlist_entries WHERE user_id = $1 AND status = 'completed') AS \"completed!\", \
            (SELECT COALESCE(sum(floor(last_read_whole_number)),0)::int8 FROM read_progress \
-              WHERE user_id = $1) AS chapters_read, \
+              WHERE user_id = $1) AS \"chapters_read!\", \
            (SELECT count(*) FROM ( \
                SELECT DISTINCT w.series_id, floor(c.number) \
                FROM watchlist_entries w \
@@ -813,9 +823,9 @@ pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResu
                JOIN chapters c ON c.series_source_id = ss.id \
                LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
                WHERE w.user_id = $1 AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
-           ) q) AS unread",
+           ) q) AS \"unread!\"",
+        user_id.as_uuid(),
     )
-    .bind(user_id.as_uuid())
     .fetch_one(exec)
     .await?;
     Ok(stats)
@@ -836,14 +846,15 @@ pub async fn recommendations<'e, E: PgExecutor<'e>>(
         normalized_title: String,
         description: Option<String>,
         cover_url: Option<String>,
-        content_type: String,
-        status: String,
+        content_type: ContentType,
+        status: SeriesStatus,
         release_year: Option<i32>,
         created_at: OffsetDateTime,
         updated_at: OffsetDateTime,
         source_count: i64,
     }
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows = sqlx::query_as!(
+        Row,
         "WITH liked_tags AS ( \
             SELECT DISTINCT stg.tag_id \
             FROM series_tags stg \
@@ -851,9 +862,9 @@ pub async fn recommendations<'e, E: PgExecutor<'e>>(
             WHERE w.user_id = $1 \
          ) \
          SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
-                s.content_type::text AS content_type, s.status::text AS status, s.release_year, \
+                s.content_type AS \"content_type: ContentType\", s.status AS \"status: SeriesStatus\", s.release_year, \
                 s.created_at, s.updated_at, \
-                (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS source_count \
+                (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\" \
          FROM series s \
          WHERE EXISTS (SELECT 1 FROM series_tags stg \
                         WHERE stg.series_id = s.id AND stg.tag_id IN (SELECT tag_id FROM liked_tags)) \
@@ -864,28 +875,27 @@ pub async fn recommendations<'e, E: PgExecutor<'e>>(
                       AND stg.tag_id IN (SELECT tag_id FROM liked_tags)) DESC, \
                   s.updated_at DESC \
          LIMIT $2",
+        user_id.as_uuid(),
+        limit,
     )
-    .bind(user_id.as_uuid())
-    .bind(limit)
     .fetch_all(exec)
     .await?;
-    rows.into_iter()
-        .map(|r| {
-            Ok(SeriesListItem {
-                series: Series {
-                    id: SeriesId::from_uuid(r.id),
-                    canonical_title: r.canonical_title,
-                    normalized_title: r.normalized_title,
-                    description: r.description,
-                    cover_url: r.cover_url,
-                    content_type: ContentType::from_str(&r.content_type)?,
-                    status: SeriesStatus::from_str(&r.status)?,
-                    release_year: r.release_year,
-                    created_at: r.created_at,
-                    updated_at: r.updated_at,
-                },
-                source_count: r.source_count,
-            })
+    Ok(rows
+        .into_iter()
+        .map(|r| SeriesListItem {
+            series: Series {
+                id: SeriesId::from_uuid(r.id),
+                canonical_title: r.canonical_title,
+                normalized_title: r.normalized_title,
+                description: r.description,
+                cover_url: r.cover_url,
+                content_type: r.content_type,
+                status: r.status,
+                release_year: r.release_year,
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+            },
+            source_count: r.source_count,
         })
-        .collect()
+        .collect())
 }

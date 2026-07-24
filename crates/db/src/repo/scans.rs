@@ -6,7 +6,6 @@
 use crate::error::{DbError, DbResult};
 use serde_json::Value as Json;
 use sqlx::{FromRow, PgExecutor};
-use std::str::FromStr;
 use tankovault_domain::{
     ProviderId, RunState, ScanMode, ScanRun, ScanRunId, ScanTask, ScanTaskId, TaskState,
 };
@@ -17,8 +16,8 @@ use uuid::Uuid;
 struct RunRow {
     id: Uuid,
     provider_id: Option<Uuid>,
-    mode: String,
-    state: String,
+    mode: ScanMode,
+    state: RunState,
     total_tasks: i32,
     done_tasks: i32,
     failed_tasks: i32,
@@ -27,30 +26,21 @@ struct RunRow {
     created_at: OffsetDateTime,
 }
 
-impl TryFrom<RunRow> for ScanRun {
-    type Error = DbError;
-    fn try_from(r: RunRow) -> Result<Self, Self::Error> {
-        Ok(Self {
+impl From<RunRow> for ScanRun {
+    fn from(r: RunRow) -> Self {
+        Self {
             id: ScanRunId::from_uuid(r.id),
             provider_id: r.provider_id.map(ProviderId::from_uuid),
-            mode: ScanMode::from_str(&r.mode)?,
-            state: RunState::from_str(&r.state)?,
+            mode: r.mode,
+            state: r.state,
             total_tasks: r.total_tasks,
             done_tasks: r.done_tasks,
             failed_tasks: r.failed_tasks,
             started_at: r.started_at,
             finished_at: r.finished_at,
             created_at: r.created_at,
-        })
+        }
     }
-}
-
-/// `scan_runs` column projection as a literal.
-macro_rules! run_cols {
-    () => {
-        "id, provider_id, mode::text AS mode, state::text AS state, total_tasks, \
-         done_tasks, failed_tasks, started_at, finished_at, created_at"
-    };
 }
 
 /// Create a queued scan run.
@@ -60,26 +50,29 @@ pub async fn create_run<'e, E: PgExecutor<'e>>(
     mode: ScanMode,
 ) -> DbResult<ScanRunId> {
     let id = ScanRunId::new();
-    sqlx::query("INSERT INTO scan_runs (id, provider_id, mode) VALUES ($1,$2,$3::scan_mode)")
-        .bind(id.as_uuid())
-        .bind(provider_id.map(ProviderId::as_uuid))
-        .bind(mode.as_str())
-        .execute(exec)
-        .await?;
+    sqlx::query!(
+        "INSERT INTO scan_runs (id, provider_id, mode) VALUES ($1,$2,$3)",
+        id.as_uuid(),
+        provider_id.map(ProviderId::as_uuid),
+        mode as ScanMode,
+    )
+    .execute(exec)
+    .await?;
     Ok(id)
 }
 
 /// Fetch a run by id.
 pub async fn get_run<'e, E: PgExecutor<'e>>(exec: E, id: ScanRunId) -> DbResult<ScanRun> {
-    let row: Option<RunRow> = sqlx::query_as(concat!(
-        "SELECT ",
-        run_cols!(),
-        " FROM scan_runs WHERE id = $1"
-    ))
-    .bind(id.as_uuid())
+    let row = sqlx::query_as!(
+        RunRow,
+        "SELECT id, provider_id, mode AS \"mode: ScanMode\", state AS \"state: RunState\", \
+         total_tasks, done_tasks, failed_tasks, started_at, finished_at, created_at \
+         FROM scan_runs WHERE id = $1",
+        id.as_uuid(),
+    )
     .fetch_optional(exec)
     .await?;
-    row.ok_or(DbError::NotFound)?.try_into()
+    Ok(row.ok_or(DbError::NotFound)?.into())
 }
 
 /// List recent runs (console overview).
@@ -87,24 +80,25 @@ pub async fn list_recent_runs<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
 ) -> DbResult<Vec<ScanRun>> {
-    let rows: Vec<RunRow> = sqlx::query_as(concat!(
-        "SELECT ",
-        run_cols!(),
-        " FROM scan_runs ORDER BY created_at DESC LIMIT $1"
-    ))
-    .bind(limit)
+    let rows = sqlx::query_as!(
+        RunRow,
+        "SELECT id, provider_id, mode AS \"mode: ScanMode\", state AS \"state: RunState\", \
+         total_tasks, done_tasks, failed_tasks, started_at, finished_at, created_at \
+         FROM scan_runs ORDER BY created_at DESC LIMIT $1",
+        limit,
+    )
     .fetch_all(exec)
     .await?;
-    rows.into_iter().map(ScanRun::try_from).collect()
+    Ok(rows.into_iter().map(ScanRun::from).collect())
 }
 
 /// Transition a run to `running` and stamp `started_at`.
 pub async fn start_run<'e, E: PgExecutor<'e>>(exec: E, id: ScanRunId) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE scan_runs SET state = 'running', started_at = COALESCE(started_at, now()) \
          WHERE id = $1",
+        id.as_uuid(),
     )
-    .bind(id.as_uuid())
     .execute(exec)
     .await?;
     Ok(())
@@ -116,11 +110,13 @@ pub async fn finish_run<'e, E: PgExecutor<'e>>(
     id: ScanRunId,
     state: RunState,
 ) -> DbResult<()> {
-    sqlx::query("UPDATE scan_runs SET state = $2::run_state, finished_at = now() WHERE id = $1")
-        .bind(id.as_uuid())
-        .bind(state.as_str())
-        .execute(exec)
-        .await?;
+    sqlx::query!(
+        "UPDATE scan_runs SET state = $2, finished_at = now() WHERE id = $1",
+        id.as_uuid(),
+        state as RunState,
+    )
+    .execute(exec)
+    .await?;
     Ok(())
 }
 
@@ -135,20 +131,21 @@ pub async fn finalize_if_complete<'e, E: PgExecutor<'e>>(
     exec: E,
     id: ScanRunId,
 ) -> DbResult<Option<ScanRun>> {
-    let row: Option<RunRow> = sqlx::query_as(concat!(
+    let row = sqlx::query_as!(
+        RunRow,
         "UPDATE scan_runs SET \
             state = CASE WHEN done_tasks = 0 AND failed_tasks > 0 \
                          THEN 'failed'::run_state ELSE 'completed'::run_state END, \
             finished_at = now() \
          WHERE id = $1 AND state = 'running' AND total_tasks > 0 \
                AND (done_tasks + failed_tasks) >= total_tasks \
-         RETURNING ",
-        run_cols!()
-    ))
-    .bind(id.as_uuid())
+         RETURNING id, provider_id, mode AS \"mode: ScanMode\", state AS \"state: RunState\", \
+                   total_tasks, done_tasks, failed_tasks, started_at, finished_at, created_at",
+        id.as_uuid(),
+    )
     .fetch_optional(exec)
     .await?;
-    row.map(ScanRun::try_from).transpose()
+    Ok(row.map(ScanRun::from))
 }
 
 /// Add to a run's planned task total (as the planner fans out).
@@ -157,11 +154,13 @@ pub async fn add_total_tasks<'e, E: PgExecutor<'e>>(
     id: ScanRunId,
     delta: i32,
 ) -> DbResult<()> {
-    sqlx::query("UPDATE scan_runs SET total_tasks = total_tasks + $2 WHERE id = $1")
-        .bind(id.as_uuid())
-        .bind(delta)
-        .execute(exec)
-        .await?;
+    sqlx::query!(
+        "UPDATE scan_runs SET total_tasks = total_tasks + $2 WHERE id = $1",
+        id.as_uuid(),
+        delta,
+    )
+    .execute(exec)
+    .await?;
     Ok(())
 }
 
@@ -175,7 +174,7 @@ struct TaskRow {
     run_id: Uuid,
     kind: String,
     target: Json,
-    state: String,
+    state: TaskState,
     attempts: i16,
     worker_id: Option<String>,
     error: Option<String>,
@@ -183,21 +182,20 @@ struct TaskRow {
     finished_at: Option<OffsetDateTime>,
 }
 
-impl TryFrom<TaskRow> for ScanTask {
-    type Error = DbError;
-    fn try_from(r: TaskRow) -> Result<Self, Self::Error> {
-        Ok(Self {
+impl From<TaskRow> for ScanTask {
+    fn from(r: TaskRow) -> Self {
+        Self {
             id: ScanTaskId::from_uuid(r.id),
             run_id: ScanRunId::from_uuid(r.run_id),
             kind: r.kind,
             target: r.target,
-            state: TaskState::from_str(&r.state)?,
+            state: r.state,
             attempts: r.attempts,
             worker_id: r.worker_id,
             error: r.error,
             claimed_at: r.claimed_at,
             finished_at: r.finished_at,
-        })
+        }
     }
 }
 
@@ -216,14 +214,14 @@ pub async fn create_task<'e, E: PgExecutor<'e>>(
     target: &Json,
 ) -> DbResult<Option<ScanTaskId>> {
     let id = ScanTaskId::new();
-    let inserted: Option<Uuid> = sqlx::query_scalar(
+    let inserted = sqlx::query_scalar!(
         "INSERT INTO scan_tasks (id, run_id, kind, target) VALUES ($1,$2,$3,$4) \
          ON CONFLICT (run_id, kind, (target::text)) DO NOTHING RETURNING id",
+        id.as_uuid(),
+        run_id.as_uuid(),
+        kind,
+        target,
     )
-    .bind(id.as_uuid())
-    .bind(run_id.as_uuid())
-    .bind(kind)
-    .bind(target)
     .fetch_optional(exec)
     .await?;
     Ok(inserted.map(ScanTaskId::from_uuid))
@@ -236,12 +234,12 @@ pub async fn claim_task<'e, E: PgExecutor<'e>>(
     task_id: ScanTaskId,
     worker_id: &str,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE scan_tasks SET state = 'claimed', worker_id = $2, claimed_at = now(), \
          attempts = attempts + 1 WHERE id = $1",
+        task_id.as_uuid(),
+        worker_id,
     )
-    .bind(task_id.as_uuid())
-    .bind(worker_id)
     .execute(exec)
     .await?;
     Ok(())
@@ -254,36 +252,37 @@ pub async fn claim_next_queued<'e, E: PgExecutor<'e>>(
     run_id: ScanRunId,
     worker_id: &str,
 ) -> DbResult<Option<ScanTask>> {
-    let row: Option<TaskRow> = sqlx::query_as(
+    let row = sqlx::query_as!(
+        TaskRow,
         "UPDATE scan_tasks SET state = 'claimed', worker_id = $2, claimed_at = now(), \
              attempts = attempts + 1 \
          WHERE id = ( \
             SELECT id FROM scan_tasks WHERE run_id = $1 AND state = 'queued' \
             ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1 \
          ) \
-         RETURNING id, run_id, kind, target, state::text AS state, attempts, worker_id, \
-                   error, claimed_at, finished_at",
+         RETURNING id, run_id, kind, target AS \"target: Json\", state AS \"state: TaskState\", \
+                   attempts, worker_id, error, claimed_at, finished_at",
+        run_id.as_uuid(),
+        worker_id,
     )
-    .bind(run_id.as_uuid())
-    .bind(worker_id)
     .fetch_optional(exec)
     .await?;
-    row.map(ScanTask::try_from).transpose()
+    Ok(row.map(ScanTask::from))
 }
 
 /// Mark a task done and increment the run's done counter, atomically per statement.
 pub async fn complete_task<'e, E: PgExecutor<'e>>(exec: E, task_id: ScanTaskId) -> DbResult<()> {
     // Two statements would race on the counter under concurrency; a CTE keeps them in
     // one round trip and lets each worker's increment commit independently.
-    sqlx::query(
+    sqlx::query!(
         "WITH done AS ( \
             UPDATE scan_tasks SET state = 'done', finished_at = now() \
             WHERE id = $1 AND state <> 'done' RETURNING run_id \
          ) \
          UPDATE scan_runs SET done_tasks = done_tasks + 1 \
          WHERE id = (SELECT run_id FROM done)",
+        task_id.as_uuid(),
     )
-    .bind(task_id.as_uuid())
     .execute(exec)
     .await?;
     Ok(())
@@ -295,16 +294,16 @@ pub async fn fail_task<'e, E: PgExecutor<'e>>(
     task_id: ScanTaskId,
     error: &str,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "WITH failed AS ( \
             UPDATE scan_tasks SET state = 'failed', error = $2, finished_at = now() \
             WHERE id = $1 AND state <> 'failed' RETURNING run_id \
          ) \
          UPDATE scan_runs SET failed_tasks = failed_tasks + 1 \
          WHERE id = (SELECT run_id FROM failed)",
+        task_id.as_uuid(),
+        error,
     )
-    .bind(task_id.as_uuid())
-    .bind(error)
     .execute(exec)
     .await?;
     Ok(())
@@ -332,8 +331,9 @@ pub async fn recent_failed_tasks<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
 ) -> DbResult<Vec<FailedTaskView>> {
-    let rows: Vec<FailedTaskView> = sqlx::query_as(
-        "SELECT t.id, t.run_id, p.slug AS provider_slug, r.mode::text AS mode, \
+    let rows = sqlx::query_as!(
+        FailedTaskView,
+        "SELECT t.id, t.run_id, p.slug AS \"provider_slug?\", r.mode::text AS \"mode!\", \
                 t.kind, t.error, t.attempts, t.finished_at \
          FROM scan_tasks t \
          JOIN scan_runs r ON r.id = t.run_id \
@@ -341,8 +341,8 @@ pub async fn recent_failed_tasks<'e, E: PgExecutor<'e>>(
          WHERE t.state = 'failed' \
          ORDER BY t.finished_at DESC NULLS LAST \
          LIMIT $1",
+        limit,
     )
-    .bind(limit)
     .fetch_all(exec)
     .await?;
     Ok(rows)
@@ -350,15 +350,15 @@ pub async fn recent_failed_tasks<'e, E: PgExecutor<'e>>(
 
 /// Mark a task skipped (unchanged content, no work needed) and count it as done.
 pub async fn skip_task<'e, E: PgExecutor<'e>>(exec: E, task_id: ScanTaskId) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "WITH skipped AS ( \
             UPDATE scan_tasks SET state = 'skipped', finished_at = now() \
             WHERE id = $1 AND state NOT IN ('done','skipped') RETURNING run_id \
          ) \
          UPDATE scan_runs SET done_tasks = done_tasks + 1 \
          WHERE id = (SELECT run_id FROM skipped)",
+        task_id.as_uuid(),
     )
-    .bind(task_id.as_uuid())
     .execute(exec)
     .await?;
     Ok(())

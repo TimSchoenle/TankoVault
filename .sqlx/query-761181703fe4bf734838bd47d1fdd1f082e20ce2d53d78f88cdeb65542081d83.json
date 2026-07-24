@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE external_accounts SET conflict_policy = $3 WHERE user_id = $1 AND provider = $2 AND conflict_policy = 'newest_wins'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "761181703fe4bf734838bd47d1fdd1f082e20ce2d53d78f88cdeb65542081d83"
+}

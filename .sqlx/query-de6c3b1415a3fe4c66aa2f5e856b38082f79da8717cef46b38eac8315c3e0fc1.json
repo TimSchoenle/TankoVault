@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO read_progress (user_id, series_id, last_read_whole_number) VALUES ($1,$2,$3::float8::numeric(10,4)) ON CONFLICT (user_id, series_id) DO UPDATE SET last_read_whole_number = EXCLUDED.last_read_whole_number, last_read_part_number = CASE WHEN read_progress.last_read_part_number IS NOT NULL AND floor(read_progress.last_read_part_number) <= EXCLUDED.last_read_whole_number THEN NULL ELSE read_progress.last_read_part_number END, updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "de6c3b1415a3fe4c66aa2f5e856b38082f79da8717cef46b38eac8315c3e0fc1"
+}

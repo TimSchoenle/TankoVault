@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series_sources (id, series_id, provider_id, source_path, provider_title) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (provider_id, source_path) DO UPDATE SET provider_title = EXCLUDED.provider_title RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series_sources",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6228d70a1f68548487acd7f266bbc21fb6c5413ac85acad9cf118b1c74130620"
+}

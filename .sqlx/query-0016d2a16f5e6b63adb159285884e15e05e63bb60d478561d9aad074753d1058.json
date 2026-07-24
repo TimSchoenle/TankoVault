@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE external_accounts SET auto_sync_enabled = COALESCE($3, auto_sync_enabled), conflict_policy   = COALESCE($4, conflict_policy) WHERE user_id = $1 AND provider = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0016d2a16f5e6b63adb159285884e15e05e63bb60d478561d9aad074753d1058"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM watchlist_entries WHERE user_id = $1 AND series_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4cdbe631e67a5c548f1de188b97c10b01353ad03e063ae339f9f5a4b4a62b7c4"
+}

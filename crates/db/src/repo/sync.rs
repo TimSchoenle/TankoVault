@@ -35,13 +35,14 @@ pub async fn get_snapshot<'e, E: PgExecutor<'e>>(
     series_id: SeriesId,
     provider: &str,
 ) -> DbResult<Option<SyncSnapshot>> {
-    let row = sqlx::query_as::<_, SyncSnapshot>(
+    let row = sqlx::query_as!(
+        SyncSnapshot,
         "SELECT last_synced_local_progress, last_synced_remote_progress, \
                 last_synced_local_status, last_synced_remote_status, last_synced_at \
          FROM sync_mappings WHERE series_id = $1 AND provider = $2",
+        series_id.as_uuid(),
+        provider,
     )
-    .bind(series_id.as_uuid())
-    .bind(provider)
     .fetch_optional(exec)
     .await?;
     Ok(row)
@@ -59,7 +60,7 @@ pub async fn record_snapshot<'e, E: PgExecutor<'e>>(
     local_status: &str,
     remote_status: &str,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE sync_mappings SET \
             last_synced_local_progress  = $3, \
             last_synced_remote_progress = $4, \
@@ -67,13 +68,13 @@ pub async fn record_snapshot<'e, E: PgExecutor<'e>>(
             last_synced_remote_status   = $6, \
             last_synced_at              = now() \
          WHERE series_id = $1 AND provider = $2",
+        series_id.as_uuid(),
+        provider,
+        local_progress,
+        remote_progress,
+        local_status,
+        remote_status,
     )
-    .bind(series_id.as_uuid())
-    .bind(provider)
-    .bind(local_progress)
-    .bind(remote_progress)
-    .bind(local_status)
-    .bind(remote_status)
     .execute(exec)
     .await?;
     Ok(())
@@ -92,19 +93,19 @@ pub async fn insert_conflict<'e, E: PgExecutor<'e>>(
     local_value: &str,
     remote_value: &str,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO sync_conflicts \
             (user_id, series_id, provider, field, local_value, remote_value) \
          VALUES ($1,$2,$3,$4,$5,$6) \
          ON CONFLICT (user_id, series_id, provider, field) WHERE resolved_at IS NULL \
          DO NOTHING",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
+        provider,
+        field,
+        local_value,
+        remote_value,
     )
-    .bind(user_id.as_uuid())
-    .bind(series_id.as_uuid())
-    .bind(provider)
-    .bind(field)
-    .bind(local_value)
-    .bind(remote_value)
     .execute(exec)
     .await?;
     Ok(())
@@ -129,14 +130,15 @@ pub async fn list_pending_conflicts<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
 ) -> DbResult<Vec<ConflictRow>> {
-    let rows = sqlx::query_as::<_, ConflictRow>(
+    let rows = sqlx::query_as!(
+        ConflictRow,
         "SELECT c.id, c.series_id, s.canonical_title AS series_title, c.provider, c.field, \
                 c.local_value, c.remote_value, c.detected_at \
          FROM sync_conflicts c JOIN series s ON s.id = c.series_id \
          WHERE c.user_id = $1 AND c.resolved_at IS NULL \
          ORDER BY c.detected_at DESC",
+        user_id.as_uuid(),
     )
-    .bind(user_id.as_uuid())
     .fetch_all(exec)
     .await?;
     Ok(rows)
@@ -158,13 +160,14 @@ pub async fn get_pending_conflict<'e, E: PgExecutor<'e>>(
     user_id: UserId,
     conflict_id: Uuid,
 ) -> DbResult<Option<ConflictDetail>> {
-    let row = sqlx::query_as::<_, ConflictDetail>(
+    let row = sqlx::query_as!(
+        ConflictDetail,
         "SELECT series_id, provider, field, local_value, remote_value \
          FROM sync_conflicts \
          WHERE id = $1 AND user_id = $2 AND resolved_at IS NULL",
+        conflict_id,
+        user_id.as_uuid(),
     )
-    .bind(conflict_id)
-    .bind(user_id.as_uuid())
     .fetch_optional(exec)
     .await?;
     Ok(row)
@@ -178,13 +181,13 @@ pub async fn resolve_conflict<'e, E: PgExecutor<'e>>(
     conflict_id: Uuid,
     resolution: &str,
 ) -> DbResult<bool> {
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "UPDATE sync_conflicts SET resolved_at = now(), resolution = $3 \
          WHERE id = $1 AND user_id = $2 AND resolved_at IS NULL",
+        conflict_id,
+        user_id.as_uuid(),
+        resolution,
     )
-    .bind(conflict_id)
-    .bind(user_id.as_uuid())
-    .bind(resolution)
     .execute(exec)
     .await?;
     Ok(result.rows_affected() > 0)
@@ -195,10 +198,10 @@ pub async fn count_pending_conflicts<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
 ) -> DbResult<i64> {
-    let (n,): (i64,) = sqlx::query_as(
-        "SELECT count(*) FROM sync_conflicts WHERE user_id = $1 AND resolved_at IS NULL",
+    let n = sqlx::query_scalar!(
+        "SELECT count(*) AS \"count!\" FROM sync_conflicts WHERE user_id = $1 AND resolved_at IS NULL",
+        user_id.as_uuid(),
     )
-    .bind(user_id.as_uuid())
     .fetch_one(exec)
     .await?;
     Ok(n)
@@ -214,15 +217,15 @@ pub async fn append_history<'e, E: PgExecutor<'e>>(
     action: &str,
     detail: &Json,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO sync_history (user_id, series_id, provider, action, detail) \
          VALUES ($1,$2,$3,$4,$5)",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
+        provider,
+        action,
+        detail,
     )
-    .bind(user_id.as_uuid())
-    .bind(series_id.as_uuid())
-    .bind(provider)
-    .bind(action)
-    .bind(detail)
     .execute(exec)
     .await?;
     Ok(())
@@ -250,21 +253,22 @@ pub async fn list_history<'e, E: PgExecutor<'e>>(
     limit: i64,
     offset: i64,
 ) -> DbResult<Vec<HistoryRow>> {
-    let rows = sqlx::query_as::<_, HistoryRow>(
+    let rows = sqlx::query_as!(
+        HistoryRow,
         "SELECT h.id, h.series_id, s.canonical_title AS series_title, h.provider, h.action, \
-                h.detail, h.created_at \
+                h.detail AS \"detail: Json\", h.created_at \
          FROM sync_history h JOIN series s ON s.id = h.series_id \
          WHERE h.user_id = $1 \
            AND ($2::uuid IS NULL OR h.series_id = $2) \
            AND ($3::text IS NULL OR h.provider = $3) \
          ORDER BY h.created_at DESC \
          LIMIT $4 OFFSET $5",
+        user_id.as_uuid(),
+        series_id.map(SeriesId::as_uuid),
+        provider,
+        limit,
+        offset,
     )
-    .bind(user_id.as_uuid())
-    .bind(series_id.map(SeriesId::as_uuid))
-    .bind(provider)
-    .bind(limit)
-    .bind(offset)
     .fetch_all(exec)
     .await?;
     Ok(rows)
@@ -308,7 +312,7 @@ pub async fn upsert_account<'e, E: PgExecutor<'e>>(
     refresh_token: Option<&[u8]>,
     expires_at: Option<OffsetDateTime>,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO external_accounts \
             (user_id, provider, access_token, refresh_token, expires_at) \
          VALUES ($1,$2,$3,$4,$5) \
@@ -316,12 +320,12 @@ pub async fn upsert_account<'e, E: PgExecutor<'e>>(
             SET access_token  = EXCLUDED.access_token, \
                 refresh_token = EXCLUDED.refresh_token, \
                 expires_at    = EXCLUDED.expires_at",
+        user_id.as_uuid(),
+        provider,
+        access_token,
+        refresh_token,
+        expires_at,
     )
-    .bind(user_id.as_uuid())
-    .bind(provider)
-    .bind(access_token)
-    .bind(refresh_token)
-    .bind(expires_at)
     .execute(exec)
     .await?;
     Ok(())
@@ -346,14 +350,15 @@ pub async fn get_account<'e, E: PgExecutor<'e>>(
         auto_sync_enabled: bool,
         conflict_policy: String,
     }
-    let row: Option<Row> = sqlx::query_as(
+    let row = sqlx::query_as!(
+        Row,
         "SELECT user_id, provider, access_token, refresh_token, expires_at, \
                 external_username, last_synced_at, last_error, \
                 auto_sync_enabled, conflict_policy \
          FROM external_accounts WHERE user_id = $1 AND provider = $2",
+        user_id.as_uuid(),
+        provider,
     )
-    .bind(user_id.as_uuid())
-    .bind(provider)
     .fetch_optional(exec)
     .await?;
     Ok(row.map(|r| ExternalAccount {
@@ -379,16 +384,16 @@ pub async fn update_account_settings<'e, E: PgExecutor<'e>>(
     auto_sync_enabled: Option<bool>,
     conflict_policy: Option<&str>,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE external_accounts \
          SET auto_sync_enabled = COALESCE($3, auto_sync_enabled), \
              conflict_policy   = COALESCE($4, conflict_policy) \
          WHERE user_id = $1 AND provider = $2",
+        user_id.as_uuid(),
+        provider,
+        auto_sync_enabled,
+        conflict_policy,
     )
-    .bind(user_id.as_uuid())
-    .bind(provider)
-    .bind(auto_sync_enabled)
-    .bind(conflict_policy)
     .execute(exec)
     .await?;
     Ok(())
@@ -403,13 +408,13 @@ pub async fn seed_account_policy<'e, E: PgExecutor<'e>>(
     provider: &str,
     default_policy: &str,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE external_accounts SET conflict_policy = $3 \
          WHERE user_id = $1 AND provider = $2 AND conflict_policy = 'newest_wins'",
+        user_id.as_uuid(),
+        provider,
+        default_policy,
     )
-    .bind(user_id.as_uuid())
-    .bind(provider)
-    .bind(default_policy)
     .execute(exec)
     .await?;
     Ok(())
@@ -425,7 +430,8 @@ pub async fn list_auto_sync_accounts<'e, E: PgExecutor<'e>>(
         user_id: Uuid,
         provider: String,
     }
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows = sqlx::query_as!(
+        Row,
         "SELECT user_id, provider FROM external_accounts \
          WHERE auto_sync_enabled ORDER BY user_id, provider",
     )
@@ -448,16 +454,16 @@ pub async fn mark_synced<'e, E: PgExecutor<'e>>(
     username: Option<&str>,
     synced_at: OffsetDateTime,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE external_accounts \
          SET external_username = COALESCE($3, external_username), last_synced_at = $4, \
              last_error = NULL \
          WHERE user_id = $1 AND provider = $2",
+        user_id.as_uuid(),
+        provider,
+        username,
+        synced_at,
     )
-    .bind(user_id.as_uuid())
-    .bind(provider)
-    .bind(username)
-    .bind(synced_at)
     .execute(exec)
     .await?;
     Ok(())
@@ -471,12 +477,12 @@ pub async fn record_sync_error<'e, E: PgExecutor<'e>>(
     provider: &str,
     error: &str,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE external_accounts SET last_error = $3 WHERE user_id = $1 AND provider = $2",
+        user_id.as_uuid(),
+        provider,
+        error,
     )
-    .bind(user_id.as_uuid())
-    .bind(provider)
-    .bind(error)
     .execute(exec)
     .await?;
     Ok(())
@@ -488,11 +494,13 @@ pub async fn delete_account<'e, E: PgExecutor<'e>>(
     user_id: UserId,
     provider: &str,
 ) -> DbResult<bool> {
-    let result = sqlx::query("DELETE FROM external_accounts WHERE user_id = $1 AND provider = $2")
-        .bind(user_id.as_uuid())
-        .bind(provider)
-        .execute(exec)
-        .await?;
+    let result = sqlx::query!(
+        "DELETE FROM external_accounts WHERE user_id = $1 AND provider = $2",
+        user_id.as_uuid(),
+        provider,
+    )
+    .execute(exec)
+    .await?;
     Ok(result.rows_affected() > 0)
 }
 
@@ -504,15 +512,15 @@ pub async fn upsert_mapping<'e, E: PgExecutor<'e>>(
     provider: &str,
     external_id: &str,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO sync_mappings (series_id, provider, external_id) \
          VALUES ($1,$2,$3) \
          ON CONFLICT (series_id, provider) DO UPDATE \
             SET external_id = EXCLUDED.external_id, updated_at = now()",
+        series_id.as_uuid(),
+        provider,
+        external_id,
     )
-    .bind(series_id.as_uuid())
-    .bind(provider)
-    .bind(external_id)
     .execute(exec)
     .await?;
     Ok(())
@@ -525,11 +533,11 @@ pub async fn mapping_series_for_external<'e, E: PgExecutor<'e>>(
     provider: &str,
     external_id: &str,
 ) -> DbResult<Option<SeriesId>> {
-    let id: Option<Uuid> = sqlx::query_scalar(
+    let id = sqlx::query_scalar!(
         "SELECT series_id FROM sync_mappings WHERE provider = $1 AND external_id = $2",
+        provider,
+        external_id,
     )
-    .bind(provider)
-    .bind(external_id)
     .fetch_optional(exec)
     .await?;
     Ok(id.map(SeriesId::from_uuid))
@@ -542,11 +550,11 @@ pub async fn mapping_external_for_series<'e, E: PgExecutor<'e>>(
     series_id: SeriesId,
     provider: &str,
 ) -> DbResult<Option<String>> {
-    let ext: Option<String> = sqlx::query_scalar(
+    let ext = sqlx::query_scalar!(
         "SELECT external_id FROM sync_mappings WHERE series_id = $1 AND provider = $2",
+        series_id.as_uuid(),
+        provider,
     )
-    .bind(series_id.as_uuid())
-    .bind(provider)
     .fetch_optional(exec)
     .await?;
     Ok(ext)
@@ -559,10 +567,10 @@ pub async fn list_linked_providers<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
 ) -> DbResult<Vec<String>> {
-    let providers: Vec<String> = sqlx::query_scalar(
+    let providers = sqlx::query_scalar!(
         "SELECT provider FROM external_accounts WHERE user_id = $1 ORDER BY provider",
+        user_id.as_uuid(),
     )
-    .bind(user_id.as_uuid())
     .fetch_all(exec)
     .await?;
     Ok(providers)
@@ -575,11 +583,13 @@ pub async fn delete_mapping<'e, E: PgExecutor<'e>>(
     series_id: SeriesId,
     provider: &str,
 ) -> DbResult<bool> {
-    let result = sqlx::query("DELETE FROM sync_mappings WHERE series_id = $1 AND provider = $2")
-        .bind(series_id.as_uuid())
-        .bind(provider)
-        .execute(exec)
-        .await?;
+    let result = sqlx::query!(
+        "DELETE FROM sync_mappings WHERE series_id = $1 AND provider = $2",
+        series_id.as_uuid(),
+        provider,
+    )
+    .execute(exec)
+    .await?;
     Ok(result.rows_affected() > 0)
 }
 
@@ -610,17 +620,18 @@ pub async fn admin_list_accounts<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
 ) -> DbResult<Vec<AdminAccountRow>> {
-    let rows = sqlx::query_as::<_, AdminAccountRow>(
+    let rows = sqlx::query_as!(
+        AdminAccountRow,
         "SELECT ea.user_id, u.username, ea.provider, ea.external_username, \
                 ea.last_synced_at, ea.last_error, ea.auto_sync_enabled, ea.conflict_policy, \
                 (SELECT count(*) FROM sync_conflicts sc \
-                   WHERE sc.user_id = ea.user_id AND sc.resolved_at IS NULL) AS pending_conflicts, \
+                   WHERE sc.user_id = ea.user_id AND sc.resolved_at IS NULL) AS \"pending_conflicts!\", \
                 ea.created_at \
          FROM external_accounts ea JOIN users u ON u.id = ea.user_id \
          ORDER BY (ea.last_error IS NOT NULL) DESC, ea.last_synced_at DESC NULLS LAST \
          LIMIT $1",
+        limit,
     )
-    .bind(limit)
     .fetch_all(exec)
     .await?;
     Ok(rows)
@@ -643,14 +654,15 @@ pub async fn admin_list_mappings<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
 ) -> DbResult<Vec<AdminMappingRow>> {
-    let rows = sqlx::query_as::<_, AdminMappingRow>(
+    let rows = sqlx::query_as!(
+        AdminMappingRow,
         "SELECT sm.series_id, s.canonical_title AS series_title, sm.provider, \
                 sm.external_id, sm.updated_at \
          FROM sync_mappings sm JOIN series s ON s.id = sm.series_id \
          ORDER BY sm.updated_at DESC \
          LIMIT $1",
+        limit,
     )
-    .bind(limit)
     .fetch_all(exec)
     .await?;
     Ok(rows)
@@ -663,14 +675,15 @@ pub async fn admin_list_mappings_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
 ) -> DbResult<Vec<AdminMappingRow>> {
-    let rows = sqlx::query_as::<_, AdminMappingRow>(
+    let rows = sqlx::query_as!(
+        AdminMappingRow,
         "SELECT sm.series_id, s.canonical_title AS series_title, sm.provider, \
                 sm.external_id, sm.updated_at \
          FROM sync_mappings sm JOIN series s ON s.id = sm.series_id \
          WHERE sm.series_id = $1 \
          ORDER BY sm.provider",
+        series_id.as_uuid(),
     )
-    .bind(series_id.as_uuid())
     .fetch_all(exec)
     .await?;
     Ok(rows)
@@ -698,9 +711,10 @@ pub async fn admin_list_unmapped<'e, E: PgExecutor<'e>>(
     let like = query
         .map(|q| format!("%{}%", q.trim()))
         .filter(|q| q.len() > 2);
-    let rows = sqlx::query_as::<_, UnmappedSeriesRow>(
+    let rows = sqlx::query_as!(
+        UnmappedSeriesRow,
         "SELECT s.id AS series_id, s.canonical_title AS series_title, \
-                count(ss.id) AS source_count \
+                count(ss.id) AS \"source_count!\" \
          FROM series s \
          LEFT JOIN series_sources ss ON ss.series_id = s.id \
          WHERE NOT EXISTS ( \
@@ -710,10 +724,10 @@ pub async fn admin_list_unmapped<'e, E: PgExecutor<'e>>(
          GROUP BY s.id, s.canonical_title \
          ORDER BY count(ss.id) DESC, s.canonical_title \
          LIMIT $3",
+        provider,
+        like,
+        limit,
     )
-    .bind(provider)
-    .bind(like)
-    .bind(limit)
     .fetch_all(exec)
     .await?;
     Ok(rows)
@@ -741,7 +755,7 @@ pub async fn upsert_remote_entry<'e, E: PgExecutor<'e>>(
     updated_at: OffsetDateTime,
     series_id: Option<SeriesId>,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO sync_remote_entries \
            (user_id, provider, external_id, title, status, progress, content_type, \
             start_year, updated_at, series_id, fetched_at) \
@@ -751,17 +765,17 @@ pub async fn upsert_remote_entry<'e, E: PgExecutor<'e>>(
             content_type = EXCLUDED.content_type, start_year = EXCLUDED.start_year, \
             updated_at = EXCLUDED.updated_at, series_id = EXCLUDED.series_id, \
             fetched_at = now()",
+        user_id.as_uuid(),
+        provider,
+        external_id,
+        title,
+        status,
+        progress,
+        content_type,
+        start_year,
+        updated_at,
+        series_id.map(SeriesId::as_uuid),
     )
-    .bind(user_id.as_uuid())
-    .bind(provider)
-    .bind(external_id)
-    .bind(title)
-    .bind(status)
-    .bind(progress)
-    .bind(content_type)
-    .bind(start_year)
-    .bind(updated_at)
-    .bind(series_id.map(SeriesId::as_uuid))
     .execute(exec)
     .await?;
     Ok(())
@@ -794,7 +808,8 @@ pub async fn admin_list_unmatched_remote<'e, E: PgExecutor<'e>>(
     let like = query
         .map(|q| format!("%{}%", q.trim()))
         .filter(|q| q.len() > 2);
-    let rows = sqlx::query_as::<_, RemoteEntryRow>(
+    let rows = sqlx::query_as!(
+        RemoteEntryRow,
         "SELECT re.user_id, u.username, re.provider, re.external_id, re.title, re.status, \
                 re.progress, re.content_type, re.start_year \
          FROM sync_remote_entries re JOIN users u ON u.id = re.user_id \
@@ -802,10 +817,10 @@ pub async fn admin_list_unmatched_remote<'e, E: PgExecutor<'e>>(
            AND ($2::text IS NULL OR re.title ILIKE $2) \
          ORDER BY re.title \
          LIMIT $3",
+        provider,
+        like,
+        limit,
     )
-    .bind(provider)
-    .bind(like)
-    .bind(limit)
     .fetch_all(exec)
     .await?;
     Ok(rows)
@@ -828,13 +843,14 @@ pub async fn get_remote_entry<'e, E: PgExecutor<'e>>(
     provider: &str,
     external_id: &str,
 ) -> DbResult<Option<RemoteEntrySnapshot>> {
-    let row = sqlx::query_as::<_, RemoteEntrySnapshot>(
+    let row = sqlx::query_as!(
+        RemoteEntrySnapshot,
         "SELECT title, status, progress, updated_at FROM sync_remote_entries \
          WHERE user_id = $1 AND provider = $2 AND external_id = $3",
+        user_id.as_uuid(),
+        provider,
+        external_id,
     )
-    .bind(user_id.as_uuid())
-    .bind(provider)
-    .bind(external_id)
     .fetch_optional(exec)
     .await?;
     Ok(row)
@@ -866,25 +882,26 @@ pub async fn suggest_series_candidates<'e, E: PgExecutor<'e>>(
     normalized: &str,
     limit: i64,
 ) -> DbResult<Vec<SeriesCandidateRow>> {
-    let rows = sqlx::query_as::<_, SeriesCandidateRow>(
+    let rows = sqlx::query_as!(
+        SeriesCandidateRow,
         "SELECT s.id AS series_id, s.canonical_title AS title, s.normalized_title, \
-                s.content_type::text AS content_type, s.release_year, \
+                s.content_type::text AS \"content_type!\", s.release_year, \
                 (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) \
-                    AS source_count, \
+                    AS \"source_count!\", \
                 GREATEST( \
                   similarity(s.normalized_title, $1), \
                   COALESCE((SELECT MAX(similarity(st.normalized, $1)) \
                             FROM series_titles st WHERE st.series_id = s.id), 0) \
-                ) AS similarity \
+                ) AS \"similarity!\" \
          FROM series s \
          WHERE s.normalized_title % $1 \
             OR EXISTS (SELECT 1 FROM series_titles st \
                        WHERE st.series_id = s.id AND st.normalized % $1) \
-         ORDER BY similarity DESC \
+         ORDER BY 7 DESC \
          LIMIT $2",
+        normalized,
+        limit,
     )
-    .bind(normalized)
-    .bind(limit)
     .fetch_all(exec)
     .await?;
     Ok(rows)
@@ -899,14 +916,14 @@ pub async fn mark_remote_entry_matched<'e, E: PgExecutor<'e>>(
     external_id: &str,
     series_id: SeriesId,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE sync_remote_entries SET series_id = $4 \
          WHERE user_id = $1 AND provider = $2 AND external_id = $3",
+        user_id.as_uuid(),
+        provider,
+        external_id,
+        series_id.as_uuid(),
     )
-    .bind(user_id.as_uuid())
-    .bind(provider)
-    .bind(external_id)
-    .bind(series_id.as_uuid())
     .execute(exec)
     .await?;
     Ok(())

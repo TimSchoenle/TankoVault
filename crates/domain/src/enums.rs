@@ -14,13 +14,24 @@ macro_rules! str_enum {
     (
         $(#[$meta:meta])*
         $vis:vis enum $name:ident { $( $variant:ident => $token:literal ),+ $(,)? }
-        default = $default:ident
+        default = $default:ident,
+        sql_type = $sql_type:literal
     ) => {
         $(#[$meta])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
         #[serde(rename_all = "snake_case")]
+        // With the `sqlx` feature on (enabled by `tankovault-db`), the enum maps to its
+        // native Postgres enum type so repositories can bind/decode it directly and let the
+        // `query!`/`query_as!` macros verify it at compile time. The feature is off for the
+        // WASM frontend, keeping this crate free of the native sqlx stack there.
+        #[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
+        #[cfg_attr(feature = "sqlx", sqlx(type_name = $sql_type))]
         $vis enum $name {
-            $( #[serde(rename = $token)] $variant ),+
+            $(
+                #[serde(rename = $token)]
+                #[cfg_attr(feature = "sqlx", sqlx(rename = $token))]
+                $variant
+            ),+
         }
 
         impl $name {
@@ -75,7 +86,8 @@ str_enum! {
         Webtoon => "webtoon",
         Unknown => "unknown",
     }
-    default = Unknown
+    default = Unknown,
+    sql_type = "content_type"
 }
 
 str_enum! {
@@ -87,7 +99,8 @@ str_enum! {
         Cancelled => "cancelled",
         Unknown => "unknown",
     }
-    default = Unknown
+    default = Unknown,
+    sql_type = "series_status"
 }
 
 str_enum! {
@@ -97,7 +110,8 @@ str_enum! {
         GenericConfig => "generic_config",
         Custom => "custom",
     }
-    default = GenericConfig
+    default = GenericConfig,
+    sql_type = "adapter_kind"
 }
 
 str_enum! {
@@ -110,7 +124,8 @@ str_enum! {
         Blocked => "blocked",
         Disabled => "disabled",
     }
-    default = Active
+    default = Active,
+    sql_type = "provider_state"
 }
 
 str_enum! {
@@ -119,7 +134,8 @@ str_enum! {
         Full => "full",
         Fast => "fast",
     }
-    default = Fast
+    default = Fast,
+    sql_type = "scan_mode"
 }
 
 str_enum! {
@@ -131,7 +147,8 @@ str_enum! {
         Failed => "failed",
         Cancelled => "cancelled",
     }
-    default = Queued
+    default = Queued,
+    sql_type = "run_state"
 }
 
 str_enum! {
@@ -144,7 +161,8 @@ str_enum! {
         Failed => "failed",
         Skipped => "skipped",
     }
-    default = Queued
+    default = Queued,
+    sql_type = "task_state"
 }
 
 str_enum! {
@@ -156,7 +174,8 @@ str_enum! {
         Dropped => "dropped",
         Paused => "paused",
     }
-    default = Reading
+    default = Reading,
+    sql_type = "watch_status"
 }
 
 str_enum! {
@@ -166,7 +185,8 @@ str_enum! {
         Operator => "operator",
         Admin => "admin",
     }
-    default = User
+    default = User,
+    sql_type = "user_role"
 }
 
 impl UserRole {

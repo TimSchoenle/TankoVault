@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series_tags (series_id, tag_id) SELECT $1, tag_id FROM series_tags WHERE series_id = $2 ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bd82686ec14e9ccb90435ccff3491e891848127be92d4723af42b19a94f95da2"
+}

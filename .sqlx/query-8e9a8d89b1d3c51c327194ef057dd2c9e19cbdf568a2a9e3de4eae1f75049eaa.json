@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO scan_runs (id, provider_id, mode) VALUES ($1,$2,$3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        {
+          "Custom": {
+            "name": "scan_mode",
+            "kind": {
+              "Enum": [
+                "full",
+                "fast"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8e9a8d89b1d3c51c327194ef057dd2c9e19cbdf568a2a9e3de4eae1f75049eaa"
+}

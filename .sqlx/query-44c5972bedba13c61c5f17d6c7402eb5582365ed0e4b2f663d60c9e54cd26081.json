@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO sync_mappings (series_id, provider, external_id) VALUES ($1,$2,$3) ON CONFLICT (series_id, provider) DO UPDATE SET external_id = EXCLUDED.external_id, updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "44c5972bedba13c61c5f17d6c7402eb5582365ed0e4b2f663d60c9e54cd26081"
+}

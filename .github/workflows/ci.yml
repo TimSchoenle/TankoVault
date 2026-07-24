@@ -42,6 +42,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: cargo test
         run: cargo test --workspace --all-targets
+      # Fails if a backend DTO changed without regenerating the OpenAPI artifacts
+      # (services/api/src/openapi.rs -> xtask openapi -> openapi.json + the progenitor
+      # crates/api-client client, consumed by the frontend via web/frontend/src/wire.rs). A
+      # local pre-commit hook (installed automatically by xtask/build.rs, see
+      # xtask/hooks/pre-commit) normally keeps this from ever drifting; this is the backstop
+      # for commits made without it.
+      - name: OpenAPI artifacts are up to date
+        run: cargo run -p xtask -- openapi --check
 
   frontend:
     name: frontend (wasm32)

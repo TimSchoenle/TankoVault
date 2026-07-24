@@ -6,12 +6,12 @@
 //! `chapter.discovered` only for real discoveries.
 
 use crate::error::{DbError, DbResult};
+use sqlx::{FromRow, PgExecutor};
+use std::str::FromStr;
 use tankovault_domain::{
     Chapter, ChapterId, ContentType, ProviderId, ProviderState, Series, SeriesId, SeriesSource,
     SeriesSourceId, SeriesStatus, normalize_title,
 };
-use sqlx::{FromRow, PgExecutor};
-use std::str::FromStr;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -111,7 +111,11 @@ pub async fn resolve_canonical_series(
         authors: Vec::new(),
     };
 
-    match tankovault_matcher::decide(&query, &candidates, tankovault_matcher::Thresholds::default()) {
+    match tankovault_matcher::decide(
+        &query,
+        &candidates,
+        tankovault_matcher::Thresholds::default(),
+    ) {
         tankovault_matcher::Decision::Attach(id) => Ok(id),
         tankovault_matcher::Decision::Ambiguous { candidate, score } => {
             let id = create_series(conn, meta).await?;
@@ -462,7 +466,6 @@ pub async fn upsert_source<'e, E: PgExecutor<'e>>(
     .await?;
     Ok(SeriesSourceId::from_uuid(id))
 }
-
 
 /// Ensure a series **source** row exists for a catalogue entry, creating a canonical
 /// series from the listing title when the source is new.

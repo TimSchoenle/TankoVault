@@ -2,6 +2,9 @@
 //! `JetStream` task consumer. Every write goes through the idempotent
 //! [`tankovault_db::repo::catalog::ingest_series`], so replays are safe.
 
+use sha2::{Digest, Sha256};
+use std::sync::Arc;
+use std::time::Duration;
 use tankovault_adapters::{ChapterMeta, Ctx, SeriesMeta, SourceAdapter, build_adapter};
 use tankovault_bus::Bus;
 use tankovault_contracts::{ChapterDiscovered, ScanTaskMessage, TaskKind};
@@ -10,9 +13,6 @@ use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert};
 use tankovault_domain::{Provider, normalize_title};
 use tankovault_fetch::{ProviderFetchConfig, RobotsRules, SessionStore, build_provider_fetcher};
 use tankovault_solver::ChallengeSolver;
-use sha2::{Digest, Sha256};
-use std::sync::Arc;
-use std::time::Duration;
 use time::OffsetDateTime;
 
 /// Shared dependencies handed to the engine.

@@ -1,0 +1,6 @@
+# `crates/api-client/src/lib.rs` is emitted by `xtask openapi` (progenitor codegen,
+# spaced via `progenitor_impl::space_out_items`) and carries a "DO NOT EDIT" header.
+# Its on-disk form must stay byte-identical to what the generator produces so
+# `xtask openapi --check` (CI + pre-commit) keeps passing; running rustfmt over it would
+# fight that invariant. Exclude it from formatting.
+ignore = ["crates/api-client/src/lib.rs"]

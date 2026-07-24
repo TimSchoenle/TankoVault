@@ -23,8 +23,8 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use tankovault_solver::{ChallengeSolver, SolveRequest};
 use serde::{Deserialize, Serialize};
+use tankovault_solver::{ChallengeSolver, SolveRequest};
 use tokio::net::TcpListener;
 
 use crate::browser::{BrowserManager, RenderOptions};

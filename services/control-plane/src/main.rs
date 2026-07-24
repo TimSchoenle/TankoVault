@@ -15,12 +15,12 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use tankovault_bus::Bus;
 use tankovault_contracts::{ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
 use tankovault_domain::{Provider, ProviderId, ScanMode, ScanRunId};
-use serde::{Deserialize, Serialize};
-use std::time::Duration;
 use tokio::net::TcpListener;
 
 #[derive(Debug, Deserialize)]
@@ -179,7 +179,8 @@ async fn plan_run(
     provider: &Provider,
     mode: ScanMode,
 ) -> anyhow::Result<ScanRunId> {
-    let run_id = tankovault_db::repo::scans::create_run(&state.pool, Some(provider.id), mode).await?;
+    let run_id =
+        tankovault_db::repo::scans::create_run(&state.pool, Some(provider.id), mode).await?;
     tankovault_db::repo::scans::start_run(&state.pool, run_id).await?;
 
     let (kind_str, kind, target) = match mode {

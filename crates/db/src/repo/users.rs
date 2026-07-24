@@ -4,9 +4,9 @@
 //! and the SHA-256 `token_hash`, never plaintext secrets.
 
 use crate::error::{DbError, DbResult};
-use tankovault_domain::{User, UserId, UserRole};
 use sqlx::{FromRow, PgExecutor};
 use std::str::FromStr;
+use tankovault_domain::{User, UserId, UserRole};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -342,7 +342,7 @@ pub async fn set_notification_prefs<'e, E: PgExecutor<'e>>(
 
 /// One row of the operator Users table: identity, role, and how many series the user
 /// tracks (frontend §9.5 `GET /v1/admin/users`).
-#[derive(Debug, Clone, serde::Serialize, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow, utoipa::ToSchema)]
 pub struct UserRow2 {
     pub id: Uuid,
     pub email: String,
@@ -351,6 +351,7 @@ pub struct UserRow2 {
     pub role: String,
     pub tracked_count: i64,
     #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
 }
 

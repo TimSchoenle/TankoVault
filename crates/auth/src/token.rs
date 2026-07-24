@@ -3,12 +3,12 @@
 use crate::error::AuthError;
 use base64::Engine;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use tankovault_domain::{UserId, UserRole};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 use std::str::FromStr;
+use tankovault_domain::{UserId, UserRole};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
@@ -114,9 +114,14 @@ mod tests {
     fn access_token_round_trips_with_role() {
         let secret = b"test-secret-please-rotate";
         let uid = UserId::new();
-        let token =
-            issue_access_token(secret, uid, "aster", UserRole::Operator, Duration::minutes(15))
-                .unwrap();
+        let token = issue_access_token(
+            secret,
+            uid,
+            "aster",
+            UserRole::Operator,
+            Duration::minutes(15),
+        )
+        .unwrap();
         let claims = verify_access_token(secret, &token).unwrap();
         assert_eq!(claims.user_id(), Some(uid));
         assert_eq!(claims.name, "aster");

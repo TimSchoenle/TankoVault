@@ -7,16 +7,16 @@
 use std::fmt::Write as _;
 use std::time::Duration;
 
+use crate::mapping::{AniListStatus, content_type_from_country};
+use crate::provider::{ExternalProvider, OAuthTokens, RemoteEntry, RemoteMetadata, Viewer};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use serde::Deserialize;
+use tankovault_domain::{ContentType, WatchStatus};
 use time::OffsetDateTime;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 use tracing::info;
-use crate::mapping::{AniListStatus, content_type_from_country};
-use crate::provider::{ExternalProvider, OAuthTokens, RemoteEntry, RemoteMetadata, Viewer};
-use tankovault_domain::{ContentType, WatchStatus};
 
 /// Default `AniList` GraphQL endpoint.
 pub(crate) const DEFAULT_GRAPHQL_URL: &str = "https://graphql.anilist.co";
@@ -31,7 +31,7 @@ pub(crate) const PROVIDER: &str = "anilist";
 #[derive(Debug, Clone)]
 pub(crate) struct AniListEntry {
     pub(crate) media_id: i64,
-    /// Candidate titles (romaji/english/native, then every AniList synonym), non-empty
+    /// Candidate titles (romaji/english/native, then every `AniList` synonym), non-empty
     /// ones only. `titles[0]` is always the first non-empty of romaji/english/native, so
     /// callers relying on "the primary title" (e.g. the remote-entry snapshot) still see
     /// the same value as before synonyms were added.
@@ -42,7 +42,7 @@ pub(crate) struct AniListEntry {
     pub(crate) start_year: Option<i32>,
     pub(crate) content_type: ContentType,
     /// Genres, used as an extra local-matching signal alongside title (design: make
-    /// AniList matching use the metadata adapters now capture).
+    /// `AniList` matching use the metadata adapters now capture).
     pub(crate) tags: Vec<String>,
     /// Staff names (story/art credits), matched against locally-scraped authors.
     pub(crate) authors: Vec<String>,
@@ -398,10 +398,7 @@ impl AniListClient {
             if let Some(token) = access_token {
                 req = req.bearer_auth(token);
             }
-            let resp = req
-                .send()
-                .await
-                .context("AniList GraphQL request failed")?;
+            let resp = req.send().await.context("AniList GraphQL request failed")?;
 
             if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS && attempt == 0 {
                 let retry_after = resp

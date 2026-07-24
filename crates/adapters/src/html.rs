@@ -5,8 +5,8 @@
 //! unit-tested so a provider markup change fails a fixture test, not production silently.
 
 use crate::error::AdapterError;
-use tankovault_domain::SeriesStatus;
 use scraper::{ElementRef, Selector};
+use tankovault_domain::SeriesStatus;
 use time::OffsetDateTime;
 use time::macros::format_description;
 use url::Url;

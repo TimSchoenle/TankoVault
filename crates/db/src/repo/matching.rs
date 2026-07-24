@@ -4,9 +4,9 @@
 //! `matcher` crate (pure) so it is unit-testable without a database.
 
 use crate::error::DbResult;
-use tankovault_domain::{ContentType, SeriesId};
 use sqlx::{FromRow, PgExecutor};
 use std::str::FromStr;
+use tankovault_domain::{ContentType, SeriesId};
 use uuid::Uuid;
 
 /// A trigram candidate for matching a new source's title to an existing series.
@@ -100,7 +100,7 @@ pub async fn record_merge_candidate<'e, E: PgExecutor<'e>>(
 
 /// A pending merge candidate enriched with both series' display titles, for the operator
 /// review queue (design §11 `GET /v1/admin/merge-candidates`).
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct MergeCandidateView {
     pub id: Uuid,
     pub series_id: SeriesId,
@@ -110,6 +110,7 @@ pub struct MergeCandidateView {
     pub score: f32,
     pub reason: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
     pub created_at: time::OffsetDateTime,
 }
 

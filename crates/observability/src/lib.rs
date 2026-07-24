@@ -8,9 +8,9 @@
 //! [`tankovault_config::TelemetryConfig::otlp_endpoint`] field is honoured by logging a
 //! notice until that exporter is wired. Local tracing and metrics are fully functional.
 
-use tankovault_config::TelemetryConfig;
 use metrics_exporter_prometheus::PrometheusBuilder;
 pub use metrics_exporter_prometheus::PrometheusHandle;
+use tankovault_config::TelemetryConfig;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;

@@ -6,7 +6,7 @@
 use crate::api;
 use crate::components::{Cover, CoverCard, EmptyBox, ErrorBox, SignInGate};
 use crate::icons::{Ic, Icon};
-use crate::models::{ContinueItem, FeedEntry};
+use crate::models::*;
 use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
@@ -14,41 +14,79 @@ use dioxus::prelude::*;
 #[component]
 pub fn Home() -> Element {
     let session = use_session();
+    let api_client = api::use_api();
     let mut reload = use_signal(|| 0u32);
 
-    let feed = use_resource(move || {
-        let _ = reload.read();
-        async move {
-            match session.token_value() {
-                Some(t) => api::feed(&t).await,
-                None => Ok(Vec::new()),
+    let feed = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let _ = reload.read();
+            let client = client.clone();
+            async move {
+                if session.is_authenticated() {
+                    client
+                        .feed()
+                        .send()
+                        .await
+                        .map(|r| r.into_inner())
+                        .map_err(api::friendly_error)
+                } else {
+                    Ok(Vec::new())
+                }
             }
-        }
-    });
-    let stats = use_resource(move || {
-        let _ = reload.read();
-        async move {
-            match session.token_value() {
-                Some(t) => api::me_stats(&t).await.ok(),
-                None => None,
+        })
+    };
+    let stats = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let _ = reload.read();
+            let client = client.clone();
+            async move {
+                if session.is_authenticated() {
+                    client.stats().send().await.map(|r| r.into_inner()).ok()
+                } else {
+                    None
+                }
             }
-        }
-    });
-    let cont = use_resource(move || {
-        let _ = reload.read();
-        async move {
-            match session.token_value() {
-                Some(t) => api::continue_reading(&t).await.unwrap_or_default(),
-                None => Vec::new(),
+        })
+    };
+    let cont = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let _ = reload.read();
+            let client = client.clone();
+            async move {
+                if session.is_authenticated() {
+                    client
+                        .continue_reading()
+                        .send()
+                        .await
+                        .map(|r| r.into_inner())
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                }
             }
-        }
-    });
-    let recs = use_resource(move || async move {
-        match session.token_value() {
-            Some(t) => api::recommendations(&t).await.unwrap_or_default(),
-            None => Vec::new(),
-        }
-    });
+        })
+    };
+    let recs = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let client = client.clone();
+            async move {
+                if session.is_authenticated() {
+                    client
+                        .recommendations()
+                        .send()
+                        .await
+                        .map(|r| r.into_inner())
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                }
+            }
+        })
+    };
 
     if !session.is_authenticated() {
         return rsx! {
@@ -70,8 +108,14 @@ pub fn Home() -> Element {
         Some(Some(s)) => Some(s.clone()),
         _ => None,
     };
-    let reading_count = me.as_ref().map(|s| s.reading.to_string()).unwrap_or_else(|| "—".to_owned());
-    let chapters_read = me.as_ref().map(|s| s.chapters_read.to_string()).unwrap_or_else(|| "—".to_owned());
+    let reading_count = me
+        .as_ref()
+        .map(|s| s.reading.to_string())
+        .unwrap_or_else(|| "—".to_owned());
+    let chapters_read = me
+        .as_ref()
+        .map(|s| s.chapters_read.to_string())
+        .unwrap_or_else(|| "—".to_owned());
 
     let feed_body = match &*feed.read_unchecked() {
         None => rsx! {
@@ -207,7 +251,7 @@ fn ContinueCard(item: ContinueItem) -> Element {
     let next = item.next_number.map(trim_num);
     let unread = item.unread;
     rsx! {
-        Link { to: Route::Series { id: item.series_id.clone() }, class: "ik-card",
+        Link { to: Route::Series { id: item.series_id.to_string() }, class: "ik-card",
             Cover { url: item.cover_url.clone(), title: item.series_title.clone() }
             div { class: "ik-card-body",
                 div { class: "ik-card-title", "{item.series_title}" }
@@ -229,9 +273,8 @@ fn ContinueCard(item: ContinueItem) -> Element {
 
 #[component]
 fn FeedRow(entry: FeedEntry, reload: Signal<u32>) -> Element {
-    let session = use_session();
-    let mut reload = reload;
-    let series_id = entry.series_id.clone();
+    let api_client = api::use_api();
+    let series_id = entry.series_id;
     let number = entry.chapter_number;
     let chapter_label = entry
         .chapter_title
@@ -240,12 +283,21 @@ fn FeedRow(entry: FeedEntry, reload: Signal<u32>) -> Element {
         .unwrap_or_else(|| format!("Chapter {}", trim_num(number)));
 
     let mark = move |_| {
-        let sid = series_id.clone();
+        let mut reload = reload;
+        let client = api_client.clone();
         spawn(async move {
-            if let Some(t) = session.token_value() {
-                if api::set_progress(&t, &sid, number).await.is_ok() {
-                    reload += 1;
-                }
+            let body = ProgressUpdate {
+                last_read_whole_number: number,
+            };
+            if client
+                .put_progress()
+                .series_id(series_id)
+                .body(body)
+                .send()
+                .await
+                .is_ok()
+            {
+                reload += 1;
             }
         });
     };

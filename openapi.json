@@ -1,0 +1,5814 @@
+{
+  "components": {
+    "schemas": {
+      "AdapterKind": {
+        "description": "Which adapter implementation drives a provider.",
+        "enum": [
+          "madara",
+          "generic_config",
+          "custom"
+        ],
+        "type": "string"
+      },
+      "AdminAccountRow": {
+        "description": "One row of the admin Sync console's \"Linked accounts\" table. The automatic-sync policy\ncolumns and pending-conflict count (design v2 §B.7) are read-only operator visibility —\nthey are user settings, never operator-overridable.",
+        "properties": {
+          "auto_sync_enabled": {
+            "type": "boolean"
+          },
+          "conflict_policy": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "external_username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_synced_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pending_conflicts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "username",
+          "provider",
+          "auto_sync_enabled",
+          "conflict_policy",
+          "pending_conflicts",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "AdminMappingRow": {
+        "description": "One row of the admin Sync console's \"Series mappings\" table.",
+        "properties": {
+          "external_id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "series_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "series_title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "series_id",
+          "series_title",
+          "provider",
+          "external_id",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "AssignRemoteEntry": {
+        "properties": {
+          "external_id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "series_id": {
+            "$ref": "#/components/schemas/SeriesId"
+          },
+          "user_id": {
+            "$ref": "#/components/schemas/UserId"
+          }
+        },
+        "required": [
+          "user_id",
+          "provider",
+          "external_id",
+          "series_id"
+        ],
+        "type": "object"
+      },
+      "AuditView": {
+        "description": "One privileged-action record enriched with the actor's username, for the console feed.",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "description": "Actor username (`None` for system-originated actions or a since-deleted user).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "detail": {
+            "$ref": "#/components/schemas/Value"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "target": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "detail",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "Author": {
+        "description": "An author/artist credit.",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/AuthorId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AuthorId": {
+        "description": "Identifies an author/artist credit.",
+        "format": "uuid",
+        "type": "string"
+      },
+      "ChapterDto": {
+        "properties": {
+          "number": {
+            "format": "double",
+            "type": "number"
+          },
+          "published_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "read": {
+            "description": "Whether the requesting user has read this chapter (number ≤ their progress).\n`None` for anonymous requests; `Some(bool)` when a valid `Bearer` token is present\n(frontend §9.2 auth-scoped read-state).",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "description": "Resolved absolute URL to open the chapter page on the provider.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "url"
+        ],
+        "type": "object"
+      },
+      "ChapterId": {
+        "description": "Identifies a [`crate::entities::Chapter`].",
+        "format": "uuid",
+        "type": "string"
+      },
+      "ChapterRead": {
+        "properties": {
+          "read": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "read"
+        ],
+        "type": "object"
+      },
+      "ContentType": {
+        "description": "The medium/origin classification of a work.",
+        "enum": [
+          "manga",
+          "manhwa",
+          "manhua",
+          "webtoon",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "ContinueItem": {
+        "properties": {
+          "cover_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_read_number": {
+            "format": "double",
+            "type": "number"
+          },
+          "next_number": {
+            "description": "The lowest unread chapter number above the user's progress, if any.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "series_id": {
+            "$ref": "#/components/schemas/SeriesId"
+          },
+          "series_title": {
+            "type": "string"
+          },
+          "unread": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "series_id",
+          "series_title",
+          "last_read_number",
+          "unread"
+        ],
+        "type": "object"
+      },
+      "CreateProvider": {
+        "properties": {
+          "adapter": {
+            "$ref": "#/components/schemas/AdapterKind"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "config": {},
+          "name": {
+            "type": "string"
+          },
+          "politeness": {
+            "$ref": "#/components/schemas/Politeness"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "base_url",
+          "adapter"
+        ],
+        "type": "object"
+      },
+      "DismissRequest": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "FailedTaskView": {
+        "description": "A failed scan task enriched with its run's provider + mode, for the console error feed.",
+        "properties": {
+          "attempts": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "provider_slug": {
+            "description": "Provider slug of the owning run (`None` if the provider was since deleted).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "mode",
+          "kind",
+          "attempts"
+        ],
+        "type": "object"
+      },
+      "FeedEntry": {
+        "properties": {
+          "chapter_number": {
+            "format": "double",
+            "type": "number"
+          },
+          "chapter_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "discovered_at": {
+            "type": "string"
+          },
+          "provider_slug": {
+            "type": "string"
+          },
+          "series_id": {
+            "$ref": "#/components/schemas/SeriesId"
+          },
+          "series_title": {
+            "type": "string"
+          },
+          "url": {
+            "description": "Ready-to-open absolute URL, resolved from the provider base + relative path.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "series_id",
+          "series_title",
+          "chapter_number",
+          "provider_slug",
+          "url",
+          "discovered_at"
+        ],
+        "type": "object"
+      },
+      "LoginRequest": {
+        "properties": {
+          "login": {
+            "description": "Email or username.",
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "login",
+          "password"
+        ],
+        "type": "object"
+      },
+      "MarkRead": {
+        "properties": {
+          "ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "type": "object"
+      },
+      "MarkReadTo": {
+        "properties": {
+          "number": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "number"
+        ],
+        "type": "object"
+      },
+      "MeStats": {
+        "description": "Lifetime reading stats for the Home/Profile headline (frontend §9.3 `GET /v1/me/stats`).\n`chapters_read` is the sum of whole chapters below each series' last-read marker — an\nhonest proxy over stored progress (there is no per-chapter read-event log, so a daily\n\"streak\" is intentionally omitted rather than fabricated).",
+        "properties": {
+          "chapters_read": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "completed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reading": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tracking": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "unread": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tracking",
+          "reading",
+          "completed",
+          "chapters_read",
+          "unread"
+        ],
+        "type": "object"
+      },
+      "MergeCandidateView": {
+        "description": "A pending merge candidate enriched with both series' display titles, for the operator\nreview queue (design §11 `GET /v1/admin/merge-candidates`).",
+        "properties": {
+          "candidate_id": {
+            "$ref": "#/components/schemas/SeriesId"
+          },
+          "candidate_title": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "score": {
+            "format": "float",
+            "type": "number"
+          },
+          "series_id": {
+            "$ref": "#/components/schemas/SeriesId"
+          },
+          "series_title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "series_id",
+          "series_title",
+          "candidate_id",
+          "candidate_title",
+          "score",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "MergeRequest": {
+        "properties": {
+          "keep": {
+            "$ref": "#/components/schemas/SeriesId",
+            "description": "The surviving canonical series."
+          },
+          "merge": {
+            "$ref": "#/components/schemas/SeriesId",
+            "description": "The series merged into `keep` and then deleted."
+          }
+        },
+        "required": [
+          "keep",
+          "merge"
+        ],
+        "type": "object"
+      },
+      "NotificationId": {
+        "description": "Identifies a notification.",
+        "format": "uuid",
+        "type": "string"
+      },
+      "Politeness": {
+        "description": "Crawl politeness parameters for one provider.",
+        "properties": {
+          "concurrency": {
+            "description": "Maximum concurrent requests to this provider.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "crawl_delay_ms": {
+            "description": "Minimum delay between requests, in milliseconds (from robots crawl-delay or config).",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rps": {
+            "description": "Requests per second, aggregate across the worker pool.",
+            "format": "double",
+            "type": "number"
+          },
+          "user_agent": {
+            "description": "User-agent sent on ordinary (non-challenge) requests.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ProblemDetails": {
+        "description": "RFC 9457 `application/problem+json` error body shape produced by [`ApiError`]. Declared\npurely for `OpenAPI` documentation — [`ApiError::into_response`] builds the JSON by hand so\nruntime callers never construct this type.",
+        "example": {
+          "detail": "resource not found",
+          "status": 404,
+          "title": "not_found",
+          "type": "about:blank#not_found"
+        },
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "status": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail"
+        ],
+        "type": "object"
+      },
+      "ProfileDto": {
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "username",
+          "role"
+        ],
+        "type": "object"
+      },
+      "ProfileUpdate": {
+        "properties": {
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "ProgressDto": {
+        "properties": {
+          "last_read_part_number": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "last_read_whole_number": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "last_read_whole_number"
+        ],
+        "type": "object"
+      },
+      "ProgressUpdate": {
+        "properties": {
+          "last_read_whole_number": {
+            "description": "The whole-chapter frontier to set outright (design v2 §A.6 — renamed from\n`last_read_number`, same semantics).",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "last_read_whole_number"
+        ],
+        "type": "object"
+      },
+      "Provider": {
+        "description": "A source site. The single place a domain (`base_url`) is defined.",
+        "properties": {
+          "adapter": {
+            "$ref": "#/components/schemas/AdapterKind"
+          },
+          "base_url": {
+            "description": "The domain root. Changing this one field migrates every stored link.",
+            "type": "string"
+          },
+          "config": {
+            "description": "Adapter selector/pagination config (shape depends on `adapter`)."
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ProviderId"
+          },
+          "last_full_scan_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "politeness": {
+            "$ref": "#/components/schemas/Politeness"
+          },
+          "robots_at": {
+            "description": "Wire shape is a plain string (whatever `time`'s serde impl emits), never parsed\nclient-side — kept untyped here so the generated frontend type doesn't need a date\ncrate (mirrors the `no date crate in the bundle` constraint on the other timestamp\nfields below).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "robots_txt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slug": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ProviderState"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "base_url",
+          "adapter",
+          "config",
+          "state",
+          "politeness",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "ProviderId": {
+        "description": "Identifies a [`crate::entities::Provider`].",
+        "format": "uuid",
+        "type": "string"
+      },
+      "ProviderStat": {
+        "description": "One row of the per-provider statistics table. Enum columns are text-cast; the provider's\nidentity fields are joined in so the console renders the table from one fetch.",
+        "properties": {
+          "adapter": {
+            "description": "Adapter implementation token (`madara` | `generic_config` | `custom`).",
+            "type": "string"
+          },
+          "blocked_sources": {
+            "description": "Source links currently in a non-active state.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "chapter_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "chapters_24h": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "chapters_7d": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "last_chapter_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_full_scan_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_run_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_run_state": {
+            "description": "State of the provider's most recent scan run, if any.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_scanned_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "series_count": {
+            "description": "Distinct series that have at least one source on this provider.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "source_count": {
+            "description": "Source links (series ↔ provider joins) this provider owns.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "state": {
+            "description": "Provider health state token (`active` | `disabled` | `blocked` | …).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider_id",
+          "slug",
+          "name",
+          "state",
+          "adapter",
+          "series_count",
+          "source_count",
+          "blocked_sources",
+          "chapter_count",
+          "chapters_24h",
+          "chapters_7d"
+        ],
+        "type": "object"
+      },
+      "ProviderState": {
+        "description": "Live health state of a provider (drives the circuit breaker + console tiles).",
+        "enum": [
+          "active",
+          "degraded",
+          "challenged",
+          "solving",
+          "blocked",
+          "disabled"
+        ],
+        "type": "string"
+      },
+      "PublicProvider": {
+        "description": "A public-facing provider entry for the Discover filter list (frontend §9.3\n`GET /v1/providers`): identity plus how many distinct series it carries, so the UI can\nshow \"Provider (N)\" options without exposing operator-only config/politeness.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "series_count": {
+            "description": "Distinct canonical series with at least one source on this provider.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "series_count"
+        ],
+        "type": "object"
+      },
+      "RegisterRequest": {
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "username",
+          "password"
+        ],
+        "type": "object"
+      },
+      "RemoteEntryRow": {
+        "description": "One row of the admin console's \"Unmatched remote entries\" queue: a fetched provider entry\nthe auto-matcher could not confidently link to a local series.",
+        "properties": {
+          "content_type": {
+            "type": "string"
+          },
+          "external_id": {
+            "type": "string"
+          },
+          "progress": {
+            "format": "double",
+            "type": "number"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "start_year": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "username",
+          "provider",
+          "external_id",
+          "title",
+          "status",
+          "progress",
+          "content_type"
+        ],
+        "type": "object"
+      },
+      "ResolveConflict": {
+        "properties": {
+          "resolution": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolution"
+        ],
+        "type": "object"
+      },
+      "RunState": {
+        "description": "Lifecycle of a scan run.",
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "ScanMode": {
+        "description": "Scan cadence.",
+        "enum": [
+          "full",
+          "fast"
+        ],
+        "type": "string"
+      },
+      "ScanRun": {
+        "description": "A scan run (progress + audit; mirrors `JetStream` dispatch).",
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "done_tasks": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "failed_tasks": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "$ref": "#/components/schemas/ScanRunId"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ScanMode"
+          },
+          "provider_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProviderId"
+              }
+            ]
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/RunState"
+          },
+          "total_tasks": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "mode",
+          "state",
+          "total_tasks",
+          "done_tasks",
+          "failed_tasks",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ScanRunId": {
+        "description": "Identifies a scan run.",
+        "format": "uuid",
+        "type": "string"
+      },
+      "ScanTaskId": {
+        "description": "Identifies a scan task.",
+        "format": "uuid",
+        "type": "string"
+      },
+      "SeriesDetail": {
+        "properties": {
+          "alt_titles": {
+            "description": "Alternative titles gathered across providers (frontend §9.2; empty when none).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "anilist_id": {
+            "description": "`AniList` media id, if this series is mapped (`sync_mappings`); lets the frontend\nlink out to the canonical `AniList` entry regardless of whether the viewer has synced.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "authors": {
+            "description": "Author/artist credits attached to the series; empty when none.",
+            "items": {
+              "$ref": "#/components/schemas/Author"
+            },
+            "type": "array"
+          },
+          "content_type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "cover_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "$ref": "#/components/schemas/SeriesId"
+          },
+          "release_year": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceDto"
+            },
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SeriesStatus"
+          },
+          "tags": {
+            "description": "Genre/tags attached to the series (frontend §9.2; empty when none).",
+            "items": {
+              "$ref": "#/components/schemas/Tag"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "content_type",
+          "status",
+          "sources",
+          "alt_titles",
+          "tags",
+          "authors"
+        ],
+        "type": "object"
+      },
+      "SeriesId": {
+        "description": "Identifies a canonical [`crate::entities::Series`].",
+        "format": "uuid",
+        "type": "string"
+      },
+      "SeriesSourceId": {
+        "description": "Identifies a [`crate::entities::SeriesSource`].",
+        "format": "uuid",
+        "type": "string"
+      },
+      "SeriesStatus": {
+        "description": "Publication status of a canonical series.",
+        "enum": [
+          "ongoing",
+          "completed",
+          "hiatus",
+          "cancelled",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "SeriesSummary": {
+        "properties": {
+          "content_type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "cover_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "$ref": "#/components/schemas/SeriesId"
+          },
+          "source_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SeriesStatus"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "content_type",
+          "status",
+          "source_count"
+        ],
+        "type": "object"
+      },
+      "SessionDto": {
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "family_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "family_id",
+          "created_at",
+          "expires_at"
+        ],
+        "type": "object"
+      },
+      "SetProviderState": {
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/ProviderState"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "type": "object"
+      },
+      "SourceDto": {
+        "properties": {
+          "chapter_count": {
+            "description": "Count of distinct **whole** chapters (`floor(number)`-deduped) — sub-chapter part\nreleases don't inflate this (§ chapter grouping).",
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "$ref": "#/components/schemas/SeriesSourceId"
+          },
+          "is_primary": {
+            "description": "True for the richest source (most chapters) — the one the reader should prefer\n(frontend §9.2). Exactly one source per series is flagged.",
+            "type": "boolean"
+          },
+          "provider_name": {
+            "type": "string"
+          },
+          "provider_slug": {
+            "type": "string"
+          },
+          "url": {
+            "description": "Resolved absolute URL to open the series on the provider.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider_name",
+          "provider_slug",
+          "url",
+          "chapter_count",
+          "is_primary"
+        ],
+        "type": "object"
+      },
+      "SuggestedMatch": {
+        "description": "One ranked suggestion for the admin \"match every loaded entry\" screen: a local series the\nmatcher thinks the remote entry could be, with enough info (title, type, sources) to\neyeball it and its confidence `score` in `[0,1]`.",
+        "properties": {
+          "content_type": {
+            "type": "string"
+          },
+          "release_year": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "score": {
+            "format": "float",
+            "type": "number"
+          },
+          "series_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "source_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "series_id",
+          "title",
+          "content_type",
+          "source_count",
+          "score"
+        ],
+        "type": "object"
+      },
+      "SyncAccountTarget": {
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "user_id": {
+            "$ref": "#/components/schemas/UserId"
+          }
+        },
+        "required": [
+          "user_id",
+          "provider"
+        ],
+        "type": "object"
+      },
+      "SyncExcluded": {
+        "properties": {
+          "excluded": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "excluded"
+        ],
+        "type": "object"
+      },
+      "SyncMappingTarget": {
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "series_id": {
+            "$ref": "#/components/schemas/SeriesId"
+          }
+        },
+        "required": [
+          "series_id",
+          "provider"
+        ],
+        "type": "object"
+      },
+      "SyncOpts": {
+        "properties": {
+          "policy": {
+            "description": "`local_wins` | `remote_wins` | `newest_wins`; omitted uses the service default.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "SyncSettingsPatch": {
+        "properties": {
+          "auto_sync_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "conflict_policy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "SystemStats": {
+        "description": "System-wide rollup for the console header (single-row query).",
+        "properties": {
+          "chapters_1h": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "chapters_24h": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "chapters_7d": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "chapters_total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pending_merges": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "providers_active": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "providers_disabled": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "providers_total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "providers_unhealthy": {
+            "description": "Providers in a non-serving health state (degraded/challenged/solving/blocked).",
+            "format": "int64",
+            "type": "integer"
+          },
+          "runs_active": {
+            "description": "Scan runs currently queued or running.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "runs_running": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "series_total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sources_total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tasks_failed_24h": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tasks_queued": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tasks_running": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "users_total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "providers_total",
+          "providers_active",
+          "providers_disabled",
+          "providers_unhealthy",
+          "series_total",
+          "sources_total",
+          "chapters_total",
+          "chapters_1h",
+          "chapters_24h",
+          "chapters_7d",
+          "users_total",
+          "pending_merges",
+          "runs_active",
+          "runs_running",
+          "tasks_queued",
+          "tasks_running",
+          "tasks_failed_24h"
+        ],
+        "type": "object"
+      },
+      "Tag": {
+        "description": "A genre/tag.",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/TagId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "type": "object"
+      },
+      "TagId": {
+        "description": "Identifies a tag.",
+        "format": "uuid",
+        "type": "string"
+      },
+      "TaskState": {
+        "description": "Lifecycle of an individual scan task.",
+        "enum": [
+          "queued",
+          "claimed",
+          "running",
+          "done",
+          "failed",
+          "skipped"
+        ],
+        "type": "string"
+      },
+      "TestAdapterRequest": {
+        "properties": {
+          "path": {
+            "description": "Optional relative series path to also fetch metadata + chapters for.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "TokenResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string"
+          },
+          "expires_in": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "token_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "token_type",
+          "expires_in"
+        ],
+        "type": "object"
+      },
+      "TriggerScan": {
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/ScanMode"
+          },
+          "provider_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProviderId"
+              }
+            ]
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "UnmappedSeriesRow": {
+        "description": "One row of the admin Sync console's \"Assign queue\" — a canonical series that has **no**\nexternal mapping for the given provider yet, so an operator can review and assign one.",
+        "properties": {
+          "series_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "series_title": {
+            "type": "string"
+          },
+          "source_count": {
+            "description": "How many local sources back this series (a proxy for how confident a match is worth).",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "series_id",
+          "series_title",
+          "source_count"
+        ],
+        "type": "object"
+      },
+      "UpdateProvider": {
+        "properties": {
+          "base_url": {
+            "type": "string"
+          },
+          "config": {},
+          "name": {
+            "type": "string"
+          },
+          "politeness": {
+            "$ref": "#/components/schemas/Politeness"
+          }
+        },
+        "required": [
+          "name",
+          "base_url"
+        ],
+        "type": "object"
+      },
+      "UpsertMapping": {
+        "properties": {
+          "external_id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "series_id": {
+            "$ref": "#/components/schemas/SeriesId"
+          }
+        },
+        "required": [
+          "series_id",
+          "provider",
+          "external_id"
+        ],
+        "type": "object"
+      },
+      "UserId": {
+        "description": "Identifies a user account.",
+        "format": "uuid",
+        "type": "string"
+      },
+      "UserRole": {
+        "description": "RBAC role. Ordering matters for privilege comparison (see [`UserRole::at_least`]).",
+        "enum": [
+          "user",
+          "operator",
+          "admin"
+        ],
+        "type": "string"
+      },
+      "UserRow2": {
+        "description": "One row of the operator Users table: identity, role, and how many series the user\ntracks (frontend §9.5 `GET /v1/admin/users`).",
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "role": {
+            "description": "RBAC role token (`user` | `operator` | `admin`).",
+            "type": "string"
+          },
+          "tracked_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "username",
+          "role",
+          "tracked_count",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "Value": {},
+      "WatchStatus": {
+        "description": "A user's tracking status for a series.",
+        "enum": [
+          "reading",
+          "planned",
+          "completed",
+          "dropped",
+          "paused"
+        ],
+        "type": "string"
+      },
+      "WatchlistItem": {
+        "properties": {
+          "added_at": {
+            "type": "string"
+          },
+          "cover_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_read_number": {
+            "description": "The user's last-read chapter number, if any.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "notify": {
+            "type": "boolean"
+          },
+          "series_id": {
+            "$ref": "#/components/schemas/SeriesId"
+          },
+          "series_title": {
+            "description": "Embedded series title so the Watchlist board renders without a per-card detail\nfetch (frontend §9.3, kills the N+1).",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WatchStatus"
+          },
+          "sync_excluded": {
+            "description": "Whether this series is opted out of external sync (design v2 §A.5).",
+            "type": "boolean"
+          },
+          "unread": {
+            "description": "Unread chapters above the user's progress.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "series_id",
+          "status",
+          "notify",
+          "added_at",
+          "series_title",
+          "unread",
+          "sync_excluded"
+        ],
+        "type": "object"
+      },
+      "WatchlistUpsert": {
+        "properties": {
+          "notify": {
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WatchStatus"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer_auth": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "contact": {
+      "name": "TankoVault contributors"
+    },
+    "description": "Axum HTTP edge: public read/write + admin, auth, resolved links, SSE.",
+    "license": {
+      "name": ""
+    },
+    "title": "tankovault-api",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/admin/audit": {
+      "get": {
+        "description": "The most recent privileged actions (design §16 audit trail).",
+        "operationId": "audit_log",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuditView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Up to 40 most recent audit records"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get the audit log",
+        "tags": [
+          "admin-overview"
+        ]
+      }
+    },
+    "/v1/admin/merge-candidates": {
+      "get": {
+        "description": "The canonicalisation review queue (design §10).",
+        "operationId": "list_merge_candidates",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MergeCandidateView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Up to 200 open merge candidates"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List merge candidates",
+        "tags": [
+          "admin-matching"
+        ]
+      }
+    },
+    "/v1/admin/merge-candidates/dismiss": {
+      "post": {
+        "description": "Operator judged the two works distinct.",
+        "operationId": "dismiss_merge_candidate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "dismissed": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Whether a candidate was actually dismissed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Dismiss a merge candidate",
+        "tags": [
+          "admin-matching"
+        ]
+      }
+    },
+    "/v1/admin/providers": {
+      "get": {
+        "operationId": "list_providers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Provider"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "All providers"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List providers",
+        "tags": [
+          "admin-providers"
+        ]
+      },
+      "post": {
+        "operationId": "create_provider",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProvider"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Provider"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have the admin role"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Provider slug already exists"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Create a provider",
+        "tags": [
+          "admin-providers"
+        ]
+      }
+    },
+    "/v1/admin/providers/stats": {
+      "get": {
+        "description": "Per-provider crawl statistics table.",
+        "operationId": "provider_stats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderStat"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Per-provider stats"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get per-provider crawl stats",
+        "tags": [
+          "admin-providers"
+        ]
+      }
+    },
+    "/v1/admin/providers/{id}": {
+      "delete": {
+        "description": "Remove a provider entirely. Its stored source links cascade-delete (FK `ON DELETE\nCASCADE`); scan-run history is retained with a nulled provider. Admin-only because it is\ndestructive and irreversible.",
+        "operationId": "delete_provider",
+        "parameters": [
+          {
+            "description": "Provider id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ProviderId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Acknowledged"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have the admin role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Provider not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Delete a provider",
+        "tags": [
+          "admin-providers"
+        ]
+      },
+      "patch": {
+        "description": "Includes the domain-migration `base_url` change: one field, and every stored relative link\nre-resolves against the new domain.",
+        "operationId": "update_provider",
+        "parameters": [
+          {
+            "description": "Provider id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ProviderId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProvider"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Provider"
+                }
+              }
+            },
+            "description": "Updated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Provider not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Update a provider",
+        "tags": [
+          "admin-providers"
+        ]
+      }
+    },
+    "/v1/admin/providers/{id}/resolve": {
+      "post": {
+        "description": "Re-solve/refresh a single provider by queuing a **fast** re-scan (frontend §9.5). This is\nthe console \"Re-solve\" action; it is proxied to the control-plane planner exactly like\n[`trigger_scan`], scoped to one provider.",
+        "operationId": "resolve_provider",
+        "parameters": [
+          {
+            "description": "Provider id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ProviderId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Scan queued, forwarded from the control-plane"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Provider not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Re-solve a provider",
+        "tags": [
+          "admin-providers"
+        ]
+      }
+    },
+    "/v1/admin/providers/{id}/state": {
+      "post": {
+        "description": "Operator override of a provider's health state: `disabled` pauses all crawling; `active`\nre-enables it (e.g. clearing a tripped circuit breaker). The scanner/circuit breaker may\nstill transition it afterwards.",
+        "operationId": "set_provider_state",
+        "parameters": [
+          {
+            "description": "Provider id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ProviderId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetProviderState"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Provider"
+                }
+              }
+            },
+            "description": "Updated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Provider not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Set a provider's health state",
+        "tags": [
+          "admin-providers"
+        ]
+      }
+    },
+    "/v1/admin/providers/{id}/test": {
+      "post": {
+        "description": "Dry-run the provider's adapter against the live site and return the parsed sample so\noperators can fix selectors without a deploy (design §11/§17). Bounded by a timeout;\nSSRF/robots/rate-limit are enforced by the injected fetch stack.",
+        "operationId": "test_adapter",
+        "parameters": [
+          {
+            "description": "Provider id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ProviderId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TestAdapterRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Optional relative series path to also fetch metadata + chapters for"
+        },
+        "responses": {
+          "200": {
+            "description": "Dry-run sample (adapter list/fetch results, each individually ok/error)"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Adapter build failed or the dry-run timed out"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Provider not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Dry-run a provider's adapter",
+        "tags": [
+          "admin-providers"
+        ]
+      }
+    },
+    "/v1/admin/scan-failures": {
+      "get": {
+        "description": "The most recently failed scan tasks with their errors, for triaging stuck providers /\nbroken selectors (design §17.2.7).",
+        "operationId": "scan_failures",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FailedTaskView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Up to 25 most recent failed tasks"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List recent scan failures",
+        "tags": [
+          "admin-scans"
+        ]
+      }
+    },
+    "/v1/admin/scans": {
+      "get": {
+        "description": "The most recent scan runs (the console's scan-queue overview). The live variant is\n`/v1/admin/scans/stream`; this GET gives the console its first paint and drives its\npolling refresh.",
+        "operationId": "list_scans",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScanRun"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Up to 30 most recent scan runs"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List recent scan runs",
+        "tags": [
+          "admin-scans"
+        ]
+      },
+      "post": {
+        "description": "Proxied to the control-plane planner.",
+        "operationId": "trigger_scan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerScan"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Scan queued, forwarded from the control-plane"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Trigger a scan",
+        "tags": [
+          "admin-scans"
+        ]
+      }
+    },
+    "/v1/admin/scans/stream": {
+      "get": {
+        "description": "SSE live scan progress for the operator console. Polls the durable `scan_runs` (the system\nof record for progress) every 2 s and pushes a `runs` event; a `scan.progress` NATS relay\nis a documented enhancement.",
+        "operationId": "scan_stream",
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "SSE stream of `runs` events"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Live scan-progress stream",
+        "tags": [
+          "admin-scans"
+        ]
+      }
+    },
+    "/v1/admin/scans/{run_id}": {
+      "get": {
+        "operationId": "get_scan",
+        "parameters": [
+          {
+            "description": "Scan run id",
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ScanRunId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanRun"
+                }
+              }
+            },
+            "description": "Scan run"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Scan run not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get a scan run",
+        "tags": [
+          "admin-scans"
+        ]
+      }
+    },
+    "/v1/admin/series/merge": {
+      "post": {
+        "description": "Transactional re-parent + title/tag union (design §10).",
+        "operationId": "merge_series",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Acknowledged"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "One or both series not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "`keep` and `merge` are the same series"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Merge two series",
+        "tags": [
+          "admin-matching"
+        ]
+      }
+    },
+    "/v1/admin/stats": {
+      "get": {
+        "description": "System-wide rollup for the console header.",
+        "operationId": "system_stats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStats"
+                }
+              }
+            },
+            "description": "System-wide stats"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get system stats",
+        "tags": [
+          "admin-overview"
+        ]
+      }
+    },
+    "/v1/admin/sync/accounts": {
+      "get": {
+        "description": "Every linked external account across all users.",
+        "operationId": "list_sync_accounts",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdminAccountRow"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Up to 200 linked accounts"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List linked external accounts",
+        "tags": [
+          "admin-sync"
+        ]
+      }
+    },
+    "/v1/admin/sync/assign": {
+      "post": {
+        "description": "Hand-assign a fetched remote entry to a local series. It records the mapping, imports the\nentry onto the user's watchlist (status + progress from the stored snapshot) so the result\nshows immediately, and clears it from the unmatched queue — no fresh pull required.",
+        "operationId": "assign_remote_entry",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignRemoteEntry"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Acknowledged"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Missing provider/external_id, no such remote entry, or the stored entry has an invalid status"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Assign a remote entry to a local series",
+        "tags": [
+          "admin-sync"
+        ]
+      }
+    },
+    "/v1/admin/sync/mappings": {
+      "get": {
+        "description": "Every series↔external mapping across all providers.",
+        "operationId": "list_sync_mappings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdminMappingRow"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Up to 200 mappings"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List series↔external mappings",
+        "tags": [
+          "admin-sync"
+        ]
+      },
+      "post": {
+        "description": "Manually create or correct a series↔external mapping (design: admin Sync console tab).\nLets an operator fix a wrong external id or add a missing one by hand from the per-series\n\"manga info\" editor and the assign queue.",
+        "operationId": "upsert_sync_mapping",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertMapping"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Acknowledged"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "provider or external_id is empty"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Create or correct a series↔external mapping",
+        "tags": [
+          "admin-sync"
+        ]
+      }
+    },
+    "/v1/admin/sync/mappings/clear": {
+      "post": {
+        "description": "Remove a bad series↔external mapping; the next pull/push (or targeted push) re-resolves it\nfrom scratch.",
+        "operationId": "clear_sync_mapping",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncMappingTarget"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "removed": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Whether a mapping was actually removed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Clear a series↔external mapping",
+        "tags": [
+          "admin-sync"
+        ]
+      }
+    },
+    "/v1/admin/sync/pull": {
+      "post": {
+        "description": "Operator-forced pull for another user's linked account. Response shape is defined by the\nsync service and forwarded verbatim; not tracked here.",
+        "operationId": "admin_sync_pull",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncAccountTarget"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Pulled, forwarded from the sync service"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Account not linked"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Force-pull another user's linked account",
+        "tags": [
+          "admin-sync"
+        ]
+      }
+    },
+    "/v1/admin/sync/push": {
+      "post": {
+        "description": "Operator-forced push for another user's linked account. Response shape is defined by the\nsync service and forwarded verbatim; not tracked here.",
+        "operationId": "admin_sync_push",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncAccountTarget"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Pushed, forwarded from the sync service"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Account not linked"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Force-push another user's linked account",
+        "tags": [
+          "admin-sync"
+        ]
+      }
+    },
+    "/v1/admin/sync/series/{id}": {
+      "get": {
+        "description": "Every external mapping recorded for one series, so the console can render a per-series\n\"manga info\" panel showing what it is (and is not) synced to.",
+        "operationId": "list_sync_mappings_for_series",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdminMappingRow"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Mappings for this series"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List a series' external mappings",
+        "tags": [
+          "admin-sync"
+        ]
+      }
+    },
+    "/v1/admin/sync/suggest": {
+      "get": {
+        "description": "Rank local catalogue series as likely matches for a fetched remote entry, so the operator\ngets automatic suggestions instead of blind-searching. Uses the same trigram candidates as\nauto-matching but returns the *full* ranked list (with scores) rather than only confident\nones, so even weak-but-plausible matches are offered.",
+        "operationId": "list_suggestions",
+        "parameters": [
+          {
+            "description": "The remote entry's title to match against the local catalogue.",
+            "in": "query",
+            "name": "title",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional local content-type token (`manga`/`manhwa`/…) to sharpen scoring.",
+            "in": "query",
+            "name": "content_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional release year to sharpen scoring.",
+            "in": "query",
+            "name": "start_year",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SuggestedMatch"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Up to 8 ranked suggestions, best score first"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Suggest local matches for a remote entry",
+        "tags": [
+          "admin-sync"
+        ]
+      }
+    },
+    "/v1/admin/sync/unlink": {
+      "post": {
+        "description": "Operator-forced unlink of another user's linked account. Response shape is defined by the\nsync service and forwarded verbatim; not tracked here.",
+        "operationId": "admin_sync_unlink",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncAccountTarget"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Unlinked, forwarded from the sync service"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Force-unlink another user's account",
+        "tags": [
+          "admin-sync"
+        ]
+      }
+    },
+    "/v1/admin/sync/unmapped": {
+      "get": {
+        "description": "The assign queue: canonical series without a mapping for the given provider, richest\nfirst, so operators can review and hand-assign the ones the automatic matcher was not\nconfident enough to link.",
+        "operationId": "list_unmapped_series",
+        "parameters": [
+          {
+            "description": "External provider to check membership against (e.g. `anilist`).",
+            "in": "query",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional case-insensitive title filter.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UnmappedSeriesRow"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Up to 100 unmapped series"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "provider is empty"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List series without a mapping",
+        "tags": [
+          "admin-sync"
+        ]
+      }
+    },
+    "/v1/admin/sync/unmatched": {
+      "get": {
+        "description": "The reverse assign queue: remote provider entries a pull fetched but the auto-matcher\ncould not confidently link to a local series, so an operator can reconcile **every**\nloaded entry by hand (not just the confident matches).",
+        "operationId": "list_unmatched_remote",
+        "parameters": [
+          {
+            "description": "External provider to check membership against (e.g. `anilist`).",
+            "in": "query",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional case-insensitive title filter.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RemoteEntryRow"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Up to 200 unmatched remote entries"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "provider is empty"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List unmatched remote entries",
+        "tags": [
+          "admin-sync"
+        ]
+      }
+    },
+    "/v1/admin/users": {
+      "get": {
+        "description": "The operator Users directory: identity, role, and tracked-series count per user (frontend\n§9.5 Users tab).",
+        "operationId": "list_users",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserRow2"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Up to 200 most relevant users"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller must have at least the operator role"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List users",
+        "tags": [
+          "admin-users"
+        ]
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "description": "Authenticates by email or username + password. Issues an access token and a rotating\nrefresh-token cookie.",
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Authenticated; access token issued"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid email/username or password"
+          }
+        },
+        "summary": "Log in",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "description": "Revokes the presented refresh-token family (if any) and clears the cookie.",
+        "operationId": "logout",
+        "responses": {
+          "200": {
+            "description": "Logged out; refresh cookie cleared"
+          }
+        },
+        "summary": "Log out",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/refresh": {
+      "post": {
+        "description": "Reads the `refresh_token` `HttpOnly` cookie, rotates it, and issues a fresh access token.\nPresenting a token that was already rotated (reuse) revokes the whole token family.",
+        "operationId": "refresh",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Refreshed; new access token issued"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Missing, expired, or already-rotated refresh token"
+          }
+        },
+        "summary": "Refresh the access token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/register": {
+      "post": {
+        "description": "Validates the request, creates the user, then issues an access token and a rotating\nrefresh-token cookie exactly like [`login`].",
+        "operationId": "register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Account created; access token issued"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid email, username or password"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Email or username already taken"
+          }
+        },
+        "summary": "Register a new account",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/me/continue": {
+      "get": {
+        "description": "Continue-reading cards for Home / the Series CTA (frontend §9.3): tracked, in-progress\nseries that have unread chapters, freshest activity first.",
+        "operationId": "continue_reading",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContinueItem"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Up to 24 continue-reading cards"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get continue-reading cards",
+        "tags": [
+          "me-dashboard"
+        ]
+      }
+    },
+    "/v1/me/feed": {
+      "get": {
+        "description": "Unread chapters across the watchlist (the reading dashboard).",
+        "operationId": "feed",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FeedEntry"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Up to 100 most recent unread chapters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get the unread-chapters feed",
+        "tags": [
+          "me-dashboard"
+        ]
+      }
+    },
+    "/v1/me/notification-prefs": {
+      "get": {
+        "description": "The caller's notification preferences JSON (frontend §9.4). `{}` means \"product defaults\".",
+        "operationId": "notification_prefs",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Product-defined free-form preferences JSON"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get notification preferences",
+        "tags": [
+          "me-notifications"
+        ]
+      },
+      "put": {
+        "description": "Replace the caller's notification preferences (frontend §9.4). The body is stored verbatim\nas an open JSON document.",
+        "operationId": "put_notification_prefs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "The stored preferences, echoed back"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Replace notification preferences",
+        "tags": [
+          "me-notifications"
+        ]
+      }
+    },
+    "/v1/me/notifications": {
+      "get": {
+        "operationId": "notifications",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Up to 100 most recent notifications"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List notifications",
+        "tags": [
+          "me-notifications"
+        ]
+      }
+    },
+    "/v1/me/notifications/read": {
+      "post": {
+        "operationId": "mark_read",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkRead"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "marked": 3
+                },
+                "schema": {}
+              }
+            },
+            "description": "Number of notifications marked read"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Mark notifications read",
+        "tags": [
+          "me-notifications"
+        ]
+      }
+    },
+    "/v1/me/profile": {
+      "patch": {
+        "description": "Update the caller's username and/or email (frontend §9.4). A duplicate email/username\nsurfaces as `409 Conflict`.",
+        "operationId": "patch_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileDto"
+                }
+              }
+            },
+            "description": "Updated profile"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Email or username already taken"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Update the profile",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/progress/{series_id}": {
+      "get": {
+        "description": "Both read frontiers for the series (design v2 §A.6).",
+        "operationId": "get_progress",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressDto"
+                }
+              }
+            },
+            "description": "Progress (defaults to zero when untracked)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get read progress",
+        "tags": [
+          "me-progress"
+        ]
+      },
+      "put": {
+        "description": "Set the whole-chapter frontier outright (design v2 §A.6).",
+        "operationId": "put_progress",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProgressUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Acknowledged"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Set the read-progress frontier",
+        "tags": [
+          "me-progress"
+        ]
+      }
+    },
+    "/v1/me/progress/{series_id}/chapters/{number}": {
+      "put": {
+        "description": "Apply the §A.3 mark-read/mark-unread rule for one chapter number. Unmarking an older\n(non-frontier) chapter retreats progress past it too; the client must confirm with the user\nfirst in that case (design v2 §A.6).",
+        "operationId": "put_chapter_progress",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          },
+          {
+            "description": "Chapter number",
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChapterRead"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Acknowledged"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Mark a single chapter read or unread",
+        "tags": [
+          "me-progress"
+        ]
+      }
+    },
+    "/v1/me/progress/{series_id}/mark-read-to": {
+      "post": {
+        "description": "\"Mark read to here\" (design v2 §A.6); equivalent to marking `number` read.",
+        "operationId": "mark_read_to",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkReadTo"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Acknowledged"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Mark read up to a chapter",
+        "tags": [
+          "me-progress"
+        ]
+      }
+    },
+    "/v1/me/recommendations": {
+      "get": {
+        "description": "*Stub*: unwatched series sharing tags with the user's list (frontend §9.3). Falls back to\nthe most-recent catalog when the user has no tagged watchlist yet, so the shelf is never\nempty for signed-in users.",
+        "operationId": "recommendations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SeriesSummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Up to 12 recommended series"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get \"because you read\" recommendations",
+        "tags": [
+          "me-dashboard"
+        ]
+      }
+    },
+    "/v1/me/sessions": {
+      "get": {
+        "description": "The caller's active login sessions (frontend §9.4).",
+        "operationId": "sessions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Active sessions"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List active sessions",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/sessions/{id}": {
+      "delete": {
+        "description": "Revoke one of the caller's own sessions (frontend §9.4). Scoped to ownership; a\nforeign/unknown id yields `404`.",
+        "operationId": "delete_session",
+        "parameters": [
+          {
+            "description": "Session id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "revoked": 1
+                },
+                "schema": {}
+              }
+            },
+            "description": "Revoked"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such session for this caller"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Revoke a session",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/stats": {
+      "get": {
+        "description": "*Stub*: lifetime tracking stats for the Home / Profile headline (frontend §9.3). See\n[`tankovault_db::repo::tracking::MeStats`] for the honest definition of `chapters_read` and\nwhy no \"streak\" is returned.",
+        "operationId": "stats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeStats"
+                }
+              }
+            },
+            "description": "Lifetime stats"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get lifetime tracking stats",
+        "tags": [
+          "me-dashboard"
+        ]
+      }
+    },
+    "/v1/me/stream": {
+      "get": {
+        "description": "Server-Sent Events of live per-user notifications (design §14, §17.4). Authenticated by the\n`access_token` query parameter (not the `Authorization` header — `EventSource` cannot set\nit), it subscribes to the user's core-NATS subject and relays each `UserNotification` as a\n`notification` SSE event, with a periodic keep-alive comment so proxies keep the connection\nopen. Ownership is implicit: the subscription is scoped to the token's own `user_id`.",
+        "operationId": "stream",
+        "parameters": [
+          {
+            "description": "Access token, passed as a query parameter because the browser `EventSource` API\ncannot attach an `Authorization` header (design §17.4). It is verified exactly like\na `Bearer` token and never logged.",
+            "in": "query",
+            "name": "access_token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "SSE stream of `notification` events"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "missing or invalid access_token"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the live notification stream is temporarily unavailable"
+          }
+        },
+        "summary": "Live notification stream",
+        "tags": [
+          "me-notifications"
+        ]
+      }
+    },
+    "/v1/me/sync/conflicts": {
+      "get": {
+        "description": "The caller's pending conflicts across all providers (§B.6). Response shape is defined by\nthe sync service and forwarded verbatim; not tracked here.",
+        "operationId": "sync_conflicts",
+        "responses": {
+          "200": {
+            "description": "Pending conflicts, forwarded from the sync service"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List pending sync conflicts",
+        "tags": [
+          "me-sync"
+        ]
+      }
+    },
+    "/v1/me/sync/conflicts/{id}/resolve": {
+      "post": {
+        "description": "Apply the caller's chosen resolution (§B.6). Response shape is defined by the sync service\nand forwarded verbatim; not tracked here.",
+        "operationId": "sync_resolve_conflict",
+        "parameters": [
+          {
+            "description": "Conflict id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveConflict"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Resolved, forwarded from the sync service"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such conflict"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Resolve a sync conflict",
+        "tags": [
+          "me-sync"
+        ]
+      }
+    },
+    "/v1/me/sync/history": {
+      "get": {
+        "description": "A page of the caller's sync history (§B.6). Response shape is defined by the sync service\nand forwarded verbatim; not tracked here.",
+        "operationId": "sync_history",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "series_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of sync history, forwarded from the sync service"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get sync history",
+        "tags": [
+          "me-sync"
+        ]
+      }
+    },
+    "/v1/me/sync/providers": {
+      "get": {
+        "description": "The registered external providers (design: generalized multi-provider sync). Drives the\nAccount \"Sync & integrations\" panel, which renders one card per entry instead of a single\nhardcoded `AniList` block. Response shape is defined by the sync service and forwarded\nverbatim; not tracked here.",
+        "operationId": "sync_providers",
+        "responses": {
+          "200": {
+            "description": "Providers, forwarded from the sync service"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List sync providers",
+        "tags": [
+          "me-sync"
+        ]
+      }
+    },
+    "/v1/me/sync/{provider}": {
+      "delete": {
+        "description": "Unlink the caller's account at `provider`. Response shape is defined by the sync service\nand forwarded verbatim; not tracked here.",
+        "operationId": "sync_disconnect",
+        "parameters": [
+          {
+            "description": "Provider slug",
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unlinked, forwarded from the sync service"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Unlink a provider",
+        "tags": [
+          "me-sync"
+        ]
+      }
+    },
+    "/v1/me/sync/{provider}/authorize": {
+      "get": {
+        "description": "Returns the provider's consent URL (proxied). Response shape is defined by the sync service\nand forwarded verbatim; not tracked here.",
+        "operationId": "sync_authorize_url",
+        "parameters": [
+          {
+            "description": "Provider slug",
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Consent URL, forwarded from the sync service"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get a provider's OAuth consent URL",
+        "tags": [
+          "me-sync"
+        ]
+      }
+    },
+    "/v1/me/sync/{provider}/callback": {
+      "get": {
+        "description": "Exchanges the authorization `code` and links the caller's account at `provider`. Response\nshape is defined by the sync service and forwarded verbatim; not tracked here.",
+        "operationId": "sync_callback",
+        "parameters": [
+          {
+            "description": "Provider slug",
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Linked, forwarded from the sync service"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unknown provider"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Account not linked"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Complete an OAuth link",
+        "tags": [
+          "me-sync"
+        ]
+      }
+    },
+    "/v1/me/sync/{provider}/pull": {
+      "post": {
+        "description": "Import `provider`'s list into the local watchlist. Response shape is defined by the sync\nservice and forwarded verbatim; not tracked here.",
+        "operationId": "sync_pull",
+        "parameters": [
+          {
+            "description": "Provider slug",
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SyncOpts"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Optional sync options; omitted body uses the service default"
+        },
+        "responses": {
+          "200": {
+            "description": "Pulled, forwarded from the sync service"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Account not linked"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Pull a provider's list into local state",
+        "tags": [
+          "me-sync"
+        ]
+      }
+    },
+    "/v1/me/sync/{provider}/push": {
+      "post": {
+        "description": "Reflect local watchlist/progress to `provider` (bulk, full-reconciliation walk — see\n`spawn_targeted_push` for the fast per-series path used automatically when marking a\nchapter/series read). Response shape is defined by the sync service and forwarded\nverbatim; not tracked here.",
+        "operationId": "sync_push",
+        "parameters": [
+          {
+            "description": "Provider slug",
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SyncOpts"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Optional sync options; omitted body uses the service default"
+        },
+        "responses": {
+          "200": {
+            "description": "Pushed, forwarded from the sync service"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Account not linked"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Push local state to a provider",
+        "tags": [
+          "me-sync"
+        ]
+      }
+    },
+    "/v1/me/sync/{provider}/settings": {
+      "get": {
+        "description": "The caller's automatic-sync settings (design v2 §B.6). Response shape is defined by the\nsync service and forwarded verbatim; not tracked here.",
+        "operationId": "sync_settings",
+        "parameters": [
+          {
+            "description": "Provider slug",
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Settings, forwarded from the sync service"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No settings for this provider"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get automatic-sync settings",
+        "tags": [
+          "me-sync"
+        ]
+      },
+      "patch": {
+        "description": "Update automatic sync + conflict policy (design v2 §B.6).",
+        "operationId": "sync_settings_patch",
+        "parameters": [
+          {
+            "description": "Provider slug",
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncSettingsPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Acknowledged"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Update automatic-sync settings",
+        "tags": [
+          "me-sync"
+        ]
+      }
+    },
+    "/v1/me/sync/{provider}/status": {
+      "get": {
+        "description": "Whether the caller has a linked account at `provider`, plus the connected display name and\nmost recent sync time (Sync & integrations panel, header pill, Series tracking card).\nAlways `200`; an unlinked account reads `{ \"linked\": false }`. Response shape is defined by\nthe sync service and forwarded verbatim; not tracked here.",
+        "operationId": "sync_status",
+        "parameters": [
+          {
+            "description": "Provider slug",
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Link status, forwarded from the sync service"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get link status for a provider",
+        "tags": [
+          "me-sync"
+        ]
+      }
+    },
+    "/v1/me/watchlist": {
+      "get": {
+        "description": "The user's watchlist with embedded title/cover/progress (frontend §9.3). Extra fields are\nadditive; older clients ignore them.",
+        "operationId": "watchlist",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WatchlistItem"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "The caller's watchlist"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get the watchlist",
+        "tags": [
+          "me-watchlist"
+        ]
+      }
+    },
+    "/v1/me/watchlist/{series_id}": {
+      "delete": {
+        "operationId": "delete_watchlist",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Acknowledged"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Remove a watchlist entry",
+        "tags": [
+          "me-watchlist"
+        ]
+      },
+      "put": {
+        "operationId": "put_watchlist",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchlistUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Acknowledged"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Add or update a watchlist entry",
+        "tags": [
+          "me-watchlist"
+        ]
+      }
+    },
+    "/v1/me/watchlist/{series_id}/sync": {
+      "put": {
+        "description": "Set the blanket per-series sync-exclusion flag (design v2 §A.5).",
+        "operationId": "put_sync_excluded",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncExcluded"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Acknowledged"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Set the per-series sync-exclusion flag",
+        "tags": [
+          "me-watchlist"
+        ]
+      }
+    },
+    "/v1/me/watchlist/{series_id}/sync/{provider}": {
+      "put": {
+        "description": "Per-provider override of the blanket exclusion flag (design v2 §A.5).",
+        "operationId": "put_sync_override",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          },
+          {
+            "description": "Provider slug",
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncExcluded"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Acknowledged"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Set a per-provider sync-exclusion override",
+        "tags": [
+          "me-watchlist"
+        ]
+      }
+    },
+    "/v1/providers": {
+      "get": {
+        "description": "Provider list + per-provider series counts, for the Discover provider filter (frontend\n§9.3). Operator-only fields (config/politeness/health) are not exposed; disabled providers\nare hidden.",
+        "operationId": "providers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PublicProvider"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Enabled providers"
+          }
+        },
+        "summary": "List public providers",
+        "tags": [
+          "series"
+        ]
+      }
+    },
+    "/v1/series": {
+      "get": {
+        "description": "Filter/sort/paginate the public series list (frontend §9.1). The body remains a plain\n`SeriesSummary[]`; pagination metadata rides on the `X-Total-Count` (rows matching the\nfilter) and `X-Next-Cursor` (next page index, absent on the last page) headers so existing\narray-decoding clients keep working.",
+        "operationId": "list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "content_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Provider slug the series must have a source on.",
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Tag slugs the series must all carry.",
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          {
+            "description": "Tag slugs the series must not carry.",
+            "in": "query",
+            "name": "exclude_tag",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "year_min",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "year_max",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_chapters",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`updated | title | chapters | sources | year` (default `updated`).",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Zero-based page index (alias: `cursor`).",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SeriesSummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Matching series, newest-updated first by default",
+            "headers": {
+              "X-Next-Cursor": {
+                "description": "Next page index; absent on the last page",
+                "schema": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "X-Total-Count": {
+                "description": "Total rows matching the filter",
+                "schema": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Browse the catalogue",
+        "tags": [
+          "series"
+        ]
+      }
+    },
+    "/v1/series/{id}": {
+      "get": {
+        "operationId": "detail",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeriesDetail"
+                }
+              }
+            },
+            "description": "Series detail"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Series not found"
+          }
+        },
+        "summary": "Get series detail",
+        "tags": [
+          "series"
+        ]
+      }
+    },
+    "/v1/series/{id}/chapters": {
+      "get": {
+        "description": "Chapter list, newest first. When a valid access token is supplied the per-chapter `read`\nflag is populated from the user's progress (frontend §9.2 auth-scoped read-state);\nanonymous callers get the same list without read-state.",
+        "operationId": "chapters",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          },
+          {
+            "description": "Which source to read chapters from. Defaults to the first source of the series.",
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesSourceId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChapterDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Chapters, newest first"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Series (or its source) not found"
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List a source's chapters",
+        "tags": [
+          "series"
+        ]
+      }
+    },
+    "/v1/tags": {
+      "get": {
+        "description": "All genres/tags in the catalogue (public).",
+        "operationId": "tags",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Tag"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "All known tags"
+          }
+        },
+        "summary": "List all tags",
+        "tags": [
+          "series"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "description": "Registration, login, session refresh/logout",
+      "name": "auth"
+    },
+    {
+      "description": "Public catalogue browse/detail/chapters",
+      "name": "series"
+    },
+    {
+      "description": "The signed-in user's watchlist",
+      "name": "me-watchlist"
+    },
+    {
+      "description": "Per-series reading progress",
+      "name": "me-progress"
+    },
+    {
+      "description": "Feed, continue-reading, recommendations, stats",
+      "name": "me-dashboard"
+    },
+    {
+      "description": "Profile and active-session management",
+      "name": "me-account"
+    },
+    {
+      "description": "In-app notifications and the live SSE stream",
+      "name": "me-notifications"
+    },
+    {
+      "description": "External tracker sync (AniList, ...), user-facing",
+      "name": "me-sync"
+    },
+    {
+      "description": "Operator provider CRUD, state and health",
+      "name": "admin-providers"
+    },
+    {
+      "description": "Scan run history, failures, live scan stream",
+      "name": "admin-scans"
+    },
+    {
+      "description": "Series merge-candidate review",
+      "name": "admin-matching"
+    },
+    {
+      "description": "Operator visibility into external sync mappings",
+      "name": "admin-sync"
+    },
+    {
+      "description": "User administration",
+      "name": "admin-users"
+    },
+    {
+      "description": "System stats and audit log",
+      "name": "admin-overview"
+    }
+  ]
+}

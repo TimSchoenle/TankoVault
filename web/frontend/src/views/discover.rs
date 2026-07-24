@@ -15,7 +15,7 @@
 use crate::api;
 use crate::components::{CoverCard, EmptyBox, ErrorBox, SkeletonGrid};
 use crate::icons::{Ic, Icon};
-use crate::models::{ContentType, PublicProvider, SeriesFilter, SeriesStatus, Tag};
+use crate::models::*;
 use dioxus::prelude::*;
 
 /// How many series a page of the grid shows.
@@ -93,37 +93,120 @@ pub fn Discover() -> Element {
     let mut page = use_signal(|| 0usize);
     let mut panel_open = use_signal(|| true);
     let mut reload = use_signal(|| 0u32);
+    let api_client = api::use_api();
 
-    let tags_res = use_resource(move || async move { api::tags().await.unwrap_or_default() });
+    let tags_res = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let client = client.clone();
+            async move {
+                client
+                    .tags()
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .unwrap_or_default()
+            }
+        })
+    };
     let all_tags: Vec<Tag> = tags_res.read_unchecked().clone().unwrap_or_default();
-    let providers_res =
-        use_resource(move || async move { api::public_providers().await.unwrap_or_default() });
+    let providers_res = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let client = client.clone();
+            async move {
+                client
+                    .providers()
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .unwrap_or_default()
+            }
+        })
+    };
     let all_providers: Vec<PublicProvider> =
         providers_res.read_unchecked().clone().unwrap_or_default();
 
     // Build the server-side filter from the current control state, then fetch one page.
-    let resource = use_resource(move || {
-        let _ = reload.read();
-        let ymin = *year_min.read();
-        let ymax = *year_max.read();
-        let mc = *min_ch.read();
-        let filter = SeriesFilter {
-            query: None,
-            // The server filter is single-valued for type/status; send the first selection.
-            content_type: types.read().first().copied(),
-            status: statuses.read().first().copied(),
-            provider: provider.read().clone(),
-            tags: inc.read().clone(),
-            exclude_tags: exc.read().clone(),
-            year_min: (ymin > YEAR_MIN).then_some(ymin),
-            year_max: (ymax < YEAR_MAX).then_some(ymax),
-            min_chapters: (mc > 0).then_some(mc),
-            sort: Some(sort.read().value().to_string()),
-            page: *page.read() as i64,
-            limit: PAGE_SIZE as i64,
-        };
-        async move { api::list_series_filtered(&filter).await }
-    });
+    let resource = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let _ = reload.read();
+            let ymin = *year_min.read();
+            let ymax = *year_max.read();
+            let mc = *min_ch.read();
+            let content_type = types.read().first().map(|ct| ct.token().to_owned());
+            let status = statuses.read().first().map(|st| st.token().to_owned());
+            let provider = provider.read().clone();
+            let tags = if inc.read().is_empty() {
+                None
+            } else {
+                Some(inc.read().clone())
+            };
+            let exclude_tag = if exc.read().is_empty() {
+                None
+            } else {
+                Some(exc.read().clone())
+            };
+            let sort = sort.read().value().to_owned();
+            let page = *page.read() as i64;
+            let client = client.clone();
+
+            async move {
+                let mut builder = client.list();
+                if let Some(ct) = content_type {
+                    builder = builder.content_type(ct);
+                }
+                if let Some(st) = status {
+                    builder = builder.status(st);
+                }
+                if let Some(p) = provider {
+                    builder = builder.provider(p);
+                }
+                if let Some(tags) = tags {
+                    builder = builder.tag(tags);
+                }
+                if let Some(exclude_tag) = exclude_tag {
+                    builder = builder.exclude_tag(exclude_tag);
+                }
+                if ymin > YEAR_MIN {
+                    builder = builder.year_min(ymin);
+                }
+                if ymax < YEAR_MAX {
+                    builder = builder.year_max(ymax);
+                }
+                if mc > 0 {
+                    builder = builder.min_chapters(mc);
+                }
+                builder = builder.sort(sort);
+                builder = builder.page(page);
+                builder = builder.limit(PAGE_SIZE as i64);
+
+                builder
+                    .send()
+                    .await
+                    .map(|r| {
+                        let total = r
+                            .headers()
+                            .get("x-total-count")
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|s| s.parse::<i64>().ok())
+                            .unwrap_or_else(|| r.as_ref().len() as i64);
+                        let next_cursor = r
+                            .headers()
+                            .get("x-next-cursor")
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|s| s.parse::<i64>().ok());
+                        SeriesPage {
+                            items: r.into_inner(),
+                            total,
+                            next_cursor,
+                        }
+                    })
+                    .map_err(api::friendly_error)
+            }
+        })
+    };
 
     let active_count = types.read().len()
         + statuses.read().len()
@@ -285,7 +368,7 @@ fn FilterPanel(
             div { class: "ik-filter-group",
                 div { class: "lbl", "Content type" }
                 div { class: "ik-chips", style: "margin-bottom:0;",
-                    for t in ContentType::ALL {
+                    for t in ContentType::all().iter().copied() {
                         TypeChip { t, types, page }
                     }
                 }
@@ -295,7 +378,7 @@ fn FilterPanel(
             div { class: "ik-filter-group",
                 div { class: "lbl", "Status" }
                 div { class: "ik-chips", style: "margin-bottom:0;",
-                    for s in SeriesStatus::ALL {
+                    for s in SeriesStatus::all().iter().copied() {
                         StatusChip { s, statuses, page }
                     }
                 }
@@ -754,10 +837,21 @@ pub fn Search(q: String) -> Element {
     }
 
     let mut reload = use_signal(|| 0u32);
+    let api_client = api::use_api();
     let resource = use_resource(move || {
         let q = q_state.read().clone();
         let _ = reload.read();
-        async move { api::list_series(Some(&q), 60).await }
+        let client = api_client.clone();
+        async move {
+            client
+                .list()
+                .query(q)
+                .limit(60)
+                .send()
+                .await
+                .map(|r| r.into_inner())
+                .map_err(api::friendly_error)
+        }
     });
 
     let (count, body) = match &*resource.read_unchecked() {

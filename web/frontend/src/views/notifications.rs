@@ -4,10 +4,11 @@
 use crate::api;
 use crate::components::{EmptyBox, ErrorBox, SignInGate, UnreadBadge};
 use crate::icons::{Ic, Icon};
-use crate::models::Notification;
+use crate::models::*;
 use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
+use uuid::Uuid;
 
 /// Filter tabs (DESIGN_SPEC §7.5). Filters the loaded list client-side by `kind`.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -31,7 +32,7 @@ impl Tab {
     fn matches(self, n: &Notification) -> bool {
         match self {
             Self::All => true,
-            Self::Unread => n.read_at.is_none(),
+            Self::Unread => notif_read_at(n).is_none(),
             Self::Chapters => matches!(kind_of(n), NotifKind::NewChapter | NotifKind::SourceAdded),
             Self::Sync => matches!(kind_of(n), NotifKind::Sync),
         }
@@ -48,13 +49,40 @@ enum NotifKind {
     Unknown,
 }
 
+fn notif_str<'a>(n: &'a Notification, key: &str) -> Option<&'a str> {
+    n.get(key).and_then(|v| v.as_str())
+}
+
+fn notif_read_at(n: &Notification) -> Option<&str> {
+    match n.get("read_at") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(v) => v.as_str().or(Some("")),
+    }
+}
+
+fn notif_kind_str(n: &Notification) -> &str {
+    notif_str(n, "kind").unwrap_or("")
+}
+
+fn notif_payload(n: &Notification) -> &serde_json::Value {
+    n.get("payload").unwrap_or(&serde_json::Value::Null)
+}
+
+fn notif_id(n: &Notification) -> Option<Uuid> {
+    n.get("id").and_then(|v| {
+        v.as_str()
+            .and_then(|s| s.parse().ok())
+            .or_else(|| serde_json::from_value::<Uuid>(v.clone()).ok())
+    })
+}
+
 fn kind_of(n: &Notification) -> NotifKind {
-    match n.kind.as_str() {
+    match notif_kind_str(n) {
         "new_chapter" | "chapter" => NotifKind::NewChapter,
         "source_added" | "source" => NotifKind::SourceAdded,
         "completed" | "series_completed" => NotifKind::Completed,
         "sync" | "sync_event" => NotifKind::Sync,
-        _ if n.payload.get("chapter_number").is_some() => NotifKind::NewChapter,
+        _ if notif_payload(n).get("chapter_number").is_some() => NotifKind::NewChapter,
         _ => NotifKind::Unknown,
     }
 }
@@ -80,28 +108,46 @@ impl NotifKind {
     }
 }
 
+fn parse_notifications(value: serde_json::Value) -> Vec<Notification> {
+    match value {
+        serde_json::Value::Array(items) => items,
+        other => vec![other],
+    }
+}
+
 #[component]
 pub fn Notifications() -> Element {
     let session = use_session();
     let badge = use_context::<UnreadBadge>();
     let mut reload = use_signal(|| 0u32);
     let mut tab = use_signal(|| Tab::All);
+    let api_client = api::use_api();
 
-    let resource = use_resource(move || {
-        let _ = reload.read();
-        async move {
-            match session.token_value() {
-                Some(t) => api::notifications(&t).await,
-                None => Ok(Vec::new()),
+    let resource = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let _ = reload.read();
+            let client = client.clone();
+            async move {
+                if session.is_authenticated() {
+                    client
+                        .notifications()
+                        .send()
+                        .await
+                        .map(|r| parse_notifications(r.into_inner()))
+                        .map_err(api::friendly_error)
+                } else {
+                    Ok(Vec::new())
+                }
             }
-        }
-    });
+        })
+    };
 
     // Keep the rail badge in sync with the number of unread rows whenever data changes.
     use_effect(move || {
         let mut count = badge.0;
         if let Some(Ok(list)) = &*resource.read_unchecked() {
-            let unread = list.iter().filter(|n| n.read_at.is_none()).count();
+            let unread = list.iter().filter(|n| notif_read_at(n).is_none()).count();
             count.set(unread as i64);
         }
     });
@@ -113,31 +159,34 @@ pub fn Notifications() -> Element {
         };
     }
 
-    let mark_all = move |_| {
-        // Collect ids and drop the borrow before awaiting.
-        let ids: Vec<String> = match &*resource.peek() {
-            Some(Ok(list)) => list
-                .iter()
-                .filter(|n| n.read_at.is_none())
-                .map(|n| n.id.clone())
-                .collect(),
-            _ => Vec::new(),
-        };
-        spawn(async move {
+    let mark_all = {
+        let client = api_client.clone();
+        move |_| {
+            // Collect ids and drop the borrow before awaiting.
+            let ids: Vec<Uuid> = match &*resource.peek() {
+                Some(Ok(list)) => list
+                    .iter()
+                    .filter(|n| notif_read_at(n).is_none())
+                    .filter_map(notif_id)
+                    .collect(),
+                _ => Vec::new(),
+            };
             if ids.is_empty() {
                 return;
             }
-            if let Some(t) = session.token_value() {
-                if api::mark_read(&t, &ids).await.is_ok() {
+            let client = client.clone();
+            spawn(async move {
+                let body = MarkRead { ids };
+                if client.mark_read().body(body).send().await.is_ok() {
                     reload += 1;
                 }
-            }
-        });
+            });
+        }
     };
 
     let current = *tab.read();
     let unread_total = match &*resource.read_unchecked() {
-        Some(Ok(list)) => list.iter().filter(|n| n.read_at.is_none()).count(),
+        Some(Ok(list)) => list.iter().filter(|n| notif_read_at(n).is_none()).count(),
         _ => 0,
     };
 
@@ -169,7 +218,7 @@ pub fn Notifications() -> Element {
             } else {
                 rsx! {
                     for n in filtered {
-                        NotifRow { key: "{n.id}", notif: n }
+                        NotifRow { key: "{notif_id(&n).map(|id| id.to_string()).unwrap_or_default()}", notif: n }
                     }
                 }
             }
@@ -199,10 +248,13 @@ pub fn Notifications() -> Element {
 
 #[component]
 fn NotifRow(notif: Notification) -> Element {
-    let unread = notif.read_at.is_none();
+    let unread = notif_read_at(&notif).is_none();
     let class = if unread { "ik-row unread" } else { "ik-row" };
     let (title, series_id) = describe(&notif);
-    let when = notif.created_at.get(0..10).unwrap_or("").to_owned();
+    let when = notif_str(&notif, "created_at")
+        .and_then(|p| p.get(0..10))
+        .unwrap_or("")
+        .to_owned();
     let kind = kind_of(&notif);
     let tile_style = format!(
         "background:color-mix(in srgb, {c} 16%, transparent);color:{c};",
@@ -236,25 +288,24 @@ fn NotifRow(notif: Notification) -> Element {
 /// notifier writes `{ series_id, series_title, chapter_number, .. }` for chapter events
 /// (services/notifier); unknown shapes fall back to the `kind`.
 fn describe(n: &Notification) -> (String, Option<String>) {
-    let series_title = n
-        .payload
+    let payload = notif_payload(n);
+    let series_title = payload
         .get("series_title")
         .and_then(|v| v.as_str())
         .map(str::to_owned);
-    let series_id = n
-        .payload
+    let series_id = payload
         .get("series_id")
         .and_then(|v| v.as_str())
         .map(str::to_owned);
-    let chapter = n
-        .payload
+    let chapter = payload
         .get("chapter_number")
         .and_then(serde_json::Value::as_f64);
 
+    let kind = notif_kind_str(n);
     let title = match (series_title, chapter) {
         (Some(t), Some(c)) => format!("New chapter {c} of {t}"),
         (Some(t), None) => format!("Update for {t}"),
-        _ if !n.kind.is_empty() => n.kind.replace('_', " "),
+        _ if !kind.is_empty() => kind.replace('_', " "),
         _ => "Notification".to_owned(),
     };
     (title, series_id)

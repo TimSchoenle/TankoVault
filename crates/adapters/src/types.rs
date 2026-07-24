@@ -2,9 +2,9 @@
 
 use crate::error::AdapterError;
 use async_trait::async_trait;
+use std::sync::Arc;
 use tankovault_domain::{ContentType, SeriesStatus, resolve_link};
 use tankovault_fetch::{FetchRequest, FetchResponse, Fetcher};
-use std::sync::Arc;
 use time::OffsetDateTime;
 
 /// Per-call context bundling the provider identity and the injected transport.

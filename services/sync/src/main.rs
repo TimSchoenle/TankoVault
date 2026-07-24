@@ -495,7 +495,12 @@ async fn list_history(
 ) -> Result<Json<Vec<tankovault_db::repo::sync::HistoryRow>>, AppError> {
     let rows = state
         .engine
-        .history(user_id, q.series_id, q.provider.as_deref(), q.page.unwrap_or(0))
+        .history(
+            user_id,
+            q.series_id,
+            q.provider.as_deref(),
+            q.page.unwrap_or(0),
+        )
         .await?;
     Ok(Json(rows))
 }

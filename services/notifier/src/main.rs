@@ -13,10 +13,10 @@ use std::sync::Arc;
 
 use channels::{Alert, NotificationChannel};
 use futures::StreamExt;
+use serde::Deserialize;
 use tankovault_bus::Bus;
 use tankovault_contracts::{ChapterDiscovered, UserNotification, subjects};
 use tankovault_db::PgPool;
-use serde::Deserialize;
 use time::OffsetDateTime;
 use tokio::net::TcpListener;
 
@@ -112,7 +112,8 @@ async fn fan_out(
     channels: &[Box<dyn NotificationChannel>],
     event: &ChapterDiscovered,
 ) -> anyhow::Result<()> {
-    let watchers = tankovault_db::repo::tracking::watchers_for_series(pool, event.series_id).await?;
+    let watchers =
+        tankovault_db::repo::tracking::watchers_for_series(pool, event.series_id).await?;
     let mut notified_any = false;
     for watcher in watchers {
         // Don't notify for a chapter the user has already read past (rescan safety).

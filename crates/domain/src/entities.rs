@@ -13,9 +13,10 @@ use crate::ids::{
 use crate::politeness::Politeness;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+use utoipa::ToSchema;
 
 /// A source site. The single place a domain (`base_url`) is defined.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Provider {
     pub id: ProviderId,
     pub slug: String,
@@ -28,9 +29,21 @@ pub struct Provider {
     pub state: ProviderState,
     pub politeness: Politeness,
     pub robots_txt: Option<String>,
+    /// Wire shape is a plain string (whatever `time`'s serde impl emits), never parsed
+    /// client-side — kept untyped here so the generated frontend type doesn't need a date
+    /// crate (mirrors the `no date crate in the bundle` constraint on the other timestamp
+    /// fields below).
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
     pub robots_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
     pub last_full_scan_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
     pub updated_at: OffsetDateTime,
 }
 
@@ -58,7 +71,7 @@ pub struct SeriesTitle {
 }
 
 /// A genre/tag.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Tag {
     pub id: TagId,
     pub slug: String,
@@ -66,7 +79,7 @@ pub struct Tag {
 }
 
 /// An author/artist credit.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Author {
     pub id: AuthorId,
     pub slug: String,
@@ -146,7 +159,7 @@ pub struct Notification {
 }
 
 /// A scan run (progress + audit; mirrors `JetStream` dispatch).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ScanRun {
     pub id: ScanRunId,
     pub provider_id: Option<ProviderId>,
@@ -155,8 +168,14 @@ pub struct ScanRun {
     pub total_tasks: i32,
     pub done_tasks: i32,
     pub failed_tasks: i32,
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
     pub started_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
     pub finished_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
 }
 

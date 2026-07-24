@@ -3,11 +3,11 @@
 //! All payloads are `serde_json`-encoded. They are versioned implicitly by their
 //! shape; add fields with `#[serde(default)]` to preserve backward compatibility.
 
+use serde::{Deserialize, Serialize};
 use tankovault_domain::{
     ProviderId, ProviderState, RunState, ScanMode, ScanRunId, ScanTaskId, SeriesId, SeriesSourceId,
     UserId,
 };
-use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 

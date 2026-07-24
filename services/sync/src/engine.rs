@@ -299,7 +299,9 @@ impl SyncEngine {
                 let status = tracking::watchlist_status_get(&self.pool, user_id, series_id)
                     .await?
                     .unwrap_or(WatchStatus::Reading);
-                provider.save_entry(&access, &external_id, status, v).await?;
+                provider
+                    .save_entry(&access, &external_id, status, v)
+                    .await?;
             }
             ("status", "remote") => {
                 let s = c
@@ -316,7 +318,9 @@ impl SyncEngine {
                 let progress = tracking::progress_state(&self.pool, user_id, series_id)
                     .await?
                     .map_or(0.0, |(p, _)| p);
-                provider.save_entry(&access, &external_id, s, progress).await?;
+                provider
+                    .save_entry(&access, &external_id, s, progress)
+                    .await?;
             }
             _ => {}
         }
@@ -421,7 +425,9 @@ impl SyncEngine {
         user_id: UserId,
         policy: Option<ConflictPolicy>,
     ) -> anyhow::Result<PullReport> {
-        let c = self.reconcile_account_guarded(slug, user_id, policy).await?;
+        let c = self
+            .reconcile_account_guarded(slug, user_id, policy)
+            .await?;
         Ok(PullReport {
             fetched: c.fetched,
             matched: c.matched,
@@ -438,7 +444,9 @@ impl SyncEngine {
         user_id: UserId,
         policy: Option<ConflictPolicy>,
     ) -> anyhow::Result<PushReport> {
-        let c = self.reconcile_account_guarded(slug, user_id, policy).await?;
+        let c = self
+            .reconcile_account_guarded(slug, user_id, policy)
+            .await?;
         Ok(PushReport {
             considered: c.considered,
             pushed: c.pushed,
@@ -582,7 +590,13 @@ impl SyncEngine {
     /// Reconcile one mapped series against the remote, per the three-way merge (design v2
     /// §B.3). `remote` is `None` when the series is not present on the remote yet (it must be
     /// created there). Excluded series (§A.5) are skipped entirely.
-    #[allow(clippy::too_many_arguments)]
+    // The parallel `snap_lp`/`snap_rp`/`snap_ls`/`snap_rs` bindings and the length are
+    // inherent to the three-way merge; splitting it would obscure the §B.3 logic.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        clippy::similar_names
+    )]
     async fn reconcile_series(
         &self,
         provider: &dyn ExternalProvider,
@@ -665,7 +679,14 @@ impl SyncEngine {
         }
         let local_status = local_status_opt.unwrap_or(remote.status);
 
-        let pd = three_way(local_progress, remote.progress, snap_lp, snap_rp, policy, newer);
+        let pd = three_way(
+            local_progress,
+            remote.progress,
+            snap_lp,
+            snap_rp,
+            policy,
+            newer,
+        );
         let sd = three_way(local_status, remote.status, snap_ls, snap_rs, policy, newer);
 
         let mut conflict = false;
@@ -801,7 +822,7 @@ impl SyncEngine {
             }
         };
         for (user_id, slug) in accounts {
-            if self.providers.get(slug.as_str()).is_none() {
+            if !self.providers.contains_key(slug.as_str()) {
                 continue;
             }
             if let Err(e) = self.reconcile_account_guarded(&slug, user_id, None).await {
@@ -925,11 +946,10 @@ impl SyncEngine {
         Ok(())
     }
 
-
     /// Resolve a remote entry to a canonical series: first via an existing mapping, then by
     /// the best confident title match against the local catalogue.
     ///
-    /// Every candidate title (romaji/english/native, plus every AniList synonym) is scored
+    /// Every candidate title (romaji/english/native, plus every `AniList` synonym) is scored
     /// against its own trigram candidates and the **global** best is taken, so an entry
     /// attaches when *any* of its titles matches confidently — not just the first one tried.
     /// Synonym lists routinely duplicate the official titles or each other once normalized
@@ -1027,7 +1047,11 @@ impl SyncEngine {
         max_series: usize,
     ) -> anyhow::Result<EnrichReport> {
         let mut report = EnrichReport::default();
-        if !self.providers.values().any(|p| p.supports_public_metadata()) {
+        if !self
+            .providers
+            .values()
+            .any(|p| p.supports_public_metadata())
+        {
             return Ok(report);
         }
         let mut offset: i64 = 0;

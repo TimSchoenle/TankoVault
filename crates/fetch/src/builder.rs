@@ -11,9 +11,9 @@ use crate::ratelimit::RateLimitedFetcher;
 use crate::retry::RetryingFetcher;
 use crate::robots::{RobotsFetcher, RobotsRules};
 use crate::solving::{SessionStore, SolvingFetcher};
-use tankovault_solver::ChallengeSolver;
 use std::sync::Arc;
 use std::time::Duration;
+use tankovault_solver::ChallengeSolver;
 
 /// Everything needed to build a provider's fetch stack.
 pub struct ProviderFetchConfig {

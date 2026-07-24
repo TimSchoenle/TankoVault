@@ -10,9 +10,9 @@ use crate::error::FetchError;
 use crate::fetcher::Fetcher;
 use crate::types::{FetchRequest, FetchResponse};
 use async_trait::async_trait;
-use tankovault_solver::{ChallengeSolver, SolveRequest, detect_challenge};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tankovault_solver::{ChallengeSolver, SolveRequest, detect_challenge};
 use time::{Duration, OffsetDateTime};
 use tokio::sync::RwLock;
 

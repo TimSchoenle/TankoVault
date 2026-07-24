@@ -23,9 +23,12 @@ WORKDIR /app
 RUN rustup target add wasm32-unknown-unknown \
  && cargo install dioxus-cli@0.7.9 --locked
 
-# The frontend crate is excluded from the host workspace and pins its own dependencies, so it
-# builds standalone from just this directory — keeping the layer independent of backend churn.
-COPY web/frontend/ ./web/frontend/
+# The frontend crate is excluded from the host workspace but now takes path dependencies on
+# workspace crates (`tankovault-api-client`, `tankovault-domain`), whose manifests inherit from
+# the root `Cargo.toml` via `workspace = true`. Cargo therefore needs the whole workspace — the
+# root manifest plus every member it lists — on disk to resolve them, so copy the full context
+# (the toolchain/dx layer above stays cached regardless, since it precedes this COPY).
+COPY . .
 WORKDIR /app/web/frontend
 # `dx build` emits the web bundle under target/dx/<app>/release/web/public. Locate it by path
 # rather than hardcoding the app name, then flatten it into /dist for the runtime stage.

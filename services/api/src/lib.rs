@@ -30,6 +30,91 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_scalar::{Scalar, Servable};
 
+pub fn full_openapi() -> utoipa::openapi::OpenApi {
+    let (_, api) = OpenApiRouter::with_openapi(openapi::ApiDoc::openapi())
+        // auth
+        .routes(routes!(auth::register))
+        .routes(routes!(auth::login))
+        .routes(routes!(auth::refresh))
+        .routes(routes!(auth::logout))
+        // public series
+        .routes(routes!(series::list))
+        .routes(routes!(series::detail))
+        .routes(routes!(series::chapters))
+        .routes(routes!(series::tags))
+        // public provider list for the Discover filter (§9.3)
+        .routes(routes!(series::providers))
+        // me
+        .routes(routes!(me::watchlist))
+        .routes(routes!(me::put_watchlist, me::delete_watchlist))
+        .routes(routes!(me::get_progress, me::put_progress))
+        .routes(routes!(me::put_chapter_progress))
+        .routes(routes!(me::mark_read_to))
+        .routes(routes!(me::put_sync_excluded))
+        .routes(routes!(me::put_sync_override))
+        .routes(routes!(me::feed))
+        // reading dashboard + recommendations + stats (§9.3)
+        .routes(routes!(me::continue_reading))
+        .routes(routes!(me::recommendations))
+        .routes(routes!(me::stats))
+        // account settings (§9.4)
+        .routes(routes!(me::patch_profile))
+        .routes(routes!(me::sessions))
+        .routes(routes!(me::delete_session))
+        .routes(routes!(me::notification_prefs, me::put_notification_prefs))
+        .routes(routes!(me::notifications))
+        .routes(routes!(me::mark_read))
+        // live per-user notification stream (SSE)
+        .routes(routes!(me::stream))
+        // me — external sync
+        .routes(routes!(me::sync_providers))
+        .routes(routes!(me::sync_authorize_url))
+        .routes(routes!(me::sync_status))
+        .routes(routes!(me::sync_disconnect))
+        .routes(routes!(me::sync_callback))
+        .routes(routes!(me::sync_push))
+        .routes(routes!(me::sync_pull))
+        // me — automatic-sync policy
+        .routes(routes!(me::sync_settings, me::sync_settings_patch))
+        .routes(routes!(me::sync_conflicts))
+        .routes(routes!(me::sync_resolve_conflict))
+        .routes(routes!(me::sync_history))
+        // admin — sync visibility
+        .routes(routes!(admin::list_sync_accounts))
+        .routes(routes!(
+            admin::list_sync_mappings,
+            admin::upsert_sync_mapping
+        ))
+        .routes(routes!(admin::list_sync_mappings_for_series))
+        .routes(routes!(admin::list_unmapped_series))
+        .routes(routes!(admin::list_unmatched_remote))
+        .routes(routes!(admin::list_suggestions))
+        .routes(routes!(admin::assign_remote_entry))
+        .routes(routes!(admin::admin_sync_pull))
+        .routes(routes!(admin::admin_sync_push))
+        .routes(routes!(admin::admin_sync_unlink))
+        .routes(routes!(admin::clear_sync_mapping))
+        // admin
+        .routes(routes!(admin::system_stats))
+        .routes(routes!(admin::audit_log))
+        .routes(routes!(admin::list_providers, admin::create_provider))
+        .routes(routes!(admin::provider_stats))
+        .routes(routes!(admin::update_provider, admin::delete_provider))
+        .routes(routes!(admin::set_provider_state))
+        .routes(routes!(admin::test_adapter))
+        .routes(routes!(admin::resolve_provider))
+        .routes(routes!(admin::list_users))
+        .routes(routes!(admin::list_scans, admin::trigger_scan))
+        .routes(routes!(admin::scan_failures))
+        .routes(routes!(admin::scan_stream))
+        .routes(routes!(admin::get_scan))
+        .routes(routes!(admin::list_merge_candidates))
+        .routes(routes!(admin::dismiss_merge_candidate))
+        .routes(routes!(admin::merge_series))
+        .split_for_parts();
+    api
+}
+
 /// Assemble the full route table and middleware stack. Kept out of `main` so the router
 /// wiring stays readable as endpoints grow (frontend §9 added the reading-dashboard,
 /// account, and console-users routes here).
@@ -90,7 +175,10 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(me::sync_history))
         // admin — sync visibility + operator actions (design: admin Sync console tab)
         .routes(routes!(admin::list_sync_accounts))
-        .routes(routes!(admin::list_sync_mappings, admin::upsert_sync_mapping))
+        .routes(routes!(
+            admin::list_sync_mappings,
+            admin::upsert_sync_mapping
+        ))
         .routes(routes!(admin::list_sync_mappings_for_series))
         .routes(routes!(admin::list_unmapped_series))
         .routes(routes!(admin::list_unmatched_remote))
@@ -158,5 +246,3 @@ pub async fn connect_bus(
         }
     }
 }
-
-

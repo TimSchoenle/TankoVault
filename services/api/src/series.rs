@@ -175,8 +175,8 @@ pub struct SeriesDetail {
     pub tags: Vec<tankovault_domain::Tag>,
     /// Author/artist credits attached to the series; empty when none.
     pub authors: Vec<tankovault_domain::Author>,
-    /// AniList media id, if this series is mapped (`sync_mappings`); lets the frontend
-    /// link out to the canonical AniList entry regardless of whether the viewer has synced.
+    /// `AniList` media id, if this series is mapped (`sync_mappings`); lets the frontend
+    /// link out to the canonical `AniList` entry regardless of whether the viewer has synced.
     pub anilist_id: Option<String>,
 }
 

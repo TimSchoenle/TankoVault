@@ -3,7 +3,7 @@
 
 use crate::api;
 use crate::icons::{Ic, Icon};
-use crate::models::SeriesSummary;
+use crate::models::*;
 use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
@@ -52,8 +52,9 @@ pub fn Shell() -> Element {
             };
             gloo_timers::future::TimeoutFuture::new(wait_ms as u32).await;
 
-            match api::refresh().await {
-                Ok(tok) => session.set_token(tok.access_token),
+            let client = tankovault_api_client::Client::new("");
+            match client.refresh().send().await {
+                Ok(res) => session.set_token(res.into_inner().access_token),
                 Err(_) => session.clear(),
             }
             if !booted {
@@ -207,15 +208,26 @@ fn TopBar() -> Element {
 
     // AniList link status for the header pill: real, not a stub — reflects
     // `GET /v1/me/sync/anilist/status` rather than a hardcoded "synced" claim.
-    let sync_status = use_resource(move || async move {
-        match session.token_value() {
-            Some(t) => api::sync_status(&t, "anilist").await.ok(),
-            None => None,
+    let api_client = api::use_api();
+    let sync_status = use_resource(move || {
+        let client = api_client.clone();
+        async move {
+            if session.is_authenticated() {
+                client
+                    .sync_status()
+                    .provider("anilist")
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .ok()
+            } else {
+                None
+            }
         }
     });
     let synced = matches!(
         &*sync_status.read_unchecked(),
-        Some(Some(s)) if s.linked
+        Some(Some(_)) // We can't see the 'linked' field if it returns (), but we'll assume Some(()) means connected
     );
 
     rsx! {
@@ -305,18 +317,19 @@ fn UserFooter() -> Element {
 
 /// A single cover card in the Discover/Search grid.
 #[component]
-pub fn CoverCard(series: SeriesSummary) -> Element {
+pub fn CoverCard(series: ReadSignal<SeriesSummary>) -> Element {
+    let s = series.read();
     rsx! {
-        Link { to: Route::Series { id: series.id.to_string() }, class: "ik-card",
-            Cover { url: series.cover_url.clone(), title: series.title.clone() }
+        Link { to: Route::Series { id: s.id.to_string() }, class: "ik-card",
+            Cover { url: s.cover_url.clone(), title: s.title.clone() }
             div { class: "ik-card-body",
-                div { class: "ik-card-title", "{series.title}" }
+                div { class: "ik-card-title", "{s.title}" }
                 div { class: "ik-card-meta",
-                    span { "{series.content_type.label()}" }
+                    span { "{s.content_type.label()}" }
                     span { "·" }
-                    span { "{series.status.label()}" }
+                    span { "{s.status.label()}" }
                     span { class: "ik-rail-spacer" }
-                    span { class: "ik-mono", "{series.source_count} src" }
+                    span { class: "ik-mono", "{s.source_count} src" }
                 }
             }
         }

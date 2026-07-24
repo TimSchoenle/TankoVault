@@ -22,12 +22,18 @@ dioxus = { version = "0.7", features = ["web", "router"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 gloo-net = { version = "0.6", features = ["http", "json", "eventsource"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
+progenitor-client = "0.14"
+tankovault-api-client = { path = "../../crates/api-client" }
+tankovault-domain = { path = "../../crates/domain" }
 # Console dashboard auto-refresh loop (wasm-friendly async sleep).
 gloo-timers = { version = "0.3", features = ["futures"] }
 futures-util = "0.3"
 base64 = "0.22"
 # Live notification stream: read `MessageEvent.data()` from the SSE subscription.
-web-sys = { version = "0.3", features = ["MessageEvent"] }
+# `Window`/`Location` let the API client resolve the served page's absolute origin — reqwest
+# (unlike the browser's own fetch) rejects the relative `/v1/...` paths with a "builder error".
+web-sys = { version = "0.3", features = ["MessageEvent", "Window", "Location"] }
 wasm-bindgen = "0.2"
 # Relative-time formatting on the console uses the browser's own ISO-8601 date parser.
 js-sys = "0.3"
@@ -35,10 +41,13 @@ js-sys = "0.3"
 # proc-macro dependency: it runs on the host during macro expansion, never compiled
 # into (or shipped in) the wasm bundle.
 typify = "0.7"
-# Typed ids in the generated wire types (`typify` maps `format: uuid` to this). No "v4"/"v7"
-# feature: the frontend only parses/displays ids, never mints new ones, so it doesn't need
-# `getrandom`'s wasm backend.
-uuid = { version = "1", features = ["serde"] }
+# Typed ids in the generated wire types (`typify` maps `format: uuid` to this). The frontend
+# never mints ids itself, but `uuid`'s `v7` feature is switched on transitively (the shared
+# `tankovault-domain` newtypes mint v7 ids), and as of uuid 1.24 `v7` on
+# `wasm32-unknown-unknown` demands an explicit randomness source. `js` supplies the
+# self-contained WebCrypto backend (via `wasm-bindgen`/`js-sys`, already deps) — no
+# `getrandom` wasm cfg required.
+uuid = { version = "1", features = ["serde", "js"] }
 
 [features]
 default = ["web"]

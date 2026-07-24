@@ -590,7 +590,13 @@ impl SyncEngine {
     /// Reconcile one mapped series against the remote, per the three-way merge (design v2
     /// §B.3). `remote` is `None` when the series is not present on the remote yet (it must be
     /// created there). Excluded series (§A.5) are skipped entirely.
-    #[allow(clippy::too_many_arguments)]
+    // The parallel `snap_lp`/`snap_rp`/`snap_ls`/`snap_rs` bindings and the length are
+    // inherent to the three-way merge; splitting it would obscure the §B.3 logic.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        clippy::similar_names
+    )]
     async fn reconcile_series(
         &self,
         provider: &dyn ExternalProvider,
@@ -816,7 +822,7 @@ impl SyncEngine {
             }
         };
         for (user_id, slug) in accounts {
-            if self.providers.get(slug.as_str()).is_none() {
+            if !self.providers.contains_key(slug.as_str()) {
                 continue;
             }
             if let Err(e) = self.reconcile_account_guarded(&slug, user_id, None).await {
@@ -943,7 +949,7 @@ impl SyncEngine {
     /// Resolve a remote entry to a canonical series: first via an existing mapping, then by
     /// the best confident title match against the local catalogue.
     ///
-    /// Every candidate title (romaji/english/native, plus every AniList synonym) is scored
+    /// Every candidate title (romaji/english/native, plus every `AniList` synonym) is scored
     /// against its own trigram candidates and the **global** best is taken, so an entry
     /// attaches when *any* of its titles matches confidently — not just the first one tried.
     /// Synonym lists routinely duplicate the official titles or each other once normalized

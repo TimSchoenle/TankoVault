@@ -7,7 +7,7 @@
 use crate::api;
 use crate::components::{rel_time, SignInGate};
 use crate::icons::{Ic, Icon};
-use crate::models::ConflictPolicy;
+use crate::models::*;
 use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
@@ -45,6 +45,7 @@ impl Panel {
 pub fn Account() -> Element {
     let session = use_session();
     let mut panel = use_signal(|| Panel::Profile);
+    let api_client = api::use_api();
 
     if !session.is_authenticated() {
         return rsx! {
@@ -70,8 +71,9 @@ pub fn Account() -> Element {
             button {
                 class: "ik-btn",
                 onclick: move |_| {
+                    let client = api_client.clone();
                     spawn(async move {
-                        let _ = api::logout().await;
+                        let _ = client.logout().send().await;
                         session.clear();
                     });
                 },
@@ -100,6 +102,7 @@ pub fn Account() -> Element {
 #[component]
 fn ProfilePanel(name: String, role: &'static str) -> Element {
     let session = use_session();
+    let api_client = api::use_api();
     let initial = name
         .chars()
         .next()
@@ -126,22 +129,24 @@ fn ProfilePanel(name: String, role: &'static str) -> Element {
         }
         saving.set(true);
         result.set(None);
+        let client = api_client.clone();
         spawn(async move {
-            if let Some(t) = session.token_value() {
-                let u = (!new_username.is_empty()).then_some(new_username.as_str());
-                let e = (!new_email.is_empty()).then_some(new_email.as_str());
-                match api::patch_profile(&t, u, e).await {
-                    Ok(p) => {
-                        // Reflect the server's canonical values immediately — both in this
-                        // form and, crucially, across the whole app (header, greeting, …) by
-                        // overriding the session display name. No relog required.
-                        username.set(p.username.clone());
-                        session.set_display_name(p.username.clone());
-                        email.set(String::new());
-                        result.set(Some(Ok("Profile updated.".to_owned())));
-                    }
-                    Err(msg) => result.set(Some(Err(msg))),
+            let update = ProfileUpdate {
+                username: (!new_username.is_empty()).then_some(new_username),
+                email: (!new_email.is_empty()).then_some(new_email),
+            };
+            match client.patch_profile().body(update).send().await {
+                Ok(res) => {
+                    let p = res.into_inner();
+                    // Reflect the server's canonical values immediately — both in this
+                    // form and, crucially, across the whole app (header, greeting, …) by
+                    // overriding the session display name. No relog required.
+                    username.set(p.username.clone());
+                    session.set_display_name(p.username.clone());
+                    email.set(String::new());
+                    result.set(Some(Ok("Profile updated.".to_owned())));
                 }
+                Err(e) => result.set(Some(Err(api::friendly_error(e)))),
             }
             saving.set(false);
         });
@@ -197,12 +202,22 @@ fn ProfilePanel(name: String, role: &'static str) -> Element {
 fn SecurityPanel() -> Element {
     let session = use_session();
     let reload = use_signal(|| 0u32);
+    let api_client = api::use_api();
     let res = use_resource(move || {
         let _ = reload.read();
+        let client = api_client.clone();
         async move {
-            match session.token_value() {
-                Some(t) => Some(api::sessions(&t).await),
-                None => None,
+            if session.is_authenticated() {
+                Some(
+                    client
+                        .sessions()
+                        .send()
+                        .await
+                        .map(|r| r.into_inner())
+                        .map_err(api::friendly_error),
+                )
+            } else {
+                None
             }
         }
     });
@@ -245,7 +260,7 @@ fn SessionRow(
     expires_at: String,
     reload: Signal<u32>,
 ) -> Element {
-    let session = use_session();
+    let api_client = api::use_api();
     let mut revoking = use_signal(|| false);
     let created = created_at.get(0..10).unwrap_or(&created_at).to_owned();
     let expires = expires_at.get(0..10).unwrap_or(&expires_at).to_owned();
@@ -256,11 +271,10 @@ fn SessionRow(
         revoking.set(true);
         let id = session_id.clone();
         let mut reload = reload;
+        let client = api_client.clone();
         spawn(async move {
-            if let Some(t) = session.token_value() {
-                if api::delete_session(&t, &id).await.is_ok() {
-                    reload += 1;
-                }
+            if client.delete_session().id(id).send().await.is_ok() {
+                reload += 1;
             }
             revoking.set(false);
         });
@@ -290,21 +304,23 @@ const NOTIFY_KEYS: [(&str, &str); 3] = [
 /// `notification_prefs` JSON document via `PUT /v1/me/notification-prefs`.
 #[component]
 fn NotificationsPanel() -> Element {
-    let session = use_session();
+    let api_client = api::use_api();
     let mut prefs = use_signal(|| Value::Object(Default::default()));
     let mut loaded = use_signal(|| false);
     let mut saved = use_signal(|| false);
 
-    use_effect(move || {
-        spawn(async move {
-            if let Some(t) = session.token_value() {
-                if let Ok(v) = api::notification_prefs(&t).await {
-                    prefs.set(v);
+    {
+        let client = api_client.clone();
+        use_effect(move || {
+            let client = client.clone();
+            spawn(async move {
+                if let Ok(res) = client.notification_prefs().send().await {
+                    prefs.set(res.into_inner());
                 }
-            }
-            loaded.set(true);
+                loaded.set(true);
+            });
         });
-    });
+    }
 
     if !*loaded.read() {
         return rsx! {
@@ -324,6 +340,7 @@ fn NotificationsPanel() -> Element {
             for (key , label) in NOTIFY_KEYS {
                 {
                     let on = current.get(key).and_then(Value::as_bool).unwrap_or(true);
+                    let client = api_client.clone();
                     rsx! {
                         div { class: "ik-row", key: "{key}",
                             span { class: "grow", "{label}" }
@@ -337,11 +354,10 @@ fn NotificationsPanel() -> Element {
                                     }
                                     prefs.set(v.clone());
                                     saved.set(false);
+                                    let client = client.clone();
                                     spawn(async move {
-                                        if let Some(t) = session.token_value() {
-                                            if api::set_notification_prefs(&t, &v).await.is_ok() {
-                                                saved.set(true);
-                                            }
+                                        if client.put_notification_prefs().body(v).send().await.is_ok() {
+                                            saved.set(true);
                                         }
                                     });
                                 },
@@ -501,12 +517,25 @@ fn apply_pref(
 #[component]
 fn SyncPanel() -> Element {
     let session = use_session();
-    let providers = use_resource(move || async move {
-        match session.token_value() {
-            Some(t) => api::sync_providers(&t).await,
-            None => Ok(Vec::new()),
-        }
-    });
+    let api_client = api::use_api();
+    let providers = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let client = client.clone();
+            async move {
+                if session.is_authenticated() {
+                    api::fetch_json(&client, "/v1/me/sync/providers")
+                        .await
+                        .and_then(|v| {
+                            serde_json::from_value::<Vec<ProviderInfo>>(v)
+                                .map_err(|e| format!("JSON error: {e}"))
+                        })
+                } else {
+                    Ok(Vec::new())
+                }
+            }
+        })
+    };
 
     rsx! {
         div { class: "ik-sidebar-card", style: "max-width:560px;",
@@ -524,7 +553,11 @@ fn SyncPanel() -> Element {
                 },
                 Some(Ok(list)) => rsx! {
                     for p in list.clone() {
-                        ProviderSyncCard { key: "{p.slug}", slug: p.slug.clone(), name: p.name.clone() }
+                        ProviderSyncCard {
+                            key: "{p.slug_or_id()}",
+                            slug: p.slug_or_id().to_owned(),
+                            name: p.name.clone(),
+                        }
                     }
                 },
             }
@@ -539,15 +572,29 @@ fn SyncPanel() -> Element {
 fn ProviderSyncCard(slug: String, name: String) -> Element {
     let session = use_session();
     let mut reload = use_signal(|| 0u32);
+    let api_client = api::use_api();
     let status = use_resource({
         let slug = slug.clone();
+        let client = api_client.clone();
         move || {
             let _ = reload.read();
             let slug = slug.clone();
+            let client = client.clone();
             async move {
-                match session.token_value() {
-                    Some(t) => Some(api::sync_status(&t, &slug).await),
-                    None => None,
+                if session.is_authenticated() {
+                    Some(
+                        api::fetch_json(&client, &format!("/v1/me/sync/{slug}/status"))
+                            .await
+                            .and_then(|v| {
+                                serde_json::from_value::<SyncStatus>(v).or(Ok(SyncStatus {
+                                    linked: false,
+                                    display_name: None,
+                                    last_sync: None,
+                                }))
+                            }),
+                    )
+                } else {
+                    None
                 }
             }
         }
@@ -563,13 +610,28 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
     // conflicts badge. Reloaded alongside `status` whenever `reload` bumps.
     let settings = use_resource({
         let slug = slug.clone();
+        let client = api_client.clone();
         move || {
             let _ = reload.read();
             let slug = slug.clone();
+            let client = client.clone();
             async move {
-                match session.token_value() {
-                    Some(t) => Some(api::sync_settings(&t, &slug).await),
-                    None => None,
+                if session.is_authenticated() {
+                    Some(
+                        api::fetch_json(&client, &format!("/v1/me/sync/{slug}/settings"))
+                            .await
+                            .and_then(|v| {
+                                serde_json::from_value::<SyncSettings>(v).or(Ok(SyncSettings {
+                                    auto_pull: true,
+                                    auto_push: true,
+                                    conflict_policy: "newest_wins".to_owned(),
+                                    auto_sync_enabled: true,
+                                    pending_conflicts: 0,
+                                }))
+                            }),
+                    )
+                } else {
+                    None
                 }
             }
         }
@@ -584,35 +646,60 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
 
     let toggle_auto = {
         let slug = slug.clone();
+        let client = api_client.clone();
         move |_| {
             let next = !*auto_sync.peek();
             auto_sync.set(next);
             let slug = slug.clone();
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    let _ = api::patch_sync_settings(&t, &slug, Some(next), None).await;
-                    reload += 1;
-                }
+                let patch = SyncSettingsPatch {
+                    auto_sync_enabled: Some(next),
+                    conflict_policy: None,
+                };
+                let _ = client
+                    .sync_settings_patch()
+                    .provider(slug)
+                    .body(patch)
+                    .send()
+                    .await;
+                reload += 1;
             });
         }
     };
 
     let connect = {
         let slug = slug.clone();
+        let client = api_client.clone();
         move |_| {
             let slug = slug.clone();
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    match api::sync_authorize_url(&t, &slug).await {
-                        Ok(url) => {
-                            let js = format!(
-                                "window.location.href = {};",
-                                serde_json::to_string(&url).unwrap_or_default()
-                            );
-                            let _ = document::eval(&js);
+                match api::fetch_json(&client, &format!("/v1/me/sync/{slug}/authorize")).await {
+                    Ok(v) => {
+                        let url = v
+                            .as_str()
+                            .map(str::to_owned)
+                            .or_else(|| v.get("url").and_then(Value::as_str).map(str::to_owned))
+                            .or_else(|| {
+                                v.get("authorize_url")
+                                    .and_then(Value::as_str)
+                                    .map(str::to_owned)
+                            });
+                        match url {
+                            Some(url) => {
+                                let js = format!(
+                                    "window.location.href = {};",
+                                    serde_json::to_string(&url).unwrap_or_default()
+                                );
+                                let _ = document::eval(&js);
+                            }
+                            None => message.set(Some(Err(
+                                "Sync provider did not return an authorize URL.".to_owned(),
+                            ))),
                         }
-                        Err(e) => message.set(Some(Err(e))),
                     }
+                    Err(e) => message.set(Some(Err(e))),
                 }
             });
         }
@@ -621,6 +708,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
     let disconnect = {
         let slug = slug.clone();
         let name = name.clone();
+        let client = api_client.clone();
         move |_| {
             if *busy.peek() {
                 return;
@@ -629,15 +717,14 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
             message.set(None);
             let slug = slug.clone();
             let name = name.clone();
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    match api::sync_disconnect(&t, &slug).await {
-                        Ok(()) => {
-                            message.set(Some(Ok(format!("Disconnected from {name}."))));
-                            reload += 1;
-                        }
-                        Err(e) => message.set(Some(Err(e))),
+                match client.sync_disconnect().provider(slug).send().await {
+                    Ok(_) => {
+                        message.set(Some(Ok(format!("Disconnected from {name}."))));
+                        reload += 1;
                     }
+                    Err(e) => message.set(Some(Err(api::friendly_error(e)))),
                 }
                 busy.set(false);
             });
@@ -649,6 +736,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
     // closure would double-move it.
     let pull_action = {
         let slug = slug.clone();
+        let client = api_client.clone();
         move |_| {
             if *busy.peek() {
                 return;
@@ -657,15 +745,23 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
             message.set(None);
             let policy = *policy.peek();
             let slug = slug.clone();
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    match api::sync_pull(&t, &slug, policy).await {
-                        Ok(v) => {
-                            message.set(Some(Ok(summarize_sync(true, &v))));
-                            reload += 1;
-                        }
-                        Err(e) => message.set(Some(Err(e))),
+                let opts = SyncOpts {
+                    policy: Some(policy.token().to_owned()),
+                };
+                match client
+                    .sync_pull()
+                    .provider(slug)
+                    .body(SyncPullBody::Variant1(opts))
+                    .send()
+                    .await
+                {
+                    Ok(_) => {
+                        message.set(Some(Ok("Sync pull started.".to_owned())));
+                        reload += 1;
                     }
+                    Err(e) => message.set(Some(Err(api::friendly_error(e)))),
                 }
                 busy.set(false);
             });
@@ -674,6 +770,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
 
     let push_action = {
         let slug = slug.clone();
+        let client = api_client.clone();
         move |_| {
             if *busy.peek() {
                 return;
@@ -682,15 +779,23 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
             message.set(None);
             let policy = *policy.peek();
             let slug = slug.clone();
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    match api::sync_push(&t, &slug, policy).await {
-                        Ok(v) => {
-                            message.set(Some(Ok(summarize_sync(false, &v))));
-                            reload += 1;
-                        }
-                        Err(e) => message.set(Some(Err(e))),
+                let opts = SyncOpts {
+                    policy: Some(policy.token().to_owned()),
+                };
+                match client
+                    .sync_push()
+                    .provider(slug)
+                    .body(SyncPushBody::Variant1(opts))
+                    .send()
+                    .await
+                {
+                    Ok(_) => {
+                        message.set(Some(Ok("Sync push started.".to_owned())));
+                        reload += 1;
                     }
+                    Err(e) => message.set(Some(Err(api::friendly_error(e)))),
                 }
                 busy.set(false);
             });
@@ -710,10 +815,10 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
         },
         Some(Some(Ok(s))) if s.linked => {
             let username = s
-                .username
+                .display_name
                 .clone()
                 .unwrap_or_else(|| format!("{name} reader"));
-            let last_sync = rel_time(s.last_synced_at.as_deref());
+            let last_sync = rel_time(s.last_sync.as_deref());
             rsx! {
                 div { class: "ik-flex", style: "gap:14px;margin-bottom:16px;",
                     div { class: "ik-source-tile", style: "width:46px;height:46px;",
@@ -756,6 +861,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                     for p in ConflictPolicy::ALL {
                         {
                             let slug = slug.clone();
+                            let client = api_client.clone();
                             rsx! {
                                 button {
                                     key: "{p.label()}",
@@ -763,11 +869,19 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                                     onclick: move |_| {
                                         policy.set(p);
                                         let slug = slug.clone();
+                                        let client = client.clone();
                                         spawn(async move {
-                                            if let Some(t) = session.token_value() {
-                                                let _ = api::patch_sync_settings(&t, &slug, None, Some(p.token())).await;
-                                                reload += 1;
-                                            }
+                                            let patch = SyncSettingsPatch {
+                                                auto_sync_enabled: None,
+                                                conflict_policy: Some(p.token().to_owned()),
+                                            };
+                                            let _ = client
+                                                .sync_settings_patch()
+                                                .provider(slug)
+                                                .body(patch)
+                                                .send()
+                                                .await;
+                                            reload += 1;
                                         });
                                     },
                                     "{p.label()}"
@@ -830,22 +944,30 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
 #[component]
 fn SyncHistory(provider: String, refresh: Signal<u32>) -> Element {
     let session = use_session();
+    let api_client = api::use_api();
     let prov = provider.clone();
     let entries = use_resource(move || {
         let _ = refresh.read();
         let prov = prov.clone();
+        let client = api_client.clone();
         async move {
-            match session.token_value() {
-                Some(t) => match api::sync_history(&t, 0).await {
-                    Ok(list) => Some(
-                        list.into_iter()
-                            .filter(|e| e.provider == prov)
-                            .take(8)
-                            .collect::<Vec<_>>(),
-                    ),
+            if session.is_authenticated() {
+                match api::fetch_json(&client, "/v1/me/sync/history").await {
+                    Ok(v) => {
+                        let list: Vec<Value> = v.as_array().cloned().unwrap_or_default();
+                        Some(
+                            list.into_iter()
+                                .filter(|e| {
+                                    e.get("provider").and_then(Value::as_str) == Some(&prov)
+                                })
+                                .take(8)
+                                .collect::<Vec<_>>(),
+                        )
+                    }
                     Err(_) => None,
-                },
-                None => None,
+                }
+            } else {
+                None
             }
         }
     });
@@ -860,13 +982,21 @@ fn SyncHistory(provider: String, refresh: Signal<u32>) -> Element {
             let rows = list.clone();
             rsx! {
                 for e in rows {
-                    div { class: "ik-row", key: "{e.id}",
-                        div { class: "grow",
-                            div { style: "font-weight:600;font-size:13px;", "{e.series_title}" }
-                            div { class: "ik-mono ik-muted", style: "font-size:11px;", "{e.action}" }
-                        }
-                        span { class: "ik-mono ik-muted", style: "font-size:11px;",
-                            {rel_time(Some(e.created_at.as_str()))}
+                    {
+                        let id = e.get("id").and_then(Value::as_str).unwrap_or("?");
+                        let title = e.get("series_title").and_then(Value::as_str).unwrap_or("Unknown Series");
+                        let action = e.get("action").and_then(Value::as_str).unwrap_or("sync");
+                        let detail = e.get("field").and_then(Value::as_str).unwrap_or("progress");
+                        let time = rel_time(e.get("created_at").and_then(Value::as_str));
+                        rsx! {
+                            div { class: "ik-row", key: "{id}",
+                                div { class: "grow",
+                                    div { style: "font-weight:600;font-size:13px;", "{title}" }
+                                    div { class: "ik-mono ik-muted", style: "font-size:11px;",
+                                        "{action} {detail} · {time}"
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -891,35 +1021,46 @@ fn SyncHistory(provider: String, refresh: Signal<u32>) -> Element {
 #[component]
 fn ConflictInbox(provider: String, show: Signal<bool>, parent_reload: Signal<u32>) -> Element {
     let session = use_session();
+    let api_client = api::use_api();
     let reload = use_signal(|| 0u32);
     let list = use_resource(move || {
         let _ = reload.read();
+        let client = api_client.clone();
         async move {
-            match session.token_value() {
-                Some(t) => Some(api::sync_conflicts(&t).await),
-                None => None,
+            if session.is_authenticated() {
+                match api::fetch_json(&client, "/v1/me/sync/conflicts").await {
+                    Ok(v) => serde_json::from_value::<Vec<SyncConflict>>(v)
+                        .map_err(|e| format!("JSON error: {e}")),
+                    Err(e) => Err(e),
+                }
+            } else {
+                Ok(Vec::new())
             }
         }
     });
 
     let prov = provider.clone();
     let body = match &*list.read_unchecked() {
-        None | Some(None) => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
-        Some(Some(Err(e))) => rsx! {
-            p { style: "font-size:13px;color:var(--acc);", "Could not load conflicts: {e}" }
-        },
-        Some(Some(Ok(all))) => {
-            let rows: Vec<_> = all.iter().filter(|c| c.provider == prov).cloned().collect();
+        None => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
+        Some(Ok(all_vec)) => {
+            let rows: Vec<SyncConflict> = all_vec
+                .iter()
+                .filter(|c| c.provider == prov)
+                .cloned()
+                .collect();
             if rows.is_empty() {
                 rsx! { div { class: "ik-empty", "No conflicts need your review." } }
             } else {
                 rsx! {
                     for c in rows {
-                        ConflictRow { key: "{c.id}", conflict: c, reload, parent_reload }
+                        ConflictRow { key: "{c.id}", conflict: Signal::new(c), reload, parent_reload }
                     }
                 }
             }
         }
+        Some(Err(e)) => rsx! {
+            p { style: "font-size:13px;color:var(--acc);", "Could not load conflicts: {e}" }
+        },
     };
 
     rsx! {
@@ -936,40 +1077,57 @@ fn ConflictInbox(provider: String, show: Signal<bool>, parent_reload: Signal<u32
 /// One conflict row: shows the disagreeing values and the two resolution buttons.
 #[component]
 fn ConflictRow(
-    conflict: crate::models::SyncConflict,
+    conflict: Signal<SyncConflict>,
     reload: Signal<u32>,
     parent_reload: Signal<u32>,
 ) -> Element {
-    let session = use_session();
+    let api_client = api::use_api();
     let busy = use_signal(|| false);
+    let con = conflict.read();
 
     // Each button gets its own closure with its own `id` clone (a shared `FnMut` capturing the
     // non-`Copy` `id` can't be moved into both buttons).
     let resolve_local = {
-        let id = conflict.id.clone();
+        let id = con.id.clone();
+        let client = api_client.clone();
         move |_| {
             if *busy.peek() {
                 return;
             }
-            resolve_conflict(session, busy, reload, parent_reload, id.clone(), "local");
+            resolve_conflict(
+                client.clone(),
+                busy,
+                reload,
+                parent_reload,
+                id.clone(),
+                "local",
+            );
         }
     };
     let resolve_remote = {
-        let id = conflict.id.clone();
+        let id = con.id.clone();
+        let client = api_client.clone();
         move |_| {
             if *busy.peek() {
                 return;
             }
-            resolve_conflict(session, busy, reload, parent_reload, id.clone(), "remote");
+            resolve_conflict(
+                client.clone(),
+                busy,
+                reload,
+                parent_reload,
+                id.clone(),
+                "remote",
+            );
         }
     };
 
     rsx! {
         div { class: "ik-row",
             div { class: "grow",
-                div { style: "font-weight:600;font-size:13px;", "{conflict.series_title}" }
+                div { style: "font-weight:600;font-size:13px;", "{con.series_title}" }
                 div { class: "ik-mono ik-muted", style: "font-size:11px;",
-                    "{conflict.field}: local {conflict.local_value} · AniList {conflict.remote_value}"
+                    "{con.field}: local {con.local_value} · AniList {con.remote_value}"
                 }
             }
             button {
@@ -990,45 +1148,33 @@ fn ConflictRow(
 
 /// Fire a conflict resolution and refresh both the inbox and the parent card's badge.
 fn resolve_conflict(
-    session: crate::state::Session,
+    api_client: tankovault_api_client::Client,
     mut busy: Signal<bool>,
     mut reload: Signal<u32>,
     mut parent_reload: Signal<u32>,
-    id: String,
+    conflict_id: String,
     resolution: &'static str,
 ) {
     busy.set(true);
     spawn(async move {
-        if let Some(t) = session.token_value() {
-            if api::resolve_conflict(&t, &id, resolution).await.is_ok() {
+        let body = ResolveConflict {
+            resolution: resolution.to_owned(),
+        };
+        if let Ok(id) = uuid::Uuid::parse_str(&conflict_id) {
+            if api_client
+                .sync_resolve_conflict()
+                .id(id)
+                .body(body)
+                .send()
+                .await
+                .is_ok()
+            {
                 reload += 1;
                 parent_reload += 1;
             }
         }
         busy.set(false);
     });
-}
-
-/// One summary line from a pull's/push's report JSON (`engine::PullReport`/`PushReport`
-/// shape, forwarded verbatim by the API).
-fn summarize_sync(pull: bool, v: &Value) -> String {
-    let n = |k: &str| v.get(k).and_then(Value::as_i64).unwrap_or(0);
-    if pull {
-        format!(
-            "Pulled {} AniList entries — {} matched, {} updated, {} unmatched.",
-            n("fetched"),
-            n("matched"),
-            n("updated"),
-            n("unmatched")
-        )
-    } else {
-        format!(
-            "Pushed {} of {} watchlist entries to AniList ({} unmapped).",
-            n("pushed"),
-            n("considered"),
-            n("unmapped")
-        )
-    }
 }
 
 /// Lands after the user approves (or declines) the `AniList` OAuth consent screen — the
@@ -1039,6 +1185,7 @@ fn summarize_sync(pull: bool, v: &Value) -> String {
 pub fn AnilistCallback(code: String) -> Element {
     let session = use_session();
     let nav = use_navigator();
+    let api_client = api::use_api();
     let mut result: Signal<Option<Result<(), String>>> = use_signal(|| None);
 
     use_effect(move || {
@@ -1046,6 +1193,7 @@ pub fn AnilistCallback(code: String) -> Element {
             return;
         }
         let code = code.clone();
+        let client = api_client.clone();
         spawn(async move {
             let outcome = match session.token_value() {
                 None => Err(
@@ -1055,7 +1203,14 @@ pub fn AnilistCallback(code: String) -> Element {
                 Some(_) if code.trim().is_empty() => {
                     Err("AniList did not return an authorization code.".to_owned())
                 }
-                Some(t) => api::sync_link(&t, "anilist", &code).await,
+                Some(_) => client
+                    .sync_callback()
+                    .provider("anilist")
+                    .code(code)
+                    .send()
+                    .await
+                    .map(|_| ())
+                    .map_err(api::friendly_error),
             };
             let ok = outcome.is_ok();
             result.set(Some(outcome));

@@ -261,7 +261,7 @@ pub async fn list_history<'e, E: PgExecutor<'e>>(
          LIMIT $4 OFFSET $5",
     )
     .bind(user_id.as_uuid())
-    .bind(series_id.map(|s| s.as_uuid()))
+    .bind(series_id.map(SeriesId::as_uuid))
     .bind(provider)
     .bind(limit)
     .bind(offset)
@@ -761,7 +761,7 @@ pub async fn upsert_remote_entry<'e, E: PgExecutor<'e>>(
     .bind(content_type)
     .bind(start_year)
     .bind(updated_at)
-    .bind(series_id.map(|s| s.as_uuid()))
+    .bind(series_id.map(SeriesId::as_uuid))
     .execute(exec)
     .await?;
     Ok(())

@@ -8,6 +8,7 @@ use axum::extract::{Path, Query, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
+use std::fmt::Write as _;
 use tankovault_contracts::UserNotification;
 use tankovault_domain::{SeriesId, UserId, WatchStatus, resolve_link};
 use time::OffsetDateTime;
@@ -1278,12 +1279,12 @@ pub async fn sync_history(
 ) -> ApiResult<Json<serde_json::Value>> {
     let mut path = format!("/v1/sync/history/{}?", user.user_id.as_uuid());
     if let Some(s) = q.series_id {
-        path.push_str(&format!("series_id={s}&"));
+        let _ = write!(path, "series_id={s}&");
     }
     if let Some(p) = &q.provider {
-        path.push_str(&format!("provider={p}&"));
+        let _ = write!(path, "provider={p}&");
     }
-    path.push_str(&format!("page={}", q.page.unwrap_or(0)));
+    let _ = write!(path, "page={}", q.page.unwrap_or(0));
     sync_get(&state, &path).await
 }
 

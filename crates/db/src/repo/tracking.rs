@@ -103,7 +103,7 @@ pub struct ReadProgress {
 /// Whether `number` denotes a whole chapter (integer-valued) rather than a part release.
 #[must_use]
 fn is_whole(number: f64) -> bool {
-    number == number.floor()
+    number.fract() == 0.0
 }
 
 /// Set a user's whole-chapter frontier for a series outright, clearing any now-stale part

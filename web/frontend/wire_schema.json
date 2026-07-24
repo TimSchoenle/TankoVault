@@ -1070,7 +1070,7 @@
           "type": "array"
         },
         "anilist_id": {
-          "description": "AniList media id, if this series is mapped (`sync_mappings`); lets the frontend\nlink out to the canonical AniList entry regardless of whether the viewer has synced.",
+          "description": "`AniList` media id, if this series is mapped (`sync_mappings`); lets the frontend\nlink out to the canonical `AniList` entry regardless of whether the viewer has synced.",
           "type": [
             "string",
             "null"

@@ -7,7 +7,7 @@
 use crate::api;
 use crate::components::{Cover, EmptyBox, ErrorBox, SignInGate};
 use crate::icons::{Ic, Icon};
-use crate::models::{ConflictPolicy, SeriesId, WatchStatus, WatchlistItem, WatchlistUpsert};
+use crate::models::*;
 use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
@@ -26,37 +26,68 @@ pub fn Watchlist() -> Element {
 
     let mut syncing = use_signal(|| false);
     let mut sync_msg: Signal<Option<Result<String, String>>> = use_signal(|| None);
-    let sync_now = move |_| {
-        if *syncing.peek() {
-            return;
-        }
-        syncing.set(true);
-        sync_msg.set(None);
-        spawn(async move {
-            if let Some(t) = session.token_value() {
-                match api::sync_pull(&t, "anilist", ConflictPolicy::NewestWins).await {
+    let api_client = api::use_api();
+
+    let sync_now = {
+        let client = api_client.clone();
+        move |_| {
+            if *syncing.peek() {
+                return;
+            }
+            syncing.set(true);
+            sync_msg.set(None);
+            let client = client.clone();
+            spawn(async move {
+                let opts = SyncOpts {
+                    policy: Some(ConflictPolicy::NewestWins.token().to_owned()),
+                };
+                match client
+                    .sync_pull()
+                    .provider("anilist")
+                    .body(SyncPullBody::Variant1(opts.clone()))
+                    .send()
+                    .await
+                {
                     Ok(_) => {
-                        let pushed =
-                            api::sync_push(&t, "anilist", ConflictPolicy::NewestWins).await;
-                        sync_msg.set(Some(pushed.map(|_| "Synced with AniList.".to_owned())));
+                        let pushed = client
+                            .sync_push()
+                            .provider("anilist")
+                            .body(SyncPushBody::Variant1(opts))
+                            .send()
+                            .await;
+                        sync_msg.set(Some(
+                            pushed
+                                .map(|_| "Synced with AniList.".to_owned())
+                                .map_err(api::friendly_error),
+                        ));
                         reload += 1;
                     }
-                    Err(e) => sync_msg.set(Some(Err(e))),
+                    Err(e) => sync_msg.set(Some(Err(api::friendly_error(e)))),
                 }
-            }
-            syncing.set(false);
-        });
+                syncing.set(false);
+            });
+        }
     };
 
-    let resource = use_resource(move || {
-        let _ = reload.read();
-        async move {
-            match session.token_value() {
-                Some(t) => api::watchlist(&t).await,
-                None => Ok(Vec::new()),
+    let resource = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let _ = reload.read();
+            let client = client.clone();
+            async move {
+                if session.is_authenticated() {
+                    client
+                        .watchlist()
+                        .send()
+                        .await
+                        .map(|r| r.into_inner())
+                        .map_err(api::friendly_error)
+                } else {
+                    Ok(Vec::new())
+                }
             }
-        }
-    });
+        })
+    };
 
     if !session.is_authenticated() {
         return rsx! {
@@ -92,7 +123,7 @@ pub fn Watchlist() -> Element {
             let items = items.clone();
             rsx! {
                 div { class: "ik-board",
-                    for status in WatchStatus::COLUMNS {
+                    for status in WatchStatus::columns().iter().copied() {
                         Column {
                             status,
                             items: items.iter().filter(|i| i.status == status).cloned().collect::<Vec<_>>(),
@@ -147,7 +178,7 @@ fn Column(
     dragging: Signal<Dragging>,
     dragover: Signal<Option<WatchStatus>>,
 ) -> Element {
-    let session = use_session();
+    let api_client = api::use_api();
     let count = items.len();
     let (icon, color) = column_style(status);
     let is_over = *dragover.read() == Some(status);
@@ -163,15 +194,21 @@ fn Column(
         dragging.set(None);
         if let Some((sid, notify)) = payload {
             let mut reload = reload;
+            let client = api_client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    let body = WatchlistUpsert {
-                        status: Some(status),
-                        notify: Some(notify),
-                    };
-                    if api::set_watchlist(&t, sid, &body).await.is_ok() {
-                        reload += 1;
-                    }
+                let body = WatchlistUpsert {
+                    status: Some(status),
+                    notify: Some(notify),
+                };
+                if client
+                    .put_watchlist()
+                    .series_id(sid)
+                    .body(body)
+                    .send()
+                    .await
+                    .is_ok()
+                {
+                    reload += 1;
                 }
             });
         }
@@ -210,13 +247,23 @@ fn Column(
 
 #[component]
 fn WatchCard(item: WatchlistItem, reload: Signal<u32>, dragging: Signal<Dragging>) -> Element {
-    let session = use_session();
+    let api_client = api::use_api();
     let series_id = item.series_id;
     let detail = use_resource({
         let id = series_id;
+        let client = api_client.clone();
         move || {
             let id = id;
-            async move { api::series_detail(id).await }
+            let client = client.clone();
+            async move {
+                client
+                    .detail()
+                    .id(id)
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error)
+            }
         }
     });
 
@@ -231,17 +278,24 @@ fn WatchCard(item: WatchlistItem, reload: Signal<u32>, dragging: Signal<Dragging
     let toggle_notify = {
         let sid = series_id;
         let mut reload = reload;
+        let client = api_client.clone();
         move |_| {
             let sid = sid;
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    let body = WatchlistUpsert {
-                        status: Some(status),
-                        notify: Some(!notify),
-                    };
-                    if api::set_watchlist(&t, sid, &body).await.is_ok() {
-                        reload += 1;
-                    }
+                let body = WatchlistUpsert {
+                    status: Some(status),
+                    notify: Some(!notify),
+                };
+                if client
+                    .put_watchlist()
+                    .series_id(sid)
+                    .body(body)
+                    .send()
+                    .await
+                    .is_ok()
+                {
+                    reload += 1;
                 }
             });
         }
@@ -250,18 +304,25 @@ fn WatchCard(item: WatchlistItem, reload: Signal<u32>, dragging: Signal<Dragging
     let move_status = {
         let sid = series_id;
         let mut reload = reload;
+        let client = api_client.clone();
         move |ev: Event<FormData>| {
             let sid = sid;
+            let client = client.clone();
             let new_status = parse_status(&ev.value());
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    let body = WatchlistUpsert {
-                        status: Some(new_status),
-                        notify: Some(notify),
-                    };
-                    if api::set_watchlist(&t, sid, &body).await.is_ok() {
-                        reload += 1;
-                    }
+                let body = WatchlistUpsert {
+                    status: Some(new_status),
+                    notify: Some(notify),
+                };
+                if client
+                    .put_watchlist()
+                    .series_id(sid)
+                    .body(body)
+                    .send()
+                    .await
+                    .is_ok()
+                {
+                    reload += 1;
                 }
             });
         }
@@ -270,13 +331,19 @@ fn WatchCard(item: WatchlistItem, reload: Signal<u32>, dragging: Signal<Dragging
     let remove = {
         let sid = series_id;
         let mut reload = reload;
+        let client = api_client.clone();
         move |_| {
             let sid = sid;
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::remove_watchlist(&t, sid).await.is_ok() {
-                        reload += 1;
-                    }
+                if client
+                    .delete_watchlist()
+                    .series_id(sid)
+                    .send()
+                    .await
+                    .is_ok()
+                {
+                    reload += 1;
                 }
             });
         }
@@ -314,7 +381,7 @@ fn WatchCard(item: WatchlistItem, reload: Signal<u32>, dragging: Signal<Dragging
                     "aria-label": "Move to column",
                     value: "{status_value(status)}",
                     onchange: move_status,
-                    for s in WatchStatus::COLUMNS {
+                    for s in WatchStatus::columns().iter().copied() {
                         option { value: "{status_value(s)}", selected: s == status, "{s.label()}" }
                     }
                 }

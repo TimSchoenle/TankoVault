@@ -121,6 +121,8 @@ impl Modify for SecurityAddon {
     crate::auth::RegisterRequest,
     crate::auth::LoginRequest,
     crate::auth::TokenResponse,
+    crate::auth::ForgotPasswordRequest,
+    crate::auth::ResetPasswordRequest,
     // --- series ---
     crate::series::SeriesSummary,
     crate::series::SourceDto,

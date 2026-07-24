@@ -3929,6 +3929,7 @@ dependencies = [
  "tankovault-contracts",
  "tankovault-db",
  "tankovault-domain",
+ "tankovault-email",
  "tankovault-fetch",
  "tankovault-matcher",
  "tankovault-observability",
@@ -4080,6 +4081,18 @@ dependencies = [
  "url",
  "utoipa",
  "uuid",
+]
+
+[[package]]
+name = "tankovault-email"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "lettre",
+ "tankovault-config",
+ "thiserror",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

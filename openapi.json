@@ -411,6 +411,18 @@
         ],
         "type": "object"
       },
+      "ForgotPasswordRequest": {
+        "properties": {
+          "email": {
+            "description": "The account's email address. Unknown addresses are accepted silently.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "login": {
@@ -957,6 +969,23 @@
           "status",
           "progress",
           "content_type"
+        ],
+        "type": "object"
+      },
+      "ResetPasswordRequest": {
+        "properties": {
+          "new_password": {
+            "description": "The new password (same policy as registration: at least 8 characters).",
+            "type": "string"
+          },
+          "token": {
+            "description": "The opaque token from the emailed reset link.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "new_password"
         ],
         "type": "object"
       },
@@ -3706,6 +3735,66 @@
           }
         },
         "summary": "Log out",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/password/forgot": {
+      "post": {
+        "description": "Always responds `202 Accepted`, whether or not the address is registered, so the\nendpoint can't be used to probe which emails have accounts. When the address does exist\nand email is configured, a single-use, time-limited reset link is sent.",
+        "operationId": "forgot_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgotPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "If the address is registered, a reset email has been sent"
+          }
+        },
+        "summary": "Request a password-reset email",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/password/reset": {
+      "post": {
+        "description": "Consumes a valid, unexpired, unused reset token, sets the new password, and revokes all\nof the user's active sessions so any stolen refresh token dies with the old credential.",
+        "operationId": "reset_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Password changed; existing sessions revoked"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid/expired token or weak password"
+          }
+        },
+        "summary": "Reset a password with a token",
         "tags": [
           "auth"
         ]

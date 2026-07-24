@@ -31,6 +31,12 @@ pub struct AppState {
     pub metrics: PrometheusHandle,
     /// Whether refresh cookies are marked `Secure` (true in production/TLS).
     pub cookie_secure: bool,
+    /// Transactional email back-end (welcome, password reset). A no-op mailer when email
+    /// is unconfigured, so these flows degrade gracefully rather than failing.
+    pub mailer: Arc<dyn tankovault_email::EmailService>,
+    /// Public base URL of the web app, used to build absolute links inside emails
+    /// (e.g. the password-reset link). No trailing slash.
+    pub email_base_url: String,
 }
 
 /// An authenticated principal, extracted from a `Bearer` access token.

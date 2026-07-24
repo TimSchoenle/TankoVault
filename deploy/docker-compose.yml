@@ -100,6 +100,20 @@ services:
       TANKOVAULT_CONTROL_PLANE_URL: http://control-plane:8081
       TANKOVAULT_SYNC_URL: http://sync:8083
       TANKOVAULT_NATS__URL: nats://nats:4222 # live per-user notification SSE relay (/v1/me/stream)
+      # ---- Transactional email (welcome on sign-up, password reset) -------------------
+      # Optional: when unset, the API uses a no-op mailer (logs + drops) and these flows
+      # simply skip sending. `base_url` is the public web origin used to build reset links.
+      TANKOVAULT_EMAIL__BASE_URL: http://localhost:3000
+      # Example: OVH-hosted Exchange over STARTTLS on 587 (or use security=tls + port 465
+      # with host ssl0.ovh.net). `username` is the full mailbox address.
+      TANKOVAULT_EMAIL__HOST: "${TANKOVAULT_EMAIL__HOST:-pro3.mail.ovh.net}"
+      TANKOVAULT_EMAIL__PORT:  "${TANKOVAULT_EMAIL__PORT:-587}"
+      TANKOVAULT_EMAIL__SECURITY: "${TANKOVAULT_EMAIL__SECURITY:-starttls}"
+      TANKOVAULT_EMAIL__USERNAME: "${TANKOVAULT_EMAIL__USERNAME:-no-reply@your-domain.com}"
+      TANKOVAULT_EMAIL__PASSWORD: "${TANKOVAULT_EMAIL__PASSWORD:-change-me}"
+      TANKOVAULT_EMAIL__FROM:  "${TANKOVAULT_EMAIL__FROM:-TankoVault <no-reply@your-domain.com>}"
+      # Alternatively point at any relay with a single lettre URL (takes precedence):
+      # TANKOVAULT_EMAIL__URL: smtps://no-reply%40your-domain.com:change-me@ssl0.ovh.net:465
     ports: ["8080:8080"]
     depends_on:
       migrate: { condition: service_completed_successfully }

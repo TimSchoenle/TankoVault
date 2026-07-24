@@ -208,6 +208,121 @@ pub async fn revoke_family<'e, E: PgExecutor<'e>>(exec: E, family_id: Uuid) -> D
 }
 
 // ---------------------------------------------------------------------------
+// Password reset (migration 0015)
+// ---------------------------------------------------------------------------
+
+/// Look up a user by email address (the forgot-password entry point).
+///
+/// Returns `None` when no account matches, letting the handler respond identically whether
+/// or not the address is registered (avoids account enumeration).
+pub async fn find_by_email<'e, E: PgExecutor<'e>>(exec: E, email: &str) -> DbResult<Option<User>> {
+    let row: Option<UserRow> = sqlx::query_as(
+        "SELECT id, email, username, role::text AS role, created_at FROM users WHERE email = $1",
+    )
+    .bind(email)
+    .fetch_optional(exec)
+    .await?;
+    row.map(TryInto::try_into).transpose()
+}
+
+/// A stored password-reset token record (hash only; the plaintext lives only in the email).
+pub struct PasswordResetRecord {
+    pub id: Uuid,
+    pub user_id: UserId,
+    pub expires_at: OffsetDateTime,
+    pub used_at: Option<OffsetDateTime>,
+}
+
+/// Persist a freshly issued password-reset token as its SHA-256 hash.
+pub async fn insert_password_reset<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    token_hash: &str,
+    expires_at: OffsetDateTime,
+) -> DbResult<()> {
+    sqlx::query(
+        "INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at) \
+         VALUES ($1,$2,$3,$4)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(user_id.as_uuid())
+    .bind(token_hash)
+    .bind(expires_at)
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+/// Find a password-reset token by its hash, regardless of expiry/use, so the caller can
+/// distinguish an unknown token from an expired or already-consumed one.
+pub async fn find_password_reset<'e, E: PgExecutor<'e>>(
+    exec: E,
+    token_hash: &str,
+) -> DbResult<Option<PasswordResetRecord>> {
+    #[derive(FromRow)]
+    struct Row {
+        id: Uuid,
+        user_id: Uuid,
+        expires_at: OffsetDateTime,
+        used_at: Option<OffsetDateTime>,
+    }
+    let row: Option<Row> = sqlx::query_as(
+        "SELECT id, user_id, expires_at, used_at FROM password_reset_tokens \
+         WHERE token_hash = $1",
+    )
+    .bind(token_hash)
+    .fetch_optional(exec)
+    .await?;
+    Ok(row.map(|r| PasswordResetRecord {
+        id: r.id,
+        user_id: UserId::from_uuid(r.user_id),
+        expires_at: r.expires_at,
+        used_at: r.used_at,
+    }))
+}
+
+/// Atomically mark a reset token consumed (single-use). Returns the number of rows updated:
+/// `0` means it was already used, which the caller must treat as a failed reset.
+pub async fn consume_password_reset<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<u64> {
+    let result = sqlx::query(
+        "UPDATE password_reset_tokens SET used_at = now() WHERE id = $1 AND used_at IS NULL",
+    )
+    .bind(id)
+    .execute(exec)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// Replace a user's password hash (pre-computed argon2id PHC string).
+pub async fn update_password<'e, E: PgExecutor<'e>>(
+    exec: E,
+    id: UserId,
+    password_hash: &str,
+) -> DbResult<()> {
+    let result = sqlx::query("UPDATE users SET password_hash = $2 WHERE id = $1")
+        .bind(id.as_uuid())
+        .bind(password_hash)
+        .execute(exec)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(DbError::NotFound);
+    }
+    Ok(())
+}
+
+/// Revoke every live refresh token for a user — used after a password reset so any stolen
+/// session is invalidated along with the changed credential.
+pub async fn revoke_all_for_user<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<()> {
+    sqlx::query(
+        "UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(user_id.as_uuid())
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Account settings (frontend §9.4)
 // ---------------------------------------------------------------------------
 

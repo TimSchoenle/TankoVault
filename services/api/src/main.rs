@@ -28,6 +28,10 @@ struct Config {
     /// still serves every other route; only `/v1/me/stream` degrades.
     #[serde(default)]
     nats: Option<tankovault_config::NatsConfig>,
+    /// Transactional email (welcome on registration, password reset). Optional: when
+    /// unconfigured a no-op mailer is used and those flows silently skip sending.
+    #[serde(default)]
+    email: tankovault_config::EmailConfig,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -76,6 +80,10 @@ async fn main() -> anyhow::Result<()> {
     // from booting, so a failure here degrades the feature to `503` rather than aborting.
     let bus = tankovault_api::connect_bus(cfg.nats.as_ref()).await;
 
+    // Build the transactional email back-end. A missing/invalid relay degrades to a no-op
+    // mailer (logs and drops) so the edge still boots and login/registration keep working.
+    let mailer = tankovault_email::build(&cfg.email);
+
     let state = AppState {
         pool,
         jwt_secret: Arc::new(cfg.auth.jwt_secret.into_bytes()),
@@ -88,6 +96,8 @@ async fn main() -> anyhow::Result<()> {
         http: reqwest::Client::new(),
         metrics,
         cookie_secure: cfg.auth.cookie_secure,
+        mailer,
+        email_base_url: cfg.email.base_url,
     };
 
     let app = tankovault_api::build_router(state);

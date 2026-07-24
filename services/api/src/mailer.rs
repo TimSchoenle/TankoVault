@@ -28,6 +28,27 @@ pub fn welcome(email: &str, username: &str) -> EmailMessage {
     EmailMessage::text(email, "Welcome to TankoVault", text).with_html(html)
 }
 
+/// Compose the email-confirmation message carrying the one-time verification `link`.
+#[must_use]
+pub fn verification(email: &str, username: &str, link: &str) -> EmailMessage {
+    let text = format!(
+        "Hi {username},\n\n\
+         Thanks for signing up for TankoVault! Please confirm your email address to \
+         activate your account by opening the link below. It expires in 24 hours:\n\n{link}\n\n\
+         If you didn't create this account, you can safely ignore this email.\n\n\
+         — The TankoVault team\n"
+    );
+    let html = format!(
+        "<p>Hi {username},</p>\
+         <p>Thanks for signing up for <strong>TankoVault</strong>! Please confirm your email \
+         address to activate your account. The link expires in 24 hours.</p>\
+         <p><a href=\"{link}\">Confirm your email</a></p>\
+         <p>If you didn't create this account, you can safely ignore this email.</p>\
+         <p>— The TankoVault team</p>"
+    );
+    EmailMessage::text(email, "Confirm your TankoVault email", text).with_html(html)
+}
+
 /// Compose the password-reset email carrying the one-time `link`.
 #[must_use]
 pub fn password_reset(email: &str, link: &str) -> EmailMessage {
@@ -76,6 +97,16 @@ mod tests {
         assert_eq!(msg.subject, "Welcome to TankoVault");
         assert!(msg.text.contains("Hi aster,"));
         assert!(msg.html.as_deref().unwrap().contains("aster"));
+    }
+
+    #[test]
+    fn verification_embeds_the_link_and_addresses_the_user() {
+        let link = "https://app.example.com/verify-email?token=abc";
+        let msg = verification("reader@example.com", "aster", link);
+        assert_eq!(msg.subject, "Confirm your TankoVault email");
+        assert!(msg.text.contains("Hi aster,"));
+        assert!(msg.text.contains(link));
+        assert!(msg.html.as_deref().unwrap().contains(link));
     }
 
     #[test]

@@ -36,6 +36,10 @@ pub enum ApiError {
     Unauthorized,
     #[error("forbidden")]
     Forbidden,
+    /// Login attempted before the account's email address was confirmed. Distinct from
+    /// [`Self::Forbidden`] so the frontend can recognise it and offer to resend the link.
+    #[error("email not verified")]
+    EmailNotVerified,
     #[error("{0}")]
     BadRequest(String),
     #[error("service unavailable")]
@@ -62,6 +66,11 @@ impl ApiError {
                 StatusCode::FORBIDDEN,
                 "forbidden",
                 "insufficient privileges".into(),
+            ),
+            Self::EmailNotVerified => (
+                StatusCode::FORBIDDEN,
+                "email_not_verified",
+                "please confirm your email address before signing in".into(),
             ),
             Self::BadRequest(m) => (StatusCode::BAD_REQUEST, "bad_request", m.clone()),
             Self::Unavailable => (

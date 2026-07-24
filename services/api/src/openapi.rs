@@ -119,10 +119,13 @@ impl Modify for SecurityAddon {
     tankovault_db::repo::tracking::MeStats,
     // --- auth ---
     crate::auth::RegisterRequest,
+    crate::auth::RegisterResponse,
     crate::auth::LoginRequest,
     crate::auth::TokenResponse,
     crate::auth::ForgotPasswordRequest,
     crate::auth::ResetPasswordRequest,
+    crate::auth::VerifyEmailRequest,
+    crate::auth::ResendVerificationRequest,
     // --- series ---
     crate::series::SeriesSummary,
     crate::series::SourceDto,

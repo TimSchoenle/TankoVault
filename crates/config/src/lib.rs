@@ -175,6 +175,17 @@ pub struct EmailConfig {
     /// Default `From` mailbox, e.g. `TankoVault <no-reply@example.com>`. Required to send.
     #[serde(default)]
     pub from: Option<String>,
+    /// SMTP envelope sender (the `MAIL FROM` / `Return-Path`) used at the protocol level,
+    /// which can differ from the visible [`Self::from`] header.
+    ///
+    /// Providers that enforce "send as" checks — notably **OVH-hosted Exchange** — reject a
+    /// message whose envelope sender is not the authenticated mailbox (SMTP `550 5.7.60
+    /// Client does not have permissions to send as this sender`). Leave this unset to default
+    /// to [`Self::username`] (the authenticated login), which is what those providers require
+    /// while still letting the `From:` header show a different address; set it explicitly only
+    /// to override that reverse-path.
+    #[serde(default)]
+    pub envelope_from: Option<String>,
     /// Public base URL of the web app, used to build absolute links inside emails
     /// (e.g. the password-reset link). No trailing slash.
     #[serde(default = "EmailConfig::default_base_url")]
@@ -201,6 +212,17 @@ impl EmailConfig {
             EmailSecurity::StartTls => 587,
             EmailSecurity::None => 25,
         })
+    }
+
+    /// The SMTP envelope sender (`MAIL FROM`), preferring an explicit [`Self::envelope_from`]
+    /// and otherwise falling back to the authenticated [`Self::username`]. Returns `None` when
+    /// neither is set, in which case the mailer uses the `From:` header address.
+    #[must_use]
+    pub fn effective_envelope_from(&self) -> Option<&str> {
+        self.envelope_from
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .or_else(|| self.username.as_deref().filter(|s| !s.is_empty()))
     }
 
     /// Whether enough is configured to actually send mail (a relay plus a `From` address).

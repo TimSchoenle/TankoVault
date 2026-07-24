@@ -17,10 +17,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use lettre::address::Envelope;
 use lettre::message::header::ContentType;
 use lettre::message::{Mailbox, MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::Credentials;
-use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
+use lettre::{Address, AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use tankovault_config::{EmailConfig, EmailSecurity};
 
 /// Errors raised while building or sending email.
@@ -95,6 +96,12 @@ pub trait EmailService: Send + Sync {
 pub struct SmtpMailer {
     transport: AsyncSmtpTransport<Tokio1Executor>,
     from: Mailbox,
+    /// SMTP envelope sender (`MAIL FROM` / reverse-path). This is the identity the relay
+    /// authorises the send against and is deliberately decoupled from the `From:` header:
+    /// providers such as OVH-hosted Exchange reject a `MAIL FROM` that differs from the
+    /// authenticated mailbox (`550 5.7.60`), so it defaults to the login username while the
+    /// `From:` header may still show a different address.
+    envelope_from: Address,
 }
 
 impl SmtpMailer {
@@ -148,7 +155,24 @@ impl SmtpMailer {
             builder.build()
         };
 
-        Ok(Self { transport, from })
+        let envelope_from = Self::resolve_envelope_from(cfg.effective_envelope_from(), &from)?;
+        Ok(Self {
+            transport,
+            from,
+            envelope_from,
+        })
+    }
+
+    /// Resolve the SMTP envelope sender address: parse the configured override/login when
+    /// present, otherwise reuse the `From:` header's address.
+    fn resolve_envelope_from(configured: Option<&str>, from: &Mailbox) -> Result<Address, EmailError> {
+        match configured {
+            Some(raw) => raw
+                .parse::<Mailbox>()
+                .map(|mb| mb.email)
+                .map_err(|e| EmailError::Address(format!("envelope sender {raw:?}: {e}"))),
+            None => Ok(from.email.clone()),
+        }
     }
 
     /// Build from a raw lettre relay URL plus a `From` mailbox.
@@ -163,7 +187,27 @@ impl SmtpMailer {
         let transport = AsyncSmtpTransport::<Tokio1Executor>::from_url(url)
             .map_err(|e| EmailError::Config(e.to_string()))?
             .build();
-        Ok(Self { transport, from })
+        let envelope_from = from.email.clone();
+        Ok(Self {
+            transport,
+            from,
+            envelope_from,
+        })
+    }
+
+    /// Assemble the SMTP envelope (`MAIL FROM` reverse-path + `RCPT TO` forward-paths) for
+    /// `message`. The reverse-path is [`Self::envelope_from`] rather than the `From:` header
+    /// so relays that enforce a "send as" match against the authenticated mailbox accept it.
+    fn build_envelope(&self, message: &EmailMessage) -> Result<Envelope, EmailError> {
+        let mut recipients = Vec::with_capacity(message.to.len());
+        for raw in &message.to {
+            let mailbox: Mailbox = raw
+                .parse()
+                .map_err(|e| EmailError::Address(format!("{raw:?}: {e}")))?;
+            recipients.push(mailbox.email);
+        }
+        Envelope::new(Some(self.envelope_from.clone()), recipients)
+            .map_err(|e| EmailError::Address(e.to_string()))
     }
 
     /// Assemble the RFC 5322 message for `message`.
@@ -213,9 +257,13 @@ impl EmailService for SmtpMailer {
 
     async fn send(&self, message: EmailMessage) -> Result<(), EmailError> {
         let msg = self.build_message(&message)?;
+        let envelope = self.build_envelope(&message)?;
+        // Send with an explicit envelope so the SMTP `MAIL FROM` is `envelope_from` (the
+        // authenticated login by default) rather than the `From:` header, which is what
+        // "send as"-enforcing relays like OVH Exchange authorise against.
         let resp = self
             .transport
-            .send(msg)
+            .send_raw(&envelope, &msg.formatted())
             .await
             .map_err(|e| EmailError::Transport(e.to_string()))?;
         if !resp.is_positive() {
@@ -344,5 +392,63 @@ mod tests {
             mailer.build_message(&msg),
             Err(EmailError::Address(_))
         ));
+    }
+
+    #[test]
+    fn envelope_sender_defaults_to_login_not_from_header() {
+        // OVH Exchange rejects a MAIL FROM that differs from the authenticated mailbox, so
+        // when the login differs from the visible From the envelope must use the login.
+        let cfg = EmailConfig {
+            host: Some("ssl0.ovh.net".to_owned()),
+            security: EmailSecurity::None,
+            username: Some("login@my-domain.com".to_owned()),
+            password: Some("secret".to_owned()),
+            from: Some("TankoVault <no-reply@my-domain.com>".to_owned()),
+            ..EmailConfig::default()
+        };
+        let mailer = SmtpMailer::from_config(&cfg).expect("valid config");
+        let envelope = mailer
+            .build_envelope(&EmailMessage::text("reader@example.com", "Hi", "body"))
+            .expect("builds envelope");
+        assert_eq!(
+            envelope.from().map(ToString::to_string),
+            Some("login@my-domain.com".to_owned())
+        );
+    }
+
+    #[test]
+    fn explicit_envelope_from_overrides_login() {
+        let cfg = EmailConfig {
+            host: Some("ssl0.ovh.net".to_owned()),
+            security: EmailSecurity::None,
+            username: Some("login@my-domain.com".to_owned()),
+            password: Some("secret".to_owned()),
+            envelope_from: Some("bounce@my-domain.com".to_owned()),
+            from: Some("TankoVault <no-reply@my-domain.com>".to_owned()),
+            ..EmailConfig::default()
+        };
+        let mailer = SmtpMailer::from_config(&cfg).expect("valid config");
+        let envelope = mailer
+            .build_envelope(&EmailMessage::text("reader@example.com", "Hi", "body"))
+            .expect("builds envelope");
+        assert_eq!(
+            envelope.from().map(ToString::to_string),
+            Some("bounce@my-domain.com".to_owned())
+        );
+    }
+
+    #[test]
+    fn envelope_falls_back_to_from_header_without_login() {
+        // No username / envelope override configured (e.g. a raw relay URL): the envelope
+        // sender simply mirrors the From header address.
+        let mailer = SmtpMailer::from_url("smtp://localhost:2525", "TankoVault <a@example.com>")
+            .expect("valid config");
+        let envelope = mailer
+            .build_envelope(&EmailMessage::text("reader@example.com", "Hi", "body"))
+            .expect("builds envelope");
+        assert_eq!(
+            envelope.from().map(ToString::to_string),
+            Some("a@example.com".to_owned())
+        );
     }
 }

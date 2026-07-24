@@ -112,6 +112,10 @@ services:
       TANKOVAULT_EMAIL__USERNAME: "${TANKOVAULT_EMAIL__USERNAME:-no-reply@your-domain.com}"
       TANKOVAULT_EMAIL__PASSWORD: "${TANKOVAULT_EMAIL__PASSWORD:-change-me}"
       TANKOVAULT_EMAIL__FROM:  "${TANKOVAULT_EMAIL__FROM:-TankoVault <no-reply@your-domain.com>}"
+      # The SMTP envelope sender (MAIL FROM) defaults to `username` above, which is what OVH
+      # Exchange authorises "send as" against — so `from` may differ from the login without
+      # tripping `550 5.7.60`. Override only if bounces must go to a different mailbox:
+      TANKOVAULT_EMAIL__ENVELOPE_FROM: "${TANKOVAULT_EMAIL__ENVELOPE_FROM:-}"
       # Alternatively point at any relay with a single lettre URL (takes precedence):
       # TANKOVAULT_EMAIL__URL: smtps://no-reply%40your-domain.com:change-me@ssl0.ovh.net:465
     ports: ["8080:8080"]

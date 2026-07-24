@@ -66,20 +66,28 @@ fn build_http_client(token: Option<&str>) -> reqwest::Client {
 pub fn use_api() -> Client {
     let api = use_context::<ApiClient>();
     let session = crate::state::use_session();
-    let token = session.token_value();
+    api.client_for(session.token_value().as_deref())
+}
 
-    let http = {
-        let mut cache = api.http_cache.borrow_mut();
-        if cache.token != token {
-            cache.client = build_http_client(token.as_deref());
-            cache.token = token;
-        }
-        // Cheap `Arc` clone; the browser owns the underlying connection pool, so every clone
-        // shares the same keep-alive connections.
-        cache.client.clone()
-    };
-
-    Client::new_with_client(api.base.baseurl(), http)
+impl ApiClient {
+    /// Build a [`Client`] carrying `token`, reusing the memoised HTTP client whenever the token
+    /// is unchanged. Unlike capturing the render-time [`use_api`] result, this takes the token
+    /// at call time — so a reactive future can read the *live* session token and always send
+    /// through a client that carries it, even after a boot-time silent refresh swaps the token
+    /// in later (otherwise a client captured while signed-out would keep 401ing post-refresh).
+    pub fn client_for(&self, token: Option<&str>) -> Client {
+        let http = {
+            let mut cache = self.http_cache.borrow_mut();
+            if cache.token.as_deref() != token {
+                cache.client = build_http_client(token);
+                cache.token = token.map(str::to_owned);
+            }
+            // Cheap `Arc` clone; the browser owns the underlying connection pool, so every clone
+            // shares the same keep-alive connections.
+            cache.client.clone()
+        };
+        Client::new_with_client(self.base.baseurl(), http)
+    }
 }
 
 pub fn provide_api() {

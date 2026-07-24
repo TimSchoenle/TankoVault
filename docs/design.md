@@ -919,7 +919,12 @@ responsive masonry of 2:3 cards.
   handlers' `utoipa` schemas via `progenitor`) so the frontend and backend share DTOs.
 - Client state via Dioxus signals; server state via a small fetch-cache layer (stale-while-revalidate).
 - Auth: access token in memory, refresh via httpOnly cookie; a route guard redirects unauthenticated
-  users.
+  users. The shell runs a background silent-refresh loop that adopts a token from the cookie on boot
+  and renews it shortly before expiry, so an active tab never lapses. A failed refresh is **not** an
+  automatic sign-out: only a genuine `401` (refresh session expired past its window, rotated away, or
+  reuse-revoked) clears the session, while transient failures (offline, timeout, 5xx, server restart,
+  waking from sleep) keep the session and retry with exponential backoff — the app stays logged in
+  across reloads and brief outages like a normal site.
 - Live updates: subscribe to the notification WS/SSE for real-time unread badges and (for operators)
   the scan progress stream.
 

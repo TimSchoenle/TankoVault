@@ -15,12 +15,30 @@ const REFRESH_BUFFER_MS: f64 = 60_000.0;
 /// Poll cadence for the background refresh loop while signed out (no cookie to adopt yet).
 const SIGNED_OUT_POLL_MS: u32 = 15_000;
 
+/// First delay before retrying a *transient* refresh failure (offline, DNS, timeout, 5xx,
+/// a server restart, or a laptop waking from sleep). Such failures must never sign the user
+/// out — the httpOnly refresh cookie is still valid — so we retry with exponential backoff
+/// instead of clearing the session, which is what makes the app "stay logged in" like a
+/// normal site across brief connectivity hiccups.
+const RETRY_BACKOFF_START_MS: u32 = 2_000;
+
+/// Ceiling for the transient-failure backoff, so a prolonged outage settles into a steady,
+/// low-frequency retry (recovering automatically once the server/network returns) rather
+/// than growing unbounded.
+const RETRY_BACKOFF_MAX_MS: u32 = 60_000;
+
 /// The persistent app shell: left rail nav + top command bar, with the routed view in the
 /// content area (via `Outlet`). Also performs the boot-time and recurring silent refresh.
 #[component]
 pub fn Shell() -> Element {
     let session = use_session();
     let route: Route = use_route();
+    // The refresh endpoint is cookie-authenticated (no bearer needed), but it must still be
+    // called through a client with the real same-origin base URL: reqwest parses the request
+    // URL up front and rejects a relative path like `/v1/auth/refresh` with a builder error
+    // (see `api::use_api`), which previously made every boot refresh fail and silently sign
+    // the user out on reload.
+    let refresh_client = api::use_api();
 
     // Silent refresh once on boot (adopt an access token from the httpOnly cookie if a
     // session already exists, so a page reload keeps the user signed in), then again shortly
@@ -36,29 +54,58 @@ pub fn Shell() -> Element {
     // Refreshing before expiry keeps `session`'s token current, which — since the stream
     // below is keyed on it — transparently tears down and re-opens the connection with a
     // valid token before that can happen.
-    use_future(move || async move {
-        loop {
-            let booted = *session.ready.peek();
-            let wait_ms = match session.token_expires_in_ms() {
-                Some(ms) if ms > REFRESH_BUFFER_MS => ms - REFRESH_BUFFER_MS,
-                Some(_) => 0.0,
-                // Signed out and we've already tried once: nothing to refresh; poll for a
-                // sign-in rather than hammering the endpoint.
-                None if booted => {
-                    gloo_timers::future::TimeoutFuture::new(SIGNED_OUT_POLL_MS).await;
-                    continue;
-                }
-                None => 0.0,
-            };
-            gloo_timers::future::TimeoutFuture::new(wait_ms as u32).await;
+    //
+    // Crucially, a *failed* refresh is not automatically a sign-out. Only a genuine `401`
+    // (the refresh session is really gone: expired past its 30-day window, rotated away, or
+    // reuse-revoked) clears the session. Every other failure — offline, DNS, timeout, a 5xx,
+    // a server restart, a laptop waking from sleep — is transient: the httpOnly cookie is
+    // still valid, so we keep the session and retry with exponential backoff rather than
+    // logging the user out. That resilience is what makes reloads and brief outages behave
+    // like a normal site instead of bouncing the user to the login screen.
+    use_future(move || {
+        let client = refresh_client.clone();
+        async move {
+            // Grows on consecutive transient failures, resets on any definitive answer.
+            let mut backoff_ms = RETRY_BACKOFF_START_MS;
+            loop {
+                let booted = *session.ready.peek();
+                let wait_ms = match session.token_expires_in_ms() {
+                    Some(ms) if ms > REFRESH_BUFFER_MS => ms - REFRESH_BUFFER_MS,
+                    Some(_) => 0.0,
+                    // No in-memory token and we've already booted: either signed out (waiting
+                    // for a sign-in) or a transient boot failure left us tokenless. Poll so a
+                    // later sign-in — or a recovered server — is picked up, without hammering.
+                    None if booted => {
+                        gloo_timers::future::TimeoutFuture::new(SIGNED_OUT_POLL_MS).await;
+                        continue;
+                    }
+                    None => 0.0,
+                };
+                gloo_timers::future::TimeoutFuture::new(wait_ms as u32).await;
 
-            let client = tankovault_api_client::Client::new("");
-            match client.refresh().send().await {
-                Ok(res) => session.set_token(res.into_inner().access_token),
-                Err(_) => session.clear(),
-            }
-            if !booted {
-                session.mark_ready();
+                match client.refresh().send().await {
+                    Ok(res) => {
+                        session.set_token(res.into_inner().access_token);
+                        backoff_ms = RETRY_BACKOFF_START_MS;
+                    }
+                    // Definitive: the server says this refresh session is no longer valid.
+                    Err(e) if e.status() == Some(reqwest::StatusCode::UNAUTHORIZED) => {
+                        session.clear();
+                        backoff_ms = RETRY_BACKOFF_START_MS;
+                    }
+                    // Transient: keep the session and back off before retrying. On boot we
+                    // skip the sleep and fall through to `mark_ready` so the UI still paints
+                    // promptly; the `None if booted` poll above then drives recovery.
+                    Err(_) => {
+                        if booted {
+                            gloo_timers::future::TimeoutFuture::new(backoff_ms).await;
+                            backoff_ms = backoff_ms.saturating_mul(2).min(RETRY_BACKOFF_MAX_MS);
+                        }
+                    }
+                }
+                if !booted {
+                    session.mark_ready();
+                }
             }
         }
     });

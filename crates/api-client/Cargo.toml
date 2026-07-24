@@ -17,8 +17,6 @@ url = { workspace = true }
 thiserror = { workspace = true }
 tankovault-domain = { workspace = true }
 progenitor-client = "0.14.0"
-# openapi-to-rust requirements
-chrono = { version = "0.4", features = ["serde"] }
 
 # This crate is 100% generated codegen output (`src/lib.rs` is emitted by `xtask`
 # and marked "DO NOT EDIT"), so the workspace's `clippy::pedantic` group is not

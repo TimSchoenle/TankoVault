@@ -37,12 +37,9 @@ web-sys = { version = "0.3", features = ["MessageEvent", "Window", "Location"] }
 wasm-bindgen = "0.2"
 # Relative-time formatting on the console uses the browser's own ISO-8601 date parser.
 js-sys = "0.3"
-# Generates the wire DTOs (src/wire.rs) from wire_schema.json at compile time. A
-# proc-macro dependency: it runs on the host during macro expansion, never compiled
-# into (or shipped in) the wasm bundle.
-typify = "0.7"
-# Typed ids in the generated wire types (`typify` maps `format: uuid` to this). The frontend
-# never mints ids itself, but `uuid`'s `v7` feature is switched on transitively (the shared
+# Typed ids in the generated wire types (the progenitor `tankovault-api-client` maps
+# `format: uuid` back to the domain newtypes, which wrap this). The frontend never mints ids
+# itself, but `uuid`'s `v7` feature is switched on transitively (the shared
 # `tankovault-domain` newtypes mint v7 ids), and as of uuid 1.24 `v7` on
 # `wasm32-unknown-unknown` demands an explicit randomness source. `js` supplies the
 # self-contained WebCrypto backend (via `wasm-bindgen`/`js-sys`, already deps) — no

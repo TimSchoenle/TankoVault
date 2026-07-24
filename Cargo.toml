@@ -62,7 +62,10 @@ tankovault-matcher = { path = "crates/matcher" }
 tankovault-bus = { path = "crates/bus" }
 tankovault-api-client = { path = "crates/api-client" }
 
-# --- wire schema (OpenAPI -> frontend typify codegen) + browsable API docs ---
+# --- OpenAPI: schema derivation from handlers + browsable API docs ---
+# The derived spec is exported by `xtask openapi` and fed to `progenitor` (an xtask dep) to
+# regenerate the typed `crates/api-client`, which the frontend consumes; `utoipa-scalar`
+# serves the same spec as a browsable UI at `/scalar`.
 utoipa = { version = "5", features = ["uuid", "axum_extras"] }
 utoipa-axum = "0.2"
 utoipa-scalar = { version = "0.3", features = ["axum"] }

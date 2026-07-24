@@ -1,9 +1,10 @@
 //! The `OpenApi` root. Every handler across [`crate::auth`], [`crate::series`], [`crate::me`]
-//! and [`crate::admin`] carries a `#[utoipa::path(..)]` annotation; `build_router` collects
-//! them via `utoipa_axum`'s `OpenApiRouter` and serves the resulting spec through Swagger UI
-//! at `/swagger-ui`. `xtask openapi` reads only `ApiDoc::openapi().components.schemas` back
-//! out of this to regenerate the frontend's generated types (`web/frontend/src/wire.rs`, via
-//! `typify`) — the path list itself has no frontend consumer.
+//! and [`crate::admin`] carries a `#[utoipa::path(..)]` annotation; [`crate::full_openapi`]
+//! and [`crate::build_router`] collect them via `utoipa_axum`'s `OpenApiRouter`, and
+//! `build_router` serves the resulting spec through a browsable Scalar UI at `/scalar`.
+//! `xtask openapi` serialises this document to `openapi.json` and feeds it to `progenitor`,
+//! regenerating the typed Rust API client (`crates/api-client`, `src/lib.rs`) that the
+//! Dioxus frontend consumes directly (re-exported via `web/frontend/src/wire.rs`).
 //!
 //! Endpoints that blindly proxy another service's JSON (`Json<serde_json::Value>` — most of
 //! `/v1/me/sync/*` and `/v1/admin/sync/{pull,push,unlink}`) document only status codes, no
@@ -12,15 +13,15 @@
 //! handler: it's product-defined free-form JSON, not a fixed schema.
 //!
 //! Typed ids (`SeriesId`, `UserId`, ...) are listed explicitly below and left with their
-//! native `utoipa` "uuid" schema (`{"type":"string","format":"uuid"}`) — `typify` maps that
-//! to `uuid::Uuid` on the frontend, so ids are a real, compiler-checked type there too, not
-//! a plain `String`.
+//! native `utoipa` "uuid" schema (`{"type":"string","format":"uuid"}`); `xtask openapi` tags
+//! them with `x-rust-type` so `progenitor` maps them back to our domain newtypes on the
+//! frontend, keeping ids a real, compiler-checked type there too, not a plain `String`.
 //!
 //! The `components(schemas(..))` list below is kept even though every listed type is now also
 //! reachable transitively from an annotated path (utoipa auto-registers schemas referenced by
 //! `request_body`/`responses`): duplicate registration is a no-op, and keeping the explicit
-//! list means `wire_schema.json` can't silently lose a type just because a handler's signature
-//! changes.
+//! list means the generated client can't silently lose a type just because a handler's
+//! signature changes.
 
 use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
@@ -139,9 +140,6 @@ impl Modify for SecurityAddon {
     crate::me::ProfileUpdate,
     crate::me::ProfileDto,
     crate::me::SessionDto,
-    crate::me::SyncOpts,
-    crate::me::SyncSettingsPatch,
-    crate::me::ResolveConflict,
     crate::me::SyncOpts,
     crate::me::SyncSettingsPatch,
     crate::me::ResolveConflict,

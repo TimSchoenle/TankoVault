@@ -1,4 +1,4 @@
-//! Installs `hooks/pre-commit` into `.git/hooks/pre-commit` so the wire-schema
+//! Installs `hooks/pre-commit` into `.git/hooks/pre-commit` so the `OpenAPI` artifact
 //! regeneration (see `src/main.rs`'s `openapi` command) happens automatically on
 //! commit instead of relying on a developer to remember it. Runs on every build of
 //! this crate; cheap no-op once the hook is up to date, silent no-op outside a git
@@ -35,7 +35,7 @@ fn main() {
     if !safe_to_write {
         println!(
             "cargo:warning=xtask: leaving existing .git/hooks/pre-commit in place (not ours to overwrite); \
-             wire_schema.json regeneration will only happen via `cargo run -p xtask -- openapi` or CI"
+             OpenAPI regeneration will only happen via `cargo run -p xtask -- openapi` or CI"
         );
         return;
     }
@@ -61,6 +61,6 @@ fn main() {
     }
 
     println!(
-        "cargo:warning=xtask: installed .git/hooks/pre-commit (auto-regenerates web/frontend/wire_schema.json)"
+        "cargo:warning=xtask: installed .git/hooks/pre-commit (auto-regenerates the OpenAPI artifacts)"
     );
 }

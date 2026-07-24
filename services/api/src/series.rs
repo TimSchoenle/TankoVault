@@ -10,7 +10,8 @@ use axum_extra::extract::Query as MultiQuery;
 use serde::{Deserialize, Serialize};
 use tankovault_db::repo::catalog::SeriesFilter;
 use tankovault_domain::{
-    ContentType, SeriesId, SeriesSourceId, SeriesStatus, UserId, resolve_link,
+    ContentType, ProviderId, SeriesId, SeriesSource, SeriesSourceId, SeriesStatus, UserId,
+    resolve_link,
 };
 use utoipa::{IntoParams, ToSchema};
 
@@ -198,28 +199,41 @@ pub async fn detail(
     let series = tankovault_db::repo::catalog::get_series(&state.pool, id).await?;
     let sources = tankovault_db::repo::catalog::list_sources_for_series(&state.pool, id).await?;
 
-    // The primary source is the one carrying the most chapters (ties → first listed).
-    let primary_idx = sources
+    // Same-source smart merge (§10): a canonical series can carry several `series_sources`
+    // rows for the *same* provider (a work split into two entries on that site, merged into
+    // one series). Those are one work, not two adapter sources, so fold every provider's rows
+    // into a single reader-visible "completing" source before building the DTOs.
+    let groups = group_sources_by_provider(&sources);
+
+    // Reader-facing count per merged source: distinct whole chapters (§ chapter grouping)
+    // across *all* of the provider's entries — part releases and chapters two entries happen
+    // to share never inflate the "Read on" card / hero stat.
+    let mut chapter_counts = Vec::with_capacity(groups.len());
+    for group in &groups {
+        chapter_counts.push(
+            tankovault_db::repo::catalog::count_full_chapters_across(&state.pool, &group.member_ids)
+                .await?,
+        );
+    }
+    // The primary source is the merged provider carrying the most chapters (ties → first).
+    let primary_idx = chapter_counts
         .iter()
         .enumerate()
-        .max_by_key(|(_, s)| s.chapter_count)
+        .max_by_key(|(_, count)| **count)
         .map(|(i, _)| i);
 
-    let mut source_dtos = Vec::with_capacity(sources.len());
-    for (i, src) in sources.into_iter().enumerate() {
-        let provider = tankovault_db::repo::providers::get(&state.pool, src.provider_id).await?;
-        let url =
-            resolve_link(&provider.base_url, &src.source_path).map_err(|_| ApiError::Internal)?;
-        // Reader-facing count: whole chapters only (§ chapter grouping) — part releases
-        // don't inflate what the \"Read on\" card / hero stat report.
-        let chapter_count =
-            tankovault_db::repo::catalog::count_full_chapters(&state.pool, src.id).await?;
+    let mut source_dtos = Vec::with_capacity(groups.len());
+    for (i, group) in groups.iter().enumerate() {
+        let provider = tankovault_db::repo::providers::get(&state.pool, group.provider_id).await?;
+        // The outbound link points at the richest entry's page on the provider.
+        let url = resolve_link(&provider.base_url, &group.link_source_path)
+            .map_err(|_| ApiError::Internal)?;
         source_dtos.push(SourceDto {
-            id: src.id,
+            id: group.link_id,
             provider_name: provider.name,
             provider_slug: provider.slug,
             url,
-            chapter_count,
+            chapter_count: chapter_counts[i],
             is_primary: Some(i) == primary_idx,
         });
     }
@@ -244,6 +258,50 @@ pub async fn detail(
         authors,
         anilist_id,
     }))
+}
+
+/// One provider's folded presence on a canonical series: all of its (possibly several)
+/// `series_sources` rows collapsed into a single reader-visible "completing" source
+/// (design §10 same-source smart merge). `member_ids` are every underlying source row whose
+/// chapters together form the merged list; `link_id` / `link_source_path` identify the richest
+/// member (most raw chapters) — used as the DTO's representative id and outbound provider link.
+struct ProviderGroup {
+    provider_id: ProviderId,
+    link_id: SeriesSourceId,
+    link_source_path: String,
+    member_ids: Vec<SeriesSourceId>,
+}
+
+/// Fold a series' source rows so each provider appears exactly once. Within a canonical
+/// series, every `series_sources` row sharing a provider is the same work split across
+/// provider entries (the canonicalisation merge already decided so, design §10), so the reader
+/// should see the provider once — with the union of its chapters — rather than one card per
+/// split entry. First-seen provider order is preserved (matching `list_sources_for_series`,
+/// which orders by id), and within a provider the richest entry becomes the outbound link.
+fn group_sources_by_provider(sources: &[SeriesSource]) -> Vec<ProviderGroup> {
+    // Parallel `best_counts` tracks each group's richest member's raw chapter_count so the
+    // link target only advances to a strictly richer entry.
+    let mut groups: Vec<ProviderGroup> = Vec::new();
+    let mut best_counts: Vec<i32> = Vec::new();
+    for src in sources {
+        if let Some(pos) = groups.iter().position(|g| g.provider_id == src.provider_id) {
+            groups[pos].member_ids.push(src.id);
+            if src.chapter_count > best_counts[pos] {
+                best_counts[pos] = src.chapter_count;
+                groups[pos].link_id = src.id;
+                groups[pos].link_source_path.clone_from(&src.source_path);
+            }
+        } else {
+            groups.push(ProviderGroup {
+                provider_id: src.provider_id,
+                link_id: src.id,
+                link_source_path: src.source_path.clone(),
+                member_ids: vec![src.id],
+            });
+            best_counts.push(src.chapter_count);
+        }
+    }
+    groups
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -291,17 +349,32 @@ pub async fn chapters(
     Path(id): Path<SeriesId>,
     Query(params): Query<ChapterParams>,
 ) -> ApiResult<Json<Vec<ChapterDto>>> {
-    let source_id = if let Some(s) = params.source {
-        s
-    } else {
-        let sources =
-            tankovault_db::repo::catalog::list_sources_for_series(&state.pool, id).await?;
-        sources.first().map(|s| s.id).ok_or(ApiError::NotFound)?
-    };
+    let sources = tankovault_db::repo::catalog::list_sources_for_series(&state.pool, id).await?;
 
+    // Resolve the requested source (explicit `?source=` or the series' first source), then
+    // expand it to every sibling entry of the *same* provider on this series: a provider split
+    // across several `series_sources` rows is one merged "completing" source (§10 smart merge),
+    // so its chapter list is the de-duplicated union of all those entries, not just one.
+    let target_id = match params.source {
+        Some(s) => s,
+        None => sources.first().map(|s| s.id).ok_or(ApiError::NotFound)?,
+    };
+    let provider_id = sources
+        .iter()
+        .find(|s| s.id == target_id)
+        .map(|s| s.provider_id)
+        .ok_or(ApiError::NotFound)?;
+    let member_ids: Vec<SeriesSourceId> = sources
+        .iter()
+        .filter(|s| s.provider_id == provider_id)
+        .map(|s| s.id)
+        .collect();
+
+    // All members share the provider, so one base_url resolves every chapter's relative path.
     let (_, base_url) =
-        tankovault_db::repo::catalog::source_provider_base_url(&state.pool, source_id).await?;
-    let chapters = tankovault_db::repo::catalog::list_chapters(&state.pool, source_id).await?;
+        tankovault_db::repo::catalog::source_provider_base_url(&state.pool, target_id).await?;
+    let chapters =
+        tankovault_db::repo::catalog::list_chapters_across(&state.pool, &member_ids).await?;
 
     // Read-state is opt-in: only when a valid token identifies the user. An authenticated
     // user with no progress row yet still gets `Some(false)` per chapter (they simply
@@ -379,4 +452,79 @@ pub async fn providers(
     Ok(Json(
         tankovault_db::repo::providers::list_public(&state.pool).await?,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tankovault_domain::ProviderState;
+
+    /// Build a minimal `SeriesSource` for a given provider, path, and raw chapter count.
+    /// The other fields are irrelevant to same-provider folding.
+    fn source(provider_id: ProviderId, source_path: &str, chapter_count: i32) -> SeriesSource {
+        SeriesSource {
+            id: SeriesSourceId::new(),
+            series_id: SeriesId::new(),
+            provider_id,
+            source_path: source_path.to_owned(),
+            provider_title: None,
+            content_hash: None,
+            chapter_count,
+            last_scanned_at: None,
+            state: ProviderState::default(),
+        }
+    }
+
+    #[test]
+    fn folds_same_provider_entries_into_one_completing_source() {
+        // Two KunManga entries under one canonical series: the exact issue case.
+        let kunmanga = ProviderId::new();
+        let early = source(kunmanga, "/manga/work-part-1", 40);
+        let later = source(kunmanga, "/manga/work-part-2", 120);
+
+        let groups = group_sources_by_provider(&[early.clone(), later.clone()]);
+
+        assert_eq!(groups.len(), 1, "one provider must yield one merged source");
+        let group = &groups[0];
+        assert_eq!(group.provider_id, kunmanga);
+        assert_eq!(group.member_ids, vec![early.id, later.id]);
+        // The richer entry (120 > 40) drives the outbound link/representative id.
+        assert_eq!(group.link_id, later.id);
+        assert_eq!(group.link_source_path, "/manga/work-part-2");
+    }
+
+    #[test]
+    fn keeps_distinct_providers_separate_in_first_seen_order() {
+        let a = ProviderId::new();
+        let b = ProviderId::new();
+        let sa = source(a, "/a", 10);
+        let sb = source(b, "/b", 20);
+
+        let groups = group_sources_by_provider(&[sa.clone(), sb.clone()]);
+
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].provider_id, a);
+        assert_eq!(groups[1].provider_id, b);
+        assert_eq!(groups[0].member_ids, vec![sa.id]);
+        assert_eq!(groups[1].member_ids, vec![sb.id]);
+    }
+
+    #[test]
+    fn richest_link_holds_on_a_later_smaller_entry() {
+        // A smaller entry seen after the richest one must not steal the link target.
+        let provider = ProviderId::new();
+        let big = source(provider, "/big", 200);
+        let small = source(provider, "/small", 5);
+
+        let groups = group_sources_by_provider(&[big.clone(), small.clone()]);
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].link_id, big.id);
+        assert_eq!(groups[0].member_ids, vec![big.id, small.id]);
+    }
+
+    #[test]
+    fn empty_input_yields_no_groups() {
+        assert!(group_sources_by_provider(&[]).is_empty());
+    }
 }

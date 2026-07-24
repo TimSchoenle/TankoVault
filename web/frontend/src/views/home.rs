@@ -14,75 +14,88 @@ use dioxus::prelude::*;
 #[component]
 pub fn Home() -> Element {
     let session = use_session();
-    let api_client = api::use_api();
+    // Capture the API *context* (not a render-time client): each resource below reads the live
+    // session token synchronously and builds its client from it. On a page reload the token is
+    // adopted from the httpOnly cookie a moment after boot, so a client captured up front would
+    // still be token-less when the resources re-run and every call would 401 (design §17.4).
+    let api = use_context::<api::ApiClient>();
     let mut reload = use_signal(|| 0u32);
 
     let feed = {
-        let client = api_client.clone();
+        let api = api.clone();
         use_resource(move || {
             let _ = reload.read();
-            let client = client.clone();
+            let token = session.token_value();
+            let api = api.clone();
             async move {
-                if session.is_authenticated() {
-                    client
+                match token {
+                    Some(token) => api
+                        .client_for(Some(&token))
                         .feed()
                         .send()
                         .await
                         .map(|r| r.into_inner())
-                        .map_err(api::friendly_error)
-                } else {
-                    Ok(Vec::new())
+                        .map_err(api::friendly_error),
+                    None => Ok(Vec::new()),
                 }
             }
         })
     };
     let stats = {
-        let client = api_client.clone();
+        let api = api.clone();
         use_resource(move || {
             let _ = reload.read();
-            let client = client.clone();
+            let token = session.token_value();
+            let api = api.clone();
             async move {
-                if session.is_authenticated() {
-                    client.stats().send().await.map(|r| r.into_inner()).ok()
-                } else {
-                    None
+                match token {
+                    Some(token) => api
+                        .client_for(Some(&token))
+                        .stats()
+                        .send()
+                        .await
+                        .map(|r| r.into_inner())
+                        .ok(),
+                    None => None,
                 }
             }
         })
     };
     let cont = {
-        let client = api_client.clone();
+        let api = api.clone();
         use_resource(move || {
             let _ = reload.read();
-            let client = client.clone();
+            let token = session.token_value();
+            let api = api.clone();
             async move {
-                if session.is_authenticated() {
-                    client
+                match token {
+                    Some(token) => api
+                        .client_for(Some(&token))
                         .continue_reading()
                         .send()
                         .await
                         .map(|r| r.into_inner())
-                        .unwrap_or_default()
-                } else {
-                    Vec::new()
+                        .unwrap_or_default(),
+                    None => Vec::new(),
                 }
             }
         })
     };
     let recs = {
-        let client = api_client.clone();
+        let api = api.clone();
         use_resource(move || {
-            let client = client.clone();
+            let token = session.token_value();
+            let api = api.clone();
             async move {
-                if session.is_authenticated() {
-                    client
+                match token {
+                    Some(token) => api
+                        .client_for(Some(&token))
                         .recommendations()
                         .send()
                         .await
                         .map(|r| r.into_inner())
-                        .unwrap_or_default()
-                } else {
-                    Vec::new()
+                        .unwrap_or_default(),
+                    None => Vec::new(),
                 }
             }
         })

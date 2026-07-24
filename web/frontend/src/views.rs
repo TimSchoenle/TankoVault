@@ -7,15 +7,17 @@ mod console;
 mod discover;
 mod home;
 mod notifications;
+mod password;
 mod series;
 mod watchlist;
 
 pub use account::{Account, AnilistCallback};
-pub use auth::Login;
+pub use auth::{Login, VerifyEmail};
 pub use console::Console;
 pub use discover::{Discover, Search};
 pub use home::Home;
 pub use notifications::Notifications;
+pub use password::{ForgotPassword, ResetPassword};
 pub use series::Series;
 pub use watchlist::Watchlist;
 

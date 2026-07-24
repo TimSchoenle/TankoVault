@@ -16,6 +16,7 @@ pub mod openapi;
 mod admin;
 mod auth;
 mod error;
+mod mailer;
 mod me;
 mod series;
 mod state;
@@ -71,6 +72,10 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(auth::login))
         .routes(routes!(auth::refresh))
         .routes(routes!(auth::logout))
+        .routes(routes!(auth::forgot_password))
+        .routes(routes!(auth::reset_password))
+        .routes(routes!(auth::verify_email))
+        .routes(routes!(auth::resend_verification))
         // public series
         .routes(routes!(series::list))
         .routes(routes!(series::detail))

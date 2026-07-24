@@ -13,14 +13,15 @@ use serde::{Deserialize, Serialize};
 // Typed DTOs from the types module (to avoid name collisions with builders)
 pub use crate::wire::types::{
     AdapterKind, AssignRemoteEntry, ChapterDto, ChapterRead, ContentType, ContinueItem,
-    CreateProvider, DismissRequest, FeedEntry, LoginRequest, MarkRead, MergeRequest, Politeness,
-    ProfileUpdate, ProgressUpdate, Provider, ProviderId, ProviderStat, ProviderState,
-    PublicProvider, RegisterRequest, ResolveConflict, RunState, ScanMode, ScanRun,
-    ScanRunProviderId, SeriesId, SeriesSourceId, SeriesStatus, SeriesSummary,
+    CreateProvider, DismissRequest, FeedEntry, ForgotPasswordRequest, LoginRequest, MarkRead,
+    MergeRequest, Politeness, ProfileUpdate, ProgressUpdate, Provider, ProviderId, ProviderStat,
+    ProviderState, PublicProvider, RegisterRequest, ResendVerificationRequest,
+    ResetPasswordRequest, ResolveConflict, RunState, ScanMode, ScanRun, ScanRunProviderId,
+    SeriesId, SeriesSourceId, SeriesStatus, SeriesSummary,
     SetProviderState as SetProviderStateBody, SourceDto, SuggestedMatch, SyncExcluded, SyncOpts,
     SyncPullBody, SyncPushBody, SyncSettingsPatch, SystemStats, Tag, TriggerScan,
-    TriggerScanProviderId, UpdateProvider, UpsertMapping, UserId, UserRow2 as UserRow, WatchStatus,
-    WatchlistItem, WatchlistUpsert,
+    TriggerScanProviderId, UpdateProvider, UpsertMapping, UserId, UserRow2 as UserRow,
+    VerifyEmailRequest, WatchStatus, WatchlistItem, WatchlistUpsert,
 };
 
 pub type Notification = serde_json::Value;

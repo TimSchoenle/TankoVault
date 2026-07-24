@@ -6,12 +6,13 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 macro_rules! id_type {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, ToSchema)]
         #[serde(transparent)]
         pub struct $name(pub Uuid);
 

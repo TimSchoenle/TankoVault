@@ -219,7 +219,10 @@ mod tests {
     #[allow(clippy::result_large_err)]
     fn env_overrides_and_defaults_apply() {
         figment::Jail::expect_with(|jail| {
-            jail.set_env("TANKOVAULT_DATABASE__URL", "postgres://localhost/tankovault");
+            jail.set_env(
+                "TANKOVAULT_DATABASE__URL",
+                "postgres://localhost/tankovault",
+            );
             jail.set_env("TANKOVAULT_DATABASE__MAX_CONNECTIONS", "32");
             let cfg: Sample = load().map_err(|e| e.to_string()).unwrap();
             assert_eq!(cfg.database.url, "postgres://localhost/tankovault");
@@ -259,7 +262,10 @@ mod tests {
 
         let winner_none = cfg.resolve(
             "description",
-            &[(SOURCE_ANILIST, None), (SOURCE_ADAPTER, Some("only one".to_owned()))],
+            &[
+                (SOURCE_ANILIST, None),
+                (SOURCE_ADAPTER, Some("only one".to_owned())),
+            ],
         );
         assert_eq!(winner_none.as_deref(), Some("only one"));
     }

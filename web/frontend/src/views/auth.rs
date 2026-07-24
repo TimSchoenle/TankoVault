@@ -3,7 +3,7 @@
 
 use crate::api;
 use crate::icons::{Ic, Icon};
-use crate::models::{LoginRequest, RegisterRequest};
+use crate::models::*;
 use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
@@ -20,6 +20,7 @@ pub fn Login() -> Element {
     let mut password = use_signal(String::new);
     let mut error = use_signal(|| Option::<String>::None);
     let mut busy = use_signal(|| false);
+    let api_client = api::use_api();
 
     let submit = use_callback(move |()| {
         if *busy.read() {
@@ -32,27 +33,35 @@ pub fn Login() -> Element {
         let username_v = username.read().trim().to_owned();
         let login_v = login.read().trim().to_owned();
         let password_v = password.read().clone();
+        let client = api_client.clone();
         spawn(async move {
             let result = if is_register {
-                api::register(&RegisterRequest {
-                    email: email_v,
-                    username: username_v,
-                    password: password_v,
-                })
-                .await
+                client
+                    .register()
+                    .body(RegisterRequest {
+                        email: email_v,
+                        username: username_v,
+                        password: password_v,
+                    })
+                    .send()
+                    .await
             } else {
-                api::login(&LoginRequest {
-                    login: login_v,
-                    password: password_v,
-                })
-                .await
+                client
+                    .login()
+                    .body(LoginRequest {
+                        login: login_v,
+                        password: password_v,
+                    })
+                    .send()
+                    .await
             };
             match result {
-                Ok(tok) => {
+                Ok(res) => {
+                    let tok = res.into_inner();
                     session.set_token(tok.access_token);
                     nav.push(Route::Discover {});
                 }
-                Err(e) => error.set(Some(e)),
+                Err(e) => error.set(Some(api::friendly_error(e))),
             }
             busy.set(false);
         });

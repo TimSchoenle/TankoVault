@@ -10,11 +10,11 @@ use std::fmt::Write as _;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use tankovault_domain::SeriesId;
 use lettre::message::Mailbox;
 use lettre::message::header::ContentType;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use serde::Deserialize;
+use tankovault_domain::SeriesId;
 
 /// Operator-configured external channel endpoints. All optional; a channel is only
 /// constructed when its URL is present and non-empty.

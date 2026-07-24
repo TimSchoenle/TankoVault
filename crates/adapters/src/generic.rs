@@ -11,8 +11,8 @@ use crate::types::{
     CatalogItem, CatalogPage, ChapterMeta, Ctx, LatestUpdate, SeriesMeta, SourceAdapter,
 };
 use async_trait::async_trait;
-use tankovault_domain::{ContentType, SeriesStatus};
 use scraper::{ElementRef, Html};
+use tankovault_domain::{ContentType, SeriesStatus};
 
 /// A generic adapter parameterised entirely by selectors from `providers.config`.
 pub struct GenericConfigAdapter {

@@ -11,53 +11,100 @@
 use crate::api;
 use crate::components::{Cover, ErrorBox};
 use crate::icons::{Ic, Icon};
-use crate::models::{
-    ContentType, SeriesStatus, SourceDto, WatchStatus, WatchlistItem, WatchlistUpsert,
-};
+use crate::models::*;
 use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
 
+/// The route gives us a plain `String` (see `crate::Route::Series`); parse it once here so
+/// the rest of the view works with the real, compiler-checked `SeriesId`.
 #[component]
 pub fn Series(id: String) -> Element {
+    let Ok(id) = id.parse::<SeriesId>() else {
+        return rsx! {
+            div { class: "ik-empty", "That series link doesn't look right." }
+        };
+    };
+
     let session = use_session();
     let nav = use_navigator();
-    let selected = use_signal(|| Option::<String>::None);
+    let selected = use_signal(|| Option::<SeriesSourceId>::None);
     let mut reload_wl = use_signal(|| 0u32);
     let reload_chapters = use_signal(|| 0u32);
+    let api_client = api::use_api();
 
-    let detail_id = id.clone();
-    let detail = use_resource(move || {
-        let id = detail_id.clone();
-        async move { api::series_detail(&id).await }
-    });
-
-    let chapters_id = id.clone();
-    let chapters = use_resource(move || {
-        let id = chapters_id.clone();
-        let src = selected.read().clone();
-        let token = session.token_value();
-        let _ = reload_chapters.read();
-        async move { api::series_chapters(&id, src.as_deref(), token.as_deref()).await }
-    });
-
-    let wl_id = id.clone();
-    let watchlist = use_resource(move || {
-        let _ = (reload_wl.read(), wl_id.clone());
-        async move {
-            match session.token_value() {
-                Some(t) => api::watchlist(&t).await,
-                None => Ok(Vec::new()),
+    let detail = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let client = client.clone();
+            async move {
+                client
+                    .detail()
+                    .id(id)
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error)
             }
-        }
-    });
+        })
+    };
 
-    let sync_status = use_resource(move || async move {
-        match session.token_value() {
-            Some(t) => api::sync_status(&t, "anilist").await.ok(),
-            None => None,
-        }
-    });
+    let chapters = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let src = *selected.read();
+            let _ = reload_chapters.read();
+            let client = client.clone();
+            async move {
+                let mut builder = client.chapters().id(id);
+                if let Some(s) = src {
+                    builder = builder.source(s.to_string());
+                }
+                builder
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error)
+            }
+        })
+    };
+
+    let watchlist = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let _ = reload_wl.read();
+            let client = client.clone();
+            async move {
+                if session.is_authenticated() {
+                    client
+                        .watchlist()
+                        .send()
+                        .await
+                        .map(|r| r.into_inner())
+                        .map_err(api::friendly_error)
+                } else {
+                    Ok(Vec::new())
+                }
+            }
+        })
+    };
+
+    let sync_status = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let client = client.clone();
+            async move {
+                if session.is_authenticated() {
+                    api::fetch_json(&client, "/v1/me/sync/anilist/status")
+                        .await
+                        .ok()
+                        .and_then(|v| serde_json::from_value::<SyncStatus>(v).ok())
+                } else {
+                    None
+                }
+            }
+        })
+    };
 
     let hero = match &*detail.read_unchecked() {
         None => rsx! {
@@ -78,7 +125,7 @@ pub fn Series(id: String) -> Element {
         }
         Some(Ok(d)) => {
             let d = d.clone();
-            let wl_entry = current_entry(&watchlist, &id);
+            let wl_entry = current_entry(&watchlist, id);
             let chapters_total: i64 = d.sources.iter().map(|s| i64::from(s.chapter_count)).sum();
             let source_count = d.sources.len();
             let bg = d.cover_url.clone().unwrap_or_default();
@@ -133,7 +180,7 @@ pub fn Series(id: String) -> Element {
                                 div { class: "item", Ic { icon: Icon::Layers, size: 16 } "{source_count} sources" }
                             }
                             WatchControls {
-                                series_id: id.clone(),
+                                series_id: id,
                                 entry: wl_entry,
                                 authed: session.is_authenticated(),
                                 reload: reload_wl,
@@ -154,7 +201,7 @@ pub fn Series(id: String) -> Element {
         Some(Ok(d)) => d.description.clone(),
         _ => None,
     };
-    let wl_entry_side = current_entry(&watchlist, &id);
+    let wl_entry_side = current_entry(&watchlist, id);
     let anilist_id: Option<String> = match &*detail.read_unchecked() {
         Some(Ok(d)) => d.anilist_id.clone(),
         _ => None,
@@ -184,7 +231,7 @@ pub fn Series(id: String) -> Element {
                         ChapterGroupRow {
                             key: "{i}",
                             group: g,
-                            series_id: id.clone(),
+                            series_id: id,
                             reload: reload_chapters,
                         }
                     }
@@ -220,7 +267,7 @@ pub fn Series(id: String) -> Element {
                 div { class: "ik-sidebar-card",
                     h4 { "Tracking" }
                     WatchControls {
-                        series_id: id.clone(),
+                        series_id: id,
                         entry: wl_entry_side,
                         authed: session.is_authenticated(),
                         reload: reload_wl,
@@ -271,7 +318,7 @@ pub fn Series(id: String) -> Element {
 /// Find this series' watchlist entry (if any) from the loaded watchlist resource.
 fn current_entry(
     watchlist: &Resource<Result<Vec<WatchlistItem>, String>>,
-    series_id: &str,
+    series_id: SeriesId,
 ) -> Option<WatchlistItem> {
     match &*watchlist.read_unchecked() {
         Some(Ok(list)) => list.iter().find(|i| i.series_id == series_id).cloned(),
@@ -301,10 +348,10 @@ fn status_color(s: SeriesStatus) -> &'static str {
 /// A "Read on" source card in the sidebar. Selecting it loads that source's chapters in the
 /// left column; the trailing link opens the resolved source page in a new tab.
 #[component]
-fn SourceCard(source: SourceDto, selected: Signal<Option<String>>) -> Element {
+fn SourceCard(source: SourceDto, selected: Signal<Option<SeriesSourceId>>) -> Element {
     let mut selected = selected;
-    let is_selected = selected.read().as_deref() == Some(source.id.as_str());
-    let sid = source.id.clone();
+    let is_selected = *selected.read() == Some(source.id);
+    let sid = source.id;
     let initial = source
         .provider_name
         .chars()
@@ -322,7 +369,7 @@ fn SourceCard(source: SourceDto, selected: Signal<Option<String>>) -> Element {
             button {
                 class: "ik-flex",
                 style: "flex:1;background:none;border:none;cursor:pointer;color:inherit;text-align:left;{border}",
-                onclick: move |_| selected.set(Some(sid.clone())),
+                onclick: move |_| selected.set(Some(sid)),
                 div { class: "ik-source-tile", "{initial}" }
                 div { class: "grow",
                     div { class: "ik-flex", style: "gap:6px;",
@@ -343,12 +390,13 @@ fn SourceCard(source: SourceDto, selected: Signal<Option<String>>) -> Element {
 
 #[component]
 fn WatchControls(
-    series_id: String,
+    series_id: SeriesId,
     entry: Option<WatchlistItem>,
     authed: bool,
     reload: Signal<u32>,
 ) -> Element {
     let session = use_session();
+    let api_client = api::use_api();
 
     if !authed {
         return rsx! {
@@ -366,89 +414,133 @@ fn WatchControls(
 
     // The per-title sync opt-out (design v2 §B.8) is only meaningful once the user has linked
     // at least one external provider — otherwise there is nothing to opt out of.
-    let has_linked = use_resource(move || async move {
-        match session.token_value() {
-            Some(t) => match api::sync_providers(&t).await {
-                Ok(list) => {
+    let has_linked = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let client = client.clone();
+            async move {
+                if session.is_authenticated() {
+                    let Ok(value) = api::fetch_json(&client, "/v1/me/sync/providers").await else {
+                        return false;
+                    };
+                    let list: Vec<ProviderInfo> = serde_json::from_value(value).unwrap_or_default();
                     for p in list {
-                        if let Ok(s) = api::sync_status(&t, &p.slug).await {
-                            if s.linked {
+                        if p.linked {
+                            return true;
+                        }
+                        let slug = if p.slug.is_empty() {
+                            p.id.clone()
+                        } else {
+                            p.slug.clone()
+                        };
+                        let path = format!("/v1/me/sync/{slug}/status");
+                        if let Ok(v) = api::fetch_json(&client, &path).await {
+                            if serde_json::from_value::<SyncStatus>(v)
+                                .map(|s| s.linked)
+                                .unwrap_or(false)
+                            {
                                 return true;
                             }
                         }
                     }
                     false
+                } else {
+                    false
                 }
-                Err(_) => false,
-            },
-            None => false,
-        }
-    });
+            }
+        })
+    };
     let show_sync_toggle = in_list && matches!(&*has_linked.read_unchecked(), Some(true));
 
     let toggle_sync = {
-        let sid = series_id.clone();
+        let sid = series_id;
         let mut reload = reload;
+        let client = api_client.clone();
         move |_| {
-            let sid = sid.clone();
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::set_sync_excluded(&t, &sid, !sync_excluded).await.is_ok() {
-                        reload += 1;
-                    }
+                let body = SyncExcluded {
+                    excluded: !sync_excluded,
+                };
+                if client
+                    .put_sync_excluded()
+                    .series_id(sid)
+                    .body(body)
+                    .send()
+                    .await
+                    .is_ok()
+                {
+                    reload += 1;
                 }
             });
         }
     };
 
     let add = {
-        let sid = series_id.clone();
+        let sid = series_id;
         let mut reload = reload;
+        let client = api_client.clone();
         move |_| {
-            let sid = sid.clone();
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    let body = WatchlistUpsert {
-                        status: WatchStatus::Reading,
-                        notify: true,
-                    };
-                    if api::set_watchlist(&t, &sid, &body).await.is_ok() {
-                        reload += 1;
-                    }
+                let body = WatchlistUpsert {
+                    status: Some(WatchStatus::Reading),
+                    notify: Some(true),
+                };
+                if client
+                    .put_watchlist()
+                    .series_id(sid)
+                    .body(body)
+                    .send()
+                    .await
+                    .is_ok()
+                {
+                    reload += 1;
                 }
             });
         }
     };
 
     let remove = {
-        let sid = series_id.clone();
+        let sid = series_id;
         let mut reload = reload;
+        let client = api_client.clone();
         move |_| {
-            let sid = sid.clone();
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::remove_watchlist(&t, &sid).await.is_ok() {
-                        reload += 1;
-                    }
+                if client
+                    .delete_watchlist()
+                    .series_id(sid)
+                    .send()
+                    .await
+                    .is_ok()
+                {
+                    reload += 1;
                 }
             });
         }
     };
 
     let toggle_notify = {
-        let sid = series_id.clone();
+        let sid = series_id;
         let mut reload = reload;
+        let client = api_client.clone();
         move |_| {
-            let sid = sid.clone();
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    let body = WatchlistUpsert {
-                        status,
-                        notify: !notify,
-                    };
-                    if api::set_watchlist(&t, &sid, &body).await.is_ok() {
-                        reload += 1;
-                    }
+                let body = WatchlistUpsert {
+                    status: Some(status),
+                    notify: Some(!notify),
+                };
+                if client
+                    .put_watchlist()
+                    .series_id(sid)
+                    .body(body)
+                    .send()
+                    .await
+                    .is_ok()
+                {
+                    reload += 1;
                 }
             });
         }
@@ -488,7 +580,7 @@ fn WatchControls(
 #[component]
 fn ChapterRow(
     chapter: crate::models::ChapterDto,
-    series_id: String,
+    series_id: SeriesId,
     reload: Signal<u32>,
     /// True for a sub-chapter part release (fractional `number`, e.g. `152.6`) — sources
     /// sometimes ship these ahead of the compiled full chapter. Styled distinctly and never
@@ -496,7 +588,7 @@ fn ChapterRow(
     #[props(default = false)]
     is_part: bool,
 ) -> Element {
-    let session = use_session();
+    let api_client = api::use_api();
     let mut reload = reload;
     let mut busy = use_signal(|| false);
 
@@ -535,24 +627,28 @@ fn ChapterRow(
     // two-scalar rule server-side, correctly advancing/retreating either the whole-chapter or
     // the part frontier for this exact `number` — a part release never corrupts whole-chapter
     // progress, and unmarking retreats to the previous chapter without assuming contiguity.
-    let number = chapter.number;
-    let mark = {
-        let series_id = series_id.clone();
-        move |_| {
-            if *busy.peek() {
-                return;
-            }
-            busy.set(true);
-            let series_id = series_id.clone();
-            spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::mark_chapter(&t, &series_id, number, !is_read).await.is_ok() {
-                        reload += 1;
-                    }
-                }
-                busy.set(false);
-            });
+    let chapter_number = chapter.number;
+    let mark = move |_| {
+        if *busy.peek() {
+            return;
         }
+        busy.set(true);
+        let client = api_client.clone();
+        spawn(async move {
+            let body = ChapterRead { read: !is_read };
+            if client
+                .put_chapter_progress()
+                .series_id(series_id)
+                .number(chapter_number)
+                .body(body)
+                .send()
+                .await
+                .is_ok()
+            {
+                reload += 1;
+            }
+            busy.set(false);
+        });
     };
 
     rsx! {
@@ -636,7 +732,7 @@ fn group_chapters(list: &[crate::models::ChapterDto]) -> Vec<ChapterGroup> {
 }
 
 #[component]
-fn ChapterGroupRow(group: ChapterGroup, series_id: String, reload: Signal<u32>) -> Element {
+fn ChapterGroupRow(group: ChapterGroup, series_id: SeriesId, reload: Signal<u32>) -> Element {
     let mut expanded = use_signal(|| false);
     let has_full = group.full.is_some();
     let parts = group.parts.clone();
@@ -657,7 +753,7 @@ fn ChapterGroupRow(group: ChapterGroup, series_id: String, reload: Signal<u32>) 
         if let Some(c) = group.full.clone() {
             ChapterRow {
                 chapter: c,
-                series_id: series_id.clone(),
+                series_id: series_id,
                 reload,
                 is_part: false,
             }
@@ -683,7 +779,7 @@ fn ChapterGroupRow(group: ChapterGroup, series_id: String, reload: Signal<u32>) 
                 ChapterRow {
                     key: "{c.number}",
                     chapter: c,
-                    series_id: series_id.clone(),
+                    series_id: series_id,
                     reload,
                     is_part: true,
                 }

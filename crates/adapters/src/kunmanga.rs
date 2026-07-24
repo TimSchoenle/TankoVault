@@ -26,9 +26,7 @@ use crate::config::AdapterConfig;
 use crate::error::AdapterError;
 use crate::generic::GenericConfigAdapter;
 use crate::html::parse_chapter_number;
-use crate::types::{
-    CatalogPage, ChapterMeta, Ctx, LatestUpdate, SeriesMeta, SourceAdapter,
-};
+use crate::types::{CatalogPage, ChapterMeta, Ctx, LatestUpdate, SeriesMeta, SourceAdapter};
 use async_trait::async_trait;
 use serde::Deserialize;
 use time::OffsetDateTime;

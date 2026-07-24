@@ -17,8 +17,8 @@ pub mod normalize;
 pub mod politeness;
 
 pub use entities::{
-    Author, Chapter, Notification, Provider, ReadProgress, ScanRun, ScanTask, Series,
-    SeriesSource, SeriesTitle, Tag, User, WatchlistEntry,
+    Author, Chapter, Notification, Provider, ReadProgress, ScanRun, ScanTask, Series, SeriesSource,
+    SeriesTitle, Tag, User, WatchlistEntry,
 };
 pub use enums::{
     AdapterKind, ContentType, ParseEnumError, ProviderState, RunState, ScanMode, SeriesStatus,

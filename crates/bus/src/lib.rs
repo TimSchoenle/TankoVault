@@ -6,12 +6,12 @@
 //! from [`tankovault_contracts::subjects`] so producers and consumers cannot drift.
 
 use async_nats::jetstream::{self, consumer::PullConsumer, consumer::pull, stream};
+use serde::Serialize;
+use std::time::Duration;
 use tankovault_contracts::{
     ChapterDiscovered, ProgressEvent, ProviderStateChanged, ScanTaskMessage, UserNotification,
     subjects,
 };
-use serde::Serialize;
-use std::time::Duration;
 use thiserror::Error;
 use uuid::Uuid;
 

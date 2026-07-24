@@ -118,7 +118,6 @@ impl Session {
         ready.set(true);
     }
 
-
     /// Milliseconds remaining before the current access token's `exp` claim is reached, or
     /// `None` when signed out or the token can't be decoded. Used to schedule the background
     /// refresh in [`crate::components::Shell`] — purely a client-side scheduling hint, since
@@ -174,7 +173,6 @@ fn username_from_jwt(token: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
 }
-
 
 /// Decode the `exp` claim (unix seconds) from a JWT payload without verifying the signature.
 fn exp_from_jwt(token: &str) -> Option<i64> {

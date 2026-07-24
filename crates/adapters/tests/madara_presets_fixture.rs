@@ -5,10 +5,10 @@
 //! rather than in production.
 
 use async_trait::async_trait;
+use std::sync::Arc;
 use tankovault_adapters::{Ctx, SourceAdapter, build_adapter, builtin_presets};
 use tankovault_domain::SeriesStatus;
 use tankovault_fetch::{FetchError, FetchRequest, FetchResponse, Fetcher};
-use std::sync::Arc;
 
 struct SiteFetcher {
     catalog: &'static str,
@@ -112,8 +112,12 @@ async fn manhuaus_series_reads_lazy_cover() {
 
 #[tokio::test]
 async fn kunmanga_catalog_excludes_ads_and_marks_next() {
-    let (adapter, ctx) =
-        preset_adapter("kunmanga", KUNMANGA_CATALOG, KUNMANGA_SERIES, KUNMANGA_CHAPTERS_API);
+    let (adapter, ctx) = preset_adapter(
+        "kunmanga",
+        KUNMANGA_CATALOG,
+        KUNMANGA_SERIES,
+        KUNMANGA_CHAPTERS_API,
+    );
     let page = adapter.list_catalog(&ctx, 1).await.expect("catalog parses");
 
     // The custom-item-ad tile is filtered out by the `:not()` override.
@@ -127,8 +131,12 @@ async fn kunmanga_catalog_excludes_ads_and_marks_next() {
 
 #[tokio::test]
 async fn kunmanga_series_metadata_from_html() {
-    let (adapter, ctx) =
-        preset_adapter("kunmanga", KUNMANGA_CATALOG, KUNMANGA_SERIES, KUNMANGA_CHAPTERS_API);
+    let (adapter, ctx) = preset_adapter(
+        "kunmanga",
+        KUNMANGA_CATALOG,
+        KUNMANGA_SERIES,
+        KUNMANGA_CHAPTERS_API,
+    );
     let meta = adapter
         .fetch_series(&ctx, "/manga/its-just-business")
         .await
@@ -149,8 +157,12 @@ async fn kunmanga_series_metadata_from_html() {
 
 #[tokio::test]
 async fn kunmanga_chapters_from_json_api() {
-    let (adapter, ctx) =
-        preset_adapter("kunmanga", KUNMANGA_CATALOG, KUNMANGA_SERIES, KUNMANGA_CHAPTERS_API);
+    let (adapter, ctx) = preset_adapter(
+        "kunmanga",
+        KUNMANGA_CATALOG,
+        KUNMANGA_SERIES,
+        KUNMANGA_CHAPTERS_API,
+    );
 
     // Chapters are NOT in the series HTML — they come from `/api/comics/{slug}/chapters`.
     let chapters = adapter
@@ -163,5 +175,8 @@ async fn kunmanga_chapters_from_json_api() {
         .find(|c| (c.number - 118.0).abs() < 1e-9)
         .expect("chapter 118 present");
     assert_eq!(ch118.path, "/manga/its-just-business/chapter-118");
-    assert!(ch118.published_at.is_some(), "updated_at parsed into a date");
+    assert!(
+        ch118.published_at.is_some(),
+        "updated_at parsed into a date"
+    );
 }

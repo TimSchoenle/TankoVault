@@ -17,8 +17,8 @@ use crate::types::{
     CatalogItem, CatalogPage, ChapterMeta, Ctx, LatestUpdate, SeriesMeta, SourceAdapter,
 };
 use async_trait::async_trait;
-use tankovault_domain::{ContentType, SeriesStatus};
 use scraper::{ElementRef, Html};
+use tankovault_domain::{ContentType, SeriesStatus};
 
 /// Adapter for the demonicscans.org custom layout.
 pub struct DemonicScansAdapter;

@@ -15,11 +15,7 @@
 use crate::api;
 use crate::components::{rel_time, Cover, ErrorBox};
 use crate::icons::{Ic, Icon};
-use crate::models::{
-    AdminSyncAccount, AdminSyncMapping, AuditEntry, FailedTask, MergeCandidate, Provider,
-    ProviderInfo, ProviderStat, RunState, ScanMode, ScanRun, SeriesSummary, SuggestedMatch,
-    SystemStats, UnmappedSeries, UnmatchedRemoteEntry,
-};
+use crate::models::*;
 use crate::state::use_session;
 use dioxus::prelude::*;
 
@@ -86,6 +82,15 @@ const ADAPTER_KINDS: &[(&str, &str)] = &[
     ("madara", "Madara / WordPress"),
     ("custom", "Custom (built-in)"),
 ];
+
+/// The wire token for a loaded provider's adapter kind (matches the SQL enum / `ADAPTER_KINDS`).
+fn adapter_token(a: AdapterKind) -> &'static str {
+    match a {
+        AdapterKind::GenericConfig => "generic_config",
+        AdapterKind::Madara => "madara",
+        AdapterKind::Custom => "custom",
+    }
+}
 
 #[component]
 pub fn Console() -> Element {
@@ -186,13 +191,23 @@ fn LiveControls(tick: Signal<u32>, auto: Signal<bool>) -> Element {
 /// System-wide KPI header — the at-a-glance health of the whole system.
 #[component]
 fn SystemOverview(tick: Signal<u32>) -> Element {
+    let api_client = api::use_api();
     let session = use_session();
     let res = use_resource(move || {
         let _ = tick.read();
+        let client = api_client.clone();
         async move {
-            match session.token_value() {
-                Some(t) => Some(api::system_stats(&t).await),
-                None => None,
+            if session.is_authenticated() {
+                Some(
+                    client
+                        .system_stats()
+                        .send()
+                        .await
+                        .map(|r| r.into_inner())
+                        .map_err(api::friendly_error),
+                )
+            } else {
+                None
             }
         }
     });
@@ -207,7 +222,7 @@ fn SystemOverview(tick: Signal<u32>) -> Element {
         Some(Some(Ok(s))) => {
             let s = s.clone();
             rsx! {
-                KpiGrid { stats: s }
+                KpiGrid { stats: Signal::new(s) }
             }
         }
     };
@@ -219,8 +234,8 @@ fn SystemOverview(tick: Signal<u32>) -> Element {
 
 /// The grid of KPI tiles.
 #[component]
-fn KpiGrid(stats: SystemStats) -> Element {
-    let s = stats;
+fn KpiGrid(stats: Signal<SystemStats>) -> Element {
+    let s = stats.read();
     let runs_accent = (if s.runs_active > 0 { "good" } else { "" }).to_owned();
     let fail_accent = (if s.tasks_failed_24h > 0 { "warn" } else { "" }).to_owned();
     let merge_accent = (if s.pending_merges > 0 { "warn" } else { "" }).to_owned();
@@ -304,43 +319,81 @@ fn Kpi(label: String, value: String, sub: String, accent: String) -> Element {
 /// on the shared console tick.
 #[component]
 fn ScanQueue(tick: Signal<u32>) -> Element {
+    let api_client = api::use_api();
     let session = use_session();
     let mut mode = use_signal(|| ScanMode::Fast);
     let mut message = use_signal(|| Option::<String>::None);
 
-    let runs = use_resource(move || {
-        let _ = tick.read();
-        async move {
-            match session.token_value() {
-                Some(t) => Some(api::recent_runs(&t).await),
-                None => None,
+    let runs = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let _ = tick.read();
+            let client = client.clone();
+            async move {
+                if session.is_authenticated() {
+                    Some(
+                        client
+                            .list_scans()
+                            .send()
+                            .await
+                            .map(|r| r.into_inner())
+                            .map_err(api::friendly_error),
+                    )
+                } else {
+                    None
+                }
             }
-        }
-    });
-    let failures = use_resource(move || {
-        let _ = tick.read();
-        async move {
-            match session.token_value() {
-                Some(t) => Some(api::scan_failures(&t).await),
-                None => None,
+        })
+    };
+    let failures = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let _ = tick.read();
+            let client = client.clone();
+            async move {
+                if session.is_authenticated() {
+                    Some(
+                        client
+                            .scan_failures()
+                            .send()
+                            .await
+                            .map(|r| r.into_inner())
+                            .map_err(api::friendly_error),
+                    )
+                } else {
+                    None
+                }
             }
-        }
-    });
+        })
+    };
 
-    let trigger = move |_| {
-        let m = *mode.read();
-        let mut tick = tick;
-        spawn(async move {
-            if let Some(t) = session.token_value() {
-                match api::trigger_scan(&t, None, m).await {
+    let trigger = {
+        let api_client = api_client.clone();
+        move |_| {
+            let m = *mode.read();
+            let mut tick = tick;
+            let client = api_client.clone();
+            spawn(async move {
+                let body = TriggerScan {
+                    mode: m,
+                    provider_id: None,
+                };
+                match client
+                    .trigger_scan()
+                    .body(body)
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error)
+                {
                     Ok(_) => {
                         message.set(Some("Scan queued for all providers.".to_owned()));
                         tick += 1;
                     }
                     Err(e) => message.set(Some(e)),
                 }
-            }
-        });
+            });
+        }
     };
 
     let all_runs = match &*runs.read_unchecked() {
@@ -381,28 +434,29 @@ fn ScanQueue(tick: Signal<u32>) -> Element {
                     p { class: "ik-muted", style: "font-size:13px;margin:6px 0 0;", "No runs in flight." }
                 } else {
                     for r in active {
-                        RunProgress { key: "{r.id}", run: r }
+                        RunProgress { key: "{r.id}", run: Signal::new(r) }
                     }
                 }
             }
 
-            RunHistory { runs: all_runs }
-            FailuresPanel { failures: match &*failures.read_unchecked() {
+            RunHistory { runs: Signal::new(all_runs) }
+            FailuresPanel { failures: Signal::new(match &*failures.read_unchecked() {
                 Some(Some(Ok(list))) => list.clone(),
                 _ => Vec::new(),
-            } }
+            }) }
         }
     }
 }
 
 /// Compact table of the most recent runs (any state).
 #[component]
-fn RunHistory(runs: Vec<ScanRun>) -> Element {
-    if runs.is_empty() {
+fn RunHistory(runs: ReadSignal<Vec<ScanRun>>) -> Element {
+    let list = runs.read();
+    if list.is_empty() {
         return rsx! {
             div { style: "margin-top:16px;",
                 div { class: "ik-subhead", "Recent runs" }
-                p { class: "ik-muted", style: "font-size:13px;margin:6px 0 0;", "No scan runs yet." }
+                p { class: "ik-muted", style: "font-size:13px;margin-left:6px;margin-top:4px;", "No scan runs yet." }
             }
         };
     }
@@ -422,8 +476,8 @@ fn RunHistory(runs: Vec<ScanRun>) -> Element {
                         }
                     }
                     tbody {
-                        for r in runs {
-                            RunHistoryRow { key: "{r.id}", run: r }
+                        for r in list.iter().cloned() {
+                            RunHistoryRow { key: "{r.id}", run: Signal::new(r) }
                         }
                     }
                 }
@@ -433,24 +487,26 @@ fn RunHistory(runs: Vec<ScanRun>) -> Element {
 }
 
 #[component]
-fn RunHistoryRow(run: ScanRun) -> Element {
-    let (pill, label) = run_state_pill(run.state);
-    let pct = (run.progress() * 100.0).round() as i32;
-    let scope = match &run.provider_id {
-        Some(id) => format!("#{}", short_id(id)),
+fn RunHistoryRow(run: Signal<ScanRun>) -> Element {
+    let r = run.read();
+    let (pill, label) = run_state_pill(r.state);
+    let pct = (r.progress() * 100.0).round() as i32;
+    let scope = match &r.provider_id {
+        Some(ScanRunProviderId::Variant1(id)) => format!("#{}", &id.to_string()[..8]),
+        Some(ScanRunProviderId::Variant0(v)) => v.as_str().unwrap_or("unknown").to_owned(),
         None => "all providers".to_owned(),
     };
     rsx! {
         tr {
             td { span { class: "{pill}", "{label}" } }
-            td { class: "ik-mono", "{run.mode:?}" }
+            td { class: "ik-mono", "{r.mode:?}" }
             td { class: "ik-mono ik-muted", "{scope}" }
             td {
                 div { class: "ik-flex", style: "gap:8px;",
                     span { class: "ik-mono", style: "font-size:12px;min-width:82px;",
-                        "{run.done_tasks}/{run.total_tasks}"
-                        if run.failed_tasks > 0 {
-                            span { style: "color:var(--vermilion);", " ·{run.failed_tasks}✗" }
+                        "{r.done_tasks}/{r.total_tasks}"
+                        if r.failed_tasks > 0 {
+                            span { style: "color:var(--vermilion);", " ·{r.failed_tasks}✗" }
                         }
                     }
                     div { class: "ik-progress", style: "flex:1;min-width:60px;",
@@ -458,16 +514,17 @@ fn RunHistoryRow(run: ScanRun) -> Element {
                     }
                 }
             }
-            td { class: "ik-muted ik-mono", style: "font-size:12px;", "{rel_time(run.started_at.as_deref())}" }
-            td { class: "ik-muted ik-mono", style: "font-size:12px;", "{rel_time(run.finished_at.as_deref())}" }
+            td { class: "ik-muted ik-mono", style: "font-size:12px;", "{rel_time(r.started_at.as_deref())}" }
+            td { class: "ik-muted ik-mono", style: "font-size:12px;", "{rel_time(r.finished_at.as_deref())}" }
         }
     }
 }
 
 /// Recent task failures with their errors — the operator's triage feed.
 #[component]
-fn FailuresPanel(failures: Vec<FailedTask>) -> Element {
-    if failures.is_empty() {
+fn FailuresPanel(failures: Signal<Vec<FailedTask>>) -> Element {
+    let list = failures.read();
+    if list.is_empty() {
         return rsx! {
             div { style: "margin-top:16px;",
                 div { class: "ik-subhead", "Recent failures" }
@@ -479,7 +536,7 @@ fn FailuresPanel(failures: Vec<FailedTask>) -> Element {
         div { style: "margin-top:16px;",
             div { class: "ik-subhead", "Recent failures" }
             div { style: "margin-top:8px;display:grid;gap:8px;",
-                for f in failures {
+                for f in list.iter().cloned() {
                     div { key: "{f.id}", class: "ik-fail",
                         div { class: "ik-flex", style: "justify-content:space-between;gap:10px;",
                             div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;",
@@ -501,14 +558,15 @@ fn FailuresPanel(failures: Vec<FailedTask>) -> Element {
 }
 
 #[component]
-fn RunProgress(run: ScanRun) -> Element {
-    let pct = (run.progress() * 100.0).round() as i32;
+fn RunProgress(run: Signal<ScanRun>) -> Element {
+    let r = run.read();
+    let pct = (r.progress() * 100.0).round() as i32;
     let width = format!("width:{pct}%;");
     rsx! {
         div { style: "margin-top:12px;",
             div { class: "ik-flex", style: "justify-content:space-between;font-size:13px;",
-                span { "{run.state.label()} · {run.mode:?}" }
-                span { class: "ik-mono", "{run.done_tasks}/{run.total_tasks} ({run.failed_tasks} failed)" }
+                span { "{r.state.label()} · {r.mode:?}" }
+                span { class: "ik-mono", "{r.done_tasks}/{r.total_tasks} ({r.failed_tasks} failed)" }
             }
             div { class: "ik-progress", style: "margin-top:6px;", span { style: "{width}" } }
         }
@@ -519,15 +577,23 @@ fn RunProgress(run: ScanRun) -> Element {
 /// per provider (edit, state toggle, scan, adapter test, delete).
 #[component]
 fn ProvidersPanel() -> Element {
+    let api_client = api::use_api();
     let session = use_session();
     let is_admin = session.role.read().is_admin();
     let mut reload = use_signal(|| 0u32);
     let resource = use_resource(move || {
         let _ = reload.read();
+        let client = api_client.clone();
         async move {
-            match session.token_value() {
-                Some(t) => api::providers(&t).await,
-                None => Ok(Vec::new()),
+            if session.is_authenticated() {
+                client
+                    .list_providers()
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error)
+            } else {
+                Ok(Vec::new())
             }
         }
     });
@@ -551,13 +617,13 @@ fn ProvidersPanel() -> Element {
                         for p in tiles {
                             div { class: "ik-tile",
                                 div { style: "font-weight:600;", "{p.name}" }
-                                HealthPill { state: p.state.clone() }
+                                HealthPill { state: provider_state_token(p.state).to_owned() }
                             }
                         }
                     }
                 }
                 for p in cards {
-                    ProviderCard { key: "{p.id}", provider: p, reload }
+                    ProviderCard { key: "{p.id}", provider: Signal::new(p), reload }
                 }
             }
         }
@@ -591,11 +657,23 @@ fn HealthPill(state: String) -> Element {
     }
 }
 
+/// The wire token for a loaded provider's health state (matches the SQL enum / `HealthPill`).
+fn provider_state_token(s: ProviderState) -> &'static str {
+    match s {
+        ProviderState::Active => "active",
+        ProviderState::Degraded => "degraded",
+        ProviderState::Challenged => "challenged",
+        ProviderState::Solving => "solving",
+        ProviderState::Blocked => "blocked",
+        ProviderState::Disabled => "disabled",
+    }
+}
+
 /// Admin-only create form. Politeness is left at the polite server defaults on creation and
 /// can be tuned immediately afterwards from the provider's editor card.
 #[component]
 fn CreateProviderForm(reload: Signal<u32>) -> Element {
-    let session = use_session();
+    let api_client = api::use_api();
     let mut open = use_signal(|| false);
     let mut slug = use_signal(String::new);
     let mut name = use_signal(String::new);
@@ -605,48 +683,68 @@ fn CreateProviderForm(reload: Signal<u32>) -> Element {
     let mut busy = use_signal(|| false);
     let mut msg = use_signal(|| Option::<String>::None);
 
-    let submit = move |_| {
-        let cfg = match serde_json::from_str::<serde_json::Value>(&config.read()) {
-            Ok(v) => v,
-            Err(e) => {
-                msg.set(Some(format!("Config is not valid JSON: {e}")));
+    let submit = {
+        let api_client = api_client.clone();
+        move |_| {
+            let cfg = match serde_json::from_str::<serde_json::Value>(&config.read()) {
+                Ok(v) => v,
+                Err(e) => {
+                    msg.set(Some(format!("Config is not valid JSON: {e}")));
+                    return;
+                }
+            };
+            let (s, n, b, a_str) = (
+                slug.read().trim().to_owned(),
+                name.read().trim().to_owned(),
+                base_url.read().trim().to_owned(),
+                adapter.read().clone(),
+            );
+            if s.is_empty() || n.is_empty() || b.is_empty() {
+                msg.set(Some("Slug, name and base URL are all required.".to_owned()));
                 return;
             }
-        };
-        let (s, n, b, a) = (
-            slug.read().trim().to_owned(),
-            name.read().trim().to_owned(),
-            base_url.read().trim().to_owned(),
-            adapter.read().clone(),
-        );
-        if s.is_empty() || n.is_empty() || b.is_empty() {
-            msg.set(Some("Slug, name and base URL are all required.".to_owned()));
-            return;
+            busy.set(true);
+            msg.set(None);
+            let mut reload = reload;
+            let client = api_client.clone();
+            spawn(async move {
+                let a = match a_str.as_str() {
+                    "madara" => AdapterKind::Madara,
+                    "generic_config" => AdapterKind::GenericConfig,
+                    _ => AdapterKind::Custom,
+                };
+                let body = CreateProvider {
+                    slug: s,
+                    name: n,
+                    base_url: b,
+                    adapter: a,
+                    config: Some(cfg),
+                    politeness: None,
+                };
+                let outcome = client
+                    .create_provider()
+                    .body(body)
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error);
+                match outcome {
+                    Ok(_) => {
+                        slug.set(String::new());
+                        name.set(String::new());
+                        base_url.set(String::new());
+                        config.set("{}".to_owned());
+                        busy.set(false);
+                        open.set(false);
+                        reload += 1;
+                    }
+                    Err(e) => {
+                        msg.set(Some(e));
+                        busy.set(false);
+                    }
+                }
+            });
         }
-        busy.set(true);
-        msg.set(None);
-        let mut reload = reload;
-        spawn(async move {
-            let outcome = match session.token_value() {
-                Some(t) => api::create_provider(&t, &s, &n, &b, &a, &cfg, None).await,
-                None => Err("You are signed out.".to_owned()),
-            };
-            match outcome {
-                Ok(_) => {
-                    slug.set(String::new());
-                    name.set(String::new());
-                    base_url.set(String::new());
-                    config.set("{}".to_owned());
-                    busy.set(false);
-                    open.set(false);
-                    reload += 1;
-                }
-                Err(e) => {
-                    msg.set(Some(e));
-                    busy.set(false);
-                }
-            }
-        });
     };
 
     rsx! {
@@ -738,13 +836,15 @@ fn Field(label: String, children: Element) -> Element {
 /// it); everything else — name, base URL, config, politeness, health state — is editable,
 /// plus per-provider scan, a live adapter dry-run, and delete.
 #[component]
-fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
+fn ProviderCard(provider: Signal<Provider>, reload: Signal<u32>) -> Element {
+    let api_client = api::use_api();
     let session = use_session();
     let is_admin = session.role.read().is_admin();
+    let pro = provider.read();
 
-    let id = provider.id.clone();
-    let original_base = provider.base_url.clone();
-    let is_disabled = provider.state == "disabled";
+    let id = pro.id;
+    let original_base = pro.base_url.clone();
+    let is_disabled = pro.state == ProviderState::Disabled;
 
     let mut expanded = use_signal(|| false);
     let mut show_test = use_signal(|| false);
@@ -754,19 +854,23 @@ fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
     let mut confirm_delete = use_signal(|| false);
     let mut scan_mode = use_signal(|| ScanMode::Fast);
 
-    let mut name = use_signal(|| provider.name.clone());
-    let mut base_url = use_signal(|| provider.base_url.clone());
-    let mut config = use_signal(|| config_editor_text(&provider.config));
-    let mut rps = use_signal(|| provider.politeness.rps.to_string());
-    let mut concurrency = use_signal(|| provider.politeness.concurrency.to_string());
-    let mut crawl_delay_ms = use_signal(|| provider.politeness.crawl_delay_ms.to_string());
-    let mut user_agent = use_signal(|| provider.politeness.user_agent.clone());
+    let mut name = use_signal(|| pro.name.clone());
+    let mut base_url = use_signal(|| pro.base_url.clone());
+    let mut config = use_signal(|| config_editor_text(&pro.config));
+    let mut rps = use_signal(|| pro.politeness.rps.unwrap_or(1.0).to_string());
+    let mut concurrency = use_signal(|| pro.politeness.concurrency.unwrap_or(2).to_string());
+    let mut crawl_delay_ms = use_signal(|| pro.politeness.crawl_delay_ms.unwrap_or(0).to_string());
+    let mut user_agent = use_signal(|| pro.politeness.user_agent.clone().unwrap_or_default());
 
-    // Commits the edit. Cloneable so both the direct-save and the confirm-migration
-    // buttons can drive it without duplicating the request logic.
-    let saver = {
-        let id = id.clone();
+    let on_save_logic = {
+        let original_base = original_base.clone();
+        let api_client = api_client.clone();
         move || {
+            if *base_url.read() != original_base && !*confirm_migrate.read() {
+                confirm_migrate.set(true);
+                return;
+            }
+
             let cfg = match serde_json::from_str::<serde_json::Value>(&config.read()) {
                 Ok(v) => v,
                 Err(e) => {
@@ -788,16 +892,26 @@ fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
             };
             let name_v = name.read().clone();
             let base_v = base_url.read().clone();
-            let id = id.clone();
             confirm_migrate.set(false);
             busy.set(true);
             msg.set(None);
             let mut reload = reload;
+            let client = api_client.clone();
             spawn(async move {
-                let outcome = match session.token_value() {
-                    Some(t) => api::update_provider(&t, &id, &name_v, &base_v, &cfg, &pol).await,
-                    None => Err("You are signed out.".to_owned()),
-                };
+                let pol_dto = serde_json::from_value::<Politeness>(pol).ok();
+                let outcome = client
+                    .update_provider()
+                    .id(id)
+                    .body(UpdateProvider {
+                        name: name_v,
+                        base_url: base_v,
+                        config: Some(cfg),
+                        politeness: pol_dto,
+                    })
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error);
                 match outcome {
                     Ok(_) => reload += 1,
                     Err(e) => {
@@ -808,34 +922,38 @@ fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
             });
         }
     };
-
     let on_save = {
-        let mut saver = saver.clone();
-        let original_base = original_base.clone();
-        move |_| {
-            if *base_url.read() != original_base && !*confirm_migrate.read() {
-                confirm_migrate.set(true);
-            } else {
-                saver();
-            }
-        }
+        let mut logic = on_save_logic.clone();
+        move |_| (logic)()
     };
     let on_confirm_migrate = {
-        let mut saver = saver.clone();
-        move |_| saver()
+        let mut logic = on_save_logic.clone();
+        move |_| (logic)()
     };
 
     let toggle_state = {
-        let id = id.clone();
+        let api_client = api_client.clone();
         move |_| {
-            let id = id.clone();
-            let target = if is_disabled { "active" } else { "disabled" };
+            let target = if is_disabled {
+                ProviderState::Active
+            } else {
+                ProviderState::Disabled
+            };
             let mut reload = reload;
             busy.set(true);
             msg.set(None);
+            let client = api_client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if let Err(e) = api::set_provider_state(&t, &id, target).await {
+                if session.token_value().is_some() {
+                    if let Err(e) = client
+                        .set_provider_state()
+                        .id(id)
+                        .body(SetProviderStateBody { state: target })
+                        .send()
+                        .await
+                        .map(|_| ())
+                        .map_err(api::friendly_error)
+                    {
                         msg.set(Some(e));
                         busy.set(false);
                         return;
@@ -847,33 +965,45 @@ fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
     };
 
     let scan = {
-        let id = id.clone();
+        let api_client = api_client.clone();
         move |_| {
-            let id = id.clone();
             let m = *scan_mode.read();
             msg.set(None);
+            let client = api_client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    match api::trigger_scan(&t, Some(&id), m).await {
-                        Ok(_) => msg.set(Some("Scan queued for this provider.".to_owned())),
-                        Err(e) => msg.set(Some(e)),
-                    }
+                let body = TriggerScan {
+                    mode: m,
+                    provider_id: Some(TriggerScanProviderId::Variant1(id)),
+                };
+                match client
+                    .trigger_scan()
+                    .body(body)
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error)
+                {
+                    Ok(_) => msg.set(Some("Scan queued for this provider.".to_owned())),
+                    Err(e) => msg.set(Some(e)),
                 }
             });
         }
     };
 
     let delete = {
-        let id = id.clone();
+        let api_client = api_client.clone();
         move |_| {
-            let id = id.clone();
             let mut reload = reload;
             busy.set(true);
+            let client = api_client.clone();
             spawn(async move {
-                let outcome = match session.token_value() {
-                    Some(t) => api::delete_provider(&t, &id).await,
-                    None => Err("You are signed out.".to_owned()),
-                };
+                let outcome = client
+                    .delete_provider()
+                    .id(id)
+                    .send()
+                    .await
+                    .map(|_| ())
+                    .map_err(api::friendly_error);
                 match outcome {
                     Ok(()) => reload += 1,
                     Err(e) => {
@@ -887,18 +1017,18 @@ fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
     };
 
     let base_changed = *base_url.read() != original_base;
-    let test_id = id.clone();
+    let test_id = id;
 
     rsx! {
         div { class: "ik-tile", style: "margin-bottom:12px;",
             div { class: "ik-flex", style: "justify-content:space-between;align-items:flex-start;gap:12px;",
                 div { class: "grow",
                     div { class: "ik-flex",
-                        span { style: "font-weight:600;", "{provider.name}" }
-                        HealthPill { state: provider.state.clone() }
+                        span { style: "font-weight:600;", "{pro.name}" }
+                        HealthPill { state: provider_state_token(pro.state).to_owned() }
                     }
                     div { class: "ik-muted ik-mono", style: "font-size:12px;margin-top:2px;word-break:break-all;",
-                        "{provider.slug} · {provider.adapter} · {provider.base_url}"
+                        "{pro.slug} · {adapter_token(pro.adapter)} · {pro.base_url}"
                     }
                 }
                 div { class: "ik-flex", style: "flex-wrap:wrap;justify-content:flex-end;",
@@ -1043,23 +1173,31 @@ fn ProviderCard(provider: Provider, reload: Signal<u32>) -> Element {
 /// Live adapter dry-run against the provider's site. Runs on demand only; shows the raw
 /// parsed sample so operators can validate selectors without a deploy.
 #[component]
-fn AdapterTestPanel(provider_id: String) -> Element {
+fn AdapterTestPanel(provider_id: ProviderId) -> Element {
+    let api_client = api::use_api();
     let session = use_session();
     let mut path = use_signal(String::new);
     let mut running = use_signal(|| false);
-    let mut result = use_signal(|| Option::<Result<serde_json::Value, String>>::None);
+    let mut result: Signal<Option<Result<serde_json::Value, String>>> = use_signal(|| None);
 
     let run = {
-        let provider_id = provider_id.clone();
+        let api_client = api_client.clone();
         move |_| {
-            let provider_id = provider_id.clone();
             let p = path.read().trim().to_owned();
             running.set(true);
+            let client = api_client.clone();
             spawn(async move {
                 let out = match session.token_value() {
-                    Some(t) => {
-                        let path_opt = if p.is_empty() { None } else { Some(p.as_str()) };
-                        api::test_adapter(&t, &provider_id, path_opt).await
+                    Some(_) => {
+                        let body = serde_json::json!({
+                            "path": if p.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(p) }
+                        });
+                        api::post_json(
+                            &client,
+                            &format!("/v1/admin/providers/{provider_id}/test"),
+                            &body,
+                        )
+                        .await
                     }
                     None => Err("You are signed out.".to_owned()),
                 };
@@ -1115,14 +1253,22 @@ fn AdapterTestPanel(provider_id: String) -> Element {
 /// and a **Re-enable** toggle for blocked/disabled providers.
 #[component]
 fn SolverPanel(tick: Signal<u32>) -> Element {
+    let api_client = api::use_api();
     let session = use_session();
     let mut reload = use_signal(|| 0u32);
     let res = use_resource(move || {
         let _ = (tick.read(), reload.read());
+        let client = api_client.clone();
         async move {
-            match session.token_value() {
-                Some(t) => api::providers(&t).await,
-                None => Ok(Vec::new()),
+            if session.is_authenticated() {
+                client
+                    .list_providers()
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error)
+            } else {
+                Ok(Vec::new())
             }
         }
     });
@@ -1173,37 +1319,46 @@ fn SolverPanel(tick: Signal<u32>) -> Element {
 
 #[component]
 fn SolverRow(provider: Provider, reload: Signal<u32>) -> Element {
+    let api_client = api::use_api();
     let session = use_session();
-    let id = provider.id.clone();
+    let id = provider.id;
     let blocked = matches!(
-        provider.state.as_str(),
-        "blocked" | "disabled" | "challenged"
+        provider.state,
+        ProviderState::Blocked | ProviderState::Disabled | ProviderState::Challenged
     );
 
     let resolve = {
-        let id = id.clone();
+        let client = api_client.clone();
         move |_| {
-            let id = id.clone();
             let mut reload = reload;
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::resolve_provider(&t, &id).await.is_ok() {
-                        reload += 1;
-                    }
+                if session.token_value().is_some()
+                    && client.resolve_provider().id(id).send().await.is_ok()
+                {
+                    reload += 1;
                 }
             });
         }
     };
     let reenable = {
-        let id = id.clone();
+        let client = api_client.clone();
         move |_| {
-            let id = id.clone();
             let mut reload = reload;
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::set_provider_state(&t, &id, "active").await.is_ok() {
-                        reload += 1;
-                    }
+                if session.token_value().is_some()
+                    && client
+                        .set_provider_state()
+                        .id(id)
+                        .body(SetProviderStateBody {
+                            state: ProviderState::Active,
+                        })
+                        .send()
+                        .await
+                        .is_ok()
+                {
+                    reload += 1;
                 }
             });
         }
@@ -1215,7 +1370,7 @@ fn SolverRow(provider: Provider, reload: Signal<u32>) -> Element {
                 div { style: "font-weight:600;", "{provider.name}" }
                 div { class: "ik-mono ik-muted", style: "font-size:12px;", "{provider.base_url}" }
             }
-            HealthPill { state: provider.state.clone() }
+            HealthPill { state: provider_state_token(provider.state).to_owned() }
             if blocked {
                 button { class: "ik-btn", onclick: reenable, "Re-enable" }
             }
@@ -1231,11 +1386,21 @@ fn SolverRow(provider: Provider, reload: Signal<u32>) -> Element {
 /// adapter against the live site and inspect the parsed sample (reuses `AdapterTestPanel`).
 #[component]
 fn AdapterTestTab() -> Element {
+    let api_client = api::use_api();
     let session = use_session();
-    let res = use_resource(move || async move {
-        match session.token_value() {
-            Some(t) => api::providers(&t).await,
-            None => Ok(Vec::new()),
+    let res = use_resource(move || {
+        let client = api_client.clone();
+        async move {
+            if session.is_authenticated() {
+                client
+                    .list_providers()
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error)
+            } else {
+                Ok(Vec::new())
+            }
         }
     });
     let mut chosen = use_signal(|| Option::<String>::None);
@@ -1263,11 +1428,11 @@ fn AdapterTestTab() -> Element {
                         },
                         option { value: "", selected: sel.is_none(), "— choose a provider —" }
                         for p in opts {
-                            option { value: "{p.id}", selected: sel.as_deref() == Some(p.id.as_str()), "{p.name}" }
+                            option { value: "{p.id}", selected: sel.as_deref() == Some(p.id.to_string().as_str()), "{p.name}" }
                         }
                     }
                 }
-                if let Some(pid) = chosen.read().clone() {
+                if let Some(pid) = chosen.read().clone().and_then(|v| v.parse::<ProviderId>().ok()) {
                     AdapterTestPanel { provider_id: pid }
                 }
             }
@@ -1290,13 +1455,23 @@ fn AdapterTestTab() -> Element {
 /// count. Read-only (role management has no endpoint yet).
 #[component]
 fn UsersPanel(tick: Signal<u32>) -> Element {
+    let api_client = api::use_api();
     let session = use_session();
     let res = use_resource(move || {
         let _ = tick.read();
+        let client = api_client.clone();
         async move {
-            match session.token_value() {
-                Some(t) => Some(api::admin_users(&t).await),
-                None => None,
+            if session.is_authenticated() {
+                Some(
+                    client
+                        .list_users()
+                        .send()
+                        .await
+                        .map(|r| r.into_inner())
+                        .map_err(api::friendly_error),
+                )
+            } else {
+                None
             }
         }
     });
@@ -1332,7 +1507,7 @@ fn UsersPanel(tick: Signal<u32>) -> Element {
                         }
                         tbody {
                             for u in rows {
-                                UserRowView { key: "{u.id}", user: u }
+                                UserRowView { key: "{u.id}", user: Signal::new(u) }
                             }
                         }
                     }
@@ -1350,19 +1525,20 @@ fn UsersPanel(tick: Signal<u32>) -> Element {
 }
 
 #[component]
-fn UserRowView(user: crate::models::UserRow) -> Element {
-    let joined = user.created_at.get(0..10).unwrap_or("").to_owned();
-    let role_class = match user.role.as_str() {
+fn UserRowView(user: Signal<crate::models::UserRow>) -> Element {
+    let u = user.read();
+    let joined = u.created_at.get(0..10).unwrap_or("").to_owned();
+    let role_class = match u.role.as_str() {
         "admin" => "ik-pill acc",
         "operator" => "ik-pill jade",
         _ => "ik-pill",
     };
     rsx! {
         tr {
-            td { "{user.username}" }
-            td { class: "ik-mono ik-muted", style: "font-size:12px;", "{user.email}" }
-            td { span { class: "{role_class}", "{user.role}" } }
-            td { class: "ik-mono", style: "text-align:right;", "{fmt_int(user.tracked_count)}" }
+            td { "{u.username}" }
+            td { class: "ik-mono ik-muted", style: "font-size:12px;", "{u.email}" }
+            td { span { class: "{role_class}", "{u.role}" } }
+            td { class: "ik-mono", style: "text-align:right;", "{fmt_int(u.tracked_count)}" }
             td { class: "ik-mono ik-muted", style: "font-size:12px;", "{joined}" }
         }
     }
@@ -1372,16 +1548,29 @@ fn UserRowView(user: crate::models::UserRow) -> Element {
 /// content freshness, and last-scan health for every provider at a glance.
 #[component]
 fn ProviderStatsTable(tick: Signal<u32>) -> Element {
+    let api_client = api::use_api();
     let session = use_session();
-    let res = use_resource(move || {
-        let _ = tick.read();
-        async move {
-            match session.token_value() {
-                Some(t) => Some(api::provider_stats(&t).await),
-                None => None,
+    let res = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let _ = tick.read();
+            let client = client.clone();
+            async move {
+                if session.is_authenticated() {
+                    Some(
+                        client
+                            .provider_stats()
+                            .send()
+                            .await
+                            .map(|r| r.into_inner())
+                            .map_err(api::friendly_error),
+                    )
+                } else {
+                    None
+                }
             }
-        }
-    });
+        })
+    };
 
     let body = match &*res.read_unchecked() {
         None | Some(None) => rsx! { div { class: "ik-skeleton", style: "height:120px;" } },
@@ -1479,16 +1668,29 @@ fn ProviderStatRow(stat: ProviderStat) -> Element {
 /// Privileged-action audit trail (design §16): recent operator actions, newest first.
 #[component]
 fn AuditPanel(tick: Signal<u32>) -> Element {
+    let api_client = api::use_api();
     let session = use_session();
-    let res = use_resource(move || {
-        let _ = tick.read();
-        async move {
-            match session.token_value() {
-                Some(t) => Some(api::audit_log(&t).await),
-                None => None,
+    let res = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let _ = tick.read();
+            let client = client.clone();
+            async move {
+                if session.is_authenticated() {
+                    Some(
+                        client
+                            .audit_log()
+                            .send()
+                            .await
+                            .map(|r| r.into_inner())
+                            .map_err(api::friendly_error),
+                    )
+                } else {
+                    None
+                }
             }
-        }
-    });
+        })
+    };
 
     let body = match &*res.read_unchecked() {
         None | Some(None) => rsx! { div { class: "ik-skeleton", style: "height:80px;" } },
@@ -1515,7 +1717,7 @@ fn AuditPanel(tick: Signal<u32>) -> Element {
                         }
                         tbody {
                             for a in rows {
-                                AuditRow { key: "{a.id}", entry: a }
+                                AuditRow { key: "{a.id}", entry: Signal::new(a) }
                             }
                         }
                     }
@@ -1533,8 +1735,8 @@ fn AuditPanel(tick: Signal<u32>) -> Element {
 }
 
 #[component]
-fn AuditRow(entry: AuditEntry) -> Element {
-    let a = entry;
+fn AuditRow(entry: Signal<AuditEntry>) -> Element {
+    let a = entry.read();
     let actor = a.actor.clone().unwrap_or_else(|| "system".to_owned());
     let target = a.target.clone().unwrap_or_else(|| "—".to_owned());
     rsx! {
@@ -1550,15 +1752,18 @@ fn AuditRow(entry: AuditEntry) -> Element {
 /// Canonicalisation review queue with merge / dismiss actions.
 #[component]
 fn MergeQueue() -> Element {
-    let session = use_session();
+    let api_client = api::use_api();
     let mut reload = use_signal(|| 0u32);
     let resource = use_resource(move || {
         let _ = reload.read();
+        let client = api_client.clone();
         async move {
-            match session.token_value() {
-                Some(t) => api::merge_candidates(&t).await,
-                None => Ok(Vec::new()),
-            }
+            client
+                .list_merge_candidates()
+                .send()
+                .await
+                .map(|r| r.into_inner())
+                .map_err(api::friendly_error)
         }
     });
 
@@ -1577,7 +1782,7 @@ fn MergeQueue() -> Element {
             let list = list.clone();
             rsx! {
                 for c in list {
-                    MergeRow { key: "{c.id}", candidate: c, reload }
+                    MergeRow { key: "{c.id}", candidate: Signal::new(c), reload }
                 }
             }
         }
@@ -1592,12 +1797,14 @@ fn MergeQueue() -> Element {
 }
 
 #[component]
-fn MergeRow(candidate: MergeCandidate, reload: Signal<u32>) -> Element {
+fn MergeRow(candidate: Signal<MergeCandidate>, reload: Signal<u32>) -> Element {
+    let api_client = api::use_api();
     let session = use_session();
-    let pct = (candidate.score * 100.0).round() as i32;
-    let id = candidate.id.clone();
-    let a = candidate.series_id.clone();
-    let b = candidate.candidate_id.clone();
+    let can = candidate.read();
+    let pct = (can.score * 100.0).round() as i32;
+    let id = can.id;
+    let a = can.series_id;
+    let b = can.candidate_id;
     let mut open = use_signal(|| false);
     let mut busy = use_signal(|| false);
 
@@ -1610,20 +1817,29 @@ fn MergeRow(candidate: MergeCandidate, reload: Signal<u32>) -> Element {
         "ik-mono ik-muted"
     };
 
+    let series_title = can.series_title.clone();
+    let candidate_title = can.candidate_title.clone();
+    let reason = can.reason.clone();
+
     let merge = {
-        let (a, b) = (a.clone(), b.clone());
         let mut reload = reload;
+        let client = api_client.clone();
         move |_| {
             if *busy.peek() {
                 return;
             }
             busy.set(true);
-            let (a, b) = (a.clone(), b.clone());
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::merge_series(&t, &a, &b).await.is_ok() {
-                        reload += 1;
-                    }
+                if session.token_value().is_some()
+                    && client
+                        .merge_series()
+                        .body(MergeRequest { keep: a, merge: b })
+                        .send()
+                        .await
+                        .is_ok()
+                {
+                    reload += 1;
                 }
                 busy.set(false);
             });
@@ -1631,38 +1847,42 @@ fn MergeRow(candidate: MergeCandidate, reload: Signal<u32>) -> Element {
     };
 
     let dismiss = {
-        let id = id.clone();
         let mut reload = reload;
+        let client = api_client.clone();
         move |_| {
             if *busy.peek() {
                 return;
             }
             busy.set(true);
-            let id = id.clone();
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::dismiss_candidate(&t, &id).await.is_ok() {
-                        reload += 1;
-                    }
+                if session.token_value().is_some()
+                    && client
+                        .dismiss_merge_candidate()
+                        .body(DismissRequest { id })
+                        .send()
+                        .await
+                        .is_ok()
+                {
+                    reload += 1;
                 }
                 busy.set(false);
             });
         }
     };
 
-    let keep_id = a.clone();
-    let drop_id = b.clone();
-    let reason = candidate.reason.clone();
+    let keep_id = a;
+    let drop_id = b;
 
     rsx! {
         div { class: "ik-card", style: "margin-bottom:10px;",
             div { class: "ik-row",
                 div { class: "grow",
                     div { class: "ik-flex", style: "justify-content:space-between;align-items:center;",
-                        span { style: "font-weight:600;", "{candidate.series_title}" }
+                        span { style: "font-weight:600;", "{series_title}" }
                         span { class: "{score_class}", "{pct}% match" }
                     }
-                    div { class: "ik-muted", style: "font-size:13px;", "↔ {candidate.candidate_title}" }
+                    div { class: "ik-muted", style: "font-size:13px;", "↔ {candidate_title}" }
                     if let Some(r) = &reason {
                         div { class: "ik-muted", style: "font-size:12px;", "reason: {r}" }
                     }
@@ -1695,11 +1915,19 @@ fn MergeRow(candidate: MergeCandidate, reload: Signal<u32>) -> Element {
 /// and the Sync inspector. Fetches the public series detail so operators can eyeball cover,
 /// type/status, sources and tags before acting.
 #[component]
-fn SeriesMiniCard(series_id: String) -> Element {
-    let sid = series_id.clone();
+fn SeriesMiniCard(series_id: SeriesId) -> Element {
+    let api_client = api::use_api();
     let res = use_resource(move || {
-        let sid = sid.clone();
-        async move { api::series_detail(&sid).await }
+        let client = api_client.clone();
+        async move {
+            client
+                .detail()
+                .id(series_id)
+                .send()
+                .await
+                .map(|r| r.into_inner())
+                .map_err(api::friendly_error)
+        }
     });
 
     match &*res.read_unchecked() {
@@ -1756,21 +1984,27 @@ fn SeriesMiniCard(series_id: String) -> Element {
 
 #[component]
 fn SyncAdminPanel() -> Element {
-    let session = use_session();
+    let api_client = api::use_api();
     let mut reload = use_signal(|| 0u32);
     // The series currently open in the "manga info" inspector, shared with the assign queue
     // so "Inspect" jumps straight to the editable per-provider mapping view.
     let selected = use_signal(|| Option::<String>::None);
 
-    let accounts = use_resource(move || {
-        let _ = reload.read();
-        async move {
-            match session.token_value() {
-                Some(t) => api::admin_sync_accounts(&t).await,
-                None => Ok(Vec::new()),
+    let accounts = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let _ = reload.read();
+            let client = client.clone();
+            async move {
+                client
+                    .list_sync_accounts()
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error)
             }
-        }
-    });
+        })
+    };
 
     let accounts_body = match &*accounts.read_unchecked() {
         None => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
@@ -1785,7 +2019,7 @@ fn SyncAdminPanel() -> Element {
             let list = list.clone();
             rsx! {
                 for a in list {
-                    SyncAccountRow { key: "{a.user_id}-{a.provider}", account: a, reload }
+                    SyncAccountRow { key: "{a.user_id}-{a.provider}", account: Signal::new(a), reload }
                 }
             }
         }
@@ -1821,27 +2055,28 @@ fn SyncAdminPanel() -> Element {
 }
 
 #[component]
-fn SyncAccountRow(account: AdminSyncAccount, reload: Signal<u32>) -> Element {
-    let session = use_session();
+fn SyncAccountRow(account: Signal<AdminSyncAccount>, reload: Signal<u32>) -> Element {
+    let api_client = api::use_api();
     let mut busy = use_signal(|| false);
-    let last_sync = rel_time(account.last_synced_at.as_deref());
+    let acc = account.read();
+    let last_sync = rel_time(acc.last_synced_at.as_deref());
 
     let pull = {
-        let user_id = account.user_id.clone();
-        let provider = account.provider.clone();
+        let user_id = UserId(acc.user_id);
+        let provider = acc.provider.clone();
         let mut reload = reload;
+        let client = api_client.clone();
         move |_| {
             if *busy.peek() {
                 return;
             }
             busy.set(true);
-            let user_id = user_id.clone();
             let provider = provider.clone();
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::admin_sync_pull(&t, &user_id, &provider).await.is_ok() {
-                        reload += 1;
-                    }
+                let body = tankovault_api_client::types::SyncAccountTarget { provider, user_id };
+                if client.admin_sync_pull().body(body).send().await.is_ok() {
+                    reload += 1;
                 }
                 busy.set(false);
             });
@@ -1849,21 +2084,21 @@ fn SyncAccountRow(account: AdminSyncAccount, reload: Signal<u32>) -> Element {
     };
 
     let push = {
-        let user_id = account.user_id.clone();
-        let provider = account.provider.clone();
+        let user_id = UserId(acc.user_id);
+        let provider = acc.provider.clone();
         let mut reload = reload;
+        let client = api_client.clone();
         move |_| {
             if *busy.peek() {
                 return;
             }
             busy.set(true);
-            let user_id = user_id.clone();
             let provider = provider.clone();
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::admin_sync_push(&t, &user_id, &provider).await.is_ok() {
-                        reload += 1;
-                    }
+                let body = tankovault_api_client::types::SyncAccountTarget { provider, user_id };
+                if client.admin_sync_push().body(body).send().await.is_ok() {
+                    reload += 1;
                 }
                 busy.set(false);
             });
@@ -1871,24 +2106,21 @@ fn SyncAccountRow(account: AdminSyncAccount, reload: Signal<u32>) -> Element {
     };
 
     let unlink = {
-        let user_id = account.user_id.clone();
-        let provider = account.provider.clone();
+        let user_id = UserId(acc.user_id);
+        let provider = acc.provider.clone();
         let mut reload = reload;
+        let client = api_client.clone();
         move |_| {
             if *busy.peek() {
                 return;
             }
             busy.set(true);
-            let user_id = user_id.clone();
             let provider = provider.clone();
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::admin_sync_unlink(&t, &user_id, &provider)
-                        .await
-                        .is_ok()
-                    {
-                        reload += 1;
-                    }
+                let body = tankovault_api_client::types::SyncAccountTarget { provider, user_id };
+                if client.admin_sync_unlink().body(body).send().await.is_ok() {
+                    reload += 1;
                 }
                 busy.set(false);
             });
@@ -1899,24 +2131,24 @@ fn SyncAccountRow(account: AdminSyncAccount, reload: Signal<u32>) -> Element {
         div { class: "ik-row",
             div { class: "grow",
                 div { class: "ik-flex", style: "justify-content:space-between;",
-                    span { style: "font-weight:600;", "{account.username}" }
-                    span { class: "ik-pill", "{account.provider}" }
+                    span { style: "font-weight:600;", "{acc.username}" }
+                    span { class: "ik-pill", "{acc.provider}" }
                 }
                 div { class: "ik-muted", style: "font-size:13px;",
-                    if let Some(u) = &account.external_username {
+                    if let Some(u) = &acc.external_username {
                         "Connected as {u} · last sync {last_sync}"
                     } else {
                         "last sync {last_sync}"
                     }
                 }
                 div { class: "ik-mono ik-muted", style: "font-size:11px;",
-                    if account.auto_sync_enabled { "auto-sync on" } else { "auto-sync off" }
-                    " · policy {account.conflict_policy}"
-                    if account.pending_conflicts > 0 {
-                        span { style: "color:var(--acc);", " · {account.pending_conflicts} pending conflicts" }
+                    if acc.auto_sync_enabled { "auto-sync on" } else { "auto-sync off" }
+                    " · policy {acc.conflict_policy}"
+                    if acc.pending_conflicts > 0 {
+                        span { style: "color:var(--acc);", " · {acc.pending_conflicts} pending conflicts" }
                     }
                 }
-                if let Some(err) = &account.last_error {
+                if let Some(err) = &acc.last_error {
                     div { style: "font-size:12px;color:var(--acc);", "{err}" }
                 }
             }
@@ -1931,30 +2163,47 @@ fn SyncAccountRow(account: AdminSyncAccount, reload: Signal<u32>) -> Element {
 /// search + recently-mapped list to open one.
 #[component]
 fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Signal<u32>) -> Element {
-    let session = use_session();
+    let api_client = api::use_api();
     let mut query = use_signal(String::new);
 
     // All hooks are declared unconditionally (Rules of Hooks) before we branch on whether a
     // series is currently open in the editor.
-    let results = use_resource(move || {
-        let q = query.read().clone();
-        async move {
-            if q.trim().len() < 2 {
-                return Ok(Vec::new());
+    let results = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let q = query.read().clone();
+            let client = client.clone();
+            async move {
+                if q.trim().len() < 2 {
+                    return Ok(Vec::new());
+                }
+                client
+                    .list()
+                    .query(q)
+                    .limit(12)
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error)
             }
-            api::list_series(Some(&q), 12).await
-        }
-    });
+        })
+    };
 
-    let mappings = use_resource(move || {
-        let _ = reload.read();
-        async move {
-            match session.token_value() {
-                Some(t) => api::admin_sync_mappings(&t).await,
-                None => Ok(Vec::new()),
+    let mappings = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let _ = reload.read();
+            let client = client.clone();
+            async move {
+                client
+                    .list_sync_mappings()
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error)
             }
-        }
-    });
+        })
+    };
 
     if let Some(sid) = selected.read().clone() {
         return rsx! {
@@ -1992,7 +2241,7 @@ fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Signal<u32>) ->
             let list = list.clone();
             rsx! {
                 for m in list {
-                    MappingPickRow { key: "{m.series_id}-{m.provider}", mapping: m, selected }
+                    MappingPickRow { key: "{m.series_id}-{m.provider}", mapping: Signal::new(m), selected }
                 }
             }
         }
@@ -2016,35 +2265,36 @@ fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Signal<u32>) ->
 /// A search-result row that opens the series in the inspector.
 #[component]
 fn SeriesPickRow(series: SeriesSummary, selected: Signal<Option<String>>) -> Element {
-    let sid = series.id.clone();
+    let sid = series.id;
     rsx! {
         div { class: "ik-row",
             div { class: "grow",
                 span { style: "font-weight:600;", "{series.title}" }
                 div { class: "ik-muted", style: "font-size:12px;", "{series.source_count} sources" }
             }
-            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.clone())), "Open" }
+            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.to_string())), "Open" }
         }
     }
 }
 
 /// A recently-mapped row that opens the series in the inspector.
 #[component]
-fn MappingPickRow(mapping: AdminSyncMapping, selected: Signal<Option<String>>) -> Element {
-    let updated = rel_time(Some(&mapping.updated_at));
-    let sid = mapping.series_id.clone();
+fn MappingPickRow(mapping: Signal<AdminSyncMapping>, selected: Signal<Option<String>>) -> Element {
+    let m = mapping.read();
+    let updated = rel_time(Some(&m.updated_at));
+    let sid = m.series_id;
     rsx! {
         div { class: "ik-row",
             div { class: "grow",
                 div { class: "ik-flex", style: "justify-content:space-between;",
-                    span { style: "font-weight:600;", "{mapping.series_title}" }
-                    span { class: "ik-pill", "{mapping.provider}" }
+                    span { style: "font-weight:600;", "{m.series_title}" }
+                    span { class: "ik-pill", "{m.provider}" }
                 }
                 div { class: "ik-mono ik-muted", style: "font-size:12px;",
-                    "id {mapping.external_id} · updated {updated}"
+                    "id {m.external_id} · updated {updated}"
                 }
             }
-            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.clone())), "Open" }
+            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.to_string())), "Open" }
         }
     }
 }
@@ -2058,26 +2308,44 @@ fn SeriesSyncEditor(
     selected: Signal<Option<String>>,
     reload: Signal<u32>,
 ) -> Element {
-    let session = use_session();
+    let api_client = api::use_api();
+    // `selected` (and therefore this component's `series_id` prop) is a plain `String` shared
+    // with the search/pick-row flow above; parse it once here at the boundary.
+    let Ok(sid) = series_id.parse::<SeriesId>() else {
+        return rsx! { div { class: "ik-empty", "That series id doesn't look right." } };
+    };
 
-    let sid_map = series_id.clone();
-    let mappings = use_resource(move || {
-        let sid = sid_map.clone();
-        let _ = reload.read();
-        async move {
-            match session.token_value() {
-                Some(t) => api::admin_sync_mappings_for_series(&t, &sid).await,
-                None => Ok(Vec::new()),
+    let mappings = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let _ = reload.read();
+            let client = client.clone();
+            async move {
+                client
+                    .list_sync_mappings_for_series()
+                    .id(sid)
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error)
             }
-        }
-    });
+        })
+    };
 
-    let providers = use_resource(move || async move {
-        match session.token_value() {
-            Some(t) => api::sync_providers(&t).await,
-            None => Ok(Vec::new()),
-        }
-    });
+    let providers = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let client = client.clone();
+            async move {
+                api::fetch_json(&client, "/v1/me/sync/providers")
+                    .await
+                    .and_then(|v| {
+                        serde_json::from_value::<Vec<ProviderInfo>>(v)
+                            .map_err(|e| format!("JSON error: {e}"))
+                    })
+            }
+        })
+    };
 
     let map_list: Vec<AdminSyncMapping> = match &*mappings.read_unchecked() {
         Some(Ok(l)) => l.clone(),
@@ -2088,13 +2356,12 @@ fn SeriesSyncEditor(
         _ => Vec::new(),
     };
 
-    let card_id = series_id.clone();
     rsx! {
         div { class: "ik-flex", style: "justify-content:space-between;align-items:center;margin-bottom:10px;",
             button { class: "ik-btn", onclick: move |_| selected.set(None), "← Back to search" }
             button { class: "ik-btn", onclick: move |_| reload += 1, "Refresh" }
         }
-        SeriesMiniCard { series_id: card_id }
+        SeriesMiniCard { series_id: sid }
         div { class: "ik-muted", style: "font-size:12px;margin:14px 0 6px;", "External sync mappings" }
         if prov_list.is_empty() && map_list.is_empty() {
             div { class: "ik-empty", "No sync providers registered." }
@@ -2108,7 +2375,7 @@ fn SeriesSyncEditor(
                 rsx! {
                     MappingEditorRow {
                         key: "{p.slug}",
-                        series_id: series_id.clone(),
+                        series_id: sid,
                         provider: p.slug.clone(),
                         provider_name: p.name.clone(),
                         current,
@@ -2121,7 +2388,7 @@ fn SeriesSyncEditor(
             if !prov_list.iter().any(|p| p.slug == m.provider) {
                 MappingEditorRow {
                     key: "orphan-{m.provider}",
-                    series_id: series_id.clone(),
+                    series_id: sid,
                     provider: m.provider.clone(),
                     provider_name: m.provider.clone(),
                     current: Some(m.external_id.clone()),
@@ -2136,22 +2403,27 @@ fn SeriesSyncEditor(
 /// Save (upsert) and, when a mapping exists, Clear (delete).
 #[component]
 fn MappingEditorRow(
-    series_id: String,
+    series_id: SeriesId,
     provider: String,
     provider_name: String,
     current: Option<String>,
     reload: Signal<u32>,
 ) -> Element {
+    let api_client = api::use_api();
     let session = use_session();
     let has_current = current.is_some();
     let mut value = use_signal(|| current.clone().unwrap_or_default());
     let mut busy = use_signal(|| false);
-    let pill_class = if has_current { "ik-pill jade" } else { "ik-pill" };
+    let pill_class = if has_current {
+        "ik-pill jade"
+    } else {
+        "ik-pill"
+    };
 
     let save = {
-        let series_id = series_id.clone();
         let provider = provider.clone();
         let mut reload = reload;
+        let client = api_client.clone();
         move |_| {
             if *busy.peek() {
                 return;
@@ -2161,16 +2433,22 @@ fn MappingEditorRow(
                 return;
             }
             busy.set(true);
-            let series_id = series_id.clone();
             let provider = provider.clone();
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::admin_upsert_sync_mapping(&t, &series_id, &provider, &ext)
+                if session.token_value().is_some()
+                    && client
+                        .upsert_sync_mapping()
+                        .body(UpsertMapping {
+                            series_id,
+                            provider: provider.clone(),
+                            external_id: ext.clone(),
+                        })
+                        .send()
                         .await
                         .is_ok()
-                    {
-                        reload += 1;
-                    }
+                {
+                    reload += 1;
                 }
                 busy.set(false);
             });
@@ -2178,24 +2456,25 @@ fn MappingEditorRow(
     };
 
     let clear = {
-        let series_id = series_id.clone();
         let provider = provider.clone();
         let mut reload = reload;
+        let client = api_client.clone();
         move |_| {
             if *busy.peek() {
                 return;
             }
             busy.set(true);
-            let series_id = series_id.clone();
             let provider = provider.clone();
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::admin_clear_sync_mapping(&t, &series_id, &provider)
-                        .await
-                        .is_ok()
-                    {
-                        reload += 1;
-                    }
+                let body = tankovault_api_client::types::SyncMappingTarget {
+                    provider,
+                    series_id,
+                };
+                if session.token_value().is_some()
+                    && client.clear_sync_mapping().body(body).send().await.is_ok()
+                {
+                    reload += 1;
                 }
                 busy.set(false);
             });
@@ -2227,28 +2506,45 @@ fn MappingEditorRow(
 /// id to any series the automatic matcher left unmapped (or open it in the inspector).
 #[component]
 fn AssignQueue(selected: Signal<Option<String>>, reload: Signal<u32>) -> Element {
-    let session = use_session();
+    let api_client = api::use_api();
     let mut provider = use_signal(|| "anilist".to_string());
     let mut query = use_signal(String::new);
 
-    let providers = use_resource(move || async move {
-        match session.token_value() {
-            Some(t) => api::sync_providers(&t).await,
-            None => Ok(Vec::new()),
-        }
-    });
-
-    let list = use_resource(move || {
-        let p = provider.read().clone();
-        let q = query.read().clone();
-        let _ = reload.read();
-        async move {
-            match session.token_value() {
-                Some(t) => api::admin_unmapped_series(&t, &p, Some(&q)).await,
-                None => Ok(Vec::new()),
+    let providers = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let client = client.clone();
+            async move {
+                api::fetch_json(&client, "/v1/me/sync/providers")
+                    .await
+                    .and_then(|v| {
+                        serde_json::from_value::<Vec<ProviderInfo>>(v)
+                            .map_err(|e| format!("JSON error: {e}"))
+                    })
             }
-        }
-    });
+        })
+    };
+
+    let list = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let p = provider.read().clone();
+            let q = query.read().clone();
+            let _ = reload.read();
+            let client = client.clone();
+            async move {
+                let mut builder = client.list_unmapped_series().provider(p);
+                if !q.trim().is_empty() {
+                    builder = builder.query(q);
+                }
+                builder
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error)
+            }
+        })
+    };
 
     let prov_list: Vec<ProviderInfo> = match &*providers.read_unchecked() {
         Some(Ok(l)) => l.clone(),
@@ -2269,7 +2565,7 @@ fn AssignQueue(selected: Signal<Option<String>>, reload: Signal<u32>) -> Element
             let prov = provider.read().clone();
             rsx! {
                 for s in l {
-                    AssignRow { key: "{s.series_id}", series: s, provider: prov.clone(), selected, reload }
+                    AssignRow { key: "{s.series_id}", series: Signal::new(s), provider: prov.clone(), selected, reload }
                 }
             }
         }
@@ -2305,19 +2601,22 @@ fn AssignQueue(selected: Signal<Option<String>>, reload: Signal<u32>) -> Element
 /// to open the full editor.
 #[component]
 fn AssignRow(
-    series: UnmappedSeries,
+    series: Signal<UnmappedSeries>,
     provider: String,
     selected: Signal<Option<String>>,
     reload: Signal<u32>,
 ) -> Element {
+    let api_client = api::use_api();
     let session = use_session();
     let mut value = use_signal(String::new);
     let mut busy = use_signal(|| false);
+    let s = series.read();
 
     let assign = {
-        let series_id = series.series_id.clone();
+        let series_id = SeriesId(s.series_id);
         let provider = provider.clone();
         let mut reload = reload;
+        let client = api_client.clone();
         move |_| {
             if *busy.peek() {
                 return;
@@ -2327,28 +2626,34 @@ fn AssignRow(
                 return;
             }
             busy.set(true);
-            let series_id = series_id.clone();
             let provider = provider.clone();
+            let client = client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::admin_upsert_sync_mapping(&t, &series_id, &provider, &ext)
+                if session.token_value().is_some()
+                    && client
+                        .upsert_sync_mapping()
+                        .body(UpsertMapping {
+                            series_id,
+                            provider: provider.clone(),
+                            external_id: ext.clone(),
+                        })
+                        .send()
                         .await
                         .is_ok()
-                    {
-                        reload += 1;
-                    }
+                {
+                    reload += 1;
                 }
                 busy.set(false);
             });
         }
     };
 
-    let sid = series.series_id.clone();
+    let sid = s.series_id;
     rsx! {
         div { class: "ik-row",
             div { class: "grow",
-                div { style: "font-weight:600;", "{series.series_title}" }
-                div { class: "ik-muted", style: "font-size:12px;", "{series.source_count} sources · {provider}" }
+                div { style: "font-weight:600;", "{s.series_title}" }
+                div { class: "ik-muted", style: "font-size:12px;", "{s.source_count} sources · {provider}" }
             }
             input {
                 class: "ik-input ik-mono",
@@ -2359,7 +2664,7 @@ fn AssignRow(
                 oninput: move |e| value.set(e.value()),
             }
             button { class: "ik-btn primary", disabled: *busy.read(), onclick: assign, "Assign" }
-            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.clone())), "Inspect" }
+            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.to_string())), "Inspect" }
         }
     }
 }
@@ -2368,28 +2673,45 @@ fn AssignRow(
 /// remote entry the auto-matcher could not confidently link to a local series.
 #[component]
 fn UnmatchedRemoteQueue(reload: Signal<u32>) -> Element {
-    let session = use_session();
+    let api_client = api::use_api();
     let mut provider = use_signal(|| "anilist".to_string());
     let mut query = use_signal(String::new);
 
-    let providers = use_resource(move || async move {
-        match session.token_value() {
-            Some(t) => api::sync_providers(&t).await,
-            None => Ok(Vec::new()),
-        }
-    });
-
-    let list = use_resource(move || {
-        let p = provider.read().clone();
-        let q = query.read().clone();
-        let _ = reload.read();
-        async move {
-            match session.token_value() {
-                Some(t) => api::admin_unmatched_remote(&t, &p, Some(&q)).await,
-                None => Ok(Vec::new()),
+    let providers = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let client = client.clone();
+            async move {
+                api::fetch_json(&client, "/v1/me/sync/providers")
+                    .await
+                    .and_then(|v| {
+                        serde_json::from_value::<Vec<ProviderInfo>>(v)
+                            .map_err(|e| format!("JSON error: {e}"))
+                    })
             }
-        }
-    });
+        })
+    };
+
+    let list = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let p = provider.read().clone();
+            let q = query.read().clone();
+            let _ = reload.read();
+            let client = client.clone();
+            async move {
+                let mut builder = client.list_unmatched_remote().provider(p);
+                if !q.trim().is_empty() {
+                    builder = builder.query(q);
+                }
+                builder
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error)
+            }
+        })
+    };
 
     let prov_list: Vec<ProviderInfo> = match &*providers.read_unchecked() {
         Some(Ok(l)) => l.clone(),
@@ -2409,7 +2731,7 @@ fn UnmatchedRemoteQueue(reload: Signal<u32>) -> Element {
             let l = l.clone();
             rsx! {
                 for e in l {
-                    UnmatchedRemoteRow { key: "{e.user_id}-{e.external_id}", entry: e, reload }
+                    UnmatchedRemoteRow { key: "{e.user_id}-{e.external_id}", entry: Signal::new(e), reload }
                 }
             }
         }
@@ -2457,38 +2779,61 @@ fn provider_entry_url(provider: &str, external_id: &str) -> Option<String> {
 /// automatic ranked match suggestions, and a manual search fallback. Every candidate can be
 /// inspected in place (a full "manga info" card) before matching.
 #[component]
-fn UnmatchedRemoteRow(entry: UnmatchedRemoteEntry, reload: Signal<u32>) -> Element {
-    let session = use_session();
+fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Signal<u32>) -> Element {
+    let api_client = api::use_api();
     let mut search = use_signal(String::new);
+    let en = entry.read();
 
     // Automatic suggestions from the server-side matcher, loaded once for this entry.
-    let entry_title = entry.title.clone();
-    let entry_ct = entry.content_type.clone();
-    let entry_year = entry.start_year;
-    let suggestions = use_resource(move || {
-        let title = entry_title.clone();
-        let ct = entry_ct.clone();
-        async move {
-            match session.token_value() {
-                Some(t) => {
-                    api::admin_suggest_matches(&t, &title, Some(&ct), entry_year).await
+    let entry_title = en.title.clone();
+    let entry_ct = en.content_type.clone();
+    let entry_year = en.start_year;
+    let suggestions = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let title = entry_title.clone();
+            let ct = entry_ct.clone();
+            let year = entry_year;
+            let client = client.clone();
+            async move {
+                let mut builder = client.list_suggestions().title(title);
+                if !ct.is_empty() {
+                    builder = builder.content_type(ct);
                 }
-                None => Ok(Vec::new()),
+                if let Some(y) = year {
+                    builder = builder.start_year(y);
+                }
+                builder
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error)
             }
-        }
-    });
+        })
+    };
 
     // Manual search fallback for the cases the matcher misses entirely.
-    let results = use_resource(move || {
-        let q = search.read().clone();
-        async move {
-            let q = q.trim().to_string();
-            if q.len() < 3 {
-                return Ok(Vec::new());
+    let results = {
+        let client = api_client.clone();
+        use_resource(move || {
+            let q = search.read().clone();
+            let client = client.clone();
+            async move {
+                let q = q.trim().to_string();
+                if q.len() < 3 {
+                    return Ok(Vec::new());
+                }
+                client
+                    .list()
+                    .query(q)
+                    .limit(8)
+                    .send()
+                    .await
+                    .map(|r| r.into_inner())
+                    .map_err(api::friendly_error)
             }
-            api::list_series(Some(&q), 8).await
-        }
-    });
+        })
+    };
 
     let suggested: Vec<SuggestedMatch> = match &*suggestions.read_unchecked() {
         Some(Ok(l)) => l.clone(),
@@ -2500,26 +2845,26 @@ fn UnmatchedRemoteRow(entry: UnmatchedRemoteEntry, reload: Signal<u32>) -> Eleme
     };
 
     let type_line = {
-        let mut parts = vec![entry.status.clone()];
-        if !entry.content_type.is_empty() && entry.content_type != "unknown" {
-            parts.push(entry.content_type.clone());
+        let mut parts = vec![en.status.clone()];
+        if !en.content_type.is_empty() && en.content_type != "unknown" {
+            parts.push(en.content_type.clone());
         }
-        if let Some(y) = entry.start_year {
+        if let Some(y) = en.start_year {
             parts.push(y.to_string());
         }
-        parts.push(format!("#{}", entry.external_id));
+        parts.push(format!("#{}", en.external_id));
         parts.join(" · ")
     };
 
-    let entry_url = provider_entry_url(&entry.provider, &entry.external_id);
-    let suggestions_pending = matches!(&*suggestions.read_unchecked(), None);
+    let entry_url = provider_entry_url(&en.provider, &en.external_id);
+    let suggestions_pending = (*suggestions.read_unchecked()).is_none();
 
     rsx! {
         div { class: "ik-row", style: "flex-direction:column;align-items:stretch;gap:8px;",
             div { class: "ik-flex", style: "justify-content:space-between;gap:8px;align-items:flex-start;",
                 div { style: "min-width:0;",
-                    div { style: "font-weight:600;", "{entry.title}" }
-                    div { class: "ik-muted", style: "font-size:12px;", "{entry.username} · {type_line}" }
+                    div { style: "font-weight:600;", "{en.title}" }
+                    div { class: "ik-muted", style: "font-size:12px;", "{en.username} · {type_line}" }
                 }
                 if let Some(url) = entry_url {
                     a {
@@ -2528,7 +2873,7 @@ fn UnmatchedRemoteRow(entry: UnmatchedRemoteEntry, reload: Signal<u32>) -> Eleme
                         href: "{url}",
                         target: "_blank",
                         rel: "noopener noreferrer",
-                        "Open on {entry.provider} ↗"
+                        "Open on {en.provider} ↗"
                     }
                 }
             }
@@ -2547,13 +2892,13 @@ fn UnmatchedRemoteRow(entry: UnmatchedRemoteEntry, reload: Signal<u32>) -> Eleme
                     for s in suggested {
                         CandidateMatchRow {
                             key: "sug-{s.series_id}",
-                            series_id: s.series_id.clone(),
+                            series_id: SeriesId(s.series_id),
                             title: s.title.clone(),
                             meta: suggestion_meta(&s),
                             score: Some(s.score),
-                            user_id: entry.user_id.clone(),
-                            provider: entry.provider.clone(),
-                            external_id: entry.external_id.clone(),
+                            user_id: UserId(en.user_id),
+                            provider: en.provider.clone(),
+                            external_id: en.external_id.clone(),
                             reload,
                         }
                     }
@@ -2572,13 +2917,13 @@ fn UnmatchedRemoteRow(entry: UnmatchedRemoteEntry, reload: Signal<u32>) -> Eleme
                     for c in manual {
                         CandidateMatchRow {
                             key: "man-{c.id}",
-                            series_id: c.id.clone(),
+                            series_id: c.id,
                             title: c.title.clone(),
                             meta: format!("{} · {} src", c.content_type.label(), c.source_count),
                             score: None,
-                            user_id: entry.user_id.clone(),
-                            provider: entry.provider.clone(),
-                            external_id: entry.external_id.clone(),
+                            user_id: UserId(en.user_id),
+                            provider: en.provider.clone(),
+                            external_id: en.external_id.clone(),
                             reload,
                         }
                     }
@@ -2606,22 +2951,20 @@ fn suggestion_meta(s: &SuggestedMatch) -> String {
 /// behind the suggested id can actually be reviewed, and a "Match" button that assigns it.
 #[component]
 fn CandidateMatchRow(
-    series_id: String,
+    series_id: SeriesId,
     title: String,
     meta: String,
     score: Option<f32>,
-    user_id: String,
+    user_id: UserId,
     provider: String,
     external_id: String,
     reload: Signal<u32>,
 ) -> Element {
-    let session = use_session();
+    let api_client = api::use_api();
     let mut busy = use_signal(|| false);
     let mut show = use_signal(|| false);
 
     let match_it = {
-        let series_id = series_id.clone();
-        let user_id = user_id.clone();
         let provider = provider.clone();
         let external_id = external_id.clone();
         move |_| {
@@ -2629,25 +2972,19 @@ fn CandidateMatchRow(
                 return;
             }
             busy.set(true);
-            let series_id = series_id.clone();
-            let user_id = user_id.clone();
             let provider = provider.clone();
             let external_id = external_id.clone();
             let mut reload = reload;
+            let client = api_client.clone();
             spawn(async move {
-                if let Some(t) = session.token_value() {
-                    if api::admin_assign_remote_entry(
-                        &t,
-                        &user_id,
-                        &provider,
-                        &external_id,
-                        &series_id,
-                    )
-                    .await
-                    .is_ok()
-                    {
-                        reload += 1;
-                    }
+                let body = AssignRemoteEntry {
+                    user_id,
+                    provider: provider.clone(),
+                    series_id,
+                    external_id: external_id.clone(),
+                };
+                if client.assign_remote_entry().body(body).send().await.is_ok() {
+                    reload += 1;
                 }
                 busy.set(false);
             });
@@ -2666,7 +3003,7 @@ fn CandidateMatchRow(
         (cls, pct)
     });
 
-    let sid_for_card = series_id.clone();
+    let sid_for_card = series_id;
     let show_now = *show.read();
 
     rsx! {
@@ -2720,11 +3057,8 @@ fn fmt_int(n: i64) -> String {
     }
 }
 
-/// Short prefix of a UUID for compact display (e.g. run scope).
-fn short_id(id: &str) -> String {
-    id.chars().take(8).collect()
-}
-
+/// Short prefix of a UUID (or any id newtype wrapping one) for compact display (e.g. run
+/// scope).
 /// The pill class + human label for a run state.
 fn run_state_pill(state: RunState) -> (&'static str, &'static str) {
     match state {
@@ -2735,8 +3069,6 @@ fn run_state_pill(state: RunState) -> (&'static str, &'static str) {
         RunState::Cancelled => ("ik-pill", "Cancelled"),
     }
 }
-
-
 
 /// Build the politeness JSON payload from the editor's string fields, or a human error.
 fn politeness_json(

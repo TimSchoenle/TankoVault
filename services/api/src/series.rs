@@ -7,17 +7,21 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue};
 use axum_extra::extract::Query as MultiQuery;
+use serde::{Deserialize, Serialize};
 use tankovault_db::repo::catalog::SeriesFilter;
 use tankovault_domain::{
     ContentType, SeriesId, SeriesSourceId, SeriesStatus, UserId, resolve_link,
 };
-use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
+
+use crate::openapi::SERIES_TAG;
 
 /// Query parameters for the Discover browse list (frontend §9.1). All filters are optional;
 /// `tag`/`exclude_tag` may repeat (`?tag=action&tag=drama`). Sorting and offset pagination
 /// are server-side; the total match count + next page are returned as response headers so
 /// the JSON body stays a plain array (backward-compatible with older clients).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ListParams {
     #[serde(default)]
     pub query: Option<String>,
@@ -56,7 +60,7 @@ fn default_limit() -> i64 {
     40
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct SeriesSummary {
     pub id: SeriesId,
     pub title: String,
@@ -66,11 +70,28 @@ pub struct SeriesSummary {
     pub source_count: i64,
 }
 
-/// `GET /v1/series` — filter/sort/paginate the browse list (frontend §9.1).
+/// Browse the catalogue
 ///
-/// The body remains a plain `SeriesSummary[]`; pagination metadata rides on the
-/// `X-Total-Count` (rows matching the filter) and `X-Next-Cursor` (next page index, absent
-/// on the last page) headers so existing array-decoding clients keep working.
+/// Filter/sort/paginate the public series list (frontend §9.1). The body remains a plain
+/// `SeriesSummary[]`; pagination metadata rides on the `X-Total-Count` (rows matching the
+/// filter) and `X-Next-Cursor` (next page index, absent on the last page) headers so existing
+/// array-decoding clients keep working.
+#[utoipa::path(
+    get,
+    path = "/v1/series",
+    tag = SERIES_TAG,
+    params(ListParams),
+    responses(
+        (
+            status = 200, description = "Matching series, newest-updated first by default",
+            body = Vec<SeriesSummary>,
+            headers(
+                ("X-Total-Count" = i64, description = "Total rows matching the filter"),
+                ("X-Next-Cursor" = i64, description = "Next page index; absent on the last page"),
+            ),
+        ),
+    )
+)]
 pub async fn list(
     State(state): State<AppState>,
     MultiQuery(params): MultiQuery<ListParams>,
@@ -123,7 +144,7 @@ pub async fn list(
     Ok((headers, Json(items)))
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct SourceDto {
     pub id: SeriesSourceId,
     pub provider_name: String,
@@ -138,7 +159,7 @@ pub struct SourceDto {
     pub is_primary: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct SeriesDetail {
     pub id: SeriesId,
     pub title: String,
@@ -154,11 +175,22 @@ pub struct SeriesDetail {
     pub tags: Vec<tankovault_domain::Tag>,
     /// Author/artist credits attached to the series; empty when none.
     pub authors: Vec<tankovault_domain::Author>,
-    /// AniList media id, if this series is mapped (`sync_mappings`); lets the frontend
-    /// link out to the canonical AniList entry regardless of whether the viewer has synced.
+    /// `AniList` media id, if this series is mapped (`sync_mappings`); lets the frontend
+    /// link out to the canonical `AniList` entry regardless of whether the viewer has synced.
     pub anilist_id: Option<String>,
 }
 
+/// Get series detail
+#[utoipa::path(
+    get,
+    path = "/v1/series/{id}",
+    tag = SERIES_TAG,
+    params(("id" = SeriesId, Path, description = "Series id")),
+    responses(
+        (status = 200, description = "Series detail", body = SeriesDetail),
+        (status = 404, description = "Series not found", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn detail(
     State(state): State<AppState>,
     Path(id): Path<SeriesId>,
@@ -196,8 +228,7 @@ pub async fn detail(
     let tags = tankovault_db::repo::catalog::list_series_tags(&state.pool, id).await?;
     let authors = tankovault_db::repo::catalog::list_series_authors(&state.pool, id).await?;
     let anilist_id =
-        tankovault_db::repo::sync::mapping_external_for_series(&state.pool, id, "anilist")
-            .await?;
+        tankovault_db::repo::sync::mapping_external_for_series(&state.pool, id, "anilist").await?;
 
     Ok(Json(SeriesDetail {
         id: series.id,
@@ -215,19 +246,21 @@ pub async fn detail(
     }))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ChapterParams {
     /// Which source to read chapters from. Defaults to the first source of the series.
     pub source: Option<SeriesSourceId>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ChapterDto {
     pub number: f64,
     pub title: Option<String>,
     /// Resolved absolute URL to open the chapter page on the provider.
     pub url: String,
     #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
     pub published_at: Option<time::OffsetDateTime>,
     /// Whether the requesting user has read this chapter (number ≤ their progress).
     /// `None` for anonymous requests; `Some(bool)` when a valid `Bearer` token is present
@@ -236,9 +269,22 @@ pub struct ChapterDto {
     pub read: Option<bool>,
 }
 
-/// `GET /v1/series/:id/chapters?source=` — chapter list, newest first. When a valid access
-/// token is supplied the per-chapter `read` flag is populated from the user's progress
-/// (frontend §9.2); anonymous callers get the same list without read-state.
+/// List a source's chapters
+///
+/// Chapter list, newest first. When a valid access token is supplied the per-chapter `read`
+/// flag is populated from the user's progress (frontend §9.2 auth-scoped read-state);
+/// anonymous callers get the same list without read-state.
+#[utoipa::path(
+    get,
+    path = "/v1/series/{id}/chapters",
+    tag = SERIES_TAG,
+    params(("id" = SeriesId, Path, description = "Series id"), ChapterParams),
+    security((), ("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Chapters, newest first", body = Vec<ChapterDto>),
+        (status = 404, description = "Series (or its source) not found", body = crate::error::ProblemDetails),
+    )
+)]
 pub async fn chapters(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -248,7 +294,8 @@ pub async fn chapters(
     let source_id = if let Some(s) = params.source {
         s
     } else {
-        let sources = tankovault_db::repo::catalog::list_sources_for_series(&state.pool, id).await?;
+        let sources =
+            tankovault_db::repo::catalog::list_sources_for_series(&state.pool, id).await?;
         sources.first().map(|s| s.id).ok_or(ApiError::NotFound)?
     };
 
@@ -298,16 +345,34 @@ fn optional_user(state: &AppState, headers: &HeaderMap) -> Option<UserId> {
         .and_then(|c| c.user_id())
 }
 
-/// `GET /v1/tags` — all genres/tags (public).
+/// List all tags
+///
+/// All genres/tags in the catalogue (public).
+#[utoipa::path(
+    get,
+    path = "/v1/tags",
+    tag = SERIES_TAG,
+    responses((status = 200, description = "All known tags", body = Vec<tankovault_domain::Tag>))
+)]
 pub async fn tags(State(state): State<AppState>) -> ApiResult<Json<Vec<tankovault_domain::Tag>>> {
     Ok(Json(
         tankovault_db::repo::catalog::list_tags(&state.pool).await?,
     ))
 }
 
-/// `GET /v1/providers` — public provider list + per-provider series counts, for the Discover
-/// provider filter (frontend §9.3). Operator-only fields (config/politeness/health) are not
-/// exposed; disabled providers are hidden.
+/// List public providers
+///
+/// Provider list + per-provider series counts, for the Discover provider filter (frontend
+/// §9.3). Operator-only fields (config/politeness/health) are not exposed; disabled providers
+/// are hidden.
+#[utoipa::path(
+    get,
+    path = "/v1/providers",
+    tag = SERIES_TAG,
+    responses(
+        (status = 200, description = "Enabled providers", body = Vec<tankovault_db::repo::providers::PublicProvider>),
+    )
+)]
 pub async fn providers(
     State(state): State<AppState>,
 ) -> ApiResult<Json<Vec<tankovault_db::repo::providers::PublicProvider>>> {

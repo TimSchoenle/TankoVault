@@ -15,6 +15,7 @@ mod live;
 mod models;
 mod state;
 mod views;
+mod wire;
 
 use components::{Shell, UnreadBadge};
 use dioxus::prelude::*;
@@ -64,9 +65,11 @@ fn main() {
 
 #[component]
 fn App() -> Element {
-    // App-wide contexts: the session (token + role) and the unread-notification badge.
+    // App-wide contexts: the session (token + role), the unread-notification badge,
+    // and the typed API client.
     use_context_provider(Session::new);
     use_context_provider(|| UnreadBadge(Signal::new(0)));
+    crate::api::provide_api();
 
     rsx! {
         document::Stylesheet { href: asset!("/assets/main.css") }

@@ -1,9 +1,9 @@
 //! Append-only audit log for privileged actions (design §16).
 
 use crate::error::DbResult;
-use tankovault_domain::UserId;
 use serde_json::Value as Json;
 use sqlx::{FromRow, PgExecutor};
+use tankovault_domain::UserId;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -29,7 +29,7 @@ pub async fn record<'e, E: PgExecutor<'e>>(
 }
 
 /// One privileged-action record enriched with the actor's username, for the console feed.
-#[derive(Debug, Clone, serde::Serialize, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow, utoipa::ToSchema)]
 pub struct AuditView {
     pub id: Uuid,
     /// Actor username (`None` for system-originated actions or a since-deleted user).
@@ -38,6 +38,7 @@ pub struct AuditView {
     pub target: Option<String>,
     pub detail: Json,
     #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
 }
 

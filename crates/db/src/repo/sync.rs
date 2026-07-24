@@ -261,7 +261,7 @@ pub async fn list_history<'e, E: PgExecutor<'e>>(
          LIMIT $4 OFFSET $5",
     )
     .bind(user_id.as_uuid())
-    .bind(series_id.map(|s| s.as_uuid()))
+    .bind(series_id.map(SeriesId::as_uuid))
     .bind(provider)
     .bind(limit)
     .bind(offset)
@@ -586,19 +586,21 @@ pub async fn delete_mapping<'e, E: PgExecutor<'e>>(
 /// One row of the admin Sync console's "Linked accounts" table. The automatic-sync policy
 /// columns and pending-conflict count (design v2 §B.7) are read-only operator visibility —
 /// they are user settings, never operator-overridable.
-#[derive(Debug, Clone, Serialize, FromRow)]
+#[derive(Debug, Clone, Serialize, FromRow, utoipa::ToSchema)]
 pub struct AdminAccountRow {
     pub user_id: Uuid,
     pub username: String,
     pub provider: String,
     pub external_username: Option<String>,
     #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
     pub last_synced_at: Option<OffsetDateTime>,
     pub last_error: Option<String>,
     pub auto_sync_enabled: bool,
     pub conflict_policy: String,
     pub pending_conflicts: i64,
     #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
 }
 
@@ -625,13 +627,14 @@ pub async fn admin_list_accounts<'e, E: PgExecutor<'e>>(
 }
 
 /// One row of the admin Sync console's "Series mappings" table.
-#[derive(Debug, Clone, Serialize, FromRow)]
+#[derive(Debug, Clone, Serialize, FromRow, utoipa::ToSchema)]
 pub struct AdminMappingRow {
     pub series_id: Uuid,
     pub series_title: String,
     pub provider: String,
     pub external_id: String,
     #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
     pub updated_at: OffsetDateTime,
 }
 
@@ -675,7 +678,7 @@ pub async fn admin_list_mappings_for_series<'e, E: PgExecutor<'e>>(
 
 /// One row of the admin Sync console's "Assign queue" — a canonical series that has **no**
 /// external mapping for the given provider yet, so an operator can review and assign one.
-#[derive(Debug, Clone, Serialize, FromRow)]
+#[derive(Debug, Clone, Serialize, FromRow, utoipa::ToSchema)]
 pub struct UnmappedSeriesRow {
     pub series_id: Uuid,
     pub series_title: String,
@@ -715,7 +718,6 @@ pub async fn admin_list_unmapped<'e, E: PgExecutor<'e>>(
     .await?;
     Ok(rows)
 }
-
 
 // ---------------------------------------------------------------------------
 // Remote-entry snapshots (design §15, admin "match every loaded entry" queue)
@@ -759,7 +761,7 @@ pub async fn upsert_remote_entry<'e, E: PgExecutor<'e>>(
     .bind(content_type)
     .bind(start_year)
     .bind(updated_at)
-    .bind(series_id.map(|s| s.as_uuid()))
+    .bind(series_id.map(SeriesId::as_uuid))
     .execute(exec)
     .await?;
     Ok(())
@@ -767,7 +769,7 @@ pub async fn upsert_remote_entry<'e, E: PgExecutor<'e>>(
 
 /// One row of the admin console's "Unmatched remote entries" queue: a fetched provider entry
 /// the auto-matcher could not confidently link to a local series.
-#[derive(Debug, Clone, Serialize, FromRow)]
+#[derive(Debug, Clone, Serialize, FromRow, utoipa::ToSchema)]
 pub struct RemoteEntryRow {
     pub user_id: Uuid,
     pub username: String,

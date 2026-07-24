@@ -3,41 +3,92 @@
 //! targets the API service under the same origin (`/v1/...`) via `Client`.
 
 use dioxus::prelude::*;
+use gloo_timers::future::TimeoutFuture;
 use progenitor_client::{ClientInfo, Error as ApiOpError};
 use serde::Serialize;
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::Duration;
 use tankovault_api_client::Client;
 
 pub type ApiResult<T> = Result<T, String>;
 
-/// App-wide base client (same-origin). `use_api` clones its base URL and attaches the
-/// caller's bearer token for authenticated requests.
+/// Total per-request deadline for the untyped helpers below. Long enough for a cold adapter
+/// dry-run or forwarded sync call, short enough that a dead connection surfaces as an error
+/// instead of an indefinitely spinning UI. WASM `reqwest` has no client-wide timeout, so the
+/// deadline is applied per request (see [`fetch_json`]/[`post_json`]).
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Extra attempts for an idempotent GET after a *transport* failure (never on an HTTP error
+/// status). Smooths over transient blips — a dropped socket or a brief offline window —
+/// without masking a real server response.
+const GET_RETRIES: u32 = 2;
+
+/// App-wide API context (same-origin). Holds the base client for its URL plus a memoised HTTP
+/// client, so `use_api` can hand out a ready, authenticated [`Client`] without rebuilding one
+/// on every render.
 #[derive(Clone)]
 pub struct ApiClient {
     base: Client,
+    /// Memoised `reqwest` client keyed by the bearer token it carries. `use_api` runs on
+    /// virtually every render across dozens of components; rebuilding a fresh client (and its
+    /// header map) each time is pure waste. A built `reqwest::Client` is an `Arc` internally, so
+    /// cloning it is cheap — we build one per distinct token and hand out clones, rebuilding only
+    /// when the token actually changes (sign-in, refresh, sign-out). WASM is single-threaded, so
+    /// `Rc<RefCell<_>>` is the right, allocation-light shared cell here.
+    http_cache: Rc<RefCell<HttpCache>>,
+}
+
+/// The single cached HTTP client and the token it was built for.
+struct HttpCache {
+    token: Option<String>,
+    client: reqwest::Client,
+}
+
+/// Build a `reqwest` client that attaches `token` (if any) as a `Bearer` `Authorization` header
+/// on every request. A malformed token yields an unauthenticated client (the server then answers
+/// 401) rather than panicking and taking the whole SPA down.
+fn build_http_client(token: Option<&str>) -> reqwest::Client {
+    let mut builder = reqwest::ClientBuilder::new();
+    if let Some(token) = token {
+        if let Ok(value) = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")) {
+            let mut headers = reqwest::header::HeaderMap::new();
+            headers.insert(reqwest::header::AUTHORIZATION, value);
+            builder = builder.default_headers(headers);
+        }
+    }
+    // The WASM builder only stores headers, so `build` is infallible here.
+    builder
+        .build()
+        .expect("wasm reqwest client build is infallible")
 }
 
 pub fn use_api() -> Client {
-    let base = use_context::<ApiClient>();
+    let api = use_context::<ApiClient>();
     let session = crate::state::use_session();
+    let token = session.token_value();
 
-    let mut builder = reqwest::ClientBuilder::new();
-    if let Some(token) = session.token_value() {
-        let mut headers = reqwest::header::HeaderMap::new();
-        let auth = format!("Bearer {token}");
-        headers.insert(
-            reqwest::header::AUTHORIZATION,
-            reqwest::header::HeaderValue::from_str(&auth).unwrap(),
-        );
-        builder = builder.default_headers(headers);
-    }
+    let http = {
+        let mut cache = api.http_cache.borrow_mut();
+        if cache.token != token {
+            cache.client = build_http_client(token.as_deref());
+            cache.token = token;
+        }
+        // Cheap `Arc` clone; the browser owns the underlying connection pool, so every clone
+        // shares the same keep-alive connections.
+        cache.client.clone()
+    };
 
-    let http_client = builder.build().unwrap();
-    Client::new_with_client(base.base.baseurl(), http_client)
+    Client::new_with_client(api.base.baseurl(), http)
 }
 
 pub fn provide_api() {
     use_context_provider(|| ApiClient {
         base: Client::new(&api_base_url()),
+        http_cache: Rc::new(RefCell::new(HttpCache {
+            token: None,
+            client: build_http_client(None),
+        })),
     });
 }
 
@@ -75,10 +126,23 @@ pub fn friendly_error<E: std::fmt::Debug>(err: ApiOpError<E>) -> String {
 pub async fn fetch_json(client: &Client, path: &str) -> ApiResult<serde_json::Value> {
     let http = client.client();
     let url = format!("{}{}", client.baseurl(), path);
-    http.get(url)
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {e}"))?
+
+    // GET is idempotent: retry only a transport error (timeout, dropped socket) with a short
+    // linear backoff. An HTTP error status is a real answer from the server and is returned as
+    // soon as it arrives — never retried.
+    let mut attempt = 0u32;
+    let response = loop {
+        match http.get(url.as_str()).timeout(REQUEST_TIMEOUT).send().await {
+            Ok(response) => break response,
+            Err(_) if attempt < GET_RETRIES => {
+                attempt += 1;
+                TimeoutFuture::new(200 * attempt).await;
+            }
+            Err(e) => return Err(format!("Network error: {e}")),
+        }
+    };
+
+    response
         .error_for_status()
         .map_err(|e| format!("Request failed: {e}"))?
         .json::<serde_json::Value>()
@@ -98,6 +162,7 @@ pub async fn post_json<B: Serialize + ?Sized>(
     let url = format!("{}{}", client.baseurl(), path);
     http.post(url)
         .json(body)
+        .timeout(REQUEST_TIMEOUT)
         .send()
         .await
         .map_err(|e| format!("Network error: {e}"))?

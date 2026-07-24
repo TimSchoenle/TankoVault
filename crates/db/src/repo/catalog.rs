@@ -684,6 +684,52 @@ pub async fn list_chapters<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(Chapter::from).collect())
 }
 
+/// The number of distinct **whole** chapters across a *set* of sources — the merge-aware
+/// counterpart to [`count_full_chapters`]. Used when several `series_sources` rows of the
+/// same provider are folded into one reader-visible "completing" source (design §10 same-source
+/// smart merge): counting each entry separately and summing would double-count a whole chapter
+/// two entries happen to share, so the count is taken over the *union* of their chapters.
+/// An empty slice yields `0`.
+pub async fn count_full_chapters_across<'e, E: PgExecutor<'e>>(
+    exec: E,
+    source_ids: &[SeriesSourceId],
+) -> DbResult<i32> {
+    let ids: Vec<Uuid> = source_ids.iter().map(|s| s.as_uuid()).collect();
+    let count = sqlx::query_scalar!(
+        "SELECT count(DISTINCT floor(number)) AS \"count!\" FROM chapters \
+         WHERE series_source_id = ANY($1)",
+        &ids,
+    )
+    .fetch_one(exec)
+    .await?;
+    Ok(i32::try_from(count).unwrap_or(i32::MAX))
+}
+
+/// List the chapters spanning a *set* of sources as a single de-duplicated, newest-first
+/// list — the merge-aware counterpart to [`list_chapters`]. When several `series_sources`
+/// rows of the same provider are folded into one "completing" source, their chapter lists are
+/// complementary (e.g. one entry carries the early chapters, another the later ones); this
+/// unions them and, when two entries expose the *same* chapter number, keeps a single row
+/// (the earliest-discovered) via `DISTINCT ON (number)` so the reader never sees a duplicate.
+/// All rows belong to the same provider, so the caller resolves paths against one `base_url`.
+pub async fn list_chapters_across<'e, E: PgExecutor<'e>>(
+    exec: E,
+    source_ids: &[SeriesSourceId],
+) -> DbResult<Vec<Chapter>> {
+    let ids: Vec<Uuid> = source_ids.iter().map(|s| s.as_uuid()).collect();
+    let rows = sqlx::query_as!(
+        ChapterRow,
+        "SELECT DISTINCT ON (number) id, series_source_id, number::float8 AS \"number!\", \
+         volume, title, path, published_at, discovered_at FROM chapters \
+         WHERE series_source_id = ANY($1) \
+         ORDER BY number DESC, discovered_at ASC",
+        &ids,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows.into_iter().map(Chapter::from).collect())
+}
+
 // ---------------------------------------------------------------------------
 // Read model: series listing (for GET /v1/series)
 // ---------------------------------------------------------------------------
@@ -728,7 +774,7 @@ pub async fn list_series<'e, E: PgExecutor<'e>>(
                     s.content_type AS \"content_type: ContentType\", \
                     s.status AS \"status: SeriesStatus\", s.release_year, \
                     s.created_at, s.updated_at, \
-                    (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\" \
+                    (SELECT count(DISTINCT ss.provider_id) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\" \
              FROM series s \
              WHERE s.normalized_title % $1 OR s.search_vec @@ plainto_tsquery('simple', $1) \
                 OR EXISTS (SELECT 1 FROM series_titles st \
@@ -751,7 +797,7 @@ pub async fn list_series<'e, E: PgExecutor<'e>>(
                     s.content_type AS \"content_type: ContentType\", \
                     s.status AS \"status: SeriesStatus\", s.release_year, \
                     s.created_at, s.updated_at, \
-                    (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\" \
+                    (SELECT count(DISTINCT ss.provider_id) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\" \
              FROM series s ORDER BY s.updated_at DESC LIMIT $1",
             limit,
         )
@@ -862,7 +908,7 @@ pub async fn list_series_filtered<'e, E: PgExecutor<'e>>(
                         s.content_type AS \"content_type: ContentType\", \
                         s.status AS \"status: SeriesStatus\", s.release_year, \
                         s.created_at, s.updated_at, \
-                        (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\", \
+                        (SELECT count(DISTINCT ss.provider_id) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\", \
                         count(*) OVER() AS \"total!\" \
                  FROM series s \
                  WHERE ($1::text IS NULL OR s.normalized_title % $1 \
@@ -911,7 +957,7 @@ pub async fn list_series_filtered<'e, E: PgExecutor<'e>>(
                         s.content_type AS \"content_type: ContentType\", \
                         s.status AS \"status: SeriesStatus\", s.release_year, \
                         s.created_at, s.updated_at, \
-                        (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\", \
+                        (SELECT count(DISTINCT ss.provider_id) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\", \
                         count(*) OVER() AS \"total!\" \
                  FROM series s \
                  WHERE ($1::text IS NULL OR s.normalized_title % $1 \
@@ -961,7 +1007,7 @@ pub async fn list_series_filtered<'e, E: PgExecutor<'e>>(
                         s.content_type AS \"content_type: ContentType\", \
                         s.status AS \"status: SeriesStatus\", s.release_year, \
                         s.created_at, s.updated_at, \
-                        (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\", \
+                        (SELECT count(DISTINCT ss.provider_id) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\", \
                         count(*) OVER() AS \"total!\" \
                  FROM series s \
                  WHERE ($1::text IS NULL OR s.normalized_title % $1 \
@@ -1010,7 +1056,7 @@ pub async fn list_series_filtered<'e, E: PgExecutor<'e>>(
                         s.content_type AS \"content_type: ContentType\", \
                         s.status AS \"status: SeriesStatus\", s.release_year, \
                         s.created_at, s.updated_at, \
-                        (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\", \
+                        (SELECT count(DISTINCT ss.provider_id) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\", \
                         count(*) OVER() AS \"total!\" \
                  FROM series s \
                  WHERE ($1::text IS NULL OR s.normalized_title % $1 \
@@ -1060,7 +1106,7 @@ pub async fn list_series_filtered<'e, E: PgExecutor<'e>>(
                         s.content_type AS \"content_type: ContentType\", \
                         s.status AS \"status: SeriesStatus\", s.release_year, \
                         s.created_at, s.updated_at, \
-                        (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\", \
+                        (SELECT count(DISTINCT ss.provider_id) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\", \
                         count(*) OVER() AS \"total!\" \
                  FROM series s \
                  WHERE ($1::text IS NULL OR s.normalized_title % $1 \

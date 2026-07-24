@@ -1,0 +1,49 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id AS series_id, s.canonical_title AS series_title, count(ss.id) AS \"source_count!\" FROM series s LEFT JOIN series_sources ss ON ss.series_id = s.id WHERE NOT EXISTS ( SELECT 1 FROM sync_mappings sm WHERE sm.series_id = s.id AND sm.provider = $1) AND ($2::text IS NULL OR s.canonical_title ILIKE $2) GROUP BY s.id, s.canonical_title ORDER BY count(ss.id) DESC, s.canonical_title LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "series_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "canonical_title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "source_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "6da3a02d35ac8416166ca940477d40cc57a2c477134ea7efbc55296d0409f096"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE scan_runs SET state = $2, finished_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        {
+          "Custom": {
+            "name": "run_state",
+            "kind": {
+              "Enum": [
+                "queued",
+                "running",
+                "completed",
+                "failed",
+                "cancelled"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c636dfd16e764282125d146c1b2753944b84371fb27e1972f7cb20a63c881ad5"
+}

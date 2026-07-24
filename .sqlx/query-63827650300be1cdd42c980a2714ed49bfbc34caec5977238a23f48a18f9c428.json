@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO external_accounts (user_id, provider, access_token, refresh_token, expires_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (user_id, provider) DO UPDATE SET access_token  = EXCLUDED.access_token, refresh_token = EXCLUDED.refresh_token, expires_at    = EXCLUDED.expires_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bytea",
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "63827650300be1cdd42c980a2714ed49bfbc34caec5977238a23f48a18f9c428"
+}

@@ -1,0 +1,138 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, series_id, provider_id, source_path, provider_title, content_hash, chapter_count, last_scanned_at, state AS \"state: ProviderState\" FROM series_sources WHERE series_id = $1 ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series_sources",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series_sources",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "provider_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series_sources",
+            "name": "provider_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "source_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series_sources",
+            "name": "source_path"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "provider_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series_sources",
+            "name": "provider_title"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "content_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "series_sources",
+            "name": "content_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "chapter_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "series_sources",
+            "name": "chapter_count"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "last_scanned_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "series_sources",
+            "name": "last_scanned_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "state: ProviderState",
+        "type_info": {
+          "Custom": {
+            "name": "provider_state",
+            "kind": {
+              "Enum": [
+                "active",
+                "degraded",
+                "challenged",
+                "solving",
+                "blocked",
+                "disabled"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "series_sources",
+            "name": "state"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "d74348e525224d37579ac0e292898e720a13a8d4358e42858ff8ecda95ebda7a"
+}

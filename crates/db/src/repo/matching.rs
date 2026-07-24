@@ -5,7 +5,6 @@
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
-use std::str::FromStr;
 use tankovault_domain::{ContentType, SeriesId};
 use uuid::Uuid;
 
@@ -32,48 +31,48 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
     struct Row {
         id: Uuid,
         normalized_title: String,
-        content_type: String,
+        content_type: ContentType,
         release_year: Option<i32>,
         sim: f32,
-        tags: Option<Vec<String>>,
-        authors: Option<Vec<String>>,
+        tags: Vec<String>,
+        authors: Vec<String>,
     }
-    let rows: Vec<Row> = sqlx::query_as(
-        "SELECT s.id, s.normalized_title, s.content_type::text AS content_type, s.release_year, \
+    let rows = sqlx::query_as!(
+        Row,
+        "SELECT s.id, s.normalized_title, s.content_type AS \"content_type: ContentType\", s.release_year, \
                 GREATEST( \
                   similarity(s.normalized_title, $1), \
                   COALESCE((SELECT MAX(similarity(st.normalized, $1)) \
                             FROM series_titles st WHERE st.series_id = s.id), 0) \
-                ) AS sim, \
-                (SELECT array_agg(t.name) FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
-                 WHERE stg.series_id = s.id) AS tags, \
-                (SELECT array_agg(a.name) FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
-                 WHERE sa.series_id = s.id) AS authors \
+                ) AS \"sim!\", \
+                COALESCE((SELECT array_agg(t.name) FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                 WHERE stg.series_id = s.id), '{}') AS \"tags!\", \
+                COALESCE((SELECT array_agg(a.name) FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
+                 WHERE sa.series_id = s.id), '{}') AS \"authors!\" \
          FROM series s \
          WHERE s.normalized_title % $1 \
             OR EXISTS (SELECT 1 FROM series_titles st \
                        WHERE st.series_id = s.id AND st.normalized % $1) \
-         ORDER BY sim DESC \
+         ORDER BY 5 DESC \
          LIMIT $2",
+        normalized,
+        limit,
     )
-    .bind(normalized)
-    .bind(limit)
     .fetch_all(exec)
     .await?;
 
-    rows.into_iter()
-        .map(|r| {
-            Ok(MatchCandidate {
-                series_id: SeriesId::from_uuid(r.id),
-                normalized_title: r.normalized_title,
-                similarity: r.sim,
-                content_type: ContentType::from_str(&r.content_type)?,
-                release_year: r.release_year,
-                tags: r.tags.unwrap_or_default(),
-                authors: r.authors.unwrap_or_default(),
-            })
+    Ok(rows
+        .into_iter()
+        .map(|r| MatchCandidate {
+            series_id: SeriesId::from_uuid(r.id),
+            normalized_title: r.normalized_title,
+            similarity: r.sim,
+            content_type: r.content_type,
+            release_year: r.release_year,
+            tags: r.tags,
+            authors: r.authors,
         })
-        .collect()
+        .collect())
 }
 
 /// Record an operator-review merge candidate (ambiguous confidence band).
@@ -84,15 +83,15 @@ pub async fn record_merge_candidate<'e, E: PgExecutor<'e>>(
     score: f32,
     reason: &str,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO merge_candidates (id, series_id, candidate_id, score, reason) \
          VALUES ($1,$2,$3,$4,$5)",
+        Uuid::now_v7(),
+        series_id.as_uuid(),
+        candidate_id.as_uuid(),
+        score,
+        reason,
     )
-    .bind(Uuid::now_v7())
-    .bind(series_id.as_uuid())
-    .bind(candidate_id.as_uuid())
-    .bind(score)
-    .bind(reason)
     .execute(exec)
     .await?;
     Ok(())
@@ -130,7 +129,8 @@ pub async fn list_open_merge_candidates<'e, E: PgExecutor<'e>>(
         reason: Option<String>,
         created_at: time::OffsetDateTime,
     }
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows = sqlx::query_as!(
+        Row,
         "SELECT mc.id, mc.series_id, s1.canonical_title AS series_title, \
                 mc.candidate_id, s2.canonical_title AS candidate_title, \
                 mc.score, mc.reason, mc.created_at \
@@ -140,8 +140,8 @@ pub async fn list_open_merge_candidates<'e, E: PgExecutor<'e>>(
          WHERE NOT mc.resolved \
          ORDER BY mc.created_at DESC \
          LIMIT $1",
+        limit,
     )
-    .bind(limit)
     .fetch_all(exec)
     .await?;
     Ok(rows
@@ -165,13 +165,13 @@ pub async fn dismiss_merge_candidate<'e, E: PgExecutor<'e>>(
     id: Uuid,
     resolved_by: Option<tankovault_domain::UserId>,
 ) -> DbResult<bool> {
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "UPDATE merge_candidates \
          SET resolved = true, resolved_by = $2, resolved_at = now() \
          WHERE id = $1 AND NOT resolved",
+        id,
+        resolved_by.map(tankovault_domain::UserId::as_uuid),
     )
-    .bind(id)
-    .bind(resolved_by.map(tankovault_domain::UserId::as_uuid))
     .execute(exec)
     .await?;
     Ok(result.rows_affected() > 0)
@@ -201,73 +201,77 @@ pub async fn merge_series(
     let drop = drop_id.as_uuid();
 
     // Both series must exist.
-    let exists: i64 = sqlx::query_scalar("SELECT count(*) FROM series WHERE id = $1 OR id = $2")
-        .bind(keep)
-        .bind(drop)
-        .fetch_one(&mut *tx)
-        .await?;
+    let exists = sqlx::query_scalar!(
+        "SELECT count(*) AS \"count!\" FROM series WHERE id = $1 OR id = $2",
+        keep,
+        drop,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
     if exists < 2 {
         return Err(crate::error::DbError::NotFound);
     }
 
     // Sources move wholesale (their global (provider, path) uniqueness is preserved).
-    sqlx::query("UPDATE series_sources SET series_id = $1 WHERE series_id = $2")
-        .bind(keep)
-        .bind(drop)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query!(
+        "UPDATE series_sources SET series_id = $1 WHERE series_id = $2",
+        keep,
+        drop,
+    )
+    .execute(&mut *tx)
+    .await?;
 
     // The merged series' canonical title becomes an alternative title of the survivor.
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO series_titles (series_id, title, normalized) \
          SELECT $1, canonical_title, normalized_title FROM series WHERE id = $2 \
          ON CONFLICT (series_id, normalized) DO NOTHING",
+        keep,
+        drop,
     )
-    .bind(keep)
-    .bind(drop)
     .execute(&mut *tx)
     .await?;
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO series_titles (series_id, title, normalized) \
          SELECT $1, title, normalized FROM series_titles WHERE series_id = $2 \
          ON CONFLICT (series_id, normalized) DO NOTHING",
+        keep,
+        drop,
     )
-    .bind(keep)
-    .bind(drop)
     .execute(&mut *tx)
     .await?;
 
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO series_tags (series_id, tag_id) \
          SELECT $1, tag_id FROM series_tags WHERE series_id = $2 \
          ON CONFLICT DO NOTHING",
+        keep,
+        drop,
     )
-    .bind(keep)
-    .bind(drop)
     .execute(&mut *tx)
     .await?;
 
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO series_authors (series_id, author_id) \
          SELECT $1, author_id FROM series_authors WHERE series_id = $2 \
          ON CONFLICT DO NOTHING",
+        keep,
+        drop,
     )
-    .bind(keep)
-    .bind(drop)
     .execute(&mut *tx)
     .await?;
 
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO watchlist_entries (user_id, series_id, status, notify, added_at) \
          SELECT user_id, $1, status, notify, added_at FROM watchlist_entries WHERE series_id = $2 \
          ON CONFLICT (user_id, series_id) DO NOTHING",
+        keep,
+        drop,
     )
-    .bind(keep)
-    .bind(drop)
     .execute(&mut *tx)
     .await?;
 
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO read_progress \
             (user_id, series_id, last_read_whole_number, last_read_part_number, updated_at) \
          SELECT user_id, $1, last_read_whole_number, last_read_part_number, updated_at \
@@ -285,36 +289,35 @@ pub async fn merge_series(
                     ELSE NULLIF(GREATEST(COALESCE(read_progress.last_read_part_number, 0), \
                                          COALESCE(EXCLUDED.last_read_part_number, 0)), 0) END, \
                 updated_at = now()",
+        keep,
+        drop,
     )
-    .bind(keep)
-    .bind(drop)
     .execute(&mut *tx)
     .await?;
 
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO sync_mappings (series_id, provider, external_id) \
          SELECT $1, provider, external_id FROM sync_mappings WHERE series_id = $2 \
          ON CONFLICT (series_id, provider) DO NOTHING",
+        keep,
+        drop,
     )
-    .bind(keep)
-    .bind(drop)
     .execute(&mut *tx)
     .await?;
 
     // Resolve every open candidate that referenced the vanishing series.
-    sqlx::query(
+    sqlx::query!(
         "UPDATE merge_candidates \
          SET resolved = true, resolved_by = $2, resolved_at = now() \
          WHERE (series_id = $1 OR candidate_id = $1) AND NOT resolved",
+        drop,
+        actor.map(tankovault_domain::UserId::as_uuid),
     )
-    .bind(drop)
-    .bind(actor.map(tankovault_domain::UserId::as_uuid))
     .execute(&mut *tx)
     .await?;
 
     // Delete the merged series; residual child rows cascade away.
-    sqlx::query("DELETE FROM series WHERE id = $1")
-        .bind(drop)
+    sqlx::query!("DELETE FROM series WHERE id = $1", drop)
         .execute(&mut *tx)
         .await?;
 

@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sync_mappings SET last_synced_local_progress  = $3, last_synced_remote_progress = $4, last_synced_local_status    = $5, last_synced_remote_status   = $6, last_synced_at              = now() WHERE series_id = $1 AND provider = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Float8",
+        "Float8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c3ccaf88e894d6ea9943b214a292a4553431e280c611f000730a090e816bb369"
+}

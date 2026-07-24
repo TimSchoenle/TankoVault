@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sync_conflicts SET resolved_at = now(), resolution = $3 WHERE id = $1 AND user_id = $2 AND resolved_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "609d3cc5c2832e2aae6573dc04deaf22d66cae2b71735420b8c0fad12874522f"
+}

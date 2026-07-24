@@ -14,6 +14,17 @@ time = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
 utoipa = { workspace = true }
+# Optional and feature-gated: only the native (server-side) crates that talk to
+# Postgres enable `sqlx`, which pulls in a Tokio/Postgres stack that cannot build
+# for `wasm32`. The WASM frontend depends on this crate with the feature *off*, so
+# the domain types stay usable in the browser while the `db` crate gets native
+# `sqlx::Type` mappings for the enum newtypes.
+sqlx = { workspace = true, optional = true, default-features = false, features = ["derive", "postgres"] }
+
+[features]
+# Derives `sqlx::Type` on the domain enums so repositories can bind/decode them as
+# their native Postgres enum types without `::text` casts. Enabled by `tankovault-db`.
+sqlx = ["dep:sqlx"]
 
 [dev-dependencies]
 serde_json = { workspace = true }

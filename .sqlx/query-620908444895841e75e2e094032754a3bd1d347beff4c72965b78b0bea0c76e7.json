@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE scan_runs SET state = 'running', started_at = COALESCE(started_at, now()) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "620908444895841e75e2e094032754a3bd1d347beff4c72965b78b0bea0c76e7"
+}

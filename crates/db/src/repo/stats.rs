@@ -71,27 +71,28 @@ pub struct ProviderStat {
 
 /// Compute the system-wide rollup for the console header.
 pub async fn system_overview<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<SystemStats> {
-    let stats: SystemStats = sqlx::query_as(
+    let stats = sqlx::query_as!(
+        SystemStats,
         "SELECT \
-           (SELECT count(*) FROM providers) AS providers_total, \
-           (SELECT count(*) FROM providers WHERE state = 'active') AS providers_active, \
-           (SELECT count(*) FROM providers WHERE state = 'disabled') AS providers_disabled, \
+           (SELECT count(*) FROM providers) AS \"providers_total!\", \
+           (SELECT count(*) FROM providers WHERE state = 'active') AS \"providers_active!\", \
+           (SELECT count(*) FROM providers WHERE state = 'disabled') AS \"providers_disabled!\", \
            (SELECT count(*) FROM providers \
-              WHERE state IN ('degraded','challenged','solving','blocked')) AS providers_unhealthy, \
-           (SELECT count(*) FROM series) AS series_total, \
-           (SELECT count(*) FROM series_sources) AS sources_total, \
-           (SELECT count(*) FROM chapters) AS chapters_total, \
-           (SELECT count(*) FROM chapters WHERE discovered_at > now() - interval '1 hour') AS chapters_1h, \
-           (SELECT count(*) FROM chapters WHERE discovered_at > now() - interval '24 hours') AS chapters_24h, \
-           (SELECT count(*) FROM chapters WHERE discovered_at > now() - interval '7 days') AS chapters_7d, \
-           (SELECT count(*) FROM users) AS users_total, \
-           (SELECT count(*) FROM merge_candidates WHERE NOT resolved) AS pending_merges, \
-           (SELECT count(*) FROM scan_runs WHERE state IN ('queued','running')) AS runs_active, \
-           (SELECT count(*) FROM scan_runs WHERE state = 'running') AS runs_running, \
-           (SELECT count(*) FROM scan_tasks WHERE state = 'queued') AS tasks_queued, \
-           (SELECT count(*) FROM scan_tasks WHERE state IN ('claimed','running')) AS tasks_running, \
+              WHERE state IN ('degraded','challenged','solving','blocked')) AS \"providers_unhealthy!\", \
+           (SELECT count(*) FROM series) AS \"series_total!\", \
+           (SELECT count(*) FROM series_sources) AS \"sources_total!\", \
+           (SELECT count(*) FROM chapters) AS \"chapters_total!\", \
+           (SELECT count(*) FROM chapters WHERE discovered_at > now() - interval '1 hour') AS \"chapters_1h!\", \
+           (SELECT count(*) FROM chapters WHERE discovered_at > now() - interval '24 hours') AS \"chapters_24h!\", \
+           (SELECT count(*) FROM chapters WHERE discovered_at > now() - interval '7 days') AS \"chapters_7d!\", \
+           (SELECT count(*) FROM users) AS \"users_total!\", \
+           (SELECT count(*) FROM merge_candidates WHERE NOT resolved) AS \"pending_merges!\", \
+           (SELECT count(*) FROM scan_runs WHERE state IN ('queued','running')) AS \"runs_active!\", \
+           (SELECT count(*) FROM scan_runs WHERE state = 'running') AS \"runs_running!\", \
+           (SELECT count(*) FROM scan_tasks WHERE state = 'queued') AS \"tasks_queued!\", \
+           (SELECT count(*) FROM scan_tasks WHERE state IN ('claimed','running')) AS \"tasks_running!\", \
            (SELECT count(*) FROM scan_tasks \
-              WHERE state = 'failed' AND finished_at > now() - interval '24 hours') AS tasks_failed_24h",
+              WHERE state = 'failed' AND finished_at > now() - interval '24 hours') AS \"tasks_failed_24h!\"",
     )
     .fetch_one(exec)
     .await?;
@@ -101,7 +102,8 @@ pub async fn system_overview<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<SystemS
 /// Per-provider crawl statistics, richest (most chapters) first. Providers with no sources
 /// yet still appear with zeroed counts so newly-added ones are visible in the table.
 pub async fn provider_stats<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<ProviderStat>> {
-    let rows: Vec<ProviderStat> = sqlx::query_as(
+    let rows = sqlx::query_as!(
+        ProviderStat,
         "WITH src AS ( \
             SELECT provider_id, \
                    count(*) AS source_count, \
@@ -119,28 +121,28 @@ pub async fn provider_stats<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<Prov
             GROUP BY ss.provider_id \
          ), lr AS ( \
             SELECT DISTINCT ON (provider_id) provider_id, \
-                   state::text AS run_state, created_at AS run_at \
+                   state AS run_state, created_at AS run_at \
             FROM scan_runs WHERE provider_id IS NOT NULL \
             ORDER BY provider_id, created_at DESC \
          ) \
          SELECT p.id AS provider_id, p.slug AS slug, p.name AS name, \
-                p.state::text AS state, p.adapter::text AS adapter, \
-                COALESCE(src.series_count, 0) AS series_count, \
-                COALESCE(src.source_count, 0) AS source_count, \
-                COALESCE(src.blocked_sources, 0) AS blocked_sources, \
-                COALESCE(ch.chapter_count, 0) AS chapter_count, \
-                COALESCE(ch.chapters_24h, 0) AS chapters_24h, \
-                COALESCE(ch.chapters_7d, 0) AS chapters_7d, \
-                ch.last_chapter_at AS last_chapter_at, \
-                src.last_scanned_at AS last_scanned_at, \
-                p.last_full_scan_at AS last_full_scan_at, \
-                lr.run_state AS last_run_state, \
-                lr.run_at AS last_run_at \
+                p.state::text AS \"state!\", p.adapter::text AS \"adapter!\", \
+                COALESCE(src.series_count, 0) AS \"series_count!\", \
+                COALESCE(src.source_count, 0) AS \"source_count!\", \
+                COALESCE(src.blocked_sources, 0) AS \"blocked_sources!\", \
+                COALESCE(ch.chapter_count, 0) AS \"chapter_count!\", \
+                COALESCE(ch.chapters_24h, 0) AS \"chapters_24h!\", \
+                COALESCE(ch.chapters_7d, 0) AS \"chapters_7d!\", \
+                ch.last_chapter_at AS \"last_chapter_at?\", \
+                src.last_scanned_at AS \"last_scanned_at?\", \
+                p.last_full_scan_at, \
+                lr.run_state::text AS \"last_run_state?\", \
+                lr.run_at AS \"last_run_at?\" \
          FROM providers p \
          LEFT JOIN src ON src.provider_id = p.id \
          LEFT JOIN ch  ON ch.provider_id  = p.id \
          LEFT JOIN lr  ON lr.provider_id  = p.id \
-         ORDER BY chapter_count DESC, p.name ASC",
+         ORDER BY 9 DESC, p.name ASC",
     )
     .fetch_all(exec)
     .await?;

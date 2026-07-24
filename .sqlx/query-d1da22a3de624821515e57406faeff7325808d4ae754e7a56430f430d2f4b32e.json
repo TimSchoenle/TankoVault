@@ -1,0 +1,131 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT re.user_id, u.username, re.provider, re.external_id, re.title, re.status, re.progress, re.content_type, re.start_year FROM sync_remote_entries re JOIN users u ON u.id = re.user_id WHERE re.series_id IS NULL AND re.provider = $1 AND ($2::text IS NULL OR re.title ILIKE $2) ORDER BY re.title LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sync_remote_entries",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": {
+          "Custom": {
+            "name": "citext",
+            "kind": "Simple"
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_remote_entries",
+            "name": "provider"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "external_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_remote_entries",
+            "name": "external_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_remote_entries",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_remote_entries",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "progress",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "sync_remote_entries",
+            "name": "progress"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "content_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_remote_entries",
+            "name": "content_type"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "start_year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "sync_remote_entries",
+            "name": "start_year"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "d1da22a3de624821515e57406faeff7325808d4ae754e7a56430f430d2f4b32e"
+}

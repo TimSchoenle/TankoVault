@@ -1,0 +1,169 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, s.content_type AS \"content_type: ContentType\", s.status AS \"status: SeriesStatus\", s.release_year, s.created_at, s.updated_at, (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\" FROM series s ORDER BY s.updated_at DESC LIMIT $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "canonical_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "canonical_title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "normalized_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "normalized_title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "cover_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "cover_url"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "content_type: ContentType",
+        "type_info": {
+          "Custom": {
+            "name": "content_type",
+            "kind": {
+              "Enum": [
+                "manga",
+                "manhwa",
+                "manhua",
+                "webtoon",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "content_type"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "status: SeriesStatus",
+        "type_info": {
+          "Custom": {
+            "name": "series_status",
+            "kind": {
+              "Enum": [
+                "ongoing",
+                "completed",
+                "hiatus",
+                "cancelled",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "release_year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "release_year"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "source_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "9f4f53d5cfae250ca5147f0b4717c5ff81617bc37d38b0a11aae6208c395c2f9"
+}

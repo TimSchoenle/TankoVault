@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE series_sources SET content_hash = $2, chapter_count = $3, last_scanned_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "02a1aca2826bf6cd746236d136eb900f646b4cbd21d3f72a4f86f712790a5d87"
+}

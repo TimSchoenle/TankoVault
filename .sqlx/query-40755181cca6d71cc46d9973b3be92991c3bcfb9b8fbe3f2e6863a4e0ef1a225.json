@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE scan_runs SET total_tasks = total_tasks + $2 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "40755181cca6d71cc46d9973b3be92991c3bcfb9b8fbe3f2e6863a4e0ef1a225"
+}

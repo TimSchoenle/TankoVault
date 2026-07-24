@@ -454,7 +454,7 @@ async fn send_verification_email(state: &AppState, user: &User) -> ApiResult<()>
         state.email_base_url.trim_end_matches('/'),
     );
     mailer::send_in_background(
-        &state,
+        state,
         mailer::verification(&user.email, &user.username, &link),
     );
     Ok(())

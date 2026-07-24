@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO watchlist_entries (user_id, series_id, status) VALUES ($1,$2,$3) ON CONFLICT (user_id, series_id) DO UPDATE SET status = EXCLUDED.status, updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        {
+          "Custom": {
+            "name": "watch_status",
+            "kind": {
+              "Enum": [
+                "reading",
+                "planned",
+                "completed",
+                "dropped",
+                "paused"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a392cb0f06b677fb73e02140a76a4a9b5f37fd82101cb4c886d4b35acd9e61ac"
+}

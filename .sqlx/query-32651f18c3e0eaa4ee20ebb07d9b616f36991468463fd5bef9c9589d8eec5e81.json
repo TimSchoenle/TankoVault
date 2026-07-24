@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE external_accounts SET external_username = COALESCE($3, external_username), last_synced_at = $4, last_error = NULL WHERE user_id = $1 AND provider = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "32651f18c3e0eaa4ee20ebb07d9b616f36991468463fd5bef9c9589d8eec5e81"
+}

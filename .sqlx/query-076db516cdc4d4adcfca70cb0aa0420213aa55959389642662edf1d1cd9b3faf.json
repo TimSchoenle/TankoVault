@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO sync_conflicts (user_id, series_id, provider, field, local_value, remote_value) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (user_id, series_id, provider, field) WHERE resolved_at IS NULL DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "076db516cdc4d4adcfca70cb0aa0420213aa55959389642662edf1d1cd9b3faf"
+}

@@ -1,0 +1,104 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT h.id, h.series_id, s.canonical_title AS series_title, h.provider, h.action, h.detail AS \"detail: Json\", h.created_at FROM sync_history h JOIN series s ON s.id = h.series_id WHERE h.user_id = $1 AND ($2::uuid IS NULL OR h.series_id = $2) AND ($3::text IS NULL OR h.provider = $3) ORDER BY h.created_at DESC LIMIT $4 OFFSET $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sync_history",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sync_history",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "series_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "canonical_title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_history",
+            "name": "provider"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "action",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_history",
+            "name": "action"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "detail: Json",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "sync_history",
+            "name": "detail"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sync_history",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2705cd594fc273437a86adc958c0e03d0077ee99dc20e7765926e7acddbff59e"
+}

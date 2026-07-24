@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT status AS \"status: WatchStatus\" FROM watchlist_entries WHERE user_id = $1 AND series_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status: WatchStatus",
+        "type_info": {
+          "Custom": {
+            "name": "watch_status",
+            "kind": {
+              "Enum": [
+                "reading",
+                "planned",
+                "completed",
+                "dropped",
+                "paused"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "status"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "948ece1da20d815452ea5a83d1ca8b04a33756162f4bfa3ecccad651d5a54783"
+}

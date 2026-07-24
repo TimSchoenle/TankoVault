@@ -17,6 +17,11 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
+  # The `tankovault-db` repositories use sqlx's compile-time-checked query macros. Every
+  # ordinary build/lint/test job resolves them from the committed offline query cache
+  # (`.sqlx/`) instead of a live database; the dedicated `sqlx` job below verifies that
+  # cache is in sync with the real schema.
+  SQLX_OFFLINE: "true"
 
 jobs:
   lint:
@@ -50,6 +55,44 @@ jobs:
       # for commits made without it.
       - name: OpenAPI artifacts are up to date
         run: cargo run -p xtask -- openapi --check
+
+  # Verifies the committed sqlx offline query cache (`.sqlx/`) against a real, migrated
+  # Postgres: `cargo sqlx prepare --check` recompiles every `query!`/`query_as!` macro
+  # against the live schema and fails if the cache is stale (a query or migration changed
+  # without running `cargo run -p xtask -- sqlx-prepare`). This is what keeps the SQL
+  # compile-time-verified; every other job only consumes the cache offline.
+  sqlx:
+    name: sqlx offline cache
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tankovault
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Force live checking in this job: the whole point is to re-derive the query metadata
+      # from the database, overriding the workflow-wide offline default.
+      SQLX_OFFLINE: "false"
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/tankovault
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features rustls,postgres --locked
+      - name: apply migrations
+        run: sqlx migrate run --source migrations
+      - name: offline query cache is up to date
+        run: cargo sqlx prepare --workspace --check
 
   frontend:
     name: frontend (wasm32)

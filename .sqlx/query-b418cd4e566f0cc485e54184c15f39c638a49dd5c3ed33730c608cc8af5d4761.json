@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH skipped AS ( UPDATE scan_tasks SET state = 'skipped', finished_at = now() WHERE id = $1 AND state NOT IN ('done','skipped') RETURNING run_id ) UPDATE scan_runs SET done_tasks = done_tasks + 1 WHERE id = (SELECT run_id FROM skipped)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b418cd4e566f0cc485e54184c15f39c638a49dd5c3ed33730c608cc8af5d4761"
+}

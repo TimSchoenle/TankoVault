@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE( (SELECT excluded FROM series_sync_overrides WHERE user_id = $1 AND series_id = $2 AND provider = $3), (SELECT sync_excluded FROM watchlist_entries WHERE user_id = $1 AND series_id = $2), false) AS \"excluded!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "excluded!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b25f53ca7c71a128d5716fa83af2e2ee438cc94256df147fcc45548684a109e3"
+}

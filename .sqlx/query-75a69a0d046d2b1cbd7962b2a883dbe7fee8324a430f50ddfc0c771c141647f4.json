@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE series SET description = COALESCE($2, description), cover_url = COALESCE($3, cover_url), content_type = CASE WHEN content_type = 'unknown' THEN COALESCE($4::text::content_type, content_type) ELSE content_type END, release_year = COALESCE(release_year, $5), updated_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "75a69a0d046d2b1cbd7962b2a883dbe7fee8324a430f50ddfc0c771c141647f4"
+}

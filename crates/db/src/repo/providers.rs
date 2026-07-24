@@ -4,21 +4,20 @@ use crate::error::{DbError, DbResult};
 use serde_json::Value as Json;
 use sqlx::types::Json as SqlxJson;
 use sqlx::{FromRow, PgExecutor};
-use std::str::FromStr;
 use tankovault_domain::{AdapterKind, Politeness, Provider, ProviderId, ProviderState};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-/// Column projection for `providers`, with enum columns cast to `text`.
+/// Column projection for `providers`, read back as the native enum types.
 #[derive(FromRow)]
 struct ProviderRow {
     id: Uuid,
     slug: String,
     name: String,
     base_url: String,
-    adapter: String,
+    adapter: AdapterKind,
     config: Json,
-    state: String,
+    state: ProviderState,
     politeness: SqlxJson<Politeness>,
     robots_txt: Option<String>,
     robots_at: Option<OffsetDateTime>,
@@ -27,35 +26,24 @@ struct ProviderRow {
     updated_at: OffsetDateTime,
 }
 
-impl TryFrom<ProviderRow> for Provider {
-    type Error = DbError;
-    fn try_from(r: ProviderRow) -> Result<Self, Self::Error> {
-        Ok(Self {
+impl From<ProviderRow> for Provider {
+    fn from(r: ProviderRow) -> Self {
+        Self {
             id: ProviderId::from_uuid(r.id),
             slug: r.slug,
             name: r.name,
             base_url: r.base_url,
-            adapter: AdapterKind::from_str(&r.adapter)?,
+            adapter: r.adapter,
             config: r.config,
-            state: ProviderState::from_str(&r.state)?,
+            state: r.state,
             politeness: r.politeness.0.clamped(),
             robots_txt: r.robots_txt,
             robots_at: r.robots_at,
             last_full_scan_at: r.last_full_scan_at,
             created_at: r.created_at,
             updated_at: r.updated_at,
-        })
+        }
     }
-}
-
-/// Full `SELECT ... FROM providers` projection as a string literal, so composed
-/// queries stay static (`sqlx 0.9` rejects dynamically-built SQL strings).
-macro_rules! provider_select {
-    () => {
-        "SELECT id, slug, name, base_url, adapter::text AS adapter, config, \
-         state::text AS state, politeness, robots_txt, robots_at, last_full_scan_at, \
-         created_at, updated_at FROM providers"
-    };
 }
 
 /// Parameters for creating a provider.
@@ -74,20 +62,22 @@ pub struct NewProvider {
 /// [`DbError::Conflict`] on a duplicate slug; otherwise a driver error.
 pub async fn create<'e, E: PgExecutor<'e>>(exec: E, new: NewProvider) -> DbResult<Provider> {
     let id = ProviderId::new();
-    let row: ProviderRow = sqlx::query_as(
+    let row = sqlx::query_as!(
+        ProviderRow,
         "INSERT INTO providers (id, slug, name, base_url, adapter, config, politeness) \
-         VALUES ($1, $2, $3, $4, $5::adapter_kind, $6, $7) \
-         RETURNING id, slug, name, base_url, adapter::text AS adapter, config, \
-                   state::text AS state, politeness, robots_txt, robots_at, \
+         VALUES ($1, $2, $3, $4, $5, $6, $7) \
+         RETURNING id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
+                   config AS \"config: Json\", state AS \"state: ProviderState\", \
+                   politeness AS \"politeness: SqlxJson<Politeness>\", robots_txt, robots_at, \
                    last_full_scan_at, created_at, updated_at",
+        id.as_uuid(),
+        new.slug,
+        new.name,
+        new.base_url,
+        new.adapter as AdapterKind,
+        new.config,
+        SqlxJson(new.politeness.clamped()) as _,
     )
-    .bind(id.as_uuid())
-    .bind(&new.slug)
-    .bind(&new.name)
-    .bind(&new.base_url)
-    .bind(new.adapter.as_str())
-    .bind(&new.config)
-    .bind(SqlxJson(new.politeness.clamped()))
     .fetch_one(exec)
     .await
     .map_err(|e| {
@@ -98,34 +88,54 @@ pub async fn create<'e, E: PgExecutor<'e>>(exec: E, new: NewProvider) -> DbResul
             de
         }
     })?;
-    row.try_into()
+    Ok(row.into())
 }
 
 /// List all providers, most recently updated first.
 pub async fn list<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<Provider>> {
-    let rows: Vec<ProviderRow> =
-        sqlx::query_as(concat!(provider_select!(), " ORDER BY updated_at DESC"))
-            .fetch_all(exec)
-            .await?;
-    rows.into_iter().map(Provider::try_from).collect()
+    let rows = sqlx::query_as!(
+        ProviderRow,
+        "SELECT id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
+                config AS \"config: Json\", state AS \"state: ProviderState\", \
+                politeness AS \"politeness: SqlxJson<Politeness>\", robots_txt, robots_at, \
+                last_full_scan_at, created_at, updated_at \
+         FROM providers ORDER BY updated_at DESC",
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows.into_iter().map(Provider::from).collect())
 }
 
 /// Fetch one provider by id.
 pub async fn get<'e, E: PgExecutor<'e>>(exec: E, id: ProviderId) -> DbResult<Provider> {
-    let row: Option<ProviderRow> = sqlx::query_as(concat!(provider_select!(), " WHERE id = $1"))
-        .bind(id.as_uuid())
-        .fetch_optional(exec)
-        .await?;
-    row.ok_or(DbError::NotFound)?.try_into()
+    let row = sqlx::query_as!(
+        ProviderRow,
+        "SELECT id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
+                config AS \"config: Json\", state AS \"state: ProviderState\", \
+                politeness AS \"politeness: SqlxJson<Politeness>\", robots_txt, robots_at, \
+                last_full_scan_at, created_at, updated_at \
+         FROM providers WHERE id = $1",
+        id.as_uuid(),
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(row.ok_or(DbError::NotFound)?.into())
 }
 
 /// Fetch one provider by slug.
 pub async fn get_by_slug<'e, E: PgExecutor<'e>>(exec: E, slug: &str) -> DbResult<Provider> {
-    let row: Option<ProviderRow> = sqlx::query_as(concat!(provider_select!(), " WHERE slug = $1"))
-        .bind(slug)
-        .fetch_optional(exec)
-        .await?;
-    row.ok_or(DbError::NotFound)?.try_into()
+    let row = sqlx::query_as!(
+        ProviderRow,
+        "SELECT id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
+                config AS \"config: Json\", state AS \"state: ProviderState\", \
+                politeness AS \"politeness: SqlxJson<Politeness>\", robots_txt, robots_at, \
+                last_full_scan_at, created_at, updated_at \
+         FROM providers WHERE slug = $1",
+        slug,
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(row.ok_or(DbError::NotFound)?.into())
 }
 
 /// Update the mutable provider fields (name, `base_url`, config, politeness).
@@ -140,21 +150,23 @@ pub async fn update<'e, E: PgExecutor<'e>>(
     config: &Json,
     politeness: Politeness,
 ) -> DbResult<Provider> {
-    let row: Option<ProviderRow> = sqlx::query_as(
+    let row = sqlx::query_as!(
+        ProviderRow,
         "UPDATE providers SET name = $2, base_url = $3, config = $4, politeness = $5, \
          updated_at = now() WHERE id = $1 \
-         RETURNING id, slug, name, base_url, adapter::text AS adapter, config, \
-                   state::text AS state, politeness, robots_txt, robots_at, \
+         RETURNING id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
+                   config AS \"config: Json\", state AS \"state: ProviderState\", \
+                   politeness AS \"politeness: SqlxJson<Politeness>\", robots_txt, robots_at, \
                    last_full_scan_at, created_at, updated_at",
+        id.as_uuid(),
+        name,
+        base_url,
+        config,
+        SqlxJson(politeness.clamped()) as _,
     )
-    .bind(id.as_uuid())
-    .bind(name)
-    .bind(base_url)
-    .bind(config)
-    .bind(SqlxJson(politeness.clamped()))
     .fetch_optional(exec)
     .await?;
-    row.ok_or(DbError::NotFound)?.try_into()
+    Ok(row.ok_or(DbError::NotFound)?.into())
 }
 
 /// Transition a provider's health state (circuit breaker / solver lifecycle).
@@ -163,11 +175,11 @@ pub async fn set_state<'e, E: PgExecutor<'e>>(
     id: ProviderId,
     state: ProviderState,
 ) -> DbResult<()> {
-    let result = sqlx::query(
-        "UPDATE providers SET state = $2::provider_state, updated_at = now() WHERE id = $1",
+    let result = sqlx::query!(
+        "UPDATE providers SET state = $2, updated_at = now() WHERE id = $1",
+        id.as_uuid(),
+        state as ProviderState,
     )
-    .bind(id.as_uuid())
-    .bind(state.as_str())
     .execute(exec)
     .await?;
     if result.rows_affected() == 0 {
@@ -184,8 +196,7 @@ pub async fn set_state<'e, E: PgExecutor<'e>>(
 /// # Errors
 /// [`DbError::NotFound`] if no provider has that id.
 pub async fn delete<'e, E: PgExecutor<'e>>(exec: E, id: ProviderId) -> DbResult<()> {
-    let result = sqlx::query("DELETE FROM providers WHERE id = $1")
-        .bind(id.as_uuid())
+    let result = sqlx::query!("DELETE FROM providers WHERE id = $1", id.as_uuid())
         .execute(exec)
         .await?;
     if result.rows_affected() == 0 {
@@ -200,11 +211,13 @@ pub async fn set_robots<'e, E: PgExecutor<'e>>(
     id: ProviderId,
     robots_txt: &str,
 ) -> DbResult<()> {
-    sqlx::query("UPDATE providers SET robots_txt = $2, robots_at = now() WHERE id = $1")
-        .bind(id.as_uuid())
-        .bind(robots_txt)
-        .execute(exec)
-        .await?;
+    sqlx::query!(
+        "UPDATE providers SET robots_txt = $2, robots_at = now() WHERE id = $1",
+        id.as_uuid(),
+        robots_txt,
+    )
+    .execute(exec)
+    .await?;
     Ok(())
 }
 
@@ -222,12 +235,13 @@ pub struct PublicProvider {
 
 /// List providers for the public Discover filter, richest first, hiding disabled ones.
 pub async fn list_public<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<PublicProvider>> {
-    let rows: Vec<PublicProvider> = sqlx::query_as(
+    let rows = sqlx::query_as!(
+        PublicProvider,
         "SELECT p.id, p.slug, p.name, \
                 (SELECT count(DISTINCT ss.series_id) FROM series_sources ss \
-                   WHERE ss.provider_id = p.id) AS series_count \
+                   WHERE ss.provider_id = p.id) AS \"series_count!\" \
          FROM providers p WHERE p.state <> 'disabled' \
-         ORDER BY series_count DESC, p.name ASC",
+         ORDER BY 4 DESC, p.name ASC",
     )
     .fetch_all(exec)
     .await?;
@@ -236,9 +250,11 @@ pub async fn list_public<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<PublicP
 
 /// Stamp the completion time of a full scan.
 pub async fn mark_full_scanned<'e, E: PgExecutor<'e>>(exec: E, id: ProviderId) -> DbResult<()> {
-    sqlx::query("UPDATE providers SET last_full_scan_at = now(), updated_at = now() WHERE id = $1")
-        .bind(id.as_uuid())
-        .execute(exec)
-        .await?;
+    sqlx::query!(
+        "UPDATE providers SET last_full_scan_at = now(), updated_at = now() WHERE id = $1",
+        id.as_uuid(),
+    )
+    .execute(exec)
+    .await?;
     Ok(())
 }

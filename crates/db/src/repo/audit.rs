@@ -15,14 +15,14 @@ pub async fn record<'e, E: PgExecutor<'e>>(
     target: Option<&str>,
     detail: &Json,
 ) -> DbResult<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO audit_log (id, actor_id, action, target, detail) VALUES ($1,$2,$3,$4,$5)",
+        Uuid::now_v7(),
+        actor_id.map(UserId::as_uuid),
+        action,
+        target,
+        detail,
     )
-    .bind(Uuid::now_v7())
-    .bind(actor_id.map(UserId::as_uuid))
-    .bind(action)
-    .bind(target)
-    .bind(detail)
     .execute(exec)
     .await?;
     Ok(())
@@ -45,14 +45,15 @@ pub struct AuditView {
 /// The most recent privileged actions, newest first (design §16 audit trail surfaced in the
 /// operator console).
 pub async fn list_recent<'e, E: PgExecutor<'e>>(exec: E, limit: i64) -> DbResult<Vec<AuditView>> {
-    let rows: Vec<AuditView> = sqlx::query_as(
-        "SELECT a.id, u.username AS actor, a.action, a.target, a.detail, a.created_at \
+    let rows: Vec<AuditView> = sqlx::query_as!(
+        AuditView,
+        "SELECT a.id, u.username AS \"actor?\", a.action, a.target, a.detail, a.created_at \
          FROM audit_log a \
          LEFT JOIN users u ON u.id = a.actor_id \
          ORDER BY a.created_at DESC \
          LIMIT $1",
+        limit,
     )
-    .bind(limit)
     .fetch_all(exec)
     .await?;
     Ok(rows)

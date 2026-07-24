@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE watchlist_entries SET sync_excluded = $3, updated_at = now() WHERE user_id = $1 AND series_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5d3262cabdf0c5a69b8de643e891273ef56e747e0f7eccf3ba520a5c6bbdb072"
+}

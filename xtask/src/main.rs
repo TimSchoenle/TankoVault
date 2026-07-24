@@ -99,10 +99,7 @@ fn openapi(check: bool) -> anyhow::Result<()> {
         + &progenitor_impl::space_out_items(tokens.to_string()).unwrap();
     let client_path = manifest_dir.join("../crates/api-client/src/lib.rs");
 
-    let artifacts = [
-        (spec_path, rendered_spec),
-        (client_path, rendered_client),
-    ];
+    let artifacts = [(spec_path, rendered_spec), (client_path, rendered_client)];
 
     if check {
         for (path, rendered) in &artifacts {
@@ -161,7 +158,10 @@ fn inject_rust_types(value: &mut serde_json::Value) {
         return;
     };
     for name in ID_TYPES.iter().chain(ENUM_TYPES.iter()) {
-        if let Some(schema) = map.get_mut(*name).and_then(serde_json::Value::as_object_mut) {
+        if let Some(schema) = map
+            .get_mut(*name)
+            .and_then(serde_json::Value::as_object_mut)
+        {
             schema.insert(
                 "x-rust-type".to_string(),
                 serde_json::json!(format!("tankovault_domain::{name}")),
@@ -271,7 +271,13 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
     )
     .await
     {
-        Ok(u) => println!("seeded admin user {} (password: {password})", u.username),
+        Ok(u) => {
+            // The admin is provisioned by the operator, not through the email-confirmation
+            // flow, so mark its address verified — otherwise the login gate would lock it out
+            // whenever a mailer is configured.
+            tankovault_db::repo::users::mark_email_verified(pool, u.id).await?;
+            println!("seeded admin user {} (password: {password})", u.username);
+        }
         Err(e) if e.is_unique_violation() || matches!(e, tankovault_db::DbError::Conflict(_)) => {
             println!("admin user already present; skipping");
         }

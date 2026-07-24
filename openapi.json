@@ -411,6 +411,18 @@
         ],
         "type": "object"
       },
+      "ForgotPasswordRequest": {
+        "properties": {
+          "email": {
+            "description": "The account's email address. Unknown addresses are accepted silently.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "login": {
@@ -911,6 +923,34 @@
         ],
         "type": "object"
       },
+      "RegisterResponse": {
+        "description": "The result of [`register`]. Registration has two outcomes depending on whether email\ndelivery is configured:\n\n- Email enabled: the account is created **unconfirmed**, a confirmation link is emailed,\n  and no session is issued (`verification_required = true`, `access_token` absent). The\n  user must click the link before they can sign in.\n- Email not configured (dev/self-host without SMTP): confirmation cannot be delivered, so\n  the account is activated immediately and a session is issued exactly like [`login`]\n  (`verification_required = false`, `access_token` present).",
+        "properties": {
+          "access_token": {
+            "description": "The issued bearer access token — present only when the account was activated\nimmediately (email delivery not configured). Mirrors [`TokenResponse::access_token`].",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_in": {
+            "description": "Access-token lifetime in seconds; present exactly when `access_token` is.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "verification_required": {
+            "description": "`true` when a confirmation email was sent and the account must be verified before it\ncan sign in. When `true`, no session was issued and `access_token` is absent.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "verification_required"
+        ],
+        "type": "object"
+      },
       "RemoteEntryRow": {
         "description": "One row of the admin console's \"Unmatched remote entries\" queue: a fetched provider entry\nthe auto-matcher could not confidently link to a local series.",
         "properties": {
@@ -957,6 +997,35 @@
           "status",
           "progress",
           "content_type"
+        ],
+        "type": "object"
+      },
+      "ResendVerificationRequest": {
+        "properties": {
+          "email": {
+            "description": "The account's email address. Unknown or already-confirmed addresses are accepted\nsilently so the endpoint can't be used to probe which emails have accounts.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
+      "ResetPasswordRequest": {
+        "properties": {
+          "new_password": {
+            "description": "The new password (same policy as registration: at least 8 characters).",
+            "type": "string"
+          },
+          "token": {
+            "description": "The opaque token from the emailed reset link.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "new_password"
         ],
         "type": "object"
       },
@@ -1669,6 +1738,18 @@
         "type": "object"
       },
       "Value": {},
+      "VerifyEmailRequest": {
+        "properties": {
+          "token": {
+            "description": "The opaque token from the emailed confirmation link.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "type": "object"
+      },
       "WatchStatus": {
         "description": "A user's tracking status for a series.",
         "enum": [
@@ -3688,6 +3769,16 @@
               }
             },
             "description": "Invalid email/username or password"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Email address not yet confirmed"
           }
         },
         "summary": "Log in",
@@ -3706,6 +3797,66 @@
           }
         },
         "summary": "Log out",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/password/forgot": {
+      "post": {
+        "description": "Always responds `202 Accepted`, whether or not the address is registered, so the\nendpoint can't be used to probe which emails have accounts. When the address does exist\nand email is configured, a single-use, time-limited reset link is sent.",
+        "operationId": "forgot_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgotPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "If the address is registered, a reset email has been sent"
+          }
+        },
+        "summary": "Request a password-reset email",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/password/reset": {
+      "post": {
+        "description": "Consumes a valid, unexpired, unused reset token, sets the new password, and revokes all\nof the user's active sessions so any stolen refresh token dies with the old credential.",
+        "operationId": "reset_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Password changed; existing sessions revoked"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid/expired token or weak password"
+          }
+        },
+        "summary": "Reset a password with a token",
         "tags": [
           "auth"
         ]
@@ -3745,7 +3896,7 @@
     },
     "/v1/auth/register": {
       "post": {
-        "description": "Validates the request, creates the user, then issues an access token and a rotating\nrefresh-token cookie exactly like [`login`].",
+        "description": "Validates the request and creates the user. When email delivery is configured the account\nis created **unconfirmed** and a confirmation link is emailed — the user must click it\nbefore they can sign in, and no session is issued. When email is not configured the\naccount is activated immediately and a session is issued exactly like [`login`], so\ndevelopment and SMTP-less self-hosting keep working.",
         "operationId": "register",
         "requestBody": {
           "content": {
@@ -3762,11 +3913,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
+                  "$ref": "#/components/schemas/RegisterResponse"
                 }
               }
             },
-            "description": "Account created; access token issued"
+            "description": "Account created; either a confirmation email was sent or (email unconfigured) an access token was issued"
           },
           "400": {
             "content": {
@@ -3790,6 +3941,73 @@
           }
         },
         "summary": "Register a new account",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/verify-email": {
+      "post": {
+        "description": "Consumes a valid, unexpired, unused confirmation token, marks the address verified, and\nsigns the user in — issuing an access token and a rotating refresh cookie exactly like\n[`login`] so clicking the link lands the user in the app.",
+        "operationId": "verify_email",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Email confirmed; session issued"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid or expired confirmation token"
+          }
+        },
+        "summary": "Confirm an email address with a token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/verify-email/resend": {
+      "post": {
+        "description": "Always responds `202 Accepted`, whether or not the address is registered or already\nconfirmed, so the endpoint can't be used to probe which emails have accounts. A fresh\nlink is only sent when the address exists, is still unconfirmed, and email is configured.",
+        "operationId": "resend_verification",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResendVerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "If the address is registered and unconfirmed, a confirmation email has been sent"
+          }
+        },
+        "summary": "Resend the email-confirmation link",
         "tags": [
           "auth"
         ]

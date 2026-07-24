@@ -10,6 +10,7 @@ members = [
     "crates/solver",
     "crates/adapters",
     "crates/auth",
+    "crates/email",
     "crates/matcher",
     "crates/bus",
     "crates/api-client",
@@ -58,6 +59,7 @@ tankovault-fetch = { path = "crates/fetch" }
 tankovault-solver = { path = "crates/solver" }
 tankovault-adapters = { path = "crates/adapters" }
 tankovault-auth = { path = "crates/auth" }
+tankovault-email = { path = "crates/email" }
 tankovault-matcher = { path = "crates/matcher" }
 tankovault-bus = { path = "crates/bus" }
 tankovault-api-client = { path = "crates/api-client" }

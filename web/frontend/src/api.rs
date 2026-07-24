@@ -105,6 +105,16 @@ fn api_base_url() -> String {
         .unwrap_or_default()
 }
 
+/// The HTTP status code of a failed operation, when the failure was an error *response*
+/// (as opposed to a transport/decoding error). Lets callers branch on a specific status —
+/// e.g. a login `403` meaning the email address still needs confirming.
+pub fn error_status<E>(err: &ApiOpError<E>) -> Option<u16> {
+    match err {
+        ApiOpError::ErrorResponse(resp) => Some(resp.status().as_u16()),
+        _ => None,
+    }
+}
+
 pub fn friendly_error<E: std::fmt::Debug>(err: ApiOpError<E>) -> String {
     match err {
         ApiOpError::ErrorResponse(resp) => {

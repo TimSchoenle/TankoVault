@@ -21,8 +21,8 @@ use components::{Shell, UnreadBadge};
 use dioxus::prelude::*;
 use state::Session;
 use views::{
-    Account, AnilistCallback, Console, Discover, Home, Login, NotFound, Notifications, Search,
-    Series, Watchlist,
+    Account, AnilistCallback, Console, Discover, ForgotPassword, Home, Login, NotFound,
+    Notifications, ResetPassword, Search, Series, VerifyEmail, Watchlist,
 };
 
 /// The type-safe route table (design §17.4). All screens live under the persistent `Shell`
@@ -53,6 +53,14 @@ pub enum Route {
         Search { q: String },
         #[route("/login")]
         Login {},
+        // Email-confirmation and password-reset landing pages (auth flow §17.4). The token
+        // rides in the query string of the link sent by email.
+        #[route("/verify-email?:token")]
+        VerifyEmail { token: String },
+        #[route("/forgot-password")]
+        ForgotPassword {},
+        #[route("/reset-password?:token")]
+        ResetPassword { token: String },
         #[route("/console")]
         Console {},
         #[route("/:..segments")]

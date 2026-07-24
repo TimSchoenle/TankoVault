@@ -109,6 +109,28 @@ pub(crate) struct ProviderPushOutcome {
     pub(crate) error: Option<String>,
 }
 
+/// Collapse a fetched remote list to at most one entry per `external_id`, keeping the most
+/// recently updated occurrence.
+///
+/// A provider's list can legitimately contain the *same* remote work more than once — `AniList`,
+/// for instance, occasionally returns duplicate `MediaList` rows for one media (a fresh entry
+/// and a stale leftover) that carry divergent `progress`/`updatedAt`. Reconciling every
+/// occurrence would let the older duplicate clobber the newer one, so the same series flip-flops
+/// between two values on every run. Deduplicating here — freshest `updated_at` wins — makes each
+/// remote work reconcile exactly once, against its latest known state.
+fn dedupe_latest_by_external_id(entries: Vec<RemoteEntry>) -> Vec<RemoteEntry> {
+    let mut by_id: HashMap<String, RemoteEntry> = HashMap::with_capacity(entries.len());
+    for entry in entries {
+        match by_id.get(&entry.external_id) {
+            Some(existing) if existing.updated_at >= entry.updated_at => {}
+            _ => {
+                by_id.insert(entry.external_id.clone(), entry);
+            }
+        }
+    }
+    by_id.into_values().collect()
+}
+
 /// The stateful sync engine, shared behind an `Arc` in service state. Holds every registered
 /// provider (`AniList` today; a second provider is a drop-in registry entry).
 pub(crate) struct SyncEngine {
@@ -499,13 +521,22 @@ impl SyncEngine {
         let policy = self.effective_policy(slug, user_id, override_policy).await;
         let access = self.access_token(slug, provider, user_id).await?;
         let viewer = provider.viewer(&access).await?;
-        let entries = provider.fetch_list(&access, &viewer).await?;
+        // Collapse duplicate remote rows (same `external_id`) to their freshest occurrence
+        // before reconciling — a provider list can carry the same work twice with divergent
+        // progress, and processing both would let a stale duplicate clobber the fresh one.
+        let entries = dedupe_latest_by_external_id(provider.fetch_list(&access, &viewer).await?);
 
         let mut counts = ReconcileCounts {
             fetched: entries.len(),
             ..Default::default()
         };
         let mut handled_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        // Series already reconciled this run. Two *distinct* remote ids can still resolve to one
+        // local series (an ambiguous title match, or genuine duplicate remote works); reconciling
+        // it more than once would replay the same clobbering flip-flop, so each series is
+        // reconciled at most once per run.
+        let mut handled_series: std::collections::HashSet<SeriesId> =
+            std::collections::HashSet::new();
 
         // Remote-driven pass: reconcile every remote entry against its local match.
         for entry in &entries {
@@ -533,6 +564,9 @@ impl SyncEngine {
             counts.matched += 1;
             sync::upsert_mapping(&self.pool, series_id, slug, &entry.external_id).await?;
             handled_ids.insert(entry.external_id.clone());
+            if !handled_series.insert(series_id) {
+                continue; // this series was already reconciled against a duplicate remote row
+            }
             self.reconcile_series(
                 provider,
                 slug,
@@ -1174,5 +1208,66 @@ impl SyncEngine {
         )
         .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // Progress values under test are small, exactly-representable integers, so exact float
+    // comparison is correct here.
+    #![allow(clippy::float_cmp)]
+
+    use super::dedupe_latest_by_external_id;
+    use crate::provider::RemoteEntry;
+    use tankovault_domain::{ContentType, WatchStatus};
+    use time::OffsetDateTime;
+
+    fn entry(external_id: &str, progress: f64, updated_unix: i64) -> RemoteEntry {
+        RemoteEntry {
+            external_id: external_id.to_owned(),
+            titles: vec![format!("title-{external_id}")],
+            status: WatchStatus::Reading,
+            progress,
+            updated_at: OffsetDateTime::from_unix_timestamp(updated_unix).unwrap(),
+            start_year: None,
+            content_type: ContentType::Unknown,
+            tags: Vec::new(),
+            authors: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn dedupe_keeps_freshest_occurrence_per_external_id() {
+        // The AniList-observed anomaly: media 143056 returned twice, a stale 2022 row at
+        // progress 23 and a fresh 2026 row at progress 182. Only the fresh one must survive.
+        let stale = entry("143056", 23.0, 1_654_724_356); // 2022-06-08
+        let fresh = entry("143056", 182.0, 1_784_801_432); // 2026-...
+        let other = entry("129918", 182.0, 1_750_314_982);
+
+        // Order must not matter: the newest `updated_at` wins regardless of input position.
+        for input in [
+            vec![fresh.clone(), stale.clone(), other.clone()],
+            vec![stale.clone(), fresh.clone(), other.clone()],
+        ] {
+            let mut out = dedupe_latest_by_external_id(input);
+            out.sort_by(|a, b| a.external_id.cmp(&b.external_id));
+
+            assert_eq!(out.len(), 2, "one row per distinct external id");
+            let dup = out.iter().find(|e| e.external_id == "143056").unwrap();
+            assert_eq!(dup.progress, 182.0, "freshest occurrence must win");
+            let single = out.iter().find(|e| e.external_id == "129918").unwrap();
+            assert_eq!(single.progress, 182.0, "non-duplicated entries pass through");
+        }
+    }
+
+    #[test]
+    fn dedupe_passes_through_a_list_without_duplicates() {
+        let input = vec![
+            entry("1", 5.0, 100),
+            entry("2", 6.0, 200),
+            entry("3", 7.0, 300),
+        ];
+        let out = dedupe_latest_by_external_id(input);
+        assert_eq!(out.len(), 3);
     }
 }

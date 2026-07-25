@@ -109,9 +109,6 @@ pub struct TelemetryConfig {
     /// Emit structured JSON logs (production) vs. pretty logs (dev).
     #[serde(default)]
     pub json_logs: bool,
-    /// Address the Prometheus scrape endpoint binds to, if enabled.
-    #[serde(default)]
-    pub metrics_addr: Option<String>,
 }
 
 impl TelemetryConfig {
@@ -249,6 +246,14 @@ pub struct MetricsConfig {
     /// Path the scrape endpoint is mounted at.
     #[serde(default = "MetricsConfig::default_route")]
     pub route: String,
+    /// Address the Prometheus scrape endpoint binds to on its **own** listener, isolating
+    /// it from the service's public HTTP port. When `Some`, the scrape route is removed
+    /// from the main app and served only here (defaults to `0.0.0.0:9090`), so metrics can
+    /// be kept on an internal-only interface and never share the request-facing port. When
+    /// `None` the scrape stays merged onto the service's primary port (the historical
+    /// behaviour).
+    #[serde(default = "MetricsConfig::default_listen")]
+    pub listen: Option<String>,
     /// Also record per-request HTTP metrics (`http_requests_total`,
     /// `http_request_duration_seconds`) from the middleware stack. Separate from
     /// [`Self::enabled`] because the request histogram is the expensive part: a service can
@@ -261,6 +266,10 @@ impl MetricsConfig {
     fn default_route() -> String {
         "/metrics".to_owned()
     }
+
+    fn default_listen() -> Option<String> {
+        Some("0.0.0.0:9090".to_owned())
+    }
 }
 
 impl Default for MetricsConfig {
@@ -268,6 +277,7 @@ impl Default for MetricsConfig {
         Self {
             enabled: true,
             route: Self::default_route(),
+            listen: Self::default_listen(),
             http_requests: true,
         }
     }

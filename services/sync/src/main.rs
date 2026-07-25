@@ -321,6 +321,8 @@ async fn main() -> anyhow::Result<()> {
         .expensive("/v1/sync/enrich");
     let limiter = RateLimiter::from_config(&cfg.rate_limit, classifier, None);
 
+    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
+
     let app = HttpStack::new(&cfg.security, metrics.clone())
         .with_rate_limit(limiter)
         .apply(routes)

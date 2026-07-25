@@ -146,6 +146,8 @@ async fn main() -> anyhow::Result<()> {
         })
         .build();
 
+    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
+
     let limiter = RateLimiter::from_config(&cfg.rate_limit, RouteClassifier::new(), None);
     let app = HttpStack::new(&cfg.security, metrics.clone())
         .with_rate_limit(limiter)

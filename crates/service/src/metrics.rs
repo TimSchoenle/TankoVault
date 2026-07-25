@@ -39,6 +39,9 @@ pub struct MetricsRegistry {
     handle: Option<PrometheusHandle>,
     http_requests: bool,
     route: Arc<str>,
+    /// When `Some`, the scrape endpoint is served on this dedicated address instead of the
+    /// service's primary port. `None` keeps it merged onto the main port.
+    listen: Option<Arc<str>>,
 }
 
 impl MetricsRegistry {
@@ -71,6 +74,7 @@ impl MetricsRegistry {
             handle: Some(handle),
             http_requests: cfg.http_requests,
             route: Arc::from(cfg.route.as_str()),
+            listen: cfg.listen.as_deref().map(Arc::from),
         })
     }
 
@@ -81,6 +85,19 @@ impl MetricsRegistry {
             handle: None,
             http_requests: false,
             route: Arc::from("/metrics"),
+            listen: None,
+        }
+    }
+
+    /// A disabled registry with an explicit scrape `route` and optional `listen` address,
+    /// for exercising the router-wiring decisions without installing a global recorder.
+    #[cfg(test)]
+    pub(crate) fn disabled_with_listen(route: &str, listen: Option<&str>) -> Self {
+        Self {
+            handle: None,
+            http_requests: false,
+            route: Arc::from(route),
+            listen: listen.map(Arc::from),
         }
     }
 
@@ -100,6 +117,13 @@ impl MetricsRegistry {
     #[must_use]
     pub fn route(&self) -> &str {
         &self.route
+    }
+
+    /// The dedicated address the scrape endpoint should bind to, when it is isolated to its
+    /// own port. `None` means the scrape stays merged onto the service's primary port.
+    #[must_use]
+    pub fn listen(&self) -> Option<&str> {
+        self.listen.as_deref()
     }
 
     /// Render the Prometheus exposition text, or `None` when metrics are disabled.

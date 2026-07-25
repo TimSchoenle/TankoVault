@@ -213,18 +213,64 @@ struct OpsState {
     metrics: MetricsRegistry,
 }
 
-/// The undocumented operational endpoints: `/health`, `/ready`, and the metrics scrape.
+/// The undocumented operational endpoints: `/health`, `/ready`, and — unless it has been
+/// isolated to its own port — the metrics scrape.
 ///
 /// Deliberately excluded from the `OpenAPI` document — an orchestrator probe is not part of
 /// the product's API contract — and mounted *outside* the middleware stack by convention,
 /// so a rate limit or a body cap can never make a replica look unhealthy.
+///
+/// When [`MetricsRegistry::listen`] is set the scrape route is **not** mounted here; it is
+/// served on its own listener instead (see [`spawn_metrics_server`]), keeping metrics off
+/// the request-facing port entirely.
 pub fn ops_router(health: Health, metrics: MetricsRegistry) -> Router {
+    let mut router = Router::new()
+        .route("/health", get(liveness))
+        .route("/ready", get(readiness));
+
+    // Only mount the scrape alongside the probes when it is not isolated to its own port.
+    if metrics.listen().is_none() {
+        let scrape_route = metrics.route().to_owned();
+        router = router.route(&scrape_route, get(scrape));
+    }
+
+    router.with_state(OpsState { health, metrics })
+}
+
+/// A standalone router serving only the Prometheus scrape endpoint, for the isolated
+/// metrics port. Carries none of the request middleware and none of the health probes —
+/// it exists purely so a scrape can reach a port that the public API traffic never touches.
+pub fn metrics_router(metrics: MetricsRegistry) -> Router {
     let scrape_route = metrics.route().to_owned();
     Router::new()
-        .route("/health", get(liveness))
-        .route("/ready", get(readiness))
         .route(&scrape_route, get(scrape))
-        .with_state(OpsState { health, metrics })
+        .with_state(OpsState {
+            health: Health::default(),
+            metrics,
+        })
+}
+
+/// Spawn a dedicated server for the metrics scrape when it has been isolated to its own
+/// port via [`MetricsRegistry::listen`].
+///
+/// A no-op when metrics are disabled or no separate address is configured, so services can
+/// call it unconditionally. The spawned server shares the same `shutdown` token as the
+/// primary listener, so both drain together on a container stop.
+pub fn spawn_metrics_server(metrics: MetricsRegistry, shutdown: CancellationToken) {
+    if !metrics.is_enabled() {
+        return;
+    }
+    let Some(addr) = metrics.listen().map(str::to_owned) else {
+        return;
+    };
+
+    let app = metrics_router(metrics);
+    tokio::spawn(async move {
+        tracing::info!(%addr, "serving metrics on a dedicated port");
+        if let Err(e) = serve(&addr, app, shutdown).await {
+            tracing::error!(error = %e, "metrics server stopped");
+        }
+    });
 }
 
 /// Liveness: the process is up and its executor is scheduling. Never consults a dependency
@@ -365,5 +411,90 @@ mod tests {
         };
         let response = scrape(State(state)).await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    use axum::body::Body;
+    use axum::http::Request;
+    use tower::ServiceExt as _;
+
+    /// The scrape handler is reached (as opposed to the route being absent) when the
+    /// response body is the handler's own "metrics are disabled" message. An unrouted path
+    /// yields axum's own empty 404 body instead, which lets these tests tell "mounted" from
+    /// "not mounted" even though both surface as `404` here.
+    async fn body_string(response: Response) -> String {
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body should collect");
+        String::from_utf8(bytes.to_vec()).expect("body should be utf-8")
+    }
+
+    fn get(path: &str) -> Request<Body> {
+        Request::builder()
+            .uri(path)
+            .body(Body::empty())
+            .expect("request should build")
+    }
+
+    #[tokio::test]
+    async fn ops_router_mounts_the_scrape_when_it_is_not_isolated() {
+        let metrics = MetricsRegistry::disabled_with_listen("/metrics", None);
+        let router = ops_router(Health::default(), metrics);
+
+        let response = router
+            .oneshot(get("/metrics"))
+            .await
+            .expect("router should respond");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(body_string(response).await, "metrics are disabled");
+    }
+
+    #[tokio::test]
+    async fn ops_router_drops_the_scrape_when_it_is_isolated_to_its_own_port() {
+        let metrics = MetricsRegistry::disabled_with_listen("/metrics", Some("0.0.0.0:9090"));
+        let router = ops_router(Health::default(), metrics);
+
+        // The scrape route is absent here — it lives on the dedicated listener instead — so
+        // the path is unrouted and the handler is never reached.
+        let response = router
+            .oneshot(get("/metrics"))
+            .await
+            .expect("router should respond");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_ne!(body_string(response).await, "metrics are disabled");
+    }
+
+    #[tokio::test]
+    async fn ops_router_always_keeps_the_health_probes() {
+        let metrics = MetricsRegistry::disabled_with_listen("/metrics", Some("0.0.0.0:9090"));
+        let router = ops_router(Health::default(), metrics);
+
+        let response = router
+            .oneshot(get("/health"))
+            .await
+            .expect("router should respond");
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn metrics_router_serves_only_the_scrape() {
+        let metrics = MetricsRegistry::disabled_with_listen("/metrics", Some("0.0.0.0:9090"));
+        let router = metrics_router(metrics);
+
+        // The scrape route is present (its handler is reached)…
+        let scrape = router
+            .clone()
+            .oneshot(get("/metrics"))
+            .await
+            .expect("router should respond");
+        assert_eq!(scrape.status(), StatusCode::NOT_FOUND);
+        assert_eq!(body_string(scrape).await, "metrics are disabled");
+
+        // …but the health probes are not carried on the isolated metrics port.
+        let health = router
+            .oneshot(get("/health"))
+            .await
+            .expect("router should respond");
+        assert_eq!(health.status(), StatusCode::NOT_FOUND);
+        assert_ne!(body_string(health).await, "ok");
     }
 }

@@ -138,6 +138,10 @@ async fn main() -> anyhow::Result<()> {
     // NATS is not (its absence only disables the live stream, which already degrades).
     let health = Health::builder().check(PostgresCheck::new(pool)).build();
 
+    // Serve the metrics scrape on its own port when configured, keeping it off the
+    // request-facing listener.
+    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
+
     let app = tankovault_api::build_router(
         state,
         &cfg.security,

@@ -56,7 +56,7 @@ pub mod telemetry;
 
 pub use audit::{AuditEvent, AuditOutcome, AuditSink, NoopAuditSink};
 pub use health::{Health, HealthBuilder, HealthReport, HealthStatus};
-pub use http::{HttpStack, ops_router, serve};
+pub use http::{HttpStack, metrics_router, ops_router, serve, spawn_metrics_server};
 pub use metrics::MetricsRegistry;
 pub use ratelimit::{RateLimiter, RouteClass, RouteClassifier};
 pub use shutdown::install_shutdown;

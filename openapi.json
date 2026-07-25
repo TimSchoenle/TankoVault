@@ -421,6 +421,19 @@
         ],
         "type": "object"
       },
+      "DeleteAccount": {
+        "description": "Confirmation payload for account deletion.\n\nDeletion is irreversible and cascades across every table, so it demands an explicit,\nunambiguous intent rather than being reachable by a stray `DELETE`. Requiring the\nusername back defends against both a mis-clicked button and a forced cross-site\nnavigation, neither of which can supply it.",
+        "properties": {
+          "confirm_username": {
+            "description": "The authenticated user's own username, typed back as confirmation.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm_username"
+        ],
+        "type": "object"
+      },
       "DismissRequest": {
         "properties": {
           "id": {
@@ -3918,7 +3931,7 @@
     },
     "/v1/auth/login": {
       "post": {
-        "description": "Authenticates by email or username + password. Issues an access token and a rotating\nrefresh-token cookie.",
+        "description": "Authenticates by email or username + password. Issues an access token and a rotating\nrefresh-token cookie.\n\nEvery outcome — success, unknown identifier, bad password, unverified address — is\naudited. An authentication log that only records successes cannot answer the question\nanyone actually asks it after an incident.",
         "operationId": "login",
         "requestBody": {
           "content": {
@@ -3960,6 +3973,16 @@
               }
             },
             "description": "Email address not yet confirmed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too many attempts; retry later"
           }
         },
         "summary": "Log in",
@@ -4194,6 +4217,42 @@
         ]
       }
     },
+    "/v1/me": {
+      "delete": {
+        "description": "Erases the account and every row owned by it (GDPR Art. 17, right to erasure).\n\nAudit records of privileged actions the user performed are **retained in pseudonymised\nform**: the actor reference is nulled, so the record of what happened survives while\nthe link to a person does not. Documented on\n`tankovault_db::repo::privacy::erase_user`.",
+        "operationId": "delete_account",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteAccount"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Account and all owned data erased"
+          },
+          "400": {
+            "description": "Confirmation did not match"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete my account",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
     "/v1/me/continue": {
       "get": {
         "description": "Continue-reading cards for Home / the Series CTA (frontend §9.3): tracked, in-progress\nseries that have unread chapters, freshest activity first.",
@@ -4231,6 +4290,34 @@
         "summary": "Get continue-reading cards",
         "tags": [
           "me-dashboard"
+        ]
+      }
+    },
+    "/v1/me/export": {
+      "get": {
+        "description": "Everything the system holds about the authenticated user, as a single JSON document\n(GDPR Art. 20, right to data portability).\n\nServed as an attachment rather than an inline body: the response is the user's entire\npersonal record and a browser should offer to save it rather than render it.\nCredentials — password hash, session token hashes, third-party OAuth tokens — are\nexcluded; see `tankovault_db::repo::privacy::export_user_data`.",
+        "operationId": "export_data",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Complete personal-data export"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Export my data",
+        "tags": [
+          "me-account"
         ]
       }
     },

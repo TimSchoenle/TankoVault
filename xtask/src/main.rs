@@ -99,7 +99,11 @@ fn sqlx_prepare(check: bool) -> anyhow::Result<()> {
     }
     println!(
         "sqlx offline query cache {}",
-        if check { "is up to date" } else { "written to .sqlx/" }
+        if check {
+            "is up to date"
+        } else {
+            "written to .sqlx/"
+        }
     );
     Ok(())
 }

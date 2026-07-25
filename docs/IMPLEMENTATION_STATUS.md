@@ -4,7 +4,44 @@ This file tracks the build state of the system described in [`design.md`](./desi
 Update it at the end of every coding session: mark what landed, and leave a precise
 "pick up next" list so the next session starts without re-deriving context.
 
-**Last updated:** 2026-07-22 (Session 15 — design only, no code)
+**Last updated:** 2026-07-25 (Session 16 — production hardening)
+
+> **Session 16 — production hardening of every backend service.** A new shared crate
+> `crates/service` (`tankovault-service`) now owns every cross-cutting concern; the old
+> `crates/observability` was folded into it and **deleted**. What it provides, and what it
+> replaced:
+>
+> | Concern | Before | Now |
+> |---|---|---|
+> | Bootstrap | Each `main.rs` open-coded load-config → init-telemetry → connect-pool → bind → `axum::serve` | One shared runtime; `main.rs` is wiring only |
+> | Shutdown | None. A container stop severed in-flight requests and background loops mid-write | One `CancellationToken` drives the server *and* every spawned loop (`shutdown::every`) |
+> | `/ready` | Literal `"ok"` in all 7 services — reported healthy with the DB gone | Concurrent, individually-timed dependency probes; `503` + per-dependency JSON body |
+> | Inbound rate limit | **None anywhere** (`governor` was only outbound crawl politeness) | `RateLimitStore` trait, in-memory (`governor`) + Redis token-bucket (atomic Lua) backends, per-route-class budgets, `429` + `Retry-After` + RFC 9457 body |
+> | CORS | `CorsLayer::permissive()` on the public edge — any site could read a signed-in user's data | Explicit origin allowlist; **empty by default** (same-origin only) |
+> | Other edge controls | None | Request-id, body cap (1 MiB), request timeout, `nosniff`/`DENY`/`no-referrer`/CORP, optional HSTS |
+> | Metrics | 3 counters in 2 services, always on | Togglable (**recorder not installed when off**), `http_requests_total` / `http_request_duration_seconds` / `http_requests_in_flight` labelled by *matched route* so cardinality is bounded |
+> | Audit | One private helper in `admin.rs`; successes only | `AuditSink` trait + Postgres/no-op sinks; `outcome` (`success`/`failure`/`denied`), `actor_ip`, `user_agent` columns (migration `0017`); **denials now recorded** — `AuthUser::require` audits refusals, and login failure / refresh-token-reuse are audited |
+> | GDPR | Nothing | `GET /v1/me/export` (Art. 20, credential-redacted) and `DELETE /v1/me` (Art. 17, cascade + audit pseudonymisation via the existing `ON DELETE SET NULL`); configurable audit retention sweep (Art. 5(1)(e)) |
+>
+> **Toggles** are wiring decisions, never call-site branches: `metrics.enabled = false`
+> installs no recorder at all, `audit.enabled = false` swaps in `NoopAuditSink`, and
+> `rate_limit.enabled = false` leaves the layer unmounted. All three verified off and on
+> against a live stack.
+>
+> **Restructuring:** `services/api/src/admin.rs` (1452 lines) → `admin/{providers,scans,
+> system,merge,sync}.rs`; `me.rs` (1346) → `me/{watchlist,progress,notifications,dashboard,
+> account,sync,privacy}.rs`. Pure code movement — the route table and `OpenAPI` document are
+> unchanged apart from the two new GDPR paths. Re-exports are **globs** because `utoipa`'s
+> `routes!` resolves a hidden `__path_<handler>` type per handler.
+>
+> **Two real bugs found and fixed while building this:** `RateLimitPolicy::capacity()`
+> clamped the burst *up* to the sustained rate, so the shipped default of 300/min with a
+> 60-deep bucket actually allowed 300 back-to-back requests; and `Health::report` gathered
+> its probes sequentially while documenting them as concurrent.
+>
+> Gates: `fmt --check`, `clippy --workspace --all-targets --all-features -D warnings`,
+> `cargo test --workspace` (**214 passing**), and the `wasm32` frontend check all clean,
+> both online and with `SQLX_OFFLINE=true`.
 
 > Session 15: **no code shipped** — a design pass on the two weakest areas of user tracking.
 > New `docs/READING_PROGRESS_AND_SYNC.md` (RFC, proposed/not implemented) fully redesigns:
@@ -308,7 +345,8 @@ Legend: ✅ done & compiling · 🟡 partial/skeleton · ⬜ not started
 | `config` | ✅ | Figment layered load (defaults → TOML → `TANKOVAULT_*` env). `ConfigError` boxes the large `figment::Error`. Tested. |
 | `contracts` | ✅ | NATS subjects/streams + task/progress/chapter/provider-state messages. Tested. |
 | `bus` | ✅ | `async-nats` JetStream client: stream provisioning, task publish/consume, chapter events. **+ core-NATS client** for non-durable live pushes (`publish_user_notification`/`subscribe_user_notifications`; `BusError::Nats`). |
-| `observability` | ✅ | `tracing` (json/pretty) + Prometheus recorder. **OTLP export deferred** (§4). |
+| `service` | ✅ | **New (Session 16).** The shared production runtime: `init_tracing`, togglable `MetricsRegistry`, `install_shutdown` + `shutdown::every`, `Health`/`HealthCheck` (+`PostgresCheck`), `HttpStack` (request-id → trace → metrics → security headers → CORS → rate limit → timeout → body cap → compression), `ops_router`, `serve` with graceful drain, `RateLimitStore` (memory + Redis) and `AuditSink` (Postgres + no-op). Features: `db`, `redis`. 31 tests. |
+| ~~`observability`~~ | — | **Deleted (Session 16)**; folded into `service`, which splits tracing from metrics so metrics can genuinely be switched off. OTLP export still deferred (§4). |
 | `db` | ✅ | Pool, embedded migrations, repos: providers, catalog (`ingest_series` tx now runs the **matcher-driven `resolve_canonical_series`** + merge-candidate recording; `list_tags`), users+refresh, scans (SKIP LOCKED), tracking (+`progress_state`, `watchlist_set_status`, `feed`, `notifications_unread_count`), matching (trigram + **`merge_series`/`list_open_merge_candidates`/`dismiss_merge_candidate`**), audit, sync (external_accounts + sync_mappings). Depends on `tankovault-matcher`. Not yet DB-integration-tested in-repo (§3). |
 | `fetch` | ✅ | `Fetcher` trait + decorator stack (robots → rate-limit → cache → solving → retry → base), **SSRF guard**, solver client. 12 tests. |
 | `solver` | ✅ | `ChallengeSolver` trait, `detect_challenge` classifier, FlareSolverr back-end, fake solver for the swap test. 7 tests. |
@@ -319,7 +357,7 @@ Legend: ✅ done & compiling · 🟡 partial/skeleton · ⬜ not started
 ### Services (`services/`)
 | Service | Status | Notes |
 |---|---|---|
-| `api` | ✅ | **Full §11 contract.** Auth (register/login/refresh/logout), series browse/detail/chapters (resolved links), `/v1/tags`, admin provider CRUD + `base_url` migration + trigger-scan + **`providers/:id/test`** (dry-run adapter via the injected fetch stack) + **`scans/stream`** (SSE, DB-poll), `merge-candidates` list/dismiss + `series/merge`, **operator dashboard reads** (`admin/stats`, `admin/providers/stats`, `admin/scans` list, `admin/scan-failures`, `admin/audit`), `/me` watchlist/progress/feed/notifications, and the **provider-keyed** `/me/sync/{provider}/*` proxy (+ `/me/sync/providers`). Now also depends on `adapters`/`fetch`/`solver` for the test endpoint. **+ `GET /v1/me/stream`** (SSE live notifications; token-in-query auth; core-NATS relay via `AppState.bus: Option<Bus>`, degrades to `503` if NATS is down). **+ admin Sync endpoints** (`admin/sync/accounts`, `admin/sync/mappings` list; `admin/sync/{pull,push,unlink}`, `admin/sync/mappings/clear` — all audited). **+ `spawn_targeted_push`**: `put_progress`/`put_watchlist` fire a best-effort background `POST {sync}/v1/sync/push-series` after their local write, so marking a chapter read reflects to every linked provider without a manual sync (design: immediate targeted push, §7). |
+| `api` | ✅ | **Full §11 contract.** Auth (register/login/refresh/logout), series browse/detail/chapters (resolved links), `/v1/tags`, admin provider CRUD + `base_url` migration + trigger-scan + **`providers/:id/test`** (dry-run adapter via the injected fetch stack) + **`scans/stream`** (SSE, DB-poll), `merge-candidates` list/dismiss + `series/merge`, **operator dashboard reads** (`admin/stats`, `admin/providers/stats`, `admin/scans` list, `admin/scan-failures`, `admin/audit`), `/me` watchlist/progress/feed/notifications, and the **provider-keyed** `/me/sync/{provider}/*` proxy (+ `/me/sync/providers`). Now also depends on `adapters`/`fetch`/`solver` for the test endpoint. **+ `GET /v1/me/stream`** (SSE live notifications; token-in-query auth; core-NATS relay via `AppState.bus: Option<Bus>`, degrades to `503` if NATS is down). **+ admin Sync endpoints** (`admin/sync/accounts`, `admin/sync/mappings` list; `admin/sync/{pull,push,unlink}`, `admin/sync/mappings/clear` — all audited). **+ `spawn_targeted_push`**: `put_progress`/`put_watchlist` fire a best-effort background `POST {sync}/v1/sync/push-series` after their local write, so marking a chapter read reflects to every linked provider without a manual sync (design: immediate targeted push, §7). **+ Session 16:** handlers split into `admin/*` and `me/*` submodules; the shared `tankovault-service` stack (rate limit, CORS allowlist, security headers, request-id, body cap, timeout, togglable metrics/audit, real `/ready`, graceful shutdown); audited auth outcomes and authz denials; **GDPR `GET /v1/me/export` + `DELETE /v1/me`**; audit-retention sweep. See [`OPERATIONS.md`](./OPERATIONS.md). |
 | `worker` | ✅ | One-shot inline full/fast scan **and** JetStream consumer (consumer-group scale); idempotent `ingest_series`, emits `chapter.discovered`. |
 | `control-plane` | ✅ | Scheduler (interval sweeps) + planner (run→tasks→JetStream) + `/internal/scans` trigger. **+ progress aggregator** (`scan.progress` consumer → atomic `finalize_if_complete` → republished terminal event) **+ Redis leader election** (`SET NX PX` lock w/ `GET`/`PEXPIRE` renewal; `Leadership` flag gates every sweep; fails open to sole-leader without Redis, stands down on Redis error). 5 tests. |
 | `notifier` | ✅ | Consumes `chapter.discovered`, fans out to watchers (partial-index lookup), dedup, in-app rows. **+ pluggable external channels** (`NotificationChannel` trait): config-driven generic JSON webhook + Discord incoming-webhook **+ email (SMTP via `lettre`, rustls/ring)**, delivered once per genuinely-new chapter (best-effort, failures logged not fatal). **+ live push**: after each in-app row it publishes a best-effort core-NATS `UserNotification` (with the fresh unread count) to `notify.user.<id>`, relayed to connected clients by the API's `/v1/me/stream`. Pure payload/message builders tested (13 tests). |

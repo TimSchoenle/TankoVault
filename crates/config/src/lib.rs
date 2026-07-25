@@ -234,6 +234,293 @@ impl EmailConfig {
     }
 }
 
+/// Prometheus metrics facility.
+///
+/// Disabling this is a real off switch, not a filter: [`Self::enabled`] gates installation
+/// of the process-wide recorder itself, so with metrics off no counter/histogram storage is
+/// allocated and `metrics::counter!` calls compile down to a no-op dispatch against the
+/// default (dropping) recorder.
+#[derive(Debug, Clone, Deserialize)]
+pub struct MetricsConfig {
+    /// Install the Prometheus recorder and serve the scrape endpoint. When `false` the
+    /// scrape route answers `404` and no measurements are retained.
+    #[serde(default = "crate::default_true")]
+    pub enabled: bool,
+    /// Path the scrape endpoint is mounted at.
+    #[serde(default = "MetricsConfig::default_route")]
+    pub route: String,
+    /// Also record per-request HTTP metrics (`http_requests_total`,
+    /// `http_request_duration_seconds`) from the middleware stack. Separate from
+    /// [`Self::enabled`] because the request histogram is the expensive part: a service can
+    /// keep cheap domain counters while dropping per-route cardinality.
+    #[serde(default = "crate::default_true")]
+    pub http_requests: bool,
+}
+
+impl MetricsConfig {
+    fn default_route() -> String {
+        "/metrics".to_owned()
+    }
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            route: Self::default_route(),
+            http_requests: true,
+        }
+    }
+}
+
+/// Append-only audit trail for privileged and privacy-relevant actions (design §16).
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuditConfig {
+    /// Write audit records. When `false` a no-op sink is installed and call sites stay
+    /// unchanged — auditing is a wiring decision, never an `if` in a handler.
+    #[serde(default = "crate::default_true")]
+    pub enabled: bool,
+    /// Record the client IP alongside each event. Off by default: an IP is personal data
+    /// under GDPR Art. 4(1), so retaining it is an explicit operator decision.
+    #[serde(default)]
+    pub record_ip: bool,
+    /// Record the client `User-Agent` alongside each event.
+    #[serde(default)]
+    pub record_user_agent: bool,
+    /// Days to retain audit records before the retention sweep deletes them. `0` disables
+    /// the sweep and keeps records forever, which is rarely what a GDPR-scoped deployment
+    /// wants (storage limitation, Art. 5(1)(e)).
+    #[serde(default = "AuditConfig::default_retention_days")]
+    pub retention_days: u32,
+    /// Hours between retention sweeps. Ignored when [`Self::retention_days`] is `0`.
+    #[serde(default = "AuditConfig::default_sweep_interval_hours")]
+    pub sweep_interval_hours: u64,
+}
+
+impl AuditConfig {
+    fn default_retention_days() -> u32 {
+        365
+    }
+    fn default_sweep_interval_hours() -> u64 {
+        24
+    }
+
+    /// Whether the background retention sweep should run.
+    #[must_use]
+    pub fn retention_enabled(&self) -> bool {
+        self.enabled && self.retention_days > 0
+    }
+}
+
+impl Default for AuditConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            record_ip: false,
+            record_user_agent: false,
+            retention_days: Self::default_retention_days(),
+            sweep_interval_hours: Self::default_sweep_interval_hours(),
+        }
+    }
+}
+
+/// Where rate-limit counters live.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RateLimitBackend {
+    /// Process-local counters. Correct for a single replica and for tests; with `N`
+    /// replicas behind a load balancer the effective limit is `N` times the configured one.
+    #[default]
+    Memory,
+    /// Shared counters in Redis, so the limit holds across every replica. Requires a
+    /// `redis` block; the limiter fails **open** (allows the request) if Redis is
+    /// unreachable, since a counter-store outage must not take the edge down.
+    Redis,
+}
+
+/// A single token-bucket policy: sustained refill rate plus bucket depth.
+///
+/// The two numbers control different things and are deliberately independent:
+/// [`Self::per_minute`] is how fast the bucket refills, [`Self::burst`] is how deep it is.
+/// A burst *below* the sustained rate is the normal case, not a misconfiguration — the
+/// default global policy allows 300 requests/minute but at most 60 back-to-back, which
+/// absorbs a page load without letting a client spend a whole minute's budget instantly.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct RateLimitPolicy {
+    /// Sustained requests allowed per minute per client key; the bucket's refill rate.
+    pub per_minute: u32,
+    /// Bucket depth: the most requests a client may spend back-to-back.
+    pub burst: u32,
+}
+
+impl RateLimitPolicy {
+    /// Construct a policy directly (used for defaults and in tests).
+    #[must_use]
+    pub const fn new(per_minute: u32, burst: u32) -> Self {
+        Self { per_minute, burst }
+    }
+
+    /// Bucket capacity: the most requests a client can make in one instant.
+    ///
+    /// Clamped to at least 1 — a zero-depth bucket would reject every request forever,
+    /// which is never what a misconfigured `0` is meant to express.
+    #[must_use]
+    pub const fn capacity(&self) -> u32 {
+        if self.burst == 0 { 1 } else { self.burst }
+    }
+}
+
+/// Inbound request rate limiting for a service's HTTP edge.
+///
+/// Distinct from the *outbound* crawl politeness in `tankovault-fetch`, which paces requests
+/// this system makes to third-party providers.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RateLimitConfig {
+    /// Enforce limits. When `false` the layer is not mounted at all (no per-request cost).
+    #[serde(default = "crate::default_true")]
+    pub enabled: bool,
+    /// Counter store. See [`RateLimitBackend`].
+    #[serde(default)]
+    pub backend: RateLimitBackend,
+    /// Applies to any route without a stricter class below.
+    #[serde(default = "RateLimitConfig::default_global")]
+    pub global: RateLimitPolicy,
+    /// Credential-handling routes (login, register, password reset, token refresh). Tight
+    /// by design — this is the online-guessing control, so it is deliberately far below
+    /// [`Self::global`].
+    #[serde(default = "RateLimitConfig::default_auth")]
+    pub auth: RateLimitPolicy,
+    /// Routes that are cheap to call and expensive to serve (data export, scan triggers,
+    /// sync push/pull).
+    #[serde(default = "RateLimitConfig::default_expensive")]
+    pub expensive: RateLimitPolicy,
+    /// Trust `X-Forwarded-For` / `X-Real-IP` when deriving the client key.
+    ///
+    /// **Only enable behind a reverse proxy that overwrites these headers.** With this on
+    /// and no such proxy, any client can forge a fresh identity per request and bypass the
+    /// limiter entirely — hence the safe default of `false`.
+    #[serde(default)]
+    pub trust_forwarded_for: bool,
+}
+
+impl RateLimitConfig {
+    fn default_global() -> RateLimitPolicy {
+        RateLimitPolicy::new(300, 60)
+    }
+    fn default_auth() -> RateLimitPolicy {
+        RateLimitPolicy::new(10, 5)
+    }
+    fn default_expensive() -> RateLimitPolicy {
+        RateLimitPolicy::new(6, 2)
+    }
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            backend: RateLimitBackend::default(),
+            global: Self::default_global(),
+            auth: Self::default_auth(),
+            expensive: Self::default_expensive(),
+            trust_forwarded_for: false,
+        }
+    }
+}
+
+/// Cross-origin resource sharing.
+///
+/// The default is an **empty allowlist**, which rejects every cross-origin request. The
+/// reference deployment serves the frontend and the API from one nginx origin, so no CORS
+/// hop exists; a split-origin deployment must name its origins explicitly.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct CorsConfig {
+    /// Exact origins allowed, e.g. `https://app.example.com`. Empty disables CORS entirely.
+    #[serde(default)]
+    pub allowed_origins: Vec<String>,
+    /// Allow credentialed cross-origin requests (cookies, `Authorization`). Cannot be
+    /// combined with a wildcard origin, which is one more reason the allowlist is explicit.
+    #[serde(default)]
+    pub allow_credentials: bool,
+    /// `Access-Control-Max-Age`, seconds.
+    #[serde(default = "CorsConfig::default_max_age_secs")]
+    pub max_age_secs: u64,
+}
+
+impl CorsConfig {
+    fn default_max_age_secs() -> u64 {
+        3600
+    }
+
+    /// Whether any cross-origin request should be permitted.
+    #[must_use]
+    pub fn is_enabled(&self) -> bool {
+        !self.allowed_origins.is_empty()
+    }
+}
+
+/// Edge hardening applied by the shared middleware stack.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SecurityConfig {
+    /// Cross-origin policy. See [`CorsConfig`].
+    #[serde(default)]
+    pub cors: CorsConfig,
+    /// Reject request bodies larger than this, in bytes, before they are buffered.
+    #[serde(default = "SecurityConfig::default_max_body_bytes")]
+    pub max_body_bytes: usize,
+    /// Abort a request that has not produced a response within this many seconds.
+    #[serde(default = "SecurityConfig::default_request_timeout_secs")]
+    pub request_timeout_secs: u64,
+    /// Emit `Strict-Transport-Security`. Only meaningful when the edge is reached over
+    /// TLS; sending it over plain HTTP is ignored by browsers but still misleading.
+    #[serde(default)]
+    pub hsts: bool,
+    /// `max-age` for the HSTS header, seconds (default: two years, the preload minimum).
+    #[serde(default = "SecurityConfig::default_hsts_max_age_secs")]
+    pub hsts_max_age_secs: u64,
+    /// Send the baseline set of hardening headers (`X-Content-Type-Options`,
+    /// `X-Frame-Options`, `Referrer-Policy`, `Cross-Origin-Resource-Policy`).
+    #[serde(default = "crate::default_true")]
+    pub security_headers: bool,
+    /// Accept and echo an inbound `X-Request-Id` instead of always minting a fresh one.
+    /// Requires a trusted proxy for the same reason as
+    /// [`RateLimitConfig::trust_forwarded_for`] — a client-supplied id can otherwise be
+    /// used to collide or poison log correlation.
+    #[serde(default)]
+    pub trust_request_id: bool,
+}
+
+impl SecurityConfig {
+    fn default_max_body_bytes() -> usize {
+        1024 * 1024 // 1 MiB: the largest legitimate body here is a provider config blob.
+    }
+    fn default_request_timeout_secs() -> u64 {
+        30
+    }
+    fn default_hsts_max_age_secs() -> u64 {
+        63_072_000
+    }
+}
+
+impl Default for SecurityConfig {
+    fn default() -> Self {
+        Self {
+            cors: CorsConfig::default(),
+            max_body_bytes: Self::default_max_body_bytes(),
+            request_timeout_secs: Self::default_request_timeout_secs(),
+            hsts: false,
+            hsts_max_age_secs: Self::default_hsts_max_age_secs(),
+            security_headers: true,
+            trust_request_id: false,
+        }
+    }
+}
+
+/// Shared `serde` default for fields that are on unless explicitly disabled.
+fn default_true() -> bool {
+    true
+}
+
 /// The canonical source key for data pulled from `AniList` (its public GraphQL metadata or a
 /// linked user's list). Kept as a shared constant so every service agrees on the spelling.
 pub const SOURCE_ANILIST: &str = "anilist";

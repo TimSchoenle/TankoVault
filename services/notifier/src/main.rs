@@ -17,8 +17,9 @@ use serde::Deserialize;
 use tankovault_bus::Bus;
 use tankovault_contracts::{ChapterDiscovered, UserNotification, subjects};
 use tankovault_db::PgPool;
+use tankovault_service::health::PostgresCheck;
+use tankovault_service::{Health, HttpStack, MetricsRegistry};
 use time::OffsetDateTime;
-use tokio::net::TcpListener;
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -29,6 +30,12 @@ struct Config {
     channels: channels::ChannelsConfig,
     #[serde(default = "default_bind")]
     bind_addr: String,
+    /// Edge hardening for the ops listener.
+    #[serde(default)]
+    security: tankovault_config::SecurityConfig,
+    /// Prometheus metrics. Togglable; disabling installs no recorder.
+    #[serde(default)]
+    metrics: tankovault_config::MetricsConfig,
 }
 
 fn default_bind() -> String {
@@ -38,7 +45,9 @@ fn default_bind() -> String {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cfg: Config = tankovault_config::load()?;
-    tankovault_observability::init_tracing(&cfg.telemetry)?;
+    tankovault_service::init_tracing(&cfg.telemetry)?;
+    let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    let shutdown = tankovault_service::install_shutdown();
 
     let pool = tankovault_db::connect(
         &cfg.database.url,
@@ -49,13 +58,28 @@ async fn main() -> anyhow::Result<()> {
     let bus = Bus::connect(&cfg.nats.url).await?;
     bus.ensure_streams().await?;
 
-    // Minimal health server for k8s probes, alongside the consumer.
-    let health = axum::Router::new()
-        .route("/health", axum::routing::get(|| async { "ok" }))
-        .route("/ready", axum::routing::get(|| async { "ok" }));
-    let listener = TcpListener::bind(&cfg.bind_addr).await?;
+    // Ops listener for orchestrator probes and the metrics scrape, alongside the consumer.
+    // Readiness names both dependencies: a notifier that cannot reach Postgres or NATS
+    // cannot deliver anything, and previously reported itself healthy regardless.
+    let ready_pool = pool.clone();
+    let ready_bus = bus.clone();
+    let health = Health::builder()
+        .check(PostgresCheck::new(ready_pool))
+        .check_fn("nats", move || {
+            let bus = ready_bus.clone();
+            async move { bus.ping().await.map_err(|e| e.to_string()) }
+        })
+        .build();
+
+    let ops = HttpStack::new(&cfg.security, metrics.clone())
+        .apply(axum::Router::new())
+        .merge(tankovault_service::ops_router(health, metrics));
+    let ops_bind = cfg.bind_addr.clone();
+    let ops_shutdown = shutdown.clone();
     tokio::spawn(async move {
-        let _ = axum::serve(listener, health).await;
+        if let Err(e) = tankovault_service::serve(&ops_bind, ops, ops_shutdown).await {
+            tracing::error!(error = %e, "ops listener stopped");
+        }
     });
 
     let external = Arc::new(channels::build(&cfg.channels));
@@ -66,13 +90,14 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!(?names, "external notification channels enabled");
     }
 
-    run_consumer(pool, bus, external).await
+    run_consumer(pool, bus, external, shutdown).await
 }
 
 async fn run_consumer(
     pool: PgPool,
     bus: Bus,
     channels: Arc<Vec<Box<dyn NotificationChannel>>>,
+    shutdown: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
     let consumer = bus
         .event_consumer(
@@ -83,7 +108,19 @@ async fn run_consumer(
     let mut messages = consumer.messages().await?;
     tracing::info!("notifier consuming chapter.discovered events");
 
-    while let Some(next) = messages.next().await {
+    loop {
+        // Finish the message in hand, then stop: acking after the fan-out is what makes
+        // redelivery correct, and being killed between the two would drop a notification.
+        let next = tokio::select! {
+            () = shutdown.cancelled() => {
+                tracing::info!("notifier consumer stopping");
+                return Ok(());
+            }
+            next = messages.next() => match next {
+                Some(next) => next,
+                None => break,
+            },
+        };
         let msg = match next {
             Ok(m) => m,
             Err(e) => {

@@ -1,8 +1,9 @@
 //! Authentication handlers: register, login, refresh (rotating + reuse-detecting), logout.
 
+use crate::audit::audit_anonymous;
 use crate::error::{ApiError, ApiResult};
 use crate::mailer;
-use crate::state::AppState;
+use crate::state::{AppState, ClientContext};
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -12,6 +13,7 @@ use tankovault_auth::{
     generate_refresh_token, hash_password, hash_refresh_token, issue_access_token, verify_password,
 };
 use tankovault_domain::{User, UserRole};
+use tankovault_service::AuditOutcome;
 use time::{Duration, OffsetDateTime};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -141,6 +143,10 @@ pub async fn register(
 ///
 /// Authenticates by email or username + password. Issues an access token and a rotating
 /// refresh-token cookie.
+///
+/// Every outcome — success, unknown identifier, bad password, unverified address — is
+/// audited. An authentication log that only records successes cannot answer the question
+/// anyone actually asks it after an incident.
 #[utoipa::path(
     post,
     path = "/v1/auth/login",
@@ -150,27 +156,80 @@ pub async fn register(
         (status = 200, description = "Authenticated; access token issued", body = TokenResponse),
         (status = 401, description = "Invalid email/username or password", body = crate::error::ProblemDetails),
         (status = 403, description = "Email address not yet confirmed", body = crate::error::ProblemDetails),
+        (status = 429, description = "Too many attempts; retry later", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn login(
     State(state): State<AppState>,
+    client: ClientContext,
     jar: CookieJar,
     Json(req): Json<LoginRequest>,
 ) -> ApiResult<(CookieJar, Json<TokenResponse>)> {
-    let creds = tankovault_db::repo::users::find_credentials(&state.pool, req.login.trim())
-        .await?
-        .ok_or(ApiError::Unauthorized)?;
+    let login = req.login.trim();
+
+    // The identifier is recorded on failures so a brute-force campaign can be attributed
+    // to the account it targets. That is the point of an authentication log, and the
+    // identifier is already stored in `users`; the *IP* is the field gated behind the
+    // operator's privacy toggle, and the sink applies that.
+    let Some(creds) = tankovault_db::repo::users::find_credentials(&state.pool, login).await?
+    else {
+        audit_anonymous(
+            &state,
+            &client,
+            None,
+            "auth.login",
+            login,
+            &serde_json::json!({ "reason": "unknown_identifier" }),
+            AuditOutcome::Failure,
+        )
+        .await;
+        return Err(ApiError::Unauthorized);
+    };
+
     let ok =
         verify_password(&req.password, &creds.password_hash).map_err(|_| ApiError::Internal)?;
     if !ok {
+        audit_anonymous(
+            &state,
+            &client,
+            Some(creds.user.id),
+            "auth.login",
+            login,
+            &serde_json::json!({ "reason": "bad_password" }),
+            AuditOutcome::Failure,
+        )
+        .await;
         return Err(ApiError::Unauthorized);
     }
+
     // Password is correct, but an unconfirmed address may not sign in. Distinct from a bad
     // password (401) so the client can offer to resend the confirmation link. Accounts created
     // before confirmation existed, and those registered without a mailer, are already verified.
     if !creds.email_verified {
+        audit_anonymous(
+            &state,
+            &client,
+            Some(creds.user.id),
+            "auth.login",
+            login,
+            &serde_json::json!({ "reason": "email_unverified" }),
+            AuditOutcome::Denied,
+        )
+        .await;
         return Err(ApiError::EmailNotVerified);
     }
+
+    audit_anonymous(
+        &state,
+        &client,
+        Some(creds.user.id),
+        "auth.login",
+        login,
+        &serde_json::json!({}),
+        AuditOutcome::Success,
+    )
+    .await;
+
     issue_session(&state, jar, &creds.user, Uuid::now_v7()).await
 }
 
@@ -189,6 +248,7 @@ pub async fn login(
 )]
 pub async fn refresh(
     State(state): State<AppState>,
+    client: ClientContext,
     jar: CookieJar,
 ) -> ApiResult<(CookieJar, Json<TokenResponse>)> {
     let raw = jar
@@ -205,6 +265,29 @@ pub async fn refresh(
     // family is compromised — revoke the whole lineage.
     if record.revoked_at.is_some() {
         tankovault_db::repo::users::revoke_family(&state.pool, record.family_id).await?;
+        // The single highest-signal security event this service can emit: a rotated
+        // refresh token being replayed means two parties hold the same credential.
+        // Previously it revoked the family and returned 401 silently, leaving the
+        // operator no way to know a token had been stolen.
+        tracing::warn!(
+            user_id = %record.user_id.as_uuid(),
+            family_id = %record.family_id,
+            "refresh token reuse detected; revoking family"
+        );
+        audit_anonymous(
+            &state,
+            &client,
+            Some(record.user_id),
+            "auth.refresh",
+            &record.user_id.as_uuid().to_string(),
+            &serde_json::json!({
+                "reason": "token_reuse_detected",
+                "family_id": record.family_id,
+                "action_taken": "family_revoked",
+            }),
+            AuditOutcome::Denied,
+        )
+        .await;
         return Err(ApiError::Unauthorized);
     }
     if record.expires_at <= OffsetDateTime::now_utc() {

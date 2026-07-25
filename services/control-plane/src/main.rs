@@ -13,7 +13,7 @@ mod leader;
 
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::routing::post;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -21,7 +21,8 @@ use tankovault_bus::Bus;
 use tankovault_contracts::{ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
 use tankovault_domain::{Provider, ProviderId, ScanMode, ScanRunId};
-use tokio::net::TcpListener;
+use tankovault_service::health::PostgresCheck;
+use tankovault_service::{Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier};
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -36,6 +37,16 @@ struct Config {
     scheduler: SchedulerConfig,
     #[serde(default = "default_bind")]
     bind_addr: String,
+    /// Edge hardening for the internal trigger endpoint.
+    #[serde(default)]
+    security: tankovault_config::SecurityConfig,
+    /// Inbound rate limiting on `/internal/scans`, so a stuck caller cannot fan out
+    /// unbounded scan runs.
+    #[serde(default)]
+    rate_limit: tankovault_config::RateLimitConfig,
+    /// Prometheus metrics. Togglable; disabling installs no recorder.
+    #[serde(default)]
+    metrics: tankovault_config::MetricsConfig,
 }
 
 fn default_bind() -> String {
@@ -74,7 +85,9 @@ struct AppState {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cfg: Config = tankovault_config::load()?;
-    tankovault_observability::init_tracing(&cfg.telemetry)?;
+    tankovault_service::init_tracing(&cfg.telemetry)?;
+    let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    let shutdown = tankovault_service::install_shutdown();
 
     let pool = tankovault_db::connect(
         &cfg.database.url,
@@ -107,8 +120,9 @@ async fn main() -> anyhow::Result<()> {
     // Background scheduler.
     let sched_state = state.clone();
     let sched_leadership = leadership.clone();
+    let sched_shutdown = shutdown.clone();
     tokio::spawn(async move {
-        run_scheduler(sched_state, cfg.scheduler, sched_leadership).await;
+        run_scheduler(sched_state, cfg.scheduler, sched_leadership, sched_shutdown).await;
     });
 
     // Background progress aggregator: finalise runs as their tasks settle and relay one
@@ -121,15 +135,28 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    let app = Router::new()
-        .route("/internal/scans", post(trigger_scan))
-        .route("/health", get(|| async { "ok" }))
-        .route("/ready", get(|| async { "ok" }))
-        .with_state(state);
+    // Readiness names both hard dependencies: without Postgres it cannot plan a run, and
+    // without NATS it cannot publish one, so a replica missing either must not take work.
+    let ready_bus = bus.clone();
+    let health = Health::builder()
+        .check(PostgresCheck::new(pool))
+        .check_fn("nats", move || {
+            let bus = ready_bus.clone();
+            async move { bus.ping().await.map_err(|e| e.to_string()) }
+        })
+        .build();
 
-    let listener = TcpListener::bind(&cfg.bind_addr).await?;
-    tracing::info!(addr = %cfg.bind_addr, "control-plane listening");
-    axum::serve(listener, app).await?;
+    let limiter = RateLimiter::from_config(&cfg.rate_limit, RouteClassifier::new(), None);
+    let app = HttpStack::new(&cfg.security, metrics.clone())
+        .with_rate_limit(limiter)
+        .apply(
+            Router::new()
+                .route("/internal/scans", post(trigger_scan))
+                .with_state(state),
+        )
+        .merge(tankovault_service::ops_router(health, metrics));
+
+    tankovault_service::serve(&cfg.bind_addr, app, shutdown).await?;
     Ok(())
 }
 
@@ -221,7 +248,16 @@ async fn plan_run(
 }
 
 /// Periodic scheduler loop.
-async fn run_scheduler(state: AppState, cfg: SchedulerConfig, leadership: leader::Leadership) {
+///
+/// Exits on `shutdown` rather than being killed mid-sweep: a sweep that is severed
+/// part-way through leaves planned-but-unpublished runs behind, which the aggregator then
+/// waits on forever.
+async fn run_scheduler(
+    state: AppState,
+    cfg: SchedulerConfig,
+    leadership: leader::Leadership,
+    shutdown: tokio_util::sync::CancellationToken,
+) {
     if cfg.fast_interval_secs == 0 && cfg.full_interval_secs == 0 {
         tracing::info!("scheduler disabled");
         return;
@@ -231,6 +267,10 @@ async fn run_scheduler(state: AppState, cfg: SchedulerConfig, leadership: leader
 
     loop {
         tokio::select! {
+            () = shutdown.cancelled() => {
+                tracing::info!("scheduler stopping");
+                return;
+            }
             () = tick(&mut fast) => maybe_sweep(&state, &leadership, ScanMode::Fast).await,
             () = tick(&mut full) => maybe_sweep(&state, &leadership, ScanMode::Full).await,
         }

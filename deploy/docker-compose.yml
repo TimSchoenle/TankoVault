@@ -118,6 +118,31 @@ services:
       TANKOVAULT_EMAIL__ENVELOPE_FROM: "${TANKOVAULT_EMAIL__ENVELOPE_FROM:-}"
       # Alternatively point at any relay with a single lettre URL (takes precedence):
       # TANKOVAULT_EMAIL__URL: smtps://no-reply%40your-domain.com:change-me@ssl0.ovh.net:465
+      #
+      # ---- Rate limiting ---------------------------------------------------------------
+      # Redis lets the limit hold across replicas instead of being multiplied by their
+      # count. Without it the limiter silently falls back to per-replica counters.
+      TANKOVAULT_REDIS__URL: redis://redis:6379
+      TANKOVAULT_RATE_LIMIT__BACKEND: redis
+      # nginx fronts the API in this compose file and overwrites the forwarded headers, so
+      # they can be trusted here. Do NOT enable this when the API is exposed directly:
+      # a client can then forge a fresh bucket per request and bypass the limiter.
+      TANKOVAULT_RATE_LIMIT__TRUST_FORWARDED_FOR: "true"
+      #
+      # ---- Security --------------------------------------------------------------------
+      # The frontend is served from the same nginx origin, so no cross-origin hop exists
+      # and the CORS allowlist stays empty (same-origin only). A split-origin deployment
+      # must name its origins:
+      # TANKOVAULT_SECURITY__CORS__ALLOWED_ORIGINS: '["https://app.example.com"]'
+      # Enable once the edge actually terminates TLS; over plain HTTP it is misleading.
+      TANKOVAULT_SECURITY__HSTS: "false"
+      #
+      # ---- Audit + privacy -------------------------------------------------------------
+      # IP and User-Agent are personal data (GDPR Art. 4(1)), so retaining them is an
+      # explicit opt-in rather than a default.
+      TANKOVAULT_AUDIT__RECORD_IP: "false"
+      TANKOVAULT_AUDIT__RECORD_USER_AGENT: "false"
+      TANKOVAULT_AUDIT__RETENTION_DAYS: "365"
     ports: ["8080:8080"]
     depends_on:
       migrate: { condition: service_completed_successfully }
@@ -149,6 +174,10 @@ services:
       TANKOVAULT_DATABASE__URL: *db-url
       TANKOVAULT_NATS__URL: nats://nats:4222
       TANKOVAULT_WORKER__CHALLENGE_SOLVER_ENDPOINT: http://challenge-solver:8090
+      # Ops listener (liveness/readiness/metrics). Not published to the host: the worker
+      # runs 2 replicas and compose cannot map one host port to both. Reachable on the
+      # compose network as `worker:8085` — which is what a Prometheus scrape uses anyway.
+      TANKOVAULT_BIND_ADDR: 0.0.0.0:8085
     depends_on:
       migrate: { condition: service_completed_successfully }
       nats: { condition: service_healthy }

@@ -8,6 +8,7 @@
 pub mod audit;
 pub mod catalog;
 pub mod matching;
+pub mod privacy;
 pub mod providers;
 pub mod scans;
 pub mod stats;

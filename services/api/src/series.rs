@@ -211,8 +211,11 @@ pub async fn detail(
     let mut chapter_counts = Vec::with_capacity(groups.len());
     for group in &groups {
         chapter_counts.push(
-            tankovault_db::repo::catalog::count_full_chapters_across(&state.pool, &group.member_ids)
-                .await?,
+            tankovault_db::repo::catalog::count_full_chapters_across(
+                &state.pool,
+                &group.member_ids,
+            )
+            .await?,
         );
     }
     // The primary source is the merged provider carrying the most chapters (ties → first).

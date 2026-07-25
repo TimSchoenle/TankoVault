@@ -57,7 +57,11 @@ pub struct EmailMessage {
 impl EmailMessage {
     /// A plain-text message to a single recipient.
     #[must_use]
-    pub fn text(to: impl Into<String>, subject: impl Into<String>, body: impl Into<String>) -> Self {
+    pub fn text(
+        to: impl Into<String>,
+        subject: impl Into<String>,
+        body: impl Into<String>,
+    ) -> Self {
         Self {
             to: vec![to.into()],
             subject: subject.into(),
@@ -132,7 +136,9 @@ impl SmtpMailer {
                 .host
                 .as_deref()
                 .filter(|h| !h.is_empty())
-                .ok_or_else(|| EmailError::Config("email.host or email.url is required".to_owned()))?;
+                .ok_or_else(|| {
+                    EmailError::Config("email.host or email.url is required".to_owned())
+                })?;
             let mut builder = match cfg.security {
                 EmailSecurity::Tls => AsyncSmtpTransport::<Tokio1Executor>::relay(host)
                     .map_err(|e| EmailError::Config(e.to_string()))?,
@@ -149,7 +155,8 @@ impl SmtpMailer {
 
             if let (Some(user), Some(pass)) = (cfg.username.as_deref(), cfg.password.as_deref()) {
                 if !user.is_empty() {
-                    builder = builder.credentials(Credentials::new(user.to_owned(), pass.to_owned()));
+                    builder =
+                        builder.credentials(Credentials::new(user.to_owned(), pass.to_owned()));
                 }
             }
             builder.build()
@@ -165,7 +172,10 @@ impl SmtpMailer {
 
     /// Resolve the SMTP envelope sender address: parse the configured override/login when
     /// present, otherwise reuse the `From:` header's address.
-    fn resolve_envelope_from(configured: Option<&str>, from: &Mailbox) -> Result<Address, EmailError> {
+    fn resolve_envelope_from(
+        configured: Option<&str>,
+        from: &Mailbox,
+    ) -> Result<Address, EmailError> {
         match configured {
             Some(raw) => raw
                 .parse::<Mailbox>()
@@ -360,9 +370,8 @@ mod tests {
         let mailer = SmtpMailer::from_url("smtp://localhost:2525", "TankoVault <a@example.com>")
             .expect("valid config");
         let msg = EmailMessage::text("reader@example.com", "Hello", "Body text");
-        let formatted =
-            String::from_utf8(mailer.build_message(&msg).expect("builds").formatted())
-                .expect("utf8");
+        let formatted = String::from_utf8(mailer.build_message(&msg).expect("builds").formatted())
+            .expect("utf8");
         assert!(formatted.contains("Subject: Hello"));
         assert!(formatted.contains("reader@example.com"));
         assert!(formatted.contains("Body text"));
@@ -371,13 +380,11 @@ mod tests {
 
     #[test]
     fn builds_a_multipart_html_message() {
-        let mailer = SmtpMailer::from_url("smtp://localhost:2525", "a@example.com")
-            .expect("valid config");
-        let msg = EmailMessage::text("reader@example.com", "Hi", "plain")
-            .with_html("<p>rich</p>");
-        let formatted =
-            String::from_utf8(mailer.build_message(&msg).expect("builds").formatted())
-                .expect("utf8");
+        let mailer =
+            SmtpMailer::from_url("smtp://localhost:2525", "a@example.com").expect("valid config");
+        let msg = EmailMessage::text("reader@example.com", "Hi", "plain").with_html("<p>rich</p>");
+        let formatted = String::from_utf8(mailer.build_message(&msg).expect("builds").formatted())
+            .expect("utf8");
         assert!(formatted.contains("multipart/alternative"));
         assert!(formatted.contains("text/plain"));
         assert!(formatted.contains("text/html"));

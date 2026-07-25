@@ -4,7 +4,11 @@
 //! [`openapi`] schema export that `xtask openapi` serialises and hands to `progenitor`
 //! to regenerate the typed API client `crates/api-client` the frontend consumes) lives
 //! here; `main.rs` is a thin entrypoint that loads config, wires up infra (DB pool, NATS,
-//! metrics), and calls [`build_router`].
+//! audit sink, metrics), and calls [`build_router`].
+//!
+//! Cross-cutting concerns — rate limiting, security headers, CORS, request ids, metrics,
+//! timeouts, body caps, graceful shutdown, health probes — are not implemented here. They
+//! come from `tankovault-service`, which every service in the workspace shares.
 
 // Handlers are `pub` so the router (and `openapi::ApiDoc`) can name them, but their
 // containing modules stay private — this crate's only real external surface is
@@ -14,6 +18,7 @@
 pub mod openapi;
 
 mod admin;
+mod audit;
 mod auth;
 mod error;
 mod mailer;
@@ -22,11 +27,9 @@ mod series;
 mod state;
 
 use axum::Router;
-use axum::routing::get;
 pub use state::AppState;
-use tower_http::compression::CompressionLayer;
-use tower_http::cors::CorsLayer;
-use tower_http::trace::TraceLayer;
+use tankovault_config::{RateLimitConfig, SecurityConfig};
+use tankovault_service::{Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier};
 use utoipa::OpenApi as _;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -36,28 +39,56 @@ pub fn full_openapi() -> utoipa::openapi::OpenApi {
     documented_router().split_for_parts().1
 }
 
-/// Assemble the full route table and middleware stack. Kept out of `main` so the router
-/// wiring stays readable as endpoints grow (frontend §9 added the reading-dashboard,
-/// account, and console-users routes here).
+/// Which rate-limit budget each route family draws from.
 ///
-/// The documented endpoints come from [`documented_router`]; the undocumented ops probes
-/// (`/health`, `/ready`, `/metrics`) are added here. `split_for_parts` then hands back the
-/// plain `axum::Router` alongside the collected `OpenApi` document, which is served (with a
-/// browsable UI) via Scalar at `/scalar`.
-pub fn build_router(state: AppState) -> Router {
-    let (router, api) = documented_router()
-        // ops (undocumented — no OpenAPI value in a health/metrics probe)
-        .route("/health", get(|| async { "ok" }))
-        .route("/ready", get(|| async { "ok" }))
-        .route("/metrics", get(metrics_handler))
-        .split_for_parts();
+/// Kept next to the route table so adding an endpoint and classifying it are one edit.
+/// Anything unlisted falls back to the global budget, which is the safe default: a new
+/// route is limited from the moment it exists rather than being unlimited until someone
+/// remembers to add it here.
+#[must_use]
+pub fn route_classifier() -> RouteClassifier {
+    RouteClassifier::new()
+        // Credential handling — the online-guessing surface.
+        .auth("/v1/auth")
+        // Cheap to ask for, expensive to serve.
+        .expensive("/v1/me/export")
+        .expensive("/v1/me/sync")
+        .expensive("/v1/admin/scans")
+        .expensive("/v1/admin/sync")
+        .expensive("/v1/admin/providers/{id}/test")
+        .expensive("/v1/admin/series/merge")
+}
 
-    router
-        .merge(Scalar::with_url("/scalar", api))
-        .layer(CompressionLayer::new())
-        .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
-        .with_state(state)
+/// Assemble the full route table and the shared middleware stack.
+///
+/// The documented endpoints come from [`documented_router`]; `split_for_parts` hands back
+/// the plain `axum::Router` alongside the collected `OpenApi` document, which is served
+/// (with a browsable UI) via Scalar at `/scalar`.
+///
+/// The ops probes (`/health`, `/ready`, the metrics scrape) are merged in **outside** the
+/// middleware stack: a rate limit or a body cap must never be able to make a healthy
+/// replica look unhealthy to its orchestrator.
+pub fn build_router(
+    state: AppState,
+    security: &SecurityConfig,
+    rate_limit: &RateLimitConfig,
+    metrics: MetricsRegistry,
+    health: Health,
+    redis: Option<tankovault_service::ratelimit::RedisStoreHandle>,
+) -> Router {
+    let (router, api) = documented_router().split_for_parts();
+
+    let limiter = RateLimiter::from_config(rate_limit, route_classifier(), redis);
+
+    let app = HttpStack::new(security, metrics.clone())
+        .with_rate_limit(limiter)
+        .apply(
+            router
+                .merge(Scalar::with_url("/scalar", api))
+                .with_state(state),
+        );
+
+    app.merge(tankovault_service::ops_router(health, metrics))
 }
 
 /// The single, authoritative registration of every documented endpoint, shared by
@@ -103,6 +134,9 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(me::notification_prefs, me::put_notification_prefs))
         .routes(routes!(me::notifications))
         .routes(routes!(me::mark_read))
+        // GDPR data-subject rights: portability (Art. 20) and erasure (Art. 17)
+        .routes(routes!(me::export_data))
+        .routes(routes!(me::delete_account))
         // live per-user notification stream (SSE; token in query — EventSource cannot set headers)
         .routes(routes!(me::stream))
         // me — external sync, provider-keyed (proxied to the sync service; design: generalized
@@ -153,12 +187,6 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::merge_series))
 }
 
-pub async fn metrics_handler(
-    axum::extract::State(state): axum::extract::State<AppState>,
-) -> String {
-    state.metrics.render()
-}
-
 /// Best-effort connection to NATS for the live notification relay. Returns `None` (with a
 /// log line) when NATS is unconfigured or unreachable, so `/v1/me/stream` degrades to `503`
 /// while the rest of the edge keeps serving.
@@ -178,5 +206,39 @@ pub async fn connect_bus(
             tracing::warn!(error = %e, "NATS unreachable; /v1/me/stream disabled");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tankovault_service::RouteClass;
+
+    #[test]
+    fn credential_routes_draw_from_the_auth_budget() {
+        let classifier = route_classifier();
+        assert_eq!(classifier.classify("/v1/auth/login"), RouteClass::Auth);
+        assert_eq!(classifier.classify("/v1/auth/register"), RouteClass::Auth);
+        assert_eq!(
+            classifier.classify("/v1/auth/reset-password"),
+            RouteClass::Auth
+        );
+    }
+
+    #[test]
+    fn the_data_export_is_expensive_not_ordinary() {
+        // `/v1/me/export` sits under `/v1/me`, which is otherwise unclassified; the
+        // longest-prefix rule is what keeps it in the tighter budget.
+        assert_eq!(
+            route_classifier().classify("/v1/me/export"),
+            RouteClass::Expensive
+        );
+    }
+
+    #[test]
+    fn ordinary_reads_fall_back_to_the_global_budget() {
+        let classifier = route_classifier();
+        assert_eq!(classifier.classify("/v1/series"), RouteClass::Global);
+        assert_eq!(classifier.classify("/v1/me/watchlist"), RouteClass::Global);
     }
 }

@@ -40,7 +40,8 @@ use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
-use tokio::net::TcpListener;
+use tankovault_service::health::PostgresCheck;
+use tankovault_service::{Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier};
 
 use anilist::{AniListClient, DEFAULT_GRAPHQL_URL, DEFAULT_OAUTH_BASE};
 use engine::SyncEngine;
@@ -64,6 +65,16 @@ struct Config {
     /// disables the loop (e.g. in tests or when a separate scheduler owns it).
     #[serde(default = "default_reconcile_interval")]
     reconcile_interval_secs: u64,
+    /// Edge hardening for this internal service.
+    #[serde(default)]
+    security: tankovault_config::SecurityConfig,
+    /// Inbound rate limiting. The pull/push routes each fan out to a third-party API, so
+    /// they draw from the tighter "expensive" budget.
+    #[serde(default)]
+    rate_limit: tankovault_config::RateLimitConfig,
+    /// Prometheus metrics. Togglable; disabling installs no recorder.
+    #[serde(default)]
+    metrics: tankovault_config::MetricsConfig,
 }
 
 /// Metadata-priority + tokenless enrichment-worker settings (design: worker queue syncing
@@ -199,7 +210,9 @@ struct AppState {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cfg: Config = tankovault_config::load()?;
-    tankovault_observability::init_tracing(&cfg.telemetry)?;
+    tankovault_service::init_tracing(&cfg.telemetry)?;
+    let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    let shutdown = tankovault_service::install_shutdown();
 
     let pool = tankovault_db::connect(
         &cfg.database.url,
@@ -207,6 +220,8 @@ async fn main() -> anyhow::Result<()> {
         cfg.database.acquire_timeout_secs,
     )
     .await?;
+    // The engine takes ownership of the pool; readiness needs its own handle.
+    let health_pool = pool.clone();
 
     let secret = SecretBox::from_base64_key(&cfg.anilist.token_encryption_key)
         .map_err(|e| anyhow::anyhow!("invalid anilist.token_encryption_key: {e}"))?;
@@ -230,14 +245,22 @@ async fn main() -> anyhow::Result<()> {
         let interval = Duration::from_secs(metadata.enrich_interval_secs.max(1));
         let batch = metadata.enrich_batch.max(1);
         let max = metadata.enrich_max_series;
+        let worker_shutdown = shutdown.clone();
         tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(interval);
-            loop {
-                ticker.tick().await;
-                if let Err(e) = worker.enrich_all(batch, max).await {
-                    tracing::warn!(error = %e, "tokenless metadata enrichment sweep failed");
-                }
-            }
+            tankovault_service::shutdown::every(
+                interval,
+                worker_shutdown,
+                "metadata-enrichment",
+                move || {
+                    let worker = worker.clone();
+                    async move {
+                        if let Err(e) = worker.enrich_all(batch, max).await {
+                            tracing::warn!(error = %e, "tokenless metadata enrichment sweep failed");
+                        }
+                    }
+                },
+            )
+            .await;
         });
         tracing::info!(
             interval_secs = metadata.enrich_interval_secs,
@@ -256,20 +279,18 @@ async fn main() -> anyhow::Result<()> {
     if cfg.reconcile_interval_secs > 0 {
         let sched = engine.clone();
         let interval = Duration::from_secs(cfg.reconcile_interval_secs);
+        let sched_shutdown = shutdown.clone();
+        // `every` skips its first tick, so boot is not a thundering herd against providers.
         tokio::spawn(async move {
-            let mut tick = tokio::time::interval(interval);
-            // Skip the immediate first tick so boot isn't a thundering herd against providers.
-            tick.tick().await;
-            loop {
-                tick.tick().await;
-                sched.reconcile_all_accounts().await;
-            }
+            tankovault_service::shutdown::every(interval, sched_shutdown, "reconcile", move || {
+                let sched = sched.clone();
+                async move { sched.reconcile_all_accounts().await }
+            })
+            .await;
         });
     }
 
-    let app = Router::new()
-        .route("/health", get(|| async { "ok" }))
-        .route("/ready", get(|| async { "ok" }))
+    let routes = Router::new()
         .route("/v1/sync/providers", get(providers_list))
         .route("/v1/sync/push-series", post(push_series))
         .route("/v1/sync/enrich", post(enrich))
@@ -287,9 +308,25 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/sync/history/{user_id}", get(list_history))
         .with_state(state);
 
-    let listener = TcpListener::bind(&cfg.bind_addr).await?;
-    tracing::info!(addr = %cfg.bind_addr, "sync service listening");
-    axum::serve(listener, app).await?;
+    // Postgres is the only hard dependency: a provider outage is expected and already
+    // degrades per-request, so probing AniList here would flap readiness on their uptime.
+    let health = Health::builder()
+        .check(PostgresCheck::new(health_pool))
+        .build();
+
+    let classifier = RouteClassifier::new()
+        .expensive("/v1/sync/{provider}/pull")
+        .expensive("/v1/sync/{provider}/push")
+        .expensive("/v1/sync/push-series")
+        .expensive("/v1/sync/enrich");
+    let limiter = RateLimiter::from_config(&cfg.rate_limit, classifier, None);
+
+    let app = HttpStack::new(&cfg.security, metrics.clone())
+        .with_rate_limit(limiter)
+        .apply(routes)
+        .merge(tankovault_service::ops_router(health, metrics));
+
+    tankovault_service::serve(&cfg.bind_addr, app, shutdown).await?;
     Ok(())
 }
 

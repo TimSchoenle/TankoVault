@@ -54,6 +54,22 @@ impl Bus {
         })
     }
 
+    /// Round-trip the broker, for a readiness probe.
+    ///
+    /// Uses `flush` rather than the client's cached connection state: the client
+    /// reconnects transparently in the background, so its state flag can read `Connected`
+    /// while the server is in fact unreachable. A flush waits for the server to
+    /// acknowledge, which is what a probe needs to assert.
+    ///
+    /// # Errors
+    /// [`BusError::Nats`] if the round trip fails or the connection is down.
+    pub async fn ping(&self) -> Result<(), BusError> {
+        self.client
+            .flush()
+            .await
+            .map_err(|e| BusError::Nats(e.to_string()))
+    }
+
     /// The underlying `JetStream` context (for advanced use / consumers).
     #[must_use]
     pub fn jetstream(&self) -> &jetstream::Context {

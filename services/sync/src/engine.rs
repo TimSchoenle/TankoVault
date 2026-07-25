@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use anyhow::{Context, anyhow};
 use serde::Serialize;
 use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 
 use tankovault_auth::SecretBox;
 use tankovault_config::{MetadataPriorityConfig, SOURCE_ADAPTER, SOURCE_ANILIST};
@@ -23,7 +24,8 @@ use tankovault_domain::{SeriesId, UserId, WatchStatus, normalize_title};
 use tankovault_matcher::{Candidate, Query, Thresholds, best_match};
 
 use crate::mapping::{ConflictPolicy, MergeAction, Side, three_way};
-use crate::provider::{ExternalProvider, OAuthTokens, ProviderInfo, RemoteEntry, RemoteMetadata};
+use crate::provider::{ExternalProvider, OAuthTokens, RemoteEntry, RemoteMetadata};
+use tankovault_contracts::sync::{AccountSettings, AccountStatus, ProviderInfo};
 
 /// Outcome of a pull (provider → local).
 #[derive(Debug, Default, Serialize)]
@@ -82,24 +84,11 @@ pub(crate) struct EnrichReport {
     pub(crate) unresolved: usize,
 }
 
-/// Whether a user has linked a provider, and (when linked) the connected display name and the
-/// most recent sync time — the shape the "Sync & integrations" panel and status pill render.
-#[derive(Debug, Default, Serialize)]
-pub(crate) struct AccountStatus {
-    pub(crate) linked: bool,
-    pub(crate) username: Option<String>,
-    #[serde(with = "time::serde::rfc3339::option")]
-    pub(crate) last_synced_at: Option<OffsetDateTime>,
-}
-
-/// An account's automatic-sync settings, for the account panel (design v2 §B.6/§B.8).
-#[derive(Debug, Serialize)]
-pub(crate) struct AccountSettings {
-    pub(crate) linked: bool,
-    pub(crate) auto_sync_enabled: bool,
-    pub(crate) conflict_policy: String,
-    pub(crate) pending_conflicts: i64,
-}
+// `AccountStatus`, `AccountSettings` and `ProviderInfo` used to be declared here, private to
+// this service. They now live in `tankovault_contracts::sync` because `services/api` proxies
+// these routes verbatim and needs the same types to describe them in its OpenAPI document —
+// which is what gives the frontend a *generated* client for the sync surface instead of
+// hand-written mirror structs that drift (see the module docs over there).
 
 /// One provider's outcome from a targeted single-series push (design: immediate targeted push).
 #[derive(Debug, Clone, Serialize)]
@@ -177,11 +166,11 @@ impl SyncEngine {
             .providers
             .values()
             .map(|p| ProviderInfo {
-                slug: p.slug(),
-                name: p.display_name(),
+                slug: p.slug().to_owned(),
+                name: p.display_name().to_owned(),
             })
             .collect();
-        list.sort_by_key(|p| p.slug);
+        list.sort_by(|a, b| a.slug.cmp(&b.slug));
         list
     }
 
@@ -380,7 +369,9 @@ impl SyncEngine {
             Some(a) => AccountStatus {
                 linked: true,
                 username: a.external_username,
-                last_synced_at: a.last_synced_at,
+                // The contract carries RFC-3339 text rather than a `time` type: it is shared
+                // with a wasm frontend that deliberately pulls in no date crate.
+                last_synced_at: a.last_synced_at.and_then(|ts| ts.format(&Rfc3339).ok()),
             },
             None => AccountStatus::default(),
         })
@@ -1256,7 +1247,10 @@ mod tests {
             let dup = out.iter().find(|e| e.external_id == "143056").unwrap();
             assert_eq!(dup.progress, 182.0, "freshest occurrence must win");
             let single = out.iter().find(|e| e.external_id == "129918").unwrap();
-            assert_eq!(single.progress, 182.0, "non-duplicated entries pass through");
+            assert_eq!(
+                single.progress, 182.0,
+                "non-duplicated entries pass through"
+            );
         }
     }
 

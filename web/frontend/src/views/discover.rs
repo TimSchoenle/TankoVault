@@ -1,4 +1,4 @@
-//! Discover (DESIGN_SPEC §7.2) — a two-pane screen: a collapsible **filter panel**
+//! Discover (`DESIGN_SPEC` §7.2) — a two-pane screen: a collapsible **filter panel**
 //! (content-type / status / tags / providers / release-year / min-chapters / presets) and a
 //! **results** pane with a sort select, removable active-filter chips, a count line, the
 //! cover-card grid, and pagination.
@@ -13,10 +13,12 @@
 //! Search (§7.6) shares the cover grid with a larger query echo and a result count.
 
 use crate::api;
-use crate::components::{CoverCard, EmptyBox, ErrorBox, SkeletonGrid};
+use crate::components::{async_list, async_view, CoverCard, SkeletonGrid};
+use crate::hooks::use_reload;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use dioxus::prelude::*;
+use progenitor_client::ResponseValue;
 
 /// How many series a page of the grid shows.
 const PAGE_SIZE: usize = 24;
@@ -78,7 +80,7 @@ impl Sort {
 
 /// Discover screen.
 #[component]
-pub fn Discover() -> Element {
+pub(crate) fn Discover() -> Element {
     // Filter state (all applied server-side; see module docs).
     let types = use_signal(Vec::<ContentType>::new);
     let statuses = use_signal(Vec::<SeriesStatus>::new);
@@ -92,46 +94,43 @@ pub fn Discover() -> Element {
     let mut sort = use_signal(|| Sort::Updated);
     let mut page = use_signal(|| 0usize);
     let mut panel_open = use_signal(|| true);
-    let mut reload = use_signal(|| 0u32);
-    let api_client = api::use_api();
+    let reload = use_reload();
+    let api = api::use_api();
 
-    let tags_res = {
-        let client = api_client.clone();
-        use_resource(move || {
-            let client = client.clone();
-            async move {
-                client
-                    .tags()
-                    .send()
-                    .await
-                    .map(|r| r.into_inner())
-                    .unwrap_or_default()
-            }
-        })
-    };
+    // Facet data. A failure degrades to an empty facet rather than an error state: the grid
+    // is still usable without the tag or provider filter, and blocking the whole screen on a
+    // secondary list would be worse than offering fewer controls.
+    let tags_res = use_resource(move || {
+        let client = api.client();
+        async move {
+            client
+                .tags()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .unwrap_or_default()
+        }
+    });
     let all_tags: Vec<Tag> = tags_res.read_unchecked().clone().unwrap_or_default();
-    let providers_res = {
-        let client = api_client.clone();
-        use_resource(move || {
-            let client = client.clone();
-            async move {
-                client
-                    .providers()
-                    .send()
-                    .await
-                    .map(|r| r.into_inner())
-                    .unwrap_or_default()
-            }
-        })
-    };
+
+    let providers_res = use_resource(move || {
+        let client = api.client();
+        async move {
+            client
+                .providers()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .unwrap_or_default()
+        }
+    });
     let all_providers: Vec<PublicProvider> =
         providers_res.read_unchecked().clone().unwrap_or_default();
 
     // Build the server-side filter from the current control state, then fetch one page.
     let resource = {
-        let client = api_client.clone();
         use_resource(move || {
-            let _ = reload.read();
+            reload.track();
             let ymin = *year_min.read();
             let ymax = *year_max.read();
             let mc = *min_ch.read();
@@ -149,8 +148,8 @@ pub fn Discover() -> Element {
                 Some(exc.read().clone())
             };
             let sort = sort.read().value().to_owned();
-            let page = *page.read() as i64;
-            let client = client.clone();
+            let page = i64::try_from(*page.read()).unwrap_or(0);
+            let client = api.client();
 
             async move {
                 let mut builder = client.list();
@@ -180,7 +179,7 @@ pub fn Discover() -> Element {
                 }
                 builder = builder.sort(sort);
                 builder = builder.page(page);
-                builder = builder.limit(PAGE_SIZE as i64);
+                builder = builder.limit(i64::try_from(PAGE_SIZE).unwrap_or(24));
 
                 builder
                     .send()
@@ -191,7 +190,7 @@ pub fn Discover() -> Element {
                             .get("x-total-count")
                             .and_then(|v| v.to_str().ok())
                             .and_then(|s| s.parse::<i64>().ok())
-                            .unwrap_or_else(|| r.as_ref().len() as i64);
+                            .unwrap_or_else(|| i64::try_from(r.as_ref().len()).unwrap_or(0));
                         let next_cursor = r
                             .headers()
                             .get("x-next-cursor")
@@ -215,49 +214,50 @@ pub fn Discover() -> Element {
         + usize::from(provider.read().is_some());
 
     // ---- results ----
-    let content = match &*resource.read_unchecked() {
-        None => rsx! { SkeletonGrid { count: 12 } },
-        Some(Err(e)) => {
-            let msg = e.clone();
-            rsx! {
-                ErrorBox { message: msg, on_retry: move |()| reload += 1 }
-            }
-        }
-        Some(Ok(pagedata)) => {
-            let total = usize::try_from(pagedata.total).unwrap_or(0);
-            let items = pagedata.items.clone();
-            let has_next = pagedata.next_cursor.is_some();
+    let content = async_view(
+        &resource,
+        reload,
+        || rsx! { SkeletonGrid { count: 12 } },
+        |page_data| {
+            let total = usize::try_from(page_data.total).unwrap_or(0);
+            let has_next = page_data.next_cursor.is_some();
             let pages = total.div_ceil(PAGE_SIZE).max(1);
-            let cur = *page.read();
+            let current = *page.read();
 
-            if items.is_empty() {
-                rsx! {
+            if page_data.items.is_empty() {
+                // Filtered-to-nothing gets its own state rather than the generic empty box:
+                // the reader's only useful next move is to widen, so offer exactly that.
+                return rsx! {
                     div { class: "ik-empty",
                         Ic { icon: Icon::Search, size: 28 }
                         p { style: "margin:10px 0 4px;font-weight:600;", "Nothing matched those filters" }
                         p { class: "ik-muted", style: "font-size:13px;", "Try widening the type or status, or reset everything." }
-                        button { class: "ik-btn", style: "margin-top:10px;", onclick: move |_| clear_all(types, statuses, inc, exc, provider, page), "Reset filters" }
-                    }
-                }
-            } else {
-                rsx! {
-                    div { class: "ik-count-line",
-                        span { class: "ik-mono", "{total}" }
-                        " series · page "
-                        span { class: "ik-mono", "{cur + 1}" }
-                        " of "
-                        span { class: "ik-mono", "{pages}" }
-                    }
-                    div { class: "ik-grid",
-                        for s in items {
-                            CoverCard { key: "{s.id}", series: s }
+                        button {
+                            class: "ik-btn",
+                            style: "margin-top:10px;",
+                            onclick: move |_| clear_all(types, statuses, inc, exc, provider, page),
+                            "Reset filters"
                         }
                     }
-                    Pagination { page, pages, has_next }
-                }
+                };
             }
-        }
-    };
+            rsx! {
+                div { class: "ik-count-line",
+                    span { class: "ik-mono", "{total}" }
+                    " series · page "
+                    span { class: "ik-mono", "{current + 1}" }
+                    " of "
+                    span { class: "ik-mono", "{pages}" }
+                }
+                div { class: "ik-grid",
+                    for series in page_data.items.iter().cloned() {
+                        CoverCard { key: "{series.id}", series }
+                    }
+                }
+                Pagination { page, pages, has_next }
+            }
+        },
+    );
 
     let discover_class = if *panel_open.read() {
         "ik-discover"
@@ -620,15 +620,13 @@ fn ActiveFilters(
     let name_of = |slug: &str| {
         tags.iter()
             .find(|t| t.slug == slug)
-            .map(|t| t.name.clone())
-            .unwrap_or_else(|| slug.to_owned())
+            .map_or_else(|| slug.to_owned(), |t| t.name.clone())
     };
     let provider_label = prov.as_ref().map(|slug| {
         providers
             .iter()
             .find(|p| &p.slug == slug)
-            .map(|p| p.name.clone())
-            .unwrap_or_else(|| slug.clone())
+            .map_or_else(|| slug.clone(), |p| p.name.clone())
     });
     rsx! {
         div { class: "ik-active-filters",
@@ -826,7 +824,7 @@ fn Pagination(page: Signal<usize>, pages: usize, has_next: bool) -> Element {
 
 /// Search screen — trigram-backed query passed straight to the API (§7.6).
 #[component]
-pub fn Search(q: String) -> Element {
+pub(crate) fn Search(q: String) -> Element {
     // `q` is a plain prop, not a signal, so re-running a search from the search page itself
     // (same route, new `?q=`) reuses this mounted component and only changes `q` — that
     // alone doesn't restart `use_resource`, which only reacts to signals read inside it.
@@ -836,12 +834,12 @@ pub fn Search(q: String) -> Element {
         q_state.set(q.clone());
     }
 
-    let mut reload = use_signal(|| 0u32);
-    let api_client = api::use_api();
+    let reload = use_reload();
+    let api = api::use_api();
     let resource = use_resource(move || {
         let q = q_state.read().clone();
-        let _ = reload.read();
-        let client = api_client.clone();
+        reload.track();
+        let client = api.client();
         async move {
             client
                 .list()
@@ -849,49 +847,40 @@ pub fn Search(q: String) -> Element {
                 .limit(60)
                 .send()
                 .await
-                .map(|r| r.into_inner())
+                .map(ResponseValue::into_inner)
                 .map_err(api::friendly_error)
         }
     });
 
-    let (count, body) = match &*resource.read_unchecked() {
-        None => (0usize, rsx! { SkeletonGrid { count: 8 } }),
-        Some(Err(e)) => {
-            let msg = e.clone();
-            (
-                0usize,
-                rsx! {
-                    ErrorBox { message: msg, on_retry: move |()| reload += 1 }
-                },
-            )
-        }
-        Some(Ok(items)) if items.is_empty() => (
-            0usize,
-            rsx! {
-                EmptyBox { message: "No series matched that. Try fewer words.".to_string() }
-            },
-        ),
-        Some(Ok(items)) => {
-            let items = items.clone();
-            let n = items.len();
-            (
-                n,
-                rsx! {
-                    div { class: "ik-grid",
-                        for s in items {
-                            CoverCard { key: "{s.id}", series: s }
-                        }
-                    }
-                },
-            )
-        }
+    // The count line reports what actually loaded, so it stays hidden rather than claiming
+    // "0 results" while the request is still in flight or after it failed.
+    let count = match &*resource.read_unchecked() {
+        Some(Ok(items)) => Some(items.len()),
+        _ => None,
     };
+    let body = async_list(
+        &resource,
+        reload,
+        || rsx! { SkeletonGrid { count: 8 } },
+        "No series matched that. Try fewer words.",
+        |items| {
+            rsx! {
+                div { class: "ik-grid",
+                    for series in items.iter().cloned() {
+                        CoverCard { key: "{series.id}", series }
+                    }
+                }
+            }
+        },
+    );
 
     rsx! {
         h1 { class: "ik-page-title", style: "font-size:34px;", "Results for “{q}”" }
-        div { class: "ik-count-line",
-            span { class: "ik-mono", "{count}" }
-            " results · trigram fuzzy match"
+        if let Some(count) = count {
+            div { class: "ik-count-line",
+                span { class: "ik-mono", "{count}" }
+                " results · trigram fuzzy match"
+            }
         }
         {body}
     }

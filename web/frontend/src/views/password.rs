@@ -4,6 +4,7 @@
 
 use super::auth::AuthBrand;
 use crate::api;
+use crate::hooks::use_busy;
 use crate::models::*;
 use crate::Route;
 use dioxus::prelude::*;
@@ -12,25 +13,24 @@ use dioxus::prelude::*;
 /// address is registered (so it can't be used to probe accounts), so the UI shows the same
 /// reassuring confirmation regardless — the only failure surfaced is a transport error.
 #[component]
-pub fn ForgotPassword() -> Element {
+pub(crate) fn ForgotPassword() -> Element {
     let mut email = use_signal(String::new);
     let mut error = use_signal(|| Option::<String>::None);
     let mut sent = use_signal(|| false);
-    let mut busy = use_signal(|| false);
-    let api_client = api::use_api();
+    let busy = use_busy();
+    let api = api::use_api();
 
     let submit = use_callback(move |()| {
-        if *busy.read() {
-            return;
-        }
         let email_v = email.read().trim().to_owned();
         if email_v.is_empty() {
             error.set(Some("Enter your email address.".to_owned()));
             return;
         }
-        busy.set(true);
+        if !busy.claim() {
+            return;
+        }
         error.set(None);
-        let client = api_client.clone();
+        let client = api.client();
         spawn(async move {
             match client
                 .forgot_password()
@@ -41,7 +41,7 @@ pub fn ForgotPassword() -> Element {
                 Ok(_) => sent.set(true),
                 Err(e) => error.set(Some(api::friendly_error(e))),
             }
-            busy.set(false);
+            busy.release();
         });
     });
 
@@ -91,9 +91,9 @@ pub fn ForgotPassword() -> Element {
                 button {
                     class: "ik-btn primary",
                     style: "width:100%;",
-                    disabled: *busy.read(),
+                    disabled: busy.is_busy(),
                     onclick: move |_| submit.call(()),
-                    if *busy.read() {
+                    if busy.is_busy() {
                         "Sending…"
                     } else {
                         "Send reset link"
@@ -115,18 +115,15 @@ pub fn ForgotPassword() -> Element {
 /// (`/reset-password?token=…`). Enforces the same minimum length as registration and confirms
 /// the two entries match before calling the API, which additionally revokes existing sessions.
 #[component]
-pub fn ResetPassword(token: String) -> Element {
+pub(crate) fn ResetPassword(token: String) -> Element {
     let mut password = use_signal(String::new);
     let mut confirm = use_signal(String::new);
     let mut error = use_signal(|| Option::<String>::None);
     let mut done = use_signal(|| false);
-    let mut busy = use_signal(|| false);
-    let api_client = api::use_api();
+    let busy = use_busy();
+    let api = api::use_api();
 
     let submit = use_callback(move |()| {
-        if *busy.read() {
-            return;
-        }
         let password_v = password.read().clone();
         let confirm_v = confirm.read().clone();
         if password_v.len() < 8 {
@@ -137,9 +134,11 @@ pub fn ResetPassword(token: String) -> Element {
             error.set(Some("Passwords don't match.".to_owned()));
             return;
         }
-        busy.set(true);
+        if !busy.claim() {
+            return;
+        }
         error.set(None);
-        let client = api_client.clone();
+        let client = api.client();
         let token_v = token.clone();
         spawn(async move {
             match client
@@ -161,7 +160,7 @@ pub fn ResetPassword(token: String) -> Element {
                 )),
                 Err(e) => error.set(Some(api::friendly_error(e))),
             }
-            busy.set(false);
+            busy.release();
         });
     });
 
@@ -215,9 +214,9 @@ pub fn ResetPassword(token: String) -> Element {
                 button {
                     class: "ik-btn primary",
                     style: "width:100%;",
-                    disabled: *busy.read(),
+                    disabled: busy.is_busy(),
                     onclick: move |_| submit.call(()),
-                    if *busy.read() {
+                    if busy.is_busy() {
                         "Saving…"
                     } else {
                         "Change password"

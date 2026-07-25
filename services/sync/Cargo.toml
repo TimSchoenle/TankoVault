@@ -14,6 +14,7 @@ path = "src/main.rs"
 tankovault-config = { workspace = true }
 tankovault-observability = { workspace = true }
 tankovault-db = { workspace = true }
+tankovault-contracts = { workspace = true }
 tankovault-domain = { workspace = true }
 tankovault-auth = { workspace = true }
 tankovault-matcher = { workspace = true }

@@ -2,6 +2,7 @@
 //! is set as an httpOnly cookie by the API. On success we route to Discover.
 
 use crate::api;
+use crate::hooks::use_busy;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::use_session;
@@ -9,7 +10,7 @@ use crate::Route;
 use dioxus::prelude::*;
 
 #[component]
-pub fn Login() -> Element {
+pub(crate) fn Login() -> Element {
     let session = use_session();
     let nav = use_navigator();
 
@@ -24,16 +25,15 @@ pub fn Login() -> Element {
     // Set when a sign-in was refused because the address isn't confirmed yet, so we can
     // surface a "resend confirmation email" action.
     let mut needs_verification = use_signal(|| false);
-    let mut busy = use_signal(|| false);
-    let api_client = api::use_api();
-    // A second clone for the resend callback below (the first is moved into `submit`).
-    let resend_client = api_client.clone();
+    let busy = use_busy();
+    // `Api` is `Copy`, so both callbacks below capture the same handle without cloning, and
+    // each resolves the live bearer token when it actually fires.
+    let api = api::use_api();
 
     let submit = use_callback(move |()| {
-        if *busy.read() {
+        if !busy.claim() {
             return;
         }
-        busy.set(true);
         error.set(None);
         info.set(None);
         needs_verification.set(false);
@@ -42,7 +42,7 @@ pub fn Login() -> Element {
         let username_v = username.read().trim().to_owned();
         let login_v = login.read().trim().to_owned();
         let password_v = password.read().clone();
-        let client = api_client.clone();
+        let client = api.client();
         spawn(async move {
             // register and login return different bodies (RegisterResponse vs TokenResponse),
             // so each branch is handled inline rather than through a shared result.
@@ -103,7 +103,7 @@ pub fn Login() -> Element {
                     Err(e) => error.set(Some(api::friendly_error(e))),
                 }
             }
-            busy.set(false);
+            busy.release();
         });
     });
 
@@ -114,7 +114,7 @@ pub fn Login() -> Element {
         if email_v.is_empty() {
             return;
         }
-        let client = resend_client.clone();
+        let client = api.client();
         spawn(async move {
             let _ = client
                 .resend_verification()
@@ -175,9 +175,7 @@ pub fn Login() -> Element {
             }
 
             if let Some(msg) = info.read().clone() {
-                div {
-                    class: "ik-note",
-                    style: "padding:12px;margin:14px 0;text-align:left;border:1px solid var(--ik-border);border-radius:8px;",
+                div { class: "ik-note", style: "padding:12px;margin:14px 0;text-align:left;",
                     "{msg}"
                 }
             }
@@ -248,9 +246,9 @@ pub fn Login() -> Element {
             button {
                 class: "ik-btn primary",
                 style: "width:100%;",
-                disabled: *busy.read(),
+                disabled: busy.is_busy(),
                 onclick: move |_| submit.call(()),
-                if *busy.read() {
+                if busy.is_busy() {
                     "Working…"
                 } else {
                     "{cta}"
@@ -275,7 +273,7 @@ pub fn Login() -> Element {
 /// The shared brand lockup (§7.9) shown atop every auth screen: gradient tile + wordmark +
 /// tagline. Extracted so the confirmation and password screens match the sign-in card.
 #[component]
-pub fn AuthBrand() -> Element {
+pub(crate) fn AuthBrand() -> Element {
     rsx! {
         div { class: "ik-auth-brand",
             div { class: "ik-brand-tile", Ic { icon: Icon::MenuBook, size: 22 } }
@@ -294,16 +292,16 @@ pub fn AuthBrand() -> Element {
 /// (`/verify-email?token=…`). Confirms the token on mount and, on success, adopts the issued
 /// session and drops the user straight into the app.
 #[component]
-pub fn VerifyEmail(token: String) -> Element {
+pub(crate) fn VerifyEmail(token: String) -> Element {
     let session = use_session();
     let nav = use_navigator();
-    let api_client = api::use_api();
+    let api = api::use_api();
 
     // Fire the confirmation once for this token; `use_resource` re-runs only if `token`
     // changes, so a stale link isn't retried on every render.
     let token_for_call = token.clone();
     let resource = use_resource(move || {
-        let client = api_client.clone();
+        let client = api.client();
         let token = token_for_call.clone();
         async move {
             client

@@ -1,18 +1,26 @@
 /*
- * TankoVault design system — Tailwind entrypoint (DESIGN_SPEC §2–5).
+ * TankoVault design system — Tailwind v4 entrypoint (DESIGN_SPEC §2–5).
  *
  * The Tailwind CLI compiles this file into the committed `assets/main.css`:
  *   npm run css:build   (one-shot, minified)   /   npm run css:watch (dev)
  *
  * Strategy: the bespoke component/`ik-*` classes are authored as plain CSS *below* the
- * @tailwind directives, so Tailwind's content-purge never removes them; utilities remain
- * available for one-off layout. The self-hosted .woff2 subsets (assets/fonts/) are wired
- * through the Dioxus asset system in src/main.rs (asset!()), not here, so their hashed
- * URLs resolve in the release bundle; system faces remain the fallback stack.
+ * import, so Tailwind's content scan never removes them; utilities remain available for
+ * one-off layout. The self-hosted .woff2 subsets (assets/fonts/) are wired through the
+ * Dioxus asset system in src/main.rs (asset!()), not here, so their hashed URLs resolve in
+ * the release bundle; system faces remain the fallback stack.
+ *
+ * v4 is CSS-first: there is no `tailwind.config.js` any more. `@source` points the scanner
+ * at the `rsx!` markup, and the `@theme` blocks at the foot of this file are the single
+ * definition of the design tokens — they emit the `--*` custom properties the `ik-*` rules
+ * consume *and* generate the matching utilities, so the two can no longer drift apart.
  */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@source "./src/**/*.rs";
+
+/* Warm Paper is the opt-in theme, selected by `<html data-theme="light">` (written by the
+ * appearance knob in Account → Appearance). Utilities can target it with `light:`. */
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
 
 :root {
   /* Ground & surface (dark, default) — §2.1 */
@@ -63,9 +71,10 @@
   /* Cover placeholder gradient — swapped by the cover-style knob (§8/§2.6). */
   --cover-fallback: linear-gradient(155deg, #1c2330, #12161d);
 
-  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+  /* NOTE: --font-display / --font-body / --font-mono are declared in the `@theme` block at
+   * the foot of this file. Tailwind v4's `--font-*` namespace emits them into `:root`
+   * verbatim, so `var(--font-display)` below keeps resolving while `font-display` also
+   * becomes a real utility. */
 }
 
 /* Warm Paper light mode. */
@@ -231,6 +240,40 @@ a { color: inherit; text-decoration: none; }
 
 .ik-page-title { font-family: var(--font-display); font-size: 28px; font-weight: 700; letter-spacing: -.01em; margin: 4px 0 18px; }
 .ik-kicker { font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+
+/* Screen header: a title block on the left, its primary action on the right. Wraps on
+ * narrow viewports so the action drops below the title rather than squeezing it. */
+.ik-page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+/* Home's header adds the stat tiles on the right, so it needs a little more breathing room
+ * below before the first section heading. */
+.ik-home-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+/* An inline text link that reads as a link (the global `a` rule strips decoration). */
+.ik-link { color: var(--acc); text-decoration: none; font-size: 13px; }
+.ik-link:hover { text-decoration: underline; }
+
+/* A neutral, non-error status note — distinct from `.ik-error` so "check your inbox" never
+ * looks like something went wrong. */
+.ik-note {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-2);
+  font-size: 13px;
+}
 
 /* Section heading with an icon. */
 .ik-section-head { display: flex; align-items: center; gap: 9px; margin: 26px 0 14px; }
@@ -511,4 +554,101 @@ table.ik-table { width: 100%; border-collapse: collapse; }
   .ik-grid { grid-template-columns: repeat(2, 1fr); }
   .ik-hero { grid-template-columns: 120px 1fr; }
   .ik-content { padding: 20px 16px; }
+}
+
+/* ============================================================================
+ * Tailwind v4 theme (replaces the old tailwind.config.js `theme.extend`)
+ *
+ * Two blocks, deliberately:
+ *
+ *  - `@theme` for *static* tokens (fonts, radii, shadows, keyframes/animations). Tailwind
+ *    emits these as `:root` custom properties, so the `ik-*` rules above can keep using
+ *    `var(--font-display)` etc. — one definition, two consumers.
+ *
+ *  - `@theme inline` for the *runtime-swappable* palette. `inline` makes a utility compile
+ *    to `var(--acc)` rather than to a copied literal, so the `[data-theme]`/`[data-accent]`
+ *    overrides declared near the top of this file keep re-tinting utilities at runtime —
+ *    which a non-inline `@theme` would freeze at build time.
+ * ========================================================================== */
+
+@theme {
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  --radius-pill: 20px;
+  --radius-card: 14px;
+  --radius-ctl: 10px;
+  --radius-chip: 8px;
+
+  --shadow-cover: 0 8px 22px rgb(0 0 0 / 0.35);
+  --shadow-hero: 0 20px 50px rgb(0 0 0 / 0.55);
+
+  --animate-fade: ikfade 0.35s ease both;
+  --animate-bar: ikbar 0.25s ease both;
+  --animate-pulse: ikpulse 1.6s ease-in-out infinite;
+  --animate-flow: ikflow 2s linear infinite;
+  --animate-shimmer: ik-shimmer 1.4s linear infinite;
+}
+
+@theme inline {
+  /* Ground & surface — §2.1 */
+  --color-bg: var(--bg);
+  --color-rail: var(--rail);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-feed: var(--surface-feed);
+  --color-surface-unread: var(--surface-unread);
+
+  /* Borders & hairlines — §2.2 */
+  --color-border: var(--border);
+  --color-border-ctl: var(--border-ctl);
+  --color-border-row: var(--border-row);
+  --color-border-soft: var(--border-soft);
+
+  /* Text ramp — §2.3 */
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-faint-2: var(--faint-2);
+  --color-icon-off: var(--icon-off);
+
+  /* Accent — §2.4 (re-tinted by [data-accent]) */
+  --color-acc: var(--acc);
+  --color-acc-2: var(--acc2);
+  --color-acc-3: var(--acc3);
+  --color-acc-dk: var(--acc-dk);
+
+  /* Semantic roles — §2.5 */
+  --color-jade: var(--jade);
+  --color-jade-bright: var(--jade-bright);
+  --color-star: var(--star);
+}
+
+@theme {
+  /* Role colours that never change with the theme: they encode data, not chrome, so they
+   * stay literal (a status pill must mean the same thing in dark and light). */
+  --color-type-manga: #6fa8dc;
+  --color-type-manhwa: #f07a56;
+  --color-type-manhua: #3da88f;
+  --color-type-webtoon: #cba43c;
+
+  --color-status-ongoing: #3da88f;
+  --color-status-completed: #6fa8dc;
+  --color-status-hiatus: #cba43c;
+  --color-status-cancelled: #8a94a0;
+
+  --color-state-active: #3da88f;
+  --color-state-degraded: #cba43c;
+  --color-state-challenged: #db4a2b;
+  --color-state-solving: #6fa8dc;
+  --color-state-blocked: #c0392b;
+  --color-state-disabled: #8a94a0;
+
+  --color-run-running: #6fa8dc;
+  --color-run-completed: #3da88f;
+  --color-run-failed: #db4a2b;
+  --color-run-queued: #8a94a0;
 }

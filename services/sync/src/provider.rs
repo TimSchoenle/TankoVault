@@ -7,7 +7,6 @@
 //! `AniListStatus` in `crate::mapping`), so the engine never touches provider-specific enums.
 
 use async_trait::async_trait;
-use serde::Serialize;
 use tankovault_domain::{ContentType, WatchStatus};
 use time::OffsetDateTime;
 
@@ -58,13 +57,6 @@ pub(crate) struct RemoteMetadata {
     pub(crate) content_type: ContentType,
     pub(crate) tags: Vec<String>,
     pub(crate) authors: Vec<String>,
-}
-
-/// A registered provider's identity, as listed by `GET /v1/sync/providers`.
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct ProviderInfo {
-    pub(crate) slug: &'static str,
-    pub(crate) name: &'static str,
 }
 
 /// An external tracker `SyncEngine` can link, pull from and push to. Implementors are stored as

@@ -713,6 +713,11 @@ pub struct TestAdapterRequest {
 /// Dry-run the provider's adapter against the live site and return the parsed sample so
 /// operators can fix selectors without a deploy (design §11/§17). Bounded by a timeout;
 /// SSRF/robots/rate-limit are enforced by the injected fetch stack.
+///
+/// The body is deliberately free-form JSON: it is a diagnostic dump whose shape follows
+/// whatever the adapter managed to parse, and the console renders it verbatim. It is still
+/// declared as a schema so the generated client can return it, rather than forcing callers
+/// onto an untyped side channel.
 #[utoipa::path(
     post,
     path = "/v1/admin/providers/{id}/test",
@@ -721,7 +726,7 @@ pub struct TestAdapterRequest {
     request_body(content = Option<TestAdapterRequest>, description = "Optional relative series path to also fetch metadata + chapters for"),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Dry-run sample (adapter list/fetch results, each individually ok/error)"),
+        (status = 200, description = "Dry-run sample (adapter list/fetch results, each individually ok/error)", body = serde_json::Value, example = json!({"provider": "kunmanga", "latest": {"ok": true, "items": []}})),
         (status = 400, description = "Adapter build failed or the dry-run timed out", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),

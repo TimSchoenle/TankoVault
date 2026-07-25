@@ -854,15 +854,15 @@ pub async fn stream(
 ///
 /// The registered external providers (design: generalized multi-provider sync). Drives the
 /// Account "Sync & integrations" panel, which renders one card per entry instead of a single
-/// hardcoded `AniList` block. Response shape is defined by the sync service and forwarded
-/// verbatim; not tracked here.
+/// hardcoded `AniList` block. The body type is shared with the sync service via
+/// `tankovault_contracts::sync`, so the generated client exposes this endpoint typed.
 #[utoipa::path(
     get,
     path = "/v1/me/sync/providers",
     tag = ME_SYNC_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Providers, forwarded from the sync service"),
+        (status = 200, description = "Providers, forwarded from the sync service", body = Vec<tankovault_contracts::sync::ProviderInfo>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
@@ -883,8 +883,8 @@ pub async fn sync_providers(
 
 /// Get a provider's OAuth consent URL
 ///
-/// Returns the provider's consent URL (proxied). Response shape is defined by the sync service
-/// and forwarded verbatim; not tracked here.
+/// Returns the provider's consent URL (proxied). The body type is shared with the sync
+/// service via `tankovault_contracts::sync`.
 #[utoipa::path(
     get,
     path = "/v1/me/sync/{provider}/authorize",
@@ -892,7 +892,7 @@ pub async fn sync_providers(
     params(("provider" = String, Path, description = "Provider slug")),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Consent URL, forwarded from the sync service"),
+        (status = 200, description = "Consent URL, forwarded from the sync service", body = tankovault_contracts::sync::AuthorizeUrl),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
@@ -919,8 +919,8 @@ pub async fn sync_authorize_url(
 ///
 /// Whether the caller has a linked account at `provider`, plus the connected display name and
 /// most recent sync time (Sync & integrations panel, header pill, Series tracking card).
-/// Always `200`; an unlinked account reads `{ "linked": false }`. Response shape is defined by
-/// the sync service and forwarded verbatim; not tracked here.
+/// Always `200`; an unlinked account reads `{ "linked": false }`. The body type is shared with
+/// the sync service via `tankovault_contracts::sync`.
 #[utoipa::path(
     get,
     path = "/v1/me/sync/{provider}/status",
@@ -928,7 +928,7 @@ pub async fn sync_authorize_url(
     params(("provider" = String, Path, description = "Provider slug")),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Link status, forwarded from the sync service"),
+        (status = 200, description = "Link status, forwarded from the sync service", body = tankovault_contracts::sync::AccountStatus),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
@@ -1104,8 +1104,8 @@ pub async fn sync_pull(
 
 /// Get automatic-sync settings
 ///
-/// The caller's automatic-sync settings (design v2 §B.6). Response shape is defined by the
-/// sync service and forwarded verbatim; not tracked here.
+/// The caller's automatic-sync settings (design v2 §B.6). The body type is shared with the
+/// sync service via `tankovault_contracts::sync`.
 #[utoipa::path(
     get,
     path = "/v1/me/sync/{provider}/settings",
@@ -1113,7 +1113,7 @@ pub async fn sync_pull(
     params(("provider" = String, Path, description = "Provider slug")),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Settings, forwarded from the sync service"),
+        (status = 200, description = "Settings, forwarded from the sync service", body = tankovault_contracts::sync::AccountSettings),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 404, description = "No settings for this provider", body = crate::error::ProblemDetails),
     )
@@ -1187,15 +1187,15 @@ pub async fn sync_settings_patch(
 
 /// List pending sync conflicts
 ///
-/// The caller's pending conflicts across all providers (§B.6). Response shape is defined by
-/// the sync service and forwarded verbatim; not tracked here.
+/// The caller's pending conflicts across all providers (§B.6). Rows are `ConflictRow`, the
+/// same type the sync service reads from the database.
 #[utoipa::path(
     get,
     path = "/v1/me/sync/conflicts",
     tag = ME_SYNC_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Pending conflicts, forwarded from the sync service"),
+        (status = 200, description = "Pending conflicts, forwarded from the sync service", body = Vec<tankovault_db::repo::sync::ConflictRow>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
@@ -1259,8 +1259,8 @@ pub struct HistoryParams {
 
 /// Get sync history
 ///
-/// A page of the caller's sync history (§B.6). Response shape is defined by the sync service
-/// and forwarded verbatim; not tracked here.
+/// A page of the caller's sync history (§B.6). Rows are `HistoryRow`, the same type the sync
+/// service reads from the database.
 #[utoipa::path(
     get,
     path = "/v1/me/sync/history",
@@ -1268,7 +1268,7 @@ pub struct HistoryParams {
     params(HistoryParams),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "A page of sync history, forwarded from the sync service"),
+        (status = 200, description = "A page of sync history, forwarded from the sync service", body = Vec<tankovault_db::repo::sync::HistoryRow>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]

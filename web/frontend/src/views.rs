@@ -11,21 +11,21 @@ mod password;
 mod series;
 mod watchlist;
 
-pub use account::{Account, AnilistCallback};
-pub use auth::{Login, VerifyEmail};
-pub use console::Console;
-pub use discover::{Discover, Search};
-pub use home::Home;
-pub use notifications::Notifications;
-pub use password::{ForgotPassword, ResetPassword};
-pub use series::Series;
-pub use watchlist::Watchlist;
+pub(crate) use account::{Account, AnilistCallback};
+pub(crate) use auth::{Login, VerifyEmail};
+pub(crate) use console::Console;
+pub(crate) use discover::{Discover, Search};
+pub(crate) use home::Home;
+pub(crate) use notifications::Notifications;
+pub(crate) use password::{ForgotPassword, ResetPassword};
+pub(crate) use series::Series;
+pub(crate) use watchlist::Watchlist;
 
 use dioxus::prelude::*;
 
 /// Catch-all 404 (design §17.3: error states name what failed).
 #[component]
-pub fn NotFound(segments: Vec<String>) -> Element {
+pub(crate) fn NotFound(segments: Vec<String>) -> Element {
     let path = segments.join("/");
     rsx! {
         h1 { class: "ik-page-title", "Lost the thread" }

@@ -1,0 +1,578 @@
+//! Sync & integrations — one card per registered external tracker.
+//!
+//! Data-driven from `GET /v1/me/sync/providers` rather than a hardcoded `AniList` block, so a
+//! second provider needs no frontend change. Every claim on this screen comes from
+//! `GET /v1/me/sync/{provider}/status`: nothing is reported as connected while it is not.
+
+use super::PanelCard;
+use crate::api;
+use crate::components::{async_list, async_view, ErrorLine, OutcomeLine, SkeletonBlock};
+use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
+use crate::icons::{Ic, Icon};
+use crate::models::*;
+use crate::state::use_session;
+use crate::util::rel_time;
+use dioxus::prelude::*;
+use progenitor_client::ResponseValue;
+
+#[component]
+pub(crate) fn SyncPanel() -> Element {
+    let session = use_session();
+    let api = api::use_api();
+    let reload = use_reload();
+
+    let providers = use_resource(move || {
+        reload.track();
+        let client = api.client();
+        let authed = session.is_authenticated();
+        async move {
+            if !authed {
+                return Ok(Vec::new());
+            }
+            client
+                .sync_providers()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(api::friendly_error)
+        }
+    });
+
+    rsx! {
+        PanelCard { icon: Icon::CloudDone, title: "Sync & integrations",
+            {
+                async_list(
+                    &providers,
+                    reload,
+                    || rsx! { SkeletonBlock { height: 80 } },
+                    "No sync providers are configured.",
+                    |list| rsx! {
+                        for provider in list.iter().cloned() {
+                            ProviderSyncCard {
+                                key: "{provider.slug}",
+                                slug: provider.slug,
+                                name: provider.name,
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+/// One provider's connect/disconnect, automatic-sync settings and manual pull/push.
+#[component]
+fn ProviderSyncCard(slug: String, name: String) -> Element {
+    let session = use_session();
+    let api = api::use_api();
+    let reload = use_reload();
+    let busy = use_busy();
+    let mut outcome = use_outcome();
+    let mut show_conflicts = use_signal(|| false);
+
+    let status = use_resource({
+        let slug = slug.clone();
+        move || {
+            reload.track();
+            let slug = slug.clone();
+            let client = api.client();
+            let authed = session.is_authenticated();
+            async move {
+                if !authed {
+                    return Ok(AccountStatus {
+                        linked: false,
+                        username: None,
+                        last_synced_at: None,
+                    });
+                }
+                client
+                    .sync_status()
+                    .provider(slug)
+                    .send()
+                    .await
+                    .map(ResponseValue::into_inner)
+                    .map_err(api::friendly_error)
+            }
+        }
+    });
+
+    // The account's persisted automatic-sync settings (design v2 §B.6/§B.8). These used to be
+    // decoded through a hand-written struct whose field set no longer matched the service, so
+    // every response failed to parse and the panel silently fell back to hardcoded defaults —
+    // showing "auto sync on, newest wins" no matter what was actually stored. The body is now
+    // generated from the producer's own type.
+    let settings = use_resource({
+        let slug = slug.clone();
+        move || {
+            reload.track();
+            let slug = slug.clone();
+            let client = api.client();
+            let authed = session.is_authenticated();
+            async move {
+                if !authed {
+                    return None;
+                }
+                client
+                    .sync_settings()
+                    .provider(slug)
+                    .send()
+                    .await
+                    .ok()
+                    .map(ResponseValue::into_inner)
+            }
+        }
+    });
+
+    let policy = settings
+        .read_unchecked()
+        .as_ref()
+        .and_then(|s| s.as_ref())
+        .map_or(ConflictPolicy::NewestWins, |s| {
+            ConflictPolicy::parse(&s.conflict_policy)
+        });
+    let auto_sync = settings
+        .read_unchecked()
+        .as_ref()
+        .and_then(|s| s.as_ref())
+        .is_none_or(|s| s.auto_sync_enabled);
+    let pending = settings
+        .read_unchecked()
+        .as_ref()
+        .and_then(|s| s.as_ref())
+        .map_or(0, |s| s.pending_conflicts);
+    let linked = matches!(&*status.read_unchecked(), Some(Ok(status)) if status.linked);
+
+    let patch_settings = {
+        let slug = slug.clone();
+        move |patch: SyncSettingsPatch| {
+            let slug = slug.clone();
+            let client = api.client();
+            spawn(async move {
+                let _ = client
+                    .sync_settings_patch()
+                    .provider(slug)
+                    .body(patch)
+                    .send()
+                    .await;
+                reload.bump();
+            });
+        }
+    };
+
+    let toggle_auto = {
+        let patch_settings = patch_settings.clone();
+        move |_| {
+            patch_settings(SyncSettingsPatch {
+                auto_sync_enabled: Some(!auto_sync),
+                conflict_policy: None,
+            });
+        }
+    };
+
+    let connect = {
+        let slug = slug.clone();
+        move |_| {
+            let slug = slug.clone();
+            let client = api.client();
+            spawn(async move {
+                match client.sync_authorize_url().provider(slug).send().await {
+                    Ok(response) => {
+                        // A full-page navigation, not a router push: the consent screen lives
+                        // on the provider's origin.
+                        let url = serde_json::to_string(&response.into_inner().url)
+                            .unwrap_or_else(|_| "\"\"".to_owned());
+                        let _ = document::eval(&format!("window.location.href = {url};"));
+                    }
+                    Err(e) => outcome.set(Some(Err(api::friendly_error(e)))),
+                }
+            });
+        }
+    };
+
+    let disconnect = {
+        let slug = slug.clone();
+        let name = name.clone();
+        move |_| {
+            if !busy.claim() {
+                return;
+            }
+            outcome.set(None);
+            let (slug, name) = (slug.clone(), name.clone());
+            let client = api.client();
+            spawn(async move {
+                match client.sync_disconnect().provider(slug).send().await {
+                    Ok(_) => {
+                        outcome.set(Some(Ok(format!("Disconnected from {name}."))));
+                        reload.bump();
+                    }
+                    Err(e) => outcome.set(Some(Err(api::friendly_error(e)))),
+                }
+                busy.release();
+            });
+        }
+    };
+
+    // Pull and push get their own closures rather than one parameterised by direction: a
+    // shared `FnMut` capturing the non-`Copy` slug cannot be moved into both buttons.
+    let pull = {
+        let slug = slug.clone();
+        move |_| {
+            if !busy.claim() {
+                return;
+            }
+            outcome.set(None);
+            let slug = slug.clone();
+            let client = api.client();
+            spawn(async move {
+                let opts = SyncOpts {
+                    policy: Some(policy.token().to_owned()),
+                };
+                match client
+                    .sync_pull()
+                    .provider(slug)
+                    .body(SyncPullBody::Variant1(opts))
+                    .send()
+                    .await
+                {
+                    Ok(_) => {
+                        outcome.set(Some(Ok("Sync pull started.".to_owned())));
+                        reload.bump();
+                    }
+                    Err(e) => outcome.set(Some(Err(api::friendly_error(e)))),
+                }
+                busy.release();
+            });
+        }
+    };
+
+    let push = {
+        let slug = slug.clone();
+        move |_| {
+            if !busy.claim() {
+                return;
+            }
+            outcome.set(None);
+            let slug = slug.clone();
+            let client = api.client();
+            spawn(async move {
+                let opts = SyncOpts {
+                    policy: Some(policy.token().to_owned()),
+                };
+                match client
+                    .sync_push()
+                    .provider(slug)
+                    .body(SyncPushBody::Variant1(opts))
+                    .send()
+                    .await
+                {
+                    Ok(_) => {
+                        outcome.set(Some(Ok("Sync push started.".to_owned())));
+                        reload.bump();
+                    }
+                    Err(e) => outcome.set(Some(Err(api::friendly_error(e)))),
+                }
+                busy.release();
+            });
+        }
+    };
+
+    let card_name = name.clone();
+    let body = async_view(
+        &status,
+        reload,
+        || rsx! { SkeletonBlock { height: 80 } },
+        |status| {
+            if !status.linked {
+                return rsx! {
+                    div { class: "ik-flex", style: "gap:14px;",
+                        div { class: "ik-source-tile", style: "width:46px;height:46px;",
+                            Ic { icon: Icon::CloudOff, size: 22 }
+                        }
+                        div { class: "grow",
+                            div { style: "font-weight:700;font-size:16px;", "{card_name}" }
+                            div { class: "ik-muted", style: "font-size:13px;", "Not connected" }
+                        }
+                        button { class: "ik-btn primary", onclick: connect, "Connect {card_name}" }
+                    }
+                };
+            }
+
+            // Both of these now carry real values. They were invisible to the old
+            // hand-written DTO, whose field names had drifted from the service's, so the
+            // panel always showed a fabricated "<provider> reader" and a blank last sync.
+            let username = status
+                .username
+                .clone()
+                .unwrap_or_else(|| format!("{card_name} reader"));
+            let last_sync = rel_time(status.last_synced_at.as_deref());
+
+            rsx! {
+                div { class: "ik-flex", style: "gap:14px;margin-bottom:16px;",
+                    div { class: "ik-source-tile", style: "width:46px;height:46px;",
+                        Ic { icon: Icon::CloudDone, size: 22 }
+                    }
+                    div { class: "grow",
+                        div { style: "font-weight:700;font-size:16px;", "{card_name}" }
+                        div { class: "ik-flex", style: "gap:5px;font-size:13px;color:var(--jade-bright);",
+                            Ic { icon: Icon::CloudDone, size: 15 }
+                            "Connected as {username} · last sync {last_sync}"
+                        }
+                    }
+                    button { class: "ik-btn", disabled: busy.is_busy(), onclick: disconnect, "Disconnect" }
+                }
+                div { class: "ik-row", style: "margin-bottom:12px;",
+                    div { class: "grow",
+                        div { style: "font-weight:600;font-size:13px;", "Automatic sync" }
+                        div { class: "ik-muted", style: "font-size:12px;",
+                            "Keep this account in sync in the background."
+                        }
+                    }
+                    button {
+                        class: if auto_sync { "ik-btn primary" } else { "ik-btn" },
+                        "aria-pressed": auto_sync,
+                        onclick: toggle_auto,
+                        if auto_sync { "On" } else { "Off" }
+                    }
+                }
+                if pending > 0 {
+                    div { class: "ik-row", style: "margin-bottom:12px;",
+                        span { class: "grow", style: "font-size:13px;color:var(--acc);",
+                            "{pending} need your review"
+                        }
+                        button { class: "ik-btn", onclick: move |_| show_conflicts.set(true), "Review conflicts" }
+                    }
+                }
+                div { class: "ik-subhead", style: "margin-bottom:8px;", "When local and {card_name} disagree" }
+                div { class: "ik-chips",
+                    for option in ConflictPolicy::ALL {
+                        {
+                            let patch_settings = patch_settings.clone();
+                            rsx! {
+                                button {
+                                    key: "{option.token()}",
+                                    class: if policy == option { "ik-chip active" } else { "ik-chip" },
+                                    "aria-pressed": policy == option,
+                                    onclick: move |_| patch_settings(SyncSettingsPatch {
+                                        auto_sync_enabled: None,
+                                        conflict_policy: Some(option.token().to_owned()),
+                                    }),
+                                    "{option.label()}"
+                                }
+                            }
+                        }
+                    }
+                }
+                div { class: "ik-flex", style: "gap:10px;flex-wrap:wrap;margin-top:12px;",
+                    button { class: "ik-btn", disabled: busy.is_busy(), onclick: pull,
+                        Ic { icon: Icon::CloudSync, size: 16 }
+                        "Pull from {card_name}"
+                    }
+                    button { class: "ik-btn", disabled: busy.is_busy(), onclick: push,
+                        Ic { icon: Icon::CloudSync, size: 16 }
+                        "Push to {card_name}"
+                    }
+                }
+            }
+        },
+    );
+
+    rsx! {
+        {body}
+        OutcomeLine { outcome: outcome.read().clone() }
+        if *show_conflicts.read() {
+            ConflictInbox { provider: slug.clone(), show: show_conflicts, parent_reload: reload }
+        }
+        if linked {
+            SyncHistory { provider: slug.clone(), refresh: reload }
+        }
+    }
+}
+
+/// A compact "recent sync activity" log for one provider (design v2 §B.4/§B.6): what the
+/// automatic engine actually did, so "automatic" never means "invisible".
+#[component]
+fn SyncHistory(provider: String, refresh: Reload) -> Element {
+    let session = use_session();
+    let api = api::use_api();
+
+    let entries = use_resource(move || {
+        refresh.track();
+        let provider = provider.clone();
+        let client = api.client();
+        let authed = session.is_authenticated();
+        async move {
+            if !authed {
+                return Ok(Vec::new());
+            }
+            client
+                .sync_history()
+                .provider(provider)
+                .send()
+                .await
+                .map(|r| r.into_inner().into_iter().take(HISTORY_ROWS).collect())
+                .map_err(api::friendly_error)
+        }
+    });
+
+    rsx! {
+        div { class: "ik-sidebar-card", style: "max-width:560px;margin-top:14px;",
+            div { class: "ik-flex", style: "margin-bottom:12px;",
+                Ic { icon: Icon::CloudSync, size: 16 }
+                strong { "Recent sync activity" }
+            }
+            {
+                async_list(
+                    &entries,
+                    refresh,
+                    || rsx! { SkeletonBlock { height: 60 } },
+                    "No automatic sync activity yet.",
+                    |rows| rsx! {
+                        for row in rows.iter() {
+                            div { class: "ik-row", key: "{row.id}",
+                                div { class: "grow",
+                                    div { style: "font-weight:600;font-size:13px;", "{row.series_title}" }
+                                    div { class: "ik-mono ik-muted", style: "font-size:11px;",
+                                        "{row.action} · {rel_time(Some(&row.created_at))}"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+/// How many history rows the activity log shows. The endpoint pages at 50; this panel is a
+/// glance, not an audit trail.
+const HISTORY_ROWS: usize = 8;
+
+/// The reader-facing conflict inbox (design v2 §B.8): every pending conflict for `provider`,
+/// each with a plain-language "keep mine / take theirs" choice.
+#[component]
+fn ConflictInbox(provider: String, show: Signal<bool>, parent_reload: Reload) -> Element {
+    let session = use_session();
+    let api = api::use_api();
+    let reload = use_reload();
+
+    let conflicts = use_resource(move || {
+        reload.track();
+        let client = api.client();
+        let authed = session.is_authenticated();
+        async move {
+            if !authed {
+                return Ok(Vec::new());
+            }
+            client
+                .sync_conflicts()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(api::friendly_error)
+        }
+    });
+
+    let provider_filter = provider.clone();
+    rsx! {
+        div { class: "ik-sidebar-card", style: "max-width:560px;margin-top:14px;",
+            div { class: "ik-flex", style: "margin-bottom:12px;",
+                strong { class: "grow", "Conflicts to review" }
+                button { class: "ik-btn", onclick: move |_| show.set(false), "Close" }
+            }
+            {
+                async_view(
+                    &conflicts,
+                    reload,
+                    || rsx! { SkeletonBlock { height: 60 } },
+                    |all| {
+                        let rows: Vec<&ConflictRow> = all
+                            .iter()
+                            .filter(|c| c.provider == provider_filter)
+                            .collect();
+                        if rows.is_empty() {
+                            return rsx! {
+                                div { class: "ik-empty", "No conflicts need your review." }
+                            };
+                        }
+                        rsx! {
+                            for conflict in rows {
+                                ConflictRowView {
+                                    key: "{conflict.id}",
+                                    conflict: conflict.clone(),
+                                    reload,
+                                    parent_reload,
+                                }
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+/// One conflict: the disagreeing values plus the two resolutions.
+#[component]
+fn ConflictRowView(conflict: ConflictRow, reload: Reload, parent_reload: Reload) -> Element {
+    let api = api::use_api();
+    let busy = use_busy();
+    let mut error = use_signal(|| Option::<String>::None);
+    let id = conflict.id;
+
+    let mut resolve = move |resolution: &'static str| {
+        if !busy.claim() {
+            return;
+        }
+        error.set(None);
+        let client = api.client();
+        spawn(async move {
+            let body = ResolveConflict {
+                resolution: resolution.to_owned(),
+            };
+            match client
+                .sync_resolve_conflict()
+                .id(id)
+                .body(body)
+                .send()
+                .await
+            {
+                Ok(_) => {
+                    // Refresh both the inbox and the parent card, whose pending badge is now
+                    // one lower.
+                    reload.bump();
+                    parent_reload.bump();
+                }
+                Err(e) => error.set(Some(api::friendly_error(e))),
+            }
+            busy.release();
+        });
+    };
+
+    rsx! {
+        div { class: "ik-row",
+            div { class: "grow",
+                div { style: "font-weight:600;font-size:13px;", "{conflict.series_title}" }
+                div { class: "ik-mono ik-muted", style: "font-size:11px;",
+                    "{conflict.field}: local {conflict.local_value} · remote {conflict.remote_value}"
+                }
+                if let Some(message) = error.read().clone() {
+                    ErrorLine { message }
+                }
+            }
+            button {
+                class: "ik-btn",
+                disabled: busy.is_busy(),
+                onclick: move |_| resolve("local"),
+                "Keep mine"
+            }
+            button {
+                class: "ik-btn",
+                disabled: busy.is_busy(),
+                onclick: move |_| resolve("remote"),
+                "Take theirs"
+            }
+        }
+    }
+}

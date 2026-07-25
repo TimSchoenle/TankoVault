@@ -6,11 +6,17 @@
 //! regenerating the typed Rust API client (`crates/api-client`, `src/lib.rs`) that the
 //! Dioxus frontend consumes directly (re-exported via `web/frontend/src/wire.rs`).
 //!
-//! Endpoints that blindly proxy another service's JSON (`Json<serde_json::Value>` — most of
-//! `/v1/me/sync/*` and `/v1/admin/sync/{pull,push,unlink}`) document only status codes, no
-//! response body schema: `services/api` itself doesn't know their shape, so there is nothing
-//! to share. `/v1/me/notification-prefs` is excluded for the same reason it's untyped in the
-//! handler: it's product-defined free-form JSON, not a fixed schema.
+//! Endpoints that proxy another service's JSON still transport it as `Json<serde_json::Value>`,
+//! but the *read* ones on `/v1/me/sync/*` now declare a real `body`: their shapes live in
+//! `tankovault_contracts::sync` (and `tankovault_db::repo::sync` for the conflict/history
+//! rows), so the producing service and this document reference one definition and the
+//! generated client covers the whole sync surface. Without that, the frontend had to
+//! hand-mirror those structs, and they drifted.
+//!
+//! The remaining untyped proxies are the *command* responses — link/unlink, pull, push,
+//! resolve, and `/v1/admin/sync/{pull,push,unlink}` — whose bodies are progress blobs no
+//! caller destructures. `/v1/me/notification-prefs` stays untyped for the reason it's untyped
+//! in the handler: it's product-defined free-form JSON, not a fixed schema.
 //!
 //! Typed ids (`SeriesId`, `UserId`, ...) are listed explicitly below and left with their
 //! native `utoipa` "uuid" schema (`{"type":"string","format":"uuid"}`); `xtask openapi` tags
@@ -116,7 +122,15 @@ impl Modify for SecurityAddon {
     tankovault_db::repo::sync::AdminMappingRow,
     tankovault_db::repo::sync::UnmappedSeriesRow,
     tankovault_db::repo::sync::RemoteEntryRow,
+    tankovault_db::repo::sync::ConflictRow,
+    tankovault_db::repo::sync::HistoryRow,
     tankovault_db::repo::tracking::MeStats,
+    // --- sync HTTP contract (produced by services/sync, re-published verbatim by the
+    //     `/v1/me/sync/*` proxies here; see `tankovault_contracts::sync`) ---
+    tankovault_contracts::sync::AccountStatus,
+    tankovault_contracts::sync::AccountSettings,
+    tankovault_contracts::sync::ProviderInfo,
+    tankovault_contracts::sync::AuthorizeUrl,
     // --- auth ---
     crate::auth::RegisterRequest,
     crate::auth::RegisterResponse,

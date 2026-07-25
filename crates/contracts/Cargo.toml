@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Shared NATS message/event schemas and subject naming."
+description = "Shared NATS message/event schemas, HTTP wire contracts and subject naming."
 
 [dependencies]
 tankovault-domain = { workspace = true }
@@ -12,6 +12,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 time = { workspace = true }
+# The HTTP contracts in `sync` are schema'd so `services/api` can annotate the routes it
+# proxies, which is what lets `xtask openapi` generate a typed client for them.
+utoipa = { workspace = true }
 
 [lints]
 workspace = true

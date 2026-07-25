@@ -8,6 +8,7 @@ use super::PanelCard;
 use crate::api;
 use crate::components::{async_list, async_view, ErrorLine, OutcomeLine, SkeletonBlock};
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
+use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::use_session;
@@ -18,6 +19,7 @@ use progenitor_client::ResponseValue;
 #[component]
 pub(crate) fn SyncPanel() -> Element {
     let session = use_session();
+    let i18n = use_i18n();
     let api = api::use_api();
     let reload = use_reload();
 
@@ -34,18 +36,18 @@ pub(crate) fn SyncPanel() -> Element {
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
     rsx! {
-        PanelCard { icon: Icon::CloudDone, title: "Sync & integrations",
+        PanelCard { icon: Icon::CloudDone, title: i18n.t("account.tab.sync"),
             {
                 async_list(
                     &providers,
                     reload,
                     || rsx! { SkeletonBlock { height: 80 } },
-                    "No sync providers are configured.",
+                    &i18n.t("account.sync.noProviders"),
                     |list| rsx! {
                         for provider in list.iter().cloned() {
                             ProviderSyncCard {
@@ -65,6 +67,7 @@ pub(crate) fn SyncPanel() -> Element {
 #[component]
 fn ProviderSyncCard(slug: String, name: String) -> Element {
     let session = use_session();
+    let i18n = use_i18n();
     let api = api::use_api();
     let reload = use_reload();
     let busy = use_busy();
@@ -92,7 +95,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                     .send()
                     .await
                     .map(ResponseValue::into_inner)
-                    .map_err(api::friendly_error)
+                    .map_err(|e| api::friendly_error(i18n, e))
             }
         }
     });
@@ -184,7 +187,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                             .unwrap_or_else(|_| "\"\"".to_owned());
                         let _ = document::eval(&format!("window.location.href = {url};"));
                     }
-                    Err(e) => outcome.set(Some(Err(api::friendly_error(e)))),
+                    Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
                 }
             });
         }
@@ -203,10 +206,12 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
             spawn(async move {
                 match client.sync_disconnect().provider(slug).send().await {
                     Ok(_) => {
-                        outcome.set(Some(Ok(format!("Disconnected from {name}."))));
+                        outcome.set(Some(Ok(
+                            i18n.args("account.sync.disconnected", &[("provider", &name)])
+                        )));
                         reload.bump();
                     }
-                    Err(e) => outcome.set(Some(Err(api::friendly_error(e)))),
+                    Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
                 }
                 busy.release();
             });
@@ -236,10 +241,10 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                     .await
                 {
                     Ok(_) => {
-                        outcome.set(Some(Ok("Sync pull started.".to_owned())));
+                        outcome.set(Some(Ok(i18n.t("account.sync.pullStarted"))));
                         reload.bump();
                     }
-                    Err(e) => outcome.set(Some(Err(api::friendly_error(e)))),
+                    Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
                 }
                 busy.release();
             });
@@ -267,10 +272,10 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                     .await
                 {
                     Ok(_) => {
-                        outcome.set(Some(Ok("Sync push started.".to_owned())));
+                        outcome.set(Some(Ok(i18n.t("account.sync.pushStarted"))));
                         reload.bump();
                     }
-                    Err(e) => outcome.set(Some(Err(api::friendly_error(e)))),
+                    Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
                 }
                 busy.release();
             });
@@ -291,9 +296,11 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                         }
                         div { class: "grow",
                             div { style: "font-weight:700;font-size:16px;", "{card_name}" }
-                            div { class: "ik-muted", style: "font-size:13px;", "Not connected" }
+                            div { class: "ik-muted", style: "font-size:13px;", {i18n.t("series.notConnected")} }
                         }
-                        button { class: "ik-btn primary", onclick: connect, "Connect {card_name}" }
+                        button { class: "ik-btn primary", onclick: connect,
+                            {i18n.args("account.sync.connect", &[("provider", &card_name)])}
+                        }
                     }
                 };
             }
@@ -301,11 +308,10 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
             // Both of these now carry real values. They were invisible to the old
             // hand-written DTO, whose field names had drifted from the service's, so the
             // panel always showed a fabricated "<provider> reader" and a blank last sync.
-            let username = status
-                .username
-                .clone()
-                .unwrap_or_else(|| format!("{card_name} reader"));
-            let last_sync = rel_time(status.last_synced_at.as_deref());
+            let username = status.username.clone().unwrap_or_else(|| {
+                i18n.args("account.sync.anonymousUser", &[("provider", &card_name)])
+            });
+            let last_sync = rel_time(i18n, status.last_synced_at.as_deref());
 
             rsx! {
                 div { class: "ik-flex", style: "gap:14px;margin-bottom:16px;",
@@ -316,34 +322,49 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                         div { style: "font-weight:700;font-size:16px;", "{card_name}" }
                         div { class: "ik-flex", style: "gap:5px;font-size:13px;color:var(--jade-bright);",
                             Ic { icon: Icon::CloudDone, size: 15 }
-                            "Connected as {username} · last sync {last_sync}"
+                            {
+                                i18n.args(
+                                    "account.sync.connectedAs",
+                                    &[("user", &username), ("when", &last_sync)],
+                                )
+                            }
                         }
                     }
-                    button { class: "ik-btn", disabled: busy.is_busy(), onclick: disconnect, "Disconnect" }
+                    button { class: "ik-btn", disabled: busy.is_busy(), onclick: disconnect,
+                        {i18n.t("account.sync.disconnect")}
+                    }
                 }
                 div { class: "ik-row", style: "margin-bottom:12px;",
                     div { class: "grow",
-                        div { style: "font-weight:600;font-size:13px;", "Automatic sync" }
+                        div { style: "font-weight:600;font-size:13px;", {i18n.t("account.sync.auto")} }
                         div { class: "ik-muted", style: "font-size:12px;",
-                            "Keep this account in sync in the background."
+                            {i18n.t("account.sync.autoHint")}
                         }
                     }
                     button {
                         class: if auto_sync { "ik-btn primary" } else { "ik-btn" },
                         "aria-pressed": auto_sync,
                         onclick: toggle_auto,
-                        if auto_sync { "On" } else { "Off" }
+                        if auto_sync {
+                            {i18n.t("common.on")}
+                        } else {
+                            {i18n.t("common.off")}
+                        }
                     }
                 }
                 if pending > 0 {
                     div { class: "ik-row", style: "margin-bottom:12px;",
                         span { class: "grow", style: "font-size:13px;color:var(--acc);",
-                            "{pending} need your review"
+                            {i18n.plural("account.sync.pending", pending, &[])}
                         }
-                        button { class: "ik-btn", onclick: move |_| show_conflicts.set(true), "Review conflicts" }
+                        button { class: "ik-btn", onclick: move |_| show_conflicts.set(true),
+                            {i18n.t("account.sync.reviewConflicts")}
+                        }
                     }
                 }
-                div { class: "ik-subhead", style: "margin-bottom:8px;", "When local and {card_name} disagree" }
+                div { class: "ik-subhead", style: "margin-bottom:8px;",
+                    {i18n.args("account.sync.policyHeading", &[("provider", &card_name)])}
+                }
                 div { class: "ik-chips",
                     for option in ConflictPolicy::ALL {
                         {
@@ -357,7 +378,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                                         auto_sync_enabled: None,
                                         conflict_policy: Some(option.token().to_owned()),
                                     }),
-                                    "{option.label()}"
+                                    {i18n.t(option.label_key())}
                                 }
                             }
                         }
@@ -366,11 +387,11 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                 div { class: "ik-flex", style: "gap:10px;flex-wrap:wrap;margin-top:12px;",
                     button { class: "ik-btn", disabled: busy.is_busy(), onclick: pull,
                         Ic { icon: Icon::CloudSync, size: 16 }
-                        "Pull from {card_name}"
+                        {i18n.args("account.sync.pull", &[("provider", &card_name)])}
                     }
                     button { class: "ik-btn", disabled: busy.is_busy(), onclick: push,
                         Ic { icon: Icon::CloudSync, size: 16 }
-                        "Push to {card_name}"
+                        {i18n.args("account.sync.push", &[("provider", &card_name)])}
                     }
                 }
             }
@@ -394,6 +415,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
 #[component]
 fn SyncHistory(provider: String, refresh: Reload) -> Element {
     let session = use_session();
+    let i18n = use_i18n();
     let api = api::use_api();
 
     let entries = use_resource(move || {
@@ -411,7 +433,7 @@ fn SyncHistory(provider: String, refresh: Reload) -> Element {
                 .send()
                 .await
                 .map(|r| r.into_inner().into_iter().take(HISTORY_ROWS).collect())
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
@@ -419,21 +441,21 @@ fn SyncHistory(provider: String, refresh: Reload) -> Element {
         div { class: "ik-sidebar-card", style: "max-width:560px;margin-top:14px;",
             div { class: "ik-flex", style: "margin-bottom:12px;",
                 Ic { icon: Icon::CloudSync, size: 16 }
-                strong { "Recent sync activity" }
+                strong { {i18n.t("account.sync.history")} }
             }
             {
                 async_list(
                     &entries,
                     refresh,
                     || rsx! { SkeletonBlock { height: 60 } },
-                    "No automatic sync activity yet.",
+                    &i18n.t("account.sync.historyEmpty"),
                     |rows| rsx! {
                         for row in rows.iter() {
                             div { class: "ik-row", key: "{row.id}",
                                 div { class: "grow",
                                     div { style: "font-weight:600;font-size:13px;", "{row.series_title}" }
                                     div { class: "ik-mono ik-muted", style: "font-size:11px;",
-                                        "{row.action} · {rel_time(Some(&row.created_at))}"
+                                        "{row.action} · {rel_time(i18n, Some(&row.created_at))}"
                                     }
                                 }
                             }
@@ -454,6 +476,7 @@ const HISTORY_ROWS: usize = 8;
 #[component]
 fn ConflictInbox(provider: String, show: Signal<bool>, parent_reload: Reload) -> Element {
     let session = use_session();
+    let i18n = use_i18n();
     let api = api::use_api();
     let reload = use_reload();
 
@@ -470,7 +493,7 @@ fn ConflictInbox(provider: String, show: Signal<bool>, parent_reload: Reload) ->
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
@@ -478,8 +501,8 @@ fn ConflictInbox(provider: String, show: Signal<bool>, parent_reload: Reload) ->
     rsx! {
         div { class: "ik-sidebar-card", style: "max-width:560px;margin-top:14px;",
             div { class: "ik-flex", style: "margin-bottom:12px;",
-                strong { class: "grow", "Conflicts to review" }
-                button { class: "ik-btn", onclick: move |_| show.set(false), "Close" }
+                strong { class: "grow", {i18n.t("account.sync.conflictsHeading")} }
+                button { class: "ik-btn", onclick: move |_| show.set(false), {i18n.t("common.close")} }
             }
             {
                 async_view(
@@ -493,7 +516,7 @@ fn ConflictInbox(provider: String, show: Signal<bool>, parent_reload: Reload) ->
                             .collect();
                         if rows.is_empty() {
                             return rsx! {
-                                div { class: "ik-empty", "No conflicts need your review." }
+                                div { class: "ik-empty", {i18n.t("account.sync.conflictsEmpty")} }
                             };
                         }
                         rsx! {
@@ -517,6 +540,7 @@ fn ConflictInbox(provider: String, show: Signal<bool>, parent_reload: Reload) ->
 #[component]
 fn ConflictRowView(conflict: ConflictRow, reload: Reload, parent_reload: Reload) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let busy = use_busy();
     let mut error = use_signal(|| Option::<String>::None);
     let id = conflict.id;
@@ -544,7 +568,7 @@ fn ConflictRowView(conflict: ConflictRow, reload: Reload, parent_reload: Reload)
                     reload.bump();
                     parent_reload.bump();
                 }
-                Err(e) => error.set(Some(api::friendly_error(e))),
+                Err(e) => error.set(Some(api::friendly_error(i18n, e))),
             }
             busy.release();
         });
@@ -555,7 +579,16 @@ fn ConflictRowView(conflict: ConflictRow, reload: Reload, parent_reload: Reload)
             div { class: "grow",
                 div { style: "font-weight:600;font-size:13px;", "{conflict.series_title}" }
                 div { class: "ik-mono ik-muted", style: "font-size:11px;",
-                    "{conflict.field}: local {conflict.local_value} · remote {conflict.remote_value}"
+                    {
+                        i18n.args(
+                            "account.sync.conflictValues",
+                            &[
+                                ("field", &conflict.field),
+                                ("local", &conflict.local_value),
+                                ("remote", &conflict.remote_value),
+                            ],
+                        )
+                    }
                 }
                 if let Some(message) = error.read().clone() {
                     ErrorLine { message }
@@ -565,13 +598,13 @@ fn ConflictRowView(conflict: ConflictRow, reload: Reload, parent_reload: Reload)
                 class: "ik-btn",
                 disabled: busy.is_busy(),
                 onclick: move |_| resolve("local"),
-                "Keep mine"
+                {i18n.t("account.sync.keepMine")}
             }
             button {
                 class: "ik-btn",
                 disabled: busy.is_busy(),
                 onclick: move |_| resolve("remote"),
-                "Take theirs"
+                {i18n.t("account.sync.takeTheirs")}
             }
         }
     }

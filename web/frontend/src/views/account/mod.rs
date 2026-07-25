@@ -12,6 +12,7 @@ pub(crate) use callback::AnilistCallback;
 
 use crate::api;
 use crate::components::SignInGate;
+use crate::i18n::use_i18n;
 use crate::state::use_session;
 use dioxus::prelude::*;
 
@@ -33,13 +34,14 @@ impl Panel {
         Self::Notifications,
     ];
 
-    fn label(self) -> &'static str {
+    /// The catalogue key of this panel's tab label (see [`crate::i18n`]).
+    fn label_key(self) -> &'static str {
         match self {
-            Self::Profile => "Profile",
-            Self::Appearance => "Appearance",
-            Self::Security => "Security & sessions",
-            Self::Sync => "Sync & integrations",
-            Self::Notifications => "Notification prefs",
+            Self::Profile => "account.tab.profile",
+            Self::Appearance => "account.tab.appearance",
+            Self::Security => "account.tab.security",
+            Self::Sync => "account.tab.sync",
+            Self::Notifications => "account.tab.notifications",
         }
     }
 }
@@ -47,18 +49,21 @@ impl Panel {
 #[component]
 pub(crate) fn Account() -> Element {
     let session = use_session();
+    let i18n = use_i18n();
     let api = api::use_api();
     let mut panel = use_signal(|| Panel::Profile);
 
     if !session.is_authenticated() {
         return rsx! {
-            h1 { class: "ik-page-title", "Account" }
+            h1 { class: "ik-page-title", {i18n.t("nav.account")} }
             SignInGate {}
         };
     }
 
-    let name = session.username().unwrap_or_else(|| "reader".to_owned());
-    let role = session.role.read().label();
+    let name = session
+        .username()
+        .unwrap_or_else(|| i18n.t("common.readerFallback"));
+    let role = i18n.t(session.role.read().label_key());
     let current = *panel.read();
 
     let sign_out = move |_| {
@@ -74,21 +79,21 @@ pub(crate) fn Account() -> Element {
 
     rsx! {
         div { class: "ik-page-head",
-            h1 { class: "ik-page-title", "Account" }
-            button { class: "ik-btn", onclick: sign_out, "Sign out" }
+            h1 { class: "ik-page-title", {i18n.t("nav.account")} }
+            button { class: "ik-btn", onclick: sign_out, {i18n.t("account.signOut")} }
         }
         div { class: "ik-tabs",
             for entry in Panel::ALL {
                 button {
-                    key: "{entry.label()}",
+                    key: "{entry.label_key()}",
                     class: if current == entry { "ik-tab active" } else { "ik-tab" },
                     onclick: move |_| panel.set(entry),
-                    "{entry.label()}"
+                    {i18n.t(entry.label_key())}
                 }
             }
         }
         match current {
-            Panel::Profile => rsx! { profile::ProfilePanel { name: name.clone(), role } },
+            Panel::Profile => rsx! { profile::ProfilePanel { name: name.clone(), role: role.clone() } },
             Panel::Appearance => rsx! { appearance::AppearancePanel {} },
             Panel::Security => rsx! { security::SecurityPanel {} },
             Panel::Sync => rsx! { sync::SyncPanel {} },
@@ -98,8 +103,11 @@ pub(crate) fn Account() -> Element {
 }
 
 /// The shared card chrome every panel sits in: an icon + title header and a body.
+///
+/// `title` arrives already resolved — a panel has its [`crate::i18n::Translator`] to hand and
+/// this keeps the chrome free of any opinion about where the words came from.
 #[component]
-fn PanelCard(icon: crate::icons::Icon, title: &'static str, children: Element) -> Element {
+fn PanelCard(icon: crate::icons::Icon, title: String, children: Element) -> Element {
     rsx! {
         div { class: "ik-sidebar-card", style: "max-width:560px;",
             div { class: "ik-flex", style: "margin-bottom:12px;",

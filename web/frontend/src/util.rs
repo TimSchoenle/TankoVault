@@ -2,7 +2,10 @@
 //!
 //! Deliberately dependency-free: dates are parsed and compared with the browser's own
 //! `Date`, because pulling a date crate into the wasm bundle to render "3d ago" would cost
-//! more bytes than the whole module.
+//! more bytes than the whole module. Anything with words in it resolves through
+//! [`crate::i18n`] rather than baking English into the formatter.
+
+use crate::i18n::Translator;
 
 /// Render a chapter number without a trailing `.0`, so whole chapters read `#152` and part
 /// releases keep their fraction (`#152.6`).
@@ -43,41 +46,81 @@ pub(crate) fn iso_date(ts: Option<&str>) -> &str {
 
 /// Format an RFC-3339 timestamp as a coarse "time ago" label. `None`/empty renders as an
 /// em dash; a value the browser can't parse falls back to the raw string rather than lying.
-pub(crate) fn rel_time(ts: Option<&str>) -> String {
+pub(crate) fn rel_time(i18n: Translator, ts: Option<&str>) -> String {
     let Some(s) = ts.filter(|s| !s.is_empty()) else {
-        return "—".to_owned();
+        return i18n.t("time.unknown");
     };
     let parsed = js_sys::Date::parse(s);
     if parsed.is_nan() {
         return s.to_owned();
     }
-    humanize_ms(js_sys::Date::now() - parsed)
+    let age = Age::of(js_sys::Date::now() - parsed);
+    i18n.args(age.key(), &[("count", &age.count().to_string())])
 }
 
-/// Humanise a millisecond age into a compact relative label.
-fn humanize_ms(diff_ms: f64) -> String {
-    if diff_ms < 45_000.0 {
-        return "just now".to_owned();
+/// A millisecond age reduced to the unit it should be read in.
+///
+/// Kept separate from the wording so the bucket boundaries stay unit-testable on the host
+/// target — the phrasing needs a Dioxus runtime, the arithmetic does not — and so a
+/// translation can put the number wherever its language wants it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Age {
+    JustNow,
+    Minutes(i64),
+    Hours(i64),
+    Days(i64),
+    Months(i64),
+    Years(i64),
+}
+
+impl Age {
+    fn of(diff_ms: f64) -> Self {
+        if diff_ms < 45_000.0 {
+            return Self::JustNow;
+        }
+        // A difference in minutes cannot overflow `i64` for any timestamp the API emits.
+        #[allow(clippy::cast_possible_truncation)]
+        let mins = (diff_ms / 60_000.0) as i64;
+        if mins < 60 {
+            return Self::Minutes(mins);
+        }
+        let hours = mins / 60;
+        if hours < 24 {
+            return Self::Hours(hours);
+        }
+        let days = hours / 24;
+        if days < 30 {
+            return Self::Days(days);
+        }
+        let months = days / 30;
+        if months < 12 {
+            return Self::Months(months);
+        }
+        Self::Years(days / 365)
     }
-    // A difference in minutes cannot overflow `i64` for any timestamp the API emits.
-    #[allow(clippy::cast_possible_truncation)]
-    let mins = (diff_ms / 60_000.0) as i64;
-    if mins < 60 {
-        return format!("{mins}m ago");
+
+    /// The catalogue key wording this bucket; every entry but `justNow` takes `{count}`.
+    fn key(self) -> &'static str {
+        match self {
+            Self::JustNow => "time.justNow",
+            Self::Minutes(_) => "time.minutesAgo",
+            Self::Hours(_) => "time.hoursAgo",
+            Self::Days(_) => "time.daysAgo",
+            Self::Months(_) => "time.monthsAgo",
+            Self::Years(_) => "time.yearsAgo",
+        }
     }
-    let hours = mins / 60;
-    if hours < 24 {
-        return format!("{hours}h ago");
+
+    fn count(self) -> i64 {
+        match self {
+            Self::JustNow => 0,
+            Self::Minutes(n)
+            | Self::Hours(n)
+            | Self::Days(n)
+            | Self::Months(n)
+            | Self::Years(n) => n,
+        }
     }
-    let days = hours / 24;
-    if days < 30 {
-        return format!("{days}d ago");
-    }
-    let months = days / 30;
-    if months < 12 {
-        return format!("{months}mo ago");
-    }
-    format!("{}y ago", days / 365)
 }
 
 /// The uppercase first character of `text`, for avatar and cover-fallback tiles.
@@ -89,13 +132,13 @@ pub(crate) fn initial(text: &str) -> String {
         .to_string()
 }
 
-/// Time-of-day greeting from the browser clock.
-pub(crate) fn greeting() -> &'static str {
+/// The catalogue key of the time-of-day greeting, from the browser clock.
+pub(crate) fn greeting_key() -> &'static str {
     match js_sys::Date::new_0().get_hours() {
-        5..=11 => "Good morning",
-        12..=17 => "Good afternoon",
-        18..=21 => "Good evening",
-        _ => "Late night",
+        5..=11 => "greeting.morning",
+        12..=17 => "greeting.afternoon",
+        18..=21 => "greeting.evening",
+        _ => "greeting.night",
     }
 }
 
@@ -132,13 +175,13 @@ mod tests {
     }
 
     #[test]
-    fn humanizes_ages_across_every_unit_boundary() {
-        assert_eq!(humanize_ms(1_000.0), "just now");
-        assert_eq!(humanize_ms(120_000.0), "2m ago");
-        assert_eq!(humanize_ms(3.0 * 3_600_000.0), "3h ago");
-        assert_eq!(humanize_ms(5.0 * 86_400_000.0), "5d ago");
-        assert_eq!(humanize_ms(90.0 * 86_400_000.0), "3mo ago");
-        assert_eq!(humanize_ms(800.0 * 86_400_000.0), "2y ago");
+    fn buckets_ages_across_every_unit_boundary() {
+        assert_eq!(Age::of(1_000.0), Age::JustNow);
+        assert_eq!(Age::of(120_000.0), Age::Minutes(2));
+        assert_eq!(Age::of(3.0 * 3_600_000.0), Age::Hours(3));
+        assert_eq!(Age::of(5.0 * 86_400_000.0), Age::Days(5));
+        assert_eq!(Age::of(90.0 * 86_400_000.0), Age::Months(3));
+        assert_eq!(Age::of(800.0 * 86_400_000.0), Age::Years(2));
     }
 
     #[test]

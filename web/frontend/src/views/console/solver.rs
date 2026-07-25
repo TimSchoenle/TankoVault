@@ -3,6 +3,7 @@
 use crate::api;
 use crate::components::ErrorBox;
 use crate::hooks::{use_reload, Reload};
+use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::use_session;
@@ -20,6 +21,7 @@ use progenitor_client::ResponseValue;
 #[component]
 pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let session = use_session();
     let reload = use_reload();
     let res = use_resource(move || {
@@ -33,7 +35,7 @@ pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
                     .send()
                     .await
                     .map(ResponseValue::into_inner)
-                    .map_err(api::friendly_error)
+                    .map_err(|e| api::friendly_error(i18n, e))
             } else {
                 Ok(Vec::new())
             }
@@ -49,7 +51,7 @@ pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
             }
         }
         Some(Ok(list)) if list.is_empty() => rsx! {
-            div { class: "ik-empty", "No providers configured." }
+            div { class: "ik-empty", {i18n.t("console.solver.noProviders")} }
         },
         Some(Ok(list)) => {
             let rows = list.clone();
@@ -68,17 +70,20 @@ pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
                     div { class: "ik-flex", style: "gap:9px;",
                         Ic { icon: Icon::ShieldLock, size: 20 }
                         div {
-                            div { style: "font-weight:600;", "Challenge solver" }
-                            div { class: "ik-mono ik-muted", style: "font-size:12px;", "Backend: FlareSolverr" }
+                            div { style: "font-weight:600;", {i18n.t("console.solver.title")} }
+                            // The back-end's product name, not a message.
+                            div { class: "ik-mono ik-muted", style: "font-size:12px;",
+                                {i18n.args("console.solver.backend", &[("backend", "FlareSolverr")])}
+                            }
                         }
                     }
-                    span { class: "ik-pill jade", "active" }
+                    span { class: "ik-pill jade", {i18n.t("console.solver.active")} }
                 }
                 p { class: "ik-muted", style: "font-size:13px;margin:10px 0 0;",
-                    "Per-provider solve-success rates need the solver-metrics endpoint (TODO(api) §9.5). Until then, re-solve queues a fast re-scan that re-attempts any challenged sources."
+                    {i18n.t("console.solver.note")}
                 }
             }
-            h3 { "Provider states" }
+            h3 { {i18n.t("console.solver.providerStates")} }
             {body}
         }
     }
@@ -87,6 +92,7 @@ pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
 #[component]
 pub(super) fn SolverRow(provider: Provider, reload: Reload) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let session = use_session();
     let id = provider.id;
     let blocked = matches!(
@@ -135,11 +141,11 @@ pub(super) fn SolverRow(provider: Provider, reload: Reload) -> Element {
             }
             HealthPill { state: provider_state_token(provider.state).to_owned() }
             if blocked {
-                button { class: "ik-btn", onclick: reenable, "Re-enable" }
+                button { class: "ik-btn", onclick: reenable, {i18n.t("console.solver.reenable")} }
             }
             button { class: "ik-btn primary", onclick: resolve,
                 Ic { icon: Icon::Refresh, size: 15 }
-                "Re-solve"
+                {i18n.t("console.solver.resolve")}
             }
         }
     }
@@ -150,6 +156,7 @@ pub(super) fn SolverRow(provider: Provider, reload: Reload) -> Element {
 #[component]
 pub(super) fn AdapterTestTab() -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let session = use_session();
     let res = use_resource(move || {
         let client = api.client();
@@ -160,7 +167,7 @@ pub(super) fn AdapterTestTab() -> Element {
                     .send()
                     .await
                     .map(ResponseValue::into_inner)
-                    .map_err(api::friendly_error)
+                    .map_err(|e| api::friendly_error(i18n, e))
             } else {
                 Ok(Vec::new())
             }
@@ -171,17 +178,19 @@ pub(super) fn AdapterTestTab() -> Element {
     let body = match &*res.read_unchecked() {
         None => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
         Some(Err(e)) => rsx! {
-            p { class: "ik-muted", style: "font-size:13px;", "Could not load providers: {e}" }
+            p { class: "ik-muted", style: "font-size:13px;",
+                {i18n.args("console.providers.unavailable", &[("message", e)])}
+            }
         },
         Some(Ok(list)) if list.is_empty() => rsx! {
-            div { class: "ik-empty", "No providers to test yet." }
+            div { class: "ik-empty", {i18n.t("console.adapterTest.noProviders")} }
         },
         Some(Ok(list)) => {
             let opts = list.clone();
             let sel = chosen.read().clone();
             rsx! {
                 div { class: "ik-flex", style: "margin-bottom:4px;",
-                    label { class: "ik-muted", style: "font-size:13px;", "Provider" }
+                    label { class: "ik-muted", style: "font-size:13px;", {i18n.t("discover.provider")} }
                     select {
                         class: "ik-input",
                         style: "width:auto;",
@@ -189,7 +198,7 @@ pub(super) fn AdapterTestTab() -> Element {
                             let v = e.value();
                             chosen.set(if v.is_empty() { None } else { Some(v) });
                         },
-                        option { value: "", selected: sel.is_none(), "— choose a provider —" }
+                        option { value: "", selected: sel.is_none(), {i18n.t("console.adapterTest.choose")} }
                         for p in opts {
                             option { value: "{p.id}", selected: sel.as_deref() == Some(p.id.to_string().as_str()), "{p.name}" }
                         }
@@ -204,9 +213,9 @@ pub(super) fn AdapterTestTab() -> Element {
 
     rsx! {
         section { style: "margin-bottom:18px;",
-            h3 { "Adapter test" }
+            h3 { {i18n.t("console.tab.adapterTest")} }
             p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                "Dry-run a provider's adapter against the live site without deploying — validate selectors and pagination."
+                {i18n.t("console.adapterTest.intro")}
             }
             {body}
         }

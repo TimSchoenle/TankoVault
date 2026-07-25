@@ -38,12 +38,12 @@ impl Role {
         matches!(self, Self::Admin)
     }
 
-    /// The lowercase word shown next to the user's name in the rail and on Account.
-    pub(crate) fn label(self) -> &'static str {
+    /// The catalogue key of the word shown next to the user's name in the rail and on Account.
+    pub(crate) fn label_key(self) -> &'static str {
         match self {
-            Self::Admin => "admin",
-            Self::Operator => "operator",
-            Self::User => "reader",
+            Self::Admin => "enum.role.admin",
+            Self::Operator => "enum.role.operator",
+            Self::User => "enum.role.reader",
         }
     }
 }

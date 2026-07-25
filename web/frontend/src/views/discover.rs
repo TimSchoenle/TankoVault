@@ -15,6 +15,7 @@
 use crate::api;
 use crate::components::{async_list, async_view, CoverCard, SkeletonGrid};
 use crate::hooks::use_reload;
+use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use dioxus::prelude::*;
@@ -46,14 +47,15 @@ impl Sort {
         Self::Rating,
         Self::Year,
     ];
-    fn label(self) -> &'static str {
+    /// The catalogue key of this option's display name (see [`crate::i18n`]).
+    fn label_key(self) -> &'static str {
         match self {
-            Self::Updated => "Recently updated",
-            Self::Title => "Title (A–Z)",
-            Self::Chapters => "Most chapters",
-            Self::Sources => "Most sources",
-            Self::Rating => "Highest rated",
-            Self::Year => "Newest",
+            Self::Updated => "discover.sort.updated",
+            Self::Title => "discover.sort.title",
+            Self::Chapters => "discover.sort.chapters",
+            Self::Sources => "discover.sort.sources",
+            Self::Rating => "discover.sort.rating",
+            Self::Year => "discover.sort.year",
         }
     }
     fn value(self) -> &'static str {
@@ -95,6 +97,7 @@ pub(crate) fn Discover() -> Element {
     let mut page = use_signal(|| 0usize);
     let mut panel_open = use_signal(|| true);
     let reload = use_reload();
+    let i18n = use_i18n();
     let api = api::use_api();
 
     // Facet data. A failure degrades to an empty facet rather than an error state: the grid
@@ -202,7 +205,7 @@ pub(crate) fn Discover() -> Element {
                             next_cursor,
                         }
                     })
-                    .map_err(api::friendly_error)
+                    .map_err(|e| api::friendly_error(i18n, e))
             }
         })
     };
@@ -230,24 +233,32 @@ pub(crate) fn Discover() -> Element {
                 return rsx! {
                     div { class: "ik-empty",
                         Ic { icon: Icon::Search, size: 28 }
-                        p { style: "margin:10px 0 4px;font-weight:600;", "Nothing matched those filters" }
-                        p { class: "ik-muted", style: "font-size:13px;", "Try widening the type or status, or reset everything." }
+                        p { style: "margin:10px 0 4px;font-weight:600;", {i18n.t("discover.noMatch.title")} }
+                        p { class: "ik-muted", style: "font-size:13px;", {i18n.t("discover.noMatch.hint")} }
                         button {
                             class: "ik-btn",
                             style: "margin-top:10px;",
                             onclick: move |_| clear_all(types, statuses, inc, exc, provider, page),
-                            "Reset filters"
+                            {i18n.t("discover.resetFilters")}
                         }
                     }
                 };
             }
             rsx! {
+                // One interpolated sentence rather than span-wrapped fragments: splitting a
+                // sentence around markup fixes its word order to English and leaves the
+                // translator with unorderable scraps.
                 div { class: "ik-count-line",
-                    span { class: "ik-mono", "{total}" }
-                    " series · page "
-                    span { class: "ik-mono", "{current + 1}" }
-                    " of "
-                    span { class: "ik-mono", "{pages}" }
+                    {
+                        i18n.args(
+                            "discover.countLine",
+                            &[
+                                ("total", &total.to_string()),
+                                ("page", &(current + 1).to_string()),
+                                ("pages", &pages.to_string()),
+                            ],
+                        )
+                    }
                 }
                 div { class: "ik-grid",
                     for series in page_data.items.iter().cloned() {
@@ -270,16 +281,16 @@ pub(crate) fn Discover() -> Element {
         div { class: "ik-results-head",
             button {
                 class: "ik-panel-toggle",
-                title: "Toggle filters",
+                title: i18n.t("discover.toggleFilters"),
                 onclick: move |_| {
                     let cur = *panel_open.peek();
                     panel_open.set(!cur);
                 },
                 Ic { icon: Icon::Tune, size: 18 }
             }
-            h1 { class: "ik-page-title", "Discover" }
+            h1 { class: "ik-page-title", {i18n.t("nav.discover")} }
             span { class: "ik-rail-spacer", style: "flex:1;" }
-            label { class: "ik-muted", style: "font-size:13px;", "Sort" }
+            label { class: "ik-muted", style: "font-size:13px;", {i18n.t("discover.sortLabel")} }
             select {
                 class: "ik-select",
                 value: "{sort_val}",
@@ -288,7 +299,7 @@ pub(crate) fn Discover() -> Element {
                     page.set(0);
                 },
                 for s in Sort::ALL {
-                    option { value: "{s.value()}", selected: *sort.read() == s, "{s.label()}" }
+                    option { value: "{s.value()}", selected: *sort.read() == s, {i18n.t(s.label_key())} }
                 }
             }
         }
@@ -352,21 +363,26 @@ fn FilterPanel(
     page: Signal<usize>,
     on_reset: EventHandler<()>,
 ) -> Element {
+    let i18n = use_i18n();
     let ma = *match_all.read();
     let cur_provider = provider.read().clone().unwrap_or_default();
     rsx! {
         aside { class: "ik-filter-panel",
             div { class: "ik-filter-head",
-                strong { Ic { icon: Icon::Tune, size: 16 } "Filters" }
-                button { class: "reset", onclick: move |_| on_reset.call(()), "Reset" }
+                strong { Ic { icon: Icon::Tune, size: 16 } {i18n.t("discover.filters")} }
+                button { class: "reset", onclick: move |_| on_reset.call(()), {i18n.t("common.reset")} }
             }
             div { class: "ik-muted", style: "font-size:12px;",
-                if active_count == 0 { "No filters applied" } else { "{active_count} active" }
+                if active_count == 0 {
+                    {i18n.t("discover.noFilters")}
+                } else {
+                    {i18n.args("discover.activeFilters", &[("count", &active_count.to_string())])}
+                }
             }
 
             // CONTENT TYPE
             div { class: "ik-filter-group",
-                div { class: "lbl", "Content type" }
+                div { class: "lbl", {i18n.t("discover.contentType")} }
                 div { class: "ik-chips", style: "margin-bottom:0;",
                     for t in ContentType::all().iter().copied() {
                         TypeChip { t, types, page }
@@ -376,7 +392,7 @@ fn FilterPanel(
 
             // STATUS
             div { class: "ik-filter-group",
-                div { class: "lbl", "Status" }
+                div { class: "lbl", {i18n.t("discover.status")} }
                 div { class: "ik-chips", style: "margin-bottom:0;",
                     for s in SeriesStatus::all().iter().copied() {
                         StatusChip { s, statuses, page }
@@ -387,7 +403,7 @@ fn FilterPanel(
             // GENRES / TAGS
             div { class: "ik-filter-group",
                 div { class: "lbl",
-                    "Genres / tags"
+                    {i18n.t("discover.tags")}
                     button {
                         class: "reset",
                         style: "font-family:var(--font-mono);text-transform:none;",
@@ -396,11 +412,15 @@ fn FilterPanel(
                             let mut m = match_all;
                             m.set(!cur);
                         },
-                        if ma { "match: all" } else { "match: any" }
+                        if ma {
+                            {i18n.t("discover.matchAll")}
+                        } else {
+                            {i18n.t("discover.matchAny")}
+                        }
                     }
                 }
                 if tags.is_empty() {
-                    div { class: "ik-muted", style: "font-size:12px;", "No tags indexed yet." }
+                    div { class: "ik-muted", style: "font-size:12px;", {i18n.t("discover.noTags")} }
                 } else {
                     div { class: "ik-chips", style: "margin-bottom:0;",
                         for tag in tags.iter().take(40).cloned() {
@@ -408,17 +428,17 @@ fn FilterPanel(
                         }
                     }
                     div { class: "ik-legend",
-                        span { class: "inc", "+ include" }
-                        span { class: "exc", "− exclude" }
+                        span { class: "inc", {i18n.t("discover.legend.include")} }
+                        span { class: "exc", {i18n.t("discover.legend.exclude")} }
                     }
                 }
             }
 
             // PROVIDER — public providers list (§9.3), filtered server-side by slug (§9.1).
             div { class: "ik-filter-group",
-                div { class: "lbl", "Provider" }
+                div { class: "lbl", {i18n.t("discover.provider")} }
                 if providers.is_empty() {
-                    div { class: "ik-muted", style: "font-size:12px;", "No providers available yet." }
+                    div { class: "ik-muted", style: "font-size:12px;", {i18n.t("discover.noProviders")} }
                 } else {
                     select {
                         class: "ik-select",
@@ -430,7 +450,7 @@ fn FilterPanel(
                             provider.set(if v.is_empty() { None } else { Some(v) });
                             page.set(0);
                         },
-                        option { value: "", selected: cur_provider.is_empty(), "All providers" }
+                        option { value: "", selected: cur_provider.is_empty(), {i18n.t("discover.allProviders")} }
                         for p in providers.iter().cloned() {
                             option {
                                 key: "{p.id}",
@@ -445,7 +465,7 @@ fn FilterPanel(
 
             // RELEASE YEAR — server-side range (§9.1); bounds sent only when narrowed.
             div { class: "ik-filter-group",
-                div { class: "lbl", "Release year" }
+                div { class: "lbl", {i18n.t("discover.releaseYear")} }
                 div { class: "ik-range-row",
                     span { "{year_min}" }
                     input {
@@ -475,7 +495,7 @@ fn FilterPanel(
             // MIN. CHAPTERS — server-side (§9.1).
             div { class: "ik-filter-group",
                 div { class: "lbl",
-                    "Min. chapters"
+                    {i18n.t("discover.minChapters")}
                     span { class: "ik-mono", style: "color:var(--muted);", "{min_ch}+" }
                 }
                 input {
@@ -493,8 +513,8 @@ fn FilterPanel(
 
             // SAVED PRESETS — stub.
             div { class: "ik-filter-group",
-                div { class: "lbl", "Saved presets" }
-                div { class: "ik-muted", style: "font-size:12px;", "Saving filter presets is coming soon." }
+                div { class: "lbl", {i18n.t("discover.presets")} }
+                div { class: "ik-muted", style: "font-size:12px;", {i18n.t("discover.presetsSoon")} }
             }
         }
     }
@@ -502,6 +522,7 @@ fn FilterPanel(
 
 #[component]
 fn TypeChip(t: ContentType, types: Signal<Vec<ContentType>>, page: Signal<usize>) -> Element {
+    let i18n = use_i18n();
     let active = types.read().contains(&t);
     let class = if active { "ik-chip active" } else { "ik-chip" };
     rsx! {
@@ -514,7 +535,7 @@ fn TypeChip(t: ContentType, types: Signal<Vec<ContentType>>, page: Signal<usize>
                 if let Some(i) = pos { v.write().remove(i); } else { v.write().push(t); }
                 page.set(0);
             },
-            "{t.label()}"
+            {i18n.t(t.label_key())}
         }
     }
 }
@@ -525,6 +546,7 @@ fn StatusChip(
     statuses: Signal<Vec<SeriesStatus>>,
     page: Signal<usize>,
 ) -> Element {
+    let i18n = use_i18n();
     let active = statuses.read().contains(&s);
     let class = if active { "ik-chip active" } else { "ik-chip" };
     rsx! {
@@ -537,7 +559,7 @@ fn StatusChip(
                 if let Some(i) = pos { v.write().remove(i); } else { v.write().push(s); }
                 page.set(0);
             },
-            "{s.label()}"
+            {i18n.t(s.label_key())}
         }
     }
 }
@@ -609,6 +631,7 @@ fn ActiveFilters(
     providers: Vec<PublicProvider>,
     page: Signal<usize>,
 ) -> Element {
+    let i18n = use_i18n();
     let ty = types.read().clone();
     let st = statuses.read().clone();
     let inc_v = inc.read().clone();
@@ -645,7 +668,7 @@ fn ActiveFilters(
             }
             for t in ty {
                 div { class: "ik-afchip",
-                    "{t.label()}"
+                    {i18n.t(t.label_key())}
                     button {
                         onclick: move |_| {
                             let mut v = types;
@@ -659,7 +682,7 @@ fn ActiveFilters(
             }
             for s in st {
                 div { class: "ik-afchip",
-                    "{s.label()}"
+                    {i18n.t(s.label_key())}
                     button {
                         onclick: move |_| {
                             let mut v = statuses;
@@ -760,6 +783,7 @@ fn jump_to_page(mut jump: Signal<String>, mut page: Signal<usize>, pages: usize)
 
 #[component]
 fn Pagination(page: Signal<usize>, pages: usize, has_next: bool) -> Element {
+    let i18n = use_i18n();
     let cur = *page.read();
     let mut jump = use_signal(String::new);
 
@@ -769,7 +793,7 @@ fn Pagination(page: Signal<usize>, pages: usize, has_next: bool) -> Element {
                 class: "page",
                 disabled: cur == 0,
                 onclick: move |_| { if cur > 0 { page.set(cur - 1); } },
-                "Prev"
+                {i18n.t("discover.page.prev")}
             }
             for p in page_window(cur, pages) {
                 match p {
@@ -787,11 +811,11 @@ fn Pagination(page: Signal<usize>, pages: usize, has_next: bool) -> Element {
                 class: "page",
                 disabled: !has_next && cur + 1 >= pages,
                 onclick: move |_| page.set(cur + 1),
-                "Next"
+                {i18n.t("discover.page.next")}
             }
             if pages > 1 {
                 div { class: "ik-page-jump",
-                    "Go to"
+                    {i18n.t("discover.page.goTo")}
                     input {
                         r#type: "number",
                         min: "1",
@@ -805,12 +829,12 @@ fn Pagination(page: Signal<usize>, pages: usize, has_next: bool) -> Element {
                             }
                         },
                     }
-                    "of {pages}"
+                    {i18n.args("discover.page.ofTotal", &[("pages", &pages.to_string())])}
                     button {
                         class: "page",
                         r#type: "button",
                         onclick: move |_| jump_to_page(jump, page, pages),
-                        "Go"
+                        {i18n.t("discover.page.go")}
                     }
                 }
             }
@@ -835,6 +859,7 @@ pub(crate) fn Search(q: String) -> Element {
     }
 
     let reload = use_reload();
+    let i18n = use_i18n();
     let api = api::use_api();
     let resource = use_resource(move || {
         let q = q_state.read().clone();
@@ -848,7 +873,7 @@ pub(crate) fn Search(q: String) -> Element {
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
@@ -862,7 +887,7 @@ pub(crate) fn Search(q: String) -> Element {
         &resource,
         reload,
         || rsx! { SkeletonGrid { count: 8 } },
-        "No series matched that. Try fewer words.",
+        &i18n.t("search.empty"),
         |items| {
             rsx! {
                 div { class: "ik-grid",
@@ -875,11 +900,12 @@ pub(crate) fn Search(q: String) -> Element {
     );
 
     rsx! {
-        h1 { class: "ik-page-title", style: "font-size:34px;", "Results for “{q}”" }
+        h1 { class: "ik-page-title", style: "font-size:34px;",
+            {i18n.args("search.title", &[("query", &q)])}
+        }
         if let Some(count) = count {
             div { class: "ik-count-line",
-                span { class: "ik-mono", "{count}" }
-                " results · trigram fuzzy match"
+                {i18n.args("search.countLine", &[("count", &count.to_string())])}
             }
         }
         {body}

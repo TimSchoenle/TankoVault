@@ -60,7 +60,9 @@ leaves the screen stuck on its signed-out result, 401ing forever.
 | `src/components/` | Shell, rail, command bar, cover cards, and the shared loading/empty/error primitives. |
 | `src/hooks.rs` | `Reload`, `Busy` and `Outcome` — the three patterns every screen repeats. |
 | `src/util.rs` | Dependency-free formatting (relative time, chapter numbers, thousands). |
-| `src/models.rs` | Re-exports of the generated types plus presentation-only labels and colours. |
+| `src/models.rs` | Re-exports of the generated types plus presentation-only label keys and colours. |
+| `src/i18n.rs` | The `i18nrs` provider, the `Translator` handle, and the catalogue parity tests. |
+| `locales/` | One JSON message catalogue per shipped language. |
 | `src/views/` | One module per screen; `console/` and `account/` are directories, one file per tab or panel. |
 | `src/icons.rs` | Inline-SVG icon set (`Icon` enum + `Ic` component; no web font). |
 
@@ -70,6 +72,43 @@ Use `async_view` / `async_list` from `components` rather than open-coding the
 loading/error/empty match. They make "a failed fetch is always visible and always retryable" a
 property of the app rather than of each screen — something the hand-rolled matches they
 replaced had already drifted away from in several places.
+
+## Messages (i18n)
+
+Every reader-facing string comes from a catalogue in `locales/`, resolved through
+[`i18nrs`](https://crates.io/crates/i18nrs) (`dio` feature). No screen holds English text.
+
+```rust
+let i18n = use_i18n();                                  // context lookup, not a hook
+
+i18n.t("nav.watchlist")                                 // plain message
+i18n.args("home.welcome", &[("name", &name)])           // `{name}` placeholders
+i18n.plural("series.sources", count, &[])               // `.one` / `.other`, `{count}` implied
+i18n.t(status.label_key())                              // enum label, via its catalogue key
+```
+
+The `Translator` is `Copy`, so pass it into handlers and spawned futures — that is how
+`api::friendly_error(i18n, err)` words a failure.
+
+Rules the catalogues have to keep, all three enforced by `cargo test`:
+
+- **`en.json` is the source of truth**, and every other locale defines *exactly* the same
+  keys. `i18nrs` falls back to an arbitrary catalogue for a missing key (it takes the first
+  `HashMap` entry, whose order is undefined), so a key missing from one locale renders
+  unpredictably — including as the literal `Key '…' not found`.
+- **Never split a sentence around markup.** Interpolate the whole thing
+  (`"{total} series · page {page} of {pages}"`); span-wrapped fragments fix the word order to
+  English and leave a translator with unorderable scraps.
+- **Enums carry a `label_key()`, not a label.** Colours and tokens stay in Rust; the words
+  live in the catalogue, so the two cannot drift into separate enumerations.
+
+Adding a language means adding a `locales/<code>.json` and one `Locale` entry in `src/i18n.rs`.
+A language outside the one/other plural split also needs a real plural rule in
+`Translator::plural`, which asserts on the shipped set so it cannot be forgotten.
+
+The choice persists to `localStorage` under `tv-lang`, alongside the appearance knobs; the
+picker is on Account → Appearance. An unset language follows `navigator.language`, matched on
+the primary subtag (`de-AT` → `de`).
 
 ## Styling
 
@@ -97,10 +136,11 @@ vendor the `.woff2` into `assets/fonts/` and add an `asset!()` + `@font-face` li
 
 ## `index.html`
 
-Hand-written, and load-bearing. It applies the reader's saved theme **before the first paint**
-(a WASM bundle cannot touch the DOM until it has downloaded, instantiated and rendered, which
-is several hundred milliseconds of the wrong theme) and registers the global ⌘K/Ctrl+K search
-shortcut once, where a component effect would stack a duplicate listener on every mount.
+Hand-written, and load-bearing. It applies the reader's saved theme and `lang` **before the
+first paint** (a WASM bundle cannot touch the DOM until it has downloaded, instantiated and
+rendered, which is several hundred milliseconds of the wrong theme, and `lang` decides
+hyphenation at parse time) and registers the global ⌘K/Ctrl+K search shortcut once, where a
+component effect would stack a duplicate listener on every mount.
 
 ## Known follow-ups
 

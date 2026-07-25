@@ -6,6 +6,7 @@ mod queues;
 use crate::api;
 use crate::components::ErrorBox;
 use crate::hooks::{use_reload, Reload};
+use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::util::rel_time;
 use dioxus::prelude::*;
@@ -17,6 +18,7 @@ use queues::UnmatchedRemoteQueue;
 #[component]
 pub(super) fn SyncAdminPanel() -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let reload = use_reload();
     // The series currently open in the "manga info" inspector, shared with the assign queue
     // so "Inspect" jumps straight to the editable per-provider mapping view.
@@ -32,7 +34,7 @@ pub(super) fn SyncAdminPanel() -> Element {
                     .send()
                     .await
                     .map(ResponseValue::into_inner)
-                    .map_err(api::friendly_error)
+                    .map_err(|e| api::friendly_error(i18n, e))
             }
         })
     };
@@ -44,7 +46,7 @@ pub(super) fn SyncAdminPanel() -> Element {
             rsx! { ErrorBox { message: msg, on_retry: move |()| reload.bump() } }
         }
         Some(Ok(list)) if list.is_empty() => rsx! {
-            div { class: "ik-empty", "No linked external accounts." }
+            div { class: "ik-empty", {i18n.t("console.sync.noAccounts")} }
         },
         Some(Ok(list)) => {
             let list = list.clone();
@@ -58,27 +60,27 @@ pub(super) fn SyncAdminPanel() -> Element {
 
     rsx! {
         section { style: "margin-bottom:24px;",
-            h3 { "Linked accounts" }
+            h3 { {i18n.t("console.sync.accounts")} }
             {accounts_body}
         }
         section { style: "margin-bottom:24px;",
-            h3 { "Series sync inspector" }
+            h3 { {i18n.t("console.sync.inspector")} }
             p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                "Open any series to see its info and what it is synced to. Fix a wrong external id or add a missing one by hand."
+                {i18n.t("console.sync.inspectorIntro")}
             }
             SeriesSyncInspector { selected, reload }
         }
         section { style: "margin-bottom:24px;",
-            h3 { "Assign queue" }
+            h3 { {i18n.t("console.sync.assignQueue")} }
             p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                "Series with no mapping for the selected provider yet — the ones auto-matching was not confident about. Assign an id or open the inspector."
+                {i18n.t("console.sync.assignQueueIntro")}
             }
             AssignQueue { selected, reload }
         }
         section {
-            h3 { "Match every loaded entry" }
+            h3 { {i18n.t("console.sync.remoteQueue")} }
             p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                "Fetched remote entries the auto-matcher could not confidently link. Each one comes with ranked suggestions and a link to open it on the provider; inspect any candidate, then match it — this maps it, imports it onto the user's watchlist, and clears it here."
+                {i18n.t("console.sync.remoteQueueIntro")}
             }
             UnmatchedRemoteQueue { reload }
         }
@@ -88,9 +90,10 @@ pub(super) fn SyncAdminPanel() -> Element {
 #[component]
 pub(super) fn SyncAccountRow(account: Signal<AdminSyncAccount>, reload: Reload) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let mut busy = use_signal(|| false);
     let acc = account.read();
-    let last_sync = rel_time(acc.last_synced_at.as_deref());
+    let last_sync = rel_time(i18n, acc.last_synced_at.as_deref());
 
     let pull = {
         let user_id = UserId(acc.user_id);
@@ -164,25 +167,42 @@ pub(super) fn SyncAccountRow(account: Signal<AdminSyncAccount>, reload: Reload) 
                 }
                 div { class: "ik-muted", style: "font-size:13px;",
                     if let Some(u) = &acc.external_username {
-                        "Connected as {u} · last sync {last_sync}"
+                        {
+                            i18n.args(
+                                "account.sync.connectedAs",
+                                &[("user", u), ("when", &last_sync)],
+                            )
+                        }
                     } else {
-                        "last sync {last_sync}"
+                        {i18n.args("console.sync.lastSync", &[("when", &last_sync)])}
                     }
                 }
                 div { class: "ik-mono ik-muted", style: "font-size:11px;",
-                    if acc.auto_sync_enabled { "auto-sync on" } else { "auto-sync off" }
-                    " · policy {acc.conflict_policy}"
+                    if acc.auto_sync_enabled {
+                        {i18n.t("console.sync.autoOn")}
+                    } else {
+                        {i18n.t("console.sync.autoOff")}
+                    }
+                    {i18n.args("console.sync.policy", &[("policy", &acc.conflict_policy)])}
                     if acc.pending_conflicts > 0 {
-                        span { style: "color:var(--acc);", " · {acc.pending_conflicts} pending conflicts" }
+                        span { style: "color:var(--acc);",
+                            {i18n.plural("console.sync.pendingConflicts", acc.pending_conflicts, &[])}
+                        }
                     }
                 }
                 if let Some(err) = &acc.last_error {
                     div { style: "font-size:12px;color:var(--acc);", "{err}" }
                 }
             }
-            button { class: "ik-btn", disabled: *busy.read(), onclick: pull, "Force pull" }
-            button { class: "ik-btn", disabled: *busy.read(), onclick: push, "Force push" }
-            button { class: "ik-btn", disabled: *busy.read(), onclick: unlink, "Unlink" }
+            button { class: "ik-btn", disabled: *busy.read(), onclick: pull,
+                {i18n.t("console.sync.forcePull")}
+            }
+            button { class: "ik-btn", disabled: *busy.read(), onclick: push,
+                {i18n.t("console.sync.forcePush")}
+            }
+            button { class: "ik-btn", disabled: *busy.read(), onclick: unlink,
+                {i18n.t("console.sync.unlink")}
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 //! Per-provider statistics: catalogue footprint, content freshness and last-scan health.
 
 use crate::api;
+use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::state::use_session;
 use crate::util::{rel_time, thousands};
@@ -14,6 +15,7 @@ use progenitor_client::ResponseValue;
 #[component]
 pub(super) fn ProviderStatsTable(tick: RefreshTick) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let session = use_session();
     let res = {
         use_resource(move || {
@@ -27,7 +29,7 @@ pub(super) fn ProviderStatsTable(tick: RefreshTick) -> Element {
                             .send()
                             .await
                             .map(ResponseValue::into_inner)
-                            .map_err(api::friendly_error),
+                            .map_err(|e| api::friendly_error(i18n, e)),
                     )
                 } else {
                     None
@@ -40,11 +42,13 @@ pub(super) fn ProviderStatsTable(tick: RefreshTick) -> Element {
         None | Some(None) => rsx! { div { class: "ik-skeleton", style: "height:120px;" } },
         Some(Some(Err(e))) => {
             rsx! {
-                p { class: "ik-muted", style: "font-size:13px;", "Provider stats unavailable: {e}" }
+                p { class: "ik-muted", style: "font-size:13px;",
+                    {i18n.args("console.stats.unavailable", &[("message", e)])}
+                }
             }
         }
         Some(Some(Ok(list))) if list.is_empty() => rsx! {
-            div { class: "ik-empty", "No providers configured yet." }
+            div { class: "ik-empty", {i18n.t("console.stats.empty")} }
         },
         Some(Some(Ok(list))) => {
             let rows = list.clone();
@@ -53,16 +57,16 @@ pub(super) fn ProviderStatsTable(tick: RefreshTick) -> Element {
                     table { class: "ik-table ik-table-compact",
                         thead {
                             tr {
-                                th { "Provider" }
-                                th { "Adapter" }
-                                th { style: "text-align:right;", "Series" }
-                                th { style: "text-align:right;", "Sources" }
-                                th { style: "text-align:right;", "Chapters" }
-                                th { style: "text-align:right;", "24h" }
-                                th { style: "text-align:right;", "7d" }
-                                th { "Newest" }
-                                th { "Last scan" }
-                                th { "Last run" }
+                                th { {i18n.t("console.stats.col.provider")} }
+                                th { {i18n.t("console.stats.col.adapter")} }
+                                th { style: "text-align:right;", {i18n.t("console.stats.col.series")} }
+                                th { style: "text-align:right;", {i18n.t("console.stats.col.sources")} }
+                                th { style: "text-align:right;", {i18n.t("console.stats.col.chapters")} }
+                                th { style: "text-align:right;", {i18n.t("console.stats.col.day")} }
+                                th { style: "text-align:right;", {i18n.t("console.stats.col.week")} }
+                                th { {i18n.t("console.stats.col.newest")} }
+                                th { {i18n.t("console.stats.col.lastScan")} }
+                                th { {i18n.t("console.stats.col.lastRun")} }
                             }
                         }
                         tbody {
@@ -78,7 +82,7 @@ pub(super) fn ProviderStatsTable(tick: RefreshTick) -> Element {
 
     rsx! {
         section { style: "margin-bottom:18px;",
-            h3 { "Provider statistics" }
+            h3 { {i18n.t("console.stats.title")} }
             {body}
         }
     }
@@ -86,15 +90,19 @@ pub(super) fn ProviderStatsTable(tick: RefreshTick) -> Element {
 
 #[component]
 pub(super) fn ProviderStatRow(stat: ProviderStat) -> Element {
+    let i18n = use_i18n();
     let s = stat;
     let blocked = if s.blocked_sources > 0 {
-        format!(" · {} off", s.blocked_sources)
+        i18n.args(
+            "console.stats.blockedSources",
+            &[("count", &thousands(s.blocked_sources))],
+        )
     } else {
         String::new()
     };
     let last_run = match (&s.last_run_state, s.last_run_at.as_deref()) {
-        (Some(state), at) => format!("{state} · {}", rel_time(at)),
-        (None, _) => "—".to_owned(),
+        (Some(state), at) => format!("{state} · {}", rel_time(i18n, at)),
+        (None, _) => i18n.t("time.unknown"),
     };
     rsx! {
         tr {
@@ -122,8 +130,12 @@ pub(super) fn ProviderStatRow(stat: ProviderStat) -> Element {
                 }
             }
             td { class: "ik-mono ik-muted", style: "text-align:right;", "{thousands(s.chapters_7d)}" }
-            td { class: "ik-muted ik-mono", style: "font-size:12px;", "{rel_time(s.last_chapter_at.as_deref())}" }
-            td { class: "ik-muted ik-mono", style: "font-size:12px;", "{rel_time(s.last_scanned_at.as_deref())}" }
+            td { class: "ik-muted ik-mono", style: "font-size:12px;",
+                "{rel_time(i18n, s.last_chapter_at.as_deref())}"
+            }
+            td { class: "ik-muted ik-mono", style: "font-size:12px;",
+                "{rel_time(i18n, s.last_scanned_at.as_deref())}"
+            }
             td { class: "ik-muted ik-mono", style: "font-size:12px;", "{last_run}" }
         }
     }

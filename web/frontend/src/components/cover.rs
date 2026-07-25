@@ -1,5 +1,6 @@
 //! Cover artwork and the cover card used by every grid.
 
+use crate::i18n::use_i18n;
 use crate::models::{ContentTypeExt, SeriesStatusExt, SeriesSummary};
 use crate::util::initial;
 use crate::Route;
@@ -30,6 +31,7 @@ pub(crate) fn Cover(url: Option<String>, title: String) -> Element {
 /// A single cover card in the Discover/Search/recommendation grids.
 #[component]
 pub(crate) fn CoverCard(series: ReadSignal<SeriesSummary>) -> Element {
+    let i18n = use_i18n();
     let series = series.read();
     rsx! {
         Link { to: Route::Series { id: series.id.to_string() }, class: "ik-card",
@@ -37,11 +39,13 @@ pub(crate) fn CoverCard(series: ReadSignal<SeriesSummary>) -> Element {
             div { class: "ik-card-body",
                 div { class: "ik-card-title", "{series.title}" }
                 div { class: "ik-card-meta",
-                    span { "{series.content_type.label()}" }
+                    span { {i18n.t(series.content_type.label_key())} }
                     span { "·" }
-                    span { "{series.status.label()}" }
+                    span { {i18n.t(series.status.label_key())} }
                     span { class: "ik-rail-spacer" }
-                    span { class: "ik-mono", "{series.source_count} src" }
+                    span { class: "ik-mono",
+                        {i18n.args("series.sourceCount", &[("count", &series.source_count.to_string())])}
+                    }
                 }
             }
         }

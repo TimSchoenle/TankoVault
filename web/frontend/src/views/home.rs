@@ -7,10 +7,11 @@ use crate::components::{
     async_list, async_view, Cover, CoverCard, SignInGate, SkeletonBlock, SkeletonRows,
 };
 use crate::hooks::{use_reload, Reload};
+use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::use_session;
-use crate::util::{chapter_number, greeting, iso_date};
+use crate::util::{chapter_number, greeting_key, iso_date};
 use crate::Route;
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
@@ -18,6 +19,7 @@ use progenitor_client::ResponseValue;
 #[component]
 pub(crate) fn Home() -> Element {
     let session = use_session();
+    let i18n = use_i18n();
     let api = api::use_api();
     let reload = use_reload();
 
@@ -37,7 +39,7 @@ pub(crate) fn Home() -> Element {
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
@@ -54,7 +56,7 @@ pub(crate) fn Home() -> Element {
                 .send()
                 .await
                 .map(|r| Some(r.into_inner()))
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
@@ -71,7 +73,7 @@ pub(crate) fn Home() -> Element {
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
@@ -87,18 +89,20 @@ pub(crate) fn Home() -> Element {
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
     if !session.is_authenticated() {
         return rsx! {
-            h1 { class: "ik-page-title", "Home" }
+            h1 { class: "ik-page-title", {i18n.t("nav.home")} }
             SignInGate {}
         };
     }
 
-    let name = session.username().unwrap_or_else(|| "reader".to_owned());
+    let name = session
+        .username()
+        .unwrap_or_else(|| i18n.t("common.readerFallback"));
 
     // Tile values render as an em dash until their call resolves, rather than as a
     // provisional zero the reader would read as a real figure.
@@ -114,26 +118,28 @@ pub(crate) fn Home() -> Element {
     rsx! {
         div { class: "ik-home-head",
             div {
-                div { class: "ik-kicker", "{greeting()}" }
-                h1 { class: "ik-page-title", style: "margin:6px 0 0;", "Welcome back, {name}" }
+                div { class: "ik-kicker", {i18n.t(greeting_key())} }
+                h1 { class: "ik-page-title", style: "margin:6px 0 0;",
+                    {i18n.args("home.welcome", &[("name", &name)])}
+                }
             }
             div { class: "ik-stat-row",
-                StatTile { icon: Icon::Bolt, label: "New chapters", value: new_chapters, tone: "acc" }
-                StatTile { icon: Icon::MenuBook, label: "Reading", value: reading, tone: "" }
-                StatTile { icon: Icon::Check, label: "Chapters read", value: chapters_read, tone: "jade" }
+                StatTile { icon: Icon::Bolt, label: i18n.t("home.stat.newChapters"), value: new_chapters, tone: "acc" }
+                StatTile { icon: Icon::MenuBook, label: i18n.t("home.stat.reading"), value: reading, tone: "" }
+                StatTile { icon: Icon::Check, label: i18n.t("home.stat.chaptersRead"), value: chapters_read, tone: "jade" }
             }
         }
 
         div { class: "ik-section-head",
             Ic { icon: Icon::PlayCircle, size: 20 }
-            h2 { "Continue reading" }
+            h2 { {i18n.t("home.continue.title")} }
         }
         {
             async_list(
                 &continuing,
                 reload,
                 || rsx! { SkeletonBlock { height: 96 } },
-                "Start reading a tracked series and it'll show up here so you can pick up where you left off.",
+                &i18n.t("home.continue.empty"),
                 |items| rsx! {
                     div { class: "ik-grid",
                         for item in items.iter().cloned() {
@@ -146,15 +152,15 @@ pub(crate) fn Home() -> Element {
 
         div { class: "ik-section-head",
             Ic { icon: Icon::Bolt, size: 20 }
-            h2 { "New in your watchlist" }
-            Link { to: Route::Notifications {}, class: "more", "See all" }
+            h2 { {i18n.t("home.feed.title")} }
+            Link { to: Route::Notifications {}, class: "more", {i18n.t("common.seeAll")} }
         }
         {
             async_list(
                 &feed,
                 reload,
                 || rsx! { SkeletonRows { count: 3 } },
-                "You're all caught up. New chapters from your watchlist will land here.",
+                &i18n.t("home.feed.empty"),
                 |items| rsx! {
                     for (day , entries) in group_by_day(items) {
                         div { class: "ik-daygroup", key: "{day}",
@@ -182,7 +188,7 @@ pub(crate) fn Home() -> Element {
                     rsx! {
                         div { class: "ik-section-head",
                             Ic { icon: Icon::AutoAwesome, size: 20 }
-                            h2 { "Because you read" }
+                            h2 { {i18n.t("home.recommendations.title")} }
                         }
                         div { class: "ik-grid",
                             for series in items.iter().cloned() {
@@ -214,6 +220,7 @@ fn StatTile(icon: Icon, label: String, value: String, tone: &'static str) -> Ele
 /// reader can resume.
 #[component]
 fn ContinueCard(item: ContinueItem) -> Element {
+    let i18n = use_i18n();
     let next = item.next_number.map(chapter_number);
     let last = chapter_number(item.last_read_number);
     rsx! {
@@ -223,12 +230,18 @@ fn ContinueCard(item: ContinueItem) -> Element {
                 div { class: "ik-card-title", "{item.series_title}" }
                 div { class: "ik-card-meta",
                     match next {
-                        Some(n) => rsx! { span { "Next #{n}" } },
-                        None => rsx! { span { "Read #{last}" } },
+                        Some(n) => rsx! {
+                            span { {i18n.args("home.continue.next", &[("number", &n)])} }
+                        },
+                        None => rsx! {
+                            span { {i18n.args("home.continue.read", &[("number", &last)])} }
+                        },
                     }
                     span { class: "ik-rail-spacer" }
                     if item.unread > 0 {
-                        span { class: "ik-pill acc", style: "font-size:10px;", "{item.unread} new" }
+                        span { class: "ik-pill acc", style: "font-size:10px;",
+                            {i18n.args("home.continue.new", &[("count", &item.unread.to_string())])}
+                        }
                     }
                 }
             }
@@ -240,13 +253,19 @@ fn ContinueCard(item: ContinueItem) -> Element {
 #[component]
 fn FeedRow(entry: FeedEntry, reload: Reload) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let series_id = entry.series_id;
     let number = entry.chapter_number;
     let label = entry
         .chapter_title
         .clone()
         .filter(|title| !title.is_empty())
-        .unwrap_or_else(|| format!("Chapter {}", chapter_number(number)));
+        .unwrap_or_else(|| {
+            i18n.args(
+                "series.chapterNumbered",
+                &[("number", &chapter_number(number))],
+            )
+        });
 
     let mark_read = move |_| {
         let client = api.client();
@@ -274,8 +293,8 @@ fn FeedRow(entry: FeedEntry, reload: Reload) -> Element {
                 div { style: "font-weight:600;", "{entry.series_title}" }
                 div { class: "ik-muted", style: "font-size:13px;", "{label} · {entry.provider_slug}" }
             }
-            a { class: "ik-btn", href: "{entry.url}", target: "_blank", rel: "noopener", "Open" }
-            button { class: "ik-btn primary", onclick: mark_read, "Mark read" }
+            a { class: "ik-btn", href: "{entry.url}", target: "_blank", rel: "noopener", {i18n.t("common.open")} }
+            button { class: "ik-btn primary", onclick: mark_read, {i18n.t("common.markRead")} }
         }
     }
 }

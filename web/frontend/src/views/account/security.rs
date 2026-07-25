@@ -6,6 +6,7 @@ use super::PanelCard;
 use crate::api;
 use crate::components::async_list;
 use crate::hooks::{use_busy, use_reload, Reload};
+use crate::i18n::use_i18n;
 use crate::icons::Icon;
 use crate::state::use_session;
 use crate::util::iso_date;
@@ -15,6 +16,7 @@ use progenitor_client::ResponseValue;
 #[component]
 pub(crate) fn SecurityPanel() -> Element {
     let session = use_session();
+    let i18n = use_i18n();
     let api = api::use_api();
     let reload = use_reload();
 
@@ -31,21 +33,21 @@ pub(crate) fn SecurityPanel() -> Element {
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
     rsx! {
-        PanelCard { icon: Icon::ShieldLock, title: "Active sessions",
+        PanelCard { icon: Icon::ShieldLock, title: i18n.t("account.security.title"),
             p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                "Each device that signed in holds a refresh session. Revoke any you don't recognise."
+                {i18n.t("account.security.intro")}
             }
             {
                 async_list(
                     &sessions,
                     reload,
                     || rsx! { crate::components::SkeletonBlock { height: 80 } },
-                    "No active sessions.",
+                    &i18n.t("account.security.empty"),
                     |rows| rsx! {
                         for row in rows.iter().cloned() {
                             SessionRow {
@@ -60,7 +62,7 @@ pub(crate) fn SecurityPanel() -> Element {
                 )
             }
             p { class: "ik-muted", style: "font-size:12px;margin-top:14px;",
-                "Password change and two-factor auth aren't available yet."
+                {i18n.t("account.security.unavailable")}
             }
         }
     }
@@ -74,6 +76,7 @@ fn SessionRow(
     reload: Reload,
 ) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let busy = use_busy();
     let created = iso_date(Some(&created_at)).to_owned();
     let expires = iso_date(Some(&expires_at)).to_owned();
@@ -95,11 +98,19 @@ fn SessionRow(
     rsx! {
         div { class: "ik-row",
             div { class: "grow",
-                div { style: "font-weight:600;font-size:13px;", "Signed in {created}" }
-                div { class: "ik-mono ik-muted", style: "font-size:11px;", "expires {expires}" }
+                div { style: "font-weight:600;font-size:13px;",
+                    {i18n.args("account.security.signedIn", &[("date", &created)])}
+                }
+                div { class: "ik-mono ik-muted", style: "font-size:11px;",
+                    {i18n.args("account.security.expires", &[("date", &expires)])}
+                }
             }
             button { class: "ik-btn", disabled: busy.is_busy(), onclick: revoke,
-                if busy.is_busy() { "Revoking…" } else { "Revoke" }
+                if busy.is_busy() {
+                    {i18n.t("account.security.revoking")}
+                } else {
+                    {i18n.t("account.security.revoke")}
+                }
             }
         }
     }

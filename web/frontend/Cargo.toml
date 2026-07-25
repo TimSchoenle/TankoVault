@@ -33,7 +33,7 @@ base64 = "0.22"
 # Live notification stream: read `MessageEvent.data()` from the SSE subscription.
 # `Window`/`Location` let the API client resolve the served page's absolute origin — reqwest
 # (unlike the browser's own fetch) rejects the relative `/v1/...` paths with a "builder error".
-web-sys = { version = "0.3", features = ["MessageEvent", "Window", "Location"] }
+web-sys = { version = "0.3", features = ["MessageEvent", "Window", "Location", "Navigator"] }
 wasm-bindgen = "0.2"
 # Relative-time formatting on the console uses the browser's own ISO-8601 date parser.
 js-sys = "0.3"
@@ -45,6 +45,10 @@ js-sys = "0.3"
 # self-contained WebCrypto backend (via `wasm-bindgen`/`js-sys`, already deps) — no
 # `getrandom` wasm cfg required.
 uuid = { version = "1", features = ["serde", "js"] }
+# Message catalogues + the language switch (`src/i18n.rs`). `dio` is the Dioxus binding; the
+# `dio-ssr`/`server` features are fullstack-only and would drag `http` and server functions into
+# a bundle that is a pure client-side SPA.
+i18nrs = { version = "0.1.9", default-features = false, features = ["dio"] }
 
 [features]
 default = ["web"]

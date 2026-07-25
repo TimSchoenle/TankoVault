@@ -3,6 +3,7 @@
 
 use crate::api;
 use crate::hooks::use_busy;
+use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::use_session;
@@ -12,6 +13,7 @@ use dioxus::prelude::*;
 #[component]
 pub(crate) fn Login() -> Element {
     let session = use_session();
+    let i18n = use_i18n();
     let nav = use_navigator();
 
     let mut register_mode = use_signal(|| false);
@@ -61,11 +63,7 @@ pub(crate) fn Login() -> Element {
                         let body = res.into_inner();
                         if body.verification_required {
                             // Email delivery is on: the account must be confirmed first.
-                            info.set(Some(
-                                "Account created. We've emailed you a confirmation link — \
-                                 click it to activate your account, then sign in."
-                                    .to_owned(),
-                            ));
+                            info.set(Some(i18n.t("auth.registered")));
                             register_mode.set(false);
                             password.set(String::new());
                         } else if let Some(token) = body.access_token {
@@ -74,7 +72,7 @@ pub(crate) fn Login() -> Element {
                             nav.push(Route::Discover {});
                         }
                     }
-                    Err(e) => error.set(Some(api::friendly_error(e))),
+                    Err(e) => error.set(Some(api::friendly_error(i18n, e))),
                 }
             } else {
                 match client
@@ -94,13 +92,9 @@ pub(crate) fn Login() -> Element {
                     // hasn't been confirmed yet — offer to resend the link.
                     Err(e) if api::error_status(&e) == Some(403) => {
                         needs_verification.set(true);
-                        error.set(Some(
-                            "Please confirm your email address before signing in. Check your \
-                             inbox for the confirmation link."
-                                .to_owned(),
-                        ));
+                        error.set(Some(i18n.t("auth.confirmFirst")));
                     }
-                    Err(e) => error.set(Some(api::friendly_error(e))),
+                    Err(e) => error.set(Some(api::friendly_error(i18n, e))),
                 }
             }
             busy.release();
@@ -123,48 +117,35 @@ pub(crate) fn Login() -> Element {
                 .await;
             needs_verification.set(false);
             error.set(None);
-            info.set(Some(
-                "If that address needs confirming, a new link is on its way.".to_owned(),
-            ));
+            info.set(Some(i18n.t("auth.resent")));
         });
     });
 
     let is_register = *register_mode.read();
-    let heading = if is_register {
-        "Create your account"
+    let heading = i18n.t(if is_register {
+        "auth.register.heading"
     } else {
-        "Welcome back"
-    };
-    let cta = if is_register {
-        "Create account"
+        "auth.signIn.heading"
+    });
+    let cta = i18n.t(if is_register {
+        "auth.register.cta"
     } else {
-        "Sign in"
-    };
-    let toggle_label = if is_register {
-        "Have an account? Sign in"
+        "common.signIn"
+    });
+    let toggle_label = i18n.t(if is_register {
+        "auth.register.toggle"
     } else {
-        "New here? Create an account"
-    };
-
-    let subtitle = if is_register {
-        "Create an account to sync your library across every device."
+        "auth.signIn.toggle"
+    });
+    let subtitle = i18n.t(if is_register {
+        "auth.register.subtitle"
     } else {
-        "Sign in to sync your library."
-    };
+        "auth.signIn.subtitle"
+    });
 
     rsx! {
         div { class: "ik-auth",
-            // Wordmark lockup (§7.9): gradient tile + TankōVault + tagline.
-            div { class: "ik-auth-brand",
-                div { class: "ik-brand-tile", Ic { icon: Icon::MenuBook, size: 22 } }
-                div {
-                    div { class: "ik-wordmark",
-                        "Tankō"
-                        span { class: "acc", "Vault" }
-                    }
-                    div { class: "ik-brand-tag", "SOURCE · TRACK · SYNC" }
-                }
-            }
+            AuthBrand {}
             h1 { "{heading}" }
             p { class: "ik-muted", "{subtitle}" }
 
@@ -186,13 +167,13 @@ pub(crate) fn Login() -> Element {
                     style: "width:100%;margin:0 0 14px;",
                     r#type: "button",
                     onclick: move |_| resend.call(()),
-                    "Resend confirmation email"
+                    {i18n.t("auth.resendConfirmation")}
                 }
             }
 
             if is_register {
                 div { class: "ik-field",
-                    label { "Email" }
+                    label { {i18n.t("auth.field.email")} }
                     input {
                         class: "ik-input",
                         r#type: "email",
@@ -201,7 +182,7 @@ pub(crate) fn Login() -> Element {
                     }
                 }
                 div { class: "ik-field",
-                    label { "Username" }
+                    label { {i18n.t("auth.field.username")} }
                     input {
                         class: "ik-input",
                         value: "{username}",
@@ -210,7 +191,7 @@ pub(crate) fn Login() -> Element {
                 }
             } else {
                 div { class: "ik-field",
-                    label { "Email or username" }
+                    label { {i18n.t("auth.field.emailOrUsername")} }
                     input {
                         class: "ik-input",
                         value: "{login}",
@@ -219,7 +200,7 @@ pub(crate) fn Login() -> Element {
                 }
             }
             div { class: "ik-field",
-                label { "Password" }
+                label { {i18n.t("auth.field.password")} }
                 input {
                     class: "ik-input",
                     r#type: "password",
@@ -238,7 +219,7 @@ pub(crate) fn Login() -> Element {
                     Link {
                         to: Route::ForgotPassword {},
                         class: "ik-link",
-                        "Forgot your password?"
+                        {i18n.t("auth.forgotPassword")}
                     }
                 }
             }
@@ -249,7 +230,7 @@ pub(crate) fn Login() -> Element {
                 disabled: busy.is_busy(),
                 onclick: move |_| submit.call(()),
                 if busy.is_busy() {
-                    "Working…"
+                    {i18n.t("common.working")}
                 } else {
                     "{cta}"
                 }
@@ -274,15 +255,17 @@ pub(crate) fn Login() -> Element {
 /// tagline. Extracted so the confirmation and password screens match the sign-in card.
 #[component]
 pub(crate) fn AuthBrand() -> Element {
+    let i18n = use_i18n();
     rsx! {
         div { class: "ik-auth-brand",
             div { class: "ik-brand-tile", Ic { icon: Icon::MenuBook, size: 22 } }
             div {
+                // The wordmark is the product's name, not a message — see `nav::Rail`.
                 div { class: "ik-wordmark",
                     "Tankō"
                     span { class: "acc", "Vault" }
                 }
-                div { class: "ik-brand-tag", "SOURCE · TRACK · SYNC" }
+                div { class: "ik-brand-tag", {i18n.t("nav.tagline")} }
             }
         }
     }
@@ -294,6 +277,7 @@ pub(crate) fn AuthBrand() -> Element {
 #[component]
 pub(crate) fn VerifyEmail(token: String) -> Element {
     let session = use_session();
+    let i18n = use_i18n();
     let nav = use_navigator();
     let api = api::use_api();
 
@@ -310,7 +294,7 @@ pub(crate) fn VerifyEmail(token: String) -> Element {
                 .send()
                 .await
                 .map(|r| r.into_inner().access_token)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
@@ -327,27 +311,24 @@ pub(crate) fn VerifyEmail(token: String) -> Element {
     rsx! {
         div { class: "ik-auth",
             AuthBrand {}
-            h1 { "Confirm your email" }
+            h1 { {i18n.t("verifyEmail.heading")} }
             match state {
                 None => rsx! {
-                    p { class: "ik-muted", "Confirming your email address…" }
+                    p { class: "ik-muted", {i18n.t("verifyEmail.pending")} }
                 },
                 Some(Ok(_)) => rsx! {
-                    p { class: "ik-muted", "Email confirmed. Taking you to your library…" }
+                    p { class: "ik-muted", {i18n.t("verifyEmail.confirmed")} }
                 },
                 Some(Err(msg)) => rsx! {
                     div { class: "ik-error", style: "padding:12px;margin:14px 0;text-align:left;",
                         "{msg}"
                     }
-                    p { class: "ik-muted",
-                        "This confirmation link may have expired or already been used. Sign in \
-                         to request a new one."
-                    }
+                    p { class: "ik-muted", {i18n.t("verifyEmail.failed")} }
                     Link {
                         to: Route::Login {},
                         class: "ik-btn primary",
                         style: "width:100%;",
-                        "Back to sign in"
+                        {i18n.t("common.backToSignIn")}
                     }
                 },
             }

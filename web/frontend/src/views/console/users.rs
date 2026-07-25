@@ -2,6 +2,7 @@
 //! Read-only — role management has no endpoint yet.
 
 use crate::api;
+use crate::i18n::use_i18n;
 use crate::state::use_session;
 use crate::util::thousands;
 use crate::views::console::RefreshTick;
@@ -14,6 +15,7 @@ use progenitor_client::ResponseValue;
 #[component]
 pub(super) fn UsersPanel(tick: RefreshTick) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let session = use_session();
     let res = use_resource(move || {
         tick.track();
@@ -26,7 +28,7 @@ pub(super) fn UsersPanel(tick: RefreshTick) -> Element {
                         .send()
                         .await
                         .map(ResponseValue::into_inner)
-                        .map_err(api::friendly_error),
+                        .map_err(|e| api::friendly_error(i18n, e)),
                 )
             } else {
                 None
@@ -37,10 +39,12 @@ pub(super) fn UsersPanel(tick: RefreshTick) -> Element {
     let body = match &*res.read_unchecked() {
         None | Some(None) => rsx! { div { class: "ik-skeleton", style: "height:120px;" } },
         Some(Some(Err(e))) => rsx! {
-            p { class: "ik-muted", style: "font-size:13px;", "Could not load users: {e}" }
+            p { class: "ik-muted", style: "font-size:13px;",
+                {i18n.args("console.users.unavailable", &[("message", e)])}
+            }
         },
         Some(Some(Ok(list))) if list.is_empty() => rsx! {
-            div { class: "ik-empty", "No users registered yet." }
+            div { class: "ik-empty", {i18n.t("console.users.empty")} }
         },
         Some(Some(Ok(list))) => {
             let count = list.len();
@@ -48,7 +52,7 @@ pub(super) fn UsersPanel(tick: RefreshTick) -> Element {
             rsx! {
                 div { class: "ik-kpis", style: "margin-bottom:14px;",
                     div { class: "ik-kpi",
-                        div { class: "ik-kpi-label", "Registered users" }
+                        div { class: "ik-kpi-label", {i18n.t("console.users.registered")} }
                         div { class: "ik-kpi-value", "{thousands(count as i64)}" }
                     }
                 }
@@ -56,11 +60,11 @@ pub(super) fn UsersPanel(tick: RefreshTick) -> Element {
                     table { class: "ik-table ik-table-compact",
                         thead {
                             tr {
-                                th { "User" }
-                                th { "Email" }
-                                th { "Role" }
-                                th { style: "text-align:right;", "Tracked" }
-                                th { "Joined" }
+                                th { {i18n.t("console.users.col.user")} }
+                                th { {i18n.t("console.users.col.email")} }
+                                th { {i18n.t("console.users.col.role")} }
+                                th { style: "text-align:right;", {i18n.t("console.users.col.tracked")} }
+                                th { {i18n.t("console.users.col.joined")} }
                             }
                         }
                         tbody {
@@ -76,7 +80,7 @@ pub(super) fn UsersPanel(tick: RefreshTick) -> Element {
 
     rsx! {
         section { style: "margin-bottom:18px;",
-            h3 { "Users" }
+            h3 { {i18n.t("console.tab.users")} }
             {body}
         }
     }

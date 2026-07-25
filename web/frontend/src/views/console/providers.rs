@@ -4,6 +4,7 @@
 use crate::api;
 use crate::components::ErrorBox;
 use crate::hooks::{use_reload, Reload};
+use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::state::use_session;
 use crate::views::console::adapter_token;
@@ -18,6 +19,7 @@ use progenitor_client::ResponseValue;
 #[component]
 pub(super) fn ProvidersPanel() -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let session = use_session();
     let is_admin = session.role.read().is_admin();
     let reload = use_reload();
@@ -31,7 +33,7 @@ pub(super) fn ProvidersPanel() -> Element {
                     .send()
                     .await
                     .map(ResponseValue::into_inner)
-                    .map_err(api::friendly_error)
+                    .map_err(|e| api::friendly_error(i18n, e))
             } else {
                 Ok(Vec::new())
             }
@@ -51,7 +53,7 @@ pub(super) fn ProvidersPanel() -> Element {
             let cards = list.clone();
             rsx! {
                 if tiles.is_empty() {
-                    div { class: "ik-empty", "No providers yet. Add one below." }
+                    div { class: "ik-empty", {i18n.t("console.providers.empty")} }
                 } else {
                     div { class: "ik-tiles",
                         for p in tiles {
@@ -71,7 +73,7 @@ pub(super) fn ProvidersPanel() -> Element {
 
     rsx! {
         section { style: "margin-bottom:18px;",
-            h3 { "Providers" }
+            h3 { {i18n.t("console.tab.providers")} }
             if is_admin {
                 CreateProviderForm { reload }
             }
@@ -82,15 +84,20 @@ pub(super) fn ProvidersPanel() -> Element {
 
 #[component]
 pub(super) fn HealthPill(state: String) -> Element {
+    let i18n = use_i18n();
     let class = match state.as_str() {
         "active" => "ik-pill jade",
         "blocked" | "disabled" => "ik-pill vermilion",
         _ => "ik-pill",
     };
-    let label = if state.is_empty() {
-        "unknown".to_owned()
-    } else {
-        state
+    // The token doubles as the catalogue key. A state the frontend does not know a word for
+    // still renders as its raw token rather than as `Key '…' not found`.
+    let label = match state.as_str() {
+        "" => i18n.t("console.providerState.unknown"),
+        "active" | "degraded" | "challenged" | "solving" | "blocked" | "disabled" => {
+            i18n.t(&format!("console.providerState.{state}"))
+        }
+        _ => state,
     };
     rsx! {
         span { class: "{class}", "{label}" }
@@ -114,6 +121,7 @@ pub(super) fn provider_state_token(s: ProviderState) -> &'static str {
 #[component]
 pub(super) fn CreateProviderForm(reload: Reload) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let mut open = use_signal(|| false);
     let mut slug = use_signal(String::new);
     let mut name = use_signal(String::new);
@@ -128,7 +136,10 @@ pub(super) fn CreateProviderForm(reload: Reload) -> Element {
             let cfg = match serde_json::from_str::<serde_json::Value>(&config.read()) {
                 Ok(v) => v,
                 Err(e) => {
-                    msg.set(Some(format!("Config is not valid JSON: {e}")));
+                    msg.set(Some(i18n.args(
+                        "console.providers.badConfig",
+                        &[("message", &e.to_string())],
+                    )));
                     return;
                 }
             };
@@ -139,7 +150,7 @@ pub(super) fn CreateProviderForm(reload: Reload) -> Element {
                 adapter.read().clone(),
             );
             if s.is_empty() || n.is_empty() || b.is_empty() {
-                msg.set(Some("Slug, name and base URL are all required.".to_owned()));
+                msg.set(Some(i18n.t("console.providers.missingFields")));
                 return;
             }
             busy.set(true);
@@ -166,7 +177,7 @@ pub(super) fn CreateProviderForm(reload: Reload) -> Element {
                     .send()
                     .await
                     .map(ResponseValue::into_inner)
-                    .map_err(api::friendly_error);
+                    .map_err(|e| api::friendly_error(i18n, e));
                 match outcome {
                     Ok(_) => {
                         slug.set(String::new());
@@ -189,19 +200,23 @@ pub(super) fn CreateProviderForm(reload: Reload) -> Element {
     rsx! {
         section { class: "ik-tile", style: "margin-bottom:14px;",
             div { class: "ik-flex", style: "justify-content:space-between;",
-                h3 { style: "margin:0;", "Add provider" }
+                h3 { style: "margin:0;", {i18n.t("console.providers.add")} }
                 button {
                     class: "ik-btn",
                     onclick: move |_| {
                         let o = *open.read();
                         open.set(!o);
                     },
-                    if *open.read() { "Cancel" } else { "New provider" }
+                    if *open.read() {
+                        {i18n.t("common.cancel")}
+                    } else {
+                        {i18n.t("console.providers.new")}
+                    }
                 }
             }
             if *open.read() {
                 div { style: "margin-top:12px;display:grid;gap:10px;",
-                    Field { label: "Slug (stable, unique)",
+                    Field { label: i18n.t("console.providers.field.slug"),
                         input {
                             class: "ik-input ik-mono",
                             placeholder: "acme-scans",
@@ -209,7 +224,7 @@ pub(super) fn CreateProviderForm(reload: Reload) -> Element {
                             oninput: move |e| slug.set(e.value()),
                         }
                     }
-                    Field { label: "Display name",
+                    Field { label: i18n.t("console.providers.field.name"),
                         input {
                             class: "ik-input",
                             placeholder: "Acme Scans",
@@ -217,7 +232,7 @@ pub(super) fn CreateProviderForm(reload: Reload) -> Element {
                             oninput: move |e| name.set(e.value()),
                         }
                     }
-                    Field { label: "Base URL",
+                    Field { label: i18n.t("console.providers.field.baseUrl"),
                         input {
                             class: "ik-input ik-mono",
                             placeholder: "https://acmescans.example",
@@ -225,17 +240,17 @@ pub(super) fn CreateProviderForm(reload: Reload) -> Element {
                             oninput: move |e| base_url.set(e.value()),
                         }
                     }
-                    Field { label: "Adapter",
+                    Field { label: i18n.t("console.providers.field.adapter"),
                         select {
                             class: "ik-input",
                             value: "{adapter}",
                             onchange: move |e| adapter.set(e.value()),
-                            for (token , label) in ADAPTER_KINDS.iter().copied() {
-                                option { value: "{token}", "{label}" }
+                            for (token , label_key) in ADAPTER_KINDS.iter().copied() {
+                                option { value: "{token}", {i18n.t(label_key)} }
                             }
                         }
                     }
-                    Field { label: "Adapter config (JSON)",
+                    Field { label: i18n.t("console.providers.field.config"),
                         textarea {
                             class: "ik-input ik-mono",
                             style: "min-height:120px;resize:vertical;",
@@ -248,7 +263,7 @@ pub(super) fn CreateProviderForm(reload: Reload) -> Element {
                             class: "ik-btn primary",
                             disabled: *busy.read(),
                             onclick: submit,
-                            "Create provider"
+                            {i18n.t("console.providers.create")}
                         }
                     }
                     if let Some(m) = msg.read().clone() {
@@ -277,6 +292,7 @@ pub(super) fn Field(label: String, children: Element) -> Element {
 #[component]
 pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let session = use_session();
     let is_admin = session.role.read().is_admin();
     let pro = provider.read();
@@ -312,7 +328,10 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
             let cfg = match serde_json::from_str::<serde_json::Value>(&config.read()) {
                 Ok(v) => v,
                 Err(e) => {
-                    msg.set(Some(format!("Config is not valid JSON: {e}")));
+                    msg.set(Some(i18n.args(
+                        "console.providers.badConfig",
+                        &[("message", &e.to_string())],
+                    )));
                     return;
                 }
             };
@@ -323,8 +342,8 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
                 &user_agent.read(),
             ) {
                 Ok(v) => v,
-                Err(e) => {
-                    msg.set(Some(e));
+                Err(key) => {
+                    msg.set(Some(i18n.t(key)));
                     return;
                 }
             };
@@ -349,7 +368,7 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
                     .send()
                     .await
                     .map(ResponseValue::into_inner)
-                    .map_err(api::friendly_error);
+                    .map_err(|e| api::friendly_error(i18n, e));
                 match outcome {
                     Ok(_) => reload.bump(),
                     Err(e) => {
@@ -389,7 +408,7 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
                         .send()
                         .await
                         .map(|_| ())
-                        .map_err(api::friendly_error)
+                        .map_err(|e| api::friendly_error(i18n, e))
                     {
                         msg.set(Some(e));
                         busy.set(false);
@@ -418,9 +437,9 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
                     .send()
                     .await
                     .map(ResponseValue::into_inner)
-                    .map_err(api::friendly_error)
+                    .map_err(|e| api::friendly_error(i18n, e))
                 {
-                    Ok(()) => msg.set(Some("Scan queued for this provider.".to_owned())),
+                    Ok(()) => msg.set(Some(i18n.t("console.providers.scanQueued"))),
                     Err(e) => msg.set(Some(e)),
                 }
             });
@@ -439,7 +458,7 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
                     .send()
                     .await
                     .map(|_| ())
-                    .map_err(api::friendly_error);
+                    .map_err(|e| api::friendly_error(i18n, e));
                 match outcome {
                     Ok(()) => reload.bump(),
                     Err(e) => {
@@ -476,12 +495,16 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
                             scan_mode
                                 .set(if e.value() == "full" { ScanMode::Full } else { ScanMode::Fast });
                         },
-                        option { value: "fast", "Fast" }
-                        option { value: "full", "Full" }
+                        option { value: "fast", {i18n.t("console.providers.fast")} }
+                        option { value: "full", {i18n.t("console.providers.full")} }
                     }
-                    button { class: "ik-btn", onclick: scan, "Scan" }
+                    button { class: "ik-btn", onclick: scan, {i18n.t("console.providers.scan")} }
                     button { class: "ik-btn", disabled: *busy.read(), onclick: toggle_state,
-                        if is_disabled { "Enable" } else { "Disable" }
+                        if is_disabled {
+                            {i18n.t("console.providers.enable")}
+                        } else {
+                            {i18n.t("console.providers.disable")}
+                        }
                     }
                     button {
                         class: "ik-btn",
@@ -489,7 +512,7 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
                             let s = *show_test.read();
                             show_test.set(!s);
                         },
-                        "Test"
+                        {i18n.t("console.providers.test")}
                     }
                     button {
                         class: "ik-btn",
@@ -497,14 +520,18 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
                             let e = *expanded.read();
                             expanded.set(!e);
                         },
-                        if *expanded.read() { "Close" } else { "Edit" }
+                        if *expanded.read() {
+                            {i18n.t("common.close")}
+                        } else {
+                            {i18n.t("console.providers.edit")}
+                        }
                     }
                     if is_admin {
                         button {
                             class: "ik-btn",
                             style: "color:var(--vermilion);",
                             onclick: move |_| confirm_delete.set(true),
-                            "Delete"
+                            {i18n.t("console.providers.delete")}
                         }
                     }
                 }
@@ -517,30 +544,34 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
             if *confirm_delete.read() {
                 div { class: "ik-flex", style: "margin-top:10px;",
                     span { class: "ik-muted", style: "font-size:13px;",
-                        "Delete this provider and all its source links? This cannot be undone."
+                        {i18n.t("console.providers.confirmDelete")}
                     }
-                    button { class: "ik-btn primary", disabled: *busy.read(), onclick: delete, "Confirm delete" }
-                    button { class: "ik-btn", onclick: move |_| confirm_delete.set(false), "Cancel" }
+                    button { class: "ik-btn primary", disabled: *busy.read(), onclick: delete,
+                        {i18n.t("console.providers.confirmDeleteCta")}
+                    }
+                    button { class: "ik-btn", onclick: move |_| confirm_delete.set(false),
+                        {i18n.t("common.cancel")}
+                    }
                 }
             }
 
             if *expanded.read() {
                 div { style: "margin-top:14px;display:grid;gap:10px;border-top:1px solid var(--border);padding-top:14px;",
-                    Field { label: "Display name",
+                    Field { label: i18n.t("console.providers.field.name"),
                         input {
                             class: "ik-input",
                             value: "{name}",
                             oninput: move |e| name.set(e.value()),
                         }
                     }
-                    Field { label: "Base URL (changing it re-resolves every stored link)",
+                    Field { label: i18n.t("console.providers.field.baseUrlEdit"),
                         input {
                             class: "ik-input ik-mono",
                             value: "{base_url}",
                             oninput: move |e| base_url.set(e.value()),
                         }
                     }
-                    Field { label: "Adapter config (JSON)",
+                    Field { label: i18n.t("console.providers.field.config"),
                         textarea {
                             class: "ik-input ik-mono",
                             style: "min-height:140px;resize:vertical;",
@@ -549,21 +580,21 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
                         }
                     }
                     div { style: "display:grid;grid-template-columns:repeat(3,1fr);gap:10px;",
-                        Field { label: "Requests / sec",
+                        Field { label: i18n.t("console.providers.field.rps"),
                             input {
                                 class: "ik-input ik-mono",
                                 value: "{rps}",
                                 oninput: move |e| rps.set(e.value()),
                             }
                         }
-                        Field { label: "Concurrency",
+                        Field { label: i18n.t("console.providers.field.concurrency"),
                             input {
                                 class: "ik-input ik-mono",
                                 value: "{concurrency}",
                                 oninput: move |e| concurrency.set(e.value()),
                             }
                         }
-                        Field { label: "Crawl delay (ms)",
+                        Field { label: i18n.t("console.providers.field.crawlDelay"),
                             input {
                                 class: "ik-input ik-mono",
                                 value: "{crawl_delay_ms}",
@@ -571,7 +602,7 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
                             }
                         }
                     }
-                    Field { label: "User agent",
+                    Field { label: i18n.t("console.providers.field.userAgent"),
                         input {
                             class: "ik-input ik-mono",
                             value: "{user_agent}",
@@ -579,20 +610,31 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
                         }
                     }
                     div { class: "ik-muted", style: "font-size:12px;",
-                        "Rate limits are clamped to the system ceilings on save (≤ 4 req/s, ≤ 8 concurrent)."
+                        {i18n.t("console.providers.clampNote")}
                     }
                     if *confirm_migrate.read() {
                         div { class: "ik-flex",
                             span { class: "ik-muted", style: "font-size:13px;",
-                                "The base URL changed — re-resolve every stored link to the new domain?"
+                                {i18n.t("console.providers.confirmMigrate")}
                             }
-                            button { class: "ik-btn primary", disabled: *busy.read(), onclick: on_confirm_migrate, "Confirm migration" }
-                            button { class: "ik-btn", onclick: move |_| confirm_migrate.set(false), "Cancel" }
+                            button {
+                                class: "ik-btn primary",
+                                disabled: *busy.read(),
+                                onclick: on_confirm_migrate,
+                                {i18n.t("console.providers.confirmMigrateCta")}
+                            }
+                            button { class: "ik-btn", onclick: move |_| confirm_migrate.set(false),
+                                {i18n.t("common.cancel")}
+                            }
                         }
                     } else {
                         div {
                             button { class: "ik-btn primary", disabled: *busy.read(), onclick: on_save,
-                                if base_changed { "Save changes (migrates domain)" } else { "Save changes" }
+                                if base_changed {
+                                    {i18n.t("console.providers.saveMigrating")}
+                                } else {
+                                    {i18n.t("console.providers.save")}
+                                }
                             }
                         }
                     }
@@ -611,6 +653,7 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
 #[component]
 pub(super) fn AdapterTestPanel(provider_id: ProviderId) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let session = use_session();
     let mut path = use_signal(String::new);
     let mut running = use_signal(|| false);
@@ -634,9 +677,9 @@ pub(super) fn AdapterTestPanel(provider_id: ProviderId) -> Element {
                             .send()
                             .await
                             .map(ResponseValue::into_inner)
-                            .map_err(api::friendly_error)
+                            .map_err(|e| api::friendly_error(i18n, e))
                     }
-                    None => Err("You are signed out.".to_owned()),
+                    None => Err(i18n.t("console.adapterTest.signedOut")),
                 };
                 result.set(Some(out));
                 running.set(false);
@@ -647,7 +690,7 @@ pub(super) fn AdapterTestPanel(provider_id: ProviderId) -> Element {
     let output = match &*result.read() {
         None => rsx! {
             p { class: "ik-muted", style: "font-size:13px;margin:8px 0 0;",
-                "Runs the adapter against the live site (latest list, and optionally one series path)."
+                {i18n.t("console.adapterTest.hint")}
             }
         },
         Some(Ok(v)) => {
@@ -671,12 +714,16 @@ pub(super) fn AdapterTestPanel(provider_id: ProviderId) -> Element {
                 input {
                     class: "ik-input ik-mono",
                     style: "flex:1;",
-                    placeholder: "optional series path, e.g. /manga/some-title",
+                    placeholder: i18n.t("console.adapterTest.pathPlaceholder"),
                     value: "{path}",
                     oninput: move |e| path.set(e.value()),
                 }
                 button { class: "ik-btn primary", disabled: *running.read(), onclick: run,
-                    if *running.read() { "Running…" } else { "Run test" }
+                    if *running.read() {
+                        {i18n.t("console.adapterTest.running")}
+                    } else {
+                        {i18n.t("console.adapterTest.run")}
+                    }
                 }
             }
             {output}

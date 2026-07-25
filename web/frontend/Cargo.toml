@@ -50,8 +50,47 @@ uuid = { version = "1", features = ["serde", "js"] }
 default = ["web"]
 web = []
 
-# Keep debug builds small enough for fast `dx serve` iteration; release is CDN-bound.
+# This crate sits outside the workspace, so it cannot inherit `[workspace.lints]`. The set
+# below mirrors it, minus the lints that fight idiomatic Dioxus: component functions are
+# PascalCase by convention, and `rsx!` expands to code that trips several pedantic lints it
+# has no way to satisfy.
+[lints.rust]
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+# `crate::models` is this crate's DTO namespace: a screen that renders a payload needs most
+# of it, and spelling out fifteen imports per view obscures more than it documents.
+wildcard_imports = "allow"
+# `rsx!` bodies are long by nature — they are markup, and splitting a screen's tree purely to
+# satisfy a line count would hurt readability rather than help it.
+too_many_lines = "allow"
+# Screen-local helpers are deliberately declared next to the handler that uses them rather
+# than hoisted above the hooks, which would separate them from their only caller.
+items_after_statements = "allow"
+
+# Release builds are CDN-bound, so size wins over speed.
+#
+# `opt-level = "z"` was measured against `"s"` here and produced a byte-identical bundle:
+# `dx` runs `wasm-opt -Oz` over the output, and that pass dominates whatever rustc emitted.
+# `"s"` is kept because it compiles faster for the same result.
 [profile.release]
 opt-level = "s"
-lto = true
+lto = "fat"
 codegen-units = 1
+# A panic in a WASM SPA cannot be caught or recovered from — the runtime just traps — so the
+# unwinding machinery and its landing pads are pure weight.
+panic = "abort"
+strip = "symbols"
+
+# `dx serve` rebuilds constantly, so keep the debug profile fast to compile but still cheap
+# enough to ship over the dev server.
+[profile.dev]
+opt-level = 1
+debug = false

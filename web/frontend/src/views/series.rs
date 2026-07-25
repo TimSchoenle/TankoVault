@@ -1,4 +1,4 @@
-//! Series detail (DESIGN_SPEC §7.3) — a blurred-cover **hero** (cover + type/status/year +
+//! Series detail (`DESIGN_SPEC` §7.3) — a blurred-cover **hero** (cover + type/status/year +
 //! title + stat row + watchlist actions) over a `1fr 340px` **body grid**: synopsis +
 //! chapter list on the left; a **Read on** source list, a **Tracking** card, and a
 //! **Readers also follow** slot in the right sidebar.
@@ -9,17 +9,23 @@
 //! `/v1/series/:id/related` (§9.3), so that slot is an honest placeholder.
 
 use crate::api;
-use crate::components::{Cover, ErrorBox};
+use crate::components::{async_view, Cover};
+use crate::hooks::{use_busy, use_reload, Busy, Reload};
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::use_session;
+use crate::util::{chapter_number, initial, iso_date};
 use crate::Route;
 use dioxus::prelude::*;
+use progenitor_client::ResponseValue;
+
+/// The external tracker whose link state the sidebar reports on.
+const SYNC_PROVIDER: &str = "anilist";
 
 /// The route gives us a plain `String` (see `crate::Route::Series`); parse it once here so
 /// the rest of the view works with the real, compiler-checked `SeriesId`.
 #[component]
-pub fn Series(id: String) -> Element {
+pub(crate) fn Series(id: String) -> Element {
     let Ok(id) = id.parse::<SeriesId>() else {
         return rsx! {
             div { class: "ik-empty", "That series link doesn't look right." }
@@ -28,83 +34,110 @@ pub fn Series(id: String) -> Element {
 
     let session = use_session();
     let nav = use_navigator();
+    let api = api::use_api();
     let selected = use_signal(|| Option::<SeriesSourceId>::None);
-    let mut reload_wl = use_signal(|| 0u32);
-    let reload_chapters = use_signal(|| 0u32);
-    let api_client = api::use_api();
+    let reload_wl = use_reload();
+    let reload_chapters = use_reload();
 
-    let detail = {
-        let client = api_client.clone();
-        use_resource(move || {
-            let client = client.clone();
-            async move {
-                client
-                    .detail()
-                    .id(id)
-                    .send()
-                    .await
-                    .map(|r| r.into_inner())
-                    .map_err(api::friendly_error)
+    let detail = use_resource(move || {
+        let client = api.client();
+        async move {
+            client
+                .detail()
+                .id(id)
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(api::friendly_error)
+        }
+    });
+
+    let chapters = use_resource(move || {
+        let source = *selected.read();
+        reload_chapters.track();
+        let client = api.client();
+        async move {
+            let mut builder = client.chapters().id(id);
+            if let Some(source) = source {
+                builder = builder.source(source.to_string());
             }
-        })
-    };
+            builder
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(api::friendly_error)
+        }
+    });
 
-    let chapters = {
-        let client = api_client.clone();
-        use_resource(move || {
-            let src = *selected.read();
-            let _ = reload_chapters.read();
-            let client = client.clone();
-            async move {
-                let mut builder = client.chapters().id(id);
-                if let Some(s) = src {
-                    builder = builder.source(s.to_string());
-                }
-                builder
-                    .send()
-                    .await
-                    .map(|r| r.into_inner())
-                    .map_err(api::friendly_error)
+    let watchlist = use_resource(move || {
+        reload_wl.track();
+        let client = api.client();
+        let authed = session.is_authenticated();
+        async move {
+            if !authed {
+                return Ok(Vec::new());
             }
-        })
-    };
+            client
+                .watchlist()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(api::friendly_error)
+        }
+    });
 
-    let watchlist = {
-        let client = api_client.clone();
-        use_resource(move || {
-            let _ = reload_wl.read();
-            let client = client.clone();
-            async move {
-                if session.is_authenticated() {
+    // Whether *any* external tracker is linked, fetched once for the whole screen.
+    //
+    // This used to live inside `WatchControls`, which the page renders twice (hero and
+    // sidebar) — so it ran twice — and it worked by listing the providers and then issuing a
+    // status request per provider until one came back linked, serially. The provider list now
+    // carries no link flag and the status endpoint is typed, so one request per provider is
+    // still needed, but they are issued once for the page and concurrently.
+    let linked = use_resource(move || {
+        let client = api.client();
+        let authed = session.is_authenticated();
+        async move {
+            if !authed {
+                return false;
+            }
+            let Ok(providers) = client.sync_providers().send().await else {
+                return false;
+            };
+            let probes = providers.into_inner().into_iter().map(|provider| {
+                let client = client.clone();
+                async move {
                     client
-                        .watchlist()
+                        .sync_status()
+                        .provider(provider.slug)
                         .send()
                         .await
-                        .map(|r| r.into_inner())
-                        .map_err(api::friendly_error)
-                } else {
-                    Ok(Vec::new())
+                        .map(|r| r.into_inner().linked)
+                        .unwrap_or(false)
                 }
-            }
-        })
-    };
+            });
+            futures_util::future::join_all(probes)
+                .await
+                .into_iter()
+                .any(|linked| linked)
+        }
+    });
 
-    let sync_status = {
-        let client = api_client.clone();
-        use_resource(move || {
-            let client = client.clone();
-            async move {
-                if session.is_authenticated() {
-                    api::fetch_json(&client, "/v1/me/sync/anilist/status")
-                        .await
-                        .ok()
-                        .and_then(|v| serde_json::from_value::<SyncStatus>(v).ok())
-                } else {
-                    None
-                }
+    let sync_status = use_resource(move || {
+        let client = api.client();
+        let authed = session.is_authenticated();
+        async move {
+            if !authed {
+                return None;
             }
-        })
-    };
+            client
+                .sync_status()
+                .provider(SYNC_PROVIDER)
+                .send()
+                .await
+                .ok()
+                .map(ResponseValue::into_inner)
+        }
+    });
 
     let hero = match &*detail.read_unchecked() {
         None => rsx! {
@@ -118,9 +151,9 @@ pub fn Series(id: String) -> Element {
             }
         },
         Some(Err(e)) => {
-            let msg = e.clone();
+            let message = e.clone();
             rsx! {
-                ErrorBox { message: msg, on_retry: move |()| reload_wl += 1 }
+                crate::components::ErrorBox { message, on_retry: move |()| reload_wl.bump() }
             }
         }
         Some(Ok(d)) => {
@@ -145,9 +178,9 @@ pub fn Series(id: String) -> Element {
                         div { Cover { url: d.cover_url.clone(), title: d.title.clone() } }
                         div {
                             div { class: "ik-flex", style: "margin-bottom:10px;",
-                                span { class: "ik-pill", style: "color:{type_color(d.content_type)};border-color:color-mix(in srgb,{type_color(d.content_type)} 55%,transparent);", "{d.content_type.label()}" }
+                                span { class: "ik-pill", style: "color:{d.content_type.color()};border-color:color-mix(in srgb,{d.content_type.color()} 55%,transparent);", "{d.content_type.label()}" }
                                 span { class: "ik-flex", style: "gap:6px;",
-                                    span { class: "ik-status-dot", style: "background:{status_color(d.status)};" }
+                                    span { class: "ik-status-dot", style: "background:{d.status.color()};" }
                                     span { class: "ik-muted", style: "font-size:13px;", "{d.status.label()}" }
                                 }
                                 if let Some(y) = d.release_year {
@@ -183,6 +216,7 @@ pub fn Series(id: String) -> Element {
                                 series_id: id,
                                 entry: wl_entry,
                                 authed: session.is_authenticated(),
+                                has_linked_tracker: matches!(&*linked.read_unchecked(), Some(true)),
                                 reload: reload_wl,
                             }
                         }
@@ -207,38 +241,40 @@ pub fn Series(id: String) -> Element {
         _ => None,
     };
 
-    let chapter_body = match &*chapters.read_unchecked() {
-        None => rsx! {
-            div { class: "ik-chapter-list",
-                for _ in 0..6 {
-                    div { class: "ik-chapter", div { class: "ik-skeleton", style: "height:14px;width:40%;" } }
+    let chapter_body = async_view(
+        &chapters,
+        reload_chapters,
+        || {
+            rsx! {
+                div { class: "ik-chapter-list",
+                    for _ in 0..6 {
+                        div { class: "ik-chapter",
+                            div { class: "ik-skeleton", style: "height:14px;width:40%;" }
+                        }
+                    }
                 }
             }
         },
-        Some(Err(e)) => {
-            let msg = e.clone();
-            rsx! { div { class: "ik-error", "Could not load chapters: {msg}" } }
-        }
-        Some(Ok(list)) if list.is_empty() => rsx! {
-            div { class: "ik-empty", "No chapters indexed for this source yet." }
-        },
-        Some(Ok(list)) => {
-            let list = list.clone();
-            let groups = group_chapters(&list);
+        |list| {
+            if list.is_empty() {
+                return rsx! {
+                    div { class: "ik-empty", "No chapters indexed for this source yet." }
+                };
+            }
             rsx! {
                 div { class: "ik-chapter-list",
-                    for (i , g) in groups.into_iter().enumerate() {
+                    for (index , group) in group_chapters(list).into_iter().enumerate() {
                         ChapterGroupRow {
-                            key: "{i}",
-                            group: g,
+                            key: "{index}",
+                            group,
                             series_id: id,
                             reload: reload_chapters,
                         }
                     }
                 }
             }
-        }
-    };
+        },
+    );
 
     rsx! {
         {hero}
@@ -270,6 +306,7 @@ pub fn Series(id: String) -> Element {
                         series_id: id,
                         entry: wl_entry_side,
                         authed: session.is_authenticated(),
+                        has_linked_tracker: matches!(&*linked.read_unchecked(), Some(true)),
                         reload: reload_wl,
                     }
                     div { class: "ik-flex", style: "margin-top:12px;font-size:13px;justify-content:space-between;",
@@ -289,8 +326,8 @@ pub fn Series(id: String) -> Element {
                             None => rsx! { span { "AniList" } },
                         }
                         match &*sync_status.read_unchecked() {
-                            Some(Some(s)) if s.linked => rsx! {
-                                span { class: "ik-flex", style: "gap:4px;color:var(--jade,#3DA88F);",
+                            Some(Some(status)) if status.linked => rsx! {
+                                span { class: "ik-flex", style: "gap:4px;color:var(--jade-bright);",
                                     Ic { icon: Icon::CloudDone, size: 15 }
                                     "Synced"
                                 }
@@ -326,51 +363,25 @@ fn current_entry(
     }
 }
 
-fn type_color(t: ContentType) -> &'static str {
-    match t {
-        ContentType::Manga => "#6FA8DC",
-        ContentType::Manhwa => "var(--acc2)",
-        ContentType::Manhua => "#3DA88F",
-        ContentType::Webtoon => "#CBA43C",
-        ContentType::Unknown => "var(--muted)",
-    }
-}
-
-fn status_color(s: SeriesStatus) -> &'static str {
-    match s {
-        SeriesStatus::Ongoing => "#3DA88F",
-        SeriesStatus::Completed => "#6FA8DC",
-        SeriesStatus::Hiatus => "#CBA43C",
-        SeriesStatus::Cancelled | SeriesStatus::Unknown => "var(--muted)",
-    }
-}
-
 /// A "Read on" source card in the sidebar. Selecting it loads that source's chapters in the
 /// left column; the trailing link opens the resolved source page in a new tab.
 #[component]
 fn SourceCard(source: SourceDto, selected: Signal<Option<SeriesSourceId>>) -> Element {
     let mut selected = selected;
-    let is_selected = *selected.read() == Some(source.id);
-    let sid = source.id;
-    let initial = source
-        .provider_name
-        .chars()
-        .next()
-        .unwrap_or('?')
-        .to_uppercase()
-        .to_string();
-    let border = if is_selected {
+    let source_id = source.id;
+    let border = if *selected.read() == Some(source_id) {
         "border-color:var(--acc);"
     } else {
         ""
     };
+    let tile = initial(&source.provider_name);
     rsx! {
         div { class: "ik-source-card",
             button {
                 class: "ik-flex",
                 style: "flex:1;background:none;border:none;cursor:pointer;color:inherit;text-align:left;{border}",
-                onclick: move |_| selected.set(Some(sid)),
-                div { class: "ik-source-tile", "{initial}" }
+                onclick: move |_| selected.set(Some(source_id)),
+                div { class: "ik-source-tile", "{tile}" }
                 div { class: "grow",
                     div { class: "ik-flex", style: "gap:6px;",
                         span { style: "font-weight:600;font-size:13px;", "{source.provider_name}" }
@@ -393,10 +404,14 @@ fn WatchControls(
     series_id: SeriesId,
     entry: Option<WatchlistItem>,
     authed: bool,
-    reload: Signal<u32>,
+    /// Whether the reader has linked any external tracker. Resolved once for the whole page
+    /// by [`Series`] and passed down, because this component is rendered twice (hero and
+    /// sidebar) and probing per instance duplicated the whole request fan-out.
+    has_linked_tracker: bool,
+    reload: Reload,
 ) -> Element {
-    let session = use_session();
-    let api_client = api::use_api();
+    let api = api::use_api();
+    let busy = use_busy();
 
     if !authed {
         return rsx! {
@@ -405,162 +420,119 @@ fn WatchControls(
     }
 
     let in_list = entry.is_some();
-    let notify = entry.as_ref().map(|e| e.notify).unwrap_or(true);
-    let sync_excluded = entry.as_ref().map(|e| e.sync_excluded).unwrap_or(false);
-    let status = entry
-        .as_ref()
-        .map(|e| e.status)
-        .unwrap_or(WatchStatus::Reading);
+    let notify = entry.as_ref().is_none_or(|e| e.notify);
+    let sync_excluded = entry.as_ref().is_some_and(|e| e.sync_excluded);
+    let status = entry.as_ref().map_or(WatchStatus::Reading, |e| e.status);
 
-    // The per-title sync opt-out (design v2 §B.8) is only meaningful once the user has linked
-    // at least one external provider — otherwise there is nothing to opt out of.
-    let has_linked = {
-        let client = api_client.clone();
-        use_resource(move || {
-            let client = client.clone();
-            async move {
-                if session.is_authenticated() {
-                    let Ok(value) = api::fetch_json(&client, "/v1/me/sync/providers").await else {
-                        return false;
-                    };
-                    let list: Vec<ProviderInfo> = serde_json::from_value(value).unwrap_or_default();
-                    for p in list {
-                        if p.linked {
-                            return true;
-                        }
-                        let slug = if p.slug.is_empty() {
-                            p.id.clone()
-                        } else {
-                            p.slug.clone()
-                        };
-                        let path = format!("/v1/me/sync/{slug}/status");
-                        if let Ok(v) = api::fetch_json(&client, &path).await {
-                            if serde_json::from_value::<SyncStatus>(v)
-                                .map(|s| s.linked)
-                                .unwrap_or(false)
-                            {
-                                return true;
-                            }
-                        }
-                    }
-                    false
-                } else {
-                    false
-                }
+    // The per-title sync opt-out (design v2 §B.8) is only meaningful once at least one
+    // external provider is linked — otherwise there is nothing to opt out of.
+    let show_sync_toggle = in_list && has_linked_tracker;
+
+    /// Apply a watchlist change and refetch on success.
+    fn upsert(api: api::Api, busy: Busy, reload: Reload, id: SeriesId, body: WatchlistUpsert) {
+        if !busy.claim() {
+            return;
+        }
+        let client = api.client();
+        spawn(async move {
+            if client
+                .put_watchlist()
+                .series_id(id)
+                .body(body)
+                .send()
+                .await
+                .is_ok()
+            {
+                reload.bump();
             }
-        })
-    };
-    let show_sync_toggle = in_list && matches!(&*has_linked.read_unchecked(), Some(true));
+            busy.release();
+        });
+    }
 
-    let toggle_sync = {
-        let sid = series_id;
-        let mut reload = reload;
-        let client = api_client.clone();
-        move |_| {
-            let client = client.clone();
-            spawn(async move {
-                let body = SyncExcluded {
-                    excluded: !sync_excluded,
-                };
-                if client
-                    .put_sync_excluded()
-                    .series_id(sid)
-                    .body(body)
-                    .send()
-                    .await
-                    .is_ok()
-                {
-                    reload += 1;
-                }
-            });
-        }
+    let add = move |_| {
+        upsert(
+            api,
+            busy,
+            reload,
+            series_id,
+            WatchlistUpsert {
+                status: Some(WatchStatus::Reading),
+                notify: Some(true),
+            },
+        );
     };
 
-    let add = {
-        let sid = series_id;
-        let mut reload = reload;
-        let client = api_client.clone();
-        move |_| {
-            let client = client.clone();
-            spawn(async move {
-                let body = WatchlistUpsert {
-                    status: Some(WatchStatus::Reading),
-                    notify: Some(true),
-                };
-                if client
-                    .put_watchlist()
-                    .series_id(sid)
-                    .body(body)
-                    .send()
-                    .await
-                    .is_ok()
-                {
-                    reload += 1;
-                }
-            });
-        }
+    let toggle_notify = move |_| {
+        upsert(
+            api,
+            busy,
+            reload,
+            series_id,
+            WatchlistUpsert {
+                status: Some(status),
+                notify: Some(!notify),
+            },
+        );
     };
 
-    let remove = {
-        let sid = series_id;
-        let mut reload = reload;
-        let client = api_client.clone();
-        move |_| {
-            let client = client.clone();
-            spawn(async move {
-                if client
-                    .delete_watchlist()
-                    .series_id(sid)
-                    .send()
-                    .await
-                    .is_ok()
-                {
-                    reload += 1;
-                }
-            });
+    let remove = move |_| {
+        if !busy.claim() {
+            return;
         }
+        let client = api.client();
+        spawn(async move {
+            if client
+                .delete_watchlist()
+                .series_id(series_id)
+                .send()
+                .await
+                .is_ok()
+            {
+                reload.bump();
+            }
+            busy.release();
+        });
     };
 
-    let toggle_notify = {
-        let sid = series_id;
-        let mut reload = reload;
-        let client = api_client.clone();
-        move |_| {
-            let client = client.clone();
-            spawn(async move {
-                let body = WatchlistUpsert {
-                    status: Some(status),
-                    notify: Some(!notify),
-                };
-                if client
-                    .put_watchlist()
-                    .series_id(sid)
-                    .body(body)
-                    .send()
-                    .await
-                    .is_ok()
-                {
-                    reload += 1;
-                }
-            });
+    let toggle_sync = move |_| {
+        if !busy.claim() {
+            return;
         }
+        let client = api.client();
+        spawn(async move {
+            let body = SyncExcluded {
+                excluded: !sync_excluded,
+            };
+            if client
+                .put_sync_excluded()
+                .series_id(series_id)
+                .body(body)
+                .send()
+                .await
+                .is_ok()
+            {
+                reload.bump();
+            }
+            busy.release();
+        });
     };
 
     rsx! {
         div { class: "ik-flex", style: "flex-wrap:wrap;",
             if in_list {
-                button { class: "ik-btn", onclick: remove,
+                button { class: "ik-btn", disabled: busy.is_busy(), onclick: remove,
                     Ic { icon: Icon::Bookmark, size: 16 }
                     "In watchlist"
                 }
                 button {
                     class: if notify { "ik-btn primary" } else { "ik-btn" },
+                    disabled: busy.is_busy(),
                     onclick: toggle_notify,
                     Ic { icon: Icon::Notify, size: 16 }
                     if notify { "Notify on" } else { "Notify off" }
                 }
             } else {
-                button { class: "ik-btn primary", onclick: add,
+                button { class: "ik-btn primary", disabled: busy.is_busy(), onclick: add,
                     Ic { icon: Icon::Bookmark, size: 16 }
                     "Add to watchlist"
                 }
@@ -568,6 +540,7 @@ fn WatchControls(
             if show_sync_toggle {
                 button {
                     class: if sync_excluded { "ik-btn" } else { "ik-btn primary" },
+                    disabled: busy.is_busy(),
                     onclick: toggle_sync,
                     Ic { icon: Icon::CloudSync, size: 16 }
                     if sync_excluded { "Sync off" } else { "Sync on" }
@@ -579,81 +552,74 @@ fn WatchControls(
 
 #[component]
 fn ChapterRow(
-    chapter: crate::models::ChapterDto,
+    chapter: ChapterDto,
     series_id: SeriesId,
-    reload: Signal<u32>,
+    reload: Reload,
     /// True for a sub-chapter part release (fractional `number`, e.g. `152.6`) — sources
     /// sometimes ship these ahead of the compiled full chapter. Styled distinctly and never
-    /// counted as a full chapter for tracking (§ chapter grouping).
+    /// counted as a full chapter for tracking.
     #[props(default = false)]
     is_part: bool,
 ) -> Element {
-    let api_client = api::use_api();
-    let mut reload = reload;
-    let mut busy = use_signal(|| false);
+    let api = api::use_api();
+    let busy = use_busy();
 
-    let num = trim_num(chapter.number);
+    let number = chapter.number;
+    let label_number = chapter_number(number);
     let label = chapter
         .title
         .clone()
-        .filter(|t| !t.is_empty())
+        .filter(|title| !title.is_empty())
         .unwrap_or_else(|| {
             if is_part {
-                format!("Part {num}")
+                format!("Part {label_number}")
             } else {
-                format!("Chapter {num}")
+                format!("Chapter {label_number}")
             }
         });
-    let date = chapter
-        .published_at
-        .as_deref()
-        .and_then(|p| p.get(0..10))
-        .unwrap_or("")
-        .to_owned();
+    let date = iso_date(chapter.published_at.as_deref()).to_owned();
     let url = chapter.url.clone();
-    // Auth-scoped read-state (§9.2): `Some(true)` dims the row + shows a check; anonymous
-    // callers get `None` and the row renders unmarked with no mark-read control — there's
-    // nothing to track without a signed-in session.
+
+    // Auth-scoped read state (§9.2): `Some(true)` dims the row and shows a check; anonymous
+    // callers get `None` and the row renders unmarked with no mark-read control, because
+    // there is nothing to track without a session.
     let is_read = chapter.read.unwrap_or(false);
     let can_track = chapter.read.is_some();
-    let row_style = if is_read { "opacity:.55;" } else { "" };
     let row_class = if is_part {
         "ik-chapter part"
     } else {
         "ik-chapter"
     };
+    let row_style = if is_read { "opacity:.55;" } else { "" };
 
     // Per-chapter mark read/unread (design v2 §A.3): the dedicated endpoint applies the
-    // two-scalar rule server-side, correctly advancing/retreating either the whole-chapter or
-    // the part frontier for this exact `number` — a part release never corrupts whole-chapter
-    // progress, and unmarking retreats to the previous chapter without assuming contiguity.
-    let chapter_number = chapter.number;
-    let mark = move |_| {
-        if *busy.peek() {
+    // two-scalar rule server-side, advancing or retreating whichever frontier — whole chapter
+    // or part — this exact `number` belongs to. A part release therefore never corrupts
+    // whole-chapter progress, and unmarking retreats without assuming contiguity.
+    let toggle_read = move |_| {
+        if !busy.claim() {
             return;
         }
-        busy.set(true);
-        let client = api_client.clone();
+        let client = api.client();
         spawn(async move {
-            let body = ChapterRead { read: !is_read };
             if client
                 .put_chapter_progress()
                 .series_id(series_id)
-                .number(chapter_number)
-                .body(body)
+                .number(number)
+                .body(ChapterRead { read: !is_read })
                 .send()
                 .await
                 .is_ok()
             {
-                reload += 1;
+                reload.bump();
             }
-            busy.set(false);
+            busy.release();
         });
     };
 
     rsx! {
         div { class: "{row_class}", style: "{row_style}",
-            span { class: "num", "#{num}" }
+            span { class: "num", "#{label_number}" }
             if is_part {
                 span { class: "ik-part-pill", "Part" }
             }
@@ -669,8 +635,8 @@ fn ChapterRow(
                 button {
                     class: "ik-btn",
                     style: "margin-left:12px;padding:4px 10px;",
-                    disabled: *busy.read(),
-                    onclick: mark,
+                    disabled: busy.is_busy(),
+                    onclick: toggle_read,
                     if is_read { "Mark unread" } else { "Mark read" }
                 }
             }
@@ -693,17 +659,19 @@ fn ChapterRow(
 /// dropdown nested under it rather than cluttering the main list.
 #[derive(Clone, PartialEq)]
 struct ChapterGroup {
-    full: Option<crate::models::ChapterDto>,
+    full: Option<ChapterDto>,
     /// Part releases sharing this group's whole-chapter number, newest (highest) first.
-    parts: Vec<crate::models::ChapterDto>,
+    parts: Vec<ChapterDto>,
 }
 
 /// Groups a newest-first chapter list by `floor(number)`. Relies on the list being sorted
 /// descending by `number`, which guarantees every part release sorts directly above its whole
 /// chapter (e.g. `152.6` > `152.1` > `152`), so same-group rows are always contiguous.
-fn group_chapters(list: &[crate::models::ChapterDto]) -> Vec<ChapterGroup> {
+fn group_chapters(list: &[ChapterDto]) -> Vec<ChapterGroup> {
     let mut groups: Vec<(i64, ChapterGroup)> = Vec::new();
     for chapter in list.iter().cloned() {
+        // Chapter numbers are small positive counts; the floor of one always fits `i64`.
+        #[allow(clippy::cast_possible_truncation)]
         let key = chapter.number.floor() as i64;
         let is_full = chapter.number.fract() == 0.0;
         match groups.last_mut() {
@@ -732,7 +700,7 @@ fn group_chapters(list: &[crate::models::ChapterDto]) -> Vec<ChapterGroup> {
 }
 
 #[component]
-fn ChapterGroupRow(group: ChapterGroup, series_id: SeriesId, reload: Signal<u32>) -> Element {
+fn ChapterGroupRow(group: ChapterGroup, series_id: SeriesId, reload: Reload) -> Element {
     let mut expanded = use_signal(|| false);
     let has_full = group.full.is_some();
     let parts = group.parts.clone();
@@ -745,8 +713,8 @@ fn ChapterGroupRow(group: ChapterGroup, series_id: SeriesId, reload: Signal<u32>
     let toggle_label = format!(
         "{count} early part release{} ({}\u{2013}{})",
         if count == 1 { "" } else { "s" },
-        trim_num(lo),
-        trim_num(hi)
+        chapter_number(lo),
+        chapter_number(hi)
     );
 
     rsx! {
@@ -785,13 +753,5 @@ fn ChapterGroupRow(group: ChapterGroup, series_id: SeriesId, reload: Signal<u32>
                 }
             }
         }
-    }
-}
-
-fn trim_num(n: f64) -> String {
-    if n.fract() == 0.0 {
-        format!("{}", n as i64)
-    } else {
-        format!("{n}")
     }
 }

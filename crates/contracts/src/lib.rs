@@ -1,12 +1,14 @@
 //! # tankovault-contracts
 //!
-//! The wire contract shared over NATS `JetStream`: task dispatch messages, progress and
-//! domain events, and the subject/stream/consumer naming every service agrees on.
+//! The wire contract shared between services: task dispatch messages, progress and domain
+//! events, the subject/stream/consumer naming every service agrees on, and the HTTP response
+//! bodies one service publishes on another's behalf.
 //! Keeping these in one crate means a schema change is a single, reviewable diff that
 //! the producer and all consumers compile against.
 
 pub mod messages;
 pub mod subjects;
+pub mod sync;
 
 pub use messages::{
     ChapterDiscovered, ProgressEvent, ProviderStateChanged, ScanTaskMessage, TaskKind,

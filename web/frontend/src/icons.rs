@@ -1,15 +1,15 @@
-//! Inline-SVG icon module (IMPLEMENTATION_PLAN §4). A single Rust enum + `Ic` component,
+//! Inline-SVG icon module (`IMPLEMENTATION_PLAN` §4). A single Rust enum + `Ic` component,
 //! no web font: works offline, tree-shaken, crisp at any size. Glyphs are 24×24 Lucide
 //! (MIT) paths, drawn with `currentColor` so a text-color utility tints them.
 
 use dioxus::prelude::*;
 
-/// Every glyph the TankoVault design uses (DESIGN_SPEC §6–7). The full inventory is
+/// Every glyph the `TankoVault` design uses (`DESIGN_SPEC` §6–7). The full inventory is
 /// vendored up front; not every glyph is referenced yet (later screens use the rest), so
 /// the unused variants are allowed until F2–F5 land.
 #[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Icon {
+pub(crate) enum Icon {
     // nav
     Home,
     Explore,
@@ -67,7 +67,7 @@ pub enum Icon {
 
 /// Render a glyph. `size` in px (default 20); `class` applies a text-color utility.
 #[component]
-pub fn Ic(
+pub(crate) fn Ic(
     icon: Icon,
     #[props(default = 20)] size: u32,
     #[props(default)] class: String,
@@ -101,16 +101,19 @@ fn path_for(icon: Icon) -> &'static str {
         Icon::Watchlist => {
             r#"<path d="M4 4h13a2 2 0 0 1 2 2v15l-6-4-6 4V6a2 2 0 0 1 2-2z"/><path d="M8 4v13"/>"#
         }
-        Icon::Notifications => {
+        // The bell is one glyph; the two names are the rail entry and the per-title toggle.
+        Icon::Notifications | Icon::Notify => {
             r#"<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a2 2 0 0 0 3.4 0"/>"#
         }
-        Icon::Console => {
+        // The console and its dashboard tab share one glyph; one arm keeps the path data
+        // single-sourced so a retouch cannot drift between them.
+        Icon::Console | Icon::Dashboard => {
             r#"<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>"#
         }
-        Icon::Dashboard => {
-            r#"<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>"#
+        // One avatar glyph, named for the rail destination and for a user row.
+        Icon::Account | Icon::Person => {
+            r#"<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>"#
         }
-        Icon::Account => r#"<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>"#,
         Icon::Settings => {
             r#"<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 4.6 15H4.5a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.1-2.7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 11 4.6V4.5a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7h.1a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.2.9z"/>"#
         }
@@ -132,9 +135,7 @@ fn path_for(icon: Icon) -> &'static str {
             r#"<path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h8M16 18h4"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/>"#
         }
         Icon::Bookmark => r#"<path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/>"#,
-        Icon::Notify => {
-            r#"<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a2 2 0 0 0 3.4 0"/>"#
-        }
+
         Icon::CloudDone => {
             r#"<path d="M7 18a4 4 0 0 1 0-8 5 5 0 0 1 9.6-1.5A3.5 3.5 0 0 1 18 18z"/><path d="m9 14 2 2 4-4"/>"#
         }
@@ -180,7 +181,7 @@ fn path_for(icon: Icon) -> &'static str {
             r#"<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>"#
         }
         Icon::Block => r#"<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>"#,
-        Icon::Person => r#"<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>"#,
+
         Icon::Palette => {
             r#"<path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2 0-1.5 1-2 2-2h1a3 3 0 0 0 3-3 8 8 0 0 0-8-9z"/><circle cx="7.5" cy="10.5" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16.5" cy="10.5" r="1"/>"#
         }

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <!--
+      Spelled out here rather than left to `Dioxus.toml`'s `[web.app] title`: that value is only
+      substituted into the index.html `dx` generates, and this crate ships its own. Keeping it in
+      the served markup also means the tab is named before the WASM bundle finishes booting.
+    -->
+    <title>TankoVault — manga tracker</title>
+    <meta name="description" content="TankoVault — source, track and sync the manga you read." />
+    <!--
+      Paint the reader's theme before anything renders.
+
+      This has to run here, synchronously in <head>, and not from the app: a WASM bundle has to
+      download, instantiate and complete a first render before it can touch the DOM, which is
+      several hundred milliseconds of the *wrong* theme flashing at anyone who chose light mode
+      (or is on a light-mode OS). Reading four localStorage keys is microseconds, so doing it
+      before the first paint costs nothing and removes the flash entirely.
+
+      The keys are written by Account -> Appearance (see src/state/prefs.rs); an unset theme
+      follows the OS, and the other knobs stay unset so the :root defaults in the stylesheet win.
+    -->
+    <script>
+      (function () {
+        var root = document.documentElement;
+        try {
+          var theme = localStorage.getItem("tv-theme");
+          if (!theme) {
+            theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches
+              ? "light"
+              : "dark";
+          }
+          root.setAttribute("data-theme", theme);
+          ["accent", "density", "cover"].forEach(function (knob) {
+            var value = localStorage.getItem("tv-" + knob);
+            if (value) root.setAttribute("data-" + knob, value);
+          });
+        } catch (e) {
+          // Private-mode browsers can throw on localStorage; the stylesheet defaults are fine.
+          root.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
+    <!--
+      Global search shortcut. Registered once, here, rather than from a component: a listener
+      added in an effect is never removed, so it would stack a duplicate on every remount, and
+      a document-level listener is the only way to catch the key when focus is on <body>.
+    -->
+    <script>
+      document.addEventListener("keydown", function (e) {
+        if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+          var field = document.getElementById("tv-search");
+          if (field) {
+            e.preventDefault();
+            field.focus();
+            field.select();
+          }
+        }
+      });
+    </script>
+  </head>
+  <body>
+    <div id="main"></div>
+  </body>
+</html>

@@ -7,11 +7,12 @@
 //! `"anilist"`), mirroring the shape used by [`tracking`](super::tracking) entries.
 
 use crate::error::DbResult;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use sqlx::{FromRow, PgExecutor};
 use tankovault_domain::{SeriesId, UserId};
 use time::OffsetDateTime;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
@@ -112,16 +113,22 @@ pub async fn insert_conflict<'e, E: PgExecutor<'e>>(
 }
 
 /// One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).
-#[derive(Debug, Clone, Serialize, FromRow)]
+///
+/// Schema'd and `Deserialize` because `services/api` re-publishes this row under
+/// `/v1/me/sync/conflicts`, so it has to appear in the `OpenAPI` document for the generated
+/// client to expose the endpoint at all.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct ConflictRow {
     pub id: Uuid,
     pub series_id: Uuid,
     pub series_title: String,
     pub provider: String,
+    /// Which tracked field disagrees, e.g. `progress` or `status`.
     pub field: String,
     pub local_value: String,
     pub remote_value: String,
     #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
     pub detected_at: OffsetDateTime,
 }
 
@@ -232,15 +239,22 @@ pub async fn append_history<'e, E: PgExecutor<'e>>(
 }
 
 /// One row of the user-facing sync history (design v2 §B.6 `GET /v1/me/sync/history`).
-#[derive(Debug, Clone, Serialize, FromRow)]
+///
+/// Schema'd and `Deserialize` for the same reason as [`ConflictRow`]: `services/api`
+/// re-publishes it, so the generated client needs it in the `OpenAPI` document.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct HistoryRow {
     pub id: Uuid,
     pub series_id: Uuid,
     pub series_title: String,
     pub provider: String,
+    /// What the engine did, e.g. `pull`, `push` or `resolve`.
     pub action: String,
+    /// Free-form, action-specific detail (the changed field and its before/after values).
+    #[schema(value_type = Object)]
     pub detail: Json,
     #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
 }
 

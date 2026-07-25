@@ -4028,6 +4028,7 @@ dependencies = [
  "serde_json",
  "tankovault-domain",
  "time",
+ "utoipa",
  "uuid",
 ]
 
@@ -4203,6 +4204,7 @@ dependencies = [
  "serde_json",
  "tankovault-auth",
  "tankovault-config",
+ "tankovault-contracts",
  "tankovault-db",
  "tankovault-domain",
  "tankovault-matcher",

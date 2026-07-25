@@ -1,0 +1,92 @@
+//! The privileged-action audit trail (design §16): recent operator actions, newest first.
+
+use crate::api;
+use crate::models::*;
+use crate::state::use_session;
+use crate::util::rel_time;
+use crate::views::console::RefreshTick;
+use dioxus::prelude::*;
+use progenitor_client::ResponseValue;
+
+/// Privileged-action audit trail (design §16): recent operator actions, newest first.
+#[component]
+pub(super) fn AuditPanel(tick: RefreshTick) -> Element {
+    let api = api::use_api();
+    let session = use_session();
+    let res = {
+        use_resource(move || {
+            tick.track();
+            let client = api.client();
+            async move {
+                if session.is_authenticated() {
+                    Some(
+                        client
+                            .audit_log()
+                            .send()
+                            .await
+                            .map(ResponseValue::into_inner)
+                            .map_err(api::friendly_error),
+                    )
+                } else {
+                    None
+                }
+            }
+        })
+    };
+
+    let body = match &*res.read_unchecked() {
+        None | Some(None) => rsx! { div { class: "ik-skeleton", style: "height:80px;" } },
+        Some(Some(Err(e))) => {
+            rsx! {
+                p { class: "ik-muted", style: "font-size:13px;", "Audit log unavailable: {e}" }
+            }
+        }
+        Some(Some(Ok(list))) if list.is_empty() => rsx! {
+            div { class: "ik-empty", "No privileged actions recorded yet." }
+        },
+        Some(Some(Ok(list))) => {
+            let rows = list.clone();
+            rsx! {
+                div { class: "ik-tablewrap",
+                    table { class: "ik-table ik-table-compact",
+                        thead {
+                            tr {
+                                th { "When" }
+                                th { "Actor" }
+                                th { "Action" }
+                                th { "Target" }
+                            }
+                        }
+                        tbody {
+                            for a in rows {
+                                AuditRow { key: "{a.id}", entry: Signal::new(a) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    rsx! {
+        section { style: "margin-bottom:18px;",
+            h3 { "Audit trail" }
+            {body}
+        }
+    }
+}
+
+#[component]
+pub(super) fn AuditRow(entry: Signal<AuditEntry>) -> Element {
+    let a = entry.read();
+    let actor = a.actor.clone().unwrap_or_else(|| "system".to_owned());
+    let target = a.target.clone().unwrap_or_else(|| "—".to_owned());
+    rsx! {
+        tr {
+            td { class: "ik-muted ik-mono", style: "font-size:12px;white-space:nowrap;", "{rel_time(Some(a.created_at.as_str()))}" }
+            td { "{actor}" }
+            td { span { class: "ik-pill", "{a.action}" } }
+            td { class: "ik-mono ik-muted", style: "font-size:12px;word-break:break-all;", "{target}" }
+        }
+    }
+}

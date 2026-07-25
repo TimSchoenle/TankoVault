@@ -1,105 +1,95 @@
-//! Home dashboard (DESIGN_SPEC §7.1) — the signed-in reader's landing screen. Greeting +
-//! lifetime stat tiles (`GET /v1/me/stats`), a continue-reading rail (`GET /v1/me/continue`),
-//! a "New in your watchlist" day-grouped feed, and a "Because you read" recommendations shelf
-//! (`GET /v1/me/recommendations`) — all §9.3.
+//! Home dashboard (`DESIGN_SPEC` §7.1) — the signed-in reader's landing screen. Greeting +
+//! lifetime stat tiles, a continue-reading rail, a day-grouped "New in your watchlist" feed,
+//! and a "Because you read" recommendations shelf.
 
 use crate::api;
-use crate::components::{Cover, CoverCard, EmptyBox, ErrorBox, SignInGate};
+use crate::components::{
+    async_list, async_view, Cover, CoverCard, SignInGate, SkeletonBlock, SkeletonRows,
+};
+use crate::hooks::{use_reload, Reload};
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::use_session;
+use crate::util::{chapter_number, greeting, iso_date};
 use crate::Route;
 use dioxus::prelude::*;
+use progenitor_client::ResponseValue;
 
 #[component]
-pub fn Home() -> Element {
+pub(crate) fn Home() -> Element {
     let session = use_session();
-    // Capture the API *context* (not a render-time client): each resource below reads the live
-    // session token synchronously and builds its client from it. On a page reload the token is
-    // adopted from the httpOnly cookie a moment after boot, so a client captured up front would
-    // still be token-less when the resources re-run and every call would 401 (design §17.4).
-    let api = use_context::<api::ApiClient>();
-    let mut reload = use_signal(|| 0u32);
+    let api = api::use_api();
+    let reload = use_reload();
 
-    let feed = {
-        let api = api.clone();
-        use_resource(move || {
-            let _ = reload.read();
-            let token = session.token_value();
-            let api = api.clone();
-            async move {
-                match token {
-                    Some(token) => api
-                        .client_for(Some(&token))
-                        .feed()
-                        .send()
-                        .await
-                        .map(|r| r.into_inner())
-                        .map_err(api::friendly_error),
-                    None => Ok(Vec::new()),
-                }
+    // Each resource builds its client from the *live* session token, so the boot-time silent
+    // refresh — which lands a moment after first paint on a reload — automatically refetches
+    // everything instead of leaving the screen stuck on its signed-out result.
+    let feed = use_resource(move || {
+        reload.track();
+        let client = api.client();
+        let authed = session.is_authenticated();
+        async move {
+            if !authed {
+                return Ok(Vec::new());
             }
-        })
-    };
-    let stats = {
-        let api = api.clone();
-        use_resource(move || {
-            let _ = reload.read();
-            let token = session.token_value();
-            let api = api.clone();
-            async move {
-                match token {
-                    Some(token) => api
-                        .client_for(Some(&token))
-                        .stats()
-                        .send()
-                        .await
-                        .map(|r| r.into_inner())
-                        .ok(),
-                    None => None,
-                }
+            client
+                .feed()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(api::friendly_error)
+        }
+    });
+
+    let stats = use_resource(move || {
+        reload.track();
+        let client = api.client();
+        let authed = session.is_authenticated();
+        async move {
+            if !authed {
+                return Ok(None);
             }
-        })
-    };
-    let cont = {
-        let api = api.clone();
-        use_resource(move || {
-            let _ = reload.read();
-            let token = session.token_value();
-            let api = api.clone();
-            async move {
-                match token {
-                    Some(token) => api
-                        .client_for(Some(&token))
-                        .continue_reading()
-                        .send()
-                        .await
-                        .map(|r| r.into_inner())
-                        .unwrap_or_default(),
-                    None => Vec::new(),
-                }
+            client
+                .stats()
+                .send()
+                .await
+                .map(|r| Some(r.into_inner()))
+                .map_err(api::friendly_error)
+        }
+    });
+
+    let continuing = use_resource(move || {
+        reload.track();
+        let client = api.client();
+        let authed = session.is_authenticated();
+        async move {
+            if !authed {
+                return Ok(Vec::new());
             }
-        })
-    };
-    let recs = {
-        let api = api.clone();
-        use_resource(move || {
-            let token = session.token_value();
-            let api = api.clone();
-            async move {
-                match token {
-                    Some(token) => api
-                        .client_for(Some(&token))
-                        .recommendations()
-                        .send()
-                        .await
-                        .map(|r| r.into_inner())
-                        .unwrap_or_default(),
-                    None => Vec::new(),
-                }
+            client
+                .continue_reading()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(api::friendly_error)
+        }
+    });
+
+    let recommendations = use_resource(move || {
+        let client = api.client();
+        let authed = session.is_authenticated();
+        async move {
+            if !authed {
+                return Ok(Vec::new());
             }
-        })
-    };
+            client
+                .recommendations()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(api::friendly_error)
+        }
+    });
 
     if !session.is_authenticated() {
         return rsx! {
@@ -109,174 +99,136 @@ pub fn Home() -> Element {
     }
 
     let name = session.username().unwrap_or_else(|| "reader".to_owned());
-    let greeting = greeting_for_hour();
 
-    // Stat tiles from the lifetime stats endpoint (§9.3); the "new chapters" figure stays the
-    // current unread-feed length. Values render as "—" until the stats call resolves.
-    let new_count = match &*feed.read_unchecked() {
-        Some(Ok(items)) => items.len(),
-        _ => 0,
+    // Tile values render as an em dash until their call resolves, rather than as a
+    // provisional zero the reader would read as a real figure.
+    let new_chapters = match &*feed.read_unchecked() {
+        Some(Ok(items)) => items.len().to_string(),
+        _ => "—".to_owned(),
     };
-    let me = match &*stats.read_unchecked() {
-        Some(Some(s)) => Some(s.clone()),
-        _ => None,
-    };
-    let reading_count = me
-        .as_ref()
-        .map(|s| s.reading.to_string())
-        .unwrap_or_else(|| "—".to_owned());
-    let chapters_read = me
-        .as_ref()
-        .map(|s| s.chapters_read.to_string())
-        .unwrap_or_else(|| "—".to_owned());
-
-    let feed_body = match &*feed.read_unchecked() {
-        None => rsx! {
-            for _ in 0..3 {
-                div { class: "ik-row",
-                    div { class: "ik-skeleton", style: "height:16px;width:40%;" }
-                }
-            }
-        },
-        Some(Err(e)) => {
-            let msg = e.clone();
-            rsx! {
-                ErrorBox { message: msg, on_retry: move |()| reload += 1 }
-            }
-        }
-        Some(Ok(items)) if items.is_empty() => rsx! {
-            EmptyBox {
-                message: "You're all caught up. New chapters from your watchlist will land here."
-                    .to_string(),
-            }
-        },
-        Some(Ok(items)) => {
-            let groups = group_by_day(items);
-            rsx! {
-                for (day , entries) in groups {
-                    div { class: "ik-daygroup",
-                        div { class: "ik-dayhead", "{day}" }
-                        for entry in entries {
-                            FeedRow { entry, reload }
-                        }
-                    }
-                }
-            }
-        }
-    };
-
-    // Continue-reading rail (§9.3): in-progress, tracked series with unread chapters.
-    let continue_body = match &*cont.read_unchecked() {
-        None => rsx! { div { class: "ik-skeleton", style: "height:96px;" } },
-        Some(list) if list.is_empty() => rsx! {
-            EmptyBox {
-                message: "Start reading a tracked series and it'll show up here so you can pick up where you left off."
-                    .to_string(),
-            }
-        },
-        Some(list) => {
-            let cards = list.clone();
-            rsx! {
-                div { class: "ik-grid",
-                    for c in cards {
-                        ContinueCard { key: "{c.series_id}", item: c }
-                    }
-                }
-            }
-        }
-    };
-
-    // "Because you read" recommendations (§9.3): shared-tag suggestions, recent fallback.
-    let recs_body = match &*recs.read_unchecked() {
-        None => rsx! { div { class: "ik-skeleton", style: "height:96px;" } },
-        Some(list) if list.is_empty() => rsx! {},
-        Some(list) => {
-            let items = list.clone();
-            rsx! {
-                div { class: "ik-section-head",
-                    Ic { icon: Icon::AutoAwesome, size: 20 }
-                    h2 { "Because you read" }
-                }
-                div { class: "ik-grid",
-                    for s in items {
-                        CoverCard { key: "{s.id}", series: s }
-                    }
-                }
-            }
-        }
+    let (reading, chapters_read) = match &*stats.read_unchecked() {
+        Some(Ok(Some(stats))) => (stats.reading.to_string(), stats.chapters_read.to_string()),
+        _ => ("—".to_owned(), "—".to_owned()),
     };
 
     rsx! {
-        div { style: "display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:8px;",
+        div { class: "ik-home-head",
             div {
-                div { class: "ik-kicker", "{greeting}" }
+                div { class: "ik-kicker", "{greeting()}" }
                 h1 { class: "ik-page-title", style: "margin:6px 0 0;", "Welcome back, {name}" }
             }
             div { class: "ik-stat-row",
-                div { class: "ik-stat",
-                    div { class: "lbl",
-                        Ic { icon: Icon::Bolt, size: 13 }
-                        "New chapters"
-                    }
-                    div { class: "val acc", "{new_count}" }
-                }
-                div { class: "ik-stat",
-                    div { class: "lbl",
-                        Ic { icon: Icon::MenuBook, size: 13 }
-                        "Reading"
-                    }
-                    div { class: "val", "{reading_count}" }
-                }
-                div { class: "ik-stat",
-                    div { class: "lbl",
-                        Ic { icon: Icon::Check, size: 13 }
-                        "Chapters read"
-                    }
-                    div { class: "val jade", "{chapters_read}" }
-                }
+                StatTile { icon: Icon::Bolt, label: "New chapters", value: new_chapters, tone: "acc" }
+                StatTile { icon: Icon::MenuBook, label: "Reading", value: reading, tone: "" }
+                StatTile { icon: Icon::Check, label: "Chapters read", value: chapters_read, tone: "jade" }
             }
         }
 
-        // Continue reading (§9.3).
         div { class: "ik-section-head",
             Ic { icon: Icon::PlayCircle, size: 20 }
             h2 { "Continue reading" }
         }
-        {continue_body}
+        {
+            async_list(
+                &continuing,
+                reload,
+                || rsx! { SkeletonBlock { height: 96 } },
+                "Start reading a tracked series and it'll show up here so you can pick up where you left off.",
+                |items| rsx! {
+                    div { class: "ik-grid",
+                        for item in items.iter().cloned() {
+                            ContinueCard { key: "{item.series_id}", item }
+                        }
+                    }
+                },
+            )
+        }
 
-        // New in your watchlist (the folded-in feed).
         div { class: "ik-section-head",
             Ic { icon: Icon::Bolt, size: 20 }
             h2 { "New in your watchlist" }
             Link { to: Route::Notifications {}, class: "more", "See all" }
         }
-        {feed_body}
+        {
+            async_list(
+                &feed,
+                reload,
+                || rsx! { SkeletonRows { count: 3 } },
+                "You're all caught up. New chapters from your watchlist will land here.",
+                |items| rsx! {
+                    for (day , entries) in group_by_day(items) {
+                        div { class: "ik-daygroup", key: "{day}",
+                            div { class: "ik-dayhead", "{day}" }
+                            for entry in entries {
+                                FeedRow { key: "{entry.series_id}-{entry.chapter_number}", entry, reload }
+                            }
+                        }
+                    }
+                },
+            )
+        }
 
-        {recs_body}
+        // Recommendations are a bonus shelf: when there is nothing to suggest the whole
+        // section disappears rather than showing an empty state for something unasked for.
+        {
+            async_view(
+                &recommendations,
+                reload,
+                || rsx! { SkeletonBlock { height: 96 } },
+                |items| {
+                    if items.is_empty() {
+                        return rsx! {};
+                    }
+                    rsx! {
+                        div { class: "ik-section-head",
+                            Ic { icon: Icon::AutoAwesome, size: 20 }
+                            h2 { "Because you read" }
+                        }
+                        div { class: "ik-grid",
+                            for series in items.iter().cloned() {
+                                CoverCard { key: "{series.id}", series }
+                            }
+                        }
+                    }
+                },
+            )
+        }
     }
 }
 
-/// A continue-reading card (§9.3): cover + last-read/next-unread progress, linking to the
-/// series page so the reader can resume. Unread count is shown as a small badge.
+/// One lifetime-stat tile in the header row.
+#[component]
+fn StatTile(icon: Icon, label: String, value: String, tone: &'static str) -> Element {
+    rsx! {
+        div { class: "ik-stat",
+            div { class: "lbl",
+                Ic { icon, size: 13 }
+                "{label}"
+            }
+            div { class: "val {tone}", "{value}" }
+        }
+    }
+}
+
+/// A continue-reading card: cover plus the next unread chapter, linking to the series so the
+/// reader can resume.
 #[component]
 fn ContinueCard(item: ContinueItem) -> Element {
-    let last = trim_num(item.last_read_number);
-    let next = item.next_number.map(trim_num);
-    let unread = item.unread;
+    let next = item.next_number.map(chapter_number);
+    let last = chapter_number(item.last_read_number);
     rsx! {
         Link { to: Route::Series { id: item.series_id.to_string() }, class: "ik-card",
             Cover { url: item.cover_url.clone(), title: item.series_title.clone() }
             div { class: "ik-card-body",
                 div { class: "ik-card-title", "{item.series_title}" }
                 div { class: "ik-card-meta",
-                    if let Some(n) = next.clone() {
-                        span { "Next #{n}" }
-                    } else {
-                        span { "Read #{last}" }
+                    match next {
+                        Some(n) => rsx! { span { "Next #{n}" } },
+                        None => rsx! { span { "Read #{last}" } },
                     }
                     span { class: "ik-rail-spacer" }
-                    if unread > 0 {
-                        span { class: "ik-pill acc", style: "font-size:10px;", "{unread} new" }
+                    if item.unread > 0 {
+                        span { class: "ik-pill acc", style: "font-size:10px;", "{item.unread} new" }
                     }
                 }
             }
@@ -284,20 +236,20 @@ fn ContinueCard(item: ContinueItem) -> Element {
     }
 }
 
+/// One newly-discovered chapter, with an open link and a mark-read action.
 #[component]
-fn FeedRow(entry: FeedEntry, reload: Signal<u32>) -> Element {
-    let api_client = api::use_api();
+fn FeedRow(entry: FeedEntry, reload: Reload) -> Element {
+    let api = api::use_api();
     let series_id = entry.series_id;
     let number = entry.chapter_number;
-    let chapter_label = entry
+    let label = entry
         .chapter_title
         .clone()
-        .filter(|t| !t.is_empty())
-        .unwrap_or_else(|| format!("Chapter {}", trim_num(number)));
+        .filter(|title| !title.is_empty())
+        .unwrap_or_else(|| format!("Chapter {}", chapter_number(number)));
 
-    let mark = move |_| {
-        let mut reload = reload;
-        let client = api_client.clone();
+    let mark_read = move |_| {
+        let client = api.client();
         spawn(async move {
             let body = ProgressUpdate {
                 last_read_whole_number: number,
@@ -310,54 +262,37 @@ fn FeedRow(entry: FeedEntry, reload: Signal<u32>) -> Element {
                 .await
                 .is_ok()
             {
-                reload += 1;
+                reload.bump();
             }
         });
     };
 
     rsx! {
         div { class: "ik-row unread",
-            span { class: "ik-mono", style: "color:var(--acc);min-width:56px;", "#{trim_num(number)}" }
+            span { class: "ik-mono", style: "color:var(--acc);min-width:56px;", "#{chapter_number(number)}" }
             div { class: "grow",
                 div { style: "font-weight:600;", "{entry.series_title}" }
-                div { class: "ik-muted", style: "font-size:13px;", "{chapter_label} · {entry.provider_slug}" }
+                div { class: "ik-muted", style: "font-size:13px;", "{label} · {entry.provider_slug}" }
             }
             a { class: "ik-btn", href: "{entry.url}", target: "_blank", rel: "noopener", "Open" }
-            button { class: "ik-btn primary", onclick: mark, "Mark read" }
+            button { class: "ik-btn primary", onclick: mark_read, "Mark read" }
         }
     }
 }
 
-/// Time-of-day greeting from the browser clock.
-fn greeting_for_hour() -> &'static str {
-    let hour = js_sys::Date::new_0().get_hours();
-    match hour {
-        5..=11 => "Good morning",
-        12..=17 => "Good afternoon",
-        18..=21 => "Good evening",
-        _ => "Late night",
-    }
-}
-
-/// Group feed entries by the date component (YYYY-MM-DD) of `discovered_at`, preserving the
-/// server's newest-first ordering.
+/// Group feed entries by the date component of `discovered_at`, preserving the server's
+/// newest-first ordering.
+///
+/// Relies on that ordering: entries for one day are contiguous, so a single pass suffices and
+/// no sort is needed.
 fn group_by_day(items: &[FeedEntry]) -> Vec<(String, Vec<FeedEntry>)> {
-    let mut out: Vec<(String, Vec<FeedEntry>)> = Vec::new();
-    for e in items {
-        let day = e.discovered_at.get(0..10).unwrap_or("").to_owned();
-        match out.last_mut() {
-            Some((d, v)) if *d == day => v.push(e.clone()),
-            _ => out.push((day, vec![e.clone()])),
+    let mut groups: Vec<(String, Vec<FeedEntry>)> = Vec::new();
+    for entry in items {
+        let day = iso_date(Some(&entry.discovered_at)).to_owned();
+        match groups.last_mut() {
+            Some((current, entries)) if *current == day => entries.push(entry.clone()),
+            _ => groups.push((day, vec![entry.clone()])),
         }
     }
-    out
-}
-
-/// Render a chapter number without a trailing `.0` for whole numbers.
-fn trim_num(n: f64) -> String {
-    if n.fract() == 0.0 {
-        format!("{}", n as i64)
-    } else {
-        format!("{n}")
-    }
+    groups
 }

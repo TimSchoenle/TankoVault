@@ -48,6 +48,7 @@ use mapping::ConflictPolicy;
 use provider::ExternalProvider;
 use tankovault_auth::SecretBox;
 use tankovault_config::{DatabaseConfig, MetadataPriorityConfig, TelemetryConfig};
+use tankovault_contracts::sync::{AccountSettings, AccountStatus, AuthorizeUrl, ProviderInfo};
 use tankovault_domain::{SeriesId, UserId};
 
 #[derive(Debug, Deserialize)]
@@ -292,7 +293,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn providers_list(State(state): State<AppState>) -> Json<Vec<provider::ProviderInfo>> {
+async fn providers_list(State(state): State<AppState>) -> Json<Vec<ProviderInfo>> {
     Json(state.engine.registry())
 }
 
@@ -321,11 +322,6 @@ async fn push_series(
     Json(req): Json<PushSeriesRequest>,
 ) -> Json<Vec<engine::ProviderPushOutcome>> {
     Json(state.engine.push_series(req.user_id, req.series_id).await)
-}
-
-#[derive(Debug, Serialize)]
-struct AuthorizeUrl {
-    url: String,
 }
 
 async fn authorize_url(
@@ -361,7 +357,7 @@ struct UserRequest {
 async fn status(
     State(state): State<AppState>,
     Path((provider, user_id)): Path<(String, UserId)>,
-) -> Result<Json<engine::AccountStatus>, AppError> {
+) -> Result<Json<AccountStatus>, AppError> {
     Ok(Json(state.engine.status(&provider, user_id).await?))
 }
 
@@ -414,7 +410,7 @@ async fn push(
 async fn get_settings(
     State(state): State<AppState>,
     Path((provider, user_id)): Path<(String, UserId)>,
-) -> Result<Json<engine::AccountSettings>, AppError> {
+) -> Result<Json<AccountSettings>, AppError> {
     Ok(Json(state.engine.settings(&provider, user_id).await?))
 }
 

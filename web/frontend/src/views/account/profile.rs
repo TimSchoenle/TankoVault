@@ -3,14 +3,16 @@
 use crate::api;
 use crate::components::OutcomeLine;
 use crate::hooks::{use_busy, use_outcome};
+use crate::i18n::use_i18n;
 use crate::models::ProfileUpdate;
 use crate::state::use_session;
 use crate::util::initial;
 use dioxus::prelude::*;
 
 #[component]
-pub(crate) fn ProfilePanel(name: String, role: &'static str) -> Element {
+pub(crate) fn ProfilePanel(name: String, role: String) -> Element {
     let session = use_session();
+    let i18n = use_i18n();
     let api = api::use_api();
     let busy = use_busy();
     let mut outcome = use_outcome();
@@ -21,9 +23,7 @@ pub(crate) fn ProfilePanel(name: String, role: &'static str) -> Element {
         let new_username = username.peek().trim().to_owned();
         let new_email = email.peek().trim().to_owned();
         if new_username.is_empty() && new_email.is_empty() {
-            outcome.set(Some(Err(
-                "Enter a new display name or email first.".to_owned()
-            )));
+            outcome.set(Some(Err(i18n.t("account.profile.nothingToSave"))));
             return;
         }
         if !busy.claim() {
@@ -44,9 +44,9 @@ pub(crate) fn ProfilePanel(name: String, role: &'static str) -> Element {
                     username.set(profile.username.clone());
                     session.set_display_name(profile.username);
                     email.set(String::new());
-                    outcome.set(Some(Ok("Profile updated.".to_owned())));
+                    outcome.set(Some(Ok(i18n.t("account.profile.updated"))));
                 }
-                Err(e) => outcome.set(Some(Err(api::friendly_error(e)))),
+                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
             }
             busy.release();
         });
@@ -67,7 +67,7 @@ pub(crate) fn ProfilePanel(name: String, role: &'static str) -> Element {
                 }
             }
             div { class: "ik-field",
-                label { r#for: "tv-profile-name", "Display name" }
+                label { r#for: "tv-profile-name", {i18n.t("account.profile.displayName")} }
                 input {
                     id: "tv-profile-name",
                     class: "ik-input",
@@ -76,12 +76,12 @@ pub(crate) fn ProfilePanel(name: String, role: &'static str) -> Element {
                 }
             }
             div { class: "ik-field",
-                label { r#for: "tv-profile-email", "Email" }
+                label { r#for: "tv-profile-email", {i18n.t("auth.field.email")} }
                 input {
                     id: "tv-profile-email",
                     class: "ik-input",
                     r#type: "email",
-                    placeholder: "new email address",
+                    placeholder: i18n.t("account.profile.emailPlaceholder"),
                     value: "{email}",
                     oninput: move |e| email.set(e.value()),
                 }
@@ -92,7 +92,11 @@ pub(crate) fn ProfilePanel(name: String, role: &'static str) -> Element {
                 style: "margin-top:12px;",
                 disabled: busy.is_busy(),
                 onclick: save,
-                if busy.is_busy() { "Saving…" } else { "Save profile" }
+                if busy.is_busy() {
+                    {i18n.t("common.saving")}
+                } else {
+                    {i18n.t("account.profile.save")}
+                }
             }
         }
     }

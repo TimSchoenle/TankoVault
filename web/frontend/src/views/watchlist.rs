@@ -6,6 +6,7 @@
 use crate::api;
 use crate::components::{async_list, Cover, SignInGate};
 use crate::hooks::{use_busy, use_outcome, use_reload, Busy, Reload};
+use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::use_session;
@@ -23,6 +24,7 @@ const SYNC_PROVIDER: &str = "anilist";
 #[component]
 pub(crate) fn Watchlist() -> Element {
     let session = use_session();
+    let i18n = use_i18n();
     let api = api::use_api();
     let reload = use_reload();
     let syncing = use_busy();
@@ -45,13 +47,13 @@ pub(crate) fn Watchlist() -> Element {
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
     if !session.is_authenticated() {
         return rsx! {
-            h1 { class: "ik-page-title", "Watchlist" }
+            h1 { class: "ik-page-title", {i18n.t("nav.watchlist")} }
             SignInGate {}
         };
     }
@@ -81,9 +83,9 @@ pub(crate) fn Watchlist() -> Element {
                     .body(SyncPushBody::Variant1(opts))
                     .send()
                     .await
-                    .map(|_| "Synced with AniList.".to_owned())
-                    .map_err(api::friendly_error),
-                Err(e) => Err(api::friendly_error(e)),
+                    .map(|_| i18n.t("watchlist.synced"))
+                    .map_err(|e| api::friendly_error(i18n, e)),
+                Err(e) => Err(api::friendly_error(i18n, e)),
             };
             if result.is_ok() {
                 reload.bump();
@@ -96,14 +98,16 @@ pub(crate) fn Watchlist() -> Element {
     rsx! {
         div { class: "ik-page-head",
             div {
-                h1 { class: "ik-page-title", style: "margin-bottom:2px;", "Watchlist" }
-                div { class: "ik-muted", style: "font-size:13px;",
-                    "Drag a title between columns to change its status — or use the picker on each card."
-                }
+                h1 { class: "ik-page-title", style: "margin-bottom:2px;", {i18n.t("nav.watchlist")} }
+                div { class: "ik-muted", style: "font-size:13px;", {i18n.t("watchlist.subtitle")} }
             }
             button { class: "ik-btn", disabled: syncing.is_busy(), onclick: sync_now,
                 Ic { icon: Icon::CloudSync, size: 16 }
-                if syncing.is_busy() { "Syncing…" } else { "Sync AniList" }
+                if syncing.is_busy() {
+                    {i18n.t("watchlist.syncing")}
+                } else {
+                    {i18n.t("watchlist.sync")}
+                }
             }
         }
         crate::components::OutcomeLine { outcome: outcome.read().clone() }
@@ -121,7 +125,7 @@ pub(crate) fn Watchlist() -> Element {
                         }
                     }
                 },
-                "Your watchlist is empty. Find a series and add it to start tracking.",
+                &i18n.t("watchlist.empty"),
                 |items| rsx! {
                     div { class: "ik-board",
                         for status in WatchStatus::columns().iter().copied() {
@@ -161,6 +165,7 @@ fn Column(
     dragover: Signal<Option<WatchStatus>>,
 ) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let count = items.len();
     let (icon, color) = column_style(status);
     let class = if *dragover.read() == Some(status) {
@@ -219,7 +224,7 @@ fn Column(
             h3 {
                 span { class: "ik-flex", style: "gap:7px;",
                     span { style: "color:{color};display:inline-flex;", Ic { icon, size: 16 } }
-                    span { "{status.label()}" }
+                    span { {i18n.t(status.label_key())} }
                 }
                 span { class: "count", "{count}" }
             }
@@ -233,6 +238,7 @@ fn Column(
 #[component]
 fn WatchCard(item: WatchlistItem, reload: Reload, dragging: Signal<Dragging>) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let busy = use_busy();
     let series_id = item.series_id;
     let notify = item.notify;
@@ -338,14 +344,14 @@ fn WatchCard(item: WatchlistItem, reload: Reload, dragging: Signal<Dragging>) ->
             }
             if item.unread > 0 {
                 div { class: "ik-mono", style: "font-size:11px;color:var(--acc);margin-top:6px;",
-                    "{item.unread} unread"
+                    {i18n.args("watchlist.unread", &[("count", &item.unread.to_string())])}
                 }
             }
             div { class: "ik-flex", style: "margin-top:8px;justify-content:space-between;gap:6px;",
                 select {
                     class: "ik-input",
                     style: "padding:4px 6px;font-size:12px;width:auto;",
-                    "aria-label": "Move to column",
+                    "aria-label": i18n.t("watchlist.moveToColumn"),
                     disabled: busy.is_busy(),
                     value: "{status.token()}",
                     onchange: move_status,
@@ -353,24 +359,28 @@ fn WatchCard(item: WatchlistItem, reload: Reload, dragging: Signal<Dragging>) ->
                         option {
                             value: "{option_status.token()}",
                             selected: option_status == status,
-                            "{option_status.label()}"
+                            {i18n.t(option_status.label_key())}
                         }
                     }
                 }
                 button {
                     class: if notify { "ik-pill vermilion" } else { "ik-pill" },
                     style: "cursor:pointer;background:none;",
-                    title: "Toggle notifications",
+                    title: i18n.t("watchlist.toggleNotifications"),
                     disabled: busy.is_busy(),
                     onclick: toggle_notify,
-                    if notify { "Notify on" } else { "Notify off" }
+                    if notify {
+                        {i18n.t("watchlist.notifyOn")}
+                    } else {
+                        {i18n.t("watchlist.notifyOff")}
+                    }
                 }
                 button {
                     class: "ik-pill",
                     style: "cursor:pointer;background:none;",
                     disabled: busy.is_busy(),
                     onclick: remove,
-                    "Remove"
+                    {i18n.t("common.remove")}
                 }
             }
         }

@@ -11,6 +11,7 @@
 use crate::api;
 use crate::components::{async_view, Cover};
 use crate::hooks::{use_busy, use_reload, Busy, Reload};
+use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::use_session;
@@ -26,9 +27,10 @@ const SYNC_PROVIDER: &str = "anilist";
 /// the rest of the view works with the real, compiler-checked `SeriesId`.
 #[component]
 pub(crate) fn Series(id: String) -> Element {
+    let i18n = use_i18n();
     let Ok(id) = id.parse::<SeriesId>() else {
         return rsx! {
-            div { class: "ik-empty", "That series link doesn't look right." }
+            div { class: "ik-empty", {i18n.t("series.badLink")} }
         };
     };
 
@@ -48,7 +50,7 @@ pub(crate) fn Series(id: String) -> Element {
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
@@ -65,7 +67,7 @@ pub(crate) fn Series(id: String) -> Element {
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
@@ -82,7 +84,7 @@ pub(crate) fn Series(id: String) -> Element {
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
@@ -172,16 +174,20 @@ pub(crate) fn Series(id: String) -> Element {
                         style: "margin-bottom:16px;",
                         onclick: move |_| { nav.go_back(); },
                         Ic { icon: Icon::Back, size: 16 }
-                        "Back"
+                        {i18n.t("common.back")}
                     }
                     div { class: "ik-hero",
                         div { Cover { url: d.cover_url.clone(), title: d.title.clone() } }
                         div {
                             div { class: "ik-flex", style: "margin-bottom:10px;",
-                                span { class: "ik-pill", style: "color:{d.content_type.color()};border-color:color-mix(in srgb,{d.content_type.color()} 55%,transparent);", "{d.content_type.label()}" }
+                                span {
+                                    class: "ik-pill",
+                                    style: "color:{d.content_type.color()};border-color:color-mix(in srgb,{d.content_type.color()} 55%,transparent);",
+                                    {i18n.t(d.content_type.label_key())}
+                                }
                                 span { class: "ik-flex", style: "gap:6px;",
                                     span { class: "ik-status-dot", style: "background:{d.status.color()};" }
-                                    span { class: "ik-muted", style: "font-size:13px;", "{d.status.label()}" }
+                                    span { class: "ik-muted", style: "font-size:13px;", {i18n.t(d.status.label_key())} }
                                 }
                                 if let Some(y) = d.release_year {
                                     span { class: "ik-mono ik-muted", "· {y}" }
@@ -190,10 +196,16 @@ pub(crate) fn Series(id: String) -> Element {
                             h1 { style: "font-family:var(--font-display);font-size:38px;font-weight:800;letter-spacing:-.02em;line-height:1.05;margin:0 0 6px;", "{d.title}" }
                             // Author/artist byline (§9.2) — shown only when present.
                             if !d.authors.is_empty() {
-                                div {
-                                    class: "ik-muted",
-                                    style: "font-size:14px;margin:0 0 4px;",
-                                    "by {d.authors.iter().map(|a| a.name.clone()).collect::<Vec<_>>().join(\", \")}"
+                                div { class: "ik-muted", style: "font-size:14px;margin:0 0 4px;",
+                                    {
+                                        let names = d
+                                            .authors
+                                            .iter()
+                                            .map(|a| a.name.clone())
+                                            .collect::<Vec<_>>()
+                                            .join(", ");
+                                        i18n.args("series.by", &[("authors", &names)])
+                                    }
                                 }
                             }
                             // Alternative titles (§9.2) — shown only when present.
@@ -209,8 +221,14 @@ pub(crate) fn Series(id: String) -> Element {
                                 }
                             }
                             div { class: "ik-stat-inline",
-                                div { class: "item", Ic { icon: Icon::Layers, size: 16 } "{chapters_total} ch" }
-                                div { class: "item", Ic { icon: Icon::Layers, size: 16 } "{source_count} sources" }
+                                div { class: "item",
+                                    Ic { icon: Icon::Layers, size: 16 }
+                                    {i18n.args("series.chapterCount", &[("count", &chapters_total.to_string())])}
+                                }
+                                div { class: "item",
+                                    Ic { icon: Icon::Layers, size: 16 }
+                                    {i18n.plural("series.sources", i64::try_from(source_count).unwrap_or(0), &[])}
+                                }
                             }
                             WatchControls {
                                 series_id: id,
@@ -258,7 +276,7 @@ pub(crate) fn Series(id: String) -> Element {
         |list| {
             if list.is_empty() {
                 return rsx! {
-                    div { class: "ik-empty", "No chapters indexed for this source yet." }
+                    div { class: "ik-empty", {i18n.t("series.noChapters")} }
                 };
             }
             rsx! {
@@ -282,18 +300,18 @@ pub(crate) fn Series(id: String) -> Element {
             // Left column: synopsis + chapters.
             div {
                 if let Some(desc) = description {
-                    h3 { class: "ik-dayhead", "Synopsis" }
+                    h3 { class: "ik-dayhead", {i18n.t("series.synopsis")} }
                     p { class: "ik-muted", style: "margin:0 0 22px;max-width:70ch;line-height:1.7;", "{desc}" }
                 }
-                h3 { class: "ik-dayhead", "Chapters" }
+                h3 { class: "ik-dayhead", {i18n.t("series.chapters")} }
                 {chapter_body}
             }
             // Right sidebar: read-on + tracking + related.
             div {
                 div { class: "ik-sidebar-card",
-                    h4 { "Read on" }
+                    h4 { {i18n.t("series.readOn")} }
                     if sources.is_empty() {
-                        div { class: "ik-muted", style: "font-size:13px;", "No sources linked yet." }
+                        div { class: "ik-muted", style: "font-size:13px;", {i18n.t("series.noSources")} }
                     } else {
                         for s in sources {
                             SourceCard { key: "{s.id}", source: s, selected }
@@ -301,7 +319,7 @@ pub(crate) fn Series(id: String) -> Element {
                     }
                 }
                 div { class: "ik-sidebar-card",
-                    h4 { "Tracking" }
+                    h4 { {i18n.t("series.tracking")} }
                     WatchControls {
                         series_id: id,
                         entry: wl_entry_side,
@@ -318,7 +336,7 @@ pub(crate) fn Series(id: String) -> Element {
                                     href: "https://anilist.co/manga/{aid}",
                                     target: "_blank",
                                     rel: "noopener",
-                                    title: "View on AniList",
+                                    title: i18n.t("series.viewOnAnilist"),
                                     "AniList"
                                     Ic { icon: Icon::OpenInNew, size: 13 }
                                 }
@@ -329,13 +347,13 @@ pub(crate) fn Series(id: String) -> Element {
                             Some(Some(status)) if status.linked => rsx! {
                                 span { class: "ik-flex", style: "gap:4px;color:var(--jade-bright);",
                                     Ic { icon: Icon::CloudDone, size: 15 }
-                                    "Synced"
+                                    {i18n.t("series.synced")}
                                 }
                             },
                             Some(_) => rsx! {
                                 Link { to: Route::Account {}, class: "ik-flex", style: "gap:4px;color:inherit;text-decoration:none;",
                                     Ic { icon: Icon::CloudOff, size: 15 }
-                                    span { class: "ik-muted", "Not connected" }
+                                    span { class: "ik-muted", {i18n.t("series.notConnected")} }
                                 }
                             },
                             None => rsx! { span { class: "ik-muted", "…" } },
@@ -343,9 +361,9 @@ pub(crate) fn Series(id: String) -> Element {
                     }
                 }
                 div { class: "ik-sidebar-card",
-                    h4 { "Readers also follow" }
+                    h4 { {i18n.t("series.alsoFollow")} }
                     // TODO(api) §9.3: needs GET /v1/series/:id/related.
-                    div { class: "ik-muted", style: "font-size:13px;", "Recommendations arrive with the related-series endpoint." }
+                    div { class: "ik-muted", style: "font-size:13px;", {i18n.t("series.alsoFollowSoon")} }
                 }
             }
         }
@@ -367,6 +385,7 @@ fn current_entry(
 /// left column; the trailing link opens the resolved source page in a new tab.
 #[component]
 fn SourceCard(source: SourceDto, selected: Signal<Option<SeriesSourceId>>) -> Element {
+    let i18n = use_i18n();
     let mut selected = selected;
     let source_id = source.id;
     let border = if *selected.read() == Some(source_id) {
@@ -386,13 +405,20 @@ fn SourceCard(source: SourceDto, selected: Signal<Option<SeriesSourceId>>) -> El
                     div { class: "ik-flex", style: "gap:6px;",
                         span { style: "font-weight:600;font-size:13px;", "{source.provider_name}" }
                         if source.is_primary {
-                            span { class: "ik-pill jade", style: "font-size:10px;", "Primary" }
+                            span { class: "ik-pill jade", style: "font-size:10px;", {i18n.t("series.primary")} }
                         }
                     }
-                    div { class: "ik-mono ik-muted", style: "font-size:11px;", "{source.chapter_count} ch" }
+                    div { class: "ik-mono ik-muted", style: "font-size:11px;",
+                        {i18n.args("series.chapterCount", &[("count", &source.chapter_count.to_string())])}
+                    }
                 }
             }
-            a { class: "ik-btn-icon ik-btn", href: "{source.url}", target: "_blank", rel: "noopener", title: "Open source",
+            a {
+                class: "ik-btn-icon ik-btn",
+                href: "{source.url}",
+                target: "_blank",
+                rel: "noopener",
+                title: i18n.t("series.openSource"),
                 Ic { icon: Icon::OpenInNew, size: 16 }
             }
         }
@@ -411,11 +437,12 @@ fn WatchControls(
     reload: Reload,
 ) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let busy = use_busy();
 
     if !authed {
         return rsx! {
-            span { class: "ik-muted", "Sign in to track this series." }
+            span { class: "ik-muted", {i18n.t("series.signInToTrack")} }
         };
     }
 
@@ -522,19 +549,23 @@ fn WatchControls(
             if in_list {
                 button { class: "ik-btn", disabled: busy.is_busy(), onclick: remove,
                     Ic { icon: Icon::Bookmark, size: 16 }
-                    "In watchlist"
+                    {i18n.t("series.inWatchlist")}
                 }
                 button {
                     class: if notify { "ik-btn primary" } else { "ik-btn" },
                     disabled: busy.is_busy(),
                     onclick: toggle_notify,
                     Ic { icon: Icon::Notify, size: 16 }
-                    if notify { "Notify on" } else { "Notify off" }
+                    if notify {
+                        {i18n.t("watchlist.notifyOn")}
+                    } else {
+                        {i18n.t("watchlist.notifyOff")}
+                    }
                 }
             } else {
                 button { class: "ik-btn primary", disabled: busy.is_busy(), onclick: add,
                     Ic { icon: Icon::Bookmark, size: 16 }
-                    "Add to watchlist"
+                    {i18n.t("series.addToWatchlist")}
                 }
             }
             if show_sync_toggle {
@@ -543,7 +574,11 @@ fn WatchControls(
                     disabled: busy.is_busy(),
                     onclick: toggle_sync,
                     Ic { icon: Icon::CloudSync, size: 16 }
-                    if sync_excluded { "Sync off" } else { "Sync on" }
+                    if sync_excluded {
+                        {i18n.t("series.syncOff")}
+                    } else {
+                        {i18n.t("series.syncOn")}
+                    }
                 }
             }
         }
@@ -562,6 +597,7 @@ fn ChapterRow(
     is_part: bool,
 ) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let busy = use_busy();
 
     let number = chapter.number;
@@ -571,11 +607,12 @@ fn ChapterRow(
         .clone()
         .filter(|title| !title.is_empty())
         .unwrap_or_else(|| {
-            if is_part {
-                format!("Part {label_number}")
+            let key = if is_part {
+                "series.partNumbered"
             } else {
-                format!("Chapter {label_number}")
-            }
+                "series.chapterNumbered"
+            };
+            i18n.args(key, &[("number", &label_number)])
         });
     let date = iso_date(chapter.published_at.as_deref()).to_owned();
     let url = chapter.url.clone();
@@ -621,13 +658,13 @@ fn ChapterRow(
         div { class: "{row_class}", style: "{row_style}",
             span { class: "num", "#{label_number}" }
             if is_part {
-                span { class: "ik-part-pill", "Part" }
+                span { class: "ik-part-pill", {i18n.t("series.part")} }
             }
             span { "{label}" }
             if is_read {
                 span { class: "ik-flex ik-muted", style: "gap:4px;font-size:11px;",
                     Ic { icon: Icon::Check, size: 13 }
-                    "Read"
+                    {i18n.t("series.read")}
                 }
             }
             span { class: "date", "{date}" }
@@ -637,7 +674,11 @@ fn ChapterRow(
                     style: "margin-left:12px;padding:4px 10px;",
                     disabled: busy.is_busy(),
                     onclick: toggle_read,
-                    if is_read { "Mark unread" } else { "Mark read" }
+                    if is_read {
+                        {i18n.t("common.markUnread")}
+                    } else {
+                        {i18n.t("common.markRead")}
+                    }
                 }
             }
             a {
@@ -646,7 +687,7 @@ fn ChapterRow(
                 href: "{url}",
                 target: "_blank",
                 rel: "noopener",
-                "Open"
+                {i18n.t("common.open")}
             }
         }
     }
@@ -701,6 +742,7 @@ fn group_chapters(list: &[ChapterDto]) -> Vec<ChapterGroup> {
 
 #[component]
 fn ChapterGroupRow(group: ChapterGroup, series_id: SeriesId, reload: Reload) -> Element {
+    let i18n = use_i18n();
     let mut expanded = use_signal(|| false);
     let has_full = group.full.is_some();
     let parts = group.parts.clone();
@@ -709,12 +751,11 @@ fn ChapterGroupRow(group: ChapterGroup, series_id: SeriesId, reload: Reload) -> 
     // lowest number is last and the highest is first.
     let lo = parts.last().map(|c| c.number).unwrap_or_default();
     let hi = parts.first().map(|c| c.number).unwrap_or_default();
-    let count = parts.len();
-    let toggle_label = format!(
-        "{count} early part release{} ({}\u{2013}{})",
-        if count == 1 { "" } else { "s" },
-        chapter_number(lo),
-        chapter_number(hi)
+    let count = i64::try_from(parts.len()).unwrap_or(i64::MAX);
+    let toggle_label = i18n.plural(
+        "series.partReleases",
+        count,
+        &[("from", &chapter_number(lo)), ("to", &chapter_number(hi))],
     );
 
     rsx! {

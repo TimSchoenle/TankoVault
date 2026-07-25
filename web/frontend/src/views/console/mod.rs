@@ -24,6 +24,7 @@ mod stats;
 mod sync;
 mod users;
 
+use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::use_session;
@@ -77,17 +78,18 @@ impl ConsoleTab {
         Self::Users,
         Self::Audit,
     ];
-    fn label(self) -> &'static str {
+    /// The catalogue key of this tab's label (see [`crate::i18n`]).
+    fn label_key(self) -> &'static str {
         match self {
-            Self::Overview => "Overview",
-            Self::LiveScans => "Live scans",
-            Self::Providers => "Providers",
-            Self::Solver => "Challenge & solver",
-            Self::AdapterTest => "Adapter test",
-            Self::Merge => "Merge queue",
-            Self::Sync => "Sync",
-            Self::Users => "Users",
-            Self::Audit => "Audit",
+            Self::Overview => "console.tab.overview",
+            Self::LiveScans => "console.tab.liveScans",
+            Self::Providers => "console.tab.providers",
+            Self::Solver => "console.tab.solver",
+            Self::AdapterTest => "console.tab.adapterTest",
+            Self::Merge => "console.tab.merge",
+            Self::Sync => "console.tab.sync",
+            Self::Users => "console.tab.users",
+            Self::Audit => "console.tab.audit",
         }
     }
     fn icon(self) -> Icon {
@@ -105,11 +107,12 @@ impl ConsoleTab {
     }
 }
 
-/// Selectable adapter implementations (token, human label). Mirrors `AdapterKind`.
+/// Selectable adapter implementations: the wire token and the catalogue key wording it.
+/// Mirrors `AdapterKind`.
 pub(super) const ADAPTER_KINDS: &[(&str, &str)] = &[
-    ("generic_config", "Generic (config-driven)"),
-    ("madara", "Madara / WordPress"),
-    ("custom", "Custom (built-in)"),
+    ("generic_config", "console.adapterKind.genericConfig"),
+    ("madara", "console.adapterKind.madara"),
+    ("custom", "console.adapterKind.custom"),
 ];
 
 /// The wire token for a loaded provider's adapter kind (matches the SQL enum / `ADAPTER_KINDS`).
@@ -124,11 +127,12 @@ pub(super) fn adapter_token(a: AdapterKind) -> &'static str {
 #[component]
 pub(crate) fn Console() -> Element {
     let session = use_session();
+    let i18n = use_i18n();
 
     if !session.role.read().is_operator() {
         return rsx! {
-            h1 { class: "ik-page-title", "Console" }
-            div { class: "ik-empty", "This area is for operators. Ask an admin for access." }
+            h1 { class: "ik-page-title", {i18n.t("nav.console")} }
+            div { class: "ik-empty", {i18n.t("console.operatorsOnly")} }
         };
     }
 
@@ -168,7 +172,7 @@ pub(crate) fn Console() -> Element {
         div { class: "ik-flex", style: "justify-content:space-between;align-items:center;flex-wrap:wrap;",
             div { class: "ik-flex", style: "gap:9px;",
                 Ic { icon: Icon::Dashboard, size: 22 }
-                h1 { class: "ik-page-title", style: "margin:0;", "Operator Console" }
+                h1 { class: "ik-page-title", style: "margin:0;", {i18n.t("console.title")} }
             }
             controls::LiveControls { tick, auto }
         }
@@ -179,7 +183,7 @@ pub(crate) fn Console() -> Element {
                     style: "display:inline-flex;align-items:center;gap:6px;",
                     onclick: move |_| tab.set(t),
                     Ic { icon: t.icon(), size: 15 }
-                    span { "{t.label()}" }
+                    span { {i18n.t(t.label_key())} }
                 }
             }
         }
@@ -187,38 +191,35 @@ pub(crate) fn Console() -> Element {
     }
 }
 
-/// Short prefix of a UUID (or any id newtype wrapping one) for compact display (e.g. run
-/// scope).
-/// The pill class + human label for a run state.
-pub(super) fn run_state_pill(state: RunState) -> (&'static str, &'static str) {
+/// The pill class encoding a run state. The wording comes from
+/// [`RunStateExt::label_key`](crate::models::RunStateExt::label_key), so the colour and the
+/// text cannot drift apart into two different enumerations.
+pub(super) fn run_state_pill(state: RunState) -> &'static str {
     match state {
-        RunState::Completed => ("ik-pill jade", "Completed"),
-        RunState::Running => ("ik-pill run", "Running"),
-        RunState::Queued => ("ik-pill", "Queued"),
-        RunState::Failed => ("ik-pill vermilion", "Failed"),
-        RunState::Cancelled => ("ik-pill", "Cancelled"),
+        RunState::Completed => "ik-pill jade",
+        RunState::Running => "ik-pill run",
+        RunState::Queued | RunState::Cancelled => "ik-pill",
+        RunState::Failed => "ik-pill vermilion",
     }
 }
 
-/// Build the politeness JSON payload from the editor's string fields, or a human error.
+/// Build the politeness JSON payload from the editor's string fields, or the catalogue key of
+/// the field that would not parse.
 pub(super) fn politeness_json(
     rps: &str,
     concurrency: &str,
     crawl_delay_ms: &str,
     user_agent: &str,
-) -> Result<serde_json::Value, String> {
-    let rps: f64 = rps
-        .trim()
-        .parse()
-        .map_err(|_| "Requests/sec must be a number.".to_owned())?;
+) -> Result<serde_json::Value, &'static str> {
+    let rps: f64 = rps.trim().parse().map_err(|_| "console.providers.badRps")?;
     let concurrency: u32 = concurrency
         .trim()
         .parse()
-        .map_err(|_| "Concurrency must be a whole number.".to_owned())?;
+        .map_err(|_| "console.providers.badConcurrency")?;
     let crawl_delay_ms: u64 = crawl_delay_ms
         .trim()
         .parse()
-        .map_err(|_| "Crawl delay must be a whole number of milliseconds.".to_owned())?;
+        .map_err(|_| "console.providers.badCrawlDelay")?;
     Ok(serde_json::json!({
         "rps": rps,
         "concurrency": concurrency,

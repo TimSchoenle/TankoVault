@@ -1573,6 +1573,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "i18nrs"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cd49c0f70832d82c0c51be6e85042844784d31fea9cb5e7792bd8f779e11f0f"
+dependencies = [
+ "dioxus",
+ "serde_json",
+ "web-sys",
+]
+
+[[package]]
 name = "icu_collections"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2670,7 +2681,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3099,6 +3110,7 @@ dependencies = [
  "futures-util",
  "gloo-net",
  "gloo-timers",
+ "i18nrs",
  "js-sys",
  "progenitor-client",
  "reqwest 0.13.4",

@@ -4,6 +4,7 @@
 use crate::api;
 use crate::components::ErrorBox;
 use crate::hooks::Reload;
+use crate::i18n::{use_i18n, Translator};
 use crate::models::*;
 use crate::state::use_session;
 use crate::views::console::merge::SeriesMiniCard;
@@ -16,6 +17,7 @@ use progenitor_client::ResponseValue;
 #[component]
 pub(super) fn AssignQueue(selected: Signal<Option<String>>, reload: Reload) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let mut provider = use_signal(|| "anilist".to_string());
     let mut query = use_signal(String::new);
 
@@ -27,7 +29,7 @@ pub(super) fn AssignQueue(selected: Signal<Option<String>>, reload: Reload) -> E
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
@@ -46,7 +48,7 @@ pub(super) fn AssignQueue(selected: Signal<Option<String>>, reload: Reload) -> E
                     .send()
                     .await
                     .map(ResponseValue::into_inner)
-                    .map_err(api::friendly_error)
+                    .map_err(|e| api::friendly_error(i18n, e))
             }
         })
     };
@@ -63,7 +65,7 @@ pub(super) fn AssignQueue(selected: Signal<Option<String>>, reload: Reload) -> E
             rsx! { ErrorBox { message: msg, on_retry: move |()| reload.bump() } }
         }
         Some(Ok(l)) if l.is_empty() => rsx! {
-            div { class: "ik-empty", "Nothing unmapped for this provider — nice." }
+            div { class: "ik-empty", {i18n.t("console.sync.assignEmpty")} }
         },
         Some(Ok(l)) => {
             let l = l.clone();
@@ -93,7 +95,7 @@ pub(super) fn AssignQueue(selected: Signal<Option<String>>, reload: Reload) -> E
                 class: "ik-input",
                 style: "flex:1;",
                 r#type: "text",
-                placeholder: "Filter unmapped by title…",
+                placeholder: i18n.t("console.sync.filterUnmapped"),
                 value: "{query}",
                 oninput: move |e| query.set(e.value()),
             }
@@ -112,6 +114,7 @@ pub(super) fn AssignRow(
     reload: Reload,
 ) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let session = use_session();
     let mut value = use_signal(String::new);
     let mut busy = use_signal(|| false);
@@ -157,18 +160,27 @@ pub(super) fn AssignRow(
         div { class: "ik-row",
             div { class: "grow",
                 div { style: "font-weight:600;", "{s.series_title}" }
-                div { class: "ik-muted", style: "font-size:12px;", "{s.source_count} sources · {provider}" }
+                div { class: "ik-muted", style: "font-size:12px;",
+                    {
+                        let sources = i18n.plural("series.sources", s.source_count, &[]);
+                        format!("{sources} · {provider}")
+                    }
+                }
             }
             input {
                 class: "ik-input ik-mono",
                 style: "width:200px;",
                 r#type: "text",
-                placeholder: "external id",
+                placeholder: i18n.t("console.sync.externalId"),
                 value: "{value}",
                 oninput: move |e| value.set(e.value()),
             }
-            button { class: "ik-btn primary", disabled: *busy.read(), onclick: assign, "Assign" }
-            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.to_string())), "Inspect" }
+            button { class: "ik-btn primary", disabled: *busy.read(), onclick: assign,
+                {i18n.t("console.sync.assign")}
+            }
+            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.to_string())),
+                {i18n.t("console.sync.inspect")}
+            }
         }
     }
 }
@@ -178,6 +190,7 @@ pub(super) fn AssignRow(
 #[component]
 pub(super) fn UnmatchedRemoteQueue(reload: Reload) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let mut provider = use_signal(|| "anilist".to_string());
     let mut query = use_signal(String::new);
 
@@ -189,7 +202,7 @@ pub(super) fn UnmatchedRemoteQueue(reload: Reload) -> Element {
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
@@ -208,7 +221,7 @@ pub(super) fn UnmatchedRemoteQueue(reload: Reload) -> Element {
                     .send()
                     .await
                     .map(ResponseValue::into_inner)
-                    .map_err(api::friendly_error)
+                    .map_err(|e| api::friendly_error(i18n, e))
             }
         })
     };
@@ -225,7 +238,7 @@ pub(super) fn UnmatchedRemoteQueue(reload: Reload) -> Element {
             rsx! { ErrorBox { message: msg, on_retry: move |()| reload.bump() } }
         }
         Some(Ok(l)) if l.is_empty() => rsx! {
-            div { class: "ik-empty", "Every fetched entry for this provider is matched — nice." }
+            div { class: "ik-empty", {i18n.t("console.sync.remoteEmpty")} }
         },
         Some(Ok(l)) => {
             let l = l.clone();
@@ -254,7 +267,7 @@ pub(super) fn UnmatchedRemoteQueue(reload: Reload) -> Element {
                 class: "ik-input",
                 style: "flex:1;",
                 r#type: "text",
-                placeholder: "Filter unmatched by title…",
+                placeholder: i18n.t("console.sync.filterUnmatched"),
                 value: "{query}",
                 oninput: move |e| query.set(e.value()),
             }
@@ -281,6 +294,7 @@ pub(super) fn provider_entry_url(provider: &str, external_id: &str) -> Option<St
 #[component]
 pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Reload) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let mut search = use_signal(String::new);
     let en = entry.read();
 
@@ -306,7 +320,7 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
                     .send()
                     .await
                     .map(ResponseValue::into_inner)
-                    .map_err(api::friendly_error)
+                    .map_err(|e| api::friendly_error(i18n, e))
             }
         })
     };
@@ -328,7 +342,7 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
                     .send()
                     .await
                     .map(ResponseValue::into_inner)
-                    .map_err(api::friendly_error)
+                    .map_err(|e| api::friendly_error(i18n, e))
             }
         })
     };
@@ -371,19 +385,19 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
                         href: "{url}",
                         target: "_blank",
                         rel: "noopener noreferrer",
-                        "Open on {en.provider} ↗"
+                        {i18n.args("console.sync.openOn", &[("provider", &en.provider)])}
                     }
                 }
             }
 
             div { class: "ik-muted", style: "font-size:11px;text-transform:uppercase;letter-spacing:.04em;",
-                "Suggested matches"
+                {i18n.t("console.sync.suggested")}
             }
             if suggestions_pending {
                 div { class: "ik-skeleton", style: "height:40px;" }
             } else if suggested.is_empty() {
                 div { class: "ik-muted", style: "font-size:12px;",
-                    "No automatic suggestions — search below to match by hand."
+                    {i18n.t("console.sync.noSuggestions")}
                 }
             } else {
                 div { class: "ik-flex", style: "flex-direction:column;gap:6px;",
@@ -392,7 +406,7 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
                             key: "sug-{s.series_id}",
                             series_id: SeriesId(s.series_id),
                             title: s.title.clone(),
-                            meta: suggestion_meta(&s),
+                            meta: suggestion_meta(i18n, &s),
                             score: Some(s.score),
                             user_id: UserId(en.user_id),
                             provider: en.provider.clone(),
@@ -406,7 +420,7 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
             input {
                 class: "ik-input",
                 r#type: "text",
-                placeholder: "Or search local series to match by hand…",
+                placeholder: i18n.t("console.sync.manualSearch"),
                 value: "{search}",
                 oninput: move |e| search.set(e.value()),
             }
@@ -417,7 +431,14 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
                             key: "man-{c.id}",
                             series_id: c.id,
                             title: c.title.clone(),
-                            meta: format!("{} · {} src", c.content_type.label(), c.source_count),
+                            meta: {
+                                let kind = i18n.t(c.content_type.label_key());
+                                let sources = i18n.args(
+                                    "series.sourceCount",
+                                    &[("count", &c.source_count.to_string())],
+                                );
+                                format!("{kind} · {sources}")
+                            },
                             score: None,
                             user_id: UserId(en.user_id),
                             provider: en.provider.clone(),
@@ -432,7 +453,10 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
 }
 
 /// A short one-line descriptor for a suggested series (type · year · sources).
-pub(super) fn suggestion_meta(s: &SuggestedMatch) -> String {
+///
+/// The content type arrives as the matcher's raw token rather than a typed enum, so it is
+/// passed through as-is; the source count is worded from the catalogue.
+pub(super) fn suggestion_meta(i18n: Translator, s: &SuggestedMatch) -> String {
     let mut parts = Vec::new();
     if !s.content_type.is_empty() && s.content_type != "unknown" {
         parts.push(s.content_type.clone());
@@ -440,7 +464,10 @@ pub(super) fn suggestion_meta(s: &SuggestedMatch) -> String {
     if let Some(y) = s.release_year {
         parts.push(y.to_string());
     }
-    parts.push(format!("{} src", s.source_count));
+    parts.push(i18n.args(
+        "series.sourceCount",
+        &[("count", &s.source_count.to_string())],
+    ));
     parts.join(" · ")
 }
 
@@ -459,6 +486,7 @@ pub(super) fn CandidateMatchRow(
     reload: Reload,
 ) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let mut busy = use_signal(|| false);
     let mut show = use_signal(|| false);
 
@@ -520,13 +548,17 @@ pub(super) fn CandidateMatchRow(
                     button {
                         class: "ik-btn",
                         onclick: move |_| show.set(!show_now),
-                        if show_now { "Hide" } else { "Inspect" }
+                        if show_now {
+                            {i18n.t("console.merge.hide")}
+                        } else {
+                            {i18n.t("console.sync.inspect")}
+                        }
                     }
                     button {
                         class: "ik-btn primary",
                         disabled: *busy.read(),
                         onclick: match_it,
-                        "Match"
+                        {i18n.t("console.sync.match")}
                     }
                 }
             }

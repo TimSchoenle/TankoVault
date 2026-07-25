@@ -2,6 +2,7 @@
 
 use crate::api;
 use crate::components::UnreadBadge;
+use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::state::use_session;
 use crate::Route;
@@ -15,6 +16,7 @@ const HEADER_SYNC_PROVIDER: &str = "anilist";
 pub(crate) fn TopBar() -> Element {
     let nav = use_navigator();
     let session = use_session();
+    let i18n = use_i18n();
     let api = api::use_api();
     let unread = *use_context::<UnreadBadge>().0.read();
     let mut query = use_signal(String::new);
@@ -51,7 +53,7 @@ pub(crate) fn TopBar() -> Element {
                     id: "tv-search",
                     class: "ik-input",
                     r#type: "search",
-                    placeholder: "Search series, tags, authors…",
+                    placeholder: i18n.t("topbar.searchPlaceholder"),
                     value: "{query}",
                     oninput: move |e| query.set(e.value()),
                     onkeydown: move |e| {
@@ -72,9 +74,13 @@ pub(crate) fn TopBar() -> Element {
                         class: if linked { "ik-pill jade" } else { "ik-pill" },
                         style: "display:inline-flex;align-items:center;gap:6px;text-decoration:none;",
                         Ic { icon: if linked { Icon::CloudDone } else { Icon::CloudOff }, size: 13 }
-                        if linked { "AniList synced" } else { "Connect AniList" }
+                        if linked {
+                            {i18n.t("topbar.anilistSynced")}
+                        } else {
+                            {i18n.t("topbar.anilistConnect")}
+                        }
                     }
-                    Link { to: Route::Notifications {}, class: "ik-bell", title: "Notifications",
+                    Link { to: Route::Notifications {}, class: "ik-bell", title: i18n.t("nav.notifications"),
                         Ic { icon: Icon::Notifications, size: 18 }
                         if unread > 0 {
                             span { class: "dot", "{unread}" }

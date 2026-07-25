@@ -5,6 +5,7 @@
 //! things from it: a short human sentence, and — occasionally — the raw status code so they
 //! can branch (a login `403` means "confirm your email", not "you lack permission").
 
+use crate::i18n::Translator;
 use progenitor_client::Error as ApiOpError;
 
 /// The HTTP status of a failed operation, when the failure was an error *response* rather
@@ -21,39 +22,51 @@ pub(crate) fn error_status<E>(err: &ApiOpError<E>) -> Option<u16> {
 /// Never leaks `Debug` output into the UI: transport and decoding faults are bucketed into
 /// plain language, because the underlying `reqwest`/`serde` text is meaningless to a reader
 /// and, in the decode case, can be long enough to break the error box's layout.
-pub(crate) fn friendly_error<E>(err: ApiOpError<E>) -> String {
+///
+/// Resolved eagerly, in the language active when the call failed. Error text is transient —
+/// the next retry re-renders it — so carrying a key around to defer translation would buy
+/// nothing but a wider error type in every `Resource` on every screen.
+pub(crate) fn friendly_error<E>(i18n: Translator, err: ApiOpError<E>) -> String {
     match err {
-        ApiOpError::ErrorResponse(response) => status_message(response.status().as_u16()),
-        ApiOpError::UnexpectedResponse(response) => status_message(response.status().as_u16()),
+        ApiOpError::ErrorResponse(response) => status_message(i18n, response.status().as_u16()),
+        ApiOpError::UnexpectedResponse(response) => {
+            status_message(i18n, response.status().as_u16())
+        }
         ApiOpError::CommunicationError(_) | ApiOpError::InvalidUpgrade(_) => {
-            "Couldn't reach the server. Check your connection and retry.".to_owned()
+            i18n.t("error.unreachable")
         }
-        ApiOpError::ResponseBodyError(_) => {
-            "The server's reply was cut short. Please retry.".to_owned()
-        }
-        ApiOpError::InvalidResponsePayload(_, _) => {
-            "The server sent something this app couldn't read.".to_owned()
-        }
+        ApiOpError::ResponseBodyError(_) => i18n.t("error.truncated"),
+        ApiOpError::InvalidResponsePayload(_, _) => i18n.t("error.unreadable"),
         // Both are programming faults on our side rather than anything the reader did.
-        ApiOpError::InvalidRequest(_) | ApiOpError::Custom(_) => {
-            "That request couldn't be built. This is a bug — please report it.".to_owned()
-        }
+        ApiOpError::InvalidRequest(_) | ApiOpError::Custom(_) => i18n.t("error.unbuildable"),
     }
 }
 
 /// Map an HTTP status onto the sentence shown to the reader.
-fn status_message(status: u16) -> String {
-    match status {
-        400 => "That request wasn't valid.".to_owned(),
-        401 => "You need to sign in to do that.".to_owned(),
-        403 => "You don't have permission to do that.".to_owned(),
-        404 => "Not found.".to_owned(),
-        409 => "That conflicts with the current state.".to_owned(),
-        413 => "That's too large to send.".to_owned(),
-        429 => "Too many requests — give it a moment and retry.".to_owned(),
-        500..=599 => "The server had a problem. Please retry.".to_owned(),
-        other => format!("Request failed ({other})."),
+fn status_message(i18n: Translator, status: u16) -> String {
+    match status_key(status) {
+        Some(key) => i18n.t(key),
+        None => i18n.args("error.status.other", &[("code", &status.to_string())]),
     }
+}
+
+/// The catalogue key wording an HTTP status, or `None` when there is nothing better to say
+/// than the bare code.
+///
+/// Split out from [`status_message`] so the mapping stays testable on the host target: the
+/// message lookup itself needs a Dioxus runtime, this does not.
+fn status_key(status: u16) -> Option<&'static str> {
+    Some(match status {
+        400 => "error.status.badRequest",
+        401 => "error.status.unauthorized",
+        403 => "error.status.forbidden",
+        404 => "error.status.notFound",
+        409 => "error.status.conflict",
+        413 => "error.status.tooLarge",
+        429 => "error.status.rateLimited",
+        500..=599 => "error.status.server",
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
@@ -61,16 +74,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn maps_known_statuses_to_plain_language() {
-        assert_eq!(status_message(401), "You need to sign in to do that.");
-        assert_eq!(
-            status_message(503),
-            "The server had a problem. Please retry."
-        );
+    fn maps_known_statuses_to_their_own_message() {
+        assert_eq!(status_key(401), Some("error.status.unauthorized"));
+        assert_eq!(status_key(503), Some("error.status.server"));
     }
 
     #[test]
     fn falls_back_to_the_bare_code_for_unmapped_statuses() {
-        assert_eq!(status_message(418), "Request failed (418).");
+        assert_eq!(status_key(418), None);
     }
 }

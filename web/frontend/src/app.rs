@@ -2,6 +2,7 @@
 //! font faces.
 
 use crate::components::{Shell, UnreadBadge};
+use crate::i18n::I18nRoot;
 use crate::state::Session;
 use crate::views::{
     Account, AnilistCallback, Console, Discover, ForgotPassword, Home, Login, NotFound,
@@ -62,7 +63,11 @@ pub(crate) fn App() -> Element {
     rsx! {
         document::Stylesheet { href: asset!("/assets/main.css") }
         FontFaces {}
-        Router::<Route> {}
+        // Above the router: every screen resolves its text through this context, so a language
+        // change has to be able to re-render all of them.
+        I18nRoot {
+            Router::<Route> {}
+        }
     }
 }
 

@@ -38,6 +38,11 @@
             var value = localStorage.getItem("tv-" + knob);
             if (value) root.setAttribute("data-" + knob, value);
           });
+          // Same reasoning for the chosen language (src/i18n.rs keeps it current afterwards):
+          // `lang` drives hyphenation and screen-reader voice, and both are decided at parse
+          // time, so a WASM-set value arrives too late for the first paint.
+          var lang = localStorage.getItem("tv-lang");
+          if (lang) root.setAttribute("lang", lang);
         } catch (e) {
           // Private-mode browsers can throw on localStorage; the stylesheet defaults are fine.
           root.setAttribute("data-theme", "dark");

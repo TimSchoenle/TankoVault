@@ -1,6 +1,7 @@
 //! The left rail: brand lockup, grouped destinations and the user footer.
 
 use crate::components::UnreadBadge;
+use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::state::use_session;
 use crate::util::initial;
@@ -10,6 +11,7 @@ use dioxus::prelude::*;
 #[component]
 pub(crate) fn Rail() -> Element {
     let session = use_session();
+    let i18n = use_i18n();
     let route: Route = use_route();
     let unread = *use_context::<UnreadBadge>().0.read();
     let is_operator = session.role.read().is_operator();
@@ -19,36 +21,38 @@ pub(crate) fn Rail() -> Element {
             div { class: "ik-brand",
                 div { class: "ik-brand-tile", Ic { icon: Icon::MenuBook, size: 22 } }
                 div {
+                    // The wordmark is the product's name, not a message: it reads the same in
+                    // every language and is deliberately not in the catalogue.
                     div { class: "ik-wordmark",
                         "Tankō"
                         span { class: "acc", "Vault" }
                     }
-                    div { class: "ik-brand-tag", "SOURCE · TRACK · SYNC" }
+                    div { class: "ik-brand-tag", {i18n.t("nav.tagline")} }
                 }
             }
 
-            NavGroup { label: "MAIN" }
-            NavLink { to: Route::Home {}, label: "Home", icon: Icon::Home, current: route.clone() }
-            NavLink { to: Route::Discover {}, label: "Discover", icon: Icon::Explore, current: route.clone() }
-            NavLink { to: Route::Search { q: String::new() }, label: "Search", icon: Icon::Search, current: route.clone() }
+            NavGroup { label: i18n.t("nav.group.main") }
+            NavLink { to: Route::Home {}, label: i18n.t("nav.home"), icon: Icon::Home, current: route.clone() }
+            NavLink { to: Route::Discover {}, label: i18n.t("nav.discover"), icon: Icon::Explore, current: route.clone() }
+            NavLink { to: Route::Search { q: String::new() }, label: i18n.t("nav.search"), icon: Icon::Search, current: route.clone() }
 
-            NavGroup { label: "LIBRARY" }
-            NavLink { to: Route::Watchlist {}, label: "Watchlist", icon: Icon::Watchlist, current: route.clone() }
+            NavGroup { label: i18n.t("nav.group.library") }
+            NavLink { to: Route::Watchlist {}, label: i18n.t("nav.watchlist"), icon: Icon::Watchlist, current: route.clone() }
             NavLink {
                 to: Route::Notifications {},
-                label: "Notifications",
+                label: i18n.t("nav.notifications"),
                 icon: Icon::Notifications,
                 current: route.clone(),
                 badge: unread,
             }
 
             if is_operator {
-                NavGroup { label: "OPERATOR" }
-                NavLink { to: Route::Console {}, label: "Console", icon: Icon::Console, current: route.clone() }
+                NavGroup { label: i18n.t("nav.group.operator") }
+                NavLink { to: Route::Console {}, label: i18n.t("nav.console"), icon: Icon::Console, current: route.clone() }
             }
 
-            NavGroup { label: "ACCOUNT" }
-            NavLink { to: Route::Account {}, label: "Account", icon: Icon::Account, current: route.clone() }
+            NavGroup { label: i18n.t("nav.group.account") }
+            NavLink { to: Route::Account {}, label: i18n.t("nav.account"), icon: Icon::Account, current: route.clone() }
 
             div { class: "ik-rail-spacer" }
             UserFooter {}
@@ -108,16 +112,19 @@ fn same_screen(a: &Route, b: &Route) -> bool {
 #[component]
 fn UserFooter() -> Element {
     let session = use_session();
+    let i18n = use_i18n();
     if !session.is_authenticated() {
         return rsx! {
             div { style: "padding:8px;",
-                Link { to: Route::Login {}, class: "ik-btn primary block", "Sign in" }
+                Link { to: Route::Login {}, class: "ik-btn primary block", {i18n.t("common.signIn")} }
             }
         };
     }
 
-    let name = session.username().unwrap_or_else(|| "reader".to_owned());
-    let role = session.role.read().label();
+    let name = session
+        .username()
+        .unwrap_or_else(|| i18n.t("common.readerFallback"));
+    let role = i18n.t(session.role.read().label_key());
     rsx! {
         div { class: "ik-userbox",
             div { class: "ik-avatar", "{initial(&name)}" }
@@ -128,7 +135,7 @@ fn UserFooter() -> Element {
                     "{role}"
                 }
             }
-            Link { to: Route::Account {}, class: "gear", title: "Account settings",
+            Link { to: Route::Account {}, class: "gear", title: i18n.t("nav.accountSettings"),
                 Ic { icon: Icon::Settings, size: 18 }
             }
         }

@@ -5,20 +5,23 @@ use super::PanelCard;
 use crate::api;
 use crate::components::{OutcomeLine, SkeletonBlock};
 use crate::hooks::use_outcome;
+use crate::i18n::use_i18n;
 use crate::icons::Icon;
 use dioxus::prelude::*;
 use serde_json::Value;
 
-/// The toggles the panel exposes. Stored as booleans in the open prefs document; an absent
-/// key means enabled, so a reader who has never opened this panel gets everything.
+/// The toggles the panel exposes: the key in the open prefs document, and the catalogue key
+/// wording it. Stored as booleans; an absent key means enabled, so a reader who has never
+/// opened this panel gets everything.
 const KEYS: [(&str, &str); 3] = [
-    ("new_chapters", "New chapters in your watchlist"),
-    ("email", "Email notifications"),
-    ("digest", "Weekly digest"),
+    ("new_chapters", "account.notifications.newChapters"),
+    ("email", "account.notifications.email"),
+    ("digest", "account.notifications.digest"),
 ];
 
 #[component]
 pub(crate) fn NotificationsPanel() -> Element {
+    let i18n = use_i18n();
     let api = api::use_api();
     let mut outcome = use_outcome();
     let mut prefs = use_signal(|| Option::<Value>::None);
@@ -31,7 +34,7 @@ pub(crate) fn NotificationsPanel() -> Element {
                 // A failed load must not silently present "everything on" as the reader's
                 // saved state — that would invite them to toggle against a phantom baseline.
                 Err(e) => {
-                    outcome.set(Some(Err(api::friendly_error(e))));
+                    outcome.set(Some(Err(api::friendly_error(i18n, e))));
                     Value::Object(serde_json::Map::new())
                 }
             };
@@ -41,7 +44,7 @@ pub(crate) fn NotificationsPanel() -> Element {
 
     let Some(current) = prefs.read().clone() else {
         return rsx! {
-            PanelCard { icon: Icon::Notify, title: "Notification preferences",
+            PanelCard { icon: Icon::Notify, title: i18n.t("account.notifications.title"),
                 SkeletonBlock { height: 80 }
             }
         };
@@ -64,25 +67,29 @@ pub(crate) fn NotificationsPanel() -> Element {
         let client = api.client();
         spawn(async move {
             match client.put_notification_prefs().body(next).send().await {
-                Ok(_) => outcome.set(Some(Ok("Preferences saved.".to_owned()))),
-                Err(e) => outcome.set(Some(Err(api::friendly_error(e)))),
+                Ok(_) => outcome.set(Some(Ok(i18n.t("account.notifications.saved")))),
+                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
             }
         });
     };
 
     rsx! {
-        PanelCard { icon: Icon::Notify, title: "Notification preferences",
-            for (key , label) in KEYS {
+        PanelCard { icon: Icon::Notify, title: i18n.t("account.notifications.title"),
+            for (key , label_key) in KEYS {
                 {
                     let on = current.get(key).and_then(Value::as_bool).unwrap_or(true);
                     rsx! {
                         div { class: "ik-row", key: "{key}",
-                            span { class: "grow", "{label}" }
+                            span { class: "grow", {i18n.t(label_key)} }
                             button {
                                 class: if on { "ik-btn primary" } else { "ik-btn" },
                                 "aria-pressed": on,
                                 onclick: move |_| toggle(key, on),
-                                if on { "On" } else { "Off" }
+                                if on {
+                                    {i18n.t("common.on")}
+                                } else {
+                                    {i18n.t("common.off")}
+                                }
                             }
                         }
                     }

@@ -5,6 +5,7 @@
 use super::auth::AuthBrand;
 use crate::api;
 use crate::hooks::use_busy;
+use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::Route;
 use dioxus::prelude::*;
@@ -14,6 +15,7 @@ use dioxus::prelude::*;
 /// reassuring confirmation regardless — the only failure surfaced is a transport error.
 #[component]
 pub(crate) fn ForgotPassword() -> Element {
+    let i18n = use_i18n();
     let mut email = use_signal(String::new);
     let mut error = use_signal(|| Option::<String>::None);
     let mut sent = use_signal(|| false);
@@ -23,7 +25,7 @@ pub(crate) fn ForgotPassword() -> Element {
     let submit = use_callback(move |()| {
         let email_v = email.read().trim().to_owned();
         if email_v.is_empty() {
-            error.set(Some("Enter your email address.".to_owned()));
+            error.set(Some(i18n.t("password.forgot.emailRequired")));
             return;
         }
         if !busy.claim() {
@@ -39,7 +41,7 @@ pub(crate) fn ForgotPassword() -> Element {
                 .await
             {
                 Ok(_) => sent.set(true),
-                Err(e) => error.set(Some(api::friendly_error(e))),
+                Err(e) => error.set(Some(api::friendly_error(i18n, e))),
             }
             busy.release();
         });
@@ -48,24 +50,18 @@ pub(crate) fn ForgotPassword() -> Element {
     rsx! {
         div { class: "ik-auth",
             AuthBrand {}
-            h1 { "Reset your password" }
+            h1 { {i18n.t("password.forgot.heading")} }
 
             if *sent.read() {
-                p { class: "ik-muted",
-                    "If an account exists for that address, we've sent a link to reset your \
-                     password. It expires in 1 hour."
-                }
+                p { class: "ik-muted", {i18n.t("password.forgot.sent")} }
                 Link {
                     to: Route::Login {},
                     class: "ik-btn primary",
                     style: "width:100%;margin-top:8px;",
-                    "Back to sign in"
+                    {i18n.t("common.backToSignIn")}
                 }
             } else {
-                p { class: "ik-muted",
-                    "Enter your account's email address and we'll send you a link to choose a \
-                     new password."
-                }
+                p { class: "ik-muted", {i18n.t("password.forgot.intro")} }
 
                 if let Some(msg) = error.read().clone() {
                     div { class: "ik-error", style: "padding:12px;margin:14px 0;text-align:left;",
@@ -74,7 +70,7 @@ pub(crate) fn ForgotPassword() -> Element {
                 }
 
                 div { class: "ik-field",
-                    label { "Email" }
+                    label { {i18n.t("auth.field.email")} }
                     input {
                         class: "ik-input",
                         r#type: "email",
@@ -94,9 +90,9 @@ pub(crate) fn ForgotPassword() -> Element {
                     disabled: busy.is_busy(),
                     onclick: move |_| submit.call(()),
                     if busy.is_busy() {
-                        "Sending…"
+                        {i18n.t("password.forgot.sending")}
                     } else {
-                        "Send reset link"
+                        {i18n.t("password.forgot.submit")}
                     }
                 }
 
@@ -104,7 +100,7 @@ pub(crate) fn ForgotPassword() -> Element {
                     to: Route::Login {},
                     class: "ik-btn",
                     style: "width:100%;margin-top:10px;",
-                    "Back to sign in"
+                    {i18n.t("common.backToSignIn")}
                 }
             }
         }
@@ -116,6 +112,7 @@ pub(crate) fn ForgotPassword() -> Element {
 /// the two entries match before calling the API, which additionally revokes existing sessions.
 #[component]
 pub(crate) fn ResetPassword(token: String) -> Element {
+    let i18n = use_i18n();
     let mut password = use_signal(String::new);
     let mut confirm = use_signal(String::new);
     let mut error = use_signal(|| Option::<String>::None);
@@ -127,11 +124,11 @@ pub(crate) fn ResetPassword(token: String) -> Element {
         let password_v = password.read().clone();
         let confirm_v = confirm.read().clone();
         if password_v.len() < 8 {
-            error.set(Some("Password must be at least 8 characters.".to_owned()));
+            error.set(Some(i18n.t("password.tooShort")));
             return;
         }
         if password_v != confirm_v {
-            error.set(Some("Passwords don't match.".to_owned()));
+            error.set(Some(i18n.t("password.mismatch")));
             return;
         }
         if !busy.claim() {
@@ -153,12 +150,10 @@ pub(crate) fn ResetPassword(token: String) -> Element {
                 Ok(_) => done.set(true),
                 // A 400 here means the token itself is bad (invalid, expired, or already
                 // used) rather than the new password, so name that specifically.
-                Err(e) if api::error_status(&e) == Some(400) => error.set(Some(
-                    "This reset link is invalid or has expired. Request a new one from the \
-                     \"Forgot your password?\" page."
-                        .to_owned(),
-                )),
-                Err(e) => error.set(Some(api::friendly_error(e))),
+                Err(e) if api::error_status(&e) == Some(400) => {
+                    error.set(Some(i18n.t("password.reset.badToken")));
+                }
+                Err(e) => error.set(Some(api::friendly_error(i18n, e))),
             }
             busy.release();
         });
@@ -167,18 +162,15 @@ pub(crate) fn ResetPassword(token: String) -> Element {
     rsx! {
         div { class: "ik-auth",
             AuthBrand {}
-            h1 { "Choose a new password" }
+            h1 { {i18n.t("password.reset.heading")} }
 
             if *done.read() {
-                p { class: "ik-muted",
-                    "Your password has been changed and any other active sessions were signed \
-                     out. You can sign in with your new password now."
-                }
+                p { class: "ik-muted", {i18n.t("password.reset.done")} }
                 Link {
                     to: Route::Login {},
                     class: "ik-btn primary",
                     style: "width:100%;margin-top:8px;",
-                    "Sign in"
+                    {i18n.t("common.signIn")}
                 }
             } else {
                 if let Some(msg) = error.read().clone() {
@@ -188,7 +180,7 @@ pub(crate) fn ResetPassword(token: String) -> Element {
                 }
 
                 div { class: "ik-field",
-                    label { "New password" }
+                    label { {i18n.t("password.reset.newPassword")} }
                     input {
                         class: "ik-input",
                         r#type: "password",
@@ -197,7 +189,7 @@ pub(crate) fn ResetPassword(token: String) -> Element {
                     }
                 }
                 div { class: "ik-field",
-                    label { "Confirm new password" }
+                    label { {i18n.t("password.reset.confirmPassword")} }
                     input {
                         class: "ik-input",
                         r#type: "password",
@@ -217,9 +209,9 @@ pub(crate) fn ResetPassword(token: String) -> Element {
                     disabled: busy.is_busy(),
                     onclick: move |_| submit.call(()),
                     if busy.is_busy() {
-                        "Saving…"
+                        {i18n.t("common.saving")}
                     } else {
-                        "Change password"
+                        {i18n.t("password.reset.submit")}
                     }
                 }
 
@@ -227,7 +219,7 @@ pub(crate) fn ResetPassword(token: String) -> Element {
                     to: Route::Login {},
                     class: "ik-btn",
                     style: "width:100%;margin-top:10px;",
-                    "Back to sign in"
+                    {i18n.t("common.backToSignIn")}
                 }
             }
         }

@@ -8,6 +8,7 @@
 use crate::api;
 use crate::components::{async_list, SignInGate, SkeletonRows, UnreadBadge};
 use crate::hooks::use_reload;
+use crate::i18n::{use_i18n, Translator};
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::use_session;
@@ -28,12 +29,13 @@ enum Tab {
 impl Tab {
     const ALL: [Tab; 4] = [Self::All, Self::Unread, Self::Chapters, Self::Sync];
 
-    fn label(self) -> &'static str {
+    /// The catalogue key of this tab's display name (see [`crate::i18n`]).
+    fn label_key(self) -> &'static str {
         match self {
-            Self::All => "All",
-            Self::Unread => "Unread",
-            Self::Chapters => "Chapters",
-            Self::Sync => "Sync",
+            Self::All => "notifications.tab.all",
+            Self::Unread => "notifications.tab.unread",
+            Self::Chapters => "notifications.tab.chapters",
+            Self::Sync => "notifications.tab.sync",
         }
     }
 
@@ -132,6 +134,7 @@ fn unread_count(list: &[Notification]) -> i64 {
 #[component]
 pub(crate) fn Notifications() -> Element {
     let session = use_session();
+    let i18n = use_i18n();
     let api = api::use_api();
     let badge = use_context::<UnreadBadge>();
     let reload = use_reload();
@@ -153,7 +156,7 @@ pub(crate) fn Notifications() -> Element {
                     serde_json::Value::Array(items) => items,
                     other => vec![other],
                 })
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
@@ -168,7 +171,7 @@ pub(crate) fn Notifications() -> Element {
 
     if !session.is_authenticated() {
         return rsx! {
-            h1 { class: "ik-page-title", "Notifications" }
+            h1 { class: "ik-page-title", {i18n.t("nav.notifications")} }
             SignInGate {}
         };
     }
@@ -209,18 +212,22 @@ pub(crate) fn Notifications() -> Element {
     rsx! {
         div { class: "ik-page-head",
             div {
-                h1 { class: "ik-page-title", style: "margin-bottom:2px;", "Notifications" }
-                div { class: "ik-mono ik-muted", style: "font-size:12px;", "{unread} unread · live push via SSE" }
+                h1 { class: "ik-page-title", style: "margin-bottom:2px;", {i18n.t("nav.notifications")} }
+                div { class: "ik-mono ik-muted", style: "font-size:12px;",
+                    {i18n.args("notifications.summary", &[("count", &unread.to_string())])}
+                }
             }
-            button { class: "ik-btn", disabled: unread == 0, onclick: mark_all, "Mark all read" }
+            button { class: "ik-btn", disabled: unread == 0, onclick: mark_all,
+                {i18n.t("notifications.markAllRead")}
+            }
         }
         div { class: "ik-tabs",
             for t in Tab::ALL {
                 button {
-                    key: "{t.label()}",
+                    key: "{t.label_key()}",
                     class: if current == t { "ik-tab active" } else { "ik-tab" },
                     onclick: move |_| tab.set(t),
-                    "{t.label()}"
+                    {i18n.t(t.label_key())}
                 }
             }
         }
@@ -229,13 +236,13 @@ pub(crate) fn Notifications() -> Element {
                 &notifications,
                 reload,
                 || rsx! { SkeletonRows { count: 5 } },
-                "No notifications yet. We'll ping you when a watched series updates.",
+                &i18n.t("notifications.empty"),
                 |items| {
                     let filtered: Vec<&Notification> =
                         items.iter().filter(|n| current.matches(n)).collect();
                     if filtered.is_empty() {
                         return rsx! {
-                            div { class: "ik-empty", "Nothing in this filter." }
+                            div { class: "ik-empty", {i18n.t("notifications.emptyFilter")} }
                         };
                     }
                     rsx! {
@@ -254,9 +261,11 @@ pub(crate) fn Notifications() -> Element {
 
 #[component]
 fn NotifRow(notification: Notification) -> Element {
+    let i18n = use_i18n();
     let unread = read_at(&notification).is_none();
     let class = if unread { "ik-row unread" } else { "ik-row" };
-    let (title, series_id) = describe(&notification);
+    let (line, series_id) = describe(&notification);
+    let title = line.render(i18n);
     let when = iso_date(string_field(&notification, "created_at")).to_owned();
     let kind = Kind::of(&notification);
     let tile = format!(
@@ -273,7 +282,7 @@ fn NotifRow(notification: Notification) -> Element {
             div { class: "ik-muted", style: "font-size:12px;", "{when}" }
         }
         if unread {
-            span { class: "ik-pill vermilion", "New" }
+            span { class: "ik-pill vermilion", {i18n.t("notifications.new")} }
         }
     };
 
@@ -287,12 +296,45 @@ fn NotifRow(notification: Notification) -> Element {
     }
 }
 
-/// Derive a human line and an optional deep-link target from a notification payload.
+/// What a row says, before it is worded.
+///
+/// Kept separate from the wording so the payload-shape logic stays unit-testable on the host
+/// target (resolving a message needs a Dioxus runtime) and so the phrasing is a catalogue
+/// concern rather than something baked into the parser.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Line {
+    /// A new chapter of a series we know the title of.
+    NewChapter { title: String, number: String },
+    /// Some other update to a series we know the title of.
+    Update { title: String },
+    /// An unrecognised payload, but a named kind — shown with its underscores spaced out,
+    /// which is still readable, rather than replaced by a placeholder that says nothing.
+    Kind(String),
+    /// Nothing usable in the payload at all.
+    Generic,
+}
+
+impl Line {
+    fn render(&self, i18n: Translator) -> String {
+        match self {
+            Self::NewChapter { title, number } => i18n.args(
+                "notifications.line.newChapter",
+                &[("number", number), ("title", title)],
+            ),
+            Self::Update { title } => i18n.args("notifications.line.update", &[("title", title)]),
+            // A server-defined token, deliberately passed through untranslated: the catalogue
+            // cannot enumerate kinds the notifier has not shipped yet.
+            Self::Kind(kind) => kind.clone(),
+            Self::Generic => i18n.t("notifications.line.generic"),
+        }
+    }
+}
+
+/// Derive a row's line and an optional deep-link target from a notification payload.
 ///
 /// The notifier writes `{ series_id, series_title, chapter_number, .. }` for chapter events;
-/// an unrecognised shape degrades to the kind token with the underscores spaced out, which is
-/// still readable, rather than to a generic placeholder that tells the reader nothing.
-fn describe(notification: &Notification) -> (String, Option<String>) {
+/// an unrecognised shape degrades through [`Line::Kind`] to [`Line::Generic`].
+fn describe(notification: &Notification) -> (Line, Option<String>) {
     let payload = payload(notification);
     let series_title = payload
         .get("series_title")
@@ -307,18 +349,16 @@ fn describe(notification: &Notification) -> (String, Option<String>) {
         .and_then(serde_json::Value::as_f64);
 
     let kind = kind_token(notification);
-    let title = match (series_title, chapter) {
-        (Some(title), Some(number)) => {
-            format!(
-                "New chapter {} of {title}",
-                crate::util::chapter_number(number)
-            )
-        }
-        (Some(title), None) => format!("Update for {title}"),
-        _ if !kind.is_empty() => kind.replace('_', " "),
-        _ => "Notification".to_owned(),
+    let line = match (series_title, chapter) {
+        (Some(title), Some(number)) => Line::NewChapter {
+            title,
+            number: crate::util::chapter_number(number),
+        },
+        (Some(title), None) => Line::Update { title },
+        _ if !kind.is_empty() => Line::Kind(kind.replace('_', " ")),
+        _ => Line::Generic,
     };
-    (title, series_id)
+    (line, series_id)
 }
 
 #[cfg(test)]
@@ -347,14 +387,25 @@ mod tests {
         });
         assert_eq!(
             describe(&n),
-            ("New chapter 7 of Blame!".to_owned(), Some("abc".to_owned()))
+            (
+                Line::NewChapter {
+                    title: "Blame!".to_owned(),
+                    number: "7".to_owned(),
+                },
+                Some("abc".to_owned()),
+            )
         );
     }
 
     #[test]
     fn falls_back_to_the_kind_token_for_an_unknown_shape() {
         let n = json!({ "kind": "some_event" });
-        assert_eq!(describe(&n), ("some event".to_owned(), None));
+        assert_eq!(describe(&n), (Line::Kind("some event".to_owned()), None));
+    }
+
+    #[test]
+    fn falls_back_to_a_generic_line_when_there_is_no_kind_either() {
+        assert_eq!(describe(&json!({})), (Line::Generic, None));
     }
 
     #[test]

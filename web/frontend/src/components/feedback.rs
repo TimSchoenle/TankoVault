@@ -2,6 +2,7 @@
 //! retry), plus the [`async_view`] helper that renders all three from one `Resource`.
 
 use crate::hooks::Reload;
+use crate::i18n::use_i18n;
 use dioxus::prelude::*;
 
 /// Skeleton placeholder grid shown while covers load.
@@ -42,13 +43,15 @@ pub(crate) fn SkeletonBlock(#[props(default = 80)] height: u32) -> Element {
     }
 }
 
-/// A named error state with a retry affordance.
+/// A named error state with a retry affordance. `message` is an already-resolved sentence
+/// (typically from [`crate::api::friendly_error`]); the framing around it is translated here.
 #[component]
 pub(crate) fn ErrorBox(message: String, on_retry: EventHandler<()>) -> Element {
+    let i18n = use_i18n();
     rsx! {
         div { class: "ik-error",
-            p { "Something went wrong: {message}" }
-            button { class: "ik-btn", onclick: move |_| on_retry.call(()), "Try again" }
+            p { {i18n.args("feedback.failed", &[("message", &message)])} }
+            button { class: "ik-btn", onclick: move |_| on_retry.call(()), {i18n.t("common.tryAgain")} }
         }
     }
 }
@@ -72,10 +75,11 @@ pub(crate) fn EmptyBox(message: String) -> Element {
 /// A "please sign in" gate rendered by protected views when there is no session.
 #[component]
 pub(crate) fn SignInGate() -> Element {
+    let i18n = use_i18n();
     rsx! {
         div { class: "ik-empty",
-            p { "Sign in to see this." }
-            Link { to: crate::Route::Login {}, class: "ik-btn primary", "Sign in" }
+            p { {i18n.t("feedback.signInGate")} }
+            Link { to: crate::Route::Login {}, class: "ik-btn primary", {i18n.t("common.signIn")} }
         }
     }
 }
@@ -132,6 +136,9 @@ pub(crate) fn async_view<T: 'static>(
 
 /// [`async_view`] for a list: adds the "loaded, but there is nothing here" state, which is a
 /// different message from an error and must never look like one.
+///
+/// `empty` is already-resolved text — the caller has a [`crate::i18n::Translator`] to hand and
+/// often needs to interpolate the filter or query the list came up empty for.
 pub(crate) fn async_list<T: 'static>(
     resource: &Resource<Result<Vec<T>, String>>,
     reload: Reload,

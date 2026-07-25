@@ -4,6 +4,7 @@
 use crate::api;
 use crate::components::{Cover, ErrorBox};
 use crate::hooks::{use_reload, Reload};
+use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::state::use_session;
 use dioxus::prelude::*;
@@ -13,6 +14,7 @@ use progenitor_client::ResponseValue;
 #[component]
 pub(super) fn MergeQueue() -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let reload = use_reload();
     let resource = use_resource(move || {
         reload.track();
@@ -23,7 +25,7 @@ pub(super) fn MergeQueue() -> Element {
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
@@ -36,7 +38,7 @@ pub(super) fn MergeQueue() -> Element {
             }
         }
         Some(Ok(list)) if list.is_empty() => rsx! {
-            div { class: "ik-empty", "No pending merge candidates. Canonicalisation is clean." }
+            div { class: "ik-empty", {i18n.t("console.merge.empty")} }
         },
         Some(Ok(list)) => {
             let list = list.clone();
@@ -50,7 +52,7 @@ pub(super) fn MergeQueue() -> Element {
 
     rsx! {
         section {
-            h3 { "Merge queue" }
+            h3 { {i18n.t("console.tab.merge")} }
             {body}
         }
     }
@@ -59,6 +61,7 @@ pub(super) fn MergeQueue() -> Element {
 #[component]
 pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let session = use_session();
     let can = candidate.read();
     // The score is a 0..=1 ratio, so the rounded percentage is always in range; clamping
@@ -139,29 +142,45 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
                 div { class: "grow",
                     div { class: "ik-flex", style: "justify-content:space-between;align-items:center;",
                         span { style: "font-weight:600;", "{series_title}" }
-                        span { class: "{score_class}", "{pct}% match" }
+                        span { class: "{score_class}",
+                            {i18n.args("console.merge.score", &[("percent", &pct.to_string())])}
+                        }
                     }
                     div { class: "ik-muted", style: "font-size:13px;", "↔ {candidate_title}" }
                     if let Some(r) = &reason {
-                        div { class: "ik-muted", style: "font-size:12px;", "reason: {r}" }
+                        div { class: "ik-muted", style: "font-size:12px;",
+                            {i18n.args("console.merge.reason", &[("reason", r)])}
+                        }
                     }
                 }
                 button {
                     class: "ik-btn",
                     onclick: move |_| { let v = *open.peek(); open.set(!v); },
-                    if *open.read() { "Hide" } else { "Compare" }
+                    if *open.read() {
+                        {i18n.t("console.merge.hide")}
+                    } else {
+                        {i18n.t("console.merge.compare")}
+                    }
                 }
-                button { class: "ik-btn primary", disabled: *busy.read(), onclick: merge, "Merge →" }
-                button { class: "ik-btn", disabled: *busy.read(), onclick: dismiss, "Distinct" }
+                button { class: "ik-btn primary", disabled: *busy.read(), onclick: merge,
+                    {i18n.t("console.merge.merge")}
+                }
+                button { class: "ik-btn", disabled: *busy.read(), onclick: dismiss,
+                    {i18n.t("console.merge.distinct")}
+                }
             }
             if *open.read() {
                 div { class: "ik-flex", style: "gap:14px;margin-top:12px;align-items:stretch;flex-wrap:wrap;",
                     div { style: "flex:1;min-width:240px;",
-                        div { class: "ik-pill jade", style: "margin-bottom:6px;", "Keep (canonical)" }
+                        div { class: "ik-pill jade", style: "margin-bottom:6px;",
+                            {i18n.t("console.merge.keep")}
+                        }
                         SeriesMiniCard { series_id: keep_id }
                     }
                     div { style: "flex:1;min-width:240px;",
-                        div { class: "ik-pill", style: "margin-bottom:6px;", "Merge in & delete" }
+                        div { class: "ik-pill", style: "margin-bottom:6px;",
+                            {i18n.t("console.merge.drop")}
+                        }
                         SeriesMiniCard { series_id: drop_id }
                     }
                 }
@@ -176,6 +195,7 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
 #[component]
 pub(super) fn SeriesMiniCard(series_id: SeriesId) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let res = use_resource(move || {
         let client = api.client();
         async move {
@@ -185,14 +205,16 @@ pub(super) fn SeriesMiniCard(series_id: SeriesId) -> Element {
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
     match &*res.read_unchecked() {
         None => rsx! { div { class: "ik-skeleton", style: "height:120px;" } },
         Some(Err(e)) => rsx! {
-            div { class: "ik-empty", style: "font-size:12px;", "Could not load series: {e}" }
+            div { class: "ik-empty", style: "font-size:12px;",
+                {i18n.args("console.merge.seriesUnavailable", &[("message", e)])}
+            }
         },
         Some(Ok(d)) => {
             let d = d.clone();
@@ -207,12 +229,20 @@ pub(super) fn SeriesMiniCard(series_id: SeriesId) -> Element {
                         div { class: "grow",
                             div { style: "font-weight:600;", "{d.title}" }
                             div { class: "ik-flex", style: "gap:6px;margin-top:4px;flex-wrap:wrap;",
-                                span { class: "ik-pill", "{d.content_type.label()}" }
-                                span { class: "ik-pill", "{d.status.label()}" }
+                                span { class: "ik-pill", {i18n.t(d.content_type.label_key())} }
+                                span { class: "ik-pill", {i18n.t(d.status.label_key())} }
                                 if !year.is_empty() {
                                     span { class: "ik-pill", "{year}" }
                                 }
-                                span { class: "ik-pill", "{d.sources.len()} sources" }
+                                span { class: "ik-pill",
+                                    {
+                                        i18n.plural(
+                                            "series.sources",
+                                            i64::try_from(d.sources.len()).unwrap_or(0),
+                                            &[],
+                                        )
+                                    }
+                                }
                             }
                             div { class: "ik-mono ik-muted", style: "font-size:11px;margin-top:4px;word-break:break-all;",
                                 "{d.id}"
@@ -223,7 +253,13 @@ pub(super) fn SeriesMiniCard(series_id: SeriesId) -> Element {
                         div { style: "margin-top:8px;",
                             for s in d.sources.iter().take(5) {
                                 div { class: "ik-muted", style: "font-size:12px;",
-                                    "· {s.provider_name} — {s.chapter_count} ch"
+                                    {
+                                        let count = i18n.args(
+                                            "series.chapterCount",
+                                            &[("count", &s.chapter_count.to_string())],
+                                        );
+                                        format!("· {} — {count}", s.provider_name)
+                                    }
                                 }
                             }
                         }

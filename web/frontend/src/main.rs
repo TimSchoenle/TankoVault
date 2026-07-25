@@ -9,6 +9,7 @@
 //! - [`app`] — the route table, root contexts and bundled font faces.
 //! - [`api`] — a `Copy` handle that mints clients carrying the *current* bearer token.
 //! - [`state`] — session, JWT claim decoding and appearance preferences.
+//! - [`i18n`] — the message catalogues and the `Translator` handle every screen renders through.
 //! - [`components`] — the shell, rail, command bar and the shared feedback primitives.
 //! - [`views`] — the screens.
 //! - [`hooks`] / [`util`] — refetch/busy handles and dependency-free formatting.
@@ -21,6 +22,7 @@ mod api;
 mod app;
 mod components;
 mod hooks;
+mod i18n;
 mod icons;
 mod live;
 mod models;

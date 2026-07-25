@@ -2,6 +2,7 @@
 //! and triage the most recent task failures with their errors.
 
 use crate::api;
+use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::state::use_session;
 use crate::util::rel_time;
@@ -16,6 +17,7 @@ use progenitor_client::ResponseValue;
 #[component]
 pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let session = use_session();
     let mut mode = use_signal(|| ScanMode::Fast);
     let mut message = use_signal(|| Option::<String>::None);
@@ -32,7 +34,7 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
                             .send()
                             .await
                             .map(ResponseValue::into_inner)
-                            .map_err(api::friendly_error),
+                            .map_err(|e| api::friendly_error(i18n, e)),
                     )
                 } else {
                     None
@@ -52,7 +54,7 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
                             .send()
                             .await
                             .map(ResponseValue::into_inner)
-                            .map_err(api::friendly_error),
+                            .map_err(|e| api::friendly_error(i18n, e)),
                     )
                 } else {
                     None
@@ -78,10 +80,10 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
                     .send()
                     .await
                     .map(ResponseValue::into_inner)
-                    .map_err(api::friendly_error)
+                    .map_err(|e| api::friendly_error(i18n, e))
                 {
                     Ok(()) => {
-                        message.set(Some("Scan queued for all providers.".to_owned()));
+                        message.set(Some(i18n.t("console.scans.queued")));
                         tick.bump();
                     }
                     Err(e) => message.set(Some(e)),
@@ -103,7 +105,7 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
     rsx! {
         section { class: "ik-tile", style: "margin-bottom:18px;",
             div { class: "ik-flex", style: "justify-content:space-between;flex-wrap:wrap;",
-                h3 { style: "margin:0;", "Scan queue" }
+                h3 { style: "margin:0;", {i18n.t("console.scans.title")} }
                 div { class: "ik-flex",
                     select {
                         class: "ik-input",
@@ -112,10 +114,12 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
                         onchange: move |e| {
                             mode.set(if e.value() == "full" { ScanMode::Full } else { ScanMode::Fast });
                         },
-                        option { value: "fast", "Fast scan (new chapters)" }
-                        option { value: "full", "Full scan (rebuild)" }
+                        option { value: "fast", {i18n.t("console.scans.modeFast")} }
+                        option { value: "full", {i18n.t("console.scans.modeFull")} }
                     }
-                    button { class: "ik-btn primary", onclick: trigger, "Trigger scan (all)" }
+                    button { class: "ik-btn primary", onclick: trigger,
+                        {i18n.t("console.scans.trigger")}
+                    }
                 }
             }
             if let Some(m) = message.read().clone() {
@@ -123,9 +127,11 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
             }
 
             div { style: "margin-top:12px;",
-                div { class: "ik-subhead", "Active runs" }
+                div { class: "ik-subhead", {i18n.t("console.scans.active")} }
                 if active.is_empty() {
-                    p { class: "ik-muted", style: "font-size:13px;margin:6px 0 0;", "No runs in flight." }
+                    p { class: "ik-muted", style: "font-size:13px;margin:6px 0 0;",
+                        {i18n.t("console.scans.noneActive")}
+                    }
                 } else {
                     for r in active {
                         RunProgress { key: "{r.id}", run: Signal::new(r) }
@@ -145,28 +151,31 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
 /// Compact table of the most recent runs (any state).
 #[component]
 pub(super) fn RunHistory(runs: ReadSignal<Vec<ScanRun>>) -> Element {
+    let i18n = use_i18n();
     let list = runs.read();
     if list.is_empty() {
         return rsx! {
             div { style: "margin-top:16px;",
-                div { class: "ik-subhead", "Recent runs" }
-                p { class: "ik-muted", style: "font-size:13px;margin-left:6px;margin-top:4px;", "No scan runs yet." }
+                div { class: "ik-subhead", {i18n.t("console.scans.recent")} }
+                p { class: "ik-muted", style: "font-size:13px;margin-left:6px;margin-top:4px;",
+                    {i18n.t("console.scans.noRuns")}
+                }
             }
         };
     }
     rsx! {
         div { style: "margin-top:16px;",
-            div { class: "ik-subhead", "Recent runs" }
+            div { class: "ik-subhead", {i18n.t("console.scans.recent")} }
             div { class: "ik-tablewrap",
                 table { class: "ik-table ik-table-compact",
                     thead {
                         tr {
-                            th { "State" }
-                            th { "Mode" }
-                            th { "Scope" }
-                            th { "Progress" }
-                            th { "Started" }
-                            th { "Finished" }
+                            th { {i18n.t("console.scans.col.state")} }
+                            th { {i18n.t("console.scans.col.mode")} }
+                            th { {i18n.t("console.scans.col.scope")} }
+                            th { {i18n.t("console.scans.col.progress")} }
+                            th { {i18n.t("console.scans.col.started")} }
+                            th { {i18n.t("console.scans.col.finished")} }
                         }
                     }
                     tbody {
@@ -182,15 +191,19 @@ pub(super) fn RunHistory(runs: ReadSignal<Vec<ScanRun>>) -> Element {
 
 #[component]
 pub(super) fn RunHistoryRow(run: Signal<ScanRun>) -> Element {
+    let i18n = use_i18n();
     let r = run.read();
-    let (pill, label) = run_state_pill(r.state);
+    let pill = run_state_pill(r.state);
+    let label = i18n.t(r.state.label_key());
     // `progress()` returns a 0..=1 ratio, so the rounded percentage is always in range.
     #[allow(clippy::cast_possible_truncation)]
     let pct = (r.progress() * 100.0).round().clamp(0.0, 100.0) as i32;
     let scope = match &r.provider_id {
         Some(ScanRunProviderId::Variant1(id)) => format!("#{}", &id.to_string()[..8]),
-        Some(ScanRunProviderId::Variant0(v)) => v.as_str().unwrap_or("unknown").to_owned(),
-        None => "all providers".to_owned(),
+        Some(ScanRunProviderId::Variant0(v)) => v
+            .as_str()
+            .map_or_else(|| i18n.t("console.scans.scopeUnknown"), str::to_owned),
+        None => i18n.t("console.scans.scopeAll"),
     };
     rsx! {
         tr {
@@ -210,8 +223,12 @@ pub(super) fn RunHistoryRow(run: Signal<ScanRun>) -> Element {
                     }
                 }
             }
-            td { class: "ik-muted ik-mono", style: "font-size:12px;", "{rel_time(r.started_at.as_deref())}" }
-            td { class: "ik-muted ik-mono", style: "font-size:12px;", "{rel_time(r.finished_at.as_deref())}" }
+            td { class: "ik-muted ik-mono", style: "font-size:12px;",
+                "{rel_time(i18n, r.started_at.as_deref())}"
+            }
+            td { class: "ik-muted ik-mono", style: "font-size:12px;",
+                "{rel_time(i18n, r.finished_at.as_deref())}"
+            }
         }
     }
 }
@@ -219,18 +236,21 @@ pub(super) fn RunHistoryRow(run: Signal<ScanRun>) -> Element {
 /// Recent task failures with their errors — the operator's triage feed.
 #[component]
 pub(super) fn FailuresPanel(failures: Signal<Vec<FailedTask>>) -> Element {
+    let i18n = use_i18n();
     let list = failures.read();
     if list.is_empty() {
         return rsx! {
             div { style: "margin-top:16px;",
-                div { class: "ik-subhead", "Recent failures" }
-                p { class: "ik-muted", style: "font-size:13px;margin:6px 0 0;", "No task failures recorded. Clean." }
+                div { class: "ik-subhead", {i18n.t("console.scans.failures")} }
+                p { class: "ik-muted", style: "font-size:13px;margin:6px 0 0;",
+                    {i18n.t("console.scans.noFailures")}
+                }
             }
         };
     }
     rsx! {
         div { style: "margin-top:16px;",
-            div { class: "ik-subhead", "Recent failures" }
+            div { class: "ik-subhead", {i18n.t("console.scans.failures")} }
             div { style: "margin-top:8px;display:grid;gap:8px;",
                 for f in list.iter().cloned() {
                     div { key: "{f.id}", class: "ik-fail",
@@ -238,13 +258,28 @@ pub(super) fn FailuresPanel(failures: Signal<Vec<FailedTask>>) -> Element {
                             div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;",
                                 span { class: "ik-pill vermilion", "{f.kind}" }
                                 span { class: "ik-mono ik-muted", style: "font-size:12px;",
-                                    "{f.provider_slug.clone().unwrap_or_else(|| \"—\".to_owned())} · {f.mode:?} · attempt {f.attempts}"
+                                    {
+                                        let slug = f
+                                            .provider_slug
+                                            .clone()
+                                            .unwrap_or_else(|| i18n.t("time.unknown"));
+                                        i18n.args(
+                                            "console.scans.failureMeta",
+                                            &[
+                                                ("provider", &slug),
+                                                ("mode", &format!("{:?}", f.mode)),
+                                                ("attempts", &f.attempts.to_string()),
+                                            ],
+                                        )
+                                    }
                                 }
                             }
-                            span { class: "ik-muted ik-mono", style: "font-size:12px;", "{rel_time(f.finished_at.as_deref())}" }
+                            span { class: "ik-muted ik-mono", style: "font-size:12px;",
+                                "{rel_time(i18n, f.finished_at.as_deref())}"
+                            }
                         }
                         p { class: "ik-mono", style: "margin:6px 0 0;font-size:12px;color:var(--vermilion);word-break:break-word;",
-                            "{f.error.clone().unwrap_or_else(|| \"(no error message)\".to_owned())}"
+                            {f.error.clone().unwrap_or_else(|| i18n.t("console.scans.noErrorMessage"))}
                         }
                     }
                 }
@@ -255,6 +290,7 @@ pub(super) fn FailuresPanel(failures: Signal<Vec<FailedTask>>) -> Element {
 
 #[component]
 pub(super) fn RunProgress(run: Signal<ScanRun>) -> Element {
+    let i18n = use_i18n();
     let r = run.read();
     // `progress()` returns a 0..=1 ratio, so the rounded percentage is always in range.
     #[allow(clippy::cast_possible_truncation)]
@@ -263,8 +299,19 @@ pub(super) fn RunProgress(run: Signal<ScanRun>) -> Element {
     rsx! {
         div { style: "margin-top:12px;",
             div { class: "ik-flex", style: "justify-content:space-between;font-size:13px;",
-                span { "{r.state.label()} · {r.mode:?}" }
-                span { class: "ik-mono", "{r.done_tasks}/{r.total_tasks} ({r.failed_tasks} failed)" }
+                span { "{i18n.t(r.state.label_key())} · {r.mode:?}" }
+                span { class: "ik-mono",
+                    {
+                        i18n.args(
+                            "console.scans.progress",
+                            &[
+                                ("done", &r.done_tasks.to_string()),
+                                ("total", &r.total_tasks.to_string()),
+                                ("failed", &r.failed_tasks.to_string()),
+                            ],
+                        )
+                    }
+                }
             }
             div { class: "ik-progress", style: "margin-top:6px;", span { style: "{width}" } }
         }

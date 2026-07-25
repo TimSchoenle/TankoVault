@@ -57,7 +57,8 @@ pub(crate) struct SeriesPage {
 }
 
 pub(crate) trait ContentTypeExt {
-    fn label(&self) -> &'static str;
+    /// The catalogue key of this variant's display name (see [`crate::i18n`]).
+    fn label_key(&self) -> &'static str;
     fn token(&self) -> &'static str;
     /// The accent colour that encodes this type across cards and the series hero.
     fn color(&self) -> &'static str;
@@ -65,13 +66,13 @@ pub(crate) trait ContentTypeExt {
 }
 
 impl ContentTypeExt for ContentType {
-    fn label(&self) -> &'static str {
+    fn label_key(&self) -> &'static str {
         match self {
-            Self::Manga => "Manga",
-            Self::Manhwa => "Manhwa",
-            Self::Manhua => "Manhua",
-            Self::Webtoon => "Webtoon",
-            Self::Unknown => "Unknown",
+            Self::Manga => "enum.contentType.manga",
+            Self::Manhwa => "enum.contentType.manhwa",
+            Self::Manhua => "enum.contentType.manhua",
+            Self::Webtoon => "enum.contentType.webtoon",
+            Self::Unknown => "enum.contentType.unknown",
         }
     }
     fn token(&self) -> &'static str {
@@ -103,7 +104,8 @@ impl ContentTypeExt for ContentType {
 }
 
 pub(crate) trait SeriesStatusExt {
-    fn label(&self) -> &'static str;
+    /// The catalogue key of this variant's display name (see [`crate::i18n`]).
+    fn label_key(&self) -> &'static str;
     fn token(&self) -> &'static str;
     /// The dot colour that encodes this status.
     fn color(&self) -> &'static str;
@@ -111,13 +113,13 @@ pub(crate) trait SeriesStatusExt {
 }
 
 impl SeriesStatusExt for SeriesStatus {
-    fn label(&self) -> &'static str {
+    fn label_key(&self) -> &'static str {
         match self {
-            Self::Ongoing => "Ongoing",
-            Self::Completed => "Completed",
-            Self::Hiatus => "Hiatus",
-            Self::Cancelled => "Cancelled",
-            Self::Unknown => "Unknown",
+            Self::Ongoing => "enum.seriesStatus.ongoing",
+            Self::Completed => "enum.seriesStatus.completed",
+            Self::Hiatus => "enum.seriesStatus.hiatus",
+            Self::Cancelled => "enum.seriesStatus.cancelled",
+            Self::Unknown => "enum.seriesStatus.unknown",
         }
     }
     fn token(&self) -> &'static str {
@@ -148,7 +150,8 @@ impl SeriesStatusExt for SeriesStatus {
 }
 
 pub(crate) trait WatchStatusExt {
-    fn label(&self) -> &'static str;
+    /// The catalogue key of this variant's display name (see [`crate::i18n`]).
+    fn label_key(&self) -> &'static str;
     fn token(&self) -> &'static str;
     fn parse(token: &str) -> WatchStatus;
     /// Kanban column order on the Watchlist board.
@@ -156,13 +159,13 @@ pub(crate) trait WatchStatusExt {
 }
 
 impl WatchStatusExt for WatchStatus {
-    fn label(&self) -> &'static str {
+    fn label_key(&self) -> &'static str {
         match self {
-            Self::Reading => "Reading",
-            Self::Planned => "Plan to read",
-            Self::Completed => "Completed",
-            Self::Dropped => "Dropped",
-            Self::Paused => "On hold",
+            Self::Reading => "enum.watchStatus.reading",
+            Self::Planned => "enum.watchStatus.planned",
+            Self::Completed => "enum.watchStatus.completed",
+            Self::Dropped => "enum.watchStatus.dropped",
+            Self::Paused => "enum.watchStatus.paused",
         }
     }
     fn token(&self) -> &'static str {
@@ -195,17 +198,18 @@ impl WatchStatusExt for WatchStatus {
 }
 
 pub(crate) trait RunStateExt {
-    fn label(&self) -> &'static str;
+    /// The catalogue key of this variant's display name (see [`crate::i18n`]).
+    fn label_key(&self) -> &'static str;
 }
 
 impl RunStateExt for RunState {
-    fn label(&self) -> &'static str {
+    fn label_key(&self) -> &'static str {
         match self {
-            Self::Queued => "Queued",
-            Self::Running => "Running",
-            Self::Completed => "Finished",
-            Self::Failed => "Failed",
-            Self::Cancelled => "Cancelled",
+            Self::Queued => "enum.runState.queued",
+            Self::Running => "enum.runState.running",
+            Self::Completed => "enum.runState.completed",
+            Self::Failed => "enum.runState.failed",
+            Self::Cancelled => "enum.runState.cancelled",
         }
     }
 }
@@ -226,7 +230,7 @@ impl ScanRunExt for ScanRun {
 
 /// How to settle a local/remote disagreement. The wire carries a bare string (the sync
 /// service validates it), so this is the frontend's closed enumeration of the tokens it
-/// offers, with the reader-facing wording for each.
+/// offers, each pointing at the catalogue entry that words it for the reader.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ConflictPolicy {
@@ -244,12 +248,13 @@ impl ConflictPolicy {
         Self::AskMe,
     ];
 
-    pub(crate) fn label(self) -> &'static str {
+    /// The catalogue key of this policy's display name (see [`crate::i18n`]).
+    pub(crate) fn label_key(self) -> &'static str {
         match self {
-            Self::LocalWins => "Always keep my local progress",
-            Self::RemoteWins => "Always trust AniList",
-            Self::NewestWins => "Use whichever changed most recently",
-            Self::AskMe => "Ask me when they disagree",
+            Self::LocalWins => "enum.conflictPolicy.localWins",
+            Self::RemoteWins => "enum.conflictPolicy.remoteWins",
+            Self::NewestWins => "enum.conflictPolicy.newestWins",
+            Self::AskMe => "enum.conflictPolicy.askMe",
         }
     }
 

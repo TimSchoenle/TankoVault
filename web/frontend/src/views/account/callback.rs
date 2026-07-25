@@ -7,6 +7,7 @@
 //! return from the provider.
 
 use crate::api;
+use crate::i18n::use_i18n;
 use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
@@ -18,6 +19,7 @@ const PROVIDER: &str = "anilist";
 #[component]
 pub(crate) fn AnilistCallback(code: String) -> Element {
     let session = use_session();
+    let i18n = use_i18n();
     let api = api::use_api();
     let nav = use_navigator();
     let mut outcome = use_signal(|| Option::<Result<(), String>>::None);
@@ -31,13 +33,8 @@ pub(crate) fn AnilistCallback(code: String) -> Element {
         let client = api.client();
         spawn(async move {
             let result = match session.token_value() {
-                None => Err(
-                    "Sign in, then connect the provider again from Account → Sync & integrations."
-                        .to_owned(),
-                ),
-                Some(_) if code.trim().is_empty() => {
-                    Err("The provider did not return an authorization code.".to_owned())
-                }
+                None => Err(i18n.t("account.callback.signedOut")),
+                Some(_) if code.trim().is_empty() => Err(i18n.t("account.callback.noCode")),
                 Some(_) => client
                     .sync_callback()
                     .provider(PROVIDER)
@@ -45,7 +42,7 @@ pub(crate) fn AnilistCallback(code: String) -> Element {
                     .send()
                     .await
                     .map(|_| ())
-                    .map_err(api::friendly_error),
+                    .map_err(|e| api::friendly_error(i18n, e)),
             };
             let succeeded = result.is_ok();
             outcome.set(Some(result));
@@ -65,12 +62,14 @@ pub(crate) fn AnilistCallback(code: String) -> Element {
     match failure {
         Some(message) => rsx! {
             div { class: "ik-empty",
-                p { "Couldn't connect the provider: {message}" }
-                Link { to: Route::Account {}, class: "ik-btn primary", "Back to Account" }
+                p { {i18n.args("account.callback.failed", &[("message", &message)])} }
+                Link { to: Route::Account {}, class: "ik-btn primary",
+                    {i18n.t("account.callback.back")}
+                }
             }
         },
         None => rsx! {
-            div { class: "ik-empty", "Connecting…" }
+            div { class: "ik-empty", {i18n.t("account.callback.connecting")} }
         },
     }
 }

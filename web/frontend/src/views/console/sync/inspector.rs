@@ -4,6 +4,7 @@
 use crate::api;
 use crate::components::ErrorBox;
 use crate::hooks::Reload;
+use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::state::use_session;
 use crate::util::rel_time;
@@ -16,6 +17,7 @@ use progenitor_client::ResponseValue;
 #[component]
 pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Reload) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let mut query = use_signal(String::new);
 
     // All hooks are declared unconditionally (Rules of Hooks) before we branch on whether a
@@ -35,7 +37,7 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
                     .send()
                     .await
                     .map(ResponseValue::into_inner)
-                    .map_err(api::friendly_error)
+                    .map_err(|e| api::friendly_error(i18n, e))
             }
         })
     };
@@ -50,7 +52,7 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
                     .send()
                     .await
                     .map(ResponseValue::into_inner)
-                    .map_err(api::friendly_error)
+                    .map_err(|e| api::friendly_error(i18n, e))
             }
         })
     };
@@ -73,7 +75,9 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
             }
         }
         Some(Err(e)) => rsx! {
-            div { class: "ik-empty", style: "font-size:12px;", "Search failed: {e}" }
+            div { class: "ik-empty", style: "font-size:12px;",
+                {i18n.args("console.sync.searchFailed", &[("message", e)])}
+            }
         },
         _ => rsx! {},
     };
@@ -85,7 +89,7 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
             rsx! { ErrorBox { message: msg, on_retry: move |()| reload.bump() } }
         }
         Some(Ok(list)) if list.is_empty() => rsx! {
-            div { class: "ik-empty", "No series↔external mappings yet." }
+            div { class: "ik-empty", {i18n.t("console.sync.noMappings")} }
         },
         Some(Ok(list)) => {
             let list = list.clone();
@@ -102,12 +106,14 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
             class: "ik-input",
             style: "width:100%;",
             r#type: "text",
-            placeholder: "Search a series by title to open its info…",
+            placeholder: i18n.t("console.sync.searchSeries"),
             value: "{query}",
             oninput: move |e| query.set(e.value()),
         }
         {results_body}
-        div { class: "ik-muted", style: "font-size:12px;margin:14px 0 6px;", "Recently mapped" }
+        div { class: "ik-muted", style: "font-size:12px;margin:14px 0 6px;",
+            {i18n.t("console.sync.recentlyMapped")}
+        }
         {mappings_body}
     }
 }
@@ -115,14 +121,19 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
 /// A search-result row that opens the series in the inspector.
 #[component]
 pub(super) fn SeriesPickRow(series: SeriesSummary, selected: Signal<Option<String>>) -> Element {
+    let i18n = use_i18n();
     let sid = series.id;
     rsx! {
         div { class: "ik-row",
             div { class: "grow",
                 span { style: "font-weight:600;", "{series.title}" }
-                div { class: "ik-muted", style: "font-size:12px;", "{series.source_count} sources" }
+                div { class: "ik-muted", style: "font-size:12px;",
+                    {i18n.plural("series.sources", series.source_count, &[])}
+                }
             }
-            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.to_string())), "Open" }
+            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.to_string())),
+                {i18n.t("common.open")}
+            }
         }
     }
 }
@@ -133,8 +144,9 @@ pub(super) fn MappingPickRow(
     mapping: Signal<AdminSyncMapping>,
     selected: Signal<Option<String>>,
 ) -> Element {
+    let i18n = use_i18n();
     let m = mapping.read();
-    let updated = rel_time(Some(&m.updated_at));
+    let updated = rel_time(i18n, Some(&m.updated_at));
     let sid = m.series_id;
     rsx! {
         div { class: "ik-row",
@@ -144,10 +156,17 @@ pub(super) fn MappingPickRow(
                     span { class: "ik-pill", "{m.provider}" }
                 }
                 div { class: "ik-mono ik-muted", style: "font-size:12px;",
-                    "id {m.external_id} · updated {updated}"
+                    {
+                        i18n.args(
+                            "console.sync.mappingMeta",
+                            &[("id", &m.external_id), ("when", &updated)],
+                        )
+                    }
                 }
             }
-            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.to_string())), "Open" }
+            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.to_string())),
+                {i18n.t("common.open")}
+            }
         }
     }
 }
@@ -162,10 +181,13 @@ pub(super) fn SeriesSyncEditor(
     reload: Reload,
 ) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     // `selected` (and therefore this component's `series_id` prop) is a plain `String` shared
     // with the search/pick-row flow above; parse it once here at the boundary.
     let Ok(sid) = series_id.parse::<SeriesId>() else {
-        return rsx! { div { class: "ik-empty", "That series id doesn't look right." } };
+        return rsx! {
+            div { class: "ik-empty", {i18n.t("console.sync.badSeriesId")} }
+        };
     };
 
     let mappings = {
@@ -179,7 +201,7 @@ pub(super) fn SeriesSyncEditor(
                     .send()
                     .await
                     .map(ResponseValue::into_inner)
-                    .map_err(api::friendly_error)
+                    .map_err(|e| api::friendly_error(i18n, e))
             }
         })
     };
@@ -192,7 +214,7 @@ pub(super) fn SeriesSyncEditor(
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(api::friendly_error)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
@@ -207,13 +229,19 @@ pub(super) fn SeriesSyncEditor(
 
     rsx! {
         div { class: "ik-flex", style: "justify-content:space-between;align-items:center;margin-bottom:10px;",
-            button { class: "ik-btn", onclick: move |_| selected.set(None), "← Back to search" }
-            button { class: "ik-btn", onclick: move |_| reload.bump(), "Refresh" }
+            button { class: "ik-btn", onclick: move |_| selected.set(None),
+                {i18n.t("console.sync.backToSearch")}
+            }
+            button { class: "ik-btn", onclick: move |_| reload.bump(),
+                {i18n.t("console.live.refresh")}
+            }
         }
         SeriesMiniCard { series_id: sid }
-        div { class: "ik-muted", style: "font-size:12px;margin:14px 0 6px;", "External sync mappings" }
+        div { class: "ik-muted", style: "font-size:12px;margin:14px 0 6px;",
+            {i18n.t("console.sync.externalMappings")}
+        }
         if prov_list.is_empty() && map_list.is_empty() {
-            div { class: "ik-empty", "No sync providers registered." }
+            div { class: "ik-empty", {i18n.t("console.sync.noProvidersRegistered")} }
         }
         for p in prov_list.clone() {
             {
@@ -259,6 +287,7 @@ pub(super) fn MappingEditorRow(
     reload: Reload,
 ) -> Element {
     let api = api::use_api();
+    let i18n = use_i18n();
     let session = use_session();
     let has_current = current.is_some();
     let mut value = use_signal(|| current.clone().unwrap_or_default());
@@ -337,13 +366,17 @@ pub(super) fn MappingEditorRow(
                 class: "ik-input ik-mono",
                 style: "flex:1;",
                 r#type: "text",
-                placeholder: "external id (e.g. AniList media id)",
+                placeholder: i18n.t("console.sync.externalIdHint"),
                 value: "{value}",
                 oninput: move |e| value.set(e.value()),
             }
-            button { class: "ik-btn primary", disabled: *busy.read(), onclick: save, "Save" }
+            button { class: "ik-btn primary", disabled: *busy.read(), onclick: save,
+                {i18n.t("common.save")}
+            }
             if has_current {
-                button { class: "ik-btn", disabled: *busy.read(), onclick: clear, "Clear" }
+                button { class: "ik-btn", disabled: *busy.read(), onclick: clear,
+                    {i18n.t("console.sync.clear")}
+                }
             }
         }
     }

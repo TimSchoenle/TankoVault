@@ -411,7 +411,11 @@ impl RateLimitConfig {
         RateLimitPolicy::new(10, 5)
     }
     fn default_expensive() -> RateLimitPolicy {
-        RateLimitPolicy::new(6, 2)
+        // Cheap-to-ask, costly-to-serve routes. Kept well below `global`, but the previous
+        // `6/min, burst 2` was tight enough that an operator triggering a couple of scans
+        // back-to-back — or an account page firing its export alongside a sync — tripped it.
+        // A shallow double still throttles abuse while leaving room for legitimate bursts.
+        RateLimitPolicy::new(30, 10)
     }
 }
 

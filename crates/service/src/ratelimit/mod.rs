@@ -34,7 +34,7 @@ pub mod redis;
 
 use async_trait::async_trait;
 use axum::extract::{ConnectInfo, MatchedPath, Request};
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use std::net::SocketAddr;
@@ -104,10 +104,25 @@ impl RouteClass {
 ///
 /// Matching is done on axum's [`MatchedPath`] (the route *pattern*, `/v1/series/{id}`) so
 /// a classification cannot be dodged by varying a path parameter.
+/// One classification rule: a route-pattern prefix, the class it grants, and whether it
+/// is restricted to mutating requests.
+#[derive(Debug, Clone)]
+struct Rule {
+    prefix: String,
+    class: RouteClass,
+    /// When set, the rule only applies to mutating methods (POST/PUT/PATCH/DELETE). Safe
+    /// reads under the same prefix fall through to a broader class. This is what lets one
+    /// path serve both a cheap console read and an expensive operator action: `GET
+    /// /v1/admin/scans` (the console's scan-queue overview) and `POST /v1/admin/scans`
+    /// (triggering a run) share one route pattern, so classifying the path alone would
+    /// drag the read into the tight expensive budget.
+    writes_only: bool,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct RouteClassifier {
-    /// Prefix → class, kept sorted longest-first so the first match is the most specific.
-    rules: Vec<(String, RouteClass)>,
+    /// Rules kept sorted longest-prefix-first so the first match is the most specific.
+    rules: Vec<Rule>,
 }
 
 impl RouteClassifier {
@@ -120,30 +135,59 @@ impl RouteClassifier {
     /// Classify routes under `prefix` as credential handling.
     #[must_use]
     pub fn auth(self, prefix: impl Into<String>) -> Self {
-        self.rule(prefix, RouteClass::Auth)
+        self.rule(prefix, RouteClass::Auth, false)
     }
 
-    /// Classify routes under `prefix` as expensive.
+    /// Classify all routes under `prefix` as expensive, regardless of method.
+    ///
+    /// Use for a path that is expensive however it is called — a data export or a
+    /// POST-only trigger whose pattern no cheap read shares.
     #[must_use]
     pub fn expensive(self, prefix: impl Into<String>) -> Self {
-        self.rule(prefix, RouteClass::Expensive)
+        self.rule(prefix, RouteClass::Expensive, false)
     }
 
-    fn rule(mut self, prefix: impl Into<String>, class: RouteClass) -> Self {
-        self.rules.push((prefix.into(), class));
+    /// Classify only *mutating* requests under `prefix` as expensive; leave reads on the
+    /// broader budget.
+    ///
+    /// Use where a heavy action shares its route pattern with a cheap read the UI polls —
+    /// notably the operator console's admin listings, whose `GET`s must not be throttled
+    /// alongside the `POST`s that kick off real work.
+    #[must_use]
+    pub fn expensive_write(self, prefix: impl Into<String>) -> Self {
+        self.rule(prefix, RouteClass::Expensive, true)
+    }
+
+    fn rule(mut self, prefix: impl Into<String>, class: RouteClass, writes_only: bool) -> Self {
+        self.rules.push(Rule {
+            prefix: prefix.into(),
+            class,
+            writes_only,
+        });
         // Longest first, so `/v1/me/export` wins over a hypothetical `/v1/me` rule.
-        self.rules
-            .sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.0.cmp(&b.0)));
+        self.rules.sort_by(|a, b| {
+            b.prefix
+                .len()
+                .cmp(&a.prefix.len())
+                .then_with(|| a.prefix.cmp(&b.prefix))
+        });
         self
     }
 
-    /// The class for a matched route pattern.
+    /// The class for a matched route pattern and request method.
+    ///
+    /// A `writes_only` rule is skipped for a safe method (`GET`/`HEAD`/`OPTIONS`/`TRACE`),
+    /// so matching continues to any broader rule and, failing that, falls back to
+    /// [`RouteClass::Global`].
     #[must_use]
-    pub fn classify(&self, matched_path: &str) -> RouteClass {
+    pub fn classify(&self, method: &Method, matched_path: &str) -> RouteClass {
+        let is_write = !method.is_safe();
         self.rules
             .iter()
-            .find(|(prefix, _)| matched_path.starts_with(prefix.as_str()))
-            .map_or(RouteClass::Global, |(_, class)| *class)
+            .find(|rule| {
+                matched_path.starts_with(rule.prefix.as_str()) && (!rule.writes_only || is_write)
+            })
+            .map_or(RouteClass::Global, |rule| rule.class)
     }
 }
 
@@ -349,11 +393,12 @@ pub async fn enforce(
     req: Request,
     next: Next,
 ) -> Response {
+    let method = req.method().clone();
     let class = req
         .extensions()
         .get::<MatchedPath>()
         .map_or(RouteClass::Global, |p| {
-            limiter.classifier.classify(p.as_str())
+            limiter.classifier.classify(&method, p.as_str())
         });
     let key = limiter.key(&req);
 
@@ -413,8 +458,14 @@ mod tests {
     #[test]
     fn unclassified_routes_fall_back_to_global() {
         let classifier = RouteClassifier::new().auth("/v1/auth");
-        assert_eq!(classifier.classify("/v1/series"), RouteClass::Global);
-        assert_eq!(classifier.classify("/v1/auth/login"), RouteClass::Auth);
+        assert_eq!(
+            classifier.classify(&Method::GET, "/v1/series"),
+            RouteClass::Global
+        );
+        assert_eq!(
+            classifier.classify(&Method::POST, "/v1/auth/login"),
+            RouteClass::Auth
+        );
     }
 
     #[test]
@@ -425,11 +476,37 @@ mod tests {
             .expensive("/v1/me/export")
             .auth("/v1/me");
         assert_eq!(
-            classifier.classify("/v1/me/export"),
+            classifier.classify(&Method::GET, "/v1/me/export"),
             RouteClass::Expensive,
             "the specific export rule must beat the broader /v1/me rule"
         );
-        assert_eq!(classifier.classify("/v1/me/watchlist"), RouteClass::Auth);
+        assert_eq!(
+            classifier.classify(&Method::GET, "/v1/me/watchlist"),
+            RouteClass::Auth
+        );
+    }
+
+    #[test]
+    fn writes_only_rules_spare_reads_on_a_shared_path() {
+        // The operator console paints itself with `GET /v1/admin/scans`; only the `POST`
+        // that triggers a run is genuinely expensive. A method-blind rule would throttle
+        // the console's reads alongside the trigger.
+        let classifier = RouteClassifier::new().expensive_write("/v1/admin/scans");
+        assert_eq!(
+            classifier.classify(&Method::GET, "/v1/admin/scans"),
+            RouteClass::Global,
+            "reads on the shared path keep the ordinary budget"
+        );
+        assert_eq!(
+            classifier.classify(&Method::GET, "/v1/admin/scans/stream"),
+            RouteClass::Global,
+            "the live console stream is a read and must not be throttled as expensive"
+        );
+        assert_eq!(
+            classifier.classify(&Method::POST, "/v1/admin/scans"),
+            RouteClass::Expensive,
+            "triggering a run is the expensive action the budget exists for"
+        );
     }
 
     #[test]

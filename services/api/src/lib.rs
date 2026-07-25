@@ -50,13 +50,19 @@ pub fn route_classifier() -> RouteClassifier {
     RouteClassifier::new()
         // Credential handling — the online-guessing surface.
         .auth("/v1/auth")
-        // Cheap to ask for, expensive to serve.
+        // Cheap to ask for, expensive to serve — genuinely heavy however they are called.
         .expensive("/v1/me/export")
-        .expensive("/v1/me/sync")
-        .expensive("/v1/admin/scans")
-        .expensive("/v1/admin/sync")
+        .expensive("/v1/me/sync/{provider}/push")
+        .expensive("/v1/me/sync/{provider}/pull")
         .expensive("/v1/admin/providers/{id}/test")
         .expensive("/v1/admin/series/merge")
+        // Admin surfaces the console polls to paint itself: only the mutating calls draw
+        // from the tight budget, so the read-heavy console and account pages are not
+        // throttled for merely loading. `GET /v1/admin/scans` (scan-queue overview) and
+        // the `/v1/admin/sync/*` listings stay on the ordinary budget; the `POST`s that
+        // trigger real work do not.
+        .expensive_write("/v1/admin/scans")
+        .expensive_write("/v1/admin/sync")
 }
 
 /// Assemble the full route table and the shared middleware stack.

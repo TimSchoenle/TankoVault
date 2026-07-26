@@ -43,6 +43,10 @@ then `TANKOVAULT_*` environment variables (`__` denotes nesting, e.g.
 
 **Replace before any non-local use** (the compose defaults are dev-only):
 - `TANKOVAULT_AUTH__JWT_SECRET` — API token signing secret.
+- `TANKOVAULT_AUTH__PASSWORD_PEPPER` — *optional* server-side password pepper mixed into every
+  argon2id hash so a database leak alone can't be brute-forced offline. Empty (the default)
+  keeps hashing un-peppered. Once set it must stay stable (or existing passwords stop
+  verifying) and must be given to both the `api` and `seed` services with the same value.
 - `TANKOVAULT_ANILIST__CLIENT_ID` / `__CLIENT_SECRET` / `__REDIRECT_URI` — AniList OAuth app.
 - `TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY` — base64 32-byte key for tokens at rest; generate
   with `openssl rand -base64 32`.

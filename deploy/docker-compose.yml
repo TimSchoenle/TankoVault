@@ -83,6 +83,7 @@ services:
     environment:
       DATABASE_URL: *db-url
       TANKOVAULT_SEED_ADMIN_PASSWORD: changeme12345
+      TANKOVAULT_AUTH__PASSWORD_PEPPER: "${TANKOVAULT_AUTH__PASSWORD_PEPPER:-}"
     depends_on:
       migrate: { condition: service_completed_successfully }
     restart: "no"
@@ -97,6 +98,7 @@ services:
       TANKOVAULT_TELEMETRY__SERVICE_NAME: api
       TANKOVAULT_DATABASE__URL: *db-url
       TANKOVAULT_AUTH__JWT_SECRET: dev-jwt-secret-change-me
+      TANKOVAULT_AUTH__PASSWORD_PEPPER: "${TANKOVAULT_AUTH__PASSWORD_PEPPER:-}"
       TANKOVAULT_CONTROL_PLANE_URL: http://control-plane:8081
       TANKOVAULT_SYNC_URL: http://sync:8083
       TANKOVAULT_NATS__URL: nats://nats:4222 # live per-user notification SSE relay (/v1/me/stream)

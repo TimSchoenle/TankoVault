@@ -60,6 +60,12 @@ struct Config {
 #[derive(Debug, serde::Deserialize)]
 struct AuthConfig {
     jwt_secret: String,
+    /// Server-side password pepper: a secret mixed into every argon2id hash so a database
+    /// leak alone cannot be brute-forced offline. Optional — empty (the default) keeps
+    /// hashing un-peppered, which is backward-compatible with hashes stored before it was
+    /// set. Once configured it must stay stable, or existing passwords stop verifying.
+    #[serde(default)]
+    password_pepper: String,
     #[serde(default = "default_access_minutes")]
     access_ttl_minutes: i64,
     #[serde(default = "default_refresh_days")]
@@ -130,6 +136,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         pool: pool.clone(),
         jwt_secret: Arc::new(cfg.auth.jwt_secret.into_bytes()),
+        password_pepper: Arc::new(cfg.auth.password_pepper.into_bytes()),
         access_ttl: time::Duration::minutes(cfg.auth.access_ttl_minutes),
         refresh_ttl: time::Duration::days(cfg.auth.refresh_ttl_days),
         control_plane_url: cfg.control_plane_url,

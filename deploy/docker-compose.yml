@@ -25,13 +25,13 @@ x-db-url: &db-url "postgres://tankovault:tankovault@postgres:5432/tankovault"
 services:
   # ---- Infrastructure ---------------------------------------------------------------
   postgres:
-    image: postgres:16-alpine
+    image: postgres:19beta2-alpine
     environment:
       POSTGRES_USER: tankovault
       POSTGRES_PASSWORD: tankovault
       POSTGRES_DB: tankovault
     ports: ["5432:5432"]
-    volumes: ["pgdata:/var/lib/postgresql/data"]
+    volumes: ["pgdata:/var/lib/postgresql"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tankovault -d tankovault"]
       interval: 5s

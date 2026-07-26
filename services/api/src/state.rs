@@ -29,6 +29,11 @@ use tankovault_service::{AuditEvent, AuditSink, FeatureGate};
 pub struct AppState {
     pub pool: PgPool,
     pub jwt_secret: Arc<Vec<u8>>,
+    /// Server-side password pepper: a secret mixed into every argon2id hash as its keyed
+    /// input, held here rather than in the database so a database leak alone cannot be
+    /// brute-forced offline. Empty when the operator configured none, which reproduces
+    /// un-peppered hashing for backward compatibility.
+    pub password_pepper: Arc<Vec<u8>>,
     pub access_ttl: time::Duration,
     pub refresh_ttl: time::Duration,
     /// Base URL of the control-plane, for proxying "Scan now".

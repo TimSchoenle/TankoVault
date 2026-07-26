@@ -330,7 +330,10 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
     // Admin user (idempotent: ignore if already present).
     let password = std::env::var("TANKOVAULT_SEED_ADMIN_PASSWORD")
         .unwrap_or_else(|_| "changeme12345".to_owned());
-    let hash = tankovault_auth::hash_password(&password)
+    // Hash with the same pepper the API is configured with, or the seeded admin could never
+    // log in. Absent (the common local-dev case) means no pepper, matching the API default.
+    let pepper = std::env::var("TANKOVAULT_AUTH__PASSWORD_PEPPER").unwrap_or_default();
+    let hash = tankovault_auth::hash_password(&password, pepper.as_bytes())
         .map_err(|e| anyhow::anyhow!("hash failed: {e}"))?;
     match tankovault_db::repo::users::create(pool, "admin@tankovault.local", "admin", &hash).await {
         Ok(u) => {

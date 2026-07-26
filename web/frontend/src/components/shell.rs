@@ -4,6 +4,7 @@
 
 use crate::api;
 use crate::components::{nav::Rail, topbar::TopBar, UnreadBadge};
+use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
@@ -26,6 +27,7 @@ const RETRY_BACKOFF_MAX_MS: u32 = 60_000;
 #[component]
 pub(crate) fn Shell() -> Element {
     use_token_refresh();
+    use_capability_sync();
     use_live_notifications();
 
     rsx! {
@@ -111,6 +113,38 @@ fn use_token_refresh() {
             }
             if !booted {
                 session.mark_ready();
+            }
+        }
+    });
+}
+
+/// Keep the reader's capabilities — their permissions and this deployment's enabled features —
+/// in step with the session.
+///
+/// Keyed on the access token via `use_resource`, exactly like the live stream below, so it
+/// refetches on sign-in, on the boot-time silent refresh, and on every renewal. That cadence is
+/// what makes a permission granted or revoked while someone is signed in reach their UI within
+/// one token lifetime rather than never.
+///
+/// A failed fetch clears rather than keeps the previous answer: a stale capability set is how a
+/// reader ends up looking at a console tab they no longer have, and showing less than they are
+/// entitled to is the recoverable direction — the next refresh puts it back.
+fn use_capability_sync() {
+    let session = use_session();
+    let api = api::use_api();
+    let capabilities = use_capabilities();
+
+    use_resource(move || {
+        let client = api.client();
+        let signed_in = session.is_authenticated();
+        async move {
+            if !signed_in {
+                capabilities.clear();
+                return;
+            }
+            match client.capabilities().send().await {
+                Ok(response) => capabilities.set(response.into_inner()),
+                Err(_) => capabilities.clear(),
             }
         }
     });

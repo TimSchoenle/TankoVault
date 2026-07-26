@@ -45,6 +45,8 @@ pub const ADMIN_SCANS_TAG: &str = "admin-scans";
 pub const ADMIN_MATCHING_TAG: &str = "admin-matching";
 pub const ADMIN_SYNC_TAG: &str = "admin-sync";
 pub const ADMIN_USERS_TAG: &str = "admin-users";
+pub const ADMIN_PRIVACY_TAG: &str = "admin-privacy";
+pub const ADMIN_FLAGS_TAG: &str = "admin-feature-flags";
 pub const ADMIN_OVERVIEW_TAG: &str = "admin-overview";
 
 /// The bearer-JWT `Authorization` header accepted by [`crate::state::AuthUser`].
@@ -79,7 +81,9 @@ impl Modify for SecurityAddon {
         (name = ADMIN_SCANS_TAG, description = "Scan run history, failures, live scan stream"),
         (name = ADMIN_MATCHING_TAG, description = "Series merge-candidate review"),
         (name = ADMIN_SYNC_TAG, description = "Operator visibility into external sync mappings"),
-        (name = ADMIN_USERS_TAG, description = "User administration"),
+        (name = ADMIN_USERS_TAG, description = "User directory, identity, suspension and permission grants"),
+        (name = ADMIN_PRIVACY_TAG, description = "The GDPR data-subject request queue and its fulfilment"),
+        (name = ADMIN_FLAGS_TAG, description = "Runtime feature flags — the deployment control plane"),
         (name = ADMIN_OVERVIEW_TAG, description = "System stats and audit log"),
     ),
     components(schemas(
@@ -98,7 +102,13 @@ impl Modify for SecurityAddon {
     tankovault_domain::AdapterKind,
     tankovault_domain::ProviderState,
     tankovault_domain::TaskState,
-    tankovault_domain::UserRole,
+    tankovault_domain::AccountStatus,
+    // --- authorization and feature registries ---
+    tankovault_domain::Permission,
+    tankovault_domain::PermissionGroup,
+    tankovault_domain::PermissionPreset,
+    tankovault_domain::Feature,
+    tankovault_domain::FeatureGroup,
     // --- domain typed ids ---
     tankovault_domain::SeriesId,
     tankovault_domain::ChapterId,
@@ -112,7 +122,14 @@ impl Modify for SecurityAddon {
     tankovault_domain::NotificationId,
     // --- db read models (served directly as JSON by admin/series handlers) ---
     tankovault_db::repo::providers::PublicProvider,
-    tankovault_db::repo::users::UserRow2,
+    tankovault_db::repo::user_admin::DirectoryRow,
+    tankovault_db::repo::user_admin::DirectoryPage,
+    tankovault_db::repo::user_admin::UserDetail,
+    tankovault_db::repo::permissions::GrantRow,
+    tankovault_db::repo::gdpr::RequestKind,
+    tankovault_db::repo::gdpr::RequestStatus,
+    tankovault_db::repo::gdpr::RequestRow,
+    tankovault_db::repo::gdpr::AdminRequestRow,
     tankovault_db::repo::scans::FailedTaskView,
     tankovault_db::repo::stats::SystemStats,
     tankovault_db::repo::stats::ProviderStat,
@@ -162,6 +179,9 @@ impl Modify for SecurityAddon {
     crate::me::SyncOpts,
     crate::me::SyncSettingsPatch,
     crate::me::ResolveConflict,
+    crate::me::Capabilities,
+    crate::me::DeleteAccount,
+    crate::me::NewPrivacyRequest,
     // --- admin ---
     crate::admin::CreateProvider,
     crate::admin::UpdateProvider,
@@ -175,6 +195,22 @@ impl Modify for SecurityAddon {
     crate::admin::UpsertMapping,
     crate::admin::SuggestedMatch,
     crate::admin::AssignRemoteEntry,
+    // --- admin: user management ---
+    crate::admin::UserDetailResponse,
+    crate::admin::AdminProfileUpdate,
+    crate::admin::SetUserStatus,
+    crate::admin::SetPermissions,
+    crate::admin::DeleteUser,
+    crate::admin::PermissionInfo,
+    crate::admin::PresetInfo,
+    crate::admin::PermissionCatalogue,
+    // --- admin: feature flags ---
+    crate::admin::FlagView,
+    crate::admin::SetFlag,
+    // --- admin: privacy queue ---
+    crate::admin::ResolveRequest,
+    crate::admin::ExtendRequest,
+    crate::admin::FulfilErasure,
     // --- errors ---
     crate::error::ProblemDetails,
 )))]

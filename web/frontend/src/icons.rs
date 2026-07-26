@@ -61,6 +61,9 @@ pub(crate) enum Icon {
     Mail,
     Devices,
     Back,
+    Download,
+    Delete,
+    Flag,
     // fallback
     Circle,
 }
@@ -192,6 +195,11 @@ fn path_for(icon: Icon) -> &'static str {
             r#"<rect x="3" y="5" width="13" height="10" rx="1"/><path d="M2 19h13"/><rect x="17" y="9" width="5" height="10" rx="1"/>"#
         }
         Icon::Back => r#"<path d="M19 12H5M11 6l-6 6 6 6"/>"#,
+        Icon::Download => r#"<path d="M12 4v11"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/>"#,
+        Icon::Delete => {
+            r#"<path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12"/><path d="M10 11v6M14 11v6"/>"#
+        }
+        Icon::Flag => r#"<path d="M5 21V4"/><path d="M5 5h11l-2 3 2 3H5z"/>"#,
         Icon::Circle => r#"<circle cx="12" cy="12" r="4"/>"#,
     }
 }

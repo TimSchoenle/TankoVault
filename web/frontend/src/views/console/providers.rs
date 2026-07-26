@@ -6,11 +6,13 @@ use crate::components::ErrorBox;
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::models::*;
+use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::views::console::adapter_token;
 use crate::views::console::config_editor_text;
 use crate::views::console::politeness_json;
 use crate::views::console::ADAPTER_KINDS;
+use crate::wire::types::Permission;
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
 
@@ -21,7 +23,10 @@ pub(super) fn ProvidersPanel() -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let session = use_session();
-    let is_admin = session.role.read().is_admin();
+    let caps = use_capabilities();
+    // Registering a provider and editing one are separate capabilities now, so the create form
+    // appears for exactly the readers who can submit it rather than for a whole admin tier.
+    let can_create = caps.can(Permission::ProvidersCreate);
     let reload = use_reload();
     let resource = use_resource(move || {
         reload.track();
@@ -74,7 +79,7 @@ pub(super) fn ProvidersPanel() -> Element {
     rsx! {
         section { style: "margin-bottom:18px;",
             h3 { {i18n.t("console.tab.providers")} }
-            if is_admin {
+            if can_create {
                 CreateProviderForm { reload }
             }
             {body}
@@ -294,7 +299,14 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
     let api = api::use_api();
     let i18n = use_i18n();
     let session = use_session();
-    let is_admin = session.role.read().is_admin();
+    let caps = use_capabilities();
+    // One button per capability, rather than one tier that unlocked all of them at once. Each
+    // control now appears exactly when the server would accept the call behind it.
+    let can_edit = caps.can(Permission::ProvidersWrite);
+    let can_change_state = caps.can(Permission::ProvidersState);
+    let can_scan = caps.can(Permission::ScansRun);
+    let can_test = caps.can(Permission::ProvidersTest);
+    let can_delete = caps.can(Permission::ProvidersDelete);
     let pro = provider.read();
 
     let id = pro.id;
@@ -498,35 +510,43 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
                         option { value: "fast", {i18n.t("console.providers.fast")} }
                         option { value: "full", {i18n.t("console.providers.full")} }
                     }
-                    button { class: "ik-btn", onclick: scan, {i18n.t("console.providers.scan")} }
-                    button { class: "ik-btn", disabled: *busy.read(), onclick: toggle_state,
-                        if is_disabled {
-                            {i18n.t("console.providers.enable")}
-                        } else {
-                            {i18n.t("console.providers.disable")}
+                    if can_scan {
+                        button { class: "ik-btn", onclick: scan, {i18n.t("console.providers.scan")} }
+                    }
+                    if can_change_state {
+                        button { class: "ik-btn", disabled: *busy.read(), onclick: toggle_state,
+                            if is_disabled {
+                                {i18n.t("console.providers.enable")}
+                            } else {
+                                {i18n.t("console.providers.disable")}
+                            }
                         }
                     }
-                    button {
-                        class: "ik-btn",
-                        onclick: move |_| {
-                            let s = *show_test.read();
-                            show_test.set(!s);
-                        },
-                        {i18n.t("console.providers.test")}
-                    }
-                    button {
-                        class: "ik-btn",
-                        onclick: move |_| {
-                            let e = *expanded.read();
-                            expanded.set(!e);
-                        },
-                        if *expanded.read() {
-                            {i18n.t("common.close")}
-                        } else {
-                            {i18n.t("console.providers.edit")}
+                    if can_test {
+                        button {
+                            class: "ik-btn",
+                            onclick: move |_| {
+                                let s = *show_test.read();
+                                show_test.set(!s);
+                            },
+                            {i18n.t("console.providers.test")}
                         }
                     }
-                    if is_admin {
+                    if can_edit {
+                        button {
+                            class: "ik-btn",
+                            onclick: move |_| {
+                                let e = *expanded.read();
+                                expanded.set(!e);
+                            },
+                            if *expanded.read() {
+                                {i18n.t("common.close")}
+                            } else {
+                                {i18n.t("console.providers.edit")}
+                            }
+                        }
+                    }
+                    if can_delete {
                         button {
                             class: "ik-btn",
                             style: "color:var(--vermilion);",

@@ -4,7 +4,123 @@ This file tracks the build state of the system described in [`design.md`](./desi
 Update it at the end of every coding session: mark what landed, and leave a precise
 "pick up next" list so the next session starts without re-deriving context.
 
-**Last updated:** 2026-07-22 (Session 15 — design only, no code)
+**Last updated:** 2026-07-26 (Session 17 — permissions, feature flags, user administration, GDPR)
+
+> **Session 17 — roles replaced by permissions; every feature put behind a runtime flag; user
+> administration and the GDPR surfaces completed.** Four changes that are really one
+> authorization/administration model, which is why they landed together.
+>
+> **1. Permissions replace roles.** The ordered `user < operator < admin` tier is *gone* —
+> column, SQL enum, `UserRole` type and all. Authorization is now per-capability:
+> `tankovault_domain::Permission` (24 capabilities in 8 groups), stored per user in
+> `user_permissions`, with no ordering and no implication between grants. Two defects drove
+> this: the tier could not express least privilege (merge-queue triage also handed over
+> provider editing, scan triggering and every user's linked-account state), and
+> `at_least(Operator)` said how privileged a caller must be rather than *what they may do*, so
+> nothing connected an endpoint to the capability it exercises.
+>
+> Grants resolve **from the database on every authenticated request** rather than from a token
+> claim. That is a deliberate cost — one indexed lookup — bought for immediate revocation,
+> which a claim baked into a 15-minute token cannot offer. The access token now carries
+> identity only, and a test asserts no authorization claim can creep back into it. Console
+> presets (Reader/Operator/Administrator) expand to a checklist the administrator then edits
+> and are never persisted; nothing in the database or in a decision knows presets exist.
+>
+> **2. Every feature is behind a runtime flag.** `tankovault_domain::Feature` — 37 features in
+> 8 groups, each with a compiled default and an operator-facing description of what switching
+> it off *does*. `feature_flag_overrides` stores only deviations, so an empty table is a working
+> deployment and a new feature needs no migration. Crucially this is a **different mechanism
+> from the §2 wiring toggles** and does not break their contract: a flag has to change without a
+> redeploy, so it is consulted per request — but *declaratively*, via a `route_features()` table
+> next to the route registration enforced by one middleware, plus a per-iteration check in the
+> background loops that have no route to declare against. No handler contains flag logic.
+> `admin.feature_flags` and `admin.users` are **locked**: disabling either would leave no
+> in-band way to switch anything back on, so the API refuses and the runtime ignores a stored
+> override. Flags are enforced in `api`, `control-plane` (scheduler sweeps), `notifier`
+> (in-app/live/email/webhook/Discord) and `sync` (its own contract + the reconciliation loop).
+>
+> **3. User administration.** `GET /v1/admin/users` became a searchable, paged directory;
+> `/v1/admin/users/{id}` gained detail, identity edits, suspend/reinstate, forced sign-out,
+> administrative email confirmation, permission grant editing and erasure. Suspension is an
+> identity-level state (`users.status`), *not* the absence of permissions — an account with no
+> grants can still read its own watchlist, which is not what suspending it means; it is checked
+> before authorization and also ends live refresh sessions. Three guard rails live in code
+> because no constraint can express them: no self-administration, the last active holder of
+> `users.permissions` cannot be revoked/suspended/erased, and erasure demands the username back.
+> All three refusals are audited.
+>
+> **4. GDPR.** Self-service export and erasure were already there; erasure now also closes the
+> caller's own open requests so the compliance record is not left looking abandoned. New
+> alongside them: a tracked data-subject request queue (`gdpr_requests`) covering the rights the
+> two endpoints cannot — Art. 16/18/21 need a human, Art. 12(3) needs a deadline on a tracked
+> object, Art. 5(2) needs a durable record. Recording an outcome and performing it are separate
+> endpoints with separate permissions (`privacy.export` is split from `privacy.write` because it
+> is the one action that discloses another person's whole record). The queue stores **no
+> snapshot of the subject's email or username**: `user_id` is `ON DELETE SET NULL`, so a
+> completed erasure leaves an accountability record that is no longer personal data.
+>
+> **Two collisions the generated client caught, both real bugs:** `tankovault_domain::
+> AccountStatus` silently clobbered `tankovault_contracts::sync::AccountStatus` in the `OpenAPI`
+> components (the latter is now published as `SyncAccountStatus`), and `#[serde(flatten)]` on
+> `AdminRequestRow` produced a schema with *no properties*, so the typed client lost every field
+> the queue renders. Both fixed; `#[serde(flatten)]` must not be used on a `ToSchema` type.
+>
+> **Frontend:** `Session::role` is gone, replaced by a `CapabilitySet` fetched from
+> `GET /v1/me/capabilities` and keyed on the session token, so a grant change reaches the UI
+> within one token lifetime. Rail entries, console tabs and individual buttons each declare the
+> permission *and* feature they need. New Console tabs (Features, Privacy) and a rewritten Users
+> tab; new Account "Privacy & data" panel (export, requests, deletion). 628 catalogue keys, en
+> and de in lockstep.
+>
+> Gates: `fmt --check`, `clippy --workspace --all-targets --all-features -D warnings`,
+> `cargo test --workspace` (**257 passing**, was 214), `openapi --check`, `sqlx-prepare --check`,
+> and the `wasm32` frontend `fmt`/`clippy -D warnings`/`test` all clean. Migration `0018` was
+> additionally applied from scratch to a throwaway database, and a **44-check end-to-end smoke
+> test** against a live API + Postgres verified: the empty token claim set, immediate
+> grant/revocation, per-feature 404s with the flag named in the body, locked-flag refusal,
+> suspension blocking both sign-in and live sessions, last-administrator protection, and the
+> full GDPR queue including operator-fulfilled erasure leaving a pseudonymised record.
+>
+> Two **pre-existing** breakages were fixed in passing: `services/api`'s lib tests called
+> `RouteClassifier::classify` with its old one-argument signature (so `cargo test --workspace`
+> did not build), and `clippy::unnecessary_wraps` failed on `MetricsConfig::default_listen`.
+
+> Session 16 — production hardening of every backend service. A new shared crate
+> `crates/service` (`tankovault-service`) now owns every cross-cutting concern; the old
+> `crates/observability` was folded into it and **deleted**. What it provides, and what it
+> replaced:
+>
+> | Concern | Before | Now |
+> |---|---|---|
+> | Bootstrap | Each `main.rs` open-coded load-config → init-telemetry → connect-pool → bind → `axum::serve` | One shared runtime; `main.rs` is wiring only |
+> | Shutdown | None. A container stop severed in-flight requests and background loops mid-write | One `CancellationToken` drives the server *and* every spawned loop (`shutdown::every`) |
+> | `/ready` | Literal `"ok"` in all 7 services — reported healthy with the DB gone | Concurrent, individually-timed dependency probes; `503` + per-dependency JSON body |
+> | Inbound rate limit | **None anywhere** (`governor` was only outbound crawl politeness) | `RateLimitStore` trait, in-memory (`governor`) + Redis token-bucket (atomic Lua) backends, per-route-class budgets, `429` + `Retry-After` + RFC 9457 body |
+> | CORS | `CorsLayer::permissive()` on the public edge — any site could read a signed-in user's data | Explicit origin allowlist; **empty by default** (same-origin only) |
+> | Other edge controls | None | Request-id, body cap (1 MiB), request timeout, `nosniff`/`DENY`/`no-referrer`/CORP, optional HSTS |
+> | Metrics | 3 counters in 2 services, always on | Togglable (**recorder not installed when off**), `http_requests_total` / `http_request_duration_seconds` / `http_requests_in_flight` labelled by *matched route* so cardinality is bounded |
+> | Audit | One private helper in `admin.rs`; successes only | `AuditSink` trait + Postgres/no-op sinks; `outcome` (`success`/`failure`/`denied`), `actor_ip`, `user_agent` columns (migration `0017`); **denials now recorded** — `AuthUser::require` audits refusals, and login failure / refresh-token-reuse are audited |
+> | GDPR | Nothing | `GET /v1/me/export` (Art. 20, credential-redacted) and `DELETE /v1/me` (Art. 17, cascade + audit pseudonymisation via the existing `ON DELETE SET NULL`); configurable audit retention sweep (Art. 5(1)(e)) |
+>
+> **Toggles** are wiring decisions, never call-site branches: `metrics.enabled = false`
+> installs no recorder at all, `audit.enabled = false` swaps in `NoopAuditSink`, and
+> `rate_limit.enabled = false` leaves the layer unmounted. All three verified off and on
+> against a live stack.
+>
+> **Restructuring:** `services/api/src/admin.rs` (1452 lines) → `admin/{providers,scans,
+> system,merge,sync}.rs`; `me.rs` (1346) → `me/{watchlist,progress,notifications,dashboard,
+> account,sync,privacy}.rs`. Pure code movement — the route table and `OpenAPI` document are
+> unchanged apart from the two new GDPR paths. Re-exports are **globs** because `utoipa`'s
+> `routes!` resolves a hidden `__path_<handler>` type per handler.
+>
+> **Two real bugs found and fixed while building this:** `RateLimitPolicy::capacity()`
+> clamped the burst *up* to the sustained rate, so the shipped default of 300/min with a
+> 60-deep bucket actually allowed 300 back-to-back requests; and `Health::report` gathered
+> its probes sequentially while documenting them as concurrent.
+>
+> Gates: `fmt --check`, `clippy --workspace --all-targets --all-features -D warnings`,
+> `cargo test --workspace` (**214 passing**), and the `wasm32` frontend check all clean,
+> both online and with `SQLX_OFFLINE=true`.
 
 > Session 15: **no code shipped** — a design pass on the two weakest areas of user tracking.
 > New `docs/READING_PROGRESS_AND_SYNC.md` (RFC, proposed/not implemented) fully redesigns:
@@ -304,22 +420,23 @@ Legend: ✅ done & compiling · 🟡 partial/skeleton · ⬜ not started
 ### Shared crates (`crates/`)
 | Crate | Status | Notes |
 |---|---|---|
-| `domain` | ✅ | Entities, typed UUIDv7 ids, enums, `resolve_link` (tested), title normalize, politeness+ceilings. 23 tests. |
+| `domain` | ✅ | Entities, typed UUIDv7 ids, enums, `resolve_link` (tested), title normalize, politeness+ceilings. **+ the two registries the whole system authorizes and switches against: `Permission` (24 capabilities, groups, presets) and `Feature` (37 flags, defaults, locked set)** — `UserRole` removed. 38 tests. |
 | `config` | ✅ | Figment layered load (defaults → TOML → `TANKOVAULT_*` env). `ConfigError` boxes the large `figment::Error`. Tested. |
 | `contracts` | ✅ | NATS subjects/streams + task/progress/chapter/provider-state messages. Tested. |
 | `bus` | ✅ | `async-nats` JetStream client: stream provisioning, task publish/consume, chapter events. **+ core-NATS client** for non-durable live pushes (`publish_user_notification`/`subscribe_user_notifications`; `BusError::Nats`). |
-| `observability` | ✅ | `tracing` (json/pretty) + Prometheus recorder. **OTLP export deferred** (§4). |
+| `service` | ✅ | **New (Session 16).** The shared production runtime: `init_tracing`, togglable `MetricsRegistry`, `install_shutdown` + `shutdown::every`, `Health`/`HealthCheck` (+`PostgresCheck`), `HttpStack` (request-id → trace → metrics → security headers → CORS → rate limit → timeout → body cap → compression), `ops_router`, `serve` with graceful drain, `RateLimitStore` (memory + Redis) and `AuditSink` (Postgres + no-op). **+ `flags`: the runtime `FeatureGate` (DB-backed snapshot + refresh loop) and the declarative `RouteFeatures` middleware.** Features: `db`, `redis`. 48 tests. |
+| ~~`observability`~~ | — | **Deleted (Session 16)**; folded into `service`, which splits tracing from metrics so metrics can genuinely be switched off. OTLP export still deferred (§4). |
 | `db` | ✅ | Pool, embedded migrations, repos: providers, catalog (`ingest_series` tx now runs the **matcher-driven `resolve_canonical_series`** + merge-candidate recording; `list_tags`), users+refresh, scans (SKIP LOCKED), tracking (+`progress_state`, `watchlist_set_status`, `feed`, `notifications_unread_count`), matching (trigram + **`merge_series`/`list_open_merge_candidates`/`dismiss_merge_candidate`**), audit, sync (external_accounts + sync_mappings). Depends on `tankovault-matcher`. Not yet DB-integration-tested in-repo (§3). |
 | `fetch` | ✅ | `Fetcher` trait + decorator stack (robots → rate-limit → cache → solving → retry → base), **SSRF guard**, solver client. 12 tests. |
 | `solver` | ✅ | `ChallengeSolver` trait, `detect_challenge` classifier, FlareSolverr back-end, fake solver for the swap test. 7 tests. |
 | `adapters` | ✅ | `SourceAdapter` trait, `Ctx`, generic/Madara config adapter, custom `DemonicScansAdapter`, HTML helpers (number/status/date parsers, `relativize`/`absolutize`), `builtin_presets()` (demonicscans + manhuaus + kunmanga, solver-derived), factory slug dispatch. Fixtures per provider; unit + fixture tests. See [`PROVIDERS.md`](./PROVIDERS.md). |
-| `auth` | ✅ | argon2id, HS256 access JWT, rotating hashed refresh + reuse detection, RBAC. **+ `SecretBox` (AES-256-GCM) for external tokens at rest (§16).** 14 tests. |
+| `auth` | ✅ | argon2id, HS256 access JWT (**identity claims only — no role or permission travels in a token**), rotating hashed refresh + reuse detection. **+ `SecretBox` (AES-256-GCM) for external tokens at rest (§16).** 15 tests. |
 | `matcher` | ✅ | Pure scoring/decision bands (attach/ambiguous/create). First live consumer is the sync service. 5 tests. |
 
 ### Services (`services/`)
 | Service | Status | Notes |
 |---|---|---|
-| `api` | ✅ | **Full §11 contract.** Auth (register/login/refresh/logout), series browse/detail/chapters (resolved links), `/v1/tags`, admin provider CRUD + `base_url` migration + trigger-scan + **`providers/:id/test`** (dry-run adapter via the injected fetch stack) + **`scans/stream`** (SSE, DB-poll), `merge-candidates` list/dismiss + `series/merge`, **operator dashboard reads** (`admin/stats`, `admin/providers/stats`, `admin/scans` list, `admin/scan-failures`, `admin/audit`), `/me` watchlist/progress/feed/notifications, and the **provider-keyed** `/me/sync/{provider}/*` proxy (+ `/me/sync/providers`). Now also depends on `adapters`/`fetch`/`solver` for the test endpoint. **+ `GET /v1/me/stream`** (SSE live notifications; token-in-query auth; core-NATS relay via `AppState.bus: Option<Bus>`, degrades to `503` if NATS is down). **+ admin Sync endpoints** (`admin/sync/accounts`, `admin/sync/mappings` list; `admin/sync/{pull,push,unlink}`, `admin/sync/mappings/clear` — all audited). **+ `spawn_targeted_push`**: `put_progress`/`put_watchlist` fire a best-effort background `POST {sync}/v1/sync/push-series` after their local write, so marking a chapter read reflects to every linked provider without a manual sync (design: immediate targeted push, §7). |
+| `api` | ✅ | **Full §11 contract.** Auth (register/login/refresh/logout), series browse/detail/chapters (resolved links), `/v1/tags`, admin provider CRUD + `base_url` migration + trigger-scan + **`providers/:id/test`** (dry-run adapter via the injected fetch stack) + **`scans/stream`** (SSE, DB-poll), `merge-candidates` list/dismiss + `series/merge`, **operator dashboard reads** (`admin/stats`, `admin/providers/stats`, `admin/scans` list, `admin/scan-failures`, `admin/audit`), `/me` watchlist/progress/feed/notifications, and the **provider-keyed** `/me/sync/{provider}/*` proxy (+ `/me/sync/providers`). Now also depends on `adapters`/`fetch`/`solver` for the test endpoint. **+ `GET /v1/me/stream`** (SSE live notifications; token-in-query auth; core-NATS relay via `AppState.bus: Option<Bus>`, degrades to `503` if NATS is down). **+ admin Sync endpoints** (`admin/sync/accounts`, `admin/sync/mappings` list; `admin/sync/{pull,push,unlink}`, `admin/sync/mappings/clear` — all audited). **+ `spawn_targeted_push`**: `put_progress`/`put_watchlist` fire a best-effort background `POST {sync}/v1/sync/push-series` after their local write, so marking a chapter read reflects to every linked provider without a manual sync (design: immediate targeted push, §7). **+ Session 16:** handlers split into `admin/*` and `me/*` submodules; the shared `tankovault-service` stack (rate limit, CORS allowlist, security headers, request-id, body cap, timeout, togglable metrics/audit, real `/ready`, graceful shutdown); audited auth outcomes and authz denials; **GDPR `GET /v1/me/export` + `DELETE /v1/me`**; audit-retention sweep. **+ Session 17:** authorization is per-`Permission`, resolved from the DB each request (no role, no token claim); the declarative `route_features()` flag table + middleware; full user administration (`/v1/admin/users/*`: directory, detail, identity, suspend, sessions, grants, erasure) and `GET /v1/admin/permissions`; the feature-flag control plane (`/v1/admin/feature-flags`); the GDPR request queue (`/v1/me/privacy/requests`, `/v1/admin/privacy/requests/*`); and `GET /v1/me/capabilities`. See [`OPERATIONS.md`](./OPERATIONS.md). |
 | `worker` | ✅ | One-shot inline full/fast scan **and** JetStream consumer (consumer-group scale); idempotent `ingest_series`, emits `chapter.discovered`. |
 | `control-plane` | ✅ | Scheduler (interval sweeps) + planner (run→tasks→JetStream) + `/internal/scans` trigger. **+ progress aggregator** (`scan.progress` consumer → atomic `finalize_if_complete` → republished terminal event) **+ Redis leader election** (`SET NX PX` lock w/ `GET`/`PEXPIRE` renewal; `Leadership` flag gates every sweep; fails open to sole-leader without Redis, stands down on Redis error). 5 tests. |
 | `notifier` | ✅ | Consumes `chapter.discovered`, fans out to watchers (partial-index lookup), dedup, in-app rows. **+ pluggable external channels** (`NotificationChannel` trait): config-driven generic JSON webhook + Discord incoming-webhook **+ email (SMTP via `lettre`, rustls/ring)**, delivered once per genuinely-new chapter (best-effort, failures logged not fatal). **+ live push**: after each in-app row it publishes a best-effort core-NATS `UserNotification` (with the fresh unread count) to `notify.user.<id>`, relayed to connected clients by the API's `/v1/me/stream`. Pure payload/message builders tested (13 tests). |
@@ -375,7 +492,7 @@ wasm32-unknown-unknown` clean. The only honest stubs left are features with no e
 ### Infra
 | Item | Status | Notes |
 |---|---|---|
-| Migrations (`migrations/`) | ✅ | 9 files (`0001_extensions` … `0008_scan_task_dedup`, `0009_account`), apply cleanly on Postgres 16. `0009` adds `users.notification_prefs jsonb` for the frontend §9.4 account settings. |
+| Migrations (`migrations/`) | ✅ | 18 files (`0001_extensions` … `0018_permissions_flags_privacy`), verified to apply cleanly from scratch on Postgres 16. `0018` is the authorization/administration model: `user_permissions` (backfilled from the roles it replaces, then `users.role` and the `user_role` type are **dropped**), `users.status`/`suspended_at`/`suspension_reason`/`last_login_at`, `feature_flag_overrides`, and `gdpr_requests`. |
 | Dockerfiles / `docker-compose.yml` | ✅ | `deploy/docker/Dockerfile` (parameterised cargo-chef + distroless) builds any backend via `--build-arg BIN`; the optional `render` tier uses the extra `runtime-browser` target (Debian slim + Chromium). **`deploy/docker/Dockerfile.frontend`** builds the Dioxus WASM SPA + serves it via nginx (`frontend.nginx.conf`), reverse-proxying `/v1/*`→`api`. `deploy/docker-compose.yml` runs the **full E2E stack**: Postgres/Redis/NATS/FlareSolverr + migrate/seed + every backend service + the frontend (front door on `:3000`). Redis is wired to `control-plane` (leader election); NATS is healthchecked. **Frontend image build + serve + `/v1` proxy verified this session; backend images not rebuilt.** k8s/Helm still pending. |
 | CI | ✅ | `.github/workflows/ci.yml`: parallel `fmt --check`, `clippy -D warnings`, `cargo test --workspace`, `wasm32` frontend check, `cargo-deny` (`deny.toml`), `cargo-audit`, and a `docker build` matrix over every service `BIN`. |
 | Config | ✅ (env) | Services are configured via `TANKOVAULT_*` env in compose; no standalone sample TOMLs. |
@@ -433,6 +550,23 @@ PG16.
 ---
 
 ## 6. Pick up next (ordered)
+
+0a. **Follow-ups left open by Session 17** (none blocking; the model is complete and verified):
+   - **A permission-model integration test suite.** The 44-check smoke script that verified this
+     session lives only in a scratchpad. It should become a checked-in integration test against
+     a disposable PG16 (see §6.4) — grant/revoke visibility, suspension, last-administrator
+     protection and the GDPR queue transitions are exactly the behaviours a refactor would break
+     silently.
+   - **Bootstrap for a deployment with no administrator.** `xtask seed` grants the demo admin
+     every capability, and the migration converts existing roles, but an installation that
+     somehow reaches zero active `users.permissions` holders has no in-band recovery. A
+     `xtask grant <user> <permission>` command would be the escape hatch.
+   - **Per-user notification channel preferences.** `notifications.{email,webhook,discord}` are
+     deployment-wide flags; the long-standing wish for per-user channel prefs (§6.7) is
+     unchanged by this work and would need its own table.
+   - **Flag change history.** `feature_flag_overrides` keeps only the *last* change (who, when,
+     why). Every change is in `audit_log` under `flag.set`/`flag.reset`, but the console does
+     not surface that timeline next to the switch.
 
 0. **Implement `docs/READING_PROGRESS_AND_SYNC.md` (Session 15 design, not yet coded).**
    Highest-priority pickup: Part A (split `read_progress.last_read_number` into scalar

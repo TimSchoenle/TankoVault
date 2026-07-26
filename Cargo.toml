@@ -4,7 +4,7 @@ members = [
     "crates/domain",
     "crates/config",
     "crates/contracts",
-    "crates/observability",
+    "crates/service",
     "crates/db",
     "crates/fetch",
     "crates/solver",
@@ -53,7 +53,7 @@ must_use_candidate = "allow"
 tankovault-domain = { path = "crates/domain" }
 tankovault-config = { path = "crates/config" }
 tankovault-contracts = { path = "crates/contracts" }
-tankovault-observability = { path = "crates/observability" }
+tankovault-service = { path = "crates/service" }
 tankovault-db = { path = "crates/db" }
 tankovault-fetch = { path = "crates/fetch" }
 tankovault-solver = { path = "crates/solver" }

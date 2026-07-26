@@ -15,7 +15,7 @@
 //! `openapi` does not.
 
 use progenitor_impl::{GenerationSettings, Generator, InterfaceStyle, TypePatch};
-use tankovault_domain::{Politeness, UserRole};
+use tankovault_domain::Politeness;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -99,7 +99,11 @@ fn sqlx_prepare(check: bool) -> anyhow::Result<()> {
     }
     println!(
         "sqlx offline query cache {}",
-        if check { "is up to date" } else { "written to .sqlx/" }
+        if check {
+            "is up to date"
+        } else {
+            "written to .sqlx/"
+        }
     );
     Ok(())
 }
@@ -199,6 +203,12 @@ const ID_TYPES: [&str; 10] = [
 ];
 
 /// Domain enums re-mapped to their canonical Rust definitions on the frontend.
+///
+/// `Permission` and `Feature` are deliberately **absent**. Both are `#[non_exhaustive]` and
+/// exist to be matched exhaustively against a specific build's registry; mapping them onto the
+/// domain types would make the generated client refuse to deserialise a response from a server
+/// that has a capability this build does not, turning a routine version skew into a hard
+/// failure. The frontend treats them as their wire strings instead.
 const ENUM_TYPES: [&str; 7] = [
     "ContentType",
     "SeriesStatus",
@@ -206,7 +216,7 @@ const ENUM_TYPES: [&str; 7] = [
     "RunState",
     "ScanMode",
     "Politeness",
-    "UserRole",
+    "AccountStatus",
 ];
 
 /// Inject `x-rust-type` into the id and enum schema components so `progenitor` emits our
@@ -323,21 +333,27 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
         .unwrap_or_else(|_| "changeme12345".to_owned());
     let hash = tankovault_auth::hash_password(&password)
         .map_err(|e| anyhow::anyhow!("hash failed: {e}"))?;
-    match tankovault_db::repo::users::create(
-        pool,
-        "admin@tankovault.local",
-        "admin",
-        &hash,
-        UserRole::Admin,
-    )
-    .await
-    {
+    match tankovault_db::repo::users::create(pool, "admin@tankovault.local", "admin", &hash).await {
         Ok(u) => {
             // The admin is provisioned by the operator, not through the email-confirmation
             // flow, so mark its address verified — otherwise the login gate would lock it out
             // whenever a mailer is configured.
             tankovault_db::repo::users::mark_email_verified(pool, u.id).await?;
-            println!("seeded admin user {} (password: {password})", u.username);
+
+            // Accounts are created with no permissions — the registration path must never be
+            // able to mint privilege. The seed is the deliberate exception: a fresh deployment
+            // needs one account that can reach the console, and above all one that holds
+            // `users.permissions`, since without it nobody could ever grant anything.
+            //
+            // `granted_by` is `None`: nobody granted these, the installation did.
+            for permission in tankovault_domain::Permission::all() {
+                tankovault_db::repo::permissions::grant(pool, u.id, *permission, None).await?;
+            }
+            println!(
+                "seeded admin user {} with all {} permissions (password: {password})",
+                u.username,
+                tankovault_domain::Permission::all().len(),
+            );
         }
         Err(e) if e.is_unique_violation() || matches!(e, tankovault_db::DbError::Conflict(_)) => {
             println!("admin user already present; skipping");

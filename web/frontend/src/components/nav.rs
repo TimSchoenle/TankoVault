@@ -3,18 +3,28 @@
 use crate::components::UnreadBadge;
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
+use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::util::initial;
+use crate::wire::types::Feature;
 use crate::Route;
 use dioxus::prelude::*;
 
 #[component]
 pub(crate) fn Rail() -> Element {
-    let session = use_session();
     let i18n = use_i18n();
     let route: Route = use_route();
     let unread = *use_context::<UnreadBadge>().0.read();
-    let is_operator = session.role.read().is_operator();
+    let caps = use_capabilities();
+
+    // Rail entries answer to both halves of a capability: the reader has to be allowed, and the
+    // deployment has to offer the feature at all. A link to a screen whose endpoints 404 is
+    // worse than no link.
+    let show_search = caps.has_feature(Feature::CatalogueSearch);
+    let show_discover = caps.has_feature(Feature::CatalogueBrowse);
+    let show_watchlist = caps.has_feature(Feature::TrackingWatchlist);
+    let show_notifications = caps.has_feature(Feature::NotificationsInApp);
+    let show_console = caps.is_staff();
 
     rsx! {
         nav { class: "ik-rail",
@@ -33,20 +43,30 @@ pub(crate) fn Rail() -> Element {
 
             NavGroup { label: i18n.t("nav.group.main") }
             NavLink { to: Route::Home {}, label: i18n.t("nav.home"), icon: Icon::Home, current: route.clone() }
-            NavLink { to: Route::Discover {}, label: i18n.t("nav.discover"), icon: Icon::Explore, current: route.clone() }
-            NavLink { to: Route::Search { q: String::new() }, label: i18n.t("nav.search"), icon: Icon::Search, current: route.clone() }
-
-            NavGroup { label: i18n.t("nav.group.library") }
-            NavLink { to: Route::Watchlist {}, label: i18n.t("nav.watchlist"), icon: Icon::Watchlist, current: route.clone() }
-            NavLink {
-                to: Route::Notifications {},
-                label: i18n.t("nav.notifications"),
-                icon: Icon::Notifications,
-                current: route.clone(),
-                badge: unread,
+            if show_discover {
+                NavLink { to: Route::Discover {}, label: i18n.t("nav.discover"), icon: Icon::Explore, current: route.clone() }
+            }
+            if show_search {
+                NavLink { to: Route::Search { q: String::new() }, label: i18n.t("nav.search"), icon: Icon::Search, current: route.clone() }
             }
 
-            if is_operator {
+            if show_watchlist || show_notifications {
+                NavGroup { label: i18n.t("nav.group.library") }
+            }
+            if show_watchlist {
+                NavLink { to: Route::Watchlist {}, label: i18n.t("nav.watchlist"), icon: Icon::Watchlist, current: route.clone() }
+            }
+            if show_notifications {
+                NavLink {
+                    to: Route::Notifications {},
+                    label: i18n.t("nav.notifications"),
+                    icon: Icon::Notifications,
+                    current: route.clone(),
+                    badge: unread,
+                }
+            }
+
+            if show_console {
                 NavGroup { label: i18n.t("nav.group.operator") }
                 NavLink { to: Route::Console {}, label: i18n.t("nav.console"), icon: Icon::Console, current: route.clone() }
             }
@@ -112,6 +132,7 @@ fn same_screen(a: &Route, b: &Route) -> bool {
 #[component]
 fn UserFooter() -> Element {
     let session = use_session();
+    let caps = use_capabilities();
     let i18n = use_i18n();
     if !session.is_authenticated() {
         return rsx! {
@@ -124,7 +145,10 @@ fn UserFooter() -> Element {
     let name = session
         .username()
         .unwrap_or_else(|| i18n.t("common.readerFallback"));
-    let role = i18n.t(session.role.read().label_key());
+    // Derived from what the reader can actually do rather than from a stored role — there is
+    // no role any more, and inventing one from a grant set would re-introduce the fiction the
+    // permission model removed.
+    let tier = i18n.t(caps.label_key());
     rsx! {
         div { class: "ik-userbox",
             div { class: "ik-avatar", "{initial(&name)}" }
@@ -132,7 +156,7 @@ fn UserFooter() -> Element {
                 div { class: "name", "{name}" }
                 div { class: "sub",
                     span { class: "ik-status-dot" }
-                    "{role}"
+                    "{tier}"
                 }
             }
             Link { to: Route::Account {}, class: "gear", title: i18n.t("nav.accountSettings"),

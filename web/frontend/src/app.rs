@@ -3,6 +3,7 @@
 
 use crate::components::{Shell, UnreadBadge};
 use crate::i18n::I18nRoot;
+use crate::state::capabilities::CapabilitySet;
 use crate::state::Session;
 use crate::views::{
     Account, AnilistCallback, Console, Discover, ForgotPassword, Home, Login, NotFound,
@@ -57,6 +58,10 @@ pub(crate) fn App() -> Element {
     // Order matters: the API handle reads the session for the live bearer token, so the
     // session context has to exist first.
     use_context_provider(Session::new);
+    // Starts empty and is filled by `Shell`'s capability sync once a token exists. Provided
+    // here rather than inside the router so a view can read it without every screen having to
+    // thread it down.
+    use_context_provider(CapabilitySet::new);
     use_context_provider(|| UnreadBadge(Signal::new(0)));
     crate::api::provide_api();
 

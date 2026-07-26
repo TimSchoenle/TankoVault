@@ -1,655 +1,814 @@
 {
-  "common": {
-    "signIn": "Sign in",
-    "backToSignIn": "Back to sign in",
-    "readerFallback": "reader",
-    "open": "Open",
-    "close": "Close",
-    "cancel": "Cancel",
-    "save": "Save",
-    "saving": "Saving…",
-    "working": "Working…",
-    "remove": "Remove",
-    "reset": "Reset",
-    "back": "Back",
-    "seeAll": "See all",
-    "tryAgain": "Try again",
-    "markRead": "Mark read",
-    "markUnread": "Mark unread",
-    "on": "On",
-    "off": "Off"
-  },
-  "nav": {
-    "tagline": "SOURCE · TRACK · SYNC",
-    "home": "Home",
-    "discover": "Discover",
-    "search": "Search",
-    "watchlist": "Watchlist",
-    "notifications": "Notifications",
-    "console": "Console",
-    "account": "Account",
-    "accountSettings": "Account settings",
-    "group": {
-      "main": "MAIN",
-      "library": "LIBRARY",
-      "operator": "OPERATOR",
-      "account": "ACCOUNT"
-    }
-  },
-  "topbar": {
-    "searchPlaceholder": "Search series, tags, authors…",
-    "anilistSynced": "AniList synced",
-    "anilistConnect": "Connect AniList"
-  },
-  "feedback": {
-    "failed": "Something went wrong: {message}",
-    "signInGate": "Sign in to see this."
-  },
-  "error": {
-    "unreachable": "Couldn't reach the server. Check your connection and retry.",
-    "truncated": "The server's reply was cut short. Please retry.",
-    "unreadable": "The server sent something this app couldn't read.",
-    "unbuildable": "That request couldn't be built. This is a bug — please report it.",
-    "status": {
-      "badRequest": "That request wasn't valid.",
-      "unauthorized": "You need to sign in to do that.",
-      "forbidden": "You don't have permission to do that.",
-      "notFound": "Not found.",
-      "conflict": "That conflicts with the current state.",
-      "tooLarge": "That's too large to send.",
-      "rateLimited": "Too many requests — give it a moment and retry.",
-      "server": "The server had a problem. Please retry.",
-      "other": "Request failed ({code})."
-    }
-  },
-  "time": {
-    "unknown": "—",
-    "justNow": "just now",
-    "minutesAgo": "{count}m ago",
-    "hoursAgo": "{count}h ago",
-    "daysAgo": "{count}d ago",
-    "monthsAgo": "{count}mo ago",
-    "yearsAgo": "{count}y ago"
-  },
-  "greeting": {
-    "morning": "Good morning",
-    "afternoon": "Good afternoon",
-    "evening": "Good evening",
-    "night": "Late night"
-  },
-  "enum": {
-    "contentType": {
-      "manga": "Manga",
-      "manhwa": "Manhwa",
-      "manhua": "Manhua",
-      "webtoon": "Webtoon",
-      "unknown": "Unknown"
-    },
-    "seriesStatus": {
-      "ongoing": "Ongoing",
-      "completed": "Completed",
-      "hiatus": "Hiatus",
-      "cancelled": "Cancelled",
-      "unknown": "Unknown"
-    },
-    "watchStatus": {
-      "reading": "Reading",
-      "planned": "Plan to read",
-      "completed": "Completed",
-      "dropped": "Dropped",
-      "paused": "On hold"
-    },
-    "runState": {
-      "queued": "Queued",
-      "running": "Running",
-      "completed": "Finished",
-      "failed": "Failed",
-      "cancelled": "Cancelled"
-    },
-    "conflictPolicy": {
-      "localWins": "Always keep my local progress",
-      "remoteWins": "Always trust AniList",
-      "newestWins": "Use whichever changed most recently",
-      "askMe": "Ask me when they disagree"
-    },
-    "role": {
-      "admin": "admin",
-      "operator": "operator",
-      "reader": "reader"
-    }
-  },
-  "home": {
-    "welcome": "Welcome back, {name}",
-    "stat": {
-      "newChapters": "New chapters",
-      "reading": "Reading",
-      "chaptersRead": "Chapters read"
-    },
-    "continue": {
-      "title": "Continue reading",
-      "empty": "Start reading a tracked series and it'll show up here so you can pick up where you left off.",
-      "next": "Next #{number}",
-      "read": "Read #{number}",
-      "new": "{count} new"
-    },
-    "feed": {
-      "title": "New in your watchlist",
-      "empty": "You're all caught up. New chapters from your watchlist will land here."
-    },
-    "recommendations": {
-      "title": "Because you read"
-    }
-  },
-  "watchlist": {
-    "subtitle": "Drag a title between columns to change its status — or use the picker on each card.",
-    "sync": "Sync AniList",
-    "syncing": "Syncing…",
-    "synced": "Synced with AniList.",
-    "empty": "Your watchlist is empty. Find a series and add it to start tracking.",
-    "unread": "{count} unread",
-    "moveToColumn": "Move to column",
-    "toggleNotifications": "Toggle notifications",
-    "notifyOn": "Notify on",
-    "notifyOff": "Notify off"
-  },
-  "discover": {
-    "sortLabel": "Sort",
-    "toggleFilters": "Toggle filters",
-    "filters": "Filters",
-    "noFilters": "No filters applied",
-    "activeFilters": "{count} active",
-    "resetFilters": "Reset filters",
-    "contentType": "Content type",
-    "status": "Status",
-    "tags": "Genres / tags",
-    "matchAll": "match: all",
-    "matchAny": "match: any",
-    "noTags": "No tags indexed yet.",
-    "provider": "Provider",
-    "noProviders": "No providers available yet.",
-    "allProviders": "All providers",
-    "releaseYear": "Release year",
-    "minChapters": "Min. chapters",
-    "presets": "Saved presets",
-    "presetsSoon": "Saving filter presets is coming soon.",
-    "countLine": "{total} series · page {page} of {pages}",
-    "legend": {
-      "include": "+ include",
-      "exclude": "− exclude"
-    },
-    "noMatch": {
-      "title": "Nothing matched those filters",
-      "hint": "Try widening the type or status, or reset everything."
-    },
-    "sort": {
-      "updated": "Recently updated",
-      "title": "Title (A–Z)",
-      "chapters": "Most chapters",
-      "sources": "Most sources",
-      "rating": "Highest rated",
-      "year": "Newest"
-    },
-    "page": {
-      "prev": "Prev",
-      "next": "Next",
-      "goTo": "Go to",
-      "ofTotal": "of {pages}",
-      "go": "Go"
-    }
-  },
-  "search": {
-    "title": "Results for “{query}”",
-    "countLine": "{count} results · trigram fuzzy match",
-    "empty": "No series matched that. Try fewer words."
-  },
-  "series": {
-    "badLink": "That series link doesn't look right.",
-    "by": "by {authors}",
-    "chapterCount": "{count} ch",
-    "sourceCount": "{count} src",
-    "sources": {
-      "one": "{count} source",
-      "other": "{count} sources"
-    },
-    "synopsis": "Synopsis",
-    "chapters": "Chapters",
-    "noChapters": "No chapters indexed for this source yet.",
-    "readOn": "Read on",
-    "noSources": "No sources linked yet.",
-    "tracking": "Tracking",
-    "viewOnAnilist": "View on AniList",
-    "synced": "Synced",
-    "notConnected": "Not connected",
-    "alsoFollow": "Readers also follow",
-    "alsoFollowSoon": "Recommendations arrive with the related-series endpoint.",
-    "primary": "Primary",
-    "openSource": "Open source",
-    "signInToTrack": "Sign in to track this series.",
-    "inWatchlist": "In watchlist",
-    "addToWatchlist": "Add to watchlist",
-    "syncOn": "Sync on",
-    "syncOff": "Sync off",
-    "chapterNumbered": "Chapter {number}",
-    "partNumbered": "Part {number}",
-    "part": "Part",
-    "read": "Read",
-    "partReleases": {
-      "one": "{count} early part release ({from}–{to})",
-      "other": "{count} early part releases ({from}–{to})"
-    }
-  },
-  "notifications": {
-    "summary": "{count} unread · live push via SSE",
-    "markAllRead": "Mark all read",
-    "empty": "No notifications yet. We'll ping you when a watched series updates.",
-    "emptyFilter": "Nothing in this filter.",
-    "new": "New",
-    "tab": {
-      "all": "All",
-      "unread": "Unread",
-      "chapters": "Chapters",
-      "sync": "Sync"
-    },
-    "line": {
-      "newChapter": "New chapter {number} of {title}",
-      "update": "Update for {title}",
-      "generic": "Notification"
-    }
-  },
-  "auth": {
-    "registered": "Account created. We've emailed you a confirmation link — click it to activate your account, then sign in.",
-    "confirmFirst": "Please confirm your email address before signing in. Check your inbox for the confirmation link.",
-    "resent": "If that address needs confirming, a new link is on its way.",
-    "resendConfirmation": "Resend confirmation email",
-    "forgotPassword": "Forgot your password?",
-    "signIn": {
-      "heading": "Welcome back",
-      "subtitle": "Sign in to sync your library.",
-      "toggle": "New here? Create an account"
-    },
-    "register": {
-      "heading": "Create your account",
-      "subtitle": "Create an account to sync your library across every device.",
-      "cta": "Create account",
-      "toggle": "Have an account? Sign in"
-    },
-    "field": {
-      "email": "Email",
-      "username": "Username",
-      "emailOrUsername": "Email or username",
-      "password": "Password"
-    }
-  },
-  "verifyEmail": {
-    "heading": "Confirm your email",
-    "pending": "Confirming your email address…",
-    "confirmed": "Email confirmed. Taking you to your library…",
-    "failed": "This confirmation link may have expired or already been used. Sign in to request a new one."
-  },
-  "password": {
-    "tooShort": "Password must be at least 8 characters.",
-    "mismatch": "Passwords don't match.",
-    "forgot": {
-      "heading": "Reset your password",
-      "intro": "Enter your account's email address and we'll send you a link to choose a new password.",
-      "emailRequired": "Enter your email address.",
-      "sent": "If an account exists for that address, we've sent a link to reset your password. It expires in 1 hour.",
-      "sending": "Sending…",
-      "submit": "Send reset link"
-    },
-    "reset": {
-      "heading": "Choose a new password",
-      "newPassword": "New password",
-      "confirmPassword": "Confirm new password",
-      "submit": "Change password",
-      "done": "Your password has been changed and any other active sessions were signed out. You can sign in with your new password now.",
-      "badToken": "This reset link is invalid or has expired. Request a new one from the \"Forgot your password?\" page."
-    }
-  },
   "account": {
-    "signOut": "Sign out",
-    "tab": {
-      "profile": "Profile",
-      "appearance": "Appearance",
-      "security": "Security & sessions",
-      "sync": "Sync & integrations",
-      "notifications": "Notification prefs"
+    "appearance": {
+      "accent": "Accent",
+      "accentOption": {
+        "amber": "Amber",
+        "amethyst": "Amethyst",
+        "azure": "Azure",
+        "jade": "Jade",
+        "vermilion": "Vermilion"
+      },
+      "cover": "Cover style",
+      "coverOption": {
+        "duotone": "Duotone",
+        "ink": "Ink",
+        "vivid": "Vivid"
+      },
+      "density": "Density",
+      "densityOption": {
+        "compact": "Compact",
+        "cozy": "Cozy",
+        "standard": "Standard"
+      },
+      "intro": "Tune the reading environment. Your choices are remembered on this device.",
+      "language": "Language",
+      "theme": "Theme",
+      "themeOption": {
+        "dark": "Inkstone Dark",
+        "light": "Warm Paper"
+      },
+      "title": "Appearance"
+    },
+    "callback": {
+      "back": "Back to Account",
+      "connecting": "Connecting…",
+      "failed": "Couldn't connect the provider: {message}",
+      "noCode": "The provider did not return an authorization code.",
+      "signedOut": "Sign in, then connect the provider again from Account → Sync & integrations."
+    },
+    "notifications": {
+      "digest": "Weekly digest",
+      "email": "Email notifications",
+      "newChapters": "New chapters in your watchlist",
+      "saved": "Preferences saved.",
+      "title": "Notification preferences"
+    },
+    "privacy": {
+      "delete": {
+        "confirmCta": "Permanently delete",
+        "confirmLabel": "Type {username} to confirm",
+        "cta": "Delete my account",
+        "intro": "This erases your account and everything in it — watchlist, reading progress, notifications and any linked trackers. It cannot be undone.",
+        "title": "Delete your account"
+      },
+      "export": {
+        "cta": "Download my data",
+        "done": "Your data has been downloaded.",
+        "failed": "The export could not be prepared.",
+        "intro": "A single JSON file with everything this service holds about you: your profile, watchlist, reading progress, notifications and linked accounts. Passwords and access tokens are never included.",
+        "preparing": "Preparing…",
+        "title": "Download your data"
+      },
+      "requests": {
+        "detail": "Details",
+        "detailPlaceholder": "For a correction, say which information is wrong and what it should be.",
+        "dueBy": "Due by {date}",
+        "empty": "You have not filed any requests.",
+        "filed": "Request filed. You will hear from us within a month.",
+        "filedOn": "Filed {date}",
+        "intro": "Ask us to correct, restrict or erase your data, or to confirm in writing what we hold. We will respond within one month.",
+        "kind": "What are you asking for?",
+        "mine": "Your requests",
+        "submit": "File request",
+        "title": "Data protection requests",
+        "withdraw": "Withdraw"
+      }
     },
     "profile": {
       "displayName": "Display name",
       "emailPlaceholder": "new email address",
       "nothingToSave": "Enter a new display name or email first.",
-      "updated": "Profile updated.",
-      "save": "Save profile"
-    },
-    "appearance": {
-      "title": "Appearance",
-      "intro": "Tune the reading environment. Your choices are remembered on this device.",
-      "language": "Language",
-      "theme": "Theme",
-      "accent": "Accent",
-      "density": "Density",
-      "cover": "Cover style",
-      "themeOption": {
-        "dark": "Inkstone Dark",
-        "light": "Warm Paper"
-      },
-      "accentOption": {
-        "vermilion": "Vermilion",
-        "amber": "Amber",
-        "jade": "Jade",
-        "azure": "Azure",
-        "amethyst": "Amethyst"
-      },
-      "densityOption": {
-        "cozy": "Cozy",
-        "standard": "Standard",
-        "compact": "Compact"
-      },
-      "coverOption": {
-        "ink": "Ink",
-        "duotone": "Duotone",
-        "vivid": "Vivid"
-      }
+      "save": "Save profile",
+      "updated": "Profile updated."
     },
     "security": {
-      "title": "Active sessions",
-      "intro": "Each device that signed in holds a refresh session. Revoke any you don't recognise.",
       "empty": "No active sessions.",
-      "signedIn": "Signed in {date}",
       "expires": "expires {date}",
+      "intro": "Each device that signed in holds a refresh session. Revoke any you don't recognise.",
       "revoke": "Revoke",
       "revoking": "Revoking…",
+      "signedIn": "Signed in {date}",
+      "title": "Active sessions",
       "unavailable": "Password change and two-factor auth aren't available yet."
     },
-    "notifications": {
-      "title": "Notification preferences",
-      "newChapters": "New chapters in your watchlist",
-      "email": "Email notifications",
-      "digest": "Weekly digest",
-      "saved": "Preferences saved."
-    },
+    "signOut": "Sign out",
     "sync": {
-      "noProviders": "No sync providers are configured.",
-      "connect": "Connect {provider}",
-      "disconnect": "Disconnect",
-      "disconnected": "Disconnected from {provider}.",
       "anonymousUser": "{provider} reader",
-      "connectedAs": "Connected as {user} · last sync {when}",
       "auto": "Automatic sync",
       "autoHint": "Keep this account in sync in the background.",
+      "conflictValues": "{field}: local {local} · remote {remote}",
+      "conflictsEmpty": "No conflicts need your review.",
+      "conflictsHeading": "Conflicts to review",
+      "connect": "Connect {provider}",
+      "connectedAs": "Connected as {user} · last sync {when}",
+      "disconnect": "Disconnect",
+      "disconnected": "Disconnected from {provider}.",
+      "history": "Recent sync activity",
+      "historyEmpty": "No automatic sync activity yet.",
+      "keepMine": "Keep mine",
+      "noProviders": "No sync providers are configured.",
       "pending": {
         "one": "{count} needs your review",
         "other": "{count} need your review"
       },
-      "reviewConflicts": "Review conflicts",
       "policyHeading": "When local and {provider} disagree",
       "pull": "Pull from {provider}",
-      "push": "Push to {provider}",
       "pullStarted": "Sync pull started.",
+      "push": "Push to {provider}",
       "pushStarted": "Sync push started.",
-      "history": "Recent sync activity",
-      "historyEmpty": "No automatic sync activity yet.",
-      "conflictsHeading": "Conflicts to review",
-      "conflictsEmpty": "No conflicts need your review.",
-      "conflictValues": "{field}: local {local} · remote {remote}",
-      "keepMine": "Keep mine",
+      "reviewConflicts": "Review conflicts",
       "takeTheirs": "Take theirs"
     },
-    "callback": {
-      "connecting": "Connecting…",
-      "signedOut": "Sign in, then connect the provider again from Account → Sync & integrations.",
-      "noCode": "The provider did not return an authorization code.",
-      "failed": "Couldn't connect the provider: {message}",
-      "back": "Back to Account"
+    "tab": {
+      "appearance": "Appearance",
+      "notifications": "Notification prefs",
+      "privacy": "Privacy & data",
+      "profile": "Profile",
+      "security": "Security & sessions",
+      "sync": "Sync & integrations"
     }
   },
+  "auth": {
+    "confirmFirst": "Please confirm your email address before signing in. Check your inbox for the confirmation link.",
+    "field": {
+      "email": "Email",
+      "emailOrUsername": "Email or username",
+      "password": "Password",
+      "username": "Username"
+    },
+    "forgotPassword": "Forgot your password?",
+    "register": {
+      "cta": "Create account",
+      "heading": "Create your account",
+      "subtitle": "Create an account to sync your library across every device.",
+      "toggle": "Have an account? Sign in"
+    },
+    "registered": "Account created. We've emailed you a confirmation link — click it to activate your account, then sign in.",
+    "resendConfirmation": "Resend confirmation email",
+    "resent": "If that address needs confirming, a new link is on its way.",
+    "signIn": {
+      "heading": "Welcome back",
+      "subtitle": "Sign in to sync your library.",
+      "toggle": "New here? Create an account"
+    }
+  },
+  "common": {
+    "back": "Back",
+    "backToSignIn": "Back to sign in",
+    "cancel": "Cancel",
+    "close": "Close",
+    "markRead": "Mark read",
+    "markUnread": "Mark unread",
+    "next": "Next",
+    "off": "Off",
+    "on": "On",
+    "open": "Open",
+    "previous": "Previous",
+    "readerFallback": "reader",
+    "remove": "Remove",
+    "reset": "Reset",
+    "save": "Save",
+    "saving": "Saving…",
+    "seeAll": "See all",
+    "signIn": "Sign in",
+    "tryAgain": "Try again",
+    "working": "Working…"
+  },
   "console": {
-    "title": "Operator Console",
-    "operatorsOnly": "This area is for operators. Ask an admin for access.",
-    "tab": {
-      "overview": "Overview",
-      "liveScans": "Live scans",
-      "providers": "Providers",
-      "solver": "Challenge & solver",
-      "adapterTest": "Adapter test",
-      "merge": "Merge queue",
-      "sync": "Sync",
-      "users": "Users",
-      "audit": "Audit"
-    },
-    "live": {
-      "on": "Live · {seconds}s",
-      "paused": "Paused",
-      "pause": "Pause",
-      "resume": "Resume",
-      "refresh": "Refresh"
-    },
     "adapterKind": {
+      "custom": "Custom (built-in)",
       "genericConfig": "Generic (config-driven)",
-      "madara": "Madara / WordPress",
-      "custom": "Custom (built-in)"
-    },
-    "providerState": {
-      "active": "active",
-      "degraded": "degraded",
-      "challenged": "challenged",
-      "solving": "solving",
-      "blocked": "blocked",
-      "disabled": "disabled",
-      "unknown": "unknown"
-    },
-    "overview": {
-      "unavailable": "Stats unavailable: {message}"
-    },
-    "kpi": {
-      "providers": "Providers",
-      "providersSub": "{active} active · {unhealthy} unhealthy · {disabled} off",
-      "series": "Series",
-      "seriesSub": "{count} source links",
-      "chapters": "Chapters",
-      "chaptersSub": "+{count} in 7d",
-      "new24h": "New · 24h",
-      "new24hSub": "{count} in the last hour",
-      "activeScans": "Active scans",
-      "activeScansSub": "{count} running now",
-      "queueDepth": "Queue depth",
-      "queueDepthSub": "{count} in flight",
-      "failures24h": "Failures · 24h",
-      "failures24hSub": "tasks failed",
-      "mergeQueue": "Merge queue",
-      "mergeQueueSub": "pending review",
-      "users": "Users",
-      "usersSub": "registered"
-    },
-    "stats": {
-      "title": "Provider statistics",
-      "unavailable": "Provider stats unavailable: {message}",
-      "empty": "No providers configured yet.",
-      "blockedSources": " · {count} off",
-      "col": {
-        "provider": "Provider",
-        "adapter": "Adapter",
-        "series": "Series",
-        "sources": "Sources",
-        "chapters": "Chapters",
-        "day": "24h",
-        "week": "7d",
-        "newest": "Newest",
-        "lastScan": "Last scan",
-        "lastRun": "Last run"
-      }
-    },
-    "scans": {
-      "title": "Scan queue",
-      "queued": "Scan queued for all providers.",
-      "modeFast": "Fast scan (new chapters)",
-      "modeFull": "Full scan (rebuild)",
-      "trigger": "Trigger scan (all)",
-      "active": "Active runs",
-      "noneActive": "No runs in flight.",
-      "recent": "Recent runs",
-      "noRuns": "No scan runs yet.",
-      "scopeAll": "all providers",
-      "scopeUnknown": "unknown",
-      "progress": "{done}/{total} ({failed} failed)",
-      "failures": "Recent failures",
-      "noFailures": "No task failures recorded. Clean.",
-      "failureMeta": "{provider} · {mode} · attempt {attempts}",
-      "noErrorMessage": "(no error message)",
-      "col": {
-        "state": "State",
-        "mode": "Mode",
-        "scope": "Scope",
-        "progress": "Progress",
-        "started": "Started",
-        "finished": "Finished"
-      }
-    },
-    "providers": {
-      "empty": "No providers yet. Add one below.",
-      "unavailable": "Could not load providers: {message}",
-      "add": "Add provider",
-      "new": "New provider",
-      "create": "Create provider",
-      "badConfig": "Config is not valid JSON: {message}",
-      "badRps": "Requests/sec must be a number.",
-      "badConcurrency": "Concurrency must be a whole number.",
-      "badCrawlDelay": "Crawl delay must be a whole number of milliseconds.",
-      "missingFields": "Slug, name and base URL are all required.",
-      "fast": "Fast",
-      "full": "Full",
-      "scan": "Scan",
-      "scanQueued": "Scan queued for this provider.",
-      "enable": "Enable",
-      "disable": "Disable",
-      "test": "Test",
-      "edit": "Edit",
-      "delete": "Delete",
-      "confirmDelete": "Delete this provider and all its source links? This cannot be undone.",
-      "confirmDeleteCta": "Confirm delete",
-      "clampNote": "Rate limits are clamped to the system ceilings on save (≤ 4 req/s, ≤ 8 concurrent).",
-      "confirmMigrate": "The base URL changed — re-resolve every stored link to the new domain?",
-      "confirmMigrateCta": "Confirm migration",
-      "save": "Save changes",
-      "saveMigrating": "Save changes (migrates domain)",
-      "field": {
-        "slug": "Slug (stable, unique)",
-        "name": "Display name",
-        "baseUrl": "Base URL",
-        "baseUrlEdit": "Base URL (changing it re-resolves every stored link)",
-        "adapter": "Adapter",
-        "config": "Adapter config (JSON)",
-        "rps": "Requests / sec",
-        "concurrency": "Concurrency",
-        "crawlDelay": "Crawl delay (ms)",
-        "userAgent": "User agent"
-      }
-    },
-    "solver": {
-      "title": "Challenge solver",
-      "backend": "Backend: {backend}",
-      "active": "active",
-      "note": "Per-provider solve-success rates need the solver-metrics endpoint (TODO(api) §9.5). Until then, re-solve queues a fast re-scan that re-attempts any challenged sources.",
-      "providerStates": "Provider states",
-      "noProviders": "No providers configured.",
-      "reenable": "Re-enable",
-      "resolve": "Re-solve"
+      "madara": "Madara / WordPress"
     },
     "adapterTest": {
-      "intro": "Dry-run a provider's adapter against the live site without deploying — validate selectors and pagination.",
-      "noProviders": "No providers to test yet.",
       "choose": "— choose a provider —",
       "hint": "Runs the adapter against the live site (latest list, and optionally one series path).",
+      "intro": "Dry-run a provider's adapter against the live site without deploying — validate selectors and pagination.",
+      "noProviders": "No providers to test yet.",
       "pathPlaceholder": "optional series path, e.g. /manga/some-title",
       "run": "Run test",
       "running": "Running…",
       "signedOut": "You are signed out."
     },
-    "merge": {
-      "empty": "No pending merge candidates. Canonicalisation is clean.",
-      "score": "{percent}% match",
-      "reason": "reason: {reason}",
-      "compare": "Compare",
-      "hide": "Hide",
-      "merge": "Merge →",
-      "distinct": "Distinct",
-      "keep": "Keep (canonical)",
-      "drop": "Merge in & delete",
-      "seriesUnavailable": "Could not load series: {message}"
-    },
-    "users": {
-      "unavailable": "Could not load users: {message}",
-      "empty": "No users registered yet.",
-      "registered": "Registered users",
-      "col": {
-        "user": "User",
-        "email": "Email",
-        "role": "Role",
-        "tracked": "Tracked",
-        "joined": "Joined"
-      }
-    },
     "audit": {
-      "title": "Audit trail",
-      "unavailable": "Audit log unavailable: {message}",
+      "col": {
+        "action": "Action",
+        "actor": "Actor",
+        "target": "Target",
+        "when": "When"
+      },
       "empty": "No privileged actions recorded yet.",
       "system": "system",
-      "col": {
-        "when": "When",
-        "actor": "Actor",
-        "action": "Action",
-        "target": "Target"
+      "title": "Audit trail",
+      "unavailable": "Audit log unavailable: {message}"
+    },
+    "flags": {
+      "changed": "Changed from default",
+      "changedBy": "{user} · {date}",
+      "disable": "Disable",
+      "enable": "Enable",
+      "group": {
+        "accounts": "Accounts",
+        "catalogue": "Catalogue",
+        "notifications": "Notifications",
+        "operations": "Operations",
+        "privacy": "Privacy",
+        "scanning": "Scanning",
+        "sync": "External sync",
+        "tracking": "Tracking"
+      },
+      "intro": "Every switchable capability in this deployment. Changes take effect immediately here and reach other replicas within a few seconds.",
+      "locked": "Always on",
+      "lockedHint": "Switching this off would leave no way to switch anything back on.",
+      "off": "Off",
+      "on": "On",
+      "readOnly": "You can view these but not change them.",
+      "resetHint": "Reset to the shipped default"
+    },
+    "kpi": {
+      "activeScans": "Active scans",
+      "activeScansSub": "{count} running now",
+      "chapters": "Chapters",
+      "chaptersSub": "+{count} in 7d",
+      "failures24h": "Failures · 24h",
+      "failures24hSub": "tasks failed",
+      "mergeQueue": "Merge queue",
+      "mergeQueueSub": "pending review",
+      "new24h": "New · 24h",
+      "new24hSub": "{count} in the last hour",
+      "providers": "Providers",
+      "providersSub": "{active} active · {unhealthy} unhealthy · {disabled} off",
+      "queueDepth": "Queue depth",
+      "queueDepthSub": "{count} in flight",
+      "series": "Series",
+      "seriesSub": "{count} source links",
+      "users": "Users",
+      "usersSub": "registered"
+    },
+    "live": {
+      "on": "Live · {seconds}s",
+      "pause": "Pause",
+      "paused": "Paused",
+      "refresh": "Refresh",
+      "resume": "Resume"
+    },
+    "merge": {
+      "compare": "Compare",
+      "distinct": "Distinct",
+      "drop": "Merge in & delete",
+      "empty": "No pending merge candidates. Canonicalisation is clean.",
+      "hide": "Hide",
+      "keep": "Keep (canonical)",
+      "merge": "Merge →",
+      "reason": "reason: {reason}",
+      "score": "{percent}% match",
+      "seriesUnavailable": "Could not load series: {message}"
+    },
+    "operatorsOnly": "You do not have permission to use any part of the console.",
+    "overview": {
+      "unavailable": "Stats unavailable: {message}"
+    },
+    "perm": {
+      "group": {
+        "catalogue": "Catalogue",
+        "flags": "Feature flags",
+        "observability": "Observability",
+        "privacy": "Privacy",
+        "providers": "Providers",
+        "scanning": "Scanning",
+        "sync": "External sync",
+        "users": "Users"
       }
+    },
+    "preset": {
+      "administrator": "Administrator",
+      "operator": "Operator",
+      "reader": "Reader"
+    },
+    "privacy": {
+      "claim": "Claim",
+      "claimedBy": "Claimed by {user}",
+      "complete": "Complete",
+      "defaultRejectionReason": "Refused: the request falls outside what this service can act on. Contact the operator for details.",
+      "dueBy": "due {date}",
+      "empty": "No open requests.",
+      "erase": "Erase account",
+      "eraseConfirmCta": "Erase permanently",
+      "eraseConfirmLabel": "Type {username} to confirm erasure",
+      "export": "Export data",
+      "exportDone": "The subject's data has been downloaded.",
+      "exportFailed": "The export could not be prepared.",
+      "filedOn": "Filed {date}",
+      "includeResolved": "Show resolved",
+      "intro": "Data protection requests, most urgent first. A request must be answered within one month of being filed.",
+      "overdue": "Overdue",
+      "reject": "Reject",
+      "subjectErased": "(account erased)"
+    },
+    "providerState": {
+      "active": "active",
+      "blocked": "blocked",
+      "challenged": "challenged",
+      "degraded": "degraded",
+      "disabled": "disabled",
+      "solving": "solving",
+      "unknown": "unknown"
+    },
+    "providers": {
+      "add": "Add provider",
+      "badConcurrency": "Concurrency must be a whole number.",
+      "badConfig": "Config is not valid JSON: {message}",
+      "badCrawlDelay": "Crawl delay must be a whole number of milliseconds.",
+      "badRps": "Requests/sec must be a number.",
+      "clampNote": "Rate limits are clamped to the system ceilings on save (≤ 4 req/s, ≤ 8 concurrent).",
+      "confirmDelete": "Delete this provider and all its source links? This cannot be undone.",
+      "confirmDeleteCta": "Confirm delete",
+      "confirmMigrate": "The base URL changed — re-resolve every stored link to the new domain?",
+      "confirmMigrateCta": "Confirm migration",
+      "create": "Create provider",
+      "delete": "Delete",
+      "disable": "Disable",
+      "edit": "Edit",
+      "empty": "No providers yet. Add one below.",
+      "enable": "Enable",
+      "fast": "Fast",
+      "field": {
+        "adapter": "Adapter",
+        "baseUrl": "Base URL",
+        "baseUrlEdit": "Base URL (changing it re-resolves every stored link)",
+        "concurrency": "Concurrency",
+        "config": "Adapter config (JSON)",
+        "crawlDelay": "Crawl delay (ms)",
+        "name": "Display name",
+        "rps": "Requests / sec",
+        "slug": "Slug (stable, unique)",
+        "userAgent": "User agent"
+      },
+      "full": "Full",
+      "missingFields": "Slug, name and base URL are all required.",
+      "new": "New provider",
+      "save": "Save changes",
+      "saveMigrating": "Save changes (migrates domain)",
+      "scan": "Scan",
+      "scanQueued": "Scan queued for this provider.",
+      "test": "Test",
+      "unavailable": "Could not load providers: {message}"
+    },
+    "scans": {
+      "active": "Active runs",
+      "col": {
+        "finished": "Finished",
+        "mode": "Mode",
+        "progress": "Progress",
+        "scope": "Scope",
+        "started": "Started",
+        "state": "State"
+      },
+      "failureMeta": "{provider} · {mode} · attempt {attempts}",
+      "failures": "Recent failures",
+      "modeFast": "Fast scan (new chapters)",
+      "modeFull": "Full scan (rebuild)",
+      "noErrorMessage": "(no error message)",
+      "noFailures": "No task failures recorded. Clean.",
+      "noRuns": "No scan runs yet.",
+      "noneActive": "No runs in flight.",
+      "progress": "{done}/{total} ({failed} failed)",
+      "queued": "Scan queued for all providers.",
+      "recent": "Recent runs",
+      "scopeAll": "all providers",
+      "scopeUnknown": "unknown",
+      "title": "Scan queue",
+      "trigger": "Trigger scan (all)"
+    },
+    "solver": {
+      "active": "active",
+      "backend": "Backend: {backend}",
+      "noProviders": "No providers configured.",
+      "note": "Per-provider solve-success rates need the solver-metrics endpoint (TODO(api) §9.5). Until then, re-solve queues a fast re-scan that re-attempts any challenged sources.",
+      "providerStates": "Provider states",
+      "reenable": "Re-enable",
+      "resolve": "Re-solve",
+      "title": "Challenge solver"
+    },
+    "stats": {
+      "blockedSources": " · {count} off",
+      "col": {
+        "adapter": "Adapter",
+        "chapters": "Chapters",
+        "day": "24h",
+        "lastRun": "Last run",
+        "lastScan": "Last scan",
+        "newest": "Newest",
+        "provider": "Provider",
+        "series": "Series",
+        "sources": "Sources",
+        "week": "7d"
+      },
+      "empty": "No providers configured yet.",
+      "title": "Provider statistics",
+      "unavailable": "Provider stats unavailable: {message}"
     },
     "sync": {
       "accounts": "Linked accounts",
-      "noAccounts": "No linked external accounts.",
-      "lastSync": "last sync {when}",
-      "autoOn": "auto-sync on",
+      "assign": "Assign",
+      "assignEmpty": "Nothing unmapped for this provider — nice.",
+      "assignQueue": "Assign queue",
+      "assignQueueIntro": "Series with no mapping for the selected provider yet — the ones auto-matching was not confident about. Assign an id or open the inspector.",
       "autoOff": "auto-sync off",
-      "policy": " · policy {policy}",
+      "autoOn": "auto-sync on",
+      "backToSearch": "← Back to search",
+      "badSeriesId": "That series id doesn't look right.",
+      "clear": "Clear",
+      "externalId": "external id",
+      "externalIdHint": "external id (e.g. AniList media id)",
+      "externalMappings": "External sync mappings",
+      "filterUnmapped": "Filter unmapped by title…",
+      "filterUnmatched": "Filter unmatched by title…",
+      "forcePull": "Force pull",
+      "forcePush": "Force push",
+      "inspect": "Inspect",
+      "inspector": "Series sync inspector",
+      "inspectorIntro": "Open any series to see its info and what it is synced to. Fix a wrong external id or add a missing one by hand.",
+      "lastSync": "last sync {when}",
+      "manualSearch": "Or search local series to match by hand…",
+      "mappingMeta": "id {id} · updated {when}",
+      "match": "Match",
+      "noAccounts": "No linked external accounts.",
+      "noMappings": "No series↔external mappings yet.",
+      "noProvidersRegistered": "No sync providers registered.",
+      "noSuggestions": "No automatic suggestions — search below to match by hand.",
+      "openOn": "Open on {provider} ↗",
       "pendingConflicts": {
         "one": " · {count} pending conflict",
         "other": " · {count} pending conflicts"
       },
-      "forcePull": "Force pull",
-      "forcePush": "Force push",
-      "unlink": "Unlink",
-      "inspector": "Series sync inspector",
-      "inspectorIntro": "Open any series to see its info and what it is synced to. Fix a wrong external id or add a missing one by hand.",
-      "assignQueue": "Assign queue",
-      "assignQueueIntro": "Series with no mapping for the selected provider yet — the ones auto-matching was not confident about. Assign an id or open the inspector.",
-      "assignEmpty": "Nothing unmapped for this provider — nice.",
-      "filterUnmapped": "Filter unmapped by title…",
-      "externalId": "external id",
-      "assign": "Assign",
-      "inspect": "Inspect",
+      "policy": " · policy {policy}",
+      "recentlyMapped": "Recently mapped",
+      "remoteEmpty": "Every fetched entry for this provider is matched — nice.",
       "remoteQueue": "Match every loaded entry",
       "remoteQueueIntro": "Fetched remote entries the auto-matcher could not confidently link. Each one comes with ranked suggestions and a link to open it on the provider; inspect any candidate, then match it — this maps it, imports it onto the user's watchlist, and clears it here.",
-      "remoteEmpty": "Every fetched entry for this provider is matched — nice.",
-      "filterUnmatched": "Filter unmatched by title…",
-      "openOn": "Open on {provider} ↗",
-      "suggested": "Suggested matches",
-      "noSuggestions": "No automatic suggestions — search below to match by hand.",
-      "manualSearch": "Or search local series to match by hand…",
-      "match": "Match",
-      "searchSeries": "Search a series by title to open its info…",
       "searchFailed": "Search failed: {message}",
-      "recentlyMapped": "Recently mapped",
-      "noMappings": "No series↔external mappings yet.",
-      "mappingMeta": "id {id} · updated {when}",
-      "badSeriesId": "That series id doesn't look right.",
-      "backToSearch": "← Back to search",
-      "externalMappings": "External sync mappings",
-      "noProvidersRegistered": "No sync providers registered.",
-      "externalIdHint": "external id (e.g. AniList media id)",
-      "clear": "Clear"
+      "searchSeries": "Search a series by title to open its info…",
+      "suggested": "Suggested matches",
+      "unlink": "Unlink"
+    },
+    "tab": {
+      "adapterTest": "Adapter test",
+      "audit": "Audit",
+      "flags": "Features",
+      "liveScans": "Live scans",
+      "merge": "Merge queue",
+      "overview": "Overview",
+      "privacy": "Privacy",
+      "providers": "Providers",
+      "solver": "Challenge & solver",
+      "sync": "Sync",
+      "users": "Users"
+    },
+    "title": "Operator Console",
+    "users": {
+      "access": "Access",
+      "activeSessions": "{count} active",
+      "col": {
+        "email": "Email",
+        "joined": "Joined",
+        "lastLogin": "Last seen",
+        "permissions": "Perms",
+        "role": "Role",
+        "status": "Status",
+        "tracked": "Tracked",
+        "user": "User"
+      },
+      "dangerZone": "Danger zone",
+      "delete": "Erase account",
+      "deleteConfirmCta": "Erase permanently",
+      "deleteConfirmLabel": "Type {username} to confirm",
+      "deleteIntro": "Erases the account and everything it owns. Audit records of what it did are kept, with the link to the person removed. This cannot be undone.",
+      "deleteReason": "Reason (recorded in the audit trail)",
+      "empty": "No users match this search.",
+      "identity": "Identity",
+      "joinedOn": "Joined {date}",
+      "lastLoginOn": "last seen {date}",
+      "manage": "Manage",
+      "manageTitle": "Manage account",
+      "never": "Never",
+      "nothingToSave": "Nothing has changed.",
+      "permissions": "Permissions",
+      "permissionsIntro": "Grant only what this account needs. Permissions do not imply one another — reading and writing are separate grants.",
+      "permissionsSaved": "Permissions updated.",
+      "presets": "Start from:",
+      "range": "{first}–{last} of {total}",
+      "registered": "Registered users",
+      "reinstate": "Reinstate account",
+      "revokeSessions": "Sign out everywhere",
+      "save": "Save changes",
+      "savePermissions": "Save permissions",
+      "saved": "Saved.",
+      "searchPlaceholder": "Search by name or email",
+      "selfNotice": "This is your own account. Use your account settings to change it.",
+      "sessions": "Sessions",
+      "stat": {
+        "linked": "Linked",
+        "privacy": "Open requests",
+        "sessions": "Sessions",
+        "tracked": "Tracked"
+      },
+      "suspend": "Suspend account",
+      "suspendReason": "Reason",
+      "suspendReasonPlaceholder": "Shown to whoever looks at this account next",
+      "suspendedFor": "Suspended: {reason}",
+      "unavailable": "Could not load users: {message}",
+      "unknownGrants": "This account holds grants this version does not recognise and cannot act on: {tokens}. Saving will remove them.",
+      "unverified": "Unverified",
+      "unverifiedHint": "This address has not been confirmed, so the account cannot sign in.",
+      "verifyEmail": "Confirm email address"
     }
   },
+  "discover": {
+    "activeFilters": "{count} active",
+    "allProviders": "All providers",
+    "contentType": "Content type",
+    "countLine": "{total} series · page {page} of {pages}",
+    "filters": "Filters",
+    "legend": {
+      "exclude": "− exclude",
+      "include": "+ include"
+    },
+    "matchAll": "match: all",
+    "matchAny": "match: any",
+    "minChapters": "Min. chapters",
+    "noFilters": "No filters applied",
+    "noMatch": {
+      "hint": "Try widening the type or status, or reset everything.",
+      "title": "Nothing matched those filters"
+    },
+    "noProviders": "No providers available yet.",
+    "noTags": "No tags indexed yet.",
+    "page": {
+      "go": "Go",
+      "goTo": "Go to",
+      "next": "Next",
+      "ofTotal": "of {pages}",
+      "prev": "Prev"
+    },
+    "presets": "Saved presets",
+    "presetsSoon": "Saving filter presets is coming soon.",
+    "provider": "Provider",
+    "releaseYear": "Release year",
+    "resetFilters": "Reset filters",
+    "sort": {
+      "chapters": "Most chapters",
+      "rating": "Highest rated",
+      "sources": "Most sources",
+      "title": "Title (A–Z)",
+      "updated": "Recently updated",
+      "year": "Newest"
+    },
+    "sortLabel": "Sort",
+    "status": "Status",
+    "tags": "Genres / tags",
+    "toggleFilters": "Toggle filters"
+  },
+  "enum": {
+    "accountStatus": {
+      "active": "Active",
+      "suspended": "Suspended"
+    },
+    "conflictPolicy": {
+      "askMe": "Ask me when they disagree",
+      "localWins": "Always keep my local progress",
+      "newestWins": "Use whichever changed most recently",
+      "remoteWins": "Always trust AniList"
+    },
+    "contentType": {
+      "manga": "Manga",
+      "manhua": "Manhua",
+      "manhwa": "Manhwa",
+      "unknown": "Unknown",
+      "webtoon": "Webtoon"
+    },
+    "privacyKind": {
+      "access": "Access request",
+      "erasure": "Erasure",
+      "objection": "Object to processing",
+      "portability": "Data portability",
+      "rectification": "Correction",
+      "restriction": "Restrict processing"
+    },
+    "privacyStatus": {
+      "cancelled": "Withdrawn",
+      "completed": "Completed",
+      "inProgress": "In progress",
+      "pending": "Pending",
+      "rejected": "Rejected"
+    },
+    "runState": {
+      "cancelled": "Cancelled",
+      "completed": "Finished",
+      "failed": "Failed",
+      "queued": "Queued",
+      "running": "Running"
+    },
+    "seriesStatus": {
+      "cancelled": "Cancelled",
+      "completed": "Completed",
+      "hiatus": "Hiatus",
+      "ongoing": "Ongoing",
+      "unknown": "Unknown"
+    },
+    "tier": {
+      "reader": "Reader",
+      "staff": "Staff"
+    },
+    "watchStatus": {
+      "completed": "Completed",
+      "dropped": "Dropped",
+      "paused": "On hold",
+      "planned": "Plan to read",
+      "reading": "Reading"
+    }
+  },
+  "error": {
+    "status": {
+      "badRequest": "That request wasn't valid.",
+      "conflict": "That conflicts with the current state.",
+      "forbidden": "You don't have permission to do that.",
+      "notFound": "Not found.",
+      "other": "Request failed ({code}).",
+      "rateLimited": "Too many requests — give it a moment and retry.",
+      "server": "The server had a problem. Please retry.",
+      "tooLarge": "That's too large to send.",
+      "unauthorized": "You need to sign in to do that."
+    },
+    "truncated": "The server's reply was cut short. Please retry.",
+    "unbuildable": "That request couldn't be built. This is a bug — please report it.",
+    "unreachable": "Couldn't reach the server. Check your connection and retry.",
+    "unreadable": "The server sent something this app couldn't read."
+  },
+  "feedback": {
+    "failed": "Something went wrong: {message}",
+    "signInGate": "Sign in to see this."
+  },
+  "greeting": {
+    "afternoon": "Good afternoon",
+    "evening": "Good evening",
+    "morning": "Good morning",
+    "night": "Late night"
+  },
+  "home": {
+    "continue": {
+      "empty": "Start reading a tracked series and it'll show up here so you can pick up where you left off.",
+      "new": "{count} new",
+      "next": "Next #{number}",
+      "read": "Read #{number}",
+      "title": "Continue reading"
+    },
+    "feed": {
+      "empty": "You're all caught up. New chapters from your watchlist will land here.",
+      "title": "New in your watchlist"
+    },
+    "recommendations": {
+      "title": "Because you read"
+    },
+    "stat": {
+      "chaptersRead": "Chapters read",
+      "newChapters": "New chapters",
+      "reading": "Reading"
+    },
+    "welcome": "Welcome back, {name}"
+  },
+  "nav": {
+    "account": "Account",
+    "accountSettings": "Account settings",
+    "console": "Console",
+    "discover": "Discover",
+    "group": {
+      "account": "ACCOUNT",
+      "library": "LIBRARY",
+      "main": "MAIN",
+      "operator": "OPERATOR"
+    },
+    "home": "Home",
+    "notifications": "Notifications",
+    "search": "Search",
+    "tagline": "SOURCE · TRACK · SYNC",
+    "watchlist": "Watchlist"
+  },
   "notFound": {
-    "title": "Lost the thread",
+    "back": "Back to Home",
     "body": "There's nothing at {path}.",
-    "back": "Back to Home"
+    "title": "Lost the thread"
+  },
+  "notifications": {
+    "empty": "No notifications yet. We'll ping you when a watched series updates.",
+    "emptyFilter": "Nothing in this filter.",
+    "line": {
+      "generic": "Notification",
+      "newChapter": "New chapter {number} of {title}",
+      "update": "Update for {title}"
+    },
+    "markAllRead": "Mark all read",
+    "new": "New",
+    "summary": "{count} unread · live push via SSE",
+    "tab": {
+      "all": "All",
+      "chapters": "Chapters",
+      "sync": "Sync",
+      "unread": "Unread"
+    }
+  },
+  "password": {
+    "forgot": {
+      "emailRequired": "Enter your email address.",
+      "heading": "Reset your password",
+      "intro": "Enter your account's email address and we'll send you a link to choose a new password.",
+      "sending": "Sending…",
+      "sent": "If an account exists for that address, we've sent a link to reset your password. It expires in 1 hour.",
+      "submit": "Send reset link"
+    },
+    "mismatch": "Passwords don't match.",
+    "reset": {
+      "badToken": "This reset link is invalid or has expired. Request a new one from the \"Forgot your password?\" page.",
+      "confirmPassword": "Confirm new password",
+      "done": "Your password has been changed and any other active sessions were signed out. You can sign in with your new password now.",
+      "heading": "Choose a new password",
+      "newPassword": "New password",
+      "submit": "Change password"
+    },
+    "tooShort": "Password must be at least 8 characters."
+  },
+  "search": {
+    "countLine": "{count} results · trigram fuzzy match",
+    "empty": "No series matched that. Try fewer words.",
+    "title": "Results for “{query}”"
+  },
+  "series": {
+    "addToWatchlist": "Add to watchlist",
+    "alsoFollow": "Readers also follow",
+    "alsoFollowSoon": "Recommendations arrive with the related-series endpoint.",
+    "badLink": "That series link doesn't look right.",
+    "by": "by {authors}",
+    "chapterCount": "{count} ch",
+    "chapterNumbered": "Chapter {number}",
+    "chapters": "Chapters",
+    "inWatchlist": "In watchlist",
+    "noChapters": "No chapters indexed for this source yet.",
+    "noSources": "No sources linked yet.",
+    "notConnected": "Not connected",
+    "openSource": "Open source",
+    "part": "Part",
+    "partNumbered": "Part {number}",
+    "partReleases": {
+      "one": "{count} early part release ({from}–{to})",
+      "other": "{count} early part releases ({from}–{to})"
+    },
+    "primary": "Primary",
+    "read": "Read",
+    "readOn": "Read on",
+    "signInToTrack": "Sign in to track this series.",
+    "sourceCount": "{count} src",
+    "sources": {
+      "one": "{count} source",
+      "other": "{count} sources"
+    },
+    "syncOff": "Sync off",
+    "syncOn": "Sync on",
+    "synced": "Synced",
+    "synopsis": "Synopsis",
+    "tracking": "Tracking",
+    "viewOnAnilist": "View on AniList"
+  },
+  "time": {
+    "daysAgo": "{count}d ago",
+    "hoursAgo": "{count}h ago",
+    "justNow": "just now",
+    "minutesAgo": "{count}m ago",
+    "monthsAgo": "{count}mo ago",
+    "unknown": "—",
+    "yearsAgo": "{count}y ago"
+  },
+  "topbar": {
+    "anilistConnect": "Connect AniList",
+    "anilistSynced": "AniList synced",
+    "searchPlaceholder": "Search series, tags, authors…"
+  },
+  "verifyEmail": {
+    "confirmed": "Email confirmed. Taking you to your library…",
+    "failed": "This confirmation link may have expired or already been used. Sign in to request a new one.",
+    "heading": "Confirm your email",
+    "pending": "Confirming your email address…"
+  },
+  "watchlist": {
+    "empty": "Your watchlist is empty. Find a series and add it to start tracking.",
+    "moveToColumn": "Move to column",
+    "notifyOff": "Notify off",
+    "notifyOn": "Notify on",
+    "subtitle": "Drag a title between columns to change its status — or use the picker on each card.",
+    "sync": "Sync AniList",
+    "synced": "Synced with AniList.",
+    "syncing": "Syncing…",
+    "toggleNotifications": "Toggle notifications",
+    "unread": "{count} unread"
   }
 }

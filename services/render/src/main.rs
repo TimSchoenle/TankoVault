@@ -21,11 +21,11 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::{get, post};
+use axum::routing::post;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use tankovault_service::{Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier};
 use tankovault_solver::{ChallengeSolver, SolveRequest};
-use tokio::net::TcpListener;
 
 use crate::browser::{BrowserManager, RenderOptions};
 use crate::config::Config;
@@ -35,7 +35,6 @@ use crate::solver::ChromiumSolver;
 struct AppState {
     manager: Arc<BrowserManager>,
     solver: Arc<ChromiumSolver>,
-    metrics: tankovault_observability::PrometheusHandle,
 }
 
 #[derive(Debug, Deserialize)]
@@ -65,7 +64,9 @@ struct RenderResponse {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cfg: Config = tankovault_config::load()?;
-    let metrics = tankovault_observability::init(&cfg.telemetry)?;
+    tankovault_service::init_tracing(&cfg.telemetry)?;
+    let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    let shutdown = tankovault_service::install_shutdown();
 
     let manager = Arc::new(BrowserManager::new(cfg.render.clone()));
     let solver = Arc::new(ChromiumSolver::new(
@@ -79,23 +80,26 @@ async fn main() -> anyhow::Result<()> {
         "render service starting"
     );
 
-    let state = AppState {
-        manager,
-        solver,
-        metrics,
-    };
+    let state = AppState { manager, solver };
+    let limiter = RateLimiter::from_config(&cfg.rate_limit, RouteClassifier::new(), None);
 
-    let app = Router::new()
-        .route("/v1/render", post(render))
-        .route("/v1/solve", post(solve))
-        .route("/health", get(|| async { "ok" }))
-        .route("/ready", get(|| async { "ok" }))
-        .route("/metrics", get(metrics_handler))
-        .with_state(state);
+    let app = HttpStack::new(&cfg.security, metrics.clone())
+        .with_rate_limit(limiter)
+        .apply(
+            Router::new()
+                .route("/v1/render", post(render))
+                .route("/v1/solve", post(solve))
+                .with_state(state),
+        )
+        // Readiness is "listening": the browser is launched lazily by design (see the
+        // module docs), so probing it here would report a healthy replica as down until
+        // its first render.
+        .merge(tankovault_service::ops_router(
+            Health::builder().build(),
+            metrics,
+        ));
 
-    let listener = TcpListener::bind(&cfg.bind_addr).await?;
-    tracing::info!(addr = %cfg.bind_addr, "render service listening");
-    axum::serve(listener, app).await?;
+    tankovault_service::serve(&cfg.bind_addr, app, shutdown).await?;
     Ok(())
 }
 
@@ -146,8 +150,4 @@ async fn solve(State(state): State<AppState>, Json(req): Json<SolveRequest>) -> 
             (StatusCode::BAD_GATEWAY, format!("solve failed: {e}")).into_response()
         }
     }
-}
-
-async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
-    state.metrics.render()
 }

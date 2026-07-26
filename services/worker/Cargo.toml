@@ -12,7 +12,9 @@ path = "src/main.rs"
 
 [dependencies]
 tankovault-config = { workspace = true }
-tankovault-observability = { workspace = true }
+tankovault-service = { workspace = true, features = ["db"] }
+tokio-util = { workspace = true }
+axum = { workspace = true }
 tankovault-domain = { workspace = true }
 tankovault-db = { workspace = true }
 tankovault-adapters = { workspace = true }

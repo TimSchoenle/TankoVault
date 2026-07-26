@@ -1,11 +1,11 @@
 //! Reading claims out of an access token.
 //!
 //! Every decode here is **unverified** — the payload segment is base64-decoded and parsed,
-//! and the signature is ignored. That is safe because nothing security-relevant hangs off
-//! it: the server re-verifies the token on every request and RBAC-gates every admin route.
-//! These claims only decide what the UI bothers to *render* (which rail links to show, which
-//! name to greet, when to schedule the next silent refresh). A forged token buys a user a
-//! Console link that answers 403 the moment they click it.
+//! and the signature is ignored. That is safe because nothing security-relevant hangs off it,
+//! and it is safe *by construction* rather than by care: the token carries no authorization
+//! claims at all any more (see `tankovault_auth::AccessClaims`). What is left is a display name
+//! and an expiry, which decide who to greet and when to schedule the next silent refresh.
+//! Forging either buys nothing.
 
 use base64::Engine;
 use serde_json::Value;
@@ -18,14 +18,6 @@ fn payload(token: &str) -> Option<Value> {
         .decode(encoded)
         .ok()?;
     serde_json::from_slice(&bytes).ok()
-}
-
-/// The `role` claim, or `None` when absent or undecodable.
-pub(crate) fn role(token: &str) -> Option<String> {
-    payload(token)?
-        .get("role")
-        .and_then(Value::as_str)
-        .map(str::to_owned)
 }
 
 /// A human-facing display name — the first of `username`, `name`, `sub` that carries a
@@ -66,8 +58,7 @@ mod tests {
 
     #[test]
     fn reads_claims_from_a_well_formed_token() {
-        let t = token(r#"{"role":"admin","username":"kaz","exp":1700000000}"#);
-        assert_eq!(role(&t).as_deref(), Some("admin"));
+        let t = token(r#"{"username":"kaz","exp":1700000000}"#);
         assert_eq!(username(&t).as_deref(), Some("kaz"));
         assert_eq!(expires_at(&t), Some(1_700_000_000));
     }
@@ -95,7 +86,6 @@ mod tests {
     #[test]
     fn malformed_tokens_decode_to_nothing_rather_than_panicking() {
         for bad in ["", "not-a-jwt", "a.!!!.c", "a.eyJib2d1cw.c"] {
-            assert!(role(bad).is_none());
             assert!(username(bad).is_none());
             assert!(expires_at(bad).is_none());
         }

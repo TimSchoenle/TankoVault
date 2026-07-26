@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_permissions (user_id, permission, granted_by) VALUES ($1,$2,$3) ON CONFLICT (user_id, permission) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "813b3152284087939a12f52b1f719d61bad189a10015b2756aecf0f4a8098729"
+}

@@ -10,7 +10,7 @@ use crate::util::initial;
 use dioxus::prelude::*;
 
 #[component]
-pub(crate) fn ProfilePanel(name: String, role: String) -> Element {
+pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
     let session = use_session();
     let i18n = use_i18n();
     let api = api::use_api();
@@ -63,7 +63,7 @@ pub(crate) fn ProfilePanel(name: String, role: String) -> Element {
                     div { style: "font-family:var(--font-display);font-size:20px;font-weight:700;",
                         "{current_name}"
                     }
-                    div { class: "ik-mono ik-muted", style: "font-size:12px;", "{role}" }
+                    div { class: "ik-mono ik-muted", style: "font-size:12px;", "{tier}" }
                 }
             }
             div { class: "ik-field",

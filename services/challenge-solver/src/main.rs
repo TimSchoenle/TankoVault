@@ -8,13 +8,13 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::{get, post};
+use axum::routing::post;
 use axum::{Json, Router};
 use serde::Deserialize;
 use std::sync::Arc;
 use tankovault_config::TelemetryConfig;
+use tankovault_service::{Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier};
 use tankovault_solver::{ChallengeSolver, FlareSolverrSolver, SolveRequest};
-use tokio::net::TcpListener;
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -22,6 +22,17 @@ struct Config {
     bind_addr: String,
     telemetry: TelemetryConfig,
     solver: SolverBackendConfig,
+    /// Edge hardening for this internal service: body cap, request timeout, security
+    /// headers. CORS stays off — nothing browser-originated calls it.
+    #[serde(default)]
+    security: tankovault_config::SecurityConfig,
+    /// Inbound rate limiting. On by default even here: a runaway worker retry loop is as
+    /// capable of exhausting the solver pool as a hostile client.
+    #[serde(default)]
+    rate_limit: tankovault_config::RateLimitConfig,
+    /// Prometheus metrics. Togglable; disabling installs no recorder.
+    #[serde(default)]
+    metrics: tankovault_config::MetricsConfig,
 }
 
 fn default_bind() -> String {
@@ -55,13 +66,14 @@ fn default_ttl() -> u64 {
 #[derive(Clone)]
 struct AppState {
     solver: Arc<dyn ChallengeSolver>,
-    metrics: tankovault_observability::PrometheusHandle,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cfg: Config = tankovault_config::load()?;
-    let metrics = tankovault_observability::init(&cfg.telemetry)?;
+    tankovault_service::init_tracing(&cfg.telemetry)?;
+    let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    let shutdown = tankovault_service::install_shutdown();
 
     let solver: Arc<dyn ChallengeSolver> = match cfg.solver.backend.as_str() {
         "flaresolverr" => Arc::new(FlareSolverrSolver::new(
@@ -73,18 +85,25 @@ async fn main() -> anyhow::Result<()> {
     };
     tracing::info!(backend = solver.backend_name(), "challenge-solver starting");
 
-    let state = AppState { solver, metrics };
+    let state = AppState { solver };
+    let limiter = RateLimiter::from_config(&cfg.rate_limit, RouteClassifier::new(), None);
 
-    let app = Router::new()
-        .route("/v1/solve", post(solve))
-        .route("/health", get(|| async { "ok" }))
-        .route("/ready", get(|| async { "ok" }))
-        .route("/metrics", get(metrics_handler))
-        .with_state(state);
+    let app = HttpStack::new(&cfg.security, metrics.clone())
+        .with_rate_limit(limiter)
+        .apply(
+            Router::new()
+                .route("/v1/solve", post(solve))
+                .with_state(state),
+        )
+        // This service holds no state of its own and reaches no database, so readiness is
+        // simply "listening" — the upstream FlareSolverr is deliberately not probed: it is
+        // launched lazily and a solve already degrades to `502` when it is unavailable.
+        .merge(tankovault_service::ops_router(
+            Health::builder().build(),
+            metrics,
+        ));
 
-    let listener = TcpListener::bind(&cfg.bind_addr).await?;
-    tracing::info!(addr = %cfg.bind_addr, "challenge-solver listening");
-    axum::serve(listener, app).await?;
+    tankovault_service::serve(&cfg.bind_addr, app, shutdown).await?;
     Ok(())
 }
 
@@ -101,8 +120,4 @@ async fn solve(State(state): State<AppState>, Json(req): Json<SolveRequest>) -> 
             (StatusCode::BAD_GATEWAY, format!("solve failed: {e}")).into_response()
         }
     }
-}
-
-async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
-    state.metrics.render()
 }

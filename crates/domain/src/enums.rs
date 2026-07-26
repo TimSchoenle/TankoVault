@@ -179,31 +179,26 @@ str_enum! {
 }
 
 str_enum! {
-    /// RBAC role. Ordering matters for privilege comparison (see [`UserRole::at_least`]).
-    pub enum UserRole {
-        User => "user",
-        Operator => "operator",
-        Admin => "admin",
+    /// Whether an account may authenticate.
+    ///
+    /// Suspension is deliberately *not* a permission: permissions answer "what may this
+    /// principal do", and a suspended account is one that may not act at all, including on
+    /// its own data. Modelling it as the absence of every permission would still let the
+    /// account read its watchlist and refresh its session, which is not what suspension
+    /// means. It is therefore an identity-level state checked before authorization runs.
+    pub enum AccountStatus {
+        Active => "active",
+        Suspended => "suspended",
     }
-    default = User,
-    sql_type = "user_role"
+    default = Active,
+    sql_type = "account_status"
 }
 
-impl UserRole {
-    /// Numeric privilege rank; higher is more privileged.
+impl AccountStatus {
+    /// Whether an account in this state may sign in and hold a session.
     #[must_use]
-    fn rank(self) -> u8 {
-        match self {
-            Self::User => 0,
-            Self::Operator => 1,
-            Self::Admin => 2,
-        }
-    }
-
-    /// True when `self` satisfies a requirement of `required` or higher.
-    #[must_use]
-    pub fn at_least(self, required: Self) -> bool {
-        self.rank() >= required.rank()
+    pub fn may_authenticate(self) -> bool {
+        matches!(self, Self::Active)
     }
 }
 
@@ -230,10 +225,10 @@ mod tests {
     }
 
     #[test]
-    fn role_privilege_ordering() {
-        assert!(UserRole::Admin.at_least(UserRole::Operator));
-        assert!(UserRole::Operator.at_least(UserRole::User));
-        assert!(!UserRole::User.at_least(UserRole::Admin));
-        assert!(UserRole::User.at_least(UserRole::User));
+    fn only_active_accounts_may_authenticate() {
+        assert!(AccountStatus::Active.may_authenticate());
+        assert!(!AccountStatus::Suspended.may_authenticate());
+        // A fresh account must be usable, so the default cannot be the locked-out state.
+        assert!(AccountStatus::default().may_authenticate());
     }
 }

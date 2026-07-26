@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 tankovault-config = { workspace = true }
-tankovault-observability = { workspace = true }
+tankovault-service = { workspace = true, features = ["db", "redis"] }
 tankovault-db = { workspace = true }
 tankovault-domain = { workspace = true }
 tankovault-auth = { workspace = true }
@@ -41,6 +41,8 @@ uuid = { workspace = true }
 utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
 utoipa-scalar = { workspace = true }
+fred = { workspace = true }
+tokio-util = { workspace = true }
 
 [lints]
 workspace = true

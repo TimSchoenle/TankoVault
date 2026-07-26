@@ -17,6 +17,8 @@ use tankovault_bus::Bus;
 use tankovault_config::{DatabaseConfig, NatsConfig, TelemetryConfig};
 use tankovault_contracts::ScanTaskMessage;
 use tankovault_fetch::{HttpChallengeSolver, InMemorySessionStore, SessionStore};
+use tankovault_service::health::PostgresCheck;
+use tankovault_service::{Health, HttpStack, MetricsRegistry};
 use tankovault_solver::ChallengeSolver;
 
 #[derive(Debug, Deserialize)]
@@ -26,6 +28,21 @@ struct Config {
     telemetry: TelemetryConfig,
     #[serde(default)]
     worker: WorkerConfig,
+    /// Ops listener binding. The worker has no HTTP contract of its own, but an
+    /// orchestrator still needs somewhere to send liveness/readiness probes and a
+    /// scrape target — previously it exposed neither, so a wedged worker was invisible.
+    #[serde(default = "default_bind")]
+    bind_addr: String,
+    /// Edge hardening for the ops listener.
+    #[serde(default)]
+    security: tankovault_config::SecurityConfig,
+    /// Prometheus metrics. Togglable; disabling installs no recorder.
+    #[serde(default)]
+    metrics: tankovault_config::MetricsConfig,
+}
+
+fn default_bind() -> String {
+    "0.0.0.0:8085".to_owned()
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,7 +75,9 @@ fn default_max_pages() -> u32 {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cfg: Config = tankovault_config::load()?;
-    tankovault_observability::init_tracing(&cfg.telemetry)?;
+    tankovault_service::init_tracing(&cfg.telemetry)?;
+    let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    let shutdown = tankovault_service::install_shutdown();
 
     let pool = tankovault_db::connect(
         &cfg.database.url,
@@ -96,13 +115,57 @@ async fn main() -> anyhow::Result<()> {
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.as_slice() {
+        // A one-shot inline scan is a CLI invocation, not a served workload: no listener,
+        // and it exits when the scan does.
         [cmd, slug, mode] if cmd == "scan" => run_inline(&engine, slug, mode).await,
-        [] => run_consumer(&engine).await,
+        [] => {
+            spawn_ops_listener(&cfg, &pool, bus.as_ref(), metrics, shutdown.clone());
+            run_consumer(&engine, shutdown).await
+        }
         _ => {
             eprintln!("usage: worker [scan <provider_slug> <full|fast>]");
             std::process::exit(2);
         }
     }
+}
+
+/// Serve liveness, readiness and the metrics scrape alongside the consumer loop.
+///
+/// Readiness reports both dependencies. A worker without NATS has nothing to consume and a
+/// worker without Postgres cannot record what it consumed, so neither should be counted as
+/// a healthy replica.
+fn spawn_ops_listener(
+    cfg: &Config,
+    pool: &tankovault_db::PgPool,
+    bus: Option<&Bus>,
+    metrics: MetricsRegistry,
+    shutdown: tokio_util::sync::CancellationToken,
+) {
+    let ready_pool = pool.clone();
+    let ready_bus = bus.cloned();
+    let health = Health::builder()
+        .check(PostgresCheck::new(ready_pool))
+        .check_fn("nats", move || {
+            let bus = ready_bus.clone();
+            async move {
+                match bus {
+                    Some(bus) => bus.ping().await.map_err(|e| e.to_string()),
+                    None => Err("not connected".to_owned()),
+                }
+            }
+        })
+        .build();
+
+    let app = HttpStack::new(&cfg.security, metrics.clone())
+        .apply(axum::Router::new())
+        .merge(tankovault_service::ops_router(health, metrics));
+
+    let bind = cfg.bind_addr.clone();
+    tokio::spawn(async move {
+        if let Err(e) = tankovault_service::serve(&bind, app, shutdown).await {
+            tracing::error!(error = %e, "worker ops listener stopped");
+        }
+    });
 }
 
 /// One-shot inline scan (no broker).
@@ -130,7 +193,14 @@ async fn run_inline(engine: &Engine, slug: &str, mode: &str) -> anyhow::Result<(
 }
 
 /// `JetStream` consumer loop.
-async fn run_consumer(engine: &Engine) -> anyhow::Result<()> {
+///
+/// Stops between tasks on shutdown rather than being severed mid-scan. A task killed
+/// part-way through stays claimed until its visibility timeout expires, so draining
+/// cleanly is what keeps a rolling restart from stalling every in-flight run.
+async fn run_consumer(
+    engine: &Engine,
+    shutdown: tokio_util::sync::CancellationToken,
+) -> anyhow::Result<()> {
     let bus = engine
         .bus
         .as_ref()
@@ -140,7 +210,17 @@ async fn run_consumer(engine: &Engine) -> anyhow::Result<()> {
     let mut messages = consumer.messages().await?;
     tracing::info!(worker_id = %engine.worker_id, "worker consuming scan tasks");
 
-    while let Some(next) = messages.next().await {
+    loop {
+        let next = tokio::select! {
+            () = shutdown.cancelled() => {
+                tracing::info!(worker_id = %engine.worker_id, "worker stopping");
+                return Ok(());
+            }
+            next = messages.next() => match next {
+                Some(next) => next,
+                None => break,
+            },
+        };
         let msg = match next {
             Ok(m) => m,
             Err(e) => {

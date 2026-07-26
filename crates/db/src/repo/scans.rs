@@ -227,6 +227,47 @@ pub async fn create_task<'e, E: PgExecutor<'e>>(
     Ok(inserted.map(ScanTaskId::from_uuid))
 }
 
+/// Create many queued tasks of the same `kind` in one statement, returning the
+/// `(id, target)` pairs that were **actually inserted**.
+///
+/// Semantically identical to calling [`create_task`] per target — including the
+/// `ON CONFLICT DO NOTHING` idempotency — but collapses N round-trips into one. Targets
+/// already present (a redelivered parent re-attempting its fan-out) are simply absent from
+/// the result, so the caller publishes only genuinely new tasks. Duplicates *within* one
+/// batch are also resolved by the conflict clause, which `DO NOTHING` handles safely.
+///
+/// Callers are expected to chunk large fan-outs; see `CATALOG_FANOUT_CHUNK` in the worker.
+pub async fn create_tasks<'e, E: PgExecutor<'e>>(
+    exec: E,
+    run_id: ScanRunId,
+    kind: &str,
+    targets: &[Json],
+) -> DbResult<Vec<(ScanTaskId, Json)>> {
+    if targets.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ids: Vec<Uuid> = targets
+        .iter()
+        .map(|_| ScanTaskId::new().as_uuid())
+        .collect();
+    let rows = sqlx::query!(
+        "INSERT INTO scan_tasks (id, run_id, kind, target) \
+         SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::jsonb[]) \
+         ON CONFLICT (run_id, kind, (target::text)) DO NOTHING \
+         RETURNING id, target",
+        &ids,
+        &vec![run_id.as_uuid(); targets.len()],
+        &vec![kind.to_owned(); targets.len()],
+        targets,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (ScanTaskId::from_uuid(r.id), r.target))
+        .collect())
+}
+
 /// Mark a task claimed by a worker (the normal path: the worker already has the message
 /// from `JetStream` and records the claim for audit/progress).
 pub async fn claim_task<'e, E: PgExecutor<'e>>(

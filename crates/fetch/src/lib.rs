@@ -14,6 +14,7 @@
 //! Hard invariant: **no image/content fetch path exists**. [`FetchResponse::body`] is
 //! bounded UTF-8 text for HTML/JSON parsing only.
 
+mod backoff;
 mod base;
 mod builder;
 mod error;
@@ -26,6 +27,7 @@ mod solving;
 pub mod ssrf;
 mod types;
 
+pub use backoff::BackoffFetcher;
 pub use base::BaseHttpFetcher;
 pub use builder::{ProviderFetchConfig, build_provider_fetcher};
 pub use error::FetchError;

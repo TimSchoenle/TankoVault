@@ -15,7 +15,6 @@
 //! `openapi` does not.
 
 use progenitor_impl::{GenerationSettings, Generator, InterfaceStyle, TypePatch};
-use tankovault_domain::Politeness;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -373,7 +372,7 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
                 base_url: preset.base_url.to_owned(),
                 adapter: preset.adapter,
                 config: preset.config,
-                politeness: Politeness::default(),
+                politeness: preset.politeness,
             },
         )
         .await

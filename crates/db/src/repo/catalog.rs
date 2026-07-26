@@ -501,6 +501,51 @@ pub async fn register_source_stub(
     Ok(())
 }
 
+/// Register a whole catalogue page's worth of entries, skipping those already known.
+///
+/// Same semantics as calling [`register_source_stub`] per entry, but the "is this source
+/// already registered?" check — which is the *only* work needed for the overwhelming
+/// majority of entries on a re-scan — is answered for the entire batch in **one** query
+/// instead of one per entry. Genuinely new sources still go through the full per-series
+/// canonicalisation pipeline, which cannot be batched (each resolves against the series
+/// created by its predecessors).
+///
+/// Returns the number of sources newly registered. A single entry failing to register is
+/// logged and skipped rather than aborting the page: losing one series must not lose the
+/// rest, and the enrichment task is enqueued regardless (design §12).
+pub async fn register_source_stubs(
+    pool: &sqlx::PgPool,
+    provider_id: ProviderId,
+    entries: &[(&str, &str)],
+) -> DbResult<usize> {
+    if entries.is_empty() {
+        return Ok(0);
+    }
+
+    let paths: Vec<String> = entries.iter().map(|(path, _)| (*path).to_owned()).collect();
+    let known: std::collections::HashSet<String> = sqlx::query_scalar!(
+        "SELECT source_path FROM series_sources WHERE provider_id = $1 AND source_path = ANY($2)",
+        provider_id.as_uuid(),
+        &paths,
+    )
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .collect();
+
+    let mut registered = 0usize;
+    for (path, title) in entries {
+        if known.contains(*path) {
+            continue;
+        }
+        match register_source_stub(pool, provider_id, path, title).await {
+            Ok(()) => registered += 1,
+            Err(e) => tracing::warn!(path = %path, error = %e, "series registration failed"),
+        }
+    }
+    Ok(registered)
+}
+
 /// Record the result of a source scan: content hash + chapter count + timestamp.
 pub async fn update_source_scan<'e, E: PgExecutor<'e>>(
     exec: E,

@@ -1190,10 +1190,10 @@
         "type": "string"
       },
       "Politeness": {
-        "description": "Crawl politeness parameters for one provider.",
+        "description": "Crawl politeness parameters for one provider.\n\n**`rps` and `concurrency` are enforced per worker process, not fleet-wide.** The fetch\nstack is built per provider inside each worker, so the load a provider actually sees is\n`rps × replicas`. Sizing a provider's budget means dividing the intended aggregate by the\nreplica count; scaling workers out without lowering these raises the real crawl rate.\n(A cross-replica token bucket in Redis is the documented follow-up — see\n`crates/fetch/src/ratelimit.rs`.)",
         "properties": {
           "concurrency": {
-            "description": "Maximum concurrent requests to this provider.",
+            "description": "Maximum concurrent requests to this provider, per worker process.",
             "format": "int32",
             "minimum": 0,
             "type": "integer"
@@ -1205,7 +1205,7 @@
             "type": "integer"
           },
           "rps": {
-            "description": "Requests per second, aggregate across the worker pool.",
+            "description": "Requests per second, per worker process (see the type-level note on fleet totals).",
             "format": "double",
             "type": "number"
           },

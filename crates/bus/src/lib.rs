@@ -5,7 +5,7 @@
 //! publish tasks/events, and open a durable pull consumer. Subject/stream naming comes
 //! from [`tankovault_contracts::subjects`] so producers and consumers cannot drift.
 
-use async_nats::jetstream::{self, consumer::PullConsumer, consumer::pull, stream};
+use async_nats::jetstream::{self, AckKind, consumer::PullConsumer, consumer::pull, stream};
 use serde::Serialize;
 use std::time::Duration;
 use tankovault_contracts::{
@@ -14,6 +14,60 @@ use tankovault_contracts::{
 };
 use thiserror::Error;
 use uuid::Uuid;
+
+/// Redelivery deadline for a claimed scan task.
+///
+/// This bounds how long a worker may go **silent**, not how long a task may take: a task
+/// that outlives it calls [`with_ack_heartbeat`] to keep extending the deadline. Keeping it
+/// modest is deliberate — a worker that crashes mid-task is redelivered within this window
+/// rather than after an hour of dead air.
+pub const TASK_ACK_WAIT: Duration = Duration::from_secs(300);
+
+/// How often an in-flight task reports progress, as a fraction of [`TASK_ACK_WAIT`].
+///
+/// Derived rather than written out so the two cannot drift apart: raising the deadline
+/// without widening the heartbeat would be harmless, but tightening it without tightening
+/// the heartbeat would silently reintroduce mid-task redelivery.
+pub const TASK_ACK_HEARTBEAT: Duration = Duration::from_secs(TASK_ACK_WAIT.as_secs() / 5);
+
+/// Run `work` while holding off redelivery of `msg`.
+///
+/// `JetStream` redelivers any message not acked within the consumer's `ack_wait`. For work
+/// that legitimately runs longer than that — a catalogue page that registers twenty thousand
+/// series, a series with thousands of chapters — the fix is not a larger deadline (which
+/// also delays recovery from a genuine crash) but to say "still working": an
+/// [`AckKind::Progress`] resets the timer without settling the message.
+///
+/// This is the reason a slow task no longer means a *duplicated* task. Idempotent writes
+/// remain the correctness backstop; this keeps the duplication from happening at all.
+///
+/// A failed heartbeat is logged, not fatal: the work continues, and the worst case is the
+/// redelivery this exists to avoid — which the idempotency layer already tolerates.
+pub async fn with_ack_heartbeat<F>(msg: &jetstream::Message, every: Duration, work: F) -> F::Output
+where
+    F: std::future::Future,
+{
+    tokio::pin!(work);
+    let mut ticker = tokio::time::interval(every);
+    // A tokio interval fires immediately; that first tick would be a pointless progress ack
+    // before any work has happened.
+    ticker.tick().await;
+    loop {
+        tokio::select! {
+            // Finishing beats ticking: never send a progress ack for work already done.
+            biased;
+            output = &mut work => return output,
+            _ = ticker.tick() => match msg.ack_with(AckKind::Progress).await {
+                Ok(()) => tracing::debug!("task still running; extended redelivery deadline"),
+                Err(e) => tracing::warn!(
+                    error = %e,
+                    "could not extend redelivery deadline; task may be redelivered while \
+                     still running"
+                ),
+            },
+        }
+    }
+}
 
 /// A `JetStream` context plus the underlying core-NATS client.
 ///
@@ -200,11 +254,7 @@ impl Bus {
             subjects::TASKS_STREAM,
             subjects::WORKER_CONSUMER,
             subjects::TASKS_SUBJECT_WILDCARD,
-            // A `catalog_page` task fans out one child per catalogue entry (many DB writes +
-            // publishes), so its processing can outlast the JetStream default ack deadline.
-            // A generous window prevents mid-processing redelivery (which would re-run the
-            // fan-out); the idempotent child insert is the correctness backstop.
-            Duration::from_secs(300),
+            TASK_ACK_WAIT,
         )
         .await
     }
@@ -254,5 +304,26 @@ impl Bus {
             .await
             .map_err(|e| BusError::Jetstream(e.to_string()))?;
         Ok(consumer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn heartbeat_fits_comfortably_inside_the_redelivery_deadline() {
+        // The whole point of the heartbeat is that a progress ack lands well before the
+        // deadline lapses. If someone tightens `TASK_ACK_WAIT` without revisiting the
+        // divisor, mid-task redelivery comes back silently — so assert the margin here
+        // rather than trusting the comment.
+        assert!(
+            TASK_ACK_HEARTBEAT.as_secs() > 0,
+            "a zero heartbeat would spin"
+        );
+        assert!(
+            TASK_ACK_HEARTBEAT * 2 <= TASK_ACK_WAIT,
+            "heartbeat {TASK_ACK_HEARTBEAT:?} leaves no margin under deadline {TASK_ACK_WAIT:?}"
+        );
     }
 }

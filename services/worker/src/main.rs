@@ -231,7 +231,17 @@ async fn run_consumer(
 
         match serde_json::from_slice::<ScanTaskMessage>(&msg.payload) {
             Ok(task) => {
-                if let Err(e) = handle_task(engine, &task).await {
+                // Wrapped here rather than inside the engine: ack lifetime belongs to
+                // whoever owns the message, and doing it at the loop means *every* task
+                // kind is covered — a 20k-entry catalogue page today, whatever runs long
+                // tomorrow — instead of each slow path having to remember.
+                let result = tankovault_bus::with_ack_heartbeat(
+                    &msg,
+                    tankovault_bus::TASK_ACK_HEARTBEAT,
+                    handle_task(engine, &task),
+                )
+                .await;
+                if let Err(e) = result {
                     tracing::warn!(task_id = %task.task_id, error = %e, "task failed");
                     let _ = tankovault_db::repo::scans::fail_task(
                         &engine.pool,

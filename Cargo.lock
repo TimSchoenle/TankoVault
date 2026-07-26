@@ -3994,6 +3994,7 @@ dependencies = [
  "serde_json",
  "tankovault-contracts",
  "thiserror",
+ "tokio",
  "tracing",
  "uuid",
 ]

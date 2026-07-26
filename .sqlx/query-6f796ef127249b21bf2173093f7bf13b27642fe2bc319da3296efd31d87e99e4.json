@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT source_path FROM series_sources WHERE provider_id = $1 AND source_path = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series_sources",
+            "name": "source_path"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6f796ef127249b21bf2173093f7bf13b27642fe2bc319da3296efd31d87e99e4"
+}

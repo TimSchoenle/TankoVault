@@ -15,6 +15,14 @@ use tankovault_fetch::{ProviderFetchConfig, RobotsRules, SessionStore, build_pro
 use tankovault_solver::ChallengeSolver;
 use time::OffsetDateTime;
 
+/// Children enqueued per statement when fanning out a catalogue page.
+///
+/// A catalogue "page" is whatever the adapter chooses to return: for most providers that is
+/// a dozen entries, but a sitemap-driven adapter (kunmanga) yields up to 20k in one page.
+/// Chunking keeps any single INSERT bounded and lets `total_tasks` advance while a large
+/// page is still fanning out, instead of in one jump at the end.
+const FANOUT_CHUNK: usize = 1_000;
+
 /// Shared dependencies handed to the engine.
 #[derive(Clone)]
 pub(crate) struct Engine {
@@ -174,24 +182,34 @@ impl Engine {
                 truncated_by_page_cap = false;
                 break;
             }
-            for item in &catalog.items {
-                // Skip duplicates a paginator may repeat across pages.
-                if !seen.insert(item.path.clone()) {
-                    continue;
-                }
-                summary.series_seen += 1;
-                if let Err(e) = tankovault_db::repo::catalog::register_source_stub(
-                    &self.pool,
-                    provider.id,
-                    &item.path,
-                    &item.title,
-                )
-                .await
-                {
-                    tracing::warn!(path = %item.path, error = %e, "series registration failed");
-                }
-                paths.push(item.path.clone());
+            // Skip duplicates a paginator may repeat across pages, then register what is
+            // left in one batch — the same batched path the broker fan-out uses, so a
+            // sitemap-shard page of 20k entries costs one existence query, not 20k.
+            let fresh: Vec<(&str, &str)> = catalog
+                .items
+                .iter()
+                .filter(|item| seen.insert(item.path.clone()))
+                .map(|item| (item.path.as_str(), item.title.as_str()))
+                .collect();
+            summary.series_seen += fresh.len();
+            match tankovault_db::repo::catalog::register_source_stubs(
+                &self.pool,
+                provider.id,
+                &fresh,
+            )
+            .await
+            {
+                Ok(registered) => tracing::info!(
+                    provider = %provider.slug,
+                    page,
+                    items = catalog.items.len(),
+                    fresh = fresh.len(),
+                    registered,
+                    "catalog page walked"
+                ),
+                Err(e) => tracing::warn!(page, error = %e, "catalog page registration failed"),
             }
+            paths.extend(fresh.iter().map(|(path, _)| (*path).to_owned()));
             if !catalog.has_next {
                 truncated_by_page_cap = false;
                 break;
@@ -284,28 +302,44 @@ impl Engine {
                     .and_then(|p| u32::try_from(p).ok())
                     .unwrap_or(1);
                 let catalog = adapter.list_catalog(&ctx, page).await?;
-                for item in &catalog.items {
-                    // Breadth-first: register the series now so the full list is available
-                    // before any chapters are fetched; a registration failure must not lose
-                    // the series, so still enqueue its enrichment task.
-                    if let Err(e) = tankovault_db::repo::catalog::register_source_stub(
-                        &self.pool,
-                        provider.id,
-                        &item.path,
-                        &item.title,
-                    )
-                    .await
-                    {
-                        tracing::warn!(path = %item.path, error = %e, "series registration failed");
-                    }
-                    self.enqueue_child(
-                        task,
-                        "series",
-                        TaskKind::Series,
-                        serde_json::json!({ "path": item.path }),
-                    )
-                    .await?;
+                // Breadth-first: register every series on the page now so the full list is
+                // available before any chapters are fetched. Both halves are batched — a
+                // sitemap-shard page can carry 20k entries, and a per-entry round-trip there
+                // would outrun the consumer's ack deadline.
+                let entries: Vec<(&str, &str)> = catalog
+                    .items
+                    .iter()
+                    .map(|i| (i.path.as_str(), i.title.as_str()))
+                    .collect();
+                match tankovault_db::repo::catalog::register_source_stubs(
+                    &self.pool,
+                    provider.id,
+                    &entries,
+                )
+                .await
+                {
+                    // Logged per page so a catalogue that walks but yields nothing new is
+                    // visible immediately: a clamped or looping paginator shows up here as
+                    // page after page of `registered = 0`, which is otherwise
+                    // indistinguishable from a healthy re-scan until the run totals land.
+                    Ok(registered) => tracing::info!(
+                        provider = %provider.slug,
+                        page,
+                        items = entries.len(),
+                        registered,
+                        "catalog page walked"
+                    ),
+                    // A registration failure must not lose the series: the enrichment tasks
+                    // below are enqueued regardless and will create the source themselves.
+                    Err(e) => tracing::warn!(page, error = %e, "catalog page registration failed"),
                 }
+                let targets: Vec<serde_json::Value> = catalog
+                    .items
+                    .iter()
+                    .map(|i| serde_json::json!({ "path": i.path }))
+                    .collect();
+                self.enqueue_children(task, "series", TaskKind::Series, targets)
+                    .await?;
                 // Chain the next page while the catalogue has more, bounded by the same
                 // safety cap the inline walk uses so an unbounded paginator cannot loop.
                 if catalog.has_next {
@@ -382,6 +416,58 @@ impl Engine {
             traceparent: None,
         })
         .await?;
+        Ok(())
+    }
+
+    /// Fan out many children of the same `kind` at once — the batched counterpart to
+    /// [`enqueue_child`](Self::enqueue_child), used for catalogue pages that carry thousands
+    /// of entries (a sitemap-shard page can hold 20k).
+    ///
+    /// Preserves both fan-out invariants exactly: creation stays idempotent on
+    /// `(run_id, kind, target)` (only rows actually inserted come back, so a redelivered
+    /// parent republishes nothing), and `total_tasks` is bumped **before** any child is
+    /// published — and before the parent completes — so `done + failed` cannot reach `total`
+    /// mid-fan-out and finalise the run early.
+    ///
+    /// Targets are processed in chunks so one page never becomes a single multi-megabyte
+    /// statement, and so progress is visible while a large page is still fanning out.
+    async fn enqueue_children(
+        &self,
+        parent: &ScanTaskMessage,
+        kind_str: &str,
+        kind: TaskKind,
+        targets: Vec<serde_json::Value>,
+    ) -> anyhow::Result<()> {
+        let Some(bus) = &self.bus else {
+            anyhow::bail!("cannot fan out scan tasks without a broker");
+        };
+        for chunk in targets.chunks(FANOUT_CHUNK) {
+            let created = tankovault_db::repo::scans::create_tasks(
+                &self.pool,
+                parent.run_id,
+                kind_str,
+                chunk,
+            )
+            .await?;
+            if created.is_empty() {
+                continue;
+            }
+            let delta = i32::try_from(created.len()).unwrap_or(i32::MAX);
+            tankovault_db::repo::scans::add_total_tasks(&self.pool, parent.run_id, delta).await?;
+            for (task_id, target) in created {
+                bus.publish_task(&ScanTaskMessage {
+                    task_id,
+                    run_id: parent.run_id,
+                    provider_id: parent.provider_id,
+                    provider_slug: parent.provider_slug.clone(),
+                    mode: parent.mode,
+                    kind,
+                    target,
+                    traceparent: None,
+                })
+                .await?;
+            }
+        }
         Ok(())
     }
 

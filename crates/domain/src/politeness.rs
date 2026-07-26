@@ -7,21 +7,29 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-/// Hard upper bound on requests-per-second for any single provider.
+/// Hard upper bound on requests-per-second for any single provider, per worker process.
 pub const MAX_RPS: f64 = 4.0;
-/// Hard upper bound on concurrent in-flight requests for any single provider.
+/// Hard upper bound on concurrent in-flight requests for any single provider, per worker
+/// process.
 pub const MAX_CONCURRENCY: u32 = 8;
 /// Default identifiable crawler user-agent.
 pub const DEFAULT_USER_AGENT: &str =
     "TankoVaultBot/0.1 (+https://github.com/tankovault; metadata-aggregator; contact: operator)";
 
 /// Crawl politeness parameters for one provider.
+///
+/// **`rps` and `concurrency` are enforced per worker process, not fleet-wide.** The fetch
+/// stack is built per provider inside each worker, so the load a provider actually sees is
+/// `rps × replicas`. Sizing a provider's budget means dividing the intended aggregate by the
+/// replica count; scaling workers out without lowering these raises the real crawl rate.
+/// (A cross-replica token bucket in Redis is the documented follow-up — see
+/// `crates/fetch/src/ratelimit.rs`.)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct Politeness {
-    /// Requests per second, aggregate across the worker pool.
+    /// Requests per second, per worker process (see the type-level note on fleet totals).
     #[serde(default = "Politeness::default_rps")]
     pub rps: f64,
-    /// Maximum concurrent requests to this provider.
+    /// Maximum concurrent requests to this provider, per worker process.
     #[serde(default = "Politeness::default_concurrency")]
     pub concurrency: u32,
     /// Minimum delay between requests, in milliseconds (from robots crawl-delay or config).

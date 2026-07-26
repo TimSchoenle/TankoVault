@@ -17,8 +17,10 @@ use serde::Deserialize;
 use tankovault_bus::Bus;
 use tankovault_contracts::{ChapterDiscovered, UserNotification, subjects};
 use tankovault_db::PgPool;
+use tankovault_domain::Feature;
+use tankovault_service::health::PostgresCheck;
+use tankovault_service::{FeatureGate, Health, HttpStack, MetricsRegistry, PostgresFlagSource};
 use time::OffsetDateTime;
-use tokio::net::TcpListener;
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -29,6 +31,15 @@ struct Config {
     channels: channels::ChannelsConfig,
     #[serde(default = "default_bind")]
     bind_addr: String,
+    /// Edge hardening for the ops listener.
+    #[serde(default)]
+    security: tankovault_config::SecurityConfig,
+    /// Prometheus metrics. Togglable; disabling installs no recorder.
+    #[serde(default)]
+    metrics: tankovault_config::MetricsConfig,
+    /// Runtime feature flags — how often this replica re-reads the operator's decisions.
+    #[serde(default)]
+    features: tankovault_config::FeaturesConfig,
 }
 
 fn default_bind() -> String {
@@ -38,7 +49,9 @@ fn default_bind() -> String {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cfg: Config = tankovault_config::load()?;
-    tankovault_observability::init_tracing(&cfg.telemetry)?;
+    tankovault_service::init_tracing(&cfg.telemetry)?;
+    let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    let shutdown = tankovault_service::install_shutdown();
 
     let pool = tankovault_db::connect(
         &cfg.database.url,
@@ -49,13 +62,28 @@ async fn main() -> anyhow::Result<()> {
     let bus = Bus::connect(&cfg.nats.url).await?;
     bus.ensure_streams().await?;
 
-    // Minimal health server for k8s probes, alongside the consumer.
-    let health = axum::Router::new()
-        .route("/health", axum::routing::get(|| async { "ok" }))
-        .route("/ready", axum::routing::get(|| async { "ok" }));
-    let listener = TcpListener::bind(&cfg.bind_addr).await?;
+    // Ops listener for orchestrator probes and the metrics scrape, alongside the consumer.
+    // Readiness names both dependencies: a notifier that cannot reach Postgres or NATS
+    // cannot deliver anything, and previously reported itself healthy regardless.
+    let ready_pool = pool.clone();
+    let ready_bus = bus.clone();
+    let health = Health::builder()
+        .check(PostgresCheck::new(ready_pool))
+        .check_fn("nats", move || {
+            let bus = ready_bus.clone();
+            async move { bus.ping().await.map_err(|e| e.to_string()) }
+        })
+        .build();
+
+    let ops = HttpStack::new(&cfg.security, metrics.clone())
+        .apply(axum::Router::new())
+        .merge(tankovault_service::ops_router(health, metrics));
+    let ops_bind = cfg.bind_addr.clone();
+    let ops_shutdown = shutdown.clone();
     tokio::spawn(async move {
-        let _ = axum::serve(listener, health).await;
+        if let Err(e) = tankovault_service::serve(&ops_bind, ops, ops_shutdown).await {
+            tracing::error!(error = %e, "ops listener stopped");
+        }
     });
 
     let external = Arc::new(channels::build(&cfg.channels));
@@ -63,16 +91,26 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("no external notification channels configured (in-app only)");
     } else {
         let names: Vec<&str> = external.iter().map(|c| c.name()).collect();
-        tracing::info!(?names, "external notification channels enabled");
+        tracing::info!(?names, "external notification channels configured");
     }
 
-    run_consumer(pool, bus, external).await
+    // Configuration says which channels *exist*; the flags say which currently deliver. Loaded
+    // before the consumer starts so the first event after a restart already respects the
+    // operator's decisions.
+    let features = FeatureGate::new(Arc::new(PostgresFlagSource::new(pool.clone())));
+    features
+        .spawn_refresh(cfg.features.refresh_interval(), shutdown.clone())
+        .await;
+
+    run_consumer(pool, bus, external, features, shutdown).await
 }
 
 async fn run_consumer(
     pool: PgPool,
     bus: Bus,
     channels: Arc<Vec<Box<dyn NotificationChannel>>>,
+    features: FeatureGate,
+    shutdown: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
     let consumer = bus
         .event_consumer(
@@ -83,7 +121,19 @@ async fn run_consumer(
     let mut messages = consumer.messages().await?;
     tracing::info!("notifier consuming chapter.discovered events");
 
-    while let Some(next) = messages.next().await {
+    loop {
+        // Finish the message in hand, then stop: acking after the fan-out is what makes
+        // redelivery correct, and being killed between the two would drop a notification.
+        let next = tokio::select! {
+            () = shutdown.cancelled() => {
+                tracing::info!("notifier consumer stopping");
+                return Ok(());
+            }
+            next = messages.next() => match next {
+                Some(next) => next,
+                None => break,
+            },
+        };
         let msg = match next {
             Ok(m) => m,
             Err(e) => {
@@ -93,7 +143,7 @@ async fn run_consumer(
         };
         match serde_json::from_slice::<ChapterDiscovered>(&msg.payload) {
             Ok(event) => {
-                if let Err(e) = fan_out(&pool, &bus, &channels, &event).await {
+                if let Err(e) = fan_out(&pool, &bus, &channels, &features, &event).await {
                     tracing::warn!(error = %e, "fan-out failed");
                 }
             }
@@ -110,8 +160,16 @@ async fn fan_out(
     pool: &PgPool,
     bus: &Bus,
     channels: &[Box<dyn NotificationChannel>],
+    features: &FeatureGate,
     event: &ChapterDiscovered,
 ) -> anyhow::Result<()> {
+    // With in-app notifications off, no rows are written and no live push is sent — but the
+    // per-watcher walk and the dedup claim still run. The claim is this system's record that a
+    // chapter has been *announced*, and it is what keeps the external channels firing once per
+    // genuinely-new chapter instead of on every rescan; skipping it would turn a Discord
+    // webhook into a duplicate every scan cycle for as long as the flag stayed off.
+    let in_app = features.is_enabled(Feature::NotificationsInApp);
+
     let watchers =
         tankovault_db::repo::tracking::watchers_for_series(pool, event.series_id).await?;
     let mut notified_any = false;
@@ -134,6 +192,12 @@ async fn fan_out(
             continue;
         }
 
+        // Claimed, so this chapter is new to this watcher whatever happens next.
+        notified_any = true;
+        if !in_app {
+            continue;
+        }
+
         let payload = serde_json::json!({
             "series_id": event.series_id,
             "chapter_number": event.chapter_number,
@@ -148,9 +212,12 @@ async fn fan_out(
             &payload,
         )
         .await?;
-        notified_any = true;
 
-        push_live(pool, bus, watcher.user_id, notification_id, &payload).await;
+        // The live push is a separate feature from the durable row: a deployment can keep the
+        // notification list while shedding the SSE fan-out under load.
+        if features.is_enabled(Feature::NotificationsLive) {
+            push_live(pool, bus, watcher.user_id, notification_id, &payload).await;
+        }
     }
 
     // Fire external channels once per genuinely-new chapter (i.e. when at least one
@@ -163,7 +230,7 @@ async fn fan_out(
             chapter_path: event.chapter_path.clone(),
             provider_slug: event.provider_slug.clone(),
         };
-        dispatch_external(channels, &alert).await;
+        dispatch_external(channels, features, &alert).await;
     }
     Ok(())
 }
@@ -199,9 +266,25 @@ async fn push_live(
     }
 }
 
-/// Best-effort delivery to every external channel; failures are logged, never fatal.
-async fn dispatch_external(channels: &[Box<dyn NotificationChannel>], alert: &Alert) {
+/// Best-effort delivery to every *currently enabled* external channel; failures are logged,
+/// never fatal.
+///
+/// A channel switched off is skipped silently at `debug` rather than logged as a problem: it is
+/// a deliberate operator decision, and warning about it every chapter would bury the delivery
+/// failures this log line exists to surface.
+async fn dispatch_external(
+    channels: &[Box<dyn NotificationChannel>],
+    features: &FeatureGate,
+    alert: &Alert,
+) {
     for channel in channels {
+        if !features.is_enabled(channel.feature()) {
+            tracing::debug!(
+                channel = channel.name(),
+                "channel is switched off; skipping"
+            );
+            continue;
+        }
         if let Err(e) = channel.deliver(alert).await {
             tracing::warn!(channel = channel.name(), error = %e, "external delivery failed");
         }

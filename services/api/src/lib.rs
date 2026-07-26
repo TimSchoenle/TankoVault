@@ -4,7 +4,11 @@
 //! [`openapi`] schema export that `xtask openapi` serialises and hands to `progenitor`
 //! to regenerate the typed API client `crates/api-client` the frontend consumes) lives
 //! here; `main.rs` is a thin entrypoint that loads config, wires up infra (DB pool, NATS,
-//! metrics), and calls [`build_router`].
+//! audit sink, metrics), and calls [`build_router`].
+//!
+//! Cross-cutting concerns — rate limiting, security headers, CORS, request ids, metrics,
+//! timeouts, body caps, graceful shutdown, health probes — are not implemented here. They
+//! come from `tankovault-service`, which every service in the workspace shares.
 
 // Handlers are `pub` so the router (and `openapi::ApiDoc`) can name them, but their
 // containing modules stay private — this crate's only real external surface is
@@ -14,6 +18,7 @@
 pub mod openapi;
 
 mod admin;
+mod audit;
 mod auth;
 mod error;
 mod mailer;
@@ -22,11 +27,13 @@ mod series;
 mod state;
 
 use axum::Router;
-use axum::routing::get;
 pub use state::AppState;
-use tower_http::compression::CompressionLayer;
-use tower_http::cors::CorsLayer;
-use tower_http::trace::TraceLayer;
+use tankovault_config::{RateLimitConfig, SecurityConfig};
+use tankovault_domain::Feature;
+use tankovault_service::{
+    FeatureGate, FeatureLayer, Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier,
+    RouteFeatures,
+};
 use utoipa::OpenApi as _;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -36,28 +43,167 @@ pub fn full_openapi() -> utoipa::openapi::OpenApi {
     documented_router().split_for_parts().1
 }
 
-/// Assemble the full route table and middleware stack. Kept out of `main` so the router
-/// wiring stays readable as endpoints grow (frontend §9 added the reading-dashboard,
-/// account, and console-users routes here).
+/// Which rate-limit budget each route family draws from.
 ///
-/// The documented endpoints come from [`documented_router`]; the undocumented ops probes
-/// (`/health`, `/ready`, `/metrics`) are added here. `split_for_parts` then hands back the
-/// plain `axum::Router` alongside the collected `OpenApi` document, which is served (with a
-/// browsable UI) via Scalar at `/scalar`.
-pub fn build_router(state: AppState) -> Router {
-    let (router, api) = documented_router()
-        // ops (undocumented — no OpenAPI value in a health/metrics probe)
-        .route("/health", get(|| async { "ok" }))
-        .route("/ready", get(|| async { "ok" }))
-        .route("/metrics", get(metrics_handler))
-        .split_for_parts();
+/// Kept next to the route table so adding an endpoint and classifying it are one edit.
+/// Anything unlisted falls back to the global budget, which is the safe default: a new
+/// route is limited from the moment it exists rather than being unlimited until someone
+/// remembers to add it here.
+#[must_use]
+pub fn route_classifier() -> RouteClassifier {
+    RouteClassifier::new()
+        // Credential handling — the online-guessing surface.
+        .auth("/v1/auth")
+        // Cheap to ask for, expensive to serve — genuinely heavy however they are called.
+        .expensive("/v1/me/export")
+        .expensive("/v1/me/sync/{provider}/push")
+        .expensive("/v1/me/sync/{provider}/pull")
+        .expensive("/v1/admin/providers/{id}/test")
+        .expensive("/v1/admin/series/merge")
+        // Admin surfaces the console polls to paint itself: only the mutating calls draw
+        // from the tight budget, so the read-heavy console and account pages are not
+        // throttled for merely loading. `GET /v1/admin/scans` (scan-queue overview) and
+        // the `/v1/admin/sync/*` listings stay on the ordinary budget; the `POST`s that
+        // trigger real work do not.
+        .expensive_write("/v1/admin/scans")
+        .expensive_write("/v1/admin/sync")
+        // Disclosing another person's whole record, and the erasure that follows an erasure
+        // request, are as heavy as the self-service versions already classified above.
+        .expensive("/v1/admin/privacy/requests/{id}/export")
+        .expensive("/v1/admin/privacy/requests/{id}/fulfil-erasure")
+        .expensive("/v1/admin/users/{id}")
+}
 
-    router
-        .merge(Scalar::with_url("/scalar", api))
-        .layer(CompressionLayer::new())
-        .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
-        .with_state(state)
+/// Which [`Feature`] each route family belongs to.
+///
+/// The other half of the flag system: [`tankovault_domain::features`] declares *what* is
+/// switchable and this table declares *where*. Kept next to the route registration below so
+/// adding an endpoint and placing it under a feature are one edit, and enforced by a single
+/// middleware ([`tankovault_service::flags::enforce`]) rather than by checks inside handlers.
+///
+/// Deliberately **not** exhaustive. A route with no entry is ungated, which is right for the
+/// substrate — credential endpoints, the capabilities probe, the ops router — because those are
+/// what a deployment needs in order to be administered at all. Switching off sign-in is not a
+/// feature flag; it is turning the service off, which the orchestrator already does better.
+#[must_use]
+pub fn route_features() -> RouteFeatures {
+    RouteFeatures::new()
+        // --- public catalogue ---
+        .gate("/v1/series", Feature::CatalogueBrowse)
+        .gate("/v1/tags", Feature::CatalogueBrowse)
+        .gate("/v1/providers", Feature::CatalogueBrowse)
+        // --- accounts ---
+        .gate("/v1/auth/register", Feature::AccountsRegistration)
+        .gate("/v1/auth/password", Feature::AccountsPasswordReset)
+        .gate("/v1/auth/verify-email", Feature::AccountsEmailVerification)
+        .gate("/v1/me/profile", Feature::AccountsProfile)
+        .gate("/v1/me/sessions", Feature::AccountsSessions)
+        // --- privacy ---
+        .gate("/v1/me/export", Feature::PrivacySelfExport)
+        // Exact: `DELETE /v1/me` is self-service erasure, and `/v1/me` is the prefix of the
+        // entire signed-in surface. A prefix rule would switch off the whole app.
+        .gate_path("/v1/me", Feature::PrivacySelfErasure)
+        .gate("/v1/me/privacy", Feature::PrivacyRequests)
+        .gate("/v1/admin/privacy", Feature::PrivacyRequests)
+        // --- tracking ---
+        .gate("/v1/me/watchlist", Feature::TrackingWatchlist)
+        .gate("/v1/me/progress", Feature::TrackingProgress)
+        .gate("/v1/me/chapter-progress", Feature::TrackingProgress)
+        .gate("/v1/me/mark-read-to", Feature::TrackingProgress)
+        .gate("/v1/me/feed", Feature::TrackingFeed)
+        .gate("/v1/me/continue", Feature::TrackingFeed)
+        .gate("/v1/me/stats", Feature::TrackingStats)
+        .gate("/v1/me/recommendations", Feature::CatalogueRecommendations)
+        // --- notifications ---
+        .gate("/v1/me/notifications", Feature::NotificationsInApp)
+        .gate("/v1/me/stream", Feature::NotificationsLive)
+        .gate(
+            "/v1/me/notification-prefs",
+            Feature::NotificationsPreferences,
+        )
+        // --- external sync ---
+        // The `/v1/me/sync` prefix covers the whole user-facing surface; the finer sync flags
+        // (auto-push, scheduled pull) govern *behaviour* rather than routes and are checked
+        // where that behaviour happens.
+        .gate("/v1/me/sync", Feature::SyncExternal)
+        .gate("/v1/me/sync/conflicts", Feature::SyncConflictReview)
+        .gate("/v1/me/sync/history", Feature::SyncHistory)
+        // --- operator surfaces ---
+        .gate("/v1/admin/providers", Feature::AdminProviders)
+        .gate("/v1/admin/providers/{id}/test", Feature::AdminAdapterTest)
+        .gate(
+            "/v1/admin/providers/{id}/resolve",
+            Feature::AdminAdapterTest,
+        )
+        // Reads stay reachable when manual scanning is off: an operator who has just disabled
+        // scan triggers still needs the history that made them do it.
+        .gate_writes("/v1/admin/scans", Feature::ScanningManual)
+        .gate("/v1/admin/merge-candidates", Feature::ScanningMergeQueue)
+        .gate("/v1/admin/series/merge", Feature::ScanningMergeQueue)
+        .gate("/v1/admin/sync", Feature::AdminSync)
+        .gate("/v1/admin/audit", Feature::AdminAudit)
+        .gate("/v1/admin/stats", Feature::AdminStats)
+        .gate("/v1/admin/users", Feature::AdminUsers)
+        .gate("/v1/admin/permissions", Feature::AdminUsers)
+        .gate("/v1/admin/feature-flags", Feature::AdminFeatureFlags)
+}
+
+/// Assemble the full route table and the shared middleware stack.
+///
+/// The documented endpoints come from [`documented_router`]; `split_for_parts` hands back
+/// the plain `axum::Router` alongside the collected `OpenApi` document, which is served
+/// (with a browsable UI) via Scalar at `/scalar`.
+///
+/// The ops probes (`/health`, `/ready`, the metrics scrape) are merged in **outside** the
+/// middleware stack: a rate limit or a body cap must never be able to make a healthy
+/// replica look unhealthy to its orchestrator.
+pub fn build_router(
+    state: AppState,
+    security: &SecurityConfig,
+    rate_limit: &RateLimitConfig,
+    metrics: MetricsRegistry,
+    health: Health,
+    redis: Option<tankovault_service::ratelimit::RedisStoreHandle>,
+) -> Router {
+    let (router, api) = documented_router().split_for_parts();
+
+    let limiter = RateLimiter::from_config(rate_limit, route_classifier(), redis);
+    let features = FeatureLayer::new(state.features.clone(), route_features());
+
+    // Mounted *inside* the shared stack and closest to the handlers: a request refused for a
+    // disabled feature should still have been rate limited, tagged with a request id and
+    // measured, so the middleware above it must run first. Applied here rather than in
+    // `HttpStack` because the feature table is the API's own, not something every service has.
+    let app = HttpStack::new(security, metrics.clone())
+        .with_rate_limit(limiter)
+        .apply(
+            router
+                .merge(Scalar::with_url("/scalar", api))
+                .with_state(state)
+                .layer(axum::middleware::from_fn_with_state(
+                    features,
+                    tankovault_service::flags::enforce,
+                )),
+        );
+
+    app.merge(tankovault_service::ops_router(health, metrics))
+}
+
+/// Load the deployment's flag overrides and keep them fresh for the lifetime of the process.
+///
+/// Awaited before the listener binds so the first request after a deploy is served against the
+/// operator's stored decisions rather than the compiled defaults — otherwise a restart would
+/// briefly re-enable everything that had been switched off.
+pub async fn install_feature_gate(
+    pool: tankovault_db::PgPool,
+    cfg: &tankovault_config::FeaturesConfig,
+    shutdown: tokio_util::sync::CancellationToken,
+) -> FeatureGate {
+    let gate = FeatureGate::new(std::sync::Arc::new(
+        tankovault_service::PostgresFlagSource::new(pool),
+    ));
+    gate.spawn_refresh(cfg.refresh_interval(), shutdown).await;
+    gate
 }
 
 /// The single, authoritative registration of every documented endpoint, shared by
@@ -96,6 +242,9 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(me::continue_reading))
         .routes(routes!(me::recommendations))
         .routes(routes!(me::stats))
+        // what this caller may do and what this deployment offers — the one read the client
+        // gates its whole UI on
+        .routes(routes!(me::capabilities))
         // account settings (§9.4)
         .routes(routes!(me::patch_profile))
         .routes(routes!(me::sessions))
@@ -103,6 +252,15 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(me::notification_prefs, me::put_notification_prefs))
         .routes(routes!(me::notifications))
         .routes(routes!(me::mark_read))
+        // GDPR data-subject rights: portability (Art. 20) and erasure (Art. 17), plus the
+        // tracked request queue that covers the rights those two cannot serve directly
+        .routes(routes!(me::export_data))
+        .routes(routes!(me::delete_account))
+        .routes(routes!(
+            me::list_privacy_requests,
+            me::create_privacy_request
+        ))
+        .routes(routes!(me::cancel_privacy_request))
         // live per-user notification stream (SSE; token in query — EventSource cannot set headers)
         .routes(routes!(me::stream))
         // me — external sync, provider-keyed (proxied to the sync service; design: generalized
@@ -143,7 +301,29 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::set_provider_state))
         .routes(routes!(admin::test_adapter))
         .routes(routes!(admin::resolve_provider))
+        // admin — user administration: directory, identity, suspension, sessions, grants,
+        // erasure, and the catalogue of what can be granted
         .routes(routes!(admin::list_users))
+        .routes(routes!(
+            admin::get_user,
+            admin::update_user,
+            admin::delete_user
+        ))
+        .routes(routes!(admin::set_user_status))
+        .routes(routes!(admin::set_user_permissions))
+        .routes(routes!(admin::revoke_user_sessions))
+        .routes(routes!(admin::verify_user_email))
+        .routes(routes!(admin::permission_catalogue))
+        // admin — the deployment control plane: every feature and its switch
+        .routes(routes!(admin::list_flags))
+        .routes(routes!(admin::set_flag, admin::reset_flag))
+        // admin — the GDPR data-subject request queue and its fulfilment
+        .routes(routes!(admin::list_privacy_queue))
+        .routes(routes!(admin::claim_privacy_request))
+        .routes(routes!(admin::resolve_privacy_request))
+        .routes(routes!(admin::extend_privacy_request))
+        .routes(routes!(admin::export_subject_data))
+        .routes(routes!(admin::fulfil_erasure))
         .routes(routes!(admin::list_scans, admin::trigger_scan))
         .routes(routes!(admin::scan_failures))
         .routes(routes!(admin::scan_stream))
@@ -151,12 +331,6 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::list_merge_candidates))
         .routes(routes!(admin::dismiss_merge_candidate))
         .routes(routes!(admin::merge_series))
-}
-
-pub async fn metrics_handler(
-    axum::extract::State(state): axum::extract::State<AppState>,
-) -> String {
-    state.metrics.render()
 }
 
 /// Best-effort connection to NATS for the live notification relay. Returns `None` (with a
@@ -177,6 +351,154 @@ pub async fn connect_bus(
         Err(e) => {
             tracing::warn!(error = %e, "NATS unreachable; /v1/me/stream disabled");
             None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::Method;
+    use tankovault_service::RouteClass;
+
+    #[test]
+    fn credential_routes_draw_from_the_auth_budget() {
+        let classifier = route_classifier();
+        assert_eq!(
+            classifier.classify(&Method::POST, "/v1/auth/login"),
+            RouteClass::Auth
+        );
+        assert_eq!(
+            classifier.classify(&Method::POST, "/v1/auth/register"),
+            RouteClass::Auth
+        );
+        assert_eq!(
+            classifier.classify(&Method::POST, "/v1/auth/password/reset"),
+            RouteClass::Auth
+        );
+    }
+
+    #[test]
+    fn the_data_export_is_expensive_not_ordinary() {
+        // `/v1/me/export` sits under `/v1/me`, which is otherwise unclassified; the
+        // longest-prefix rule is what keeps it in the tighter budget.
+        assert_eq!(
+            route_classifier().classify(&Method::GET, "/v1/me/export"),
+            RouteClass::Expensive
+        );
+    }
+
+    #[test]
+    fn disclosing_or_erasing_another_person_is_expensive() {
+        let classifier = route_classifier();
+        assert_eq!(
+            classifier.classify(&Method::GET, "/v1/admin/privacy/requests/{id}/export"),
+            RouteClass::Expensive
+        );
+        assert_eq!(
+            classifier.classify(&Method::DELETE, "/v1/admin/users/{id}"),
+            RouteClass::Expensive
+        );
+    }
+
+    #[test]
+    fn ordinary_reads_fall_back_to_the_global_budget() {
+        let classifier = route_classifier();
+        assert_eq!(
+            classifier.classify(&Method::GET, "/v1/series"),
+            RouteClass::Global
+        );
+        assert_eq!(
+            classifier.classify(&Method::GET, "/v1/me/watchlist"),
+            RouteClass::Global
+        );
+    }
+
+    #[test]
+    fn the_substrate_is_never_behind_a_flag() {
+        // Turning off sign-in, the capabilities probe or the ops surface is not a product
+        // decision — it is turning the service off, and it would leave no way to switch
+        // anything back on. These must have no rule at all.
+        let features = route_features();
+        for path in [
+            "/v1/auth/login",
+            "/v1/auth/refresh",
+            "/v1/auth/logout",
+            "/v1/me/capabilities",
+            "/health",
+            "/ready",
+        ] {
+            assert_eq!(
+                features.required(&Method::POST, path),
+                None,
+                "{path} must not be gated"
+            );
+        }
+    }
+
+    #[test]
+    fn the_scan_history_survives_disabling_manual_scans() {
+        let features = route_features();
+        assert_eq!(features.required(&Method::GET, "/v1/admin/scans"), None);
+        assert_eq!(
+            features.required(&Method::POST, "/v1/admin/scans"),
+            Some(Feature::ScanningManual)
+        );
+    }
+
+    #[test]
+    fn the_finer_sync_routes_beat_the_broad_one() {
+        let features = route_features();
+        assert_eq!(
+            features.required(&Method::GET, "/v1/me/sync/providers"),
+            Some(Feature::SyncExternal)
+        );
+        assert_eq!(
+            features.required(&Method::GET, "/v1/me/sync/conflicts"),
+            Some(Feature::SyncConflictReview)
+        );
+        assert_eq!(
+            features.required(&Method::GET, "/v1/me/sync/history"),
+            Some(Feature::SyncHistory)
+        );
+    }
+
+    #[test]
+    fn the_recovery_paths_are_gated_only_by_features_that_cannot_be_switched_off() {
+        // Both surfaces *are* declared, so the table is complete — but their features are
+        // locked, so declaring them cannot lock anybody out.
+        let features = route_features();
+        for (path, expected) in [
+            ("/v1/admin/users", Feature::AdminUsers),
+            ("/v1/admin/feature-flags", Feature::AdminFeatureFlags),
+        ] {
+            assert_eq!(features.required(&Method::GET, path), Some(expected));
+            assert!(expected.is_locked(), "{expected} must be locked");
+        }
+    }
+
+    #[test]
+    fn every_route_backed_feature_is_actually_reachable() {
+        // A feature nobody gates is a switch that does nothing, which is worse than no switch
+        // because an operator will believe it worked. The features listed here are the ones
+        // deliberately enforced somewhere other than the route table — background loops,
+        // outbound channels, and behaviour decided inside a handler.
+        let declared = route_features().declared_features();
+        let enforced_elsewhere = [
+            Feature::CatalogueSearch,
+            Feature::NotificationsEmail,
+            Feature::NotificationsWebhook,
+            Feature::NotificationsDiscord,
+            Feature::SyncAutoPush,
+            Feature::SyncScheduledPull,
+            Feature::ScanningScheduler,
+            Feature::ScanningFull,
+        ];
+        for feature in Feature::all() {
+            assert!(
+                declared.contains(feature) || enforced_elsewhere.contains(feature),
+                "{feature} is switchable but nothing enforces it"
+            );
         }
     }
 }

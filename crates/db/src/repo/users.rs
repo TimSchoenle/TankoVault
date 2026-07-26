@@ -2,10 +2,14 @@
 //!
 //! The `auth` crate owns hashing; this layer stores only the argon2id `password_hash`
 //! and the SHA-256 `token_hash`, never plaintext secrets.
+//!
+//! What a user is *allowed* to do is not here: permission grants live in
+//! [`crate::repo::permissions`] and the operator-facing administration of accounts lives in
+//! [`crate::repo::user_admin`]. This module is identity and session plumbing only.
 
 use crate::error::{DbError, DbResult};
 use sqlx::{FromRow, PgExecutor};
-use tankovault_domain::{User, UserId, UserRole};
+use tankovault_domain::{AccountStatus, User, UserId};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -14,7 +18,7 @@ struct UserRow {
     id: Uuid,
     email: String,
     username: String,
-    role: UserRole,
+    status: AccountStatus,
     created_at: OffsetDateTime,
 }
 
@@ -24,7 +28,7 @@ impl From<UserRow> for User {
             id: UserId::from_uuid(r.id),
             email: r.email,
             username: r.username,
-            role: r.role,
+            status: r.status,
             created_at: r.created_at,
         }
     }
@@ -41,6 +45,11 @@ pub struct Credentials {
 
 /// Create a user. `password_hash` is a pre-computed argon2id PHC string.
 ///
+/// The account is created with **no permissions**, which is the only safe default: a
+/// registration endpoint must not be able to mint privilege. Grants are added afterwards by
+/// someone holding [`Permission::UsersPermissions`](tankovault_domain::Permission), via
+/// [`crate::repo::permissions::replace`].
+///
 /// # Errors
 /// [`DbError::Conflict`] if the email or username is taken.
 pub async fn create<'e, E: PgExecutor<'e>>(
@@ -48,19 +57,17 @@ pub async fn create<'e, E: PgExecutor<'e>>(
     email: &str,
     username: &str,
     password_hash: &str,
-    role: UserRole,
 ) -> DbResult<User> {
     let id = UserId::new();
     let row = sqlx::query_as!(
         UserRow,
-        "INSERT INTO users (id, email, username, password_hash, role) \
-         VALUES ($1,$2,$3,$4,$5) \
-         RETURNING id, email, username, role AS \"role: UserRole\", created_at",
+        "INSERT INTO users (id, email, username, password_hash) \
+         VALUES ($1,$2,$3,$4) \
+         RETURNING id, email, username, status AS \"status: AccountStatus\", created_at",
         id.as_uuid(),
         email,
         username,
         password_hash,
-        role as UserRole,
     )
     .fetch_one(exec)
     .await
@@ -85,15 +92,15 @@ pub async fn find_credentials<'e, E: PgExecutor<'e>>(
         id: Uuid,
         email: String,
         username: String,
-        role: UserRole,
+        status: AccountStatus,
         created_at: OffsetDateTime,
         password_hash: String,
         email_verified: bool,
     }
     let row = sqlx::query_as!(
         Row,
-        "SELECT id, email, username, role AS \"role: UserRole\", created_at, password_hash, \
-                (email_verified_at IS NOT NULL) AS \"email_verified!\" \
+        "SELECT id, email, username, status AS \"status: AccountStatus\", created_at, \
+                password_hash, (email_verified_at IS NOT NULL) AS \"email_verified!\" \
          FROM users WHERE email = $1 OR username = $1",
         login,
     )
@@ -105,7 +112,7 @@ pub async fn find_credentials<'e, E: PgExecutor<'e>>(
             id: UserId::from_uuid(r.id),
             email: r.email,
             username: r.username,
-            role: r.role,
+            status: r.status,
             created_at: r.created_at,
         },
         password_hash: r.password_hash,
@@ -117,12 +124,52 @@ pub async fn find_credentials<'e, E: PgExecutor<'e>>(
 pub async fn get<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<User> {
     let row = sqlx::query_as!(
         UserRow,
-        "SELECT id, email, username, role AS \"role: UserRole\", created_at FROM users WHERE id = $1",
+        "SELECT id, email, username, status AS \"status: AccountStatus\", created_at \
+         FROM users WHERE id = $1",
         id.as_uuid(),
     )
     .fetch_optional(exec)
     .await?;
     Ok(row.ok_or(DbError::NotFound)?.into())
+}
+
+/// Record a successful sign-in.
+///
+/// Separate from the credential lookup so a *failed* attempt cannot advance the timestamp:
+/// "last login" that moves on every guess would be worse than not having it, both for the
+/// operator reading the directory and for a user checking their own account.
+pub async fn touch_last_login<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<()> {
+    sqlx::query!(
+        "UPDATE users SET last_login_at = now() WHERE id = $1",
+        id.as_uuid(),
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+/// The account state the authorization layer needs on every authenticated request.
+///
+/// Fetched with the permission grants in one round trip (see
+/// [`crate::repo::permissions::resolve`]) because both are needed together and neither is
+/// useful alone: a grant set without the status would authorize a suspended account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AccountState {
+    pub status: AccountStatus,
+}
+
+/// Read just the authorization-relevant account state.
+pub async fn account_state<'e, E: PgExecutor<'e>>(
+    exec: E,
+    id: UserId,
+) -> DbResult<Option<AccountState>> {
+    let status = sqlx::query_scalar!(
+        "SELECT status AS \"status: AccountStatus\" FROM users WHERE id = $1",
+        id.as_uuid(),
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(status.map(|status| AccountState { status }))
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +270,8 @@ pub async fn revoke_family<'e, E: PgExecutor<'e>>(exec: E, family_id: Uuid) -> D
 pub async fn find_by_email<'e, E: PgExecutor<'e>>(exec: E, email: &str) -> DbResult<Option<User>> {
     let row = sqlx::query_as!(
         UserRow,
-        "SELECT id, email, username, role AS \"role: UserRole\", created_at FROM users WHERE email = $1",
+        "SELECT id, email, username, status AS \"status: AccountStatus\", created_at \
+         FROM users WHERE email = $1",
         email,
     )
     .fetch_optional(exec)
@@ -349,13 +397,13 @@ pub async fn find_by_email_with_verification<'e, E: PgExecutor<'e>>(
         id: Uuid,
         email: String,
         username: String,
-        role: UserRole,
+        status: AccountStatus,
         created_at: OffsetDateTime,
         email_verified: bool,
     }
     let row = sqlx::query_as!(
         Row,
-        "SELECT id, email, username, role AS \"role: UserRole\", created_at, \
+        "SELECT id, email, username, status AS \"status: AccountStatus\", created_at, \
                 (email_verified_at IS NOT NULL) AS \"email_verified!\" \
          FROM users WHERE email = $1",
         email,
@@ -368,7 +416,7 @@ pub async fn find_by_email_with_verification<'e, E: PgExecutor<'e>>(
                 id: UserId::from_uuid(r.id),
                 email: r.email,
                 username: r.username,
-                role: r.role,
+                status: r.status,
                 created_at: r.created_at,
             },
             r.email_verified,
@@ -479,7 +527,7 @@ pub async fn update_profile<'e, E: PgExecutor<'e>>(
             username = COALESCE($2, username), \
             email = COALESCE($3, email) \
          WHERE id = $1 \
-         RETURNING id, email, username, role AS \"role: UserRole\", created_at",
+         RETURNING id, email, username, status AS \"status: AccountStatus\", created_at",
         id.as_uuid(),
         username,
         email,
@@ -592,36 +640,18 @@ pub async fn set_notification_prefs<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Admin: user directory (frontend §9.5 Console Users tab)
-// ---------------------------------------------------------------------------
-
-/// One row of the operator Users table: identity, role, and how many series the user
-/// tracks (frontend §9.5 `GET /v1/admin/users`).
-#[derive(Debug, Clone, serde::Serialize, FromRow, utoipa::ToSchema)]
-pub struct UserRow2 {
-    pub id: Uuid,
-    pub email: String,
-    pub username: String,
-    /// RBAC role token (`user` | `operator` | `admin`).
-    pub role: String,
-    pub tracked_count: i64,
-    #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
-    pub created_at: OffsetDateTime,
-}
-
-/// List users for the operator console, newest first.
-pub async fn list_users<'e, E: PgExecutor<'e>>(exec: E, limit: i64) -> DbResult<Vec<UserRow2>> {
-    let rows = sqlx::query_as!(
-        UserRow2,
-        "SELECT u.id, u.email, u.username, \
-                u.role::text AS \"role!\", u.created_at, \
-                (SELECT count(*) FROM watchlist_entries w WHERE w.user_id = u.id) AS \"tracked_count!\" \
-         FROM users u ORDER BY u.created_at DESC LIMIT $1",
-        limit,
+/// Revoke **every** live session for a user, returning how many tokens were invalidated.
+///
+/// Distinct from [`revoke_all_for_user`], which exists for the password-reset path and
+/// discards the count: an operator forcing a sign-out needs to be told whether there was
+/// anything to sign out of.
+pub async fn revoke_all_sessions<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<u64> {
+    let result = sqlx::query!(
+        "UPDATE refresh_tokens SET revoked_at = now() \
+         WHERE user_id = $1 AND revoked_at IS NULL",
+        user_id.as_uuid(),
     )
-    .fetch_all(exec)
+    .execute(exec)
     .await?;
-    Ok(rows)
+    Ok(result.rows_affected())
 }

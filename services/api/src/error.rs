@@ -40,6 +40,20 @@ pub enum ApiError {
     /// [`Self::Forbidden`] so the frontend can recognise it and offer to resend the link.
     #[error("email not verified")]
     EmailNotVerified,
+    /// The account has been suspended by an administrator. Distinct from [`Self::Forbidden`],
+    /// which means "you may not do *this*": suspension means the account may not act at all,
+    /// and telling the user "insufficient privileges" would send them looking for a permission
+    /// they can never be granted while suspended.
+    #[error("account suspended")]
+    Suspended,
+    /// The requested capability exists in the code but is switched off for this deployment.
+    ///
+    /// `404`, matching `tankovault_service::flags::enforce`: the resource genuinely is not part
+    /// of this deployment's API. Handlers use this for the cases the route-level middleware
+    /// cannot express — a request body that asks for a disabled *mode* rather than a disabled
+    /// path, such as a full scan when only fast scans are enabled.
+    #[error("feature disabled")]
+    FeatureDisabled(tankovault_domain::Feature),
     #[error("{0}")]
     BadRequest(String),
     #[error("service unavailable")]
@@ -71,6 +85,19 @@ impl ApiError {
                 StatusCode::FORBIDDEN,
                 "email_not_verified",
                 "please confirm your email address before signing in".into(),
+            ),
+            Self::Suspended => (
+                StatusCode::FORBIDDEN,
+                "account_suspended",
+                "this account has been suspended; contact an administrator".into(),
+            ),
+            Self::FeatureDisabled(feature) => (
+                StatusCode::NOT_FOUND,
+                "feature_disabled",
+                format!(
+                    "the \"{}\" feature is switched off on this deployment",
+                    feature.title()
+                ),
             ),
             Self::BadRequest(m) => (StatusCode::BAD_REQUEST, "bad_request", m.clone()),
             Self::Unavailable => (

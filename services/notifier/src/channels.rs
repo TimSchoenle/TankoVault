@@ -14,7 +14,7 @@ use lettre::message::Mailbox;
 use lettre::message::header::ContentType;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use serde::Deserialize;
-use tankovault_domain::SeriesId;
+use tankovault_domain::{Feature, SeriesId};
 
 /// Operator-configured external channel endpoints. All optional; a channel is only
 /// constructed when its URL is present and non-empty.
@@ -148,6 +148,15 @@ pub(crate) trait NotificationChannel: Send + Sync {
     /// Stable identifier for logging/metrics.
     fn name(&self) -> &'static str;
 
+    /// The feature that governs this channel at runtime.
+    ///
+    /// Configuration decides whether a channel *exists* (an SMTP relay was supplied); this
+    /// flag decides whether it currently *delivers*. The two are genuinely different
+    /// questions: an operator silencing outbound email during an incident should not have to
+    /// delete the relay configuration and redeploy to do it, nor lose it when they want the
+    /// channel back an hour later.
+    fn feature(&self) -> Feature;
+
     /// Deliver `alert`. Errors are logged by the caller and never abort fan-out.
     ///
     /// # Errors
@@ -171,6 +180,10 @@ impl WebhookChannel {
 impl NotificationChannel for WebhookChannel {
     fn name(&self) -> &'static str {
         "webhook"
+    }
+
+    fn feature(&self) -> Feature {
+        Feature::NotificationsWebhook
     }
 
     async fn deliver(&self, alert: &Alert) -> anyhow::Result<()> {
@@ -204,6 +217,10 @@ impl DiscordChannel {
 impl NotificationChannel for DiscordChannel {
     fn name(&self) -> &'static str {
         "discord"
+    }
+
+    fn feature(&self) -> Feature {
+        Feature::NotificationsDiscord
     }
 
     async fn deliver(&self, alert: &Alert) -> anyhow::Result<()> {
@@ -270,6 +287,10 @@ impl EmailChannel {
 impl NotificationChannel for EmailChannel {
     fn name(&self) -> &'static str {
         "email"
+    }
+
+    fn feature(&self) -> Feature {
+        Feature::NotificationsEmail
     }
 
     async fn deliver(&self, alert: &Alert) -> anyhow::Result<()> {

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE gdpr_requests SET due_at = $2 WHERE id = $1 AND status IN ('pending','in_progress') AND $2 > due_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cbf5ad0546e7f89ec8137a35baf55be317ed0ead4291aef4302ae2922fc0d08a"
+}

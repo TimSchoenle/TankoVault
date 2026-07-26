@@ -8,11 +8,24 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 use std::str::FromStr;
-use tankovault_domain::{UserId, UserRole};
+use tankovault_domain::UserId;
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 /// Claims embedded in a short-lived access token.
+///
+/// # What is deliberately *not* here
+///
+/// The token carries **no authorization state**. It used to carry an RBAC role, and the API
+/// authorized against that claim. That is a correctness problem, not a style one: a claim is
+/// fixed when the token is minted, so revoking a privilege left the holder exercising it until
+/// their access token expired, with no in-band way to shorten that window. Authorization now
+/// resolves the caller's permission grants from the database on each request
+/// (`tankovault_db::repo::permissions::resolve`), which is the only way "revoke now" can mean
+/// now.
+///
+/// [`Self::name`] stays because it is cosmetic and the client is welcome to a stale display
+/// name; nothing is decided on its basis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessClaims {
     /// Subject — the user id (UUID string).
@@ -21,8 +34,6 @@ pub struct AccessClaims {
     /// current name without a round-trip. Absent on legacy tokens (defaults to empty).
     #[serde(default)]
     pub name: String,
-    /// RBAC role token (`user`/`operator`/`admin`).
-    pub role: String,
     /// Expiry (unix seconds).
     pub exp: i64,
     /// Issued-at (unix seconds).
@@ -37,12 +48,6 @@ impl AccessClaims {
     pub fn user_id(&self) -> Option<UserId> {
         Uuid::from_str(&self.sub).ok().map(UserId::from_uuid)
     }
-
-    /// Parse the RBAC role, defaulting to the least-privileged role on error.
-    #[must_use]
-    pub fn role(&self) -> UserRole {
-        UserRole::from_str(&self.role).unwrap_or(UserRole::User)
-    }
 }
 
 /// Issue a signed HS256 access token valid for `ttl`.
@@ -53,14 +58,12 @@ pub fn issue_access_token(
     secret: &[u8],
     user_id: UserId,
     username: &str,
-    role: UserRole,
     ttl: Duration,
 ) -> Result<String, AuthError> {
     let now = OffsetDateTime::now_utc();
     let claims = AccessClaims {
         sub: user_id.to_string(),
         name: username.to_owned(),
-        role: role.as_str().to_owned(),
         iat: now.unix_timestamp(),
         exp: (now + ttl).unix_timestamp(),
         jti: Uuid::now_v7().to_string(),
@@ -111,47 +114,49 @@ mod tests {
     use super::*;
 
     #[test]
-    fn access_token_round_trips_with_role() {
+    fn access_token_round_trips_its_identity_claims() {
         let secret = b"test-secret-please-rotate";
         let uid = UserId::new();
-        let token = issue_access_token(
-            secret,
-            uid,
-            "aster",
-            UserRole::Operator,
-            Duration::minutes(15),
-        )
-        .unwrap();
+        let token = issue_access_token(secret, uid, "aster", Duration::minutes(15)).unwrap();
         let claims = verify_access_token(secret, &token).unwrap();
         assert_eq!(claims.user_id(), Some(uid));
         assert_eq!(claims.name, "aster");
-        assert_eq!(claims.role(), UserRole::Operator);
+    }
+
+    #[test]
+    fn the_token_carries_no_authorization_claim() {
+        // Pins the decision in `AccessClaims`' docs: privileges must not be able to travel in
+        // a token, because a token cannot be un-issued. If a future change adds a role or
+        // permission claim, this fails.
+        let token =
+            issue_access_token(b"secret", UserId::new(), "aster", Duration::minutes(5)).unwrap();
+        let payload = token.split('.').nth(1).expect("a JWT has three parts");
+        let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(payload)
+            .expect("the payload is base64url");
+        let json: serde_json::Value =
+            serde_json::from_slice(&decoded).expect("the payload is JSON");
+        let claims = json.as_object().expect("claims are an object");
+        for forbidden in ["role", "roles", "perms", "permissions", "scope"] {
+            assert!(
+                !claims.contains_key(forbidden),
+                "access tokens must not carry authorization state ({forbidden})"
+            );
+        }
     }
 
     #[test]
     fn tampered_token_is_rejected() {
-        let token = issue_access_token(
-            b"secret-a",
-            UserId::new(),
-            "aster",
-            UserRole::User,
-            Duration::minutes(5),
-        )
-        .unwrap();
+        let token =
+            issue_access_token(b"secret-a", UserId::new(), "aster", Duration::minutes(5)).unwrap();
         assert!(verify_access_token(b"secret-b", &token).is_err());
     }
 
     #[test]
     fn expired_token_is_rejected() {
         // Well past the default 60s clock-skew leeway.
-        let token = issue_access_token(
-            b"secret",
-            UserId::new(),
-            "aster",
-            UserRole::User,
-            Duration::seconds(-120),
-        )
-        .unwrap();
+        let token =
+            issue_access_token(b"secret", UserId::new(), "aster", Duration::seconds(-120)).unwrap();
         assert!(verify_access_token(b"secret", &token).is_err());
     }
 

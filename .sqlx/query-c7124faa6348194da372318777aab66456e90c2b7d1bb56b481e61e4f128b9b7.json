@@ -1,0 +1,57 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.permission, p.granted_at, g.username AS \"granted_by?: String\" FROM user_permissions p LEFT JOIN users g ON g.id = p.granted_by WHERE p.user_id = $1 ORDER BY p.granted_at DESC, p.permission",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "permission",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_permissions",
+            "name": "permission"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "granted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_permissions",
+            "name": "granted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "granted_by?: String",
+        "type_info": {
+          "Custom": {
+            "name": "citext",
+            "kind": "Simple"
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c7124faa6348194da372318777aab66456e90c2b7d1bb56b481e61e4f128b9b7"
+}

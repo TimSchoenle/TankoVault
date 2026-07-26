@@ -3918,6 +3918,7 @@ dependencies = [
  "anyhow",
  "axum",
  "axum-extra",
+ "fred",
  "metrics",
  "reqwest",
  "serde",
@@ -3932,12 +3933,13 @@ dependencies = [
  "tankovault-email",
  "tankovault-fetch",
  "tankovault-matcher",
- "tankovault-observability",
+ "tankovault-service",
  "tankovault-solver",
  "thiserror",
  "time",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tower",
  "tower-http 0.7.0",
  "tracing",
@@ -3973,6 +3975,7 @@ dependencies = [
  "jsonwebtoken",
  "rand 0.8.7",
  "serde",
+ "serde_json",
  "sha2 0.10.9",
  "tankovault-domain",
  "thiserror",
@@ -4005,9 +4008,10 @@ dependencies = [
  "serde",
  "serde_json",
  "tankovault-config",
- "tankovault-observability",
+ "tankovault-service",
  "tankovault-solver",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -4047,9 +4051,10 @@ dependencies = [
  "tankovault-contracts",
  "tankovault-db",
  "tankovault-domain",
- "tankovault-observability",
+ "tankovault-service",
  "time",
  "tokio",
+ "tokio-util",
  "tracing",
  "uuid",
 ]
@@ -4141,22 +4146,11 @@ dependencies = [
  "tankovault-contracts",
  "tankovault-db",
  "tankovault-domain",
- "tankovault-observability",
+ "tankovault-service",
  "time",
  "tokio",
+ "tokio-util",
  "tracing",
-]
-
-[[package]]
-name = "tankovault-observability"
-version = "0.1.0"
-dependencies = [
- "metrics",
- "metrics-exporter-prometheus",
- "tankovault-config",
- "thiserror",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -4172,10 +4166,39 @@ dependencies = [
  "serde",
  "serde_json",
  "tankovault-config",
- "tankovault-observability",
+ "tankovault-service",
  "tankovault-solver",
  "tokio",
+ "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "tankovault-service"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "fred",
+ "futures",
+ "governor",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tankovault-config",
+ "tankovault-db",
+ "tankovault-domain",
+ "thiserror",
+ "time",
+ "tokio",
+ "tokio-util",
+ "tower",
+ "tower-http 0.7.0",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -4208,9 +4231,10 @@ dependencies = [
  "tankovault-db",
  "tankovault-domain",
  "tankovault-matcher",
- "tankovault-observability",
+ "tankovault-service",
  "time",
  "tokio",
+ "tokio-util",
  "tracing",
  "uuid",
 ]
@@ -4220,6 +4244,7 @@ name = "tankovault-worker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "futures",
  "serde",
  "serde_json",
@@ -4231,10 +4256,11 @@ dependencies = [
  "tankovault-db",
  "tankovault-domain",
  "tankovault-fetch",
- "tankovault-observability",
+ "tankovault-service",
  "tankovault-solver",
  "time",
  "tokio",
+ "tokio-util",
  "tracing",
  "uuid",
 ]
@@ -4403,6 +4429,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

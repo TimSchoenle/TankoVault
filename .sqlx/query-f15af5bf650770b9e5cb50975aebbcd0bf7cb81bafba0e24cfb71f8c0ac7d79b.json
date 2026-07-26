@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"count!\" FROM user_permissions p JOIN users u ON u.id = p.user_id WHERE p.permission = $1 AND p.user_id <> $2 AND u.status = 'active'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f15af5bf650770b9e5cb50975aebbcd0bf7cb81bafba0e24cfb71f8c0ac7d79b"
+}

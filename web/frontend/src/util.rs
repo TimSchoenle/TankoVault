@@ -7,6 +7,51 @@
 
 use crate::i18n::Translator;
 
+/// Hand `contents` to the browser as a download named `filename`.
+///
+/// Built from a `Blob` + object URL + a synthetic anchor click, which is the only way to make a
+/// browser save a document the app already holds in memory. The alternative — pointing an
+/// anchor at the endpoint — cannot work here: the export is bearer-authenticated and a plain
+/// navigation carries no `Authorization` header.
+///
+/// The object URL is revoked immediately after the click. The download has already been handed
+/// to the browser at that point, and leaving it alive pins the blob for the lifetime of the
+/// document — which, for a personal-data export, means keeping the reader's entire record in
+/// memory until they navigate away.
+///
+/// # Errors
+/// A short, already-worded message when any step of the DOM dance is unavailable. Every failure
+/// here means the browser is missing something ordinary, so the wording is deliberately generic
+/// rather than naming an API the reader has never heard of.
+pub(crate) fn save_text_file(filename: &str, mime: &str, contents: &str) -> Result<(), String> {
+    use wasm_bindgen::JsCast as _;
+
+    let failed = || "your browser would not accept the download".to_owned();
+
+    let parts = js_sys::Array::new();
+    parts.push(&wasm_bindgen::JsValue::from_str(contents));
+    let options = web_sys::BlobPropertyBag::new();
+    options.set_type(mime);
+    let blob =
+        web_sys::Blob::new_with_str_sequence_and_options(&parts, &options).map_err(|_| failed())?;
+    let url = web_sys::Url::create_object_url_with_blob(&blob).map_err(|_| failed())?;
+
+    let document = web_sys::window()
+        .and_then(|w| w.document())
+        .ok_or_else(failed)?;
+    let anchor = document
+        .create_element("a")
+        .map_err(|_| failed())?
+        .dyn_into::<web_sys::HtmlAnchorElement>()
+        .map_err(|_| failed())?;
+    anchor.set_href(&url);
+    anchor.set_download(filename);
+    anchor.click();
+
+    let _ = web_sys::Url::revoke_object_url(&url);
+    Ok(())
+}
+
 /// Render a chapter number without a trailing `.0`, so whole chapters read `#152` and part
 /// releases keep their fraction (`#152.6`).
 pub(crate) fn chapter_number(n: f64) -> String {

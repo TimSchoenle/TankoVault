@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM feature_flag_overrides WHERE feature_key = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d72e42bcc704d6e35001025e91f2a44e0eaff70a07ffc42fd56f557958ab06c5"
+}

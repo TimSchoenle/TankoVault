@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Password hashing (argon2id), JWT access tokens, rotating refresh tokens, RBAC."
+description = "Password hashing (argon2id), JWT access tokens, rotating refresh tokens, secret sealing."
 
 [dependencies]
 tankovault-domain = { workspace = true }
@@ -18,6 +18,11 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }
+
+[dev-dependencies]
+# Only the token test that decodes a JWT payload to assert no authorization claim leaked
+# into it needs to inspect raw JSON; the crate itself never parses arbitrary JSON.
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

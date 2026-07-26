@@ -4,6 +4,7 @@
 mod appearance;
 mod callback;
 mod notifications;
+mod privacy;
 mod profile;
 mod security;
 mod sync;
@@ -13,7 +14,9 @@ pub(crate) use callback::AnilistCallback;
 use crate::api;
 use crate::components::SignInGate;
 use crate::i18n::use_i18n;
+use crate::state::capabilities::{use_capabilities, CapabilitySet};
 use crate::state::use_session;
+use crate::wire::types::Feature;
 use dioxus::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -23,15 +26,17 @@ enum Panel {
     Security,
     Sync,
     Notifications,
+    Privacy,
 }
 
 impl Panel {
-    const ALL: [Panel; 5] = [
+    const ALL: [Panel; 6] = [
         Self::Profile,
         Self::Appearance,
         Self::Security,
         Self::Sync,
         Self::Notifications,
+        Self::Privacy,
     ];
 
     /// The catalogue key of this panel's tab label (see [`crate::i18n`]).
@@ -42,6 +47,28 @@ impl Panel {
             Self::Security => "account.tab.security",
             Self::Sync => "account.tab.sync",
             Self::Notifications => "account.tab.notifications",
+            Self::Privacy => "account.tab.privacy",
+        }
+    }
+
+    /// Whether this deployment offers the panel at all.
+    ///
+    /// Appearance is unconditional: it is entirely client-side and has no endpoint to switch
+    /// off. Privacy stays visible whenever *any* of its three features is on, because each of
+    /// export, deletion and the request queue can be enabled independently and the panel is
+    /// worth showing for any one of them.
+    fn is_visible(self, caps: &CapabilitySet) -> bool {
+        match self {
+            Self::Appearance => true,
+            Self::Profile => caps.has_feature(Feature::AccountsProfile),
+            Self::Security => caps.has_feature(Feature::AccountsSessions),
+            Self::Sync => caps.has_feature(Feature::SyncExternal),
+            Self::Notifications => caps.has_feature(Feature::NotificationsPreferences),
+            Self::Privacy => {
+                caps.has_feature(Feature::PrivacySelfExport)
+                    || caps.has_feature(Feature::PrivacySelfErasure)
+                    || caps.has_feature(Feature::PrivacyRequests)
+            }
         }
     }
 }
@@ -49,6 +76,7 @@ impl Panel {
 #[component]
 pub(crate) fn Account() -> Element {
     let session = use_session();
+    let caps = use_capabilities();
     let i18n = use_i18n();
     let api = api::use_api();
     let mut panel = use_signal(|| Panel::Profile);
@@ -63,8 +91,24 @@ pub(crate) fn Account() -> Element {
     let name = session
         .username()
         .unwrap_or_else(|| i18n.t("common.readerFallback"));
-    let role = i18n.t(session.role.read().label_key());
-    let current = *panel.read();
+    // Derived from capabilities, not a stored role — see `CapabilitySet::label_key`.
+    let tier = i18n.t(caps.label_key());
+
+    let visible: Vec<Panel> = Panel::ALL
+        .into_iter()
+        .filter(|p| p.is_visible(&caps))
+        .collect();
+    // Appearance is always visible, so this cannot be empty; falling back to it rather than
+    // unwrapping keeps that a local fact instead of a panic waiting on a future edit.
+    let fallback = visible.first().copied().unwrap_or(Panel::Appearance);
+    let current = {
+        let selected = *panel.read();
+        if visible.contains(&selected) {
+            selected
+        } else {
+            fallback
+        }
+    };
 
     let sign_out = move |_| {
         let client = api.client();
@@ -74,6 +118,7 @@ pub(crate) fn Account() -> Element {
             // worse than a revocation call that quietly failed.
             let _ = client.logout().send().await;
             session.clear();
+            caps.clear();
         });
     };
 
@@ -83,7 +128,7 @@ pub(crate) fn Account() -> Element {
             button { class: "ik-btn", onclick: sign_out, {i18n.t("account.signOut")} }
         }
         div { class: "ik-tabs",
-            for entry in Panel::ALL {
+            for entry in visible.iter().copied() {
                 button {
                     key: "{entry.label_key()}",
                     class: if current == entry { "ik-tab active" } else { "ik-tab" },
@@ -93,11 +138,12 @@ pub(crate) fn Account() -> Element {
             }
         }
         match current {
-            Panel::Profile => rsx! { profile::ProfilePanel { name: name.clone(), role: role.clone() } },
+            Panel::Profile => rsx! { profile::ProfilePanel { name: name.clone(), tier: tier.clone() } },
             Panel::Appearance => rsx! { appearance::AppearancePanel {} },
             Panel::Security => rsx! { security::SecurityPanel {} },
             Panel::Sync => rsx! { sync::SyncPanel {} },
             Panel::Notifications => rsx! { notifications::NotificationsPanel {} },
+            Panel::Privacy => rsx! { privacy::PrivacyPanel {} },
         }
     }
 }

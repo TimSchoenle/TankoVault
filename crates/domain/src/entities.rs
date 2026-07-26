@@ -3,8 +3,8 @@
 //! to match the adapter contract; the DB stores them as `numeric(10,4)`.
 
 use crate::enums::{
-    AdapterKind, ContentType, ProviderState, RunState, ScanMode, SeriesStatus, TaskState, UserRole,
-    WatchStatus,
+    AccountStatus, AdapterKind, ContentType, ProviderState, RunState, ScanMode, SeriesStatus,
+    TaskState, WatchStatus,
 };
 use crate::ids::{
     AuthorId, ChapterId, NotificationId, ProviderId, ScanRunId, ScanTaskId, SeriesId,
@@ -117,12 +117,18 @@ pub struct Chapter {
 }
 
 /// A user account. The password hash lives only in the `db`/`auth` layers, never here.
+///
+/// Carries no authorization state. What the account may *do* is a set of
+/// [`Permission`](crate::Permission) grants stored separately (`user_permissions`) and
+/// resolved per request, so an identity record cannot go stale with respect to a grant that
+/// was revoked a moment ago. [`AccountStatus`] is here because it is identity, not
+/// authorization: a suspended account may not act at all.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     pub id: UserId,
     pub email: String,
     pub username: String,
-    pub role: UserRole,
+    pub status: AccountStatus,
     pub created_at: OffsetDateTime,
 }
 

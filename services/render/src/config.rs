@@ -10,6 +10,17 @@ pub(crate) struct Config {
     pub(crate) telemetry: tankovault_config::TelemetryConfig,
     #[serde(default)]
     pub(crate) render: RenderConfig,
+    /// Edge hardening: body cap, request timeout, security headers. CORS stays off —
+    /// this is an internal service, not a browser-facing one.
+    #[serde(default)]
+    pub(crate) security: tankovault_config::SecurityConfig,
+    /// Inbound rate limiting. Especially load-bearing here: every request costs a browser
+    /// tab, so an unbounded caller exhausts the pool long before it exhausts the CPU.
+    #[serde(default)]
+    pub(crate) rate_limit: tankovault_config::RateLimitConfig,
+    /// Prometheus metrics. Togglable; disabling installs no recorder.
+    #[serde(default)]
+    pub(crate) metrics: tankovault_config::MetricsConfig,
 }
 
 fn default_bind() -> String {

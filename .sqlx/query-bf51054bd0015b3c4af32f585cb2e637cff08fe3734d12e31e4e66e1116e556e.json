@@ -1,0 +1,79 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT f.feature_key, f.enabled, f.note, f.updated_at, u.username AS \"updated_by?: String\" FROM feature_flag_overrides f LEFT JOIN users u ON u.id = f.updated_by ORDER BY f.feature_key",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "feature_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "feature_flag_overrides",
+            "name": "feature_key"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "feature_flag_overrides",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "feature_flag_overrides",
+            "name": "note"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "feature_flag_overrides",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_by?: String",
+        "type_info": {
+          "Custom": {
+            "name": "citext",
+            "kind": "Simple"
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "bf51054bd0015b3c4af32f585cb2e637cff08fe3734d12e31e4e66e1116e556e"
+}

@@ -1,0 +1,49 @@
+[package]
+name = "tankovault-service"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Shared production runtime for TankoVault services: bootstrap, graceful shutdown, health probes, middleware, rate limiting, audit and metrics."
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# Postgres-backed audit sink and connection-pool health check. Enabled by the services
+# that own a database handle; `render` and `challenge-solver` deliberately do not.
+db = ["dep:tankovault-db", "dep:sqlx"]
+# Redis-backed rate-limit store, so a limit holds across replicas rather than per process.
+redis = ["dep:fred"]
+
+[dependencies]
+tankovault-config.workspace = true
+tankovault-domain.workspace = true
+
+async-trait.workspace = true
+axum.workspace = true
+futures.workspace = true
+governor.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+tankovault-db = { workspace = true, optional = true }
+sqlx = { workspace = true, optional = true }
+# `i-scripts` is not part of fred's default `i-std` feature set but is what exposes
+# `LuaInterface::eval`, which the token-bucket store needs for an atomic check-and-consume.
+fred = { workspace = true, optional = true, features = ["i-scripts"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }

@@ -11,7 +11,7 @@ Container build and local orchestration for TankoVault (design §19).
   CLI, then serves it behind nginx. nginx also reverse-proxies `/v1/*` (REST + SSE) to the
   `api` service, so the SPA's same-origin API calls resolve without CORS.
 - `docker/frontend.nginx.conf` — the nginx server block (SPA fallback + `/v1/*` proxy).
-- `docker-compose.yml` — the full end-to-end local stack: Postgres 16, Redis 7, NATS
+- `docker-compose.yml` — the full end-to-end local stack: Postgres 19, Redis 7, NATS
   (JetStream), FlareSolverr, a one-shot `migrate`+`seed`, every backend service, and the
   web frontend.
 

@@ -187,7 +187,7 @@ tankovault/
 | HTTP server | **Axum** + tower/tower-http | Composable middleware, first-class extractors, ecosystem fit. |
 | DB access | **SQLx** (Postgres, `runtime-tokio`, `tls-rustls`) | Compile-time-checked SQL, no heavy ORM, full control over queries and indexes. |
 | Migrations | **sqlx-cli** migrations (SQL files) | Deterministic, reviewable, no macro magic. |
-| DB | **PostgreSQL 16** | Rich indexing (GIN, trigram, FTS), `ON CONFLICT` upserts, `SKIP LOCKED`. |
+| DB | **PostgreSQL 19** | Rich indexing (GIN, trigram, FTS), `ON CONFLICT` upserts, `SKIP LOCKED`. |
 | Cache / locks / rate state | **Redis 7** (`fred` client) | Hot read cache, distributed rate-limit counters, advisory locks. |
 | Message bus | **NATS JetStream** (`async-nats`) | Durable streams, consumer groups, backpressure. |
 | HTTP client (crawl) | **reqwest** (rustls) + `governor` (rate limit) | Mature, connection pooling, per-host limiting. |
@@ -439,7 +439,7 @@ CREATE INDEX scan_tasks_queue ON scan_tasks (state) WHERE state = 'queued';
 
 Notes:
 - `citext` for case-insensitive email/username uniqueness; enable `citext`, `pg_trgm`, and a `uuidv7()`
-  function (Postgres 16: provide via `pg_uuidv7` extension, or generate in-app and pass explicitly).
+  function (Postgres 19: provide via `pg_uuidv7` extension, or generate in-app and pass explicitly).
 - Partitioning `chapters` is **not** needed at MVP. Scale path: range-partition `chapters` and
   `notifications` by month if row counts exceed ~10^8; documented, not built.
 - All writes from workers are idempotent `INSERT ... ON CONFLICT DO UPDATE`, so re-running a task is

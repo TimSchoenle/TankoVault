@@ -492,7 +492,7 @@ wasm32-unknown-unknown` clean. The only honest stubs left are features with no e
 ### Infra
 | Item | Status | Notes |
 |---|---|---|
-| Migrations (`migrations/`) | ✅ | 18 files (`0001_extensions` … `0018_permissions_flags_privacy`), verified to apply cleanly from scratch on Postgres 16. `0018` is the authorization/administration model: `user_permissions` (backfilled from the roles it replaces, then `users.role` and the `user_role` type are **dropped**), `users.status`/`suspended_at`/`suspension_reason`/`last_login_at`, `feature_flag_overrides`, and `gdpr_requests`. |
+| Migrations (`migrations/`) | ✅ | 18 files (`0001_extensions` … `0018_permissions_flags_privacy`), verified to apply cleanly from scratch on Postgres 19. `0018` is the authorization/administration model: `user_permissions` (backfilled from the roles it replaces, then `users.role` and the `user_role` type are **dropped**), `users.status`/`suspended_at`/`suspension_reason`/`last_login_at`, `feature_flag_overrides`, and `gdpr_requests`. |
 | Dockerfiles / `docker-compose.yml` | ✅ | `deploy/docker/Dockerfile` (parameterised cargo-chef + distroless) builds any backend via `--build-arg BIN`; the optional `render` tier uses the extra `runtime-browser` target (Debian slim + Chromium). **`deploy/docker/Dockerfile.frontend`** builds the Dioxus WASM SPA + serves it via nginx (`frontend.nginx.conf`), reverse-proxying `/v1/*`→`api`. `deploy/docker-compose.yml` runs the **full E2E stack**: Postgres/Redis/NATS/FlareSolverr + migrate/seed + every backend service + the frontend (front door on `:3000`). Redis is wired to `control-plane` (leader election); NATS is healthchecked. **Frontend image build + serve + `/v1` proxy verified this session; backend images not rebuilt.** k8s/Helm still pending. |
 | CI | ✅ | `.github/workflows/ci.yml`: parallel `fmt --check`, `clippy -D warnings`, `cargo test --workspace`, `wasm32` frontend check, `cargo-deny` (`deny.toml`), `cargo-audit`, and a `docker build` matrix over every service `BIN`. |
 | Config | ✅ (env) | Services are configured via `TANKOVAULT_*` env in compose; no standalone sample TOMLs. |
@@ -501,13 +501,13 @@ wasm32-unknown-unknown` clean. The only honest stubs left are features with no e
 
 ## 3. Schema validation
 
-All migrations applied cleanly to a throwaway `postgres:16-alpine` (Session 1). The new
+All migrations applied cleanly to a throwaway `postgres:19-alpine` (Session 1). The new
 `sync` repo SQL (`external_accounts`, `sync_mappings`) matches `0005_external_sync.sql`
 (bytea ciphertext token columns) and was validated by inspection. In-repo DB integration
 tests (via `sqlx`'s test harness against a disposable database) remain the priority
 pickup (§6) that would exercise all repo SQL — including enum text-casts, `xmax = 0`
 new-chapter detection, SKIP LOCKED claim, and trigram candidate lookup — against a live
-PG16.
+PG19.
 
 ---
 
@@ -554,7 +554,7 @@ PG16.
 0a. **Follow-ups left open by Session 17** (none blocking; the model is complete and verified):
    - **A permission-model integration test suite.** The 44-check smoke script that verified this
      session lives only in a scratchpad. It should become a checked-in integration test against
-     a disposable PG16 (see §6.4) — grant/revoke visibility, suspension, last-administrator
+     a disposable PG19 (see §6.4) — grant/revoke visibility, suspension, last-administrator
      protection and the GDPR queue transitions are exactly the behaviours a refactor would break
      silently.
    - **Bootstrap for a deployment with no administrator.** `xtask seed` grants the demo admin
@@ -599,7 +599,7 @@ PG16.
    aggregated DB-side by `scans::complete_task`/`fail_task`. Remaining polish: the API SSE
    could subscribe to the relayed NATS events instead of DB-polling.
 4. **In-repo DB integration tests** (§3) using `sqlx`'s test harness against a disposable
-   PG16 — exercises every repo (canonicalisation `resolve_canonical_series`, `merge_series`,
+   PG19 — exercises every repo (canonicalisation `resolve_canonical_series`, `merge_series`,
    `feed`, `sync`, SKIP LOCKED, `xmax = 0`).
 5. ~~**CI pipeline:** wire fmt + clippy(`-D warnings`) + `cargo deny` + `cargo audit` +
    tests + `docker build` of each `BIN`.~~ **DONE (Session 8).** `.github/workflows/ci.yml`

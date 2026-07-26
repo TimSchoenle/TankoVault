@@ -59,7 +59,11 @@ pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
            'sync_history', (SELECT coalesce(json_agg(to_jsonb(h) ORDER BY h.created_at), '[]'::json) \
                               FROM sync_history h WHERE h.user_id = $1), \
            'audit_entries', (SELECT coalesce(json_agg(to_jsonb(a) ORDER BY a.created_at), '[]'::json) \
-                               FROM audit_log a WHERE a.actor_id = $1) \
+                               FROM audit_log a WHERE a.actor_id = $1), \
+           'permissions', (SELECT coalesce(json_agg(to_jsonb(g) - 'user_id' ORDER BY g.granted_at), '[]'::json) \
+                             FROM user_permissions g WHERE g.user_id = $1), \
+           'privacy_requests', (SELECT coalesce(json_agg(to_jsonb(q) - 'user_id' ORDER BY q.requested_at), '[]'::json) \
+                                  FROM gdpr_requests q WHERE q.user_id = $1) \
          ) AS \"export!\"",
         user_id.as_uuid(),
     )

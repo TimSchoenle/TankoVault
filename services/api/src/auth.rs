@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use tankovault_auth::{
     generate_refresh_token, hash_password, hash_refresh_token, issue_access_token, verify_password,
 };
-use tankovault_domain::{User, UserRole};
+use tankovault_domain::{Feature, User};
 use tankovault_service::AuditOutcome;
 use time::{Duration, OffsetDateTime};
 use utoipa::ToSchema;
@@ -105,11 +105,17 @@ pub async fn register(
         req.email.trim(),
         req.username.trim(),
         &hash,
-        UserRole::User,
     )
     .await?;
 
-    if state.mailer.is_enabled() {
+    // Confirmation needs both a way to deliver the link *and* an operator who wants the step.
+    // Turning `accounts.email_verification` off is how a deployment with working mail
+    // deliberately skips it; a missing mailer is the involuntary version of the same thing.
+    if state.mailer.is_enabled()
+        && state
+            .features
+            .is_enabled(Feature::AccountsEmailVerification)
+    {
         // Email delivery is available: require confirmation before the account can sign in.
         // Send the confirmation link out of band and issue no session — the welcome email is
         // deferred until the address is actually confirmed (see [`verify_email`]).
@@ -124,8 +130,9 @@ pub async fn register(
         ));
     }
 
-    // No mailer: confirmation can't be delivered, so activate the account immediately and log
-    // the user straight in, preserving the pre-confirmation sign-up experience for dev/CI.
+    // Confirmation is not in play: activate the account immediately and log the user straight
+    // in, preserving the pre-confirmation sign-up experience for dev/CI and for deployments
+    // that have switched the step off.
     tankovault_db::repo::users::mark_email_verified(&state.pool, user.id).await?;
     mailer::send_in_background(&state, mailer::welcome(&user.email, &user.username));
     let (jar, token) = issue_session_tokens(&state, jar, &user, Uuid::now_v7()).await?;
@@ -202,10 +209,35 @@ pub async fn login(
         return Err(ApiError::Unauthorized);
     }
 
+    // The credential is valid, but the account may not be permitted to act. Checked here as
+    // well as in the `AuthUser` extractor: refusing at the door is what makes the refusal
+    // *legible* — the user is told they are suspended instead of signing in successfully and
+    // then having every subsequent request fail.
+    if !creds.user.status.may_authenticate() {
+        audit_anonymous(
+            &state,
+            &client,
+            Some(creds.user.id),
+            "auth.login",
+            login,
+            &serde_json::json!({ "reason": "account_suspended" }),
+            AuditOutcome::Denied,
+        )
+        .await;
+        return Err(ApiError::Suspended);
+    }
+
     // Password is correct, but an unconfirmed address may not sign in. Distinct from a bad
     // password (401) so the client can offer to resend the confirmation link. Accounts created
     // before confirmation existed, and those registered without a mailer, are already verified.
-    if !creds.email_verified {
+    //
+    // Skipped entirely when the operator has switched confirmation off: leaving it enforced
+    // would strand every account that registered while it was on, with no way to confirm.
+    if !creds.email_verified
+        && state
+            .features
+            .is_enabled(Feature::AccountsEmailVerification)
+    {
         audit_anonymous(
             &state,
             &client,
@@ -229,6 +261,11 @@ pub async fn login(
         AuditOutcome::Success,
     )
     .await;
+
+    // Best-effort: the directory's "last seen" column is not worth failing a sign-in over.
+    if let Err(e) = tankovault_db::repo::users::touch_last_login(&state.pool, creds.user.id).await {
+        tracing::warn!(error = %e, "failed to record last login");
+    }
 
     issue_session(&state, jar, &creds.user, Uuid::now_v7()).await
 }
@@ -297,6 +334,28 @@ pub async fn refresh(
     // Rotate: revoke the presented token, mint a new one in the same family.
     tankovault_db::repo::users::revoke_token(&state.pool, record.id).await?;
     let user = tankovault_db::repo::users::get(&state.pool, record.user_id).await?;
+
+    // A suspension applied since this session began must end it. Without this check the
+    // holder of a live refresh cookie could keep minting access tokens indefinitely, and a
+    // suspension would only take effect once the cookie itself expired — weeks later.
+    if !user.status.may_authenticate() {
+        tankovault_db::repo::users::revoke_family(&state.pool, record.family_id).await?;
+        audit_anonymous(
+            &state,
+            &client,
+            Some(user.id),
+            "auth.refresh",
+            &user.id.as_uuid().to_string(),
+            &serde_json::json!({
+                "reason": "account_suspended",
+                "action_taken": "family_revoked",
+            }),
+            AuditOutcome::Denied,
+        )
+        .await;
+        return Err(ApiError::Suspended);
+    }
+
     issue_session(&state, jar, &user, record.family_id).await
 }
 
@@ -564,14 +623,8 @@ async fn issue_session_tokens(
     user: &User,
     family_id: Uuid,
 ) -> ApiResult<(CookieJar, TokenResponse)> {
-    let access = issue_access_token(
-        &state.jwt_secret,
-        user.id,
-        &user.username,
-        user.role,
-        state.access_ttl,
-    )
-    .map_err(|_| ApiError::Internal)?;
+    let access = issue_access_token(&state.jwt_secret, user.id, &user.username, state.access_ttl)
+        .map_err(|_| ApiError::Internal)?;
 
     let raw_refresh = generate_refresh_token();
     let refresh_hash = hash_refresh_token(&raw_refresh);

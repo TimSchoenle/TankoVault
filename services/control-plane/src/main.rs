@@ -20,9 +20,12 @@ use std::time::Duration;
 use tankovault_bus::Bus;
 use tankovault_contracts::{ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
-use tankovault_domain::{Provider, ProviderId, ScanMode, ScanRunId};
+use tankovault_domain::{Feature, Provider, ProviderId, ScanMode, ScanRunId};
 use tankovault_service::health::PostgresCheck;
-use tankovault_service::{Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier};
+use tankovault_service::{
+    FeatureGate, Health, HttpStack, MetricsRegistry, PostgresFlagSource, RateLimiter,
+    RouteClassifier,
+};
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -47,6 +50,9 @@ struct Config {
     /// Prometheus metrics. Togglable; disabling installs no recorder.
     #[serde(default)]
     metrics: tankovault_config::MetricsConfig,
+    /// Runtime feature flags — how often this replica re-reads the operator's decisions.
+    #[serde(default)]
+    features: tankovault_config::FeaturesConfig,
 }
 
 fn default_bind() -> String {
@@ -80,6 +86,10 @@ fn default_fast_interval() -> u64 {
 struct AppState {
     pool: PgPool,
     bus: Bus,
+    /// The operator's runtime switches. Consulted at the top of each scheduler sweep rather
+    /// than at boot: switching the scheduler off during an incident has to take effect without
+    /// a redeploy, which is the whole point of a flag as opposed to a config toggle.
+    features: FeatureGate,
 }
 
 #[tokio::main]
@@ -99,9 +109,17 @@ async fn main() -> anyhow::Result<()> {
     let bus = Bus::connect(&cfg.nats.url).await?;
     bus.ensure_streams().await?;
 
+    // Loaded before the scheduler starts, so the first sweep after a restart already respects
+    // the operator's stored decisions rather than briefly running against the defaults.
+    let features = FeatureGate::new(std::sync::Arc::new(PostgresFlagSource::new(pool.clone())));
+    features
+        .spawn_refresh(cfg.features.refresh_interval(), shutdown.clone())
+        .await;
+
     let state = AppState {
         pool: pool.clone(),
         bus: bus.clone(),
+        features,
     };
 
     // Leader election: only the elected replica runs the scheduler sweeps.
@@ -178,6 +196,17 @@ async fn trigger_scan(
     State(state): State<AppState>,
     Json(req): Json<TriggerRequest>,
 ) -> Result<Json<TriggerResponse>, (StatusCode, String)> {
+    // The API refuses a full scan on the same flag before it ever reaches here. Repeating the
+    // check is not redundant: this endpoint is reachable by anything on the internal network,
+    // and a switch an operator has thrown should hold at the component that does the work, not
+    // only at the one that happens to be in front of it today.
+    if req.mode == ScanMode::Full && !state.features.is_enabled(Feature::ScanningFull) {
+        return Err((
+            StatusCode::NOT_FOUND,
+            "full catalogue scans are switched off".to_owned(),
+        ));
+    }
+
     let providers = match req.provider_id {
         Some(id) => vec![
             tankovault_db::repo::providers::get(&state.pool, id)
@@ -279,8 +308,24 @@ async fn run_scheduler(
     }
 }
 
-/// Run a sweep only when this replica currently holds scheduler leadership.
+/// Run a sweep only when this replica currently holds scheduler leadership *and* the operator
+/// has left scheduled scanning switched on.
+///
+/// The flag is checked here, per sweep, rather than when the loop is built: an operator
+/// switching `scanning.scheduler` off — typically because a provider is complaining about
+/// traffic — needs the next sweep to skip, not a redeploy. The loop itself keeps running so it
+/// resumes on its own when the flag comes back.
 async fn maybe_sweep(state: &AppState, leadership: &leader::Leadership, mode: ScanMode) {
+    if !state.features.is_enabled(Feature::ScanningScheduler) {
+        tracing::debug!(?mode, "skipping sweep; scheduled scanning is switched off");
+        return;
+    }
+    // A scheduled *full* sweep is the expensive one. `scanning.full` lets an operator stop it
+    // while leaving the cheap latest-feed pass running, which is the usual way to back off.
+    if mode == ScanMode::Full && !state.features.is_enabled(Feature::ScanningFull) {
+        tracing::debug!("skipping sweep; full catalogue scans are switched off");
+        return;
+    }
     if leadership.is_leader() {
         sweep(state, mode).await;
     } else {

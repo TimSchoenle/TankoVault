@@ -1,7 +1,7 @@
 //! # api service
 //!
 //! The public edge (design §11): Axum REST + JSON, JWT auth with rotating refresh
-//! cookies, RBAC-gated admin routes, and link resolution at read time. This binary is a
+//! cookies, permission-gated admin routes, and link resolution at read time. This binary is a
 //! thin entrypoint — the route table and app state live in the `tankovault_api` library
 //! (`src/lib.rs`), which also exposes the `openapi` schema export `xtask openapi` uses to
 //! regenerate the frontend's generated wire types.
@@ -51,6 +51,10 @@ struct Config {
     /// Audit trail. Togglable; disabling installs a no-op sink.
     #[serde(default)]
     audit: tankovault_config::AuditConfig,
+    /// Runtime feature flags. Only the refresh cadence is configured here — which features
+    /// are on is an operator decision made in the control plane at runtime.
+    #[serde(default)]
+    features: tankovault_config::FeaturesConfig,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -118,6 +122,11 @@ async fn main() -> anyhow::Result<()> {
     let audit = build_audit_sink(&pool, &cfg.audit);
     spawn_audit_retention(&pool, &cfg.audit, shutdown.clone());
 
+    // Awaited: the listener must not accept a request until the gate reflects the operator's
+    // stored decisions, or a restart would briefly re-enable everything switched off.
+    let features =
+        tankovault_api::install_feature_gate(pool.clone(), &cfg.features, shutdown.clone()).await;
+
     let state = AppState {
         pool: pool.clone(),
         jwt_secret: Arc::new(cfg.auth.jwt_secret.into_bytes()),
@@ -129,6 +138,7 @@ async fn main() -> anyhow::Result<()> {
         bus,
         http: reqwest::Client::new(),
         audit,
+        features,
         cookie_secure: cfg.auth.cookie_secure,
         mailer,
         email_base_url: cfg.email.base_url,

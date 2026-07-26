@@ -8,6 +8,7 @@
 //! hidden `__path_<handler>` type per handler; see the note in [`crate::admin`].
 
 mod account;
+mod capabilities;
 mod dashboard;
 mod notifications;
 mod privacy;
@@ -16,6 +17,7 @@ mod sync;
 mod watchlist;
 
 pub use account::*;
+pub use capabilities::*;
 pub use dashboard::*;
 pub use notifications::*;
 pub use privacy::*;

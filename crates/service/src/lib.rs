@@ -47,6 +47,7 @@
 //! ```
 
 pub mod audit;
+pub mod flags;
 pub mod health;
 pub mod http;
 pub mod metrics;
@@ -55,6 +56,7 @@ pub mod shutdown;
 pub mod telemetry;
 
 pub use audit::{AuditEvent, AuditOutcome, AuditSink, NoopAuditSink};
+pub use flags::{FeatureGate, FeatureLayer, FlagSource, RouteFeatures};
 pub use health::{Health, HealthBuilder, HealthReport, HealthStatus};
 pub use http::{HttpStack, metrics_router, ops_router, serve, spawn_metrics_server};
 pub use metrics::MetricsRegistry;
@@ -64,6 +66,8 @@ pub use telemetry::init_tracing;
 
 #[cfg(feature = "db")]
 pub use audit::PostgresAuditSink;
+#[cfg(feature = "db")]
+pub use flags::PostgresFlagSource;
 
 /// Failures that prevent a service from starting.
 ///

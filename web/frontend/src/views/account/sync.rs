@@ -83,7 +83,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
             let authed = session.is_authenticated();
             async move {
                 if !authed {
-                    return Ok(AccountStatus {
+                    return Ok(SyncAccountStatus {
                         linked: false,
                         username: None,
                         last_synced_at: None,

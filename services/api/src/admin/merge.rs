@@ -8,7 +8,7 @@ use axum::Json;
 use axum::extract::State;
 use serde::Deserialize;
 use tankovault_db::repo::matching::MergeCandidateView;
-use tankovault_domain::{SeriesId, UserRole};
+use tankovault_domain::{Permission, SeriesId};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -23,14 +23,14 @@ use uuid::Uuid;
     responses(
         (status = 200, description = "Up to 200 open merge candidates", body = Vec<MergeCandidateView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_merge_candidates(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> ApiResult<Json<Vec<MergeCandidateView>>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::MergeRead).await?;
     Ok(Json(
         tankovault_db::repo::matching::list_open_merge_candidates(&state.pool, 200).await?,
     ))
@@ -56,7 +56,7 @@ pub struct MergeRequest {
     responses(
         (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "One or both series not found", body = crate::error::ProblemDetails),
         (status = 409, description = "`keep` and `merge` are the same series", body = crate::error::ProblemDetails),
     )
@@ -66,7 +66,7 @@ pub async fn merge_series(
     user: AuthUser,
     Json(req): Json<MergeRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::MergeWrite).await?;
     tankovault_db::repo::matching::merge_series(
         &state.pool,
         req.keep,
@@ -102,7 +102,7 @@ pub struct DismissRequest {
     responses(
         (status = 200, description = "Whether a candidate was actually dismissed", body = serde_json::Value, example = json!({"dismissed": true})),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn dismiss_merge_candidate(
@@ -110,7 +110,7 @@ pub async fn dismiss_merge_candidate(
     user: AuthUser,
     Json(req): Json<DismissRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::MergeWrite).await?;
     let dismissed = tankovault_db::repo::matching::dismiss_merge_candidate(
         &state.pool,
         req.id,

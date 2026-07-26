@@ -27,7 +27,11 @@ pub struct ProfileDto {
     pub id: uuid::Uuid,
     pub email: String,
     pub username: String,
-    pub role: String,
+    /// Whether the account is active or suspended. A suspended caller cannot reach this
+    /// endpoint at all, so in practice this is always `active` — it is here because the
+    /// profile is the account's identity record and omitting its state would make the DTO an
+    /// incomplete picture of it.
+    pub status: tankovault_domain::AccountStatus,
 }
 
 /// Update the profile
@@ -68,7 +72,7 @@ pub async fn patch_profile(
         id: updated.id.as_uuid(),
         email: updated.email,
         username: updated.username,
-        role: updated.role.as_str().to_owned(),
+        status: updated.status,
     }))
 }
 

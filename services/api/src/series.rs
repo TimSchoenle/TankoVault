@@ -10,7 +10,7 @@ use axum_extra::extract::Query as MultiQuery;
 use serde::{Deserialize, Serialize};
 use tankovault_db::repo::catalog::SeriesFilter;
 use tankovault_domain::{
-    ContentType, ProviderId, SeriesId, SeriesSource, SeriesSourceId, SeriesStatus, UserId,
+    ContentType, Feature, ProviderId, SeriesId, SeriesSource, SeriesSourceId, SeriesStatus, UserId,
     resolve_link,
 };
 use utoipa::{IntoParams, ToSchema};
@@ -97,6 +97,19 @@ pub async fn list(
     State(state): State<AppState>,
     MultiQuery(params): MultiQuery<ListParams>,
 ) -> ApiResult<(HeaderMap, Json<Vec<SeriesSummary>>)> {
+    // Search is a *parameter* of the browse route rather than a route of its own, so the
+    // feature table cannot express it: `catalogue.search` must be refusable without taking
+    // down browsing, which shares this handler. Refused rather than silently ignored — a
+    // search that quietly returns the unfiltered catalogue is worse than one that says no.
+    if params
+        .query
+        .as_deref()
+        .is_some_and(|q| !q.trim().is_empty())
+        && !state.features.is_enabled(Feature::CatalogueSearch)
+    {
+        return Err(ApiError::FeatureDisabled(Feature::CatalogueSearch));
+    }
+
     let limit = params.limit.clamp(1, 100);
     let page = params.page.or(params.cursor).unwrap_or(0).max(0);
     let filter = SeriesFilter {

@@ -46,6 +46,8 @@ The `worker` has no HTTP contract of its own but now serves this listener anyway
 ## 2. Toggles
 
 Each toggle is a **wiring** decision resolved once at boot, never an `if` at a call site.
+These are deployment settings, distinct from the runtime **feature flags** in §4 — see the
+comparison there for which mechanism a given switch belongs in.
 
 ### `metrics`
 
@@ -184,15 +186,169 @@ to the timeout's `408`, not only to handler responses.
 
 ---
 
-## 3. GDPR data-subject endpoints
+## 3. Authorization: permissions, not roles
 
-| Endpoint | Right | Notes |
+Authorization is **per-capability**. There is no role, no tier, and no ordering: a principal
+holds a set of named [`Permission`](../crates/domain/src/permissions.rs) grants, each endpoint
+asks for the specific thing it does, and permissions never imply one another —
+`users.write` does not confer `users.read`.
+
+The previous `user < operator < admin` tier was removed rather than extended. It could not
+express least privilege (letting someone triage the merge queue also handed them provider
+editing, scan triggering and every user's linked-account state), and it made the requirement
+invisible in the model — `at_least(Operator)` says how privileged a caller must be, not what
+they are allowed to do.
+
+**Grants are resolved from the database on every authenticated request**, not read out of the
+access token. The token carries identity only. That is a deliberate cost: one indexed lookup
+per request buys immediate revocation, which a claim baked into a 15-minute token cannot
+offer at any price.
+
+| Concept | Where |
+|---|---|
+| The capability registry (24 permissions, their groups and descriptions) | `tankovault_domain::Permission` |
+| Storage | `user_permissions` (one row per user × capability, with `granted_by` provenance) |
+| Resolution | `tankovault_db::repo::permissions::resolve` |
+| Enforcement | `AuthUser::require` / `require_all` — a refusal is audited as `authz.denied` |
+| What a caller may do | `GET /v1/me/capabilities` (also carries the enabled feature list) |
+| Catalogue + preset bundles for the admin UI | `GET /v1/admin/permissions` |
+
+**Presets are not roles.** The console offers Reader / Operator / Administrator bundles as a
+starting point; applying one expands to a checklist the administrator then edits, and only the
+resulting set is stored. Nothing in the database or in an authorization decision knows presets
+exist.
+
+### Account status
+
+Suspension is *not* modelled as the absence of every permission — an account with no grants can
+still read its own watchlist, which is not what suspending it means. `users.status` is an
+identity-level state checked **before** authorization: a suspended account cannot sign in,
+cannot refresh, and is refused at the extractor with `403 account_suspended`.
+
+### Guard rails that live in code, not in the schema
+
+Three refusals are properties of the deployment that no constraint can express, enforced in
+`services/api/src/admin/users.rs`:
+
+1. **No self-administration.** Suspension, erasure and permission edits refuse to target the
+   caller — `/v1/me` is where someone acts on their own account, and an administrator who can
+   quietly grant themselves a capability produces a trail nobody can rely on.
+2. **The last administrator is protected.** Revoking, suspending or erasing the final *active*
+   holder of `users.permissions` is refused; it would leave no way to grant anything again,
+   recoverable only by editing the database by hand.
+3. **Erasure demands the username back**, typed by the administrator.
+
+All three refusals are audited, not just the successes.
+
+---
+
+## 4. Feature flags — the control plane
+
+Every product capability is switchable at runtime from the console. Flags are a **different
+mechanism from the toggles in §2** and the distinction matters:
+
+|  | Toggles (§2) | Feature flags |
 |---|---|---|
-| `GET /v1/me/export` | Art. 20, portability | One JSON document assembled in a single query, so the export is a consistent snapshot. Served as an attachment. |
-| `DELETE /v1/me` | Art. 17, erasure | Requires the caller's own username echoed back in `{"confirm_username": "..."}`. |
+| Resolved | Once, at boot | Per request, from a cached snapshot |
+| Changed by | Redeploy | `PUT /v1/admin/feature-flags/{key}` |
+| Scope | This process | The whole deployment |
+
+What keeps a runtime flag from becoming `if flag { }` scattered through handlers is that the
+check is **declarative**. `route_features()` in `services/api/src/lib.rs` is a table, sitting
+next to the route registration, mapping route-pattern prefixes to features; one middleware
+(`tankovault_service::flags::enforce`) reads it. Handlers contain no flag logic. Background
+loops, which have no route to declare against, check their own flag at the top of each
+iteration — there the loop *is* the feature.
+
+- **Registry:** `tankovault_domain::Feature` — 37 features in 8 groups, each with a compiled
+  default and an operator-facing description of what switching it off does.
+- **Storage:** `feature_flag_overrides` holds *only* deviations from the shipped defaults. An
+  empty table is a fully working deployment; a feature added in code appears in the console at
+  its default with no migration and no seed row.
+- **Three states, not two:** a feature is on or off, and *separately* at its default or
+  explicitly overridden. `PUT` records a decision (which pins it against a future change of the
+  default); `DELETE` withdraws it.
+
+```bash
+curl -X PUT $API/v1/admin/feature-flags/notifications.email \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"enabled":false,"note":"SMTP relay is bouncing"}'
+```
+
+**Propagation.** The replica serving the write refreshes before responding, so the operator's
+next request already behaves the new way. Other replicas converge within
+`features.refresh_secs` (default 15). A refresh that cannot reach the database keeps the
+previous snapshot rather than falling back to defaults — a database blip must not silently
+re-enable something an operator switched off.
+
+**Response when a feature is off:** `404` with an RFC 9457 body naming the feature, so the
+answer to "why is this 404ing" is in the response rather than only on the flag page.
+
+```json
+{"type":"about:blank#feature_disabled","title":"feature_disabled","status":404,
+ "detail":"the \"Watchlist\" feature is switched off on this deployment",
+ "feature":"tracking.watchlist"}
+```
+
+**Two features are locked and refuse to be switched off:** `admin.feature_flags` and
+`admin.users`. Disabling the flag surface removes the only way to turn anything back on;
+disabling user administration removes the only way to grant the permission that reaches it.
+Either would brick the deployment from the operator's side. The API rejects the write *and* the
+runtime ignores a stored override for them, so a hand-edited database cannot do it either.
+
+**Two ship off by default** — `notifications.webhook` and `notifications.discord` — because
+they send data to third parties from configuration the installer has not necessarily reviewed.
+Everything else ships on: flags exist so an operator can narrow a working deployment, not so a
+fresh install arrives inert.
+
+---
+
+## 5. GDPR data-subject endpoints
+
+### Self-service
+
+| Endpoint | Right | Feature | Notes |
+|---|---|---|---|
+| `GET /v1/me/export` | Art. 20, portability | `privacy.self_export` | One JSON document assembled in a single query, so the export is a consistent snapshot. Served as an attachment. |
+| `DELETE /v1/me` | Art. 17, erasure | `privacy.self_erasure` | Requires the caller's own username echoed back in `{"confirm_username": "..."}`. Closes the caller's own open requests first, so the compliance record shows the erasure was carried out. |
 
 Both act only on the authenticated principal; there is no operator override on these paths.
 Both draw from the `expensive` rate-limit class.
+
+### The request queue
+
+The self-service endpoints answer the two rights people actually exercise. They cannot satisfy
+the rest of Chapter III, so a tracked queue sits alongside them (`gdpr_requests`, feature
+`privacy.requests`):
+
+- **Art. 16/18/21** — rectification, restriction and objection have no self-service shape.
+  They are decisions someone has to make.
+- **Art. 12(3)** — a one-month deadline needs a tracked object with a due date. An HTTP call
+  that either happened or did not cannot be overdue.
+- **Art. 5(2)** — the controller must be able to *demonstrate* it responded.
+- When `privacy.self_erasure` is off, the right is not removed — it becomes mediated through
+  this queue.
+
+| Endpoint | Permission | Purpose |
+|---|---|---|
+| `POST/GET /v1/me/privacy/requests`, `DELETE …/{id}` | *(own account)* | File, list, withdraw |
+| `GET /v1/admin/privacy/requests` | `privacy.read` | The queue, most-urgent-first, overdue flagged |
+| `POST …/{id}/claim` | `privacy.write` | Take ownership; a second claim `409`s rather than silently stealing it |
+| `POST …/{id}/resolve` | `privacy.write` | Complete or reject. A rejection **must** state reasons (Art. 12(4)) |
+| `POST …/{id}/extend` | `privacy.write` | Art. 12(3) extension; only ever moves the deadline later |
+| `GET …/{id}/export` | `privacy.export` | Disclose the subject's record to fulfil an access request |
+| `POST …/{id}/fulfil-erasure` | `privacy.write` **+** `users.delete` | Carry out an erasure and complete the request in one call |
+
+Recording an outcome and performing it are **separate endpoints with separate permissions**, so
+the trail distinguishes *we said we did it* from *we did it*. `privacy.export` is split out from
+`privacy.write` because it is the one action that discloses another person's entire record.
+
+**No subject snapshot.** The queue stores no copy of the subject's email or username;
+`user_id` is `ON DELETE SET NULL`. While a request is open its subject exists and is reachable
+by join, and the moment an erasure completes the row degrades by itself into "an erasure
+request was filed on D1 and completed on D2 by operator O" — an accountability record that is
+no longer personal data. Copying the email in for the operator's convenience would have
+re-created, in the compliance log, the identifier the erasure destroyed.
 
 **Export redaction** is by explicit column exclusion, spelled out in the SQL next to the
 table it applies to: `users.password_hash`, `refresh_tokens.token_hash`, and
@@ -216,7 +372,7 @@ leader election — concurrent sweeps simply share the work.
 
 ---
 
-## 4. Shutdown
+## 6. Shutdown
 
 `install_shutdown()` listens for `SIGINT` and (on Unix) `SIGTERM` — what a container runtime
 sends first — and cancels one `CancellationToken` shared by the HTTP server and every

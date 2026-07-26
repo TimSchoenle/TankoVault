@@ -1,4 +1,17 @@
-//! Shared application state and the authenticated-user extractor (RBAC).
+//! Shared application state and the authenticated-principal extractor.
+//!
+//! # Authorization model
+//!
+//! Every privileged handler asks for a named capability —
+//! `user.require(Permission::ProvidersDelete).await?` — and the capability set is resolved
+//! from the database on each request rather than read out of the access token. See
+//! [`tankovault_domain::permissions`] for why the previous ordered `user < operator < admin`
+//! role was removed rather than extended, and
+//! [`tankovault_db::repo::permissions`] for why resolution is per-request.
+//!
+//! The extractor also refuses a **suspended** account outright, before any capability is
+//! consulted. Suspension is not the absence of permissions: an account with no grants can
+//! still read its own watchlist, which is precisely what a suspended one must not do.
 
 use crate::error::ApiError;
 use axum::extract::{ConnectInfo, FromRequestParts};
@@ -8,8 +21,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tankovault_auth::verify_access_token;
 use tankovault_db::PgPool;
-use tankovault_domain::{UserId, UserRole};
-use tankovault_service::{AuditEvent, AuditSink};
+use tankovault_domain::{Permission, PermissionSet, UserId};
+use tankovault_service::{AuditEvent, AuditSink, FeatureGate};
 
 /// Application state shared across handlers.
 #[derive(Clone)]
@@ -32,6 +45,10 @@ pub struct AppState {
     /// Where audit records go. A [`tankovault_service::NoopAuditSink`] when the operator
     /// disabled auditing, so no handler ever branches on the toggle.
     pub audit: Arc<dyn AuditSink>,
+    /// Which features are currently switched on. Held here — not just in the middleware layer
+    /// — because the flag-write handler has to refresh it, and `/v1/me/capabilities` has to
+    /// report it.
+    pub features: FeatureGate,
     /// Whether refresh cookies are marked `Secure` (true in production/TLS).
     pub cookie_secure: bool,
     /// Transactional email back-end (welcome, password reset). A no-op mailer when email
@@ -89,10 +106,12 @@ impl ClientContext {
     }
 }
 
-/// An authenticated principal, extracted from a `Bearer` access token.
+/// An authenticated principal: a verified identity plus the capabilities it currently holds.
 pub struct AuthUser {
     pub user_id: UserId,
-    pub role: UserRole,
+    /// The capabilities resolved for this request. Freshly read, so a grant revoked a second
+    /// ago is already gone.
+    pub permissions: PermissionSet,
     /// Request origin, attached to any audit record this principal produces.
     pub client: ClientContext,
     /// Carried so [`Self::require`] can record a refused privileged action without every
@@ -101,26 +120,43 @@ pub struct AuthUser {
 }
 
 impl AuthUser {
-    /// Enforce a minimum RBAC role, returning `Forbidden` otherwise.
+    /// Enforce a single capability, returning `Forbidden` otherwise.
     ///
-    /// A refusal is audited. That is the whole reason this is `async`: the previous
-    /// version returned `403` and left no trace, so an attempt to use a privileged
-    /// endpoint without the role — the single most interesting thing an audit trail can
-    /// tell you — was invisible.
+    /// A refusal is audited. That is the whole reason this is `async`: an attempt to use a
+    /// privileged endpoint without the capability — the single most interesting thing an audit
+    /// trail can tell you — would otherwise return `403` and leave no trace.
     ///
     /// # Errors
-    /// [`ApiError::Forbidden`] if the principal's role is below `required`.
-    pub async fn require(&self, required: UserRole) -> Result<(), ApiError> {
-        if self.role.at_least(required) {
+    /// [`ApiError::Forbidden`] if the principal does not hold `required`.
+    pub async fn require(&self, required: Permission) -> Result<(), ApiError> {
+        self.require_all(&[required]).await
+    }
+
+    /// Enforce several capabilities at once.
+    ///
+    /// Exists because permissions deliberately do not imply one another: a handler that both
+    /// reads and writes has to ask for both, and asking in one call keeps the audit record for
+    /// a refusal naming *everything* that was missing rather than only the first check to fail.
+    ///
+    /// # Errors
+    /// [`ApiError::Forbidden`] if any of `required` is missing.
+    pub async fn require_all(&self, required: &[Permission]) -> Result<(), ApiError> {
+        let missing: Vec<&'static str> = required
+            .iter()
+            .filter(|p| !self.permissions.has(**p))
+            .map(|p| p.as_str())
+            .collect();
+        if missing.is_empty() {
             return Ok(());
         }
+
         self.audit
             .record(
                 AuditEvent::new("authz.denied")
                     .actor(self.user_id)
                     .detail(serde_json::json!({
-                        "required_role": required.to_string(),
-                        "actual_role": self.role.to_string(),
+                        "required": required.iter().map(|p| p.as_str()).collect::<Vec<_>>(),
+                        "missing": missing,
                     }))
                     .denied()
                     .client(self.client.ip.clone(), self.client.user_agent.clone()),
@@ -155,9 +191,22 @@ impl FromRequestParts<AppState> for AuthUser {
             .ok_or(ApiError::Unauthorized)?;
 
         let claims = verify_access_token(&state.jwt_secret, token)?;
+        let user_id = claims.user_id().ok_or(ApiError::Unauthorized)?;
+
+        // A valid signature proves the token was ours; it does not prove the account still
+        // exists, is still permitted to act, or still holds what it held when the token was
+        // minted. All three are settled here.
+        let principal = tankovault_db::repo::permissions::resolve(&state.pool, user_id)
+            .await?
+            .ok_or(ApiError::Unauthorized)?;
+
+        if !principal.status.may_authenticate() {
+            return Err(ApiError::Suspended);
+        }
+
         Ok(Self {
-            user_id: claims.user_id().ok_or(ApiError::Unauthorized)?,
-            role: claims.role(),
+            user_id,
+            permissions: principal.permissions,
             client: ClientContext::from_parts(parts),
             audit: Arc::clone(&state.audit),
         })

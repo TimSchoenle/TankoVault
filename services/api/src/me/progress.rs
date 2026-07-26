@@ -6,7 +6,7 @@ use crate::state::{AppState, AuthUser};
 use axum::Json;
 use axum::extract::{Path, State};
 use serde::{Deserialize, Serialize};
-use tankovault_domain::{SeriesId, UserId};
+use tankovault_domain::{Feature, SeriesId, UserId};
 use utoipa::ToSchema;
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -247,7 +247,19 @@ pub async fn put_sync_override(
 /// engine's viewer-name lookup on link): logged on failure, never surfaced to the caller, never
 /// blocks the response (design: immediate targeted push — marking a chapter/series read locally
 /// reflects to `AniList` without a manual "Push" click).
+///
+/// Gated on [`Feature::SyncAutoPush`] — and on [`Feature::SyncExternal`], since the finer flag
+/// is meaningless when the whole surface is off. This is a *behaviour* rather than a route, so
+/// it is checked here rather than in the route-feature table: the caller is marking a chapter
+/// read, which must keep working either way; the only question is whether that reaches a
+/// third party.
 pub(super) fn spawn_targeted_push(state: &AppState, user_id: UserId, series_id: SeriesId) {
+    if !state.features.is_enabled(Feature::SyncExternal)
+        || !state.features.is_enabled(Feature::SyncAutoPush)
+    {
+        return;
+    }
+
     let http = state.http.clone();
     let sync_url = state.sync_url.clone();
     tokio::spawn(async move {

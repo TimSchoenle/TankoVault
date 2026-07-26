@@ -7,11 +7,15 @@
 
 pub mod audit;
 pub mod catalog;
+pub mod flags;
+pub mod gdpr;
 pub mod matching;
+pub mod permissions;
 pub mod privacy;
 pub mod providers;
 pub mod scans;
 pub mod stats;
 pub mod sync;
 pub mod tracking;
+pub mod user_admin;
 pub mod users;

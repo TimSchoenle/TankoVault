@@ -17,17 +17,25 @@ use serde::{Deserialize, Serialize};
 pub(crate) use crate::wire::types::{
     AccountStatus, AdapterKind, AssignRemoteEntry, ChapterDto, ChapterRead, ConflictRow,
     ContentType, ContinueItem, CreateProvider, DismissRequest, FeedEntry, ForgotPasswordRequest,
-    LoginRequest, MarkRead, MergeRequest, Politeness, ProfileUpdate, ProgressUpdate, Provider,
-    ProviderId, ProviderInfo, ProviderStat, ProviderState, PublicProvider, RegisterRequest,
-    ResendVerificationRequest, ResetPasswordRequest, ResolveConflict, RunState, ScanMode, ScanRun,
-    ScanRunProviderId, SeriesId, SeriesSourceId, SeriesStatus, SeriesSummary,
+    LoginRequest, MarkRead, MergeRequest, PermissionPreset, Politeness, ProfileUpdate,
+    ProgressUpdate, Provider, ProviderId, ProviderInfo, ProviderStat, ProviderState,
+    PublicProvider, RegisterRequest, RequestKind, RequestStatus, ResendVerificationRequest,
+    ResetPasswordRequest, ResolveConflict, RunState, ScanMode, ScanRun, ScanRunProviderId,
+    SeriesId, SeriesSourceId, SeriesStatus, SeriesSummary,
     SetProviderState as SetProviderStateBody, SourceDto, SuggestedMatch, SyncExcluded, SyncOpts,
     SyncPullBody, SyncPushBody, SyncSettingsPatch, SystemStats, Tag, TestAdapterBody,
     TestAdapterRequest, TriggerScan, TriggerScanProviderId, UpdateProvider, UpsertMapping, UserId,
-    UserRow2 as UserRow, VerifyEmailRequest, WatchStatus, WatchlistItem, WatchlistUpsert,
+    VerifyEmailRequest, WatchStatus, WatchlistItem, WatchlistUpsert,
 };
 
 // Generated names that read poorly at the call site keep a local alias.
+//
+// `SyncAccountStatus` is the exception that reads *better* generated than aliased: it is the
+// external-tracker link status, and it is qualified precisely because `AccountStatus` is now a
+// different thing — whether a user account is active or suspended. Both are re-exported above
+// and below under names that cannot be confused.
+pub(crate) use crate::wire::types::SyncAccountStatus;
+
 pub(crate) use crate::wire::types::AdminAccountRow as AdminSyncAccount;
 pub(crate) use crate::wire::types::AdminMappingRow as AdminSyncMapping;
 pub(crate) use crate::wire::types::AuditView as AuditEntry;
@@ -194,6 +202,117 @@ impl WatchStatusExt for WatchStatus {
             WatchStatus::Paused,
             WatchStatus::Dropped,
         ]
+    }
+}
+
+pub(crate) trait RequestKindExt {
+    /// The catalogue key of this variant's display name (see [`crate::i18n`]).
+    fn label_key(self) -> &'static str;
+    /// The wire token, used as a `<select>` option value.
+    fn token(self) -> &'static str;
+    /// Whether fulfilling this kind means disclosing the subject's export.
+    ///
+    /// Mirrors `RequestKind::needs_export` on the server. Duplicated rather than shared because
+    /// the generated client carries no methods; the server refuses the call regardless, so this
+    /// only decides whether the button is worth offering.
+    fn needs_export(self) -> bool;
+    /// Every kind, in the order the request form offers them.
+    fn all() -> &'static [RequestKind];
+}
+
+impl RequestKindExt for RequestKind {
+    fn label_key(self) -> &'static str {
+        match self {
+            Self::Access => "enum.privacyKind.access",
+            Self::Portability => "enum.privacyKind.portability",
+            Self::Rectification => "enum.privacyKind.rectification",
+            Self::Erasure => "enum.privacyKind.erasure",
+            Self::Restriction => "enum.privacyKind.restriction",
+            Self::Objection => "enum.privacyKind.objection",
+        }
+    }
+    fn token(self) -> &'static str {
+        match self {
+            Self::Access => "access",
+            Self::Portability => "portability",
+            Self::Rectification => "rectification",
+            Self::Erasure => "erasure",
+            Self::Restriction => "restriction",
+            Self::Objection => "objection",
+        }
+    }
+    fn needs_export(self) -> bool {
+        matches!(self, Self::Access | Self::Portability)
+    }
+    fn all() -> &'static [RequestKind] {
+        &[
+            RequestKind::Access,
+            RequestKind::Portability,
+            RequestKind::Rectification,
+            RequestKind::Erasure,
+            RequestKind::Restriction,
+            RequestKind::Objection,
+        ]
+    }
+}
+
+pub(crate) trait RequestStatusExt {
+    /// The catalogue key of this variant's display name (see [`crate::i18n`]).
+    fn label_key(self) -> &'static str;
+    /// Whether the request is still awaiting a resolution — the only state in which either
+    /// side can still act on it.
+    fn is_open(&self) -> bool;
+}
+
+impl RequestStatusExt for RequestStatus {
+    fn label_key(self) -> &'static str {
+        match self {
+            Self::Pending => "enum.privacyStatus.pending",
+            Self::InProgress => "enum.privacyStatus.inProgress",
+            Self::Completed => "enum.privacyStatus.completed",
+            Self::Rejected => "enum.privacyStatus.rejected",
+            Self::Cancelled => "enum.privacyStatus.cancelled",
+        }
+    }
+    fn is_open(&self) -> bool {
+        matches!(self, Self::Pending | Self::InProgress)
+    }
+}
+
+pub(crate) trait AccountStatusExt {
+    /// The catalogue key of this variant's display name (see [`crate::i18n`]).
+    fn label_key(self) -> &'static str;
+    /// The pill class encoding it: a suspended account must be impossible to skim past.
+    fn pill_class(self) -> &'static str;
+}
+
+impl AccountStatusExt for AccountStatus {
+    fn label_key(self) -> &'static str {
+        match self {
+            Self::Active => "enum.accountStatus.active",
+            Self::Suspended => "enum.accountStatus.suspended",
+        }
+    }
+    fn pill_class(self) -> &'static str {
+        match self {
+            Self::Active => "ik-pill jade",
+            Self::Suspended => "ik-pill vermilion",
+        }
+    }
+}
+
+pub(crate) trait PermissionPresetExt {
+    /// The catalogue key of this preset's display name (see [`crate::i18n`]).
+    fn label_key(self) -> &'static str;
+}
+
+impl PermissionPresetExt for PermissionPreset {
+    fn label_key(self) -> &'static str {
+        match self {
+            Self::Reader => "console.preset.reader",
+            Self::Operator => "console.preset.operator",
+            Self::Administrator => "console.preset.administrator",
+        }
     }
 }
 

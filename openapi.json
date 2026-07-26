@@ -31,31 +31,12 @@
         "type": "object"
       },
       "AccountStatus": {
-        "description": "Whether a user has linked a provider and, when linked, who they are connected as.\n\nAlways `200`: an unlinked account reads `{ \"linked\": false }` rather than 404ing, so the\nUI can render \"not connected\" without treating it as an error.",
-        "properties": {
-          "last_synced_at": {
-            "description": "RFC-3339 timestamp of the most recent successful sync, when there has been one.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "linked": {
-            "description": "Whether a linked external account exists for this user and provider.",
-            "type": "boolean"
-          },
-          "username": {
-            "description": "The connected account's display name at the provider, when linked.",
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "linked"
+        "description": "Whether an account may authenticate.\n\nSuspension is deliberately *not* a permission: permissions answer \"what may this\nprincipal do\", and a suspended account is one that may not act at all, including on\nits own data. Modelling it as the absence of every permission would still let the\naccount read its watchlist and refresh its session, which is not what suspension\nmeans. It is therefore an identity-level state checked before authorization runs.",
+        "enum": [
+          "active",
+          "suspended"
         ],
-        "type": "object"
+        "type": "string"
       },
       "AdapterKind": {
         "description": "Which adapter implementation drives a provider.",
@@ -148,6 +129,74 @@
           "provider",
           "external_id",
           "updated_at"
+        ],
+        "type": "object"
+      },
+      "AdminProfileUpdate": {
+        "properties": {
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "AdminRequestRow": {
+        "description": "A queue entry as the operator sees it: the subject's identity (while they still exist) and\nwho is handling it.\n\nThe subject-facing fields are a nested `request` rather than `#[serde(flatten)]`. Flattening\nreads better on the wire, but `utoipa` cannot describe it: a flattened field contributes no\nproperties to the generated schema, so the typed client ended up with a struct missing every\nfield the queue actually renders. A nested object is honest about its shape and survives\ncode generation.",
+        "properties": {
+          "claimed_by": {
+            "description": "Operator who claimed it, if any.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overdue": {
+            "description": "Whether the Art. 12(3) deadline has passed with the request still open. Computed in\nSQL against `now()` so the queue cannot disagree with itself about what is late\ndepending on when a client's clock says it rendered.",
+            "type": "boolean"
+          },
+          "request": {
+            "$ref": "#/components/schemas/RequestRow"
+          },
+          "resolved_by": {
+            "description": "Operator who resolved it, if resolved.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_id": {
+            "description": "The subject's id, or `None` once they have been erased.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "description": "The subject's username. `None` means the account is gone — for a completed erasure\nthat is the expected end state, not missing data.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "request",
+          "overdue"
         ],
         "type": "object"
       },
@@ -246,6 +295,30 @@
         },
         "required": [
           "url"
+        ],
+        "type": "object"
+      },
+      "Capabilities": {
+        "description": "The caller's capabilities and the deployment's enabled features.",
+        "properties": {
+          "features": {
+            "description": "Every feature switched on for this deployment, in registry order.\n\nSent as the *enabled* list rather than a key→bool map: the client asks \"may I show\nthis\", which is a membership test, and a map would invite it to distinguish\n\"explicitly false\" from \"absent\" — a distinction that exists in the control plane's\noverride table and nowhere else.",
+            "items": {
+              "$ref": "#/components/schemas/Feature"
+            },
+            "type": "array"
+          },
+          "permissions": {
+            "description": "The permissions this caller currently holds, in registry order.",
+            "items": {
+              "$ref": "#/components/schemas/Permission"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "permissions",
+          "features"
         ],
         "type": "object"
       },
@@ -434,6 +507,97 @@
         ],
         "type": "object"
       },
+      "DeleteUser": {
+        "properties": {
+          "confirm_username": {
+            "description": "The target account's username, typed back as confirmation.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why the account is being erased. Recorded in the audit trail, which is the only place\nthe reason can survive — the account itself is about to be gone.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "confirm_username"
+        ],
+        "type": "object"
+      },
+      "DirectoryPage": {
+        "description": "A page of the directory plus the unfiltered-by-page total, so the UI can render\n\"showing 1–25 of 312\" without a second request.",
+        "properties": {
+          "total": {
+            "description": "Total matching the current search, ignoring `limit`/`offset`.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/DirectoryRow"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "users",
+          "total"
+        ],
+        "type": "object"
+      },
+      "DirectoryRow": {
+        "description": "One row of the operator user directory.\n\nCarries a grant *count* rather than the grants themselves: the directory is a list, and a\nuser's actual capabilities are what the detail view is for. The count is enough to answer\n\"which of these accounts are privileged at all\", which is the question the list is scanned\nfor.",
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "email_verified": {
+            "description": "Whether the address has been confirmed. An unverified account that has existed for\nmonths is usually an abandoned registration.",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_login_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "permission_count": {
+            "description": "How many permissions this account holds. `0` is an ordinary reader.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AccountStatus"
+          },
+          "tracked_count": {
+            "description": "How many series the user tracks — the cheapest signal of a real, in-use account.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "username",
+          "status",
+          "email_verified",
+          "permission_count",
+          "tracked_count",
+          "created_at"
+        ],
+        "type": "object"
+      },
       "DismissRequest": {
         "properties": {
           "id": {
@@ -443,6 +607,23 @@
         },
         "required": [
           "id"
+        ],
+        "type": "object"
+      },
+      "ExtendRequest": {
+        "properties": {
+          "due_at": {
+            "description": "The new deadline, RFC 3339.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why an extension is needed. Art. 12(3) requires the subject to be told of the extension\nand its reasons, so recording one is part of taking it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "due_at",
+          "reason"
         ],
         "type": "object"
       },
@@ -496,6 +677,63 @@
         ],
         "type": "object"
       },
+      "Feature": {
+        "description": "A switchable product capability.",
+        "enum": [
+          "catalogue.browse",
+          "catalogue.search",
+          "catalogue.recommendations",
+          "accounts.registration",
+          "accounts.password_reset",
+          "accounts.email_verification",
+          "accounts.profile",
+          "accounts.sessions",
+          "privacy.self_export",
+          "privacy.self_erasure",
+          "privacy.requests",
+          "tracking.watchlist",
+          "tracking.progress",
+          "tracking.feed",
+          "tracking.stats",
+          "notifications.in_app",
+          "notifications.live",
+          "notifications.preferences",
+          "notifications.email",
+          "notifications.webhook",
+          "notifications.discord",
+          "sync.external",
+          "sync.auto_push",
+          "sync.scheduled_pull",
+          "sync.conflict_review",
+          "sync.history",
+          "scanning.scheduler",
+          "scanning.manual",
+          "scanning.full",
+          "scanning.merge_queue",
+          "admin.providers",
+          "admin.adapter_test",
+          "admin.sync",
+          "admin.audit",
+          "admin.stats",
+          "admin.users",
+          "admin.feature_flags"
+        ],
+        "type": "string"
+      },
+      "FeatureGroup": {
+        "description": "The control plane's grouping of features into sections.",
+        "enum": [
+          "catalogue",
+          "accounts",
+          "privacy",
+          "tracking",
+          "notifications",
+          "sync",
+          "scanning",
+          "operations"
+        ],
+        "type": "string"
+      },
       "FeedEntry": {
         "properties": {
           "chapter_number": {
@@ -535,6 +773,72 @@
         ],
         "type": "object"
       },
+      "FlagView": {
+        "description": "One feature as the control plane shows it.\n\nThe four booleans are not a struct that wants splitting: they answer four different\nquestions the page asks side by side — is it on, is that the shipped value, did someone\ndecide it, and can it be changed at all — and grouping any of them would only move the\nflattening into the client.",
+        "properties": {
+          "default_enabled": {
+            "description": "What this feature ships as, so the page can show \"changed from default\" without the\nclient hard-coding a copy of the registry.",
+            "type": "boolean"
+          },
+          "description": {
+            "description": "What switching it off actually does, written to be read immediately before someone\nflips a production switch.",
+            "type": "string"
+          },
+          "enabled": {
+            "description": "The effective state: the override if there is one, else the shipped default.",
+            "type": "boolean"
+          },
+          "group": {
+            "$ref": "#/components/schemas/FeatureGroup"
+          },
+          "key": {
+            "$ref": "#/components/schemas/Feature"
+          },
+          "locked": {
+            "description": "Whether the feature refuses to be switched off — the deployment's recovery paths. The\nUI disables the control; the API refuses the write regardless.",
+            "type": "boolean"
+          },
+          "note": {
+            "description": "Why the switch was last flipped, if the operator said.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overridden": {
+            "description": "Whether an operator has explicitly decided this one. `false` means it is following the\nshipped default.",
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When it was last changed. Absent while the feature is at its default.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_by": {
+            "description": "Username of the operator who last changed it; `None` once that account is erased.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "group",
+          "title",
+          "description",
+          "enabled",
+          "default_enabled",
+          "overridden",
+          "locked"
+        ],
+        "type": "object"
+      },
       "ForgotPasswordRequest": {
         "properties": {
           "email": {
@@ -544,6 +848,47 @@
         },
         "required": [
           "email"
+        ],
+        "type": "object"
+      },
+      "FulfilErasure": {
+        "properties": {
+          "confirm_username": {
+            "description": "The subject's username, typed back as confirmation.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm_username"
+        ],
+        "type": "object"
+      },
+      "GrantRow": {
+        "description": "A single grant, with its provenance, for the user-detail view.",
+        "properties": {
+          "granted_at": {
+            "type": "string"
+          },
+          "granted_by": {
+            "description": "Who granted it, or `None` for a grant made by the migration from the old role model\nor by an administrator since erased.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "known": {
+            "description": "Whether this build recognises the token. `false` means the grant is inert.",
+            "type": "boolean"
+          },
+          "permission": {
+            "description": "The permission token. A string rather than the enum because a row surviving from a\nbuild that had a capability this one does not must still be *visible* to an\nadministrator — that is precisely when they need to see and remove it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "known",
+          "granted_at"
         ],
         "type": "object"
       },
@@ -724,9 +1069,124 @@
         ],
         "type": "object"
       },
+      "NewPrivacyRequest": {
+        "properties": {
+          "detail": {
+            "description": "What the subject is asking for, in their words. Required for rectification — \"correct\nmy data\" without saying which field to what is not actionable — and optional otherwise.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RequestKind",
+            "description": "Which right is being exercised."
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
       "NotificationId": {
         "description": "Identifies a notification.",
         "format": "uuid",
+        "type": "string"
+      },
+      "Permission": {
+        "description": "Everything a principal can be authorized to do.\n\nThe enum is exhaustive by design: a permission that exists only as a string somewhere\ncannot be listed in the admin UI, cannot be spell-checked by the compiler, and cannot be\naudited as a known capability. Adding a capability means adding a variant here and\nnothing else.",
+        "enum": [
+          "providers.read",
+          "providers.write",
+          "providers.create",
+          "providers.delete",
+          "providers.state",
+          "providers.test",
+          "scans.read",
+          "scans.run",
+          "merge.read",
+          "merge.write",
+          "sync.admin.read",
+          "sync.admin.write",
+          "users.read",
+          "users.write",
+          "users.permissions",
+          "users.delete",
+          "users.sessions",
+          "privacy.read",
+          "privacy.write",
+          "privacy.export",
+          "system.stats",
+          "audit.read",
+          "flags.read",
+          "flags.write"
+        ],
+        "type": "string"
+      },
+      "PermissionCatalogue": {
+        "description": "The permission catalogue and its presets.",
+        "properties": {
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/PermissionInfo"
+            },
+            "type": "array"
+          },
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/PresetInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "permissions",
+          "presets"
+        ],
+        "type": "object"
+      },
+      "PermissionGroup": {
+        "description": "The admin UI's grouping of permissions into sections.",
+        "enum": [
+          "providers",
+          "scanning",
+          "catalogue",
+          "sync",
+          "users",
+          "privacy",
+          "observability",
+          "flags"
+        ],
+        "type": "string"
+      },
+      "PermissionInfo": {
+        "description": "One entry of the permission catalogue the editor renders.",
+        "properties": {
+          "description": {
+            "description": "What the capability allows, in the operator's terms.",
+            "type": "string"
+          },
+          "group": {
+            "$ref": "#/components/schemas/PermissionGroup"
+          },
+          "key": {
+            "$ref": "#/components/schemas/Permission"
+          }
+        },
+        "required": [
+          "key",
+          "group",
+          "description"
+        ],
+        "type": "object"
+      },
+      "PermissionPreset": {
+        "description": "A named bundle offered in the permission editor as a starting point.\n\nNot persisted and never consulted during an authorization decision — see the module docs\non why this is not a role by another name.",
+        "enum": [
+          "reader",
+          "operator",
+          "administrator"
+        ],
         "type": "string"
       },
       "Politeness": {
@@ -754,6 +1214,26 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "PresetInfo": {
+        "description": "A named starting point in the permission editor.",
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/PermissionPreset"
+          },
+          "permissions": {
+            "description": "The permissions this preset expands to. Sent expanded rather than by name so applying a\npreset is a pure client-side operation over the same checklist the operator then edits —\nwhich is what keeps a preset from behaving like a stored role.",
+            "items": {
+              "$ref": "#/components/schemas/Permission"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "permissions"
+        ],
         "type": "object"
       },
       "ProblemDetails": {
@@ -797,8 +1277,9 @@
             "format": "uuid",
             "type": "string"
           },
-          "role": {
-            "type": "string"
+          "status": {
+            "$ref": "#/components/schemas/AccountStatus",
+            "description": "Whether the account is active or suspended. A suspended caller cannot reach this\nendpoint at all, so in practice this is always `active` — it is here because the\nprofile is the account's identity record and omitting its state would make the DTO an\nincomplete picture of it."
           },
           "username": {
             "type": "string"
@@ -808,7 +1289,7 @@
           "id",
           "email",
           "username",
-          "role"
+          "status"
         ],
         "type": "object"
       },
@@ -1182,6 +1663,77 @@
         ],
         "type": "object"
       },
+      "RequestKind": {
+        "description": "What the subject is exercising. Mirrors the `gdpr_request_kind` SQL enum.",
+        "enum": [
+          "access",
+          "portability",
+          "rectification",
+          "erasure",
+          "restriction",
+          "objection"
+        ],
+        "type": "string"
+      },
+      "RequestRow": {
+        "description": "A request as the subject sees it, and the shape the operator queue extends.",
+        "properties": {
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "due_at": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RequestKind"
+          },
+          "requested_at": {
+            "type": "string"
+          },
+          "resolution_note": {
+            "description": "How it was resolved, or — for a rejection — why. Art. 12(4) obliges the controller to\ngive reasons for a refusal, so a rejected request without this is incomplete.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolved_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/RequestStatus"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "requested_at",
+          "due_at"
+        ],
+        "type": "object"
+      },
+      "RequestStatus": {
+        "description": "Where a request is in its lifecycle. Mirrors the `gdpr_request_status` SQL enum.",
+        "enum": [
+          "pending",
+          "in_progress",
+          "completed",
+          "rejected",
+          "cancelled"
+        ],
+        "type": "string"
+      },
       "ResendVerificationRequest": {
         "properties": {
           "email": {
@@ -1219,6 +1771,25 @@
         },
         "required": [
           "resolution"
+        ],
+        "type": "object"
+      },
+      "ResolveRequest": {
+        "properties": {
+          "note": {
+            "description": "What was done, or — for a rejection — why.\n\nMandatory on a rejection: Art. 12(4) obliges the controller to give reasons for refusing\nto act, so a rejection without one is not a lawful response.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/RequestStatus",
+            "description": "How it ends. Only `completed` and `rejected` are operator decisions; `cancelled` belongs\nto the subject and is refused here."
+          }
+        },
+        "required": [
+          "status"
         ],
         "type": "object"
       },
@@ -1470,6 +2041,39 @@
         ],
         "type": "object"
       },
+      "SetFlag": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "note": {
+            "description": "Why. Optional, but it is the thing the next operator needs and the audit record does not\nsurface on this page.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "SetPermissions": {
+        "properties": {
+          "permissions": {
+            "description": "The complete permission set the account should have afterwards.\n\nA whole set rather than add/remove operations: the editor is a checklist, and submitting\nthe intended end state means two administrators editing concurrently produce one of their\ntwo intents rather than an interleaving of both. Unknown tokens are rejected by\ndeserialisation — a capability that does not exist cannot be granted.",
+            "items": {
+              "$ref": "#/components/schemas/Permission"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "permissions"
+        ],
+        "type": "object"
+      },
       "SetProviderState": {
         "properties": {
           "state": {
@@ -1478,6 +2082,28 @@
         },
         "required": [
           "state"
+        ],
+        "type": "object"
+      },
+      "SetUserStatus": {
+        "properties": {
+          "reason": {
+            "description": "Why the account was suspended. Recorded on the account and shown to whoever looks at it\nnext; ignored when reinstating.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revoke_sessions": {
+            "description": "Also revoke every live session, so the suspension takes effect immediately rather than\nwhen the current access token expires.\n\nDefaults to `true`: a suspension that leaves the account working for the next quarter of\nan hour is not what anyone means by suspending it. Settable to `false` for the case\nwhere an operator wants the account frozen but the user's current tab left alone.",
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AccountStatus"
+          }
+        },
+        "required": [
+          "status"
         ],
         "type": "object"
       },
@@ -1551,6 +2177,33 @@
           "content_type",
           "source_count",
           "score"
+        ],
+        "type": "object"
+      },
+      "SyncAccountStatus": {
+        "description": "Whether a user has linked a provider and, when linked, who they are connected as.\n\nAlways `200`: an unlinked account reads `{ \"linked\": false }` rather than 404ing, so the\nUI can render \"not connected\" without treating it as an error.\n\nPublished as `SyncAccountStatus` rather than under its Rust name: `tankovault_domain`\nhas an `AccountStatus` too (whether a *user account* is active or suspended), and two\nunrelated types sharing one `OpenAPI` component name means the last one registered silently\nreplaces the other — which is exactly what happened when the domain enum was introduced.\nThe qualifier is on this one because it is the more specific of the two: an\nexternal-tracker link status, not an account's own state.",
+        "properties": {
+          "last_synced_at": {
+            "description": "RFC-3339 timestamp of the most recent successful sync, when there has been one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "linked": {
+            "description": "Whether a linked external account exists for this user and provider.",
+            "type": "boolean"
+          },
+          "username": {
+            "description": "The connected account's display name at the provider, when linked.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "linked"
         ],
         "type": "object"
       },
@@ -1870,36 +2523,56 @@
         ],
         "type": "object"
       },
-      "UserId": {
-        "description": "Identifies a user account.",
-        "format": "uuid",
-        "type": "string"
-      },
-      "UserRole": {
-        "description": "RBAC role. Ordering matters for privilege comparison (see [`UserRole::at_least`]).",
-        "enum": [
-          "user",
-          "operator",
-          "admin"
-        ],
-        "type": "string"
-      },
-      "UserRow2": {
-        "description": "One row of the operator Users table: identity, role, and how many series the user\ntracks (frontend §9.5 `GET /v1/admin/users`).",
+      "UserDetail": {
+        "description": "Everything the user-detail panel shows, minus the grant list (fetched separately by\n[`crate::repo::permissions::list_for_user`] so the panel can refresh just that part after\nan edit).",
         "properties": {
+          "active_sessions": {
+            "description": "Live login sessions. Tells an operator whether a suspension will actually take effect\nwithout also revoking sessions.",
+            "format": "int64",
+            "type": "integer"
+          },
           "created_at": {
             "type": "string"
           },
           "email": {
             "type": "string"
           },
+          "email_verified": {
+            "type": "boolean"
+          },
           "id": {
-            "format": "uuid",
             "type": "string"
           },
-          "role": {
-            "description": "RBAC role token (`user` | `operator` | `admin`).",
-            "type": "string"
+          "last_login_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "linked_accounts": {
+            "description": "Linked external trackers, so an operator can see the account has third-party\ncredentials at rest before deciding to erase it.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "open_privacy_requests": {
+            "description": "Unresolved data-subject requests filed by this user. An account with an open erasure\nrequest must not be quietly edited.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AccountStatus"
+          },
+          "suspended_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "suspension_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "tracked_count": {
             "format": "int64",
@@ -1913,11 +2586,40 @@
           "id",
           "email",
           "username",
-          "role",
+          "status",
+          "email_verified",
+          "created_at",
+          "active_sessions",
           "tracked_count",
-          "created_at"
+          "linked_accounts",
+          "open_privacy_requests"
         ],
         "type": "object"
+      },
+      "UserDetailResponse": {
+        "description": "One account's administrative detail, together with its grants.",
+        "properties": {
+          "permissions": {
+            "description": "The account's permission grants, with provenance.",
+            "items": {
+              "$ref": "#/components/schemas/GrantRow"
+            },
+            "type": "array"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserDetail"
+          }
+        },
+        "required": [
+          "user",
+          "permissions"
+        ],
+        "type": "object"
+      },
+      "UserId": {
+        "description": "Identifies a user account.",
+        "format": "uuid",
+        "type": "string"
       },
       "Value": {},
       "VerifyEmailRequest": {
@@ -2064,7 +2766,17 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the audit trail feature is disabled"
           }
         },
         "security": [
@@ -2075,6 +2787,206 @@
         "summary": "Get the audit log",
         "tags": [
           "admin-overview"
+        ]
+      }
+    },
+    "/v1/admin/feature-flags": {
+      "get": {
+        "description": "Every feature this build defines, with its effective state, its shipped default, and who\nlast changed it. Served from the compiled registry joined to the stored overrides, so the\npage can never list a feature that does nothing or omit one that does.",
+        "operationId": "list_flags",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FlagView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Every feature and its current state"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List feature flags",
+        "tags": [
+          "admin-feature-flags"
+        ]
+      }
+    },
+    "/v1/admin/feature-flags/{key}": {
+      "delete": {
+        "description": "Drops the stored override so the feature follows the value it ships with. Distinct from\nsetting it to that value, which records an operator decision that would survive a future\nchange of the default.",
+        "operationId": "reset_flag",
+        "parameters": [
+          {
+            "description": "Feature key, e.g. `sync.auto_push`",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FlagView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Every feature and its state after the reset"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "unknown feature"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Reset a feature flag",
+        "tags": [
+          "admin-feature-flags"
+        ]
+      },
+      "put": {
+        "description": "Records an explicit decision for one feature and applies it immediately on this replica.\nWriting the value a feature already has is meaningful: it pins the feature against a future\nchange of the shipped default.",
+        "operationId": "set_flag",
+        "parameters": [
+          {
+            "description": "Feature key, e.g. `sync.auto_push`",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetFlag"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FlagView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Every feature and its state after the change"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "unknown feature, or an attempt to disable a locked one"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Set a feature flag",
+        "tags": [
+          "admin-feature-flags"
         ]
       }
     },
@@ -2114,7 +3026,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -2172,7 +3084,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -2183,6 +3095,547 @@
         "summary": "Dismiss a merge candidate",
         "tags": [
           "admin-matching"
+        ]
+      }
+    },
+    "/v1/admin/permissions": {
+      "get": {
+        "description": "Every capability this build defines, with its grouping and description, plus the preset\nbundles the editor offers. Served from the compiled registry, so the editor can never list a\ncapability the backend does not enforce or miss one it does.",
+        "operationId": "permission_catalogue",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionCatalogue"
+                }
+              }
+            },
+            "description": "The permission catalogue"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List assignable permissions",
+        "tags": [
+          "admin-users"
+        ]
+      }
+    },
+    "/v1/admin/privacy/requests": {
+      "get": {
+        "description": "The privacy queue, most urgent first: open requests ordered by their Art. 12(3) deadline,\neach flagged if that deadline has passed.",
+        "operationId": "list_privacy_queue",
+        "parameters": [
+          {
+            "description": "Show only unresolved requests. Defaults to `true` — the queue's job is the work\noutstanding, and resolved requests are the compliance record behind it.",
+            "in": "query",
+            "name": "include_resolved",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdminRequestRow"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "The request queue"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List data-subject requests",
+        "tags": [
+          "admin-privacy"
+        ]
+      }
+    },
+    "/v1/admin/privacy/requests/{id}/claim": {
+      "post": {
+        "description": "Takes ownership of a pending request so two operators do not work the same one. Refuses if\nsomebody already claimed it, rather than silently taking it over.",
+        "operationId": "claim_privacy_request",
+        "parameters": [
+          {
+            "description": "Request id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRequestRow"
+                }
+              }
+            },
+            "description": "The claimed request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such request"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "already claimed or already resolved"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Claim a data-subject request",
+        "tags": [
+          "admin-privacy"
+        ]
+      }
+    },
+    "/v1/admin/privacy/requests/{id}/export": {
+      "get": {
+        "description": "Produces the same document as the subject's own export, for delivery in answer to an access\n(Art. 15) or portability (Art. 20) request.\n\nGated on [`Permission::PrivacyExport`] rather than `privacy.write`, and audited under its own\naction: this is the one operation in the queue that *discloses* another person's entire\nrecord, and it needs to be separately grantable and separately searchable afterwards.\n\nRefused for request kinds that are not about disclosure — an erasure request is not a licence\nto read the account first.",
+        "operationId": "export_subject_data",
+        "parameters": [
+          {
+            "description": "Request id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "The subject's complete personal-data export"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "this request kind does not call for an export"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such request, or its subject no longer exists"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Export a subject's data for a request",
+        "tags": [
+          "admin-privacy"
+        ]
+      }
+    },
+    "/v1/admin/privacy/requests/{id}/extend": {
+      "post": {
+        "description": "Art. 12(3) allows up to two further months for complex requests. Only moves a deadline\nlater: the subject has been told a date, and a controller shortening its own window after\nthe fact is not an extension.",
+        "operationId": "extend_privacy_request",
+        "parameters": [
+          {
+            "description": "Request id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRequestRow"
+                }
+              }
+            },
+            "description": "The request with its new deadline"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the request is resolved, or the new date is not later"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such request"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Extend a request's deadline",
+        "tags": [
+          "admin-privacy"
+        ]
+      }
+    },
+    "/v1/admin/privacy/requests/{id}/fulfil-erasure": {
+      "post": {
+        "description": "Erases the subject's account and everything it owns, then resolves the request as completed\nin the same call — so the compliance record cannot end up saying an erasure was done when it\nwas not, or the reverse.\n\nRequires [`Permission::UsersDelete`] as well as [`Permission::PrivacyWrite`]: working the\nprivacy queue and being able to destroy an account are separate authorities, and this is the\none action that needs both.",
+        "operationId": "fulfil_erasure",
+        "parameters": [
+          {
+            "description": "Request id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FulfilErasure"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRequestRow"
+                }
+              }
+            },
+            "description": "The completed request"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "not an erasure request, or the confirmation did not match"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permissions"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such request, or its subject no longer exists"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Carry out an erasure request",
+        "tags": [
+          "admin-privacy"
+        ]
+      }
+    },
+    "/v1/admin/privacy/requests/{id}/resolve": {
+      "post": {
+        "description": "Marks a request completed or rejected. Only transitions out of an open state, so a\nresolution cannot be recorded twice or rewritten later.\n\nDoes **not** perform the underlying action — completing an erasure request does not erase.\nFulfilment is [`fulfil_erasure`] and [`export_subject_data`], each with its own permission,\nso \"we said we did it\" and \"we did it\" are separate records.",
+        "operationId": "resolve_privacy_request",
+        "parameters": [
+          {
+            "description": "Request id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRequestRow"
+                }
+              }
+            },
+            "description": "The resolved request"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "invalid target status, or a rejection with no reason"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such request"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the request was already resolved"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Resolve a data-subject request",
+        "tags": [
+          "admin-privacy"
         ]
       }
     },
@@ -2221,7 +3674,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -2275,7 +3728,7 @@
                 }
               }
             },
-            "description": "caller must have the admin role"
+            "description": "caller does not hold the required permission"
           },
           "409": {
             "content": {
@@ -2335,7 +3788,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -2394,7 +3847,7 @@
                 }
               }
             },
-            "description": "caller must have the admin role"
+            "description": "caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -2470,7 +3923,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -2531,7 +3984,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -2609,7 +4062,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -2709,7 +4162,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -2769,7 +4222,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -2819,7 +4272,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -2867,7 +4320,17 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "manual scanning, or full scans specifically, are switched off"
           }
         },
         "security": [
@@ -2910,7 +4373,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -2967,7 +4430,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -3035,7 +4498,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -3102,7 +4565,17 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the system statistics feature is disabled"
           }
         },
         "security": [
@@ -3152,7 +4625,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -3220,7 +4693,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -3270,7 +4743,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -3336,7 +4809,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -3394,7 +4867,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -3444,7 +4917,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           },
           "409": {
             "content": {
@@ -3504,7 +4977,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           },
           "409": {
             "content": {
@@ -3575,7 +5048,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -3655,7 +5128,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -3705,7 +5178,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -3785,7 +5258,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -3865,7 +5338,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -3881,21 +5354,56 @@
     },
     "/v1/admin/users": {
       "get": {
-        "description": "The operator Users directory: identity, role, and tracked-series count per user (frontend\n§9.5 Users tab).",
+        "description": "The operator user directory: identity, account state, permission and tracking counts, and\nlast sign-in, with search and paging.",
         "operationId": "list_users",
+        "parameters": [
+          {
+            "description": "Case-insensitive substring match on username or email. Empty lists everyone.",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/UserRow2"
-                  },
-                  "type": "array"
+                  "$ref": "#/components/schemas/DirectoryPage"
                 }
               }
             },
-            "description": "Up to 200 most relevant users"
+            "description": "A page of the user directory"
           },
           "401": {
             "content": {
@@ -3915,7 +5423,7 @@
                 }
               }
             },
-            "description": "caller must have at least the operator role"
+            "description": "caller does not hold the required permission"
           }
         },
         "security": [
@@ -3924,6 +5432,549 @@
           }
         ],
         "summary": "List users",
+        "tags": [
+          "admin-users"
+        ]
+      }
+    },
+    "/v1/admin/users/{id}": {
+      "delete": {
+        "description": "Deletes the account and every row it owns, using the same cascade as self-service erasure\n(GDPR Art. 17) so there is one implementation rather than two that can diverge. The\naccount's audit records survive in pseudonymised form; see\n`tankovault_db::repo::privacy::erase_user`.\n\nIrreversible. Requires the username back, refuses the caller's own account, and refuses the\nlast active administrator.",
+        "operationId": "delete_user",
+        "parameters": [
+          {
+            "description": "User id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteUser"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Account and all owned data erased"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "confirmation mismatch, own account, or the last administrator"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such user"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Erase a user",
+        "tags": [
+          "admin-users"
+        ]
+      },
+      "get": {
+        "description": "Everything the user-detail panel shows: identity, account state, activity counts, and the\npermissions currently granted with who granted each and when.",
+        "operationId": "get_user",
+        "parameters": [
+          {
+            "description": "User id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDetailResponse"
+                }
+              }
+            },
+            "description": "The account and its grants"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such user"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get a user",
+        "tags": [
+          "admin-users"
+        ]
+      },
+      "patch": {
+        "description": "Change another account's username and/or email. Omitted fields are left alone.\n\nChanging an email does **not** re-open verification: an administrator setting an address is\nasserting it is correct, and forcing a confirmation round trip would lock the account out\nuntil the user acted on mail they did not expect.",
+        "operationId": "update_user",
+        "parameters": [
+          {
+            "description": "User id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDetailResponse"
+                }
+              }
+            },
+            "description": "The updated account"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such user"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "email or username already taken"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Edit a user's identity",
+        "tags": [
+          "admin-users"
+        ]
+      }
+    },
+    "/v1/admin/users/{id}/permissions": {
+      "put": {
+        "description": "Replaces the account's entire grant set. The audit record names what was actually added and\nremoved, not the submitted list, so \"who gave them that\" is answerable afterwards.",
+        "operationId": "set_user_permissions",
+        "parameters": [
+          {
+            "description": "User id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPermissions"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDetailResponse"
+                }
+              }
+            },
+            "description": "The updated account and its grants"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "cannot edit your own permissions, or strip the last administrator"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such user"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Set a user's permissions",
+        "tags": [
+          "admin-users"
+        ]
+      }
+    },
+    "/v1/admin/users/{id}/revoke-sessions": {
+      "post": {
+        "description": "Signs the account out of every device. Does not change what the account may do — use\nsuspension for that; this only ends the sessions currently in flight.",
+        "operationId": "revoke_user_sessions",
+        "parameters": [
+          {
+            "description": "User id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "revoked": 3
+                },
+                "schema": {}
+              }
+            },
+            "description": "How many sessions were revoked"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Revoke a user's sessions",
+        "tags": [
+          "admin-users"
+        ]
+      }
+    },
+    "/v1/admin/users/{id}/status": {
+      "post": {
+        "description": "A suspended account cannot sign in, refresh a session, or take any action — the check\nhappens before authorization, so it is not something a permission can override. Nothing the\naccount owns is deleted, so the change is fully reversible.",
+        "operationId": "set_user_status",
+        "parameters": [
+          {
+            "description": "User id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetUserStatus"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDetailResponse"
+                }
+              }
+            },
+            "description": "The updated account"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "cannot suspend your own account, or the last administrator"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such user"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Suspend or reinstate a user",
+        "tags": [
+          "admin-users"
+        ]
+      }
+    },
+    "/v1/admin/users/{id}/verify-email": {
+      "post": {
+        "description": "The escape hatch for an account that never received its confirmation link. Without it, a\ndeployment whose outbound mail broke leaves those accounts permanently unable to sign in\nwith no self-service route back.",
+        "operationId": "verify_user_email",
+        "parameters": [
+          {
+            "description": "User id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDetailResponse"
+                }
+              }
+            },
+            "description": "The updated account"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such user"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Confirm a user's email address",
         "tags": [
           "admin-users"
         ]
@@ -4219,7 +6270,7 @@
     },
     "/v1/me": {
       "delete": {
-        "description": "Erases the account and every row owned by it (GDPR Art. 17, right to erasure).\n\nAudit records of privileged actions the user performed are **retained in pseudonymised\nform**: the actor reference is nulled, so the record of what happened survives while\nthe link to a person does not. Documented on\n`tankovault_db::repo::privacy::erase_user`.",
+        "description": "Erases the account and every row owned by it (GDPR Art. 17, right to erasure).\n\nAudit records of privileged actions the user performed are **retained in pseudonymised\nform**: the actor reference is nulled, so the record of what happened survives while\nthe link to a person does not. Documented on\n`tankovault_db::repo::privacy::erase_user`.\n\nAny of the user's own open data-subject requests are resolved as completed *before* the\ncascade, so the compliance record shows the erasure was carried out rather than leaving a\nrequest that appears abandoned.",
         "operationId": "delete_account",
         "requestBody": {
           "content": {
@@ -4240,6 +6291,9 @@
           },
           "401": {
             "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "self-service deletion is switched off; file an erasure request instead"
           }
         },
         "security": [
@@ -4248,6 +6302,53 @@
           }
         ],
         "summary": "Delete my account",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/capabilities": {
+      "get": {
+        "description": "The permissions the caller holds and the features this deployment has enabled — everything\na client needs to decide which navigation, panels and controls to render.\n\nNot cacheable: a permission revoked or a feature switched off must be reflected on the next\nfetch, and this is the endpoint a client polls to find out.",
+        "operationId": "capabilities",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            },
+            "description": "Held permissions and enabled features"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the account is suspended"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get my capabilities",
         "tags": [
           "me-account"
         ]
@@ -4308,6 +6409,9 @@
           },
           "401": {
             "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "self-service export is switched off; file an access request instead"
           }
         },
         "security": [
@@ -4515,6 +6619,173 @@
         "summary": "Mark notifications read",
         "tags": [
           "me-notifications"
+        ]
+      }
+    },
+    "/v1/me/privacy/requests": {
+      "get": {
+        "description": "The authenticated account's own requests, newest first, including resolved ones — the\nsubject is entitled to see how their requests were handled, not only which are outstanding.",
+        "operationId": "list_privacy_requests",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RequestRow"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "The caller's requests"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the data-subject request queue is switched off"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List my data-subject requests",
+        "tags": [
+          "me-account"
+        ]
+      },
+      "post": {
+        "description": "Opens a tracked request against the authenticated account and returns it with its Art. 12(3)\ndeadline, which is the one thing the subject is entitled to know up front.\n\nOne open request per kind: a second would start its own clock and show the queue two\ndeadlines for one obligation.",
+        "operationId": "create_privacy_request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewPrivacyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestRow"
+                }
+              }
+            },
+            "description": "The filed request, with its response deadline"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "rectification without detail, or a duplicate open request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the data-subject request queue is switched off"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "File a data-subject request",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/privacy/requests/{id}": {
+      "delete": {
+        "description": "Cancels one of the caller's own open requests. Scoped to ownership, so the id alone is not\nauthority to cancel someone else's, and refused once resolved — a request that has already\nbeen answered is a compliance record, not a draft.",
+        "operationId": "cancel_privacy_request",
+        "parameters": [
+          {
+            "description": "Request id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Withdrawn"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such open request for this caller"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Withdraw a data-subject request",
+        "tags": [
+          "me-account"
         ]
       }
     },
@@ -5673,7 +7944,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AccountStatus"
+                  "$ref": "#/components/schemas/SyncAccountStatus"
                 }
               }
             },
@@ -6340,8 +8611,16 @@
       "name": "admin-sync"
     },
     {
-      "description": "User administration",
+      "description": "User directory, identity, suspension and permission grants",
       "name": "admin-users"
+    },
+    {
+      "description": "The GDPR data-subject request queue and its fulfilment",
+      "name": "admin-privacy"
+    },
+    {
+      "description": "Runtime feature flags — the deployment control plane",
+      "name": "admin-feature-flags"
     },
     {
       "description": "System stats and audit log",

@@ -1,52 +1,19 @@
 //! Client session state (design §17.4).
 //!
 //! The access token lives only in memory — never `localStorage`, so an XSS foothold cannot
-//! exfiltrate it — and is re-adopted from the httpOnly refresh cookie on boot. The RBAC role
-//! is decoded from the token so the rail can reveal the operator Console to operators and
-//! admins; see [`jwt`] for why reading it unverified is safe.
+//! exfiltrate it — and is re-adopted from the httpOnly refresh cookie on boot.
+//!
+//! The session carries **identity only**. What the reader is allowed to do lives in
+//! [`capabilities`], fetched from the server rather than decoded from the token: the backend
+//! authorizes per capability and a grant can be revoked at any moment, neither of which a claim
+//! baked into a 15-minute token can represent. See [`jwt`] for what is still read out of the
+//! token (a display name) and why doing so unverified is safe.
 
+pub(crate) mod capabilities;
 mod jwt;
 pub(crate) mod prefs;
 
 use dioxus::prelude::*;
-
-/// RBAC role, mirroring `tankovault_domain::UserRole` tokens.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Role {
-    User,
-    Operator,
-    Admin,
-}
-
-impl Role {
-    /// Parse a role claim, defaulting to the least-privileged tier for anything unknown.
-    fn parse(token: &str) -> Self {
-        match token {
-            "admin" => Self::Admin,
-            "operator" => Self::Operator,
-            _ => Self::User,
-        }
-    }
-
-    /// True when this role satisfies the operator tier (operator or admin).
-    pub(crate) fn is_operator(self) -> bool {
-        matches!(self, Self::Operator | Self::Admin)
-    }
-
-    /// True only for the admin tier (create/delete provider and other destructive ops).
-    pub(crate) fn is_admin(self) -> bool {
-        matches!(self, Self::Admin)
-    }
-
-    /// The catalogue key of the word shown next to the user's name in the rail and on Account.
-    pub(crate) fn label_key(self) -> &'static str {
-        match self {
-            Self::Admin => "enum.role.admin",
-            Self::Operator => "enum.role.operator",
-            Self::User => "enum.role.reader",
-        }
-    }
-}
 
 /// App-wide session, provided via context at the router root. Every field is a `Signal`,
 /// which is `Copy`, so the whole struct is `Copy` and event handlers can capture it freely.
@@ -54,8 +21,6 @@ impl Role {
 pub(crate) struct Session {
     /// In-memory access token; `None` when signed out.
     pub(crate) token: Signal<Option<String>>,
-    /// Decoded RBAC role (defaults to `User`).
-    pub(crate) role: Signal<Role>,
     /// The live display name. Seeded from the token on sign-in, but overridable so a profile
     /// rename shows everywhere *instantly*, without waiting for a new token.
     pub(crate) name: Signal<Option<String>>,
@@ -69,7 +34,6 @@ impl Session {
     pub(crate) fn new() -> Self {
         Self {
             token: Signal::new(None),
-            role: Signal::new(Role::User),
             name: Signal::new(None),
             ready: Signal::new(false),
         }
@@ -102,22 +66,19 @@ impl Session {
         current.set((!name.trim().is_empty()).then_some(name));
     }
 
-    /// Record a freshly-minted access token, decoding its role and seeding the display name
-    /// from it. A fresh token is authoritative, so it replaces any earlier local override.
+    /// Record a freshly-minted access token, seeding the display name from it. A fresh token is
+    /// authoritative, so it replaces any earlier local override.
     pub(crate) fn set_token(self, token: String) {
-        let role = jwt::role(&token).as_deref().map_or(Role::User, Role::parse);
         let name = jwt::username(&token);
-        let (mut role_sig, mut name_sig, mut token_sig) = (self.role, self.name, self.token);
-        role_sig.set(role);
+        let (mut name_sig, mut token_sig) = (self.name, self.token);
         name_sig.set(name);
         token_sig.set(Some(token));
     }
 
     /// Clear the session (sign out).
     pub(crate) fn clear(self) {
-        let (mut token, mut role, mut name) = (self.token, self.role, self.name);
+        let (mut token, mut name) = (self.token, self.name);
         token.set(None);
-        role.set(Role::User);
         name.set(None);
     }
 

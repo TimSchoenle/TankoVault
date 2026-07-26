@@ -18,7 +18,15 @@ use utoipa::ToSchema;
 ///
 /// Always `200`: an unlinked account reads `{ "linked": false }` rather than 404ing, so the
 /// UI can render "not connected" without treating it as an error.
+///
+/// Published as `SyncAccountStatus` rather than under its Rust name: `tankovault_domain`
+/// has an `AccountStatus` too (whether a *user account* is active or suspended), and two
+/// unrelated types sharing one `OpenAPI` component name means the last one registered silently
+/// replaces the other — which is exactly what happened when the domain enum was introduced.
+/// The qualifier is on this one because it is the more specific of the two: an
+/// external-tracker link status, not an account's own state.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[schema(as = SyncAccountStatus)]
 pub struct AccountStatus {
     /// Whether a linked external account exists for this user and provider.
     pub linked: bool,

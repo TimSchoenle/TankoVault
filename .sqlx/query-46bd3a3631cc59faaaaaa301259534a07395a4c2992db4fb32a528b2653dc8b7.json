@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE gdpr_requests SET status = $2, resolved_by = $3, resolved_at = now(), resolution_note = $4 WHERE id = $1 AND status IN ('pending','in_progress')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        {
+          "Custom": {
+            "name": "gdpr_request_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "in_progress",
+                "completed",
+                "rejected",
+                "cancelled"
+              ]
+            }
+          }
+        },
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "46bd3a3631cc59faaaaaa301259534a07395a4c2992db4fb32a528b2653dc8b7"
+}

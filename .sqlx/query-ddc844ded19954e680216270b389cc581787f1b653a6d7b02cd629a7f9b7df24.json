@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 FROM gdpr_requests WHERE user_id = $1 AND kind = $2 AND status IN ('pending','in_progress')) AS \"exists!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        {
+          "Custom": {
+            "name": "gdpr_request_kind",
+            "kind": {
+              "Enum": [
+                "access",
+                "portability",
+                "rectification",
+                "erasure",
+                "restriction",
+                "objection"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ddc844ded19954e680216270b389cc581787f1b653a6d7b02cd629a7f9b7df24"
+}

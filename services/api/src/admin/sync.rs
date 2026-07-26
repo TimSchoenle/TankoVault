@@ -8,7 +8,7 @@ use axum::Json;
 use axum::extract::{Path, State};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
-use tankovault_domain::{SeriesId, UserId, UserRole, WatchStatus};
+use tankovault_domain::{Permission, SeriesId, UserId, WatchStatus};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -27,14 +27,14 @@ use uuid::Uuid;
     responses(
         (status = 200, description = "Up to 200 linked accounts", body = Vec<tankovault_db::repo::sync::AdminAccountRow>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_sync_accounts(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> ApiResult<Json<Vec<tankovault_db::repo::sync::AdminAccountRow>>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::SyncAdminRead).await?;
     Ok(Json(
         tankovault_db::repo::sync::admin_list_accounts(&state.pool, 200).await?,
     ))
@@ -51,14 +51,14 @@ pub async fn list_sync_accounts(
     responses(
         (status = 200, description = "Up to 200 mappings", body = Vec<tankovault_db::repo::sync::AdminMappingRow>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_sync_mappings(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> ApiResult<Json<Vec<tankovault_db::repo::sync::AdminMappingRow>>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::SyncAdminRead).await?;
     Ok(Json(
         tankovault_db::repo::sync::admin_list_mappings(&state.pool, 200).await?,
     ))
@@ -83,7 +83,7 @@ pub struct SyncAccountTarget {
     responses(
         (status = 200, description = "Pulled, forwarded from the sync service"),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
     )
 )]
@@ -92,7 +92,7 @@ pub async fn admin_sync_pull(
     user: AuthUser,
     Json(req): Json<SyncAccountTarget>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::SyncAdminWrite).await?;
     let body = crate::me::sync_proxy(
         &state,
         &format!("/v1/sync/{}/pull", req.provider),
@@ -123,7 +123,7 @@ pub async fn admin_sync_pull(
     responses(
         (status = 200, description = "Pushed, forwarded from the sync service"),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
     )
 )]
@@ -132,7 +132,7 @@ pub async fn admin_sync_push(
     user: AuthUser,
     Json(req): Json<SyncAccountTarget>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::SyncAdminWrite).await?;
     let body = crate::me::sync_proxy(
         &state,
         &format!("/v1/sync/{}/push", req.provider),
@@ -163,7 +163,7 @@ pub async fn admin_sync_push(
     responses(
         (status = 200, description = "Unlinked, forwarded from the sync service"),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn admin_sync_unlink(
@@ -171,7 +171,7 @@ pub async fn admin_sync_unlink(
     user: AuthUser,
     Json(req): Json<SyncAccountTarget>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::SyncAdminWrite).await?;
     let url = format!(
         "{}/v1/sync/{}/link",
         state.sync_url.trim_end_matches('/'),
@@ -221,7 +221,7 @@ pub struct SyncMappingTarget {
     responses(
         (status = 200, description = "Whether a mapping was actually removed", body = serde_json::Value, example = json!({"removed": true})),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn clear_sync_mapping(
@@ -229,7 +229,7 @@ pub async fn clear_sync_mapping(
     user: AuthUser,
     Json(req): Json<SyncMappingTarget>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::SyncAdminWrite).await?;
     let removed =
         tankovault_db::repo::sync::delete_mapping(&state.pool, req.series_id, &req.provider)
             .await?;
@@ -266,7 +266,7 @@ pub struct UpsertMapping {
         (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
         (status = 400, description = "provider or external_id is empty", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn upsert_sync_mapping(
@@ -274,7 +274,7 @@ pub async fn upsert_sync_mapping(
     user: AuthUser,
     Json(req): Json<UpsertMapping>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::SyncAdminWrite).await?;
     let provider = req.provider.trim();
     let external_id = req.external_id.trim();
     if provider.is_empty() || external_id.is_empty() {
@@ -308,7 +308,7 @@ pub async fn upsert_sync_mapping(
     responses(
         (status = 200, description = "Mappings for this series", body = Vec<tankovault_db::repo::sync::AdminMappingRow>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_sync_mappings_for_series(
@@ -316,7 +316,7 @@ pub async fn list_sync_mappings_for_series(
     user: AuthUser,
     Path(series_id): Path<SeriesId>,
 ) -> ApiResult<Json<Vec<tankovault_db::repo::sync::AdminMappingRow>>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::SyncAdminRead).await?;
     Ok(Json(
         tankovault_db::repo::sync::admin_list_mappings_for_series(&state.pool, series_id).await?,
     ))
@@ -347,7 +347,7 @@ pub struct UnmappedQuery {
         (status = 200, description = "Up to 100 unmapped series", body = Vec<tankovault_db::repo::sync::UnmappedSeriesRow>),
         (status = 400, description = "provider is empty", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_unmapped_series(
@@ -355,7 +355,7 @@ pub async fn list_unmapped_series(
     user: AuthUser,
     axum::extract::Query(q): axum::extract::Query<UnmappedQuery>,
 ) -> ApiResult<Json<Vec<tankovault_db::repo::sync::UnmappedSeriesRow>>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::SyncAdminRead).await?;
     let provider = q.provider.trim();
     if provider.is_empty() {
         return Err(ApiError::BadRequest("provider is required".to_owned()));
@@ -386,7 +386,7 @@ pub async fn list_unmapped_series(
         (status = 200, description = "Up to 200 unmatched remote entries", body = Vec<tankovault_db::repo::sync::RemoteEntryRow>),
         (status = 400, description = "provider is empty", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_unmatched_remote(
@@ -394,7 +394,7 @@ pub async fn list_unmatched_remote(
     user: AuthUser,
     axum::extract::Query(q): axum::extract::Query<UnmappedQuery>,
 ) -> ApiResult<Json<Vec<tankovault_db::repo::sync::RemoteEntryRow>>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::SyncAdminRead).await?;
     let provider = q.provider.trim();
     if provider.is_empty() {
         return Err(ApiError::BadRequest("provider is required".to_owned()));
@@ -451,7 +451,7 @@ pub struct SuggestedMatch {
     responses(
         (status = 200, description = "Up to 8 ranked suggestions, best score first", body = Vec<SuggestedMatch>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_suggestions(
@@ -459,7 +459,7 @@ pub async fn list_suggestions(
     user: AuthUser,
     axum::extract::Query(q): axum::extract::Query<SuggestQuery>,
 ) -> ApiResult<Json<Vec<SuggestedMatch>>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::SyncAdminRead).await?;
     let normalized = tankovault_domain::normalize_title(&q.title);
     if normalized.is_empty() {
         return Ok(Json(Vec::new()));
@@ -535,7 +535,7 @@ pub struct AssignRemoteEntry {
         (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
         (status = 400, description = "Missing provider/external_id, no such remote entry, or the stored entry has an invalid status", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn assign_remote_entry(
@@ -543,7 +543,7 @@ pub async fn assign_remote_entry(
     user: AuthUser,
     Json(req): Json<AssignRemoteEntry>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::SyncAdminWrite).await?;
     let provider = req.provider.trim();
     let external_id = req.external_id.trim();
     if provider.is_empty() || external_id.is_empty() {

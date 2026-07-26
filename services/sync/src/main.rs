@@ -41,7 +41,10 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use tankovault_service::health::PostgresCheck;
-use tankovault_service::{Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier};
+use tankovault_service::{
+    FeatureGate, FeatureLayer, Health, HttpStack, MetricsRegistry, PostgresFlagSource, RateLimiter,
+    RouteClassifier, RouteFeatures,
+};
 
 use anilist::{AniListClient, DEFAULT_GRAPHQL_URL, DEFAULT_OAUTH_BASE};
 use engine::SyncEngine;
@@ -50,7 +53,7 @@ use provider::ExternalProvider;
 use tankovault_auth::SecretBox;
 use tankovault_config::{DatabaseConfig, MetadataPriorityConfig, TelemetryConfig};
 use tankovault_contracts::sync::{AccountSettings, AccountStatus, AuthorizeUrl, ProviderInfo};
-use tankovault_domain::{SeriesId, UserId};
+use tankovault_domain::{Feature, SeriesId, UserId};
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -75,6 +78,9 @@ struct Config {
     /// Prometheus metrics. Togglable; disabling installs no recorder.
     #[serde(default)]
     metrics: tankovault_config::MetricsConfig,
+    /// Runtime feature flags — how often this replica re-reads the operator's decisions.
+    #[serde(default)]
+    features: tankovault_config::FeaturesConfig,
 }
 
 /// Metadata-priority + tokenless enrichment-worker settings (design: worker queue syncing
@@ -198,6 +204,79 @@ fn build_providers(
     Ok(providers)
 }
 
+/// Tokenless metadata-enrichment worker: a periodic background sweep that fills in
+/// description/cover/alternative-titles for every existing series straight from `AniList`'s
+/// public API — no stored user token required (design: worker queue syncing all entries).
+///
+/// Not feature-gated. It reads public metadata about the *catalogue*, not about any user, and
+/// belongs to the catalogue rather than to external sync; switching `sync.external` off should
+/// not stop series descriptions being filled in.
+fn spawn_enrichment_worker(
+    engine: &Arc<SyncEngine>,
+    metadata: &MetadataConfig,
+    shutdown: tokio_util::sync::CancellationToken,
+) {
+    if !metadata.enrich_enabled {
+        return;
+    }
+    let worker = engine.clone();
+    let interval = Duration::from_secs(metadata.enrich_interval_secs.max(1));
+    let batch = metadata.enrich_batch.max(1);
+    let max = metadata.enrich_max_series;
+    tokio::spawn(async move {
+        tankovault_service::shutdown::every(interval, shutdown, "metadata-enrichment", move || {
+            let worker = worker.clone();
+            async move {
+                if let Err(e) = worker.enrich_all(batch, max).await {
+                    tracing::warn!(error = %e, "tokenless metadata enrichment sweep failed");
+                }
+            }
+        })
+        .await;
+    });
+    tracing::info!(
+        interval_secs = metadata.enrich_interval_secs,
+        "tokenless metadata enrichment worker started"
+    );
+}
+
+/// Scheduled reconciliation loop (design v2 §B.4): pulls remote-side changes back
+/// automatically, closing the reactive-push-only gap. Disabled when `interval_secs` is 0.
+fn spawn_reconciliation_loop(
+    engine: &Arc<SyncEngine>,
+    interval_secs: u64,
+    features: &FeatureGate,
+    shutdown: tokio_util::sync::CancellationToken,
+) {
+    if interval_secs == 0 {
+        return;
+    }
+    let engine = engine.clone();
+    let features = features.clone();
+    let interval = Duration::from_secs(interval_secs);
+    // `every` skips its first tick, so boot is not a thundering herd against providers.
+    tokio::spawn(async move {
+        tankovault_service::shutdown::every(interval, shutdown, "reconcile", move || {
+            let engine = engine.clone();
+            let features = features.clone();
+            async move {
+                // Checked per tick, not at boot: this loop reaches out to third parties on
+                // every user's behalf, and an operator stopping that — because a provider is
+                // rate-limiting, or because a bad mapping is propagating — must take effect
+                // now. The loop keeps ticking so it resumes on its own when the flag returns.
+                if !features.is_enabled(Feature::SyncExternal)
+                    || !features.is_enabled(Feature::SyncScheduledPull)
+                {
+                    tracing::debug!("skipping reconciliation; scheduled sync is switched off");
+                    return;
+                }
+                engine.reconcile_all_accounts().await;
+            }
+        })
+        .await;
+    });
+}
+
 #[derive(Clone)]
 struct AppState {
     engine: Arc<SyncEngine>,
@@ -220,8 +299,9 @@ async fn main() -> anyhow::Result<()> {
         cfg.database.acquire_timeout_secs,
     )
     .await?;
-    // The engine takes ownership of the pool; readiness needs its own handle.
+    // The engine takes ownership of the pool; readiness and the feature gate need their own.
     let health_pool = pool.clone();
+    let flags_pool = pool.clone();
 
     let secret = SecretBox::from_base64_key(&cfg.anilist.token_encryption_key)
         .map_err(|e| anyhow::anyhow!("invalid anilist.token_encryption_key: {e}"))?;
@@ -237,36 +317,7 @@ async fn main() -> anyhow::Result<()> {
         providers,
     ));
 
-    // Tokenless metadata-enrichment worker: a periodic background sweep that fills in
-    // description/cover/alternative-titles for every existing series straight from AniList's
-    // public API — no stored user token required (design: worker queue syncing all entries).
-    if metadata.enrich_enabled {
-        let worker = engine.clone();
-        let interval = Duration::from_secs(metadata.enrich_interval_secs.max(1));
-        let batch = metadata.enrich_batch.max(1);
-        let max = metadata.enrich_max_series;
-        let worker_shutdown = shutdown.clone();
-        tokio::spawn(async move {
-            tankovault_service::shutdown::every(
-                interval,
-                worker_shutdown,
-                "metadata-enrichment",
-                move || {
-                    let worker = worker.clone();
-                    async move {
-                        if let Err(e) = worker.enrich_all(batch, max).await {
-                            tracing::warn!(error = %e, "tokenless metadata enrichment sweep failed");
-                        }
-                    }
-                },
-            )
-            .await;
-        });
-        tracing::info!(
-            interval_secs = metadata.enrich_interval_secs,
-            "tokenless metadata enrichment worker started"
-        );
-    }
+    spawn_enrichment_worker(&engine, &metadata, shutdown.clone());
 
     let state = AppState {
         engine: engine.clone(),
@@ -274,21 +325,18 @@ async fn main() -> anyhow::Result<()> {
         enrich_max: metadata.enrich_max_series,
     };
 
-    // Scheduled reconciliation loop (design v2 §B.4): pulls remote-side changes back
-    // automatically, closing the reactive-push-only gap. Disabled when the interval is 0.
-    if cfg.reconcile_interval_secs > 0 {
-        let sched = engine.clone();
-        let interval = Duration::from_secs(cfg.reconcile_interval_secs);
-        let sched_shutdown = shutdown.clone();
-        // `every` skips its first tick, so boot is not a thundering herd against providers.
-        tokio::spawn(async move {
-            tankovault_service::shutdown::every(interval, sched_shutdown, "reconcile", move || {
-                let sched = sched.clone();
-                async move { sched.reconcile_all_accounts().await }
-            })
-            .await;
-        });
-    }
+    // The operator's runtime switches, loaded before anything starts consulting them.
+    let features = FeatureGate::new(Arc::new(PostgresFlagSource::new(flags_pool)));
+    features
+        .spawn_refresh(cfg.features.refresh_interval(), shutdown.clone())
+        .await;
+
+    spawn_reconciliation_loop(
+        &engine,
+        cfg.reconcile_interval_secs,
+        &features,
+        shutdown.clone(),
+    );
 
     let routes = Router::new()
         .route("/v1/sync/providers", get(providers_list))
@@ -306,7 +354,22 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/sync/conflicts/{user_id}", get(list_conflicts))
         .route("/v1/sync/conflicts/{id}/resolve", post(resolve_conflict))
         .route("/v1/sync/history/{user_id}", get(list_history))
-        .with_state(state);
+        .with_state(state)
+        // The same declarative gate the public API uses, applied to this service's own
+        // contract. The API already refuses these routes when `sync.external` is off, but this
+        // service is reachable from anywhere on the internal network and a switch an operator
+        // has thrown should hold where the work happens, not only at the edge in front of it.
+        .layer(axum::middleware::from_fn_with_state(
+            FeatureLayer::new(
+                features.clone(),
+                RouteFeatures::new()
+                    .gate("/v1/sync", Feature::SyncExternal)
+                    .gate("/v1/sync/push-series", Feature::SyncAutoPush)
+                    .gate("/v1/sync/conflicts", Feature::SyncConflictReview)
+                    .gate("/v1/sync/history", Feature::SyncHistory),
+            ),
+            tankovault_service::flags::enforce,
+        ));
 
     // Postgres is the only hard dependency: a provider outage is expected and already
     // degrades per-request, so probing AniList here would flap readiness on their uptime.

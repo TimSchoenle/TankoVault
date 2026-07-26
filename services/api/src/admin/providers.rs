@@ -13,7 +13,7 @@ use std::time::Duration;
 use tankovault_adapters::{Ctx, SourceAdapter, build_adapter};
 use tankovault_db::repo::providers::NewProvider;
 use tankovault_domain::{
-    AdapterKind, Politeness, Provider, ProviderId, ProviderState, ScanMode, UserRole,
+    AdapterKind, Permission, Politeness, Provider, ProviderId, ProviderState, ScanMode,
 };
 use tankovault_fetch::{
     HttpChallengeSolver, InMemorySessionStore, ProviderFetchConfig, RobotsRules, SessionStore,
@@ -31,14 +31,14 @@ use utoipa::ToSchema;
     responses(
         (status = 200, description = "All providers", body = Vec<Provider>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_providers(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> ApiResult<Json<Vec<Provider>>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::ProvidersRead).await?;
     Ok(Json(
         tankovault_db::repo::providers::list(&state.pool).await?,
     ))
@@ -70,7 +70,7 @@ fn empty_object() -> serde_json::Value {
     responses(
         (status = 200, description = "Created", body = Provider),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have the admin role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 409, description = "Provider slug already exists", body = crate::error::ProblemDetails),
     )
 )]
@@ -79,7 +79,7 @@ pub async fn create_provider(
     user: AuthUser,
     Json(req): Json<CreateProvider>,
 ) -> ApiResult<Json<Provider>> {
-    user.require(UserRole::Admin).await?;
+    user.require(Permission::ProvidersCreate).await?;
     let provider = tankovault_db::repo::providers::create(
         &state.pool,
         NewProvider {
@@ -132,7 +132,7 @@ pub struct UpdateProvider {
     responses(
         (status = 200, description = "Updated", body = Provider),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
     )
 )]
@@ -142,7 +142,7 @@ pub async fn update_provider(
     Path(id): Path<ProviderId>,
     Json(req): Json<UpdateProvider>,
 ) -> ApiResult<Json<Provider>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::ProvidersWrite).await?;
     let before = tankovault_db::repo::providers::get(&state.pool, id).await?;
     let provider = tankovault_db::repo::providers::update(
         &state.pool,
@@ -185,7 +185,7 @@ pub async fn update_provider(
     responses(
         (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have the admin role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
     )
 )]
@@ -194,7 +194,7 @@ pub async fn delete_provider(
     user: AuthUser,
     Path(id): Path<ProviderId>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    user.require(UserRole::Admin).await?;
+    user.require(Permission::ProvidersDelete).await?;
     let before = tankovault_db::repo::providers::get(&state.pool, id).await?;
     tankovault_db::repo::providers::delete(&state.pool, id).await?;
     audit(
@@ -228,7 +228,7 @@ pub struct SetProviderState {
     responses(
         (status = 200, description = "Updated", body = Provider),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
     )
 )]
@@ -238,7 +238,7 @@ pub async fn set_provider_state(
     Path(id): Path<ProviderId>,
     Json(req): Json<SetProviderState>,
 ) -> ApiResult<Json<Provider>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::ProvidersState).await?;
     tankovault_db::repo::providers::set_state(&state.pool, id, req.state).await?;
     let provider = tankovault_db::repo::providers::get(&state.pool, id).await?;
     audit(
@@ -266,7 +266,7 @@ pub async fn set_provider_state(
     responses(
         (status = 200, description = "Scan queued, forwarded from the control-plane"),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
     )
 )]
@@ -275,7 +275,7 @@ pub async fn resolve_provider(
     user: AuthUser,
     Path(id): Path<ProviderId>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::ProvidersTest).await?;
     // Confirm the provider exists (and surface a clean 404 otherwise) before queuing work.
     let provider = tankovault_db::repo::providers::get(&state.pool, id).await?;
 
@@ -318,14 +318,14 @@ pub async fn resolve_provider(
     responses(
         (status = 200, description = "Per-provider stats", body = Vec<tankovault_db::repo::stats::ProviderStat>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn provider_stats(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> ApiResult<Json<Vec<tankovault_db::repo::stats::ProviderStat>>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::ProvidersRead).await?;
     Ok(Json(
         tankovault_db::repo::stats::provider_stats(&state.pool).await?,
     ))
@@ -359,7 +359,7 @@ pub struct TestAdapterRequest {
         (status = 200, description = "Dry-run sample (adapter list/fetch results, each individually ok/error)", body = serde_json::Value, example = json!({"provider": "kunmanga", "latest": {"ok": true, "items": []}})),
         (status = 400, description = "Adapter build failed or the dry-run timed out", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller must have at least the operator role", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
     )
 )]
@@ -369,7 +369,7 @@ pub async fn test_adapter(
     Path(id): Path<ProviderId>,
     body: Option<Json<TestAdapterRequest>>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    user.require(UserRole::Operator).await?;
+    user.require(Permission::ProvidersTest).await?;
     let req = body.map(|b| b.0).unwrap_or_default();
     let provider = tankovault_db::repo::providers::get(&state.pool, id).await?;
     let (adapter, ctx) = build_test_context(&provider, &state.challenge_solver_url)?;

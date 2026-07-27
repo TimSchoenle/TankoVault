@@ -137,7 +137,7 @@ tokio-cron-scheduler = "0.15"
 
 # --- email ---
 # rustls + ring to match the rest of the stack (no native-tls / OpenSSL in the
-# distroless images); webpki-roots for a bundled trust store.
+# runtime images); webpki-roots for a bundled trust store.
 # No `pool` feature: the pooled builder spawns a background task and so requires a
 # running Tokio reactor at `build()` time; a connection-per-send transport is plenty
 # for the notifier's occasional alerts and keeps construction runtime-independent.

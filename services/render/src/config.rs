@@ -36,7 +36,7 @@ pub(crate) struct RenderConfig {
     /// Run the browser headless (the default; set `false` only for local debugging).
     #[serde(default = "default_true")]
     pub(crate) headless: bool,
-    /// Pass `--no-sandbox` (required to run Chromium as root inside the distroless image).
+    /// Pass `--no-sandbox` (required to run Chromium as root inside the runtime container).
     #[serde(default = "default_true")]
     pub(crate) no_sandbox: bool,
     /// Per-navigation time budget handed to the CDP client (ms).

@@ -5,8 +5,11 @@ Container build and local orchestration for TankoVault (design §19).
 ## Layout
 - `docker/Dockerfile` — a single parameterised, cargo-chef-cached multi-stage build for the
   Rust services. Pick the binary with `--build-arg BIN=<name>` (`api`, `worker`,
-  `control-plane`, `notifier`, `sync`, `challenge-solver`, `render`, `xtask`). Runtime image
-  is distroless, nonroot.
+  `control-plane`, `notifier`, `sync`, `challenge-solver`, `render`, `xtask`). Each binary is
+  compiled as a **fully static musl binary** and shipped on a bare `scratch` image (no OS, no
+  shell, no package manager — just the binary, a CA trust store, and a numeric nonroot user).
+  The `render` tier needs a real Chromium at runtime, so it uses the Debian `runtime-browser`
+  stage (`--target runtime-browser`) instead.
 - `docker/Dockerfile.frontend` — builds the Dioxus WASM SPA (`web/frontend/`) with the `dx`
   CLI, then serves it behind nginx. nginx also reverse-proxies `/v1/*` (REST + SSE) to the
   `api` service, so the SPA's same-origin API calls resolve without CORS.
@@ -53,11 +56,28 @@ then `TANKOVAULT_*` environment variables (`__` denotes nesting, e.g.
 
 ## Building a single service image
 ```bash
-# A backend service:
+# A backend service (static musl -> scratch):
 docker build -f deploy/docker/Dockerfile --build-arg BIN=api -t tankovault-api .
+# The render tier (Debian + Chromium):
+docker build -f deploy/docker/Dockerfile --build-arg BIN=render --target runtime-browser -t tankovault-render .
 # The frontend:
 docker build -f deploy/docker/Dockerfile.frontend -t tankovault-frontend .
 ```
+
+### Reproducible & cached builds
+All base images are pinned by digest, cargo resolves against the committed `Cargo.lock`
+(`--locked`), and passing `SOURCE_DATE_EPOCH` clamps image layer timestamps so repeated
+builds of the same commit are byte-identical:
+```bash
+docker build -f deploy/docker/Dockerfile \
+  --build-arg BIN=api \
+  --build-arg SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
+  -t tankovault-api .
+```
+The dependency graph is compiled once by cargo-chef (reused across every service image and
+exported by CI via the GHA layer cache); BuildKit `type=cache` mounts additionally keep the
+crate registry warm across local rebuilds. Refresh a pinned digest with
+`docker buildx imagetools inspect <image:tag>`.
 
 ## Running migrations only
 ```bash
@@ -70,12 +90,12 @@ docker compose -f deploy/docker-compose.yml run --rm migrate
   stack wires it so the behaviour matches a multi-replica deployment.
 - **NATS** exposes its HTTP monitoring port (`-m 8222`) purely so compose can healthcheck it
   (`/healthz`); backend services wait on `nats: service_healthy` before starting.
-- The **Rust service** containers are distroless (no shell), so they carry no container-level
-  healthcheck; `depends_on` ordering plus the infra healthchecks (postgres/redis/nats) and
-  the `migrate` completion gate handle startup sequencing. The frontend (nginx) and infra
-  images do have healthchecks.
+- The **Rust service** containers are `scratch`-based (no shell, no OS), so they carry no
+  container-level healthcheck; `depends_on` ordering plus the infra healthchecks
+  (postgres/redis/nats) and the `migrate` completion gate handle startup sequencing. The
+  frontend (nginx) and infra images do have healthchecks.
 
 ## Not yet included
 - Kubernetes / Helm chart (design §19) — the compose stack is the current target.
-- Per-service HTTP health probes for the distroless backends (they ship no shell/curl; wire
+- Per-service HTTP health probes for the `scratch` backends (they ship no shell/curl; wire
   k8s HTTP probes against each service's `/health` and `/ready` when the chart lands).

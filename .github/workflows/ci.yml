@@ -164,16 +164,45 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+      # Clamp image layer mtimes to the commit timestamp so repeated builds of the same
+      # commit are byte-identical (see deploy/docker/Dockerfile → SOURCE_DATE_EPOCH).
+      - name: derive SOURCE_DATE_EPOCH
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
       - name: build ${{ matrix.bin }} image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: deploy/docker/Dockerfile
-          build-args: BIN=${{ matrix.bin }}
-          # The render tier needs a real browser at runtime (Chromium), so it
-          # selects the dedicated runtime-browser stage; everything else uses
-          # the default distroless runtime.
+          build-args: |
+            BIN=${{ matrix.bin }}
+            SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+          # The render tier needs a real browser at runtime (Chromium), so it selects the
+          # dedicated runtime-browser stage; every other binary is a static musl build that
+          # ships on the default `scratch` runtime.
           target: ${{ matrix.bin == 'render' && 'runtime-browser' || 'runtime' }}
           push: false
+          # Reproducible output: no attestation/provenance layer, and mtimes rewritten.
+          provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  docker-frontend:
+    name: docker build (frontend)
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: derive SOURCE_DATE_EPOCH
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+      - name: build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.frontend
+          build-args: |
+            SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+          push: false
+          provenance: false
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max

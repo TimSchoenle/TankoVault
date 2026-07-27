@@ -7,9 +7,9 @@
 //!   horizontal scale) and process tasks until shutdown.
 
 mod engine;
+mod queue;
 
 use engine::Engine;
-use futures::StreamExt;
 use serde::Deserialize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -51,6 +51,13 @@ struct WorkerConfig {
     challenge_solver_endpoint: String,
     #[serde(default = "default_max_pages")]
     max_catalog_pages: u32,
+    /// How often the round-robin queue re-reads the provider list, in seconds.
+    ///
+    /// This is the delay before a provider added (or renamed) while the pool is running has
+    /// its task lane opened and starts being scanned — a one-off at provider onboarding, so
+    /// a minute costs nothing and keeps the query off the hot path.
+    #[serde(default = "default_provider_refresh_secs")]
+    provider_refresh_secs: u64,
 }
 
 impl Default for WorkerConfig {
@@ -58,12 +65,16 @@ impl Default for WorkerConfig {
         Self {
             challenge_solver_endpoint: default_solver_endpoint(),
             max_catalog_pages: default_max_pages(),
+            provider_refresh_secs: default_provider_refresh_secs(),
         }
     }
 }
 
 fn default_solver_endpoint() -> String {
     "http://challenge-solver:8090".to_owned()
+}
+fn default_provider_refresh_secs() -> u64 {
+    60
 }
 fn default_max_pages() -> u32 {
     // Purely a runaway-paginator backstop (real termination is the adapter's `has_next`
@@ -120,7 +131,7 @@ async fn main() -> anyhow::Result<()> {
         [cmd, slug, mode] if cmd == "scan" => run_inline(&engine, slug, mode).await,
         [] => {
             spawn_ops_listener(&cfg, &pool, bus.as_ref(), metrics, shutdown.clone());
-            run_consumer(&engine, shutdown).await
+            run_consumer(&engine, &cfg.worker, shutdown).await
         }
         _ => {
             eprintln!("usage: worker [scan <provider_slug> <full|fast>]");
@@ -194,11 +205,17 @@ async fn run_inline(engine: &Engine, slug: &str, mode: &str) -> anyhow::Result<(
 
 /// `JetStream` consumer loop.
 ///
+/// Tasks are taken from the round-robin [`queue::FairQueue`] rather than straight off a
+/// wildcard consumer, so which provider runs next is a scheduling decision instead of
+/// whatever the stream holds at its head. Everything below the pull is unchanged: one task
+/// at a time, per-provider rate limits still governing the fetch stack.
+///
 /// Stops between tasks on shutdown rather than being severed mid-scan. A task killed
 /// part-way through stays claimed until its visibility timeout expires, so draining
 /// cleanly is what keeps a rolling restart from stalling every in-flight run.
 async fn run_consumer(
     engine: &Engine,
+    cfg: &WorkerConfig,
     shutdown: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
     let bus = engine
@@ -206,29 +223,15 @@ async fn run_consumer(
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("consumer mode requires NATS, which is unavailable"))?;
 
-    let consumer = bus.task_consumer().await?;
-    let mut messages = consumer.messages().await?;
+    let mut queue = queue::FairQueue::open(
+        bus.clone(),
+        engine.pool.clone(),
+        Duration::from_secs(cfg.provider_refresh_secs),
+    )
+    .await?;
     tracing::info!(worker_id = %engine.worker_id, "worker consuming scan tasks");
 
-    loop {
-        let next = tokio::select! {
-            () = shutdown.cancelled() => {
-                tracing::info!(worker_id = %engine.worker_id, "worker stopping");
-                return Ok(());
-            }
-            next = messages.next() => match next {
-                Some(next) => next,
-                None => break,
-            },
-        };
-        let msg = match next {
-            Ok(m) => m,
-            Err(e) => {
-                tracing::warn!(error = %e, "error pulling message");
-                continue;
-            }
-        };
-
+    while let Some(msg) = queue.next_task(&shutdown).await {
         match serde_json::from_slice::<ScanTaskMessage>(&msg.payload) {
             Ok(task) => {
                 // Wrapped here rather than inside the engine: ack lifetime belongs to
@@ -296,6 +299,7 @@ async fn run_consumer(
             tracing::warn!(error = %e, "failed to ack message");
         }
     }
+    tracing::info!(worker_id = %engine.worker_id, "worker stopping");
     Ok(())
 }
 

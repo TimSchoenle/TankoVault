@@ -3710,6 +3710,16 @@
             },
             "description": "Created"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Provider slug is not a legal bus token"
+          },
           "401": {
             "content": {
               "application/json": {

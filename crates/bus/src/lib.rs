@@ -6,14 +6,26 @@
 //! from [`tankovault_contracts::subjects`] so producers and consumers cannot drift.
 
 use async_nats::jetstream::{self, AckKind, consumer::PullConsumer, consumer::pull, stream};
+use futures::StreamExt;
 use serde::Serialize;
 use std::time::Duration;
 use tankovault_contracts::{
-    ChapterDiscovered, ProgressEvent, ProviderStateChanged, ScanTaskMessage, UserNotification,
-    subjects,
+    ChapterDiscovered, ProgressEvent, ProviderStateChanged, ScanMode, ScanTaskMessage,
+    UserNotification, subjects,
 };
 use thiserror::Error;
 use uuid::Uuid;
+
+/// A message as it arrives from the broker: the envelope carrying a serialized
+/// [`ScanTaskMessage`] payload plus its ack handle.
+///
+/// Re-exported so services can name it without taking their own `async-nats` dependency —
+/// this crate stays the single place the broker client is pinned.
+pub use async_nats::jetstream::Message as BrokerMessage;
+
+/// A durable pull consumer on one subject, re-exported for the same reason as
+/// [`BrokerMessage`].
+pub use async_nats::jetstream::consumer::PullConsumer as BrokerConsumer;
 
 /// Redelivery deadline for a claimed scan task.
 ///
@@ -101,6 +113,19 @@ pub fn delivery_count(msg: &jetstream::Message) -> u64 {
         .unwrap_or(1)
 }
 
+/// Whether a consumer operation failed because the consumer is not there.
+///
+/// `async-nats` models this as a `JetStream` API error code rather than a distinct error
+/// kind, so the check has to reach for the code. It is the one failure that means "nothing
+/// to do" for an idempotent delete.
+fn is_consumer_not_found(err: &stream::ConsumerError) -> bool {
+    matches!(
+        err.kind(),
+        stream::ConsumerErrorKind::JetStream(e)
+            if e.error_code() == jetstream::ErrorCode::CONSUMER_NOT_FOUND
+    )
+}
+
 /// A `JetStream` context plus the underlying core-NATS client.
 ///
 /// Durable task/event traffic goes through the `JetStream` context; ephemeral, best-effort
@@ -162,13 +187,19 @@ impl Bus {
         &self.js
     }
 
-    /// Idempotently create the tasks and events streams.
+    /// Idempotently create — or bring into line — the tasks and events streams.
+    ///
+    /// `create_or_update_stream` rather than `get_or_create_stream`: the latter returns an
+    /// existing stream untouched, so widening the tasks stream's subject binding from
+    /// `scan.tasks.*` to `scan.tasks.>` would never take effect on an installation that
+    /// already has the stream, and every tiered task would be published to a subject no
+    /// stream captures.
     ///
     /// # Errors
     /// [`BusError::Jetstream`] on a provisioning failure.
     pub async fn ensure_streams(&self) -> Result<(), BusError> {
         self.js
-            .get_or_create_stream(stream::Config {
+            .create_or_update_stream(stream::Config {
                 name: subjects::TASKS_STREAM.to_owned(),
                 subjects: vec![subjects::TASKS_SUBJECT_WILDCARD.to_owned()],
                 retention: stream::RetentionPolicy::WorkQueue,
@@ -177,7 +208,7 @@ impl Bus {
             .await
             .map_err(|e| BusError::Jetstream(e.to_string()))?;
         self.js
-            .get_or_create_stream(stream::Config {
+            .create_or_update_stream(stream::Config {
                 name: subjects::EVENTS_STREAM.to_owned(),
                 subjects: vec![subjects::EVENTS_SUBJECT_WILDCARD.to_owned()],
                 ..Default::default()
@@ -187,12 +218,12 @@ impl Bus {
         Ok(())
     }
 
-    /// Publish a scan task to its provider subject.
+    /// Publish a scan task to its provider's queue for the run's scan mode.
     ///
     /// # Errors
     /// [`BusError`] on serialization or publish failure.
     pub async fn publish_task(&self, msg: &ScanTaskMessage) -> Result<(), BusError> {
-        let subject = subjects::task_subject(&msg.provider_slug);
+        let subject = subjects::task_subject(&msg.provider_slug, msg.mode);
         self.publish(subject, msg).await
     }
 
@@ -277,18 +308,108 @@ impl Bus {
         Ok(())
     }
 
-    /// Open (or reuse) a durable pull consumer on the tasks stream for the worker pool.
+    /// Open (or reuse) the worker pool's durable pull consumer for **one provider's tasks
+    /// in one scan mode**.
+    ///
+    /// One consumer per provider is what makes the queue fair: each provider gets its own
+    /// FIFO lane, and a worker chooses which lane to serve next instead of taking whatever
+    /// the stream happens to hold at its head. With a single wildcard consumer, a full
+    /// catalogue scan of one provider — which fans out into one task per series — is served
+    /// to completion before any other provider's first task is even looked at.
+    ///
+    /// Splitting each provider again by scan mode is what makes the queue *prioritisable*:
+    /// the worker can drain every fast lane before looking at a full one.
+    ///
+    /// The full-scan lane also binds [`subjects::legacy_task_subject`], the untiered subject
+    /// tasks were published to before the split. It is the conservative side to put it on —
+    /// an old task is backfill-grade work, and folding it in here means the upgrade strands
+    /// nothing rather than leaving messages in the stream that no filter can reach.
     ///
     /// # Errors
-    /// [`BusError::Jetstream`] on failure.
-    pub async fn task_consumer(&self) -> Result<PullConsumer, BusError> {
+    /// [`BusError::Jetstream`] on failure, including a `slug` that is not a legal subject
+    /// token — see [`subjects::is_valid_provider_slug`].
+    pub async fn provider_task_consumer(
+        &self,
+        provider_slug: &str,
+        mode: ScanMode,
+    ) -> Result<PullConsumer, BusError> {
+        if !subjects::is_valid_provider_slug(provider_slug) {
+            return Err(BusError::Jetstream(format!(
+                "provider slug {provider_slug:?} is not a legal subject token"
+            )));
+        }
+        let mut filters = vec![subjects::task_subject(provider_slug, mode)];
+        if mode == ScanMode::Full {
+            filters.push(subjects::legacy_task_subject(provider_slug));
+        }
         self.durable_consumer(
             subjects::TASKS_STREAM,
-            subjects::WORKER_CONSUMER,
-            subjects::TASKS_SUBJECT_WILDCARD,
+            &subjects::worker_consumer(provider_slug, mode),
+            filters,
             TASK_ACK_WAIT,
         )
         .await
+    }
+
+    /// The lanes that already have a worker consumer on the tasks stream.
+    ///
+    /// The worker builds its lanes from the provider table, but the stream outlives any one
+    /// row: tasks published for a provider that has since been renamed or deleted are still
+    /// in the stream, and only a lane with the matching filter can drain them. Folding these
+    /// lanes into the set keeps those tasks from being stranded forever.
+    ///
+    /// # Errors
+    /// [`BusError::Jetstream`] if the stream or its consumer list cannot be read.
+    pub async fn task_consumer_lanes(&self) -> Result<Vec<(ScanMode, String)>, BusError> {
+        let stream = self
+            .js
+            .get_stream(subjects::TASKS_STREAM)
+            .await
+            .map_err(|e| BusError::Jetstream(e.to_string()))?;
+        let mut names = stream.consumer_names();
+        let mut lanes = Vec::new();
+        while let Some(name) = names.next().await {
+            let name = name.map_err(|e| BusError::Jetstream(e.to_string()))?;
+            if let Some((mode, slug)) = subjects::worker_consumer_lane(&name) {
+                lanes.push((mode, slug.to_owned()));
+            }
+        }
+        Ok(lanes)
+    }
+
+    /// Delete the pre-fairness wildcard task consumer, if it is still present.
+    ///
+    /// A work-queue stream refuses a consumer whose filter subject overlaps an existing
+    /// one, and `scan.tasks.*` overlaps every per-provider filter — so on the first start
+    /// after the upgrade, this removal is what lets the lanes be created at all. Nothing is
+    /// lost by it: work-queue retention drops a message when it is *acked*, not when a
+    /// consumer goes away, so everything still pending is picked up by the new lanes.
+    ///
+    /// Idempotent — a missing consumer is the expected steady state.
+    ///
+    /// # Errors
+    /// [`BusError::Jetstream`] if the stream cannot be read or the delete fails for a reason
+    /// other than the consumer already being gone.
+    pub async fn retire_wildcard_task_consumer(&self) -> Result<(), BusError> {
+        let stream = self
+            .js
+            .get_stream(subjects::TASKS_STREAM)
+            .await
+            .map_err(|e| BusError::Jetstream(e.to_string()))?;
+        match stream
+            .delete_consumer(subjects::LEGACY_WILDCARD_WORKER_CONSUMER)
+            .await
+        {
+            Ok(_) => {
+                tracing::info!(
+                    consumer = subjects::LEGACY_WILDCARD_WORKER_CONSUMER,
+                    "removed the wildcard task consumer; scan tasks are now served per provider"
+                );
+                Ok(())
+            }
+            Err(e) if is_consumer_not_found(&e) => Ok(()),
+            Err(e) => Err(BusError::Jetstream(e.to_string())),
+        }
     }
 
     /// Open (or reuse) a durable pull consumer on the events stream, filtered to
@@ -304,17 +425,22 @@ impl Bus {
         self.durable_consumer(
             subjects::EVENTS_STREAM,
             durable,
-            filter_subject,
+            vec![filter_subject.to_owned()],
             Duration::from_secs(30),
         )
         .await
     }
 
+    /// Open (or reuse) a durable pull consumer over one or more subjects.
+    ///
+    /// A single filter goes in `filter_subject` and several in `filter_subjects`; the two
+    /// fields are mutually exclusive on the wire, and the single-subject form is what every
+    /// server version understands.
     async fn durable_consumer(
         &self,
         stream_name: &str,
         durable: &str,
-        filter_subject: &str,
+        mut filters: Vec<String>,
         ack_wait: Duration,
     ) -> Result<PullConsumer, BusError> {
         let stream = self
@@ -322,12 +448,18 @@ impl Bus {
             .get_stream(stream_name)
             .await
             .map_err(|e| BusError::Jetstream(e.to_string()))?;
+        let (filter_subject, filter_subjects) = if filters.len() == 1 {
+            (filters.remove(0), Vec::new())
+        } else {
+            (String::new(), filters)
+        };
         let consumer = stream
             .get_or_create_consumer(
                 durable,
                 pull::Config {
                     durable_name: Some(durable.to_owned()),
-                    filter_subject: filter_subject.to_owned(),
+                    filter_subject,
+                    filter_subjects,
                     ack_policy: async_nats::jetstream::consumer::AckPolicy::Explicit,
                     ack_wait,
                     ..Default::default()

@@ -11,9 +11,10 @@ Container build and local orchestration for TankoVault (design §19).
   The `render` tier needs a real Chromium at runtime, so it uses the Debian `runtime-browser`
   stage (`--target runtime-browser`) instead.
 - `docker/Dockerfile.frontend` — builds the Dioxus WASM SPA (`web/frontend/`) with the `dx`
-  CLI, then serves it behind nginx. nginx also reverse-proxies `/v1/*` (REST + SSE) to the
-  `api` service, so the SPA's same-origin API calls resolve without CORS.
-- `docker/frontend.nginx.conf` — the nginx server block (SPA fallback + `/v1/*` proxy).
+  CLI, compiles the `frontend` axum server (`services/frontend/`) as a **static musl binary**,
+  and ships both on a bare `scratch` image (like every backend service). The server serves the
+  SPA and reverse-proxies `/v1/*` (REST + SSE) to the `api` service, so the SPA's same-origin
+  API calls resolve without CORS.
 - `docker-compose.yml` — the full end-to-end local stack: Postgres 19, Redis 7, NATS
   (JetStream), FlareSolverr, a one-shot `migrate`+`seed`, every backend service, and the
   web frontend.
@@ -26,9 +27,9 @@ docker compose -f deploy/docker-compose.yml up --build
 This applies migrations, seeds a demo admin (`admin` / `changeme12345`) and a placeholder
 Madara provider, then starts all services and the frontend.
 
-**Open the app at http://localhost:3000** — nginx serves the SPA and proxies `/v1/*` to the
-API, so this single origin is all a browser needs. The API is also exposed directly on
-http://localhost:8080 for tooling/curl.
+**Open the app at http://localhost:3000** — the `frontend` server serves the SPA and proxies
+`/v1/*` to the API, so this single origin is all a browser needs. The API is also exposed
+directly on http://localhost:8080 for tooling/curl.
 
 Ports: **frontend `3000`**, api `8080`, control-plane `8081`, notifier `8082`, sync `8083`,
 render `8084`, challenge-solver `8090`, FlareSolverr `8191`.
@@ -36,8 +37,8 @@ render `8084`, challenge-solver `8090`, FlareSolverr `8191`.
 ### Why the frontend sits behind a proxy
 The WASM client calls the API same-origin (`web/frontend/src/api.rs` → `API_BASE = ""`) and
 opens the live-notification SSE stream (`/v1/me/stream`) via the browser `EventSource` API.
-Serving the SPA and proxying `/v1/*` from one nginx origin makes those calls resolve with no
-cross-origin hop, and the proxy disables buffering so SSE frames flush immediately.
+Serving the SPA and proxying `/v1/*` from one origin makes those calls resolve with no
+cross-origin hop, and the proxy streams responses unbuffered so SSE frames flush immediately.
 
 ## Configuration
 Every service reads layered config via `tankovault-config`: optional TOML at `$TANKOVAULT_CONFIG`,
@@ -93,7 +94,8 @@ docker compose -f deploy/docker-compose.yml run --rm migrate
 - The **Rust service** containers are `scratch`-based (no shell, no OS), so they carry no
   container-level healthcheck; `depends_on` ordering plus the infra healthchecks
   (postgres/redis/nats) and the `migrate` completion gate handle startup sequencing. The
-  frontend (nginx) and infra images do have healthchecks.
+  frontend is now a `scratch` static binary too, so it likewise carries no container
+  healthcheck (it still exposes `GET /healthz` for an external probe); the infra images do.
 
 ## Not yet included
 - Kubernetes / Helm chart (design §19) — the compose stack is the current target.

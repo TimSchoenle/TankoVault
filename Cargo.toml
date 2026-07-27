@@ -22,6 +22,7 @@ members = [
     "services/sync",
     "services/challenge-solver",
     "services/render",
+    "services/frontend",
     "xtask",
 ]
 # The Dioxus WASM frontend is built with the `dx` CLI against the `wasm32` target

@@ -1,12 +1,12 @@
 # Full end-to-end local stack (design §19): Postgres + Redis + NATS(JetStream) +
 # FlareSolverr, a one-shot migrate/seed step, every TankoVault backend service, and the Dioxus
-# web frontend behind nginx. Backend images are built from the single parameterised
-# deploy/docker/Dockerfile; the frontend from deploy/docker/Dockerfile.frontend (build
-# context = repo root for both).
+# web frontend. Backend images are built from the single parameterised deploy/docker/Dockerfile;
+# the frontend from deploy/docker/Dockerfile.frontend (build context = repo root for both).
 #
 #   docker compose -f deploy/docker-compose.yml up --build
 #
-# Then open the app at http://localhost:3000 (nginx serves the SPA and proxies /v1/* to api).
+# Then open the app at http://localhost:3000 (the frontend server serves the SPA and proxies
+# /v1/* to api).
 #
 # Secrets here are DEV-ONLY placeholders. Replace TANKOVAULT_AUTH__JWT_SECRET, the AniList
 # credentials, and TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY before any non-local use.
@@ -126,14 +126,14 @@ services:
       # count. Without it the limiter silently falls back to per-replica counters.
       TANKOVAULT_REDIS__URL: redis://redis:6379
       TANKOVAULT_RATE_LIMIT__BACKEND: redis
-      # nginx fronts the API in this compose file and overwrites the forwarded headers, so
-      # they can be trusted here. Do NOT enable this when the API is exposed directly:
-      # a client can then forge a fresh bucket per request and bypass the limiter.
+      # The frontend server fronts the API in this compose file and overwrites the forwarded
+      # headers, so they can be trusted here. Do NOT enable this when the API is exposed
+      # directly: a client can then forge a fresh bucket per request and bypass the limiter.
       TANKOVAULT_RATE_LIMIT__TRUST_FORWARDED_FOR: "true"
       #
       # ---- Security --------------------------------------------------------------------
-      # The frontend is served from the same nginx origin, so no cross-origin hop exists
-      # and the CORS allowlist stays empty (same-origin only). A split-origin deployment
+      # The frontend is served from the same origin as the proxied API, so no cross-origin hop
+      # exists and the CORS allowlist stays empty (same-origin only). A split-origin deployment
       # must name its origins:
       # TANKOVAULT_SECURITY__CORS__ALLOWED_ORIGINS: '["https://app.example.com"]'
       # Enable once the edge actually terminates TLS; over plain HTTP it is misleading.
@@ -246,22 +246,24 @@ services:
       # CHROME_PATH + NO_SANDBOX are baked into the runtime-browser image.
     ports: ["8084:8084"]
 
-  # ---- Frontend (Dioxus WASM SPA behind nginx) --------------------------------------
-  # nginx serves the built SPA and reverse-proxies /v1/* (REST + SSE) to `api`, giving the
-  # single origin the client's same-origin API calls (API_BASE = "") require. This is the
+  # ---- Frontend (Dioxus WASM SPA served by the axum `frontend` server) ---------------
+  # The `frontend` server serves the built SPA and reverse-proxies /v1/* (REST + SSE) to `api`,
+  # giving the single origin the client's same-origin API calls (API_BASE = "") require. Like
+  # the other services it is a static musl binary on `scratch` (no shell), so — matching them —
+  # it carries no container healthcheck; `depends_on` handles startup ordering. This is the
   # front door for the E2E stack: open http://localhost:3000.
   frontend:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.frontend
-    ports: ["3000:80"]
+    environment:
+      <<: *telemetry
+      TANKOVAULT_TELEMETRY__SERVICE_NAME: frontend
+      # Same-origin front door: proxy /v1/* (REST + SSE) to the api service.
+      TANKOVAULT_FRONTEND__API_UPSTREAM: http://api:8080
+    ports: ["3000:3000"]
     depends_on:
       api: { condition: service_started }
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/healthz"]
-      interval: 10s
-      timeout: 3s
-      retries: 6
 
 volumes:
   pgdata:

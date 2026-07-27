@@ -1,0 +1,28 @@
+[package]
+name = "tankovault-frontend"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Static web server for the Dioxus SPA with a streaming /v1/* reverse proxy to the api."
+
+[[bin]]
+name = "frontend"
+path = "src/main.rs"
+
+[dependencies]
+tankovault-config = { workspace = true }
+tankovault-service = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true }
+tower = { workspace = true }
+# `fs` adds ServeDir/ServeFile (static bundle + SPA fallback); `set-header` and `trace`
+# already ride on the workspace feature set, merged here.
+tower-http = { workspace = true, features = ["fs"] }
+
+[lints]
+workspace = true

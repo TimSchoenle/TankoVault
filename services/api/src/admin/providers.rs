@@ -71,6 +71,7 @@ fn empty_object() -> serde_json::Value {
         (status = 200, description = "Created", body = Provider),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 400, description = "Provider slug is not a legal bus token", body = crate::error::ProblemDetails),
         (status = 409, description = "Provider slug already exists", body = crate::error::ProblemDetails),
     )
 )]
@@ -80,6 +81,16 @@ pub async fn create_provider(
     Json(req): Json<CreateProvider>,
 ) -> ApiResult<Json<Provider>> {
     user.require(Permission::ProvidersCreate).await?;
+    // The slug is not just a label: it becomes the provider's NATS task subject and the
+    // name of the worker consumer that drains it. A slug NATS will not accept there yields
+    // a provider whose scans are planned, published into nothing, and never run — so it is
+    // rejected here rather than discovered as a run that never progresses.
+    if !tankovault_contracts::is_valid_provider_slug(&req.slug) {
+        return Err(ApiError::BadRequest(format!(
+            "provider slug {:?} must be non-empty and contain only letters, digits, '-' or '_'",
+            req.slug
+        )));
+    }
     let provider = tankovault_db::repo::providers::create(
         &state.pool,
         NewProvider {

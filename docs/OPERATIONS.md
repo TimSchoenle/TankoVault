@@ -387,3 +387,66 @@ expires, stalling the run.
 Use `shutdown::every(interval, token, name, task)` for any new periodic loop rather than
 hand-rolling `tokio::time::interval` — it skips its first tick, so a rolling restart does not
 stampede every replica's sweep at once.
+
+---
+
+## 7. Scan-queue priority and fairness
+
+Scan tasks are dispatched on a NATS work-queue stream, one subject per provider **and scan
+mode** (`scan.tasks.<slug>.<mode>`). Workers bind one durable consumer per subject — a
+*lane*, `tankovault-workers-<mode>-<slug>` — and pick between lanes on two rules:
+
+1. **Fast scans before full scans.** Every fast lane is offered a turn before any full lane
+   is looked at.
+2. **Round-robin between providers**, within a mode, taking a single task from a lane before
+   moving to the next.
+
+The reason for both is head-of-line blocking. A full catalogue scan fans out into one
+`series` task per catalogue entry — six figures for a large provider — and publishes them
+back to back. A single consumer on a wildcard serves the stream in publish order, so
+everything else waits for that entire backlog to drain: hours or days in which neither
+another provider's scan nor a fast scan that would surface a new chapter runs at all. The
+two rules make the same backlog cost another provider *one task* of delay, and cost a fast
+scan nothing beyond the task currently in flight.
+
+Priority is strict, and safe to be strict, because the fast tier is bounded by construction:
+a fast run enqueues exactly one `latest_feed` task per provider and processes the feed
+inline, so the fast lanes hold at most one task per provider and cannot starve the full
+tier. **If a fast scan is ever changed to fan out**, that reasoning lapses and the tiers need
+a weighted split rather than strict priority — `TIERS` in `services/worker/src/queue.rs` is
+where the policy lives.
+
+**What to watch.** `scan_tasks_served_total{provider,scan}` counts tasks handed out per lane.
+Over a window in which several providers have work, the per-provider counters should climb
+together; one provider climbing alone means either the others' lanes are empty or their lanes
+failed to open (`could not open provider task lane` in the worker log). A `scan="fast"`
+counter that stays flat while fast runs are being planned points at the lane, not the
+scheduler.
+
+**Adding a provider.** Its lanes open on the next refresh — `worker.provider_refresh_secs`,
+default 60 — not instantly. Until then its tasks sit queued, which is why a freshly created
+provider can take up to a minute to start scanning. Provider slugs are restricted to
+letters, digits, `-` and `_` because the slug *is* a subject token and part of the consumer
+name; the create endpoint rejects anything else with `400`.
+
+**Removing a provider.** Lanes are never dropped while a worker runs, and per-provider
+consumers are not deleted with the provider row. That is deliberate: tasks already queued
+under the old slug can only be reached by a consumer with that exact filter, so the lane
+stays until it has drained them. An idle lane costs one round trip per poll cycle.
+
+**Upgrading.** Two things happen on the first worker start after this change, both
+automatic:
+
+- The legacy `tankovault-workers` wildcard consumer is deleted. A work-queue stream refuses
+  two consumers whose filters overlap, and `scan.tasks.*` overlaps every lane, so the lanes
+  cannot be created beside it. No work is lost: work-queue retention drops a message when it
+  is *acked*, not when a consumer is deleted.
+- The tasks stream's subject binding widens from `scan.tasks.*` to `scan.tasks.>`, so the
+  two-token tiered subjects are captured. This uses `create_or_update_stream` —
+  `get_or_create_stream` returns an existing stream untouched, which would silently leave
+  every tiered task published to a subject no stream holds.
+
+Tasks published before the upgrade sit on the untiered `scan.tasks.<slug>` subject; each
+full-scan lane binds that subject alongside its own, so they are executed as backfill rather
+than stranded. During a rolling deploy, an old replica that has not yet restarted loses its
+consumer and stops consuming; it recovers when it is replaced.

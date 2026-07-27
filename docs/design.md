@@ -750,7 +750,7 @@ POST   /v1/admin/series/merge             { keep, merge }
 - **Scheduler**: per-provider cron for `fast` and `full`; on-demand triggers via internal endpoint
   called by the API.
 - **Planner**: expands a run into tasks, writes `scan_tasks`, publishes to the provider's JetStream
-  subject (`scan.tasks.<provider_slug>`).
+  subject (`scan.tasks.<provider_slug>.<scan_mode>`).
 - **Progress aggregator**: consumes task lifecycle events, updates `scan_runs` counters, republishes a
   compact progress event on `scan.progress` (API relays to the console via SSE).
 - **Health manager**: watches failure/block ratios, drives the provider circuit breaker and
@@ -763,8 +763,33 @@ POST   /v1/admin/series/merge             { keep, merge }
 
 ## 13. Worker service
 
-- Subscribes to `scan.tasks.*` (JetStream consumer group → free horizontal scaling; add replicas, they
-  share the stream).
+- Subscribes with **one durable consumer per provider per scan mode** — a *lane*,
+  `tankovault-workers-<mode>-<slug>` filtered on `scan.tasks.<slug>.<mode>`. Horizontal scaling is
+  unchanged (replicas share every lane); what changes is which task a worker takes next. A single
+  wildcard consumer served the stream in publish order, so a full catalogue scan (one `series` task
+  per catalogue entry, hundreds of thousands for a large site) starved everything else until it
+  drained. Two rules replace that:
+  1. **Fast before full.** Every fast lane is offered a turn before any full lane is looked at, so a
+     chapter release is never queued behind a catalogue walk. Strict priority is safe because the fast
+     tier is bounded by construction — a fast run enqueues one `latest_feed` task per provider and
+     processes the feed inline — so it cannot starve the full tier. If a fast scan ever fans out, this
+     needs to become a weighted split.
+  2. **Round-robin between providers**, within a mode, one task per lane per turn. A provider's share
+     is set by how many providers have work, not by how many tasks it enqueued.
+  - The lane set is refreshed from the provider table on an interval (`worker.provider_refresh_secs`),
+    unioned with the consumers already on the stream so a renamed or deleted provider's queued tasks
+    are still drained rather than stranded.
+  - Lanes are polled with `no_wait` pulls; a round in which every lane is empty backs off (200 ms →
+    5 s) so an idle pool does not busy-poll the broker.
+  - `scan_tasks_served_total{provider,scan}` counts tasks handed out per lane, which is how fairness
+    and priority are observed rather than assumed.
+  - Upgrade notes. The pre-fairness `tankovault-workers` wildcard consumer is deleted on worker start:
+    a work-queue stream refuses overlapping consumer filters, so the lanes cannot exist beside it.
+    Nothing is lost — work-queue retention drops a message on *ack*, not on consumer deletion. The
+    tasks stream's subject binding widens from `scan.tasks.*` to `scan.tasks.>` (applied via
+    `create_or_update_stream`, since `get_or_create_stream` leaves an existing stream untouched), and
+    each full-scan lane also binds the untiered `scan.tasks.<slug>` subject so tasks published before
+    the split are executed rather than stranded.
 - For each task: claim (`scan_tasks` → `claimed`), run the adapter via the injected fetch stack, upsert
   results idempotently, emit `chapter.discovered` events, mark done/failed, publish progress.
 - **Robust environment handling** = resilience, not evasion: timeouts, retries with backoff, circuit

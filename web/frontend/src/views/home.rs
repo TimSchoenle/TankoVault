@@ -73,6 +73,12 @@ pub(crate) fn Home() -> Element {
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
+                .map(|mut items| {
+                    // Fewest unread chapters first, so the closest-to-caught-up series lead
+                    // the rail; ties keep the server's deterministic activity order.
+                    items.sort_by(|a, b| a.unread.cmp(&b.unread));
+                    items
+                })
                 .map_err(|e| api::friendly_error(i18n, e))
         }
     });

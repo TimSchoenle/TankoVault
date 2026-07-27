@@ -9,6 +9,7 @@ description = "SourceAdapter trait and config-driven (Madara/generic) provider a
 [dependencies]
 tankovault-domain = { workspace = true }
 tankovault-fetch = { workspace = true }
+tankovault-solver = { workspace = true }
 async-trait = { workspace = true }
 scraper = { workspace = true }
 serde = { workspace = true }

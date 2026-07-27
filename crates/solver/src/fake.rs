@@ -28,6 +28,8 @@ impl StaticSolver {
                 cookies: Vec::new(),
                 user_agent: user_agent.into(),
                 html: None,
+                status: None,
+                headers: Vec::new(),
                 ttl_secs,
             },
         }
@@ -69,6 +71,8 @@ mod tests {
             cookies: vec![("cf_clearance".into(), "abc".into())],
             user_agent: "UA/1.0".into(),
             html: Some("<html>solved</html>".into()),
+            status: Some(200),
+            headers: Vec::new(),
             ttl_secs: 900,
         });
         let out = drive(&solver, "https://example.test/manga").await;

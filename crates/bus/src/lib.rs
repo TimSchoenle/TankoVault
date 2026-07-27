@@ -69,6 +69,38 @@ where
     }
 }
 
+/// Hand `msg` back to the stream for redelivery after `delay`, instead of settling it.
+///
+/// This is the broker half of retrying a task that failed for a reason time can fix — an
+/// unsolved challenge, a rate-limited provider, a solver that was restarting. Acking such a
+/// task (the only option before this existed) spent the failure permanently: the series was
+/// simply missing from the run, with a log line as the only trace.
+///
+/// The consumer, not the stream, bounds the attempts: callers check [`delivery_count`] and
+/// settle the message once retrying stops being worthwhile.
+///
+/// # Errors
+/// [`BusError::Jetstream`] if the negative ack could not be sent — in which case the message
+/// is still unsettled and the stream redelivers it once the ack deadline lapses.
+pub async fn retry_later(msg: &jetstream::Message, delay: Duration) -> Result<(), BusError> {
+    msg.ack_with(AckKind::Nak(Some(delay)))
+        .await
+        .map_err(|e| BusError::Jetstream(e.to_string()))
+}
+
+/// How many times this message has been delivered, including the current delivery.
+///
+/// Falls back to `1` when the stream metadata cannot be read: an unreadable count must not
+/// make a task look fresh forever, so the safe reading is "this is the first attempt" only
+/// for the decision the caller then bounds by its own limit.
+#[must_use]
+pub fn delivery_count(msg: &jetstream::Message) -> u64 {
+    msg.info()
+        .ok()
+        .and_then(|info| u64::try_from(info.delivered).ok())
+        .unwrap_or(1)
+}
+
 /// A `JetStream` context plus the underlying core-NATS client.
 ///
 /// Durable task/event traffic goes through the `JetStream` context; ephemeral, best-effort

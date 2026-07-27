@@ -43,6 +43,11 @@ pub(crate) fn render_result_into_outcome(result: RenderResult, ttl_secs: u64) ->
         } else {
             Some(result.html)
         },
+        // A rendered navigation carries no status back from the browser layer, so the fetch
+        // stack falls back to reading the page itself (`is_rate_limit_page`) rather than
+        // being told a throttle notice was a 200.
+        status: None,
+        headers: Vec::new(),
         ttl_secs,
     }
 }

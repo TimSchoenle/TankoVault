@@ -12,7 +12,9 @@ use crate::types::{FetchRequest, FetchResponse};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tankovault_solver::{ChallengeSolver, SolveRequest, detect_challenge};
+use tankovault_solver::{
+    ChallengeSolver, SolveRequest, detect_challenge, detect_challenge_body, is_rate_limit_page,
+};
 use time::{Duration, OffsetDateTime};
 use tokio::sync::RwLock;
 
@@ -83,6 +85,23 @@ impl<F> SolvingFetcher<F> {
     }
 }
 
+/// The status to report for a solved page.
+///
+/// **The page outranks the report.** A solver back-end's status is second-hand and, for the
+/// default one, frequently invented: `FlareSolverr` reports `200` for any navigation that
+/// completed, throttle notice included, and returns no response headers to contradict it. A
+/// document that *is* the provider's "Too Many Requests" page is a `429` whatever the solver
+/// claims — and it is the only evidence left once the real status has been discarded upstream.
+///
+/// Believing the report over the body is what let a rendered `429` travel all the way to an
+/// adapter as a successful fetch, where the only available verdict was "unparseable".
+fn solved_status(reported: Option<u16>, html: &str) -> u16 {
+    if is_rate_limit_page(html) {
+        return 429;
+    }
+    reported.unwrap_or(200)
+}
+
 fn apply_session(mut req: FetchRequest, session: &SolvedSession) -> FetchRequest {
     req.user_agent = Some(session.user_agent.clone());
     req.headers
@@ -126,12 +145,32 @@ impl<F: Fetcher> Fetcher for SolvingFetcher<F> {
         };
         self.store.put(&req.provider_slug, session.clone()).await;
 
-        // If the solver already fetched the solved page, use it directly.
+        // If the solver already fetched the solved page, use it directly — but only once it
+        // is established that what came back is the *page* and not the interstitial again.
+        // A solver that timed out mid-challenge still returns 200-shaped HTML, and passing
+        // that off as content is how an unsolved challenge reaches an adapter disguised as a
+        // malformed page: the caller then reports a parse failure for a body it never had.
         if let Some(html) = outcome.html {
+            if let Some(kind) = detect_challenge_body(&html) {
+                tracing::warn!(
+                    provider = %req.provider_slug,
+                    challenge = kind.as_str(),
+                    "solver returned a challenge page; treating the fetch as unsolved"
+                );
+                return Err(FetchError::Challenge(kind));
+            }
+            let status = solved_status(outcome.status, &html);
+            if status >= 400 {
+                tracing::debug!(
+                    provider = %req.provider_slug,
+                    status,
+                    "solved fetch carries a non-success status; passing it up the stack"
+                );
+            }
             return Ok(FetchResponse {
-                status: 200,
+                status,
                 url: req.url.clone(),
-                headers: Vec::new(),
+                headers: outcome.headers,
                 body: html,
                 from_cache: false,
             });
@@ -144,5 +183,141 @@ impl<F: Fetcher> Fetcher for SolvingFetcher<F> {
             return Err(FetchError::Challenge(kind));
         }
         Ok(resp2)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tankovault_solver::{ChallengeKind, SolveOutcome, StaticSolver};
+
+    /// Serves the Cloudflare interstitial for every request, so a solve is always triggered.
+    struct Challenged;
+
+    #[async_trait]
+    impl Fetcher for Challenged {
+        async fn get(&self, req: FetchRequest) -> Result<FetchResponse, FetchError> {
+            Ok(FetchResponse {
+                status: 503,
+                url: req.url.clone(),
+                headers: vec![("server".to_owned(), "cloudflare".to_owned())],
+                body: "<html><head><title>Just a moment...</title></head><body>\
+                       <script src=\"/cdn-cgi/challenge-platform/h/b/orchestrate\"></script>\
+                       </body></html>"
+                    .to_owned(),
+                from_cache: false,
+            })
+        }
+    }
+
+    fn solving(html: &str) -> SolvingFetcher<Challenged> {
+        solving_with(html, None, Vec::new())
+    }
+
+    fn solving_with(
+        html: &str,
+        status: Option<u16>,
+        headers: Vec<(String, String)>,
+    ) -> SolvingFetcher<Challenged> {
+        let solver = StaticSolver::new(SolveOutcome {
+            cookies: vec![("cf_clearance".to_owned(), "x".to_owned())],
+            user_agent: "UA/1.0".to_owned(),
+            html: Some(html.to_owned()),
+            status,
+            headers,
+            ttl_secs: 900,
+        });
+        SolvingFetcher::new(
+            Challenged,
+            Arc::new(solver),
+            Arc::new(InMemorySessionStore::default()),
+        )
+    }
+
+    fn req() -> FetchRequest {
+        FetchRequest::new("https://example.test/api/items", "example")
+    }
+
+    #[tokio::test]
+    async fn a_solved_page_reaches_the_caller() {
+        let resp = solving("<html><body><pre>{\"ok\":true}</pre></body></html>")
+            .get(req())
+            .await
+            .expect("solved page is returned");
+        assert_eq!(resp.status, 200);
+        assert!(resp.body.contains("\"ok\":true"));
+    }
+
+    #[tokio::test]
+    async fn the_solved_status_and_headers_reach_the_caller() {
+        // A page the provider served with a non-success status is not a successful fetch,
+        // however well the challenge in front of it was solved. Flattening it to 200 hid
+        // every rendered 429/503 from the layers that handle exactly those.
+        let resp = solving_with(
+            "<html><head><title>Down for maintenance</title></head><body>back soon</body></html>",
+            Some(503),
+            vec![("retry-after".to_owned(), "30".to_owned())],
+        )
+        .get(req())
+        .await
+        .expect("the response is returned, not an error");
+        assert_eq!(resp.status, 503);
+        assert_eq!(resp.header("Retry-After"), Some("30"));
+    }
+
+    #[tokio::test]
+    async fn a_throttle_page_outranks_a_solver_reported_200() {
+        // FlareSolverr reports 200 for any navigation that completed, and sends no headers to
+        // contradict it. Believing that over the page in front of us is what kept a rendered
+        // 429 arriving at adapters as content.
+        let resp = solving_with(
+            "<html lang=\"en\"><head><meta charset=\"utf-8\">\
+             <title>Too Many Requests</title></head><body></body></html>",
+            Some(200),
+            Vec::new(),
+        )
+        .get(req())
+        .await
+        .expect("the response is returned, not an error");
+        assert_eq!(resp.status, 429);
+    }
+
+    #[tokio::test]
+    async fn a_throttle_page_from_a_status_less_backend_is_read_as_a_429() {
+        // The render back-end reports no status, so the page itself is the only evidence.
+        let resp = solving(
+            "<html lang=\"en\"><head><meta charset=\"utf-8\">\
+             <title>Too Many Requests</title></head><body></body></html>",
+        )
+        .get(req())
+        .await
+        .expect("the response is returned, not an error");
+        assert_eq!(resp.status, 429);
+    }
+
+    #[tokio::test]
+    async fn an_ordinary_solved_page_from_a_status_less_backend_is_still_a_200() {
+        let resp = solving("<html><body><h1>Chapter 12</h1></body></html>")
+            .get(req())
+            .await
+            .expect("solved page is returned");
+        assert_eq!(resp.status, 200);
+    }
+
+    #[tokio::test]
+    async fn a_solver_that_hands_back_the_interstitial_has_not_solved_anything() {
+        // Accepting this as a 200 is how an unsolved challenge reaches an adapter disguised
+        // as content, which the adapter can only report as a malformed body.
+        let err = solving(
+            "<html><head><title>Just a moment...</title></head>\
+             <body><div class=\"cf-turnstile\"></div></body></html>",
+        )
+        .get(req())
+        .await
+        .expect_err("a challenge page is not a solved page");
+        assert!(
+            matches!(err, FetchError::Challenge(ChallengeKind::Turnstile)),
+            "got {err:?}"
+        );
     }
 }

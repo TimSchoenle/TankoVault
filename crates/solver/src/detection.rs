@@ -21,9 +21,10 @@ pub trait ResponseView {
 /// Statuses commonly used to serve an interstitial/challenge.
 const CHALLENGE_STATUSES: [u16; 3] = [403, 429, 503];
 
-/// Classify a response as a bot-management challenge, or `None` for a normal page.
-///
-/// Ordered cheapest-first: status, then headers, then a bounded body scan.
+/// How far into a document the `<title>` is looked for. Well past any real `<head>`, short
+/// enough that the scan stays trivial on a multi-megabyte body.
+const TITLE_SCAN_BYTES: usize = 4096;
+
 pub fn detect_challenge<R: ResponseView>(resp: &R) -> Option<ChallengeKind> {
     let status = resp.status();
 
@@ -45,16 +46,24 @@ pub fn detect_challenge<R: ResponseView>(resp: &R) -> Option<ChallengeKind> {
 
     let body = resp.body_snippet();
 
-    // Turnstile widget.
-    if body.contains("challenges.cloudflare.com/turnstile") || body.contains("cf-turnstile") {
-        return Some(ChallengeKind::Turnstile);
+    // Unambiguous markup markers (Turnstile widget, classic JS challenge).
+    if let Some(kind) = detect_challenge_body(body) {
+        return Some(kind);
     }
 
-    // Classic JS challenge.
-    if body.contains("/cdn-cgi/challenge-platform")
-        || body.contains("cf_chl_opt")
-        || body.contains("Just a moment")
-    {
+    // A rendered rate-limit notice is the origin answering, not an interstitial in front of
+    // it — and two of the three challenge statuses are also the rate-limit statuses. Without
+    // this, every `429` from a Cloudflare-fronted origin fell through to the managed-challenge
+    // fallback below and bought an expensive solve, whose only possible result was fetching
+    // the same notice again through a browser: the provider's `Retry-After` was replaced by a
+    // solver-invented `200`, and the layers that exist to slow the crawl down never fired.
+    if is_rate_limit_page(body) {
+        return None;
+    }
+
+    // Looser body markers, admissible here because the status/header envelope already
+    // corroborates them.
+    if body.contains("Just a moment") {
         return Some(ChallengeKind::CloudflareJs);
     }
 
@@ -71,6 +80,51 @@ pub fn detect_challenge<R: ResponseView>(resp: &R) -> Option<ChallengeKind> {
         return Some(ChallengeKind::GenericJsInterstitial);
     }
 
+    None
+}
+
+/// Whether a body is an infrastructure "you are sending too many requests" page.
+///
+/// A fallback for the case where the real status is unavailable — a solver back-end that
+/// reports no status hands back a rendered throttle notice that is otherwise indistinguishable
+/// from content. Callers use it to reconstruct the `429` the provider actually sent, so the
+/// backoff and rate-limiting layers see the signal they exist for.
+///
+/// Matches on the document title only, because "too many requests" is a phrase, while a
+/// `<title>` saying it is a verdict.
+#[must_use]
+pub fn is_rate_limit_page(body: &str) -> bool {
+    let mut cut = body.len().min(TITLE_SCAN_BYTES);
+    while cut > 0 && !body.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    let head = &body[..cut];
+    head.contains("<title>Too Many Requests")
+        || head.contains("<title>429 Too Many Requests")
+        || head.contains("<title>Rate limit exceeded")
+}
+
+/// Classify a **body alone** as a bot-management interstitial.
+///
+/// Used where there is no status/header envelope to corroborate the markers — chiefly the
+/// HTML a challenge solver hands back, which the fetch stack would otherwise accept as a
+/// solved 200 and pass to an adapter, turning "still challenged" into an inscrutable parse
+/// failure downstream.
+///
+/// Deliberately narrower than [`detect_challenge`]: only markup that no ordinary page emits
+/// counts here, so a page that merely *mentions* Cloudflare (a scanlation site's FAQ, a
+/// chapter titled "Just a moment") is not misread as a challenge.
+#[must_use]
+pub fn detect_challenge_body(body: &str) -> Option<ChallengeKind> {
+    if body.contains("challenges.cloudflare.com/turnstile") || body.contains("cf-turnstile") {
+        return Some(ChallengeKind::Turnstile);
+    }
+    if body.contains("/cdn-cgi/challenge-platform")
+        || body.contains("cf_chl_opt")
+        || body.contains("<title>Just a moment")
+    {
+        return Some(ChallengeKind::CloudflareJs);
+    }
     None
 }
 
@@ -151,6 +205,61 @@ mod tests {
             detect_challenge(&r),
             Some(ChallengeKind::GenericJsInterstitial)
         );
+    }
+
+    #[test]
+    fn body_only_detection_finds_the_unambiguous_markers() {
+        assert_eq!(
+            detect_challenge_body("<div class=\"cf-turnstile\"></div>"),
+            Some(ChallengeKind::Turnstile)
+        );
+        assert_eq!(
+            detect_challenge_body("<script src=\"/cdn-cgi/challenge-platform/h/b/x\"></script>"),
+            Some(ChallengeKind::CloudflareJs)
+        );
+        assert_eq!(
+            detect_challenge_body("<html><head><title>Just a moment...</title></head></html>"),
+            Some(ChallengeKind::CloudflareJs)
+        );
+    }
+
+    #[test]
+    fn a_rate_limited_origin_is_not_mistaken_for_a_challenge() {
+        // 429 is both a rate-limit status and a challenge status, and this origin sits behind
+        // Cloudflare — so without the body check this fell through to the managed-challenge
+        // fallback and spent a solve on a page that only says "slow down".
+        let r = resp(
+            429,
+            &[("server", "cloudflare"), ("retry-after", "60")],
+            "<html lang=\"en\"><head><meta charset=\"utf-8\">\
+             <title>Too Many Requests</title></head><body></body></html>",
+        );
+        assert_eq!(detect_challenge(&r), None);
+    }
+
+    #[test]
+    fn a_rendered_throttle_notice_is_recognised() {
+        let page = "<html lang=\"en\"><head> <meta charset=\"utf-8\"> \
+                    <title>Too Many Requests</title> </head><body></body></html>";
+        assert!(is_rate_limit_page(page));
+        // The phrase in page content is not a verdict — only the title is.
+        assert!(!is_rate_limit_page(
+            "<html><head><title>Chapter 4</title></head><body>Too Many Requests, he thought.\
+             </body></html>"
+        ));
+        assert!(!is_rate_limit_page("{\"data\":{\"chapters\":[]}}"));
+    }
+
+    #[test]
+    fn body_only_detection_does_not_fire_on_ordinary_content() {
+        // Without a status or header to corroborate it, a page that merely says the words
+        // must not be mistaken for an interstitial — this classifier's callers turn a
+        // positive into a failed fetch.
+        assert_eq!(
+            detect_challenge_body("<h1>Chapter 12: Just a moment longer</h1>"),
+            None
+        );
+        assert_eq!(detect_challenge_body("{\"data\":{\"chapters\":[]}}"), None);
     }
 
     #[test]

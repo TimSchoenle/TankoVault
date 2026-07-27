@@ -99,7 +99,8 @@ pub async fn register(
     Json(req): Json<RegisterRequest>,
 ) -> ApiResult<(CookieJar, Json<RegisterResponse>)> {
     validate_registration(&req)?;
-    let hash = hash_password(&req.password, &state.password_pepper).map_err(|_| ApiError::Internal)?;
+    let hash =
+        hash_password(&req.password, &state.password_pepper).map_err(|_| ApiError::Internal)?;
     let user = tankovault_db::repo::users::create(
         &state.pool,
         req.email.trim(),
@@ -482,7 +483,8 @@ pub async fn reset_password(
         ));
     }
 
-    let hash = hash_password(&req.new_password, &state.password_pepper).map_err(|_| ApiError::Internal)?;
+    let hash =
+        hash_password(&req.new_password, &state.password_pepper).map_err(|_| ApiError::Internal)?;
     tankovault_db::repo::users::update_password(&state.pool, record.user_id, &hash).await?;
     tankovault_db::repo::users::revoke_all_for_user(&state.pool, record.user_id).await?;
     Ok(StatusCode::OK)

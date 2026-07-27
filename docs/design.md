@@ -581,7 +581,8 @@ pub trait Fetcher: Send + Sync {
 }
 // Composed stack (outer → inner):
 //   RobotsFetcher      -> honours robots.txt + crawl-delay, refuses disallowed paths
-//   RateLimitedFetcher -> per-provider governor + shared Redis token bucket
+//   RateLimitedFetcher -> per-provider governor + shared Redis token bucket; narrows its own
+//                         spacing when the provider answers 429/503, recovering on quiet
 //   CachedFetcher      -> ETag/Last-Modified conditional GETs, short-TTL body cache in Redis
 //   SolvingFetcher     -> detects bot-management challenges; on a hit, delegates to the
 //                         challenge-solver service and replays the request with the solved session

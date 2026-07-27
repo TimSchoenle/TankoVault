@@ -192,6 +192,22 @@ pub fn parse_ymd_date(text: &str) -> Option<OffsetDateTime> {
         .map(|d| d.midnight().assume_utc())
 }
 
+/// Unescape the five predefined XML/HTML entities (`&amp;` resolved last so a
+/// double-encoded `&amp;lt;` decodes one level, not two).
+///
+/// Enough for text that a challenge solver or an XML viewer re-encoded on its way through a
+/// DOM — JSON or XML wrapped in rendered markup — which is the only place adapters need it;
+/// real page text is unescaped by the HTML parser itself.
+#[must_use]
+pub fn unescape_entities(s: &str) -> String {
+    s.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&#039;", "'")
+        .replace("&amp;", "&")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

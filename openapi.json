@@ -6380,7 +6380,7 @@
                 }
               }
             },
-            "description": "Up to 24 continue-reading cards"
+            "description": "All continue-reading cards"
           },
           "401": {
             "content": {

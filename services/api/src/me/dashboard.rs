@@ -34,7 +34,7 @@ pub struct ContinueItem {
     tag = ME_DASHBOARD_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Up to 24 continue-reading cards", body = Vec<ContinueItem>),
+        (status = 200, description = "All continue-reading cards", body = Vec<ContinueItem>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
@@ -42,8 +42,7 @@ pub async fn continue_reading(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> ApiResult<Json<Vec<ContinueItem>>> {
-    let cards =
-        tankovault_db::repo::tracking::continue_reading(&state.pool, user.user_id, 24).await?;
+    let cards = tankovault_db::repo::tracking::continue_reading(&state.pool, user.user_id).await?;
     let out = cards
         .into_iter()
         .map(|c| ContinueItem {

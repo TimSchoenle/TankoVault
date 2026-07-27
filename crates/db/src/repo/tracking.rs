@@ -735,13 +735,14 @@ pub struct ContinueCard {
 }
 
 /// Continue-reading cards: watched series (`reading`/`planned`/`paused`) that have at least
-/// one unread chapter, freshest activity first. `unread` counts distinct **whole** chapters
-/// (`floor(number)`) — sub-chapter part releases (e.g. `152.1`..`152.6`) collapse into the
-/// one chapter they belong to rather than inflating the badge.
+/// one unread chapter, freshest activity first. Returns **every** matching series (no cap) so
+/// the rail size is stable across requests; the `unread > 0` requirement is enforced in SQL via
+/// `EXISTS` and ties on activity are broken by `series_id` for a deterministic order. `unread`
+/// counts distinct **whole** chapters (`floor(number)`) — sub-chapter part releases (e.g.
+/// `152.1`..`152.6`) collapse into the one chapter they belong to rather than inflating the badge.
 pub async fn continue_reading<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
-    limit: i64,
 ) -> DbResult<Vec<ContinueCard>> {
     #[derive(FromRow)]
     struct Row {
@@ -768,18 +769,19 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
          JOIN series s ON s.id = w.series_id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
          WHERE w.user_id = $1 AND w.status IN ('reading','planned','paused') \
+           AND EXISTS (SELECT 1 \
+                   FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+                   WHERE ss.series_id = w.series_id \
+                     AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0)) \
          ORDER BY (SELECT max(c.discovered_at) \
                    FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-                   WHERE ss.series_id = w.series_id) DESC NULLS LAST \
-         LIMIT $2",
+                   WHERE ss.series_id = w.series_id) DESC NULLS LAST, w.series_id",
         user_id.as_uuid(),
-        limit,
     )
     .fetch_all(exec)
     .await?;
     Ok(rows
         .into_iter()
-        .filter(|r| r.unread > 0)
         .map(|r| ContinueCard {
             series_id: SeriesId::from_uuid(r.series_id),
             series_title: r.series_title,

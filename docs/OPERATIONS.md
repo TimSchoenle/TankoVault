@@ -165,8 +165,8 @@ The CORS default is an **empty allowlist**, which rejects every cross-origin req
 replaces `CorsLayer::permissive()`, which reflected any origin and allowed any method and
 header — on an API serving authenticated user data, that let any site on the internet read a
 signed-in user's watchlist, progress and account settings. The reference deployment serves
-the frontend and API from one nginx origin, so no CORS hop exists; a split-origin deployment
-must name its origins explicitly.
+the frontend and API from one origin (the axum `frontend` server proxies `/v1/*` to the API),
+so no CORS hop exists; a split-origin deployment must name its origins explicitly.
 
 Always-on response headers when `security_headers = true`: `X-Content-Type-Options: nosniff`,
 `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`,

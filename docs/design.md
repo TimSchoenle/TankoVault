@@ -890,8 +890,9 @@ are unaffected, so short/generated secrets keep working locally.
 **Other.** Strict input validation at the edge (`validator` + newtypes). Rate limiting on the auth
 endpoints. CSRF defence for the cookie refresh flow is `SameSite=Strict` plus a cookie path scoped to
 `/v1/auth`. `cargo audit` + `cargo deny` in CI. Secrets from env/secret store, never in the repo.
-**Content-Security-Policy** and baseline hardening headers on the web edge (nginx; see
-`deploy/docker/frontend.nginx.conf`); the JSON API additionally sets `X-Content-Type-Options: nosniff`,
+Baseline hardening headers on the web edge (the axum `frontend` server; see
+`services/frontend/`) — `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+`Referrer-Policy: no-referrer` on the app shell; the JSON API additionally sets `X-Content-Type-Options: nosniff`,
 `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-origin`
 and HSTS. Structured audit log for privileged actions (provider edits, merges, scan triggers, grant
 changes, suspensions).

@@ -4,7 +4,27 @@ This file tracks the build state of the system described in [`design.md`](./desi
 Update it at the end of every coding session: mark what landed, and leave a precise
 "pick up next" list so the next session starts without re-deriving context.
 
-**Last updated:** 2026-07-26 (Session 17 — permissions, feature flags, user administration, GDPR)
+**Last updated:** 2026-07-27 (Session 18 — frontend migrated off nginx to a scratch-based axum server)
+
+> **Session 18 — the frontend image dropped nginx for an axum static server on `scratch`.** The
+> web edge is now `services/frontend` (`tankovault-frontend`, binary `frontend`): an axum app that
+> serves the built Dioxus WASM bundle with SPA fallback to `index.html`, exposes `GET /healthz`,
+> puts the baseline hardening headers (`X-Content-Type-Options`, `Referrer-Policy`,
+> `X-Frame-Options`) on the app shell only, and reverse-proxies `/v1/*` to `api` via `reqwest`.
+> The proxy streams responses (`bytes_stream`), sets no whole-request timeout and disables
+> gzip/brotli decompression, so the SSE streams (`/v1/me/stream`, `/v1/admin/scans/stream`) flow
+> through unbuffered and byte-for-byte; it forwards `X-Forwarded-For`/`X-Real-IP`/`X-Forwarded-Proto`
+> (appending XFF like nginx's `$proxy_add_x_forwarded_for`) so the API's forwarded-header trust and
+> rate limiter keep working. `deploy/docker/Dockerfile.frontend` now builds the WASM bundle **and**
+> the static musl `frontend` binary, then ships both on a bare `scratch` image (numeric nonroot
+> user, no shell) exactly like every other backend service — replacing the nginx runtime. Because
+> nonroot cannot bind port 80, the server listens on **3000** (compose maps `3000:3000`, was
+> `3000:80`); the `deploy/docker/frontend.nginx.conf` file is deleted. Config: `TANKOVAULT_BIND_ADDR`
+> (default `0.0.0.0:3000`), `TANKOVAULT_FRONTEND__STATIC_DIR` (image sets `/srv/www`),
+> `TANKOVAULT_FRONTEND__API_UPSTREAM` (default `http://api:8080`). Like the other `scratch`
+> services it now carries no container healthcheck. Docs (`deploy/README.md`, `docs/design.md`,
+> `docs/OPERATIONS.md`, the `CorsConfig` doc-comment) updated to drop the nginx references. Gates:
+> the new crate is `clippy -D warnings`-clean and the workspace builds.
 
 > **Session 17 — roles replaced by permissions; every feature put behind a runtime flag; user
 > administration and the GDPR surfaces completed.** Four changes that are really one

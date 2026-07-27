@@ -111,14 +111,16 @@ pub(crate) fn Home() -> Element {
         .unwrap_or_else(|| i18n.t("common.readerFallback"));
 
     // Tile values render as an em dash until their call resolves, rather than as a
-    // provisional zero the reader would read as a real figure.
-    let new_chapters = match &*feed.read_unchecked() {
-        Some(Ok(items)) => items.len().to_string(),
-        _ => "—".to_owned(),
-    };
-    let (reading, chapters_read) = match &*stats.read_unchecked() {
-        Some(Ok(Some(stats))) => (stats.reading.to_string(), stats.chapters_read.to_string()),
-        _ => ("—".to_owned(), "—".to_owned()),
+    // provisional zero the reader would read as a real figure. The "new chapters" count
+    // comes from the stats endpoint's uncapped `unread` total rather than the feed length,
+    // which is capped at 100 rows and so would plateau at "100" for busy watchlists.
+    let (new_chapters, reading, chapters_read) = match &*stats.read_unchecked() {
+        Some(Ok(Some(stats))) => (
+            stats.unread.to_string(),
+            stats.reading.to_string(),
+            stats.chapters_read.to_string(),
+        ),
+        _ => ("—".to_owned(), "—".to_owned(), "—".to_owned()),
     };
 
     rsx! {

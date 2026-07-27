@@ -30,6 +30,14 @@ impl ChallengeKind {
     }
 }
 
+/// Renders the stable label token, so a challenge kind can be interpolated into an error
+/// message or a log field without every call site reaching for `as_str`.
+impl std::fmt::Display for ChallengeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// A request to solve a challenge for a specific target URL.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SolveRequest {
@@ -50,6 +58,20 @@ pub struct SolveOutcome {
     pub user_agent: String,
     /// The solved page HTML, when the solver fetched it (avoids a re-fetch).
     pub html: Option<String>,
+    /// The HTTP status the solver's browser received for [`Self::html`], when the back-end
+    /// reports one.
+    ///
+    /// Without this the fetch stack has to assume `200`, and every status the provider
+    /// expresses through a *rendered page* — a `429` throttle notice, a `503` maintenance
+    /// screen — reaches the caller as a successful fetch of an unparseable document. The
+    /// layers that exist to handle those statuses (server-directed backoff, adaptive rate
+    /// limiting) then never see them.
+    #[serde(default)]
+    pub status: Option<u16>,
+    /// Response headers the solver observed, when the back-end reports them (`Retry-After`
+    /// is the one that matters).
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
     /// Seconds the session is expected to remain valid (drives Redis TTL).
     pub ttl_secs: u64,
 }

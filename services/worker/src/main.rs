@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tankovault_bus::Bus;
 use tankovault_config::{DatabaseConfig, NatsConfig, TelemetryConfig};
-use tankovault_contracts::ScanTaskMessage;
+use tankovault_contracts::{ScanTaskMessage, TaskKind};
 use tankovault_fetch::{HttpChallengeSolver, InMemorySessionStore, SessionStore};
 use tankovault_service::health::PostgresCheck;
 use tankovault_service::{Health, HttpStack, MetricsRegistry};
@@ -242,7 +242,42 @@ async fn run_consumer(
                 )
                 .await;
                 if let Err(e) = result {
-                    tracing::warn!(task_id = %task.task_id, error = %e, "task failed");
+                    let deliveries = tankovault_bus::delivery_count(&msg);
+                    if is_retryable(&e) && deliveries < MAX_TASK_DELIVERIES {
+                        let delay = retry_delay(deliveries);
+                        log_task_failure(
+                            &task,
+                            deliveries,
+                            &e,
+                            &format!(
+                                "requeued; delivery {} of {MAX_TASK_DELIVERIES} follows in {}s",
+                                deliveries + 1,
+                                delay.as_secs()
+                            ),
+                        );
+                        if let Err(e) = tankovault_bus::retry_later(&msg, delay).await {
+                            tracing::warn!(
+                                task_id = %task.task_id,
+                                error = %e,
+                                "could not requeue task; it will be redelivered when the ack \
+                                 deadline lapses"
+                            );
+                        }
+                        // Left unsettled and uncounted: the run stays open for it, and the
+                        // idempotent writes make the re-run a no-op for whatever it did do.
+                        continue;
+                    }
+                    let next = if is_retryable(&e) {
+                        format!(
+                            "gave up after {MAX_TASK_DELIVERIES} deliveries; recorded as failed \
+                             and the run continues without it"
+                        )
+                    } else {
+                        "will fail identically on replay; recorded as failed and the run \
+                         continues without it"
+                            .to_owned()
+                    };
+                    log_task_failure(&task, deliveries, &e, &next);
                     let _ = tankovault_db::repo::scans::fail_task(
                         &engine.pool,
                         task.task_id,
@@ -264,6 +299,92 @@ async fn run_consumer(
     Ok(())
 }
 
+/// Deliveries a scan task gets before its failure is treated as final.
+///
+/// Sized against what actually recovers between attempts — a challenge solve, a provider's
+/// rate-limit window, a solver restart. Past that, "transient" is not a useful description of
+/// the failure, and further attempts only delay the run's completion.
+const MAX_TASK_DELIVERIES: u64 = 3;
+
+/// Whether `err` is worth another delivery.
+///
+/// The adapter layer owns this judgement ([`AdapterError::is_transient`]) because it is the
+/// layer that knows the difference between a provider that blocked us and a page whose markup
+/// changed. Anything else — a DB write, a broker publish, a malformed task — fails the task:
+/// a worker that cannot reach Postgres has a problem no redelivery fixes.
+fn is_retryable(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<tankovault_adapters::AdapterError>()
+        .is_some_and(tankovault_adapters::AdapterError::is_transient)
+}
+
+/// Backoff before a requeued task is redelivered.
+///
+/// Minutes rather than seconds, deliberately: the failures worth retrying are provider-side,
+/// and retrying into a rate limit or a bot-management block faster than it clears is how a
+/// scan becomes the thing that keeps it blocked.
+fn retry_delay(deliveries: u64) -> Duration {
+    match deliveries {
+        0 | 1 => Duration::from_secs(60),
+        2 => Duration::from_secs(300),
+        _ => Duration::from_secs(900),
+    }
+}
+
+/// The task kind as it is spelled on the wire and in `scan_tasks.kind`, so a console line
+/// and a row in the table can be correlated without a translation step.
+fn task_kind_name(kind: TaskKind) -> &'static str {
+    match kind {
+        TaskKind::CatalogPage => "catalog_page",
+        TaskKind::Series => "series",
+        TaskKind::LatestFeed => "latest_feed",
+    }
+}
+
+/// What a task was pointed at, in the terms the provider uses.
+///
+/// A task id identifies a row; it does not tell whoever is watching the console *which page*
+/// of the catalogue or *which series* just failed, which is the only part they can act on.
+fn describe_target(task: &ScanTaskMessage) -> String {
+    match task.kind {
+        TaskKind::CatalogPage => format!(
+            "catalog page {}",
+            task.target
+                .get("page")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(1)
+        ),
+        TaskKind::Series => task
+            .target
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<no path>")
+            .to_owned(),
+        TaskKind::LatestFeed => "latest-updates feed".to_owned(),
+    }
+}
+
+/// Report a failed task, and what becomes of it.
+///
+/// A scan is watched from the console, so one failure is one line answering three questions:
+/// what was being scanned, what the provider did about it, and whether anything will try
+/// again. `next` carries the third — the retry decision lives at the call site, because only
+/// there are the delivery count and the backoff known.
+fn log_task_failure(task: &ScanTaskMessage, deliveries: u64, err: &anyhow::Error, next: &str) {
+    tracing::warn!(
+        provider = %task.provider_slug,
+        scan = %task.mode,
+        task = task_kind_name(task.kind),
+        target = %describe_target(task),
+        run_id = %task.run_id,
+        task_id = %task.task_id,
+        delivery = deliveries,
+        max_deliveries = MAX_TASK_DELIVERIES,
+        error = %err,
+        next = %next,
+        "scan task failed"
+    );
+}
+
 async fn handle_task(engine: &Engine, task: &ScanTaskMessage) -> anyhow::Result<()> {
     let provider = tankovault_db::repo::providers::get(&engine.pool, task.provider_id).await?;
     tankovault_db::repo::scans::claim_task(&engine.pool, task.task_id, &engine.worker_id).await?;
@@ -272,4 +393,46 @@ async fn handle_task(engine: &Engine, task: &ScanTaskMessage) -> anyhow::Result<
     engine.dispatch_task(&provider, task).await?;
     tankovault_db::repo::scans::complete_task(&engine.pool, task.task_id).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tankovault_domain::{ProviderId, ScanMode, ScanRunId, ScanTaskId};
+
+    fn task(kind: TaskKind, target: serde_json::Value) -> ScanTaskMessage {
+        ScanTaskMessage {
+            task_id: ScanTaskId::from_uuid(uuid::Uuid::nil()),
+            run_id: ScanRunId::from_uuid(uuid::Uuid::nil()),
+            provider_id: ProviderId::from_uuid(uuid::Uuid::nil()),
+            provider_slug: "kunmanga".to_owned(),
+            mode: ScanMode::Full,
+            kind,
+            target,
+            traceparent: None,
+        }
+    }
+
+    #[test]
+    fn a_series_target_is_the_path_that_was_scanned() {
+        let msg = task(
+            TaskKind::Series,
+            serde_json::json!({ "path": "/manga/berserk/" }),
+        );
+        assert_eq!(describe_target(&msg), "/manga/berserk/");
+    }
+
+    #[test]
+    fn a_catalog_target_is_the_page_number() {
+        let msg = task(TaskKind::CatalogPage, serde_json::json!({ "page": 7 }));
+        assert_eq!(describe_target(&msg), "catalog page 7");
+    }
+
+    #[test]
+    fn a_malformed_target_still_logs() {
+        let msg = task(TaskKind::Series, serde_json::json!({}));
+        assert_eq!(describe_target(&msg), "<no path>");
+        let msg = task(TaskKind::LatestFeed, serde_json::Value::Null);
+        assert_eq!(describe_target(&msg), "latest-updates feed");
+    }
 }

@@ -15,7 +15,7 @@ use crate::backoff::BackoffFetcher;
 use crate::base::BaseHttpFetcher;
 use crate::error::FetchError;
 use crate::fetcher::Fetcher;
-use crate::ratelimit::RateLimitedFetcher;
+use crate::ratelimit::{RateLimitedFetcher, ThrottlePolicy};
 use crate::retry::RetryingFetcher;
 use crate::robots::{RobotsFetcher, RobotsRules};
 use crate::solving::{SessionStore, SolvingFetcher};
@@ -50,6 +50,11 @@ pub struct ProviderFetchConfig {
     pub backoff_base: Duration,
     /// Ceiling on any single backoff wait, including a server-supplied `Retry-After`.
     pub backoff_max: Duration,
+    /// How the rate limiter narrows its own budget when the provider answers `429`/`503`.
+    ///
+    /// Complements `backoff_*`, which waits out one throttled *request*: this changes the
+    /// pace of every subsequent request, so a scan that tripped a limit stops re-tripping it.
+    pub throttle: ThrottlePolicy,
     /// The challenge solver back-end (HTTP client to the service, or a fake in tests).
     pub solver: Arc<dyn ChallengeSolver>,
     /// Solved-session cache.
@@ -79,6 +84,7 @@ impl ProviderFetchConfig {
             max_backoff_attempts: 3,
             backoff_base: Duration::from_secs(2),
             backoff_max: Duration::from_secs(60),
+            throttle: ThrottlePolicy::default(),
             solver,
             session_store,
         }
@@ -98,7 +104,13 @@ pub fn build_provider_fetcher(cfg: ProviderFetchConfig) -> Result<Arc<dyn Fetche
         Duration::from_secs(30),
     );
     let solving = SolvingFetcher::new(retry, cfg.solver, cfg.session_store);
-    let rated = RateLimitedFetcher::new(solving, cfg.rps, cfg.concurrency, cfg.crawl_delay_ms);
+    let rated = RateLimitedFetcher::new(
+        solving,
+        cfg.rps,
+        cfg.concurrency,
+        cfg.crawl_delay_ms,
+        cfg.throttle,
+    );
     let backoff = BackoffFetcher::new(
         rated,
         cfg.max_backoff_attempts,

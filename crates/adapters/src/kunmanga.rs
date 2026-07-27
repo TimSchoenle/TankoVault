@@ -25,13 +25,15 @@
 //! ```
 //!
 //! The API GET is routed through the same injected fetch stack, so it may come back as raw
-//! JSON (plain fetch) or as solver-rendered HTML wrapping the JSON in a `<pre>` block when
-//! a bot-management challenge had to be solved; [`extract_json`] tolerates both.
+//! JSON (plain fetch) or as solver-rendered markup wrapping the JSON when a bot-management
+//! challenge had to be solved; [`crate::json::parse_json_body`] tolerates both shapes and
+//! reports an unsolved challenge as such rather than as malformed JSON.
 
 use crate::config::AdapterConfig;
 use crate::error::AdapterError;
 use crate::generic::GenericConfigAdapter;
-use crate::html::{parse_chapter_number, relativize};
+use crate::html::{parse_chapter_number, relativize, unescape_entities};
+use crate::json::parse_json_body;
 use crate::types::{
     CatalogItem, CatalogPage, ChapterMeta, Ctx, LatestUpdate, SeriesMeta, SourceAdapter,
 };
@@ -56,6 +58,17 @@ const SITEMAP_INDEX_PATH: &str = "/sitemap.xml";
 /// `sitemap-chapter-*` and `sitemap0` shards, which we do not walk).
 const COMIC_SHARD_MARKER: &str = "sitemap-comic-";
 
+/// Names the chapters call for what it is: the same XHR the site's own front-end makes.
+///
+/// The endpoint is behind the same bot management as the pages, and a request for
+/// `text/html` with no XHR marker is exactly what that tier scores as automation. These
+/// headers cost nothing and make the plain (unsolved) fetch more likely to succeed, which is
+/// the fetch that does *not* burn a solve.
+const API_HEADERS: [(&str, &str); 2] = [
+    ("Accept", "application/json, text/plain, */*"),
+    ("X-Requested-With", "XMLHttpRequest"),
+];
+
 /// Adapter for kunmanga: Madara-shaped HTML for catalogue/series, JSON API for chapters.
 pub struct KunMangaAdapter {
     /// Drives catalogue/latest/series parsing with the standard Madara selectors.
@@ -73,9 +86,30 @@ impl KunMangaAdapter {
 }
 
 /// The `/api/comics/{slug}/chapters` envelope.
+///
+/// `data` is optional because the API answers a request it cannot serve — an unknown slug,
+/// a series it has withdrawn — with `{"success": false, "message": …}` and no payload at
+/// all. Modelling that as a required field turned every such answer into "unparseable JSON",
+/// which pointed at the parser instead of at the provider's actual reply.
 #[derive(Debug, Deserialize)]
 struct ChaptersResponse {
-    data: ChaptersData,
+    #[serde(default)]
+    data: Option<ChaptersData>,
+    #[serde(default)]
+    success: Option<bool>,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+impl ChaptersResponse {
+    /// What the API said about a response that carried no `data`, for the error message.
+    fn refusal(&self) -> String {
+        match (&self.message, self.success) {
+            (Some(msg), _) if !msg.trim().is_empty() => msg.trim().to_owned(),
+            (_, Some(false)) => "the API reported success=false with no message".to_owned(),
+            _ => "the API returned an envelope with no chapter data".to_owned(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -128,7 +162,7 @@ fn series_slug(path: &str) -> Option<&str> {
 
 /// Extract every `<loc>` value from a sitemap document.
 ///
-/// Like [`extract_json`], this tolerates both shapes the fetch stack can return: raw XML
+/// Like the chapters JSON, this tolerates both shapes the fetch stack can return: raw XML
 /// from a plain fetch, and solver-rendered output when a challenge had to be solved (the
 /// headless browser serves an XML *viewer* page that embeds the original document and also
 /// renders an entity-escaped pretty-print of it). Scanning for literal `<loc>` picks up the
@@ -138,7 +172,7 @@ fn series_slug(path: &str) -> Option<&str> {
 fn sitemap_locs(body: &str) -> Vec<String> {
     let locs = scan_locs(body);
     if locs.is_empty() {
-        scan_locs(&html_unescape(body))
+        scan_locs(&unescape_entities(body))
     } else {
         locs
     }
@@ -203,44 +237,6 @@ fn title_from_slug(slug: &str) -> String {
         .join(" ")
 }
 
-/// Unescape the five predefined XML/HTML entities (`&amp;` resolved last to avoid
-/// double-unescaping). Sufficient for JSON that a solver wrapped in an HTML `<pre>` block.
-fn html_unescape(s: &str) -> String {
-    s.replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&#039;", "'")
-        .replace("&amp;", "&")
-}
-
-/// Parse the chapters envelope from a response body that is either raw JSON or JSON that a
-/// challenge solver wrapped (and HTML-entity-escaped) inside a `<pre>` block.
-fn extract_json(body: &str) -> Result<ChaptersResponse, AdapterError> {
-    let trimmed = body.trim_start();
-    if trimmed.starts_with('{') {
-        if let Ok(v) = serde_json::from_str::<ChaptersResponse>(body.trim()) {
-            return Ok(v);
-        }
-    }
-    // Solver-wrapped: pull the JSON object out of the surrounding markup and unescape it.
-    if let (Some(start), Some(end)) = (body.find('{'), body.rfind('}')) {
-        if end > start {
-            let slice = &body[start..=end];
-            let unescaped = html_unescape(slice);
-            if let Ok(v) = serde_json::from_str::<ChaptersResponse>(unescaped.trim()) {
-                return Ok(v);
-            }
-            if let Ok(v) = serde_json::from_str::<ChaptersResponse>(slice.trim()) {
-                return Ok(v);
-            }
-        }
-    }
-    Err(AdapterError::Parse(
-        "kunmanga chapters API returned no parseable JSON".to_owned(),
-    ))
-}
-
 #[async_trait]
 impl SourceAdapter for KunMangaAdapter {
     /// Enumerate the catalogue from the site's **sitemap**, one `sitemap-comic-{n}.xml`
@@ -263,9 +259,10 @@ impl SourceAdapter for KunMangaAdapter {
             .filter(|loc| loc.contains(COMIC_SHARD_MARKER))
             .collect();
         if shards.is_empty() {
-            return Err(AdapterError::Missing(format!(
-                "kunmanga series shards ({COMIC_SHARD_MARKER}*) in {SITEMAP_INDEX_PATH}"
-            )));
+            return Err(AdapterError::missing(
+                &format!("kunmanga series shards ({COMIC_SHARD_MARKER}*) in {SITEMAP_INDEX_PATH}"),
+                &index,
+            ));
         }
 
         // Pages are 1-based; past the last shard the catalogue is exhausted.
@@ -299,6 +296,11 @@ impl SourceAdapter for KunMangaAdapter {
         self.inner.fetch_series(ctx, path).await
     }
 
+    /// Read every page of the chapters API for one series.
+    ///
+    /// Pagination terminates on the API's own `last_page`, with two independent backstops —
+    /// a page that adds nothing new, and a hard page cap — because a paginator that lies
+    /// about `last_page` must not be able to hold a scan task open indefinitely.
     async fn fetch_chapters(
         &self,
         ctx: &Ctx,
@@ -307,17 +309,55 @@ impl SourceAdapter for KunMangaAdapter {
         let slug = series_slug(path)
             .ok_or_else(|| AdapterError::Missing(format!("kunmanga series slug in {path:?}")))?;
 
+        // The site's front-end calls this endpoint from the series page; sending the same
+        // Referer keeps the request consistent with the session that fetched that page.
+        let referer = tankovault_domain::resolve_link(&ctx.base_url, &format!("/manga/{slug}"))?;
+        let mut headers: Vec<(&str, &str)> = API_HEADERS.to_vec();
+        headers.push(("Referer", referer.as_str()));
+
         let mut chapters = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut unnumbered = 0usize;
         let mut page = 1u32;
         loop {
             let api_path = format!(
                 "/api/comics/{slug}/chapters?page={page}&per_page={CHAPTERS_PER_PAGE}&order=asc"
             );
-            let resp = ctx.fetch(&api_path).await?;
-            let payload = extract_json(&resp.body)?;
+            let resp = ctx.fetch_with(&api_path, &headers).await?;
+            let payload: ChaptersResponse = parse_json_body("kunmanga chapters API", &resp)?;
 
-            for ch in &payload.data.chapters {
-                let Some(number) = ch.number() else { continue };
+            // A well-formed envelope carrying no payload is the API declining, not a parse
+            // problem. On the first page that means this series has no chapter data at all —
+            // worth surfacing with the provider's own wording; on a later page it just ends
+            // the walk with what we already have.
+            let Some(data) = payload.data else {
+                if page == 1 {
+                    return Err(AdapterError::Missing(format!(
+                        "kunmanga chapters for {slug:?}: {}",
+                        payload.refusal()
+                    )));
+                }
+                tracing::warn!(
+                    series = %slug,
+                    page,
+                    reason = %payload.refusal(),
+                    "kunmanga chapters API stopped returning data mid-walk"
+                );
+                break;
+            };
+
+            let mut added = 0usize;
+            for ch in &data.chapters {
+                let Some(number) = ch.number() else {
+                    unnumbered += 1;
+                    continue;
+                };
+                // Guards against a paginator that replays a page: a duplicate would ride all
+                // the way to the upsert and inflate every count on the way.
+                if !seen.insert(ch.chapter_slug.clone()) {
+                    continue;
+                }
+                added += 1;
                 chapters.push(ChapterMeta {
                     number,
                     title: ch
@@ -333,15 +373,31 @@ impl SourceAdapter for KunMangaAdapter {
                 });
             }
 
-            // Stop at the API's own last page; the empty-page guard prevents an unbounded
-            // loop if `last_page`/`current_page` are ever absent or inconsistent.
-            if payload.data.chapters.is_empty() || page >= payload.data.last_page {
+            // Stop at the API's own last page; the no-progress guard covers a `last_page`
+            // that is absent, inconsistent, or simply wrong.
+            if added == 0 || page >= data.last_page || page >= MAX_CHAPTER_PAGES {
+                if page >= MAX_CHAPTER_PAGES && page < data.last_page {
+                    tracing::warn!(
+                        series = %slug,
+                        page,
+                        last_page = data.last_page,
+                        "kunmanga chapter walk stopped at the page safety cap"
+                    );
+                }
                 break;
             }
             page += 1;
-            if page > MAX_CHAPTER_PAGES {
-                break;
-            }
+        }
+
+        // Silent drops are how a provider's format change becomes a slow data loss instead
+        // of a failure, so the count is reported even though the scan succeeds.
+        if unnumbered > 0 {
+            tracing::warn!(
+                series = %slug,
+                unnumbered,
+                kept = chapters.len(),
+                "kunmanga chapters skipped: no chapter number in the API row"
+            );
         }
         Ok(chapters)
     }
@@ -360,17 +416,31 @@ mod tests {
         assert_eq!(series_slug(""), None);
     }
 
+    fn api_response(body: &str) -> tankovault_fetch::FetchResponse {
+        tankovault_fetch::FetchResponse {
+            status: 200,
+            url: "https://www.kunmanga.co.uk/api/comics/monarch/chapters?page=1".to_owned(),
+            headers: Vec::new(),
+            body: body.to_owned(),
+            from_cache: false,
+        }
+    }
+
+    fn parse(body: &str) -> Result<ChaptersResponse, AdapterError> {
+        parse_json_body("kunmanga chapters API", &api_response(body))
+    }
+
     #[test]
     fn parses_raw_json_envelope() {
         let body = r#"{"success":true,"data":{"chapters":[
             {"chapter_num":57,"chapter_name":"Chapter 57","chapter_slug":"chapter-57",
              "updated_at":"2026-07-20T18:11:23.000000Z"}],
             "total":57,"current_page":1,"per_page":50,"last_page":2}}"#;
-        let env = extract_json(body).expect("raw json parses");
-        assert_eq!(env.data.last_page, 2);
-        assert_eq!(env.data.chapters.len(), 1);
-        assert_eq!(env.data.chapters[0].number(), Some(57.0));
-        assert_eq!(env.data.chapters[0].chapter_slug, "chapter-57");
+        let data = parse(body).expect("raw json parses").data.expect("payload");
+        assert_eq!(data.last_page, 2);
+        assert_eq!(data.chapters.len(), 1);
+        assert_eq!(data.chapters[0].number(), Some(57.0));
+        assert_eq!(data.chapters[0].chapter_slug, "chapter-57");
     }
 
     #[test]
@@ -385,9 +455,34 @@ mod tests {
             "&quot;current_page&quot;:1,&quot;last_page&quot;:1}}",
             "</pre></body></html>"
         );
-        let env = extract_json(body).expect("wrapped json parses");
-        assert_eq!(env.data.chapters.len(), 1);
-        assert_eq!(env.data.chapters[0].number(), Some(12.0));
+        let data = parse(body)
+            .expect("wrapped json parses")
+            .data
+            .expect("payload");
+        assert_eq!(data.chapters.len(), 1);
+        assert_eq!(data.chapters[0].number(), Some(12.0));
+    }
+
+    #[test]
+    fn an_api_refusal_parses_and_carries_its_reason() {
+        // The API answers an unknown series with a payload-less envelope. That must parse —
+        // reporting it as unparseable JSON hid the real message for the whole class.
+        let env = parse(r#"{"success":false,"message":"Comic not found"}"#)
+            .expect("refusal envelope parses");
+        assert!(env.data.is_none());
+        assert_eq!(env.refusal(), "Comic not found");
+    }
+
+    #[test]
+    fn an_unsolved_challenge_is_not_reported_as_a_parse_failure() {
+        let body = "<html><head><title>Just a moment...</title></head><body>\
+                    <div class=\"cf-turnstile\"></div></body></html>";
+        let err = parse(body).expect_err("a challenge page is not chapter data");
+        assert!(
+            matches!(err, AdapterError::Challenged { .. }),
+            "expected a challenge, got {err}"
+        );
+        assert!(err.is_transient(), "a challenge is worth retrying");
     }
 
     #[test]

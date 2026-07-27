@@ -27,13 +27,35 @@ impl Ctx {
     /// # Errors
     /// [`AdapterError`] on resolve/transport failure or a non-success status.
     pub async fn fetch(&self, relative_path: &str) -> Result<FetchResponse, AdapterError> {
+        self.fetch_with(relative_path, &[]).await
+    }
+
+    /// [`fetch`](Self::fetch) with extra request headers.
+    ///
+    /// Exists for provider endpoints that are not pages: a site's own JSON API is called by
+    /// its front-end as an XHR, and some back-ends content-negotiate or gate on that — so an
+    /// adapter that knows it is calling an API can say so, instead of asking for a document
+    /// and hoping.
+    ///
+    /// # Errors
+    /// [`AdapterError`] on resolve/transport failure or a non-success status.
+    pub async fn fetch_with(
+        &self,
+        relative_path: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<FetchResponse, AdapterError> {
         let url = resolve_link(&self.base_url, relative_path)?;
+        let mut request = FetchRequest::new(url.clone(), &self.provider_slug);
+        for (name, value) in headers {
+            request = request.with_header(*name, *value);
+        }
         let resp = self
             .fetcher
-            .get(FetchRequest::new(url, &self.provider_slug))
-            .await?;
+            .get(request)
+            .await
+            .map_err(|source| AdapterError::Fetch { url, source })?;
         if !resp.is_success() {
-            return Err(AdapterError::Http(resp.status));
+            return Err(AdapterError::from_response(&resp));
         }
         Ok(resp)
     }

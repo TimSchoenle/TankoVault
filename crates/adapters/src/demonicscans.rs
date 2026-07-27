@@ -166,7 +166,9 @@ impl SourceAdapter for DemonicScansAdapter {
             .next()
             .map(text_of)
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| AdapterError::Missing("series title".to_owned()))?;
+            .ok_or_else(|| {
+                AdapterError::missing("series title (selector \"h1.big-fat-titles\")", &resp)
+            })?;
 
         let cover_sel = parse_selector("#manga-page img.border-box")?;
         let cover_url = root

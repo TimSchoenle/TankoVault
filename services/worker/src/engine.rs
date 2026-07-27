@@ -173,7 +173,16 @@ impl Engine {
             let catalog = match adapter.list_catalog(&ctx, page).await {
                 Ok(c) => c,
                 Err(e) => {
-                    tracing::warn!(page, error = %e, "catalog page failed; stopping walk");
+                    tracing::warn!(
+                        provider = %provider.slug,
+                        page,
+                        pages_walked = page.saturating_sub(1),
+                        series_collected = paths.len(),
+                        error = %e,
+                        next = "catalogue walk stops here; the series already collected are \
+                                still enriched, later pages are not seen this run",
+                        "catalog page failed"
+                    );
                     truncated_by_page_cap = false;
                     break;
                 }
@@ -207,7 +216,15 @@ impl Engine {
                     registered,
                     "catalog page walked"
                 ),
-                Err(e) => tracing::warn!(page, error = %e, "catalog page registration failed"),
+                Err(e) => tracing::warn!(
+                    provider = %provider.slug,
+                    page,
+                    items = fresh.len(),
+                    error = %e,
+                    next = "the page's series are still enriched below, which creates their \
+                            source rows",
+                    "catalog page registration failed"
+                ),
             }
             paths.extend(fresh.iter().map(|(path, _)| (*path).to_owned()));
             if !catalog.has_next {
@@ -233,7 +250,14 @@ impl Engine {
                 Ok(new) => summary.new_chapters += new,
                 Err(e) => {
                     summary.series_failed += 1;
-                    tracing::warn!(path = %path, error = %e, "series ingest failed");
+                    tracing::warn!(
+                        provider = %provider.slug,
+                        target = %path,
+                        error = %e,
+                        next = "series skipped; the rest of the scan continues and the next run \
+                                retries it",
+                        "series ingest failed"
+                    );
                 }
             }
         }
@@ -263,7 +287,14 @@ impl Engine {
                 Ok(new) => summary.new_chapters += new,
                 Err(e) => {
                     summary.series_failed += 1;
-                    tracing::warn!(path = %update.path, error = %e, "fast-scan series failed");
+                    tracing::warn!(
+                        provider = %provider.slug,
+                        target = %update.path,
+                        error = %e,
+                        next = "series skipped; the rest of the feed continues and the next fast \
+                                scan retries it",
+                        "fast-scan series failed"
+                    );
                 }
             }
         }
@@ -331,7 +362,14 @@ impl Engine {
                     ),
                     // A registration failure must not lose the series: the enrichment tasks
                     // below are enqueued regardless and will create the source themselves.
-                    Err(e) => tracing::warn!(page, error = %e, "catalog page registration failed"),
+                    Err(e) => tracing::warn!(
+                        provider = %provider.slug,
+                        page,
+                        items = entries.len(),
+                        error = %e,
+                        next = "series are still enqueued and will create their own source rows",
+                        "catalog page registration failed"
+                    ),
                 }
                 let targets: Vec<serde_json::Value> = catalog
                     .items
@@ -370,7 +408,14 @@ impl Engine {
                         .process_series(provider, adapter.as_ref(), &ctx, &update.path)
                         .await
                     {
-                        tracing::warn!(path = %update.path, error = %e, "latest series failed");
+                        tracing::warn!(
+                            provider = %provider.slug,
+                            target = %update.path,
+                            error = %e,
+                            next = "series skipped; the rest of the feed continues and the next \
+                                    fast scan retries it",
+                            "latest series failed"
+                        );
                     }
                 }
             }

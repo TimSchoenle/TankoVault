@@ -32,7 +32,7 @@ pub use base::BaseHttpFetcher;
 pub use builder::{ProviderFetchConfig, build_provider_fetcher};
 pub use error::FetchError;
 pub use fetcher::Fetcher;
-pub use ratelimit::RateLimitedFetcher;
+pub use ratelimit::{RateLimitedFetcher, ThrottlePolicy};
 pub use retry::RetryingFetcher;
 pub use robots::{RobotsFetcher, RobotsRules};
 pub use solver_client::HttpChallengeSolver;

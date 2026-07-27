@@ -127,8 +127,12 @@ impl SourceAdapter for GenericConfigAdapter {
         let doc = Html::parse_document(&resp.body);
         let root = doc.root_element();
 
-        let title = extract_first(root, &self.config.series.title)?
-            .ok_or_else(|| AdapterError::Missing("series title".to_owned()))?;
+        let title = extract_first(root, &self.config.series.title)?.ok_or_else(|| {
+            AdapterError::missing(
+                &format!("series title (selector {:?})", self.config.series.title),
+                &resp,
+            )
+        })?;
 
         let description = self
             .config

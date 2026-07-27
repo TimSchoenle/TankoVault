@@ -57,6 +57,12 @@ struct FsSolution {
     user_agent: String,
     #[serde(default)]
     response: String,
+    /// Status the browser received for the final navigation. Optional: older builds omit it.
+    #[serde(default)]
+    status: Option<u16>,
+    /// Response headers, as an object. Optional and often empty.
+    #[serde(default)]
+    headers: std::collections::HashMap<String, String>,
 }
 
 #[derive(Deserialize)]
@@ -113,6 +119,8 @@ impl ChallengeSolver for FlareSolverrSolver {
             } else {
                 Some(solution.response)
             },
+            status: solution.status,
+            headers: solution.headers.into_iter().collect(),
             ttl_secs: self.session_ttl_secs,
         })
     }

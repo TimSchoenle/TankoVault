@@ -3904,6 +3904,7 @@ dependencies = [
  "serde_json",
  "tankovault-domain",
  "tankovault-fetch",
+ "tankovault-solver",
  "thiserror",
  "time",
  "tokio",

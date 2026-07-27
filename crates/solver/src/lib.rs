@@ -16,7 +16,7 @@ mod fake;
 mod flaresolverr;
 mod types;
 
-pub use detection::{ResponseView, detect_challenge};
+pub use detection::{ResponseView, detect_challenge, detect_challenge_body, is_rate_limit_page};
 pub use fake::StaticSolver;
 pub use flaresolverr::FlareSolverrSolver;
 pub use types::{ChallengeKind, ChallengeSolver, SolveError, SolveOutcome, SolveRequest};

@@ -12,10 +12,12 @@
 
 mod config;
 mod demonicscans;
+mod diagnostics;
 mod error;
 mod factory;
 mod generic;
 pub mod html;
+mod json;
 mod kunmanga;
 mod madara;
 pub mod presets;

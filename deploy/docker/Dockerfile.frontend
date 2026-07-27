@@ -9,18 +9,33 @@
 # it and proxying `/v1/*` from one nginx origin is what makes those calls resolve — no CORS,
 # and Server-Sent Events (`/v1/me/stream`, `/v1/admin/scans/stream`) flow through unbuffered.
 #
+# The runtime is a static bundle served by nginx (a `scratch` image cannot serve HTTP or
+# proxy the API/SSE), so this image keeps nginx but pins it by digest like every other stage.
+#
+# Caching: BuildKit `type=cache` mounts keep the crate registry/git downloads and the WASM
+# build target warm across rebuilds. Reproducibility: base images are pinned by digest, the
+# `dx`/frontend builds resolve against committed lockfiles, and layer mtimes are clamped to
+# `SOURCE_DATE_EPOCH` when supplied.
+#
 # Build context is the repo root (see deploy/docker-compose.yml):
 #   docker build -f deploy/docker/Dockerfile.frontend -t tankovault-frontend .
 
 ARG RUST_VERSION=1.94
+# Passed through so BuildKit can clamp layer mtimes for reproducible images. Empty is fine.
+ARG SOURCE_DATE_EPOCH
 
 # --- Build: compile the WASM bundle with the Dioxus CLI. ----------------------------
-FROM rust:${RUST_VERSION}-bookworm AS frontend-builder
+# Pinned by digest for reproducible, tamper-evident builds. Refresh with:
+#   docker buildx imagetools inspect rust:1.94-bookworm
+FROM rust:${RUST_VERSION}-bookworm@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55 AS frontend-builder
 WORKDIR /app
 # The CLI version must match the `dioxus` library version (web/frontend/Cargo.toml → 0.7.9)
 # so asset hashing/codegen line up. `--locked` builds it from its own pinned lockfile.
-# This layer is cached independently of the frontend source below.
-RUN rustup target add wasm32-unknown-unknown \
+# This layer is cached independently of the frontend source below; the registry cache mount
+# only speeds the initial download of the CLI's own dependencies.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    rustup target add wasm32-unknown-unknown \
  && cargo install dioxus-cli@0.7.9 --locked
 
 # The frontend crate is excluded from the host workspace but now takes path dependencies on
@@ -35,7 +50,13 @@ WORKDIR /app/web/frontend
 # Match the `release` bundle explicitly and require exactly one hit: `head -n1` on an
 # ambiguous match silently shipped a stale `debug` bundle when a second output dir was
 # present, so fail loudly instead of guessing which build to serve.
-RUN set -eu; \
+#
+# The cache mounts keep the crate registry and the WASM build target warm across rebuilds;
+# the copied /dist output lands in the image layer, so the runtime stage is unaffected.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/web/frontend/target \
+    set -eu; \
     dx build --platform web --release; \
     matches="$(find target/dx -type d -path '*/release/web/public')"; \
     count="$(printf '%s\n' "$matches" | grep -c . || true)"; \
@@ -49,7 +70,8 @@ RUN set -eu; \
     test -f /dist/index.html || { echo "bundle missing index.html" >&2; exit 1; }
 
 # --- Runtime: nginx serving the SPA + reverse-proxying the API. ---------------------
-FROM nginx:1.27-alpine AS frontend
+# Pinned by digest. Refresh with: docker buildx imagetools inspect nginx:1.27-alpine
+FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10 AS frontend
 COPY deploy/docker/frontend.nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=frontend-builder /dist /usr/share/nginx/html
 EXPOSE 80

@@ -234,7 +234,7 @@ services:
       flaresolverr: { condition: service_started }
 
   # Optional headless-render tier (design §9). Uses the Chromium-provisioned runtime
-  # (the distroless image has no browser); doubles as a ChallengeSolver back-end on /v1/solve.
+  # (the scratch image has no browser); doubles as a ChallengeSolver back-end on /v1/solve.
   render:
     build:
       <<: *build

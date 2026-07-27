@@ -44,5 +44,13 @@ utoipa-scalar = { workspace = true }
 fred = { workspace = true }
 tokio-util = { workspace = true }
 
+[features]
+# Opt-in: the HTTP integration suites need Docker (an ephemeral Postgres via the harness). Off
+# by default so `cargo test -p tankovault-api` stays fast and DB-free.
+integration = []
+
+[dev-dependencies]
+tankovault-test-support = { path = "../../crates/test-support" }
+
 [lints]
 workspace = true

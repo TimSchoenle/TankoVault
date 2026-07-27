@@ -834,12 +834,32 @@ POST   /v1/admin/series/merge             { keep, merge }
 
 ## 16. Authentication, authorisation & security
 
-**AuthN.** Argon2id password hashing (tuned params). Short-lived JWT access tokens; rotating refresh
-tokens stored **as hashes** in `refresh_tokens`, delivered as `httpOnly`, `Secure`, `SameSite=Strict`
-cookies. Refresh rotation with reuse-detection (a reused refresh token revokes the family).
+**AuthN.** Argon2id password hashing (tuned params) with a **server-side pepper** — a secret mixed
+into every hash as its keyed input, held in configuration rather than the database so a database
+leak alone cannot be brute-forced offline. Short-lived JWT access tokens carry **identity only,
+never privileges**; rotating refresh tokens are stored **as hashes** in `refresh_tokens` and
+delivered as `httpOnly`, `Secure`, `SameSite=Strict` cookies scoped to `/v1/auth`. Refresh rotation
+with reuse-detection: a reused (already-rotated) refresh token revokes the whole family and emits an
+audited `token_reuse_detected` event.
 
-**AuthZ.** RBAC (`user` / `operator` / `admin`). Axum extractor guards per route; admin/operator routes
-reject non-privileged tokens. Ownership checks on all `/me/*` resources.
+**AuthZ — per-capability, resolved per request.** The earlier ordered role tier
+(`user < operator < admin`) has been **removed**. Authorization is now a set of fine-grained,
+**non-implying** capabilities (`tankovault_domain::Permission`, e.g. `providers.delete`,
+`users.permissions`, `audit.read`): holding one capability never implies another, so a grant cannot
+silently widen. Each privileged handler asks for the exact capability it exercises
+(`user.require(Permission::X)` / `require_all(&[…])`), and the caller's capability set is **read
+fresh from `user_permissions` on every request** rather than embedded in the access token — so a
+revocation takes effect immediately instead of outliving the token's lifetime. A refusal is recorded
+as an `authz.denied` audit event naming *every* missing capability. The extractor rejects a
+**suspended** account outright, before any capability is consulted (suspension ≠ "no permissions").
+Ownership is enforced on all `/me/*` resources — the id alone is never authority over another user's
+data. The "Reader / Operator / Administrator" presets are a UI convenience expanded at grant time and
+never persisted; they are starting points, not stored roles.
+
+> Supersedes the `user_role` enum and `users.role` column sketched in §12: authorization is stored
+> per user in `user_permissions`, not as a role column. Authoritative implementation:
+> `services/api/src/state.rs` (the `AuthUser` extractor), `crates/domain/src/permissions.rs`
+> (the capability set) and `crates/db/src/repo/permissions.rs` (per-request resolution).
 
 **SSRF — critical for this system.** Workers and the "test adapter" endpoint fetch operator-supplied
 URLs. Guard rails in the `fetch` crate:
@@ -850,11 +870,31 @@ URLs. Guard rails in the `fetch` crate:
 - Cap redirects; validate each hop.
 - Never place secrets or user data in query strings.
 
-**Other.** Encrypt AniList tokens at rest (envelope encryption; key from KMS/secret, `aes-gcm`). Strict
-input validation at the edge (`validator` + newtypes). Rate limit auth endpoints. CSRF protection for
-cookie-based flows. `cargo audit` + `cargo deny` in CI. Secrets from env/secret store, never in the
-repo. Content Security Policy headers on the web app. Structured audit log for admin actions
-(provider edits, merges, scan triggers).
+**Startup fail-fast.** Under a production profile (`TANKOVAULT_PROFILE=production`) the API refuses to
+boot when `jwt_secret` is missing or shorter than 32 bytes — a broken trust root must never serve a
+single request — and warns when the pepper is empty. Development, tests and the integration harness
+are unaffected, so short/generated secrets keep working locally.
+
+**Secret & pepper rotation.**
+- `jwt_secret`: rotating it invalidates every outstanding **access** token immediately (they fail
+  signature verification); **refresh** sessions survive only for their remaining lifetime because
+  refresh state lives in the database, not the token. Roll it whenever a leak is suspected and keep
+  it at ≥ 32 bytes of CSPRNG output.
+- `password_pepper`: it is a keyed input to every argon2id hash, so **changing it invalidates every
+  stored password hash**. Treat it as set-once and stable, held in the secret manager (never the
+  database or the repo); a genuine rotation needs a re-hash-on-next-login migration, not a config
+  edit.
+- AniList / provider tokens: encrypted at rest (envelope encryption, `aes-gcm`); rotate the KMS/data
+  key per the secret manager's policy.
+
+**Other.** Strict input validation at the edge (`validator` + newtypes). Rate limiting on the auth
+endpoints. CSRF defence for the cookie refresh flow is `SameSite=Strict` plus a cookie path scoped to
+`/v1/auth`. `cargo audit` + `cargo deny` in CI. Secrets from env/secret store, never in the repo.
+**Content-Security-Policy** and baseline hardening headers on the web edge (nginx; see
+`deploy/docker/frontend.nginx.conf`); the JSON API additionally sets `X-Content-Type-Options: nosniff`,
+`X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-origin`
+and HSTS. Structured audit log for privileged actions (provider edits, merges, scan triggers, grant
+changes, suspensions).
 
 ---
 

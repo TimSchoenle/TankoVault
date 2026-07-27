@@ -1,0 +1,37 @@
+[package]
+name = "tankovault-test-support"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Dev-only integration-test harness: ephemeral Postgres, seeding, token minting, and an in-process router."
+publish = false
+
+# This crate exists only to support integration tests. It is a normal workspace member so it
+# builds under the same lints as the rest of the tree, but it is never depended on by a
+# shipping binary — only as a `dev-dependency` of the crates whose behaviour it exercises. The
+# resulting `api -> (dev) test-support -> api` cycle is permitted by Cargo precisely because the
+# edge back into `test-support` is a dev-dependency.
+
+[dependencies]
+tankovault-api = { path = "../../services/api" }
+tankovault-config = { workspace = true }
+tankovault-service = { workspace = true }
+tankovault-db = { workspace = true }
+tankovault-domain = { workspace = true }
+tankovault-auth = { workspace = true }
+tankovault-email = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tokio = { workspace = true }
+sqlx = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+time = { workspace = true }
+uuid = { workspace = true }
+testcontainers-modules = { version = "0.13.0", features = ["postgres"] }
+
+[lints]
+workspace = true

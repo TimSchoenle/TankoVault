@@ -99,10 +99,78 @@ fn default_refresh_days() -> i64 {
 /// stall the writers appending to it; the sweep simply catches up over successive runs.
 const AUDIT_PRUNE_BATCH: i64 = 10_000;
 
+/// Minimum accepted length of `jwt_secret` in a production profile.
+///
+/// HS256 signs access tokens with this secret as the HMAC key; anything materially shorter than
+/// the 256-bit output is a weak key an attacker can attempt to brute-force offline, and an empty
+/// one forges tokens outright. 32 bytes is the floor a real deployment must clear.
+const MIN_JWT_SECRET_LEN: usize = 32;
+
+/// Whether this process is running under the production profile.
+///
+/// Keyed off `TANKOVAULT_PROFILE=production` (or `prod`). Absent/anything else is treated as
+/// development, so local runs, tests and the integration harness — which use generated or short
+/// secrets — are never blocked; only a real deployment opts into the strict check.
+fn is_production() -> bool {
+    matches!(
+        std::env::var("TANKOVAULT_PROFILE").as_deref(),
+        Ok("production" | "prod")
+    )
+}
+
+/// Fail fast on a misconfigured secret **before** the edge accepts a single request.
+///
+/// A production deployment that boots with a missing or weak `jwt_secret` can have every session
+/// forged; refusing to start is strictly safer than serving with a broken trust root. An empty
+/// `password_pepper` is a weakened — not broken — posture (hashes are simply un-peppered), so it
+/// is a loud warning rather than a hard stop, preserving compatibility with hashes stored before
+/// a pepper was configured.
+///
+/// # Errors
+/// Returns an error in a production profile when `jwt_secret` is empty or shorter than
+/// [`MIN_JWT_SECRET_LEN`].
+fn validate_auth_secrets(auth: &AuthConfig, production: bool) -> anyhow::Result<()> {
+    if !production {
+        if auth.jwt_secret.len() < MIN_JWT_SECRET_LEN {
+            tracing::warn!(
+                "jwt_secret is short ({} < {MIN_JWT_SECRET_LEN}); acceptable for development but \
+                 set a strong secret and TANKOVAULT_PROFILE=production before deploying",
+                auth.jwt_secret.len()
+            );
+        }
+        return Ok(());
+    }
+
+    if auth.jwt_secret.trim().is_empty() {
+        anyhow::bail!(
+            "refusing to start: jwt_secret is empty in a production profile; every session could \
+             be forged. Set a strong random secret (at least {MIN_JWT_SECRET_LEN} bytes)."
+        );
+    }
+    if auth.jwt_secret.len() < MIN_JWT_SECRET_LEN {
+        anyhow::bail!(
+            "refusing to start: jwt_secret is too short ({} < {MIN_JWT_SECRET_LEN}) for a \
+             production profile; it is brute-forceable. Set a strong random secret.",
+            auth.jwt_secret.len()
+        );
+    }
+    if auth.password_pepper.is_empty() {
+        tracing::warn!(
+            "password_pepper is empty in a production profile; password hashes are un-peppered, so \
+             a database leak alone can be brute-forced offline. Configure a stable pepper."
+        );
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cfg: Config = tankovault_config::load()?;
     tankovault_service::init_tracing(&cfg.telemetry)?;
+
+    // Refuse to boot with a broken trust root: a production deployment must not serve a single
+    // request against a missing or brute-forceable JWT secret.
+    validate_auth_secrets(&cfg.auth, is_production())?;
     let metrics = MetricsRegistry::install(&cfg.metrics)?;
     let shutdown = tankovault_service::install_shutdown();
 
@@ -262,5 +330,53 @@ async fn connect_redis(
             tracing::warn!(error = %e, "invalid redis configuration; rate limits stay per replica");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AuthConfig, MIN_JWT_SECRET_LEN, validate_auth_secrets};
+
+    fn auth(jwt_secret: &str, pepper: &str) -> AuthConfig {
+        AuthConfig {
+            jwt_secret: jwt_secret.to_owned(),
+            password_pepper: pepper.to_owned(),
+            access_ttl_minutes: 15,
+            refresh_ttl_days: 30,
+            cookie_secure: true,
+        }
+    }
+
+    #[test]
+    fn production_rejects_an_empty_secret() {
+        let err = validate_auth_secrets(&auth("", "pepper"), true).unwrap_err();
+        assert!(err.to_string().contains("empty"), "got: {err}");
+    }
+
+    #[test]
+    fn production_rejects_a_short_secret() {
+        let short = "x".repeat(MIN_JWT_SECRET_LEN - 1);
+        let err = validate_auth_secrets(&auth(&short, "pepper"), true).unwrap_err();
+        assert!(err.to_string().contains("too short"), "got: {err}");
+    }
+
+    #[test]
+    fn production_accepts_a_strong_secret() {
+        let strong = "x".repeat(MIN_JWT_SECRET_LEN);
+        assert!(validate_auth_secrets(&auth(&strong, "pepper"), true).is_ok());
+    }
+
+    #[test]
+    fn production_tolerates_an_empty_pepper() {
+        // An empty pepper is weaker, not broken: it must warn, never block a boot.
+        let strong = "x".repeat(MIN_JWT_SECRET_LEN);
+        assert!(validate_auth_secrets(&auth(&strong, ""), true).is_ok());
+    }
+
+    #[test]
+    fn development_never_blocks_even_an_empty_secret() {
+        // Local runs, tests and the integration harness must boot with whatever they have.
+        assert!(validate_auth_secrets(&auth("", ""), false).is_ok());
+        assert!(validate_auth_secrets(&auth("short", ""), false).is_ok());
     }
 }

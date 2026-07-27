@@ -14,6 +14,7 @@ members = [
     "crates/matcher",
     "crates/bus",
     "crates/api-client",
+    "crates/test-support",
     "services/api",
     "services/control-plane",
     "services/worker",

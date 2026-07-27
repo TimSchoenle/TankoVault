@@ -21,5 +21,14 @@ tracing = { workspace = true }
 futures = { workspace = true }
 utoipa = { workspace = true }
 
+[features]
+# Opt-in: the DB-backed repo tests need Docker (an ephemeral Postgres via the harness). Off by
+# default so `cargo test -p tankovault-db` stays fast and DB-free for contributors without it.
+integration = []
+
+[dev-dependencies]
+tankovault-test-support = { path = "../test-support" }
+tokio = { workspace = true }
+
 [lints]
 workspace = true

@@ -94,6 +94,24 @@ jobs:
       - name: offline query cache is up to date
         run: cargo sqlx prepare --workspace --check
 
+  # DB-backed and HTTP access-control integration suites. These stand up an ephemeral Postgres
+  # via testcontainers (Docker is available on the GitHub-hosted runner), run the migrations,
+  # and drive the real Axum router in-process — so authorization regressions fail CI here. The
+  # suites are gated behind each crate's `integration` feature, which is why the fast offline
+  # `test` job above never touches Docker and stays the default path.
+  integration:
+    name: integration (testcontainers)
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # SQLX_OFFLINE (inherited) resolves the query macros from the committed cache at compile
+      # time; the container supplies the live database the tests run against at runtime.
+      - name: repo + HTTP access-control integration suites
+        run: cargo test -p tankovault-db -p tankovault-api --features integration
+
   frontend:
     name: frontend (wasm32)
     runs-on: ubuntu-latest

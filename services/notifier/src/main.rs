@@ -75,6 +75,10 @@ async fn main() -> anyhow::Result<()> {
         })
         .build();
 
+    // Serve the metrics scrape on its own port when configured, keeping it off the
+    // request-facing listener.
+    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
+
     let ops = HttpStack::new(&cfg.security, metrics.clone())
         .apply(axum::Router::new())
         .merge(tankovault_service::ops_router(health, metrics));

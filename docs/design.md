@@ -1017,7 +1017,8 @@ responsive masonry of 2:3 cards.
 - Each service is a small static (`scratch`) container — a fully static musl binary on an empty
   base (multi-stage build; `cargo chef` for cached dependency layers). The `render` tier is the
   exception (Debian + Chromium). The frontend builds to static WASM+assets served by a CDN or the API.
-- **Kubernetes** via a Helm chart in `deploy/`:
+- **Kubernetes** via a Helm chart in `deploy/helm/tankovault` (consuming the shared
+  `deploy/helm/common` library chart; see its README):
    - `api` and `worker` are `HorizontalPodAutoscaler`-scaled (worker on queue depth, api on CPU/RPS).
    - `challenge-solver` is its own Deployment with a **FlareSolverr** companion container; scaled on
      solve queue depth/latency and given a modest CPU/memory floor (a headless browser is heavy).

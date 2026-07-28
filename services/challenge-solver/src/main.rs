@@ -88,6 +88,10 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState { solver };
     let limiter = RateLimiter::from_config(&cfg.rate_limit, RouteClassifier::new(), None);
 
+    // Serve the metrics scrape on its own port when configured, keeping it off the
+    // request-facing listener.
+    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
+
     let app = HttpStack::new(&cfg.security, metrics.clone())
         .with_rate_limit(limiter)
         .apply(

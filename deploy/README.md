@@ -97,7 +97,12 @@ docker compose -f deploy/docker-compose.yml run --rm migrate
   frontend is now a `scratch` static binary too, so it likewise carries no container
   healthcheck (it still exposes `GET /healthz` for an external probe); the infra images do.
 
-## Not yet included
-- Kubernetes / Helm chart (design §19) — the compose stack is the current target.
-- Per-service HTTP health probes for the `scratch` backends (they ship no shell/curl; wire
-  k8s HTTP probes against each service's `/health` and `/ready` when the chart lands).
+## Kubernetes / Helm
+The Helm chart (design §19) lives in [`helm/tankovault`](helm/tankovault) and consumes the
+shared [`helm/common`](helm/common) library chart. It renders the whole fleet from one
+`values.yaml`: Deployments/Services, HPAs (api/worker/frontend), a control-plane singleton, the
+challenge-solver + FlareSolverr companion, a pre-install schema-migration Job, shared
+ConfigMap/Secret, optional PodMonitors, and optional in-cluster Postgres/Redis/NATS for dev.
+k8s HTTP probes are wired against each service's `/health` and `/ready` (the frontend's
+`/healthz`), and each backend exposes an isolated Prometheus scrape on port `9090`. See
+[`helm/tankovault/README.md`](helm/tankovault/README.md) for the full guide.

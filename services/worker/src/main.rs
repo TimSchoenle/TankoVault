@@ -130,6 +130,9 @@ async fn main() -> anyhow::Result<()> {
         // and it exits when the scan does.
         [cmd, slug, mode] if cmd == "scan" => run_inline(&engine, slug, mode).await,
         [] => {
+            // Serve the metrics scrape on its own port when configured, keeping it off the
+            // request-facing ops listener.
+            tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
             spawn_ops_listener(&cfg, &pool, bus.as_ref(), metrics, shutdown.clone());
             run_consumer(&engine, &cfg.worker, shutdown).await
         }

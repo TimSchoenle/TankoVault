@@ -176,9 +176,10 @@ services:
       TANKOVAULT_DATABASE__URL: *db-url
       TANKOVAULT_NATS__URL: nats://nats:4222
       TANKOVAULT_WORKER__CHALLENGE_SOLVER_ENDPOINT: http://challenge-solver:8090
-      # Ops listener (liveness/readiness/metrics). Not published to the host: the worker
-      # runs 2 replicas and compose cannot map one host port to both. Reachable on the
-      # compose network as `worker:8085` — which is what a Prometheus scrape uses anyway.
+      # Ops listener (liveness/readiness) on 8085; the Prometheus scrape is served on the
+      # isolated metrics port (TANKOVAULT_METRICS__LISTEN, default 0.0.0.0:9090). Neither is
+      # published to the host: the worker runs 2 replicas and compose cannot map one host port
+      # to both. Both are reachable on the compose network (`worker:8085`, `worker:9090`).
       TANKOVAULT_BIND_ADDR: 0.0.0.0:8085
     depends_on:
       migrate: { condition: service_completed_successfully }

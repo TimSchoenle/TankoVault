@@ -87,8 +87,8 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certifi
 COPY --from=builder /app/frontend /usr/local/bin/tankovault-frontend
 COPY --from=builder /dist /srv/www
 ENV TANKOVAULT_FRONTEND__STATIC_DIR=/srv/www
-# Numeric nonroot UID:GID (scratch ships no /etc/passwd); mirrors distroless `nonroot`. This is
-# why the server binds 3000 rather than the privileged port 80 the nginx image used.
-USER 65532:65532
+# Numeric nonroot UID:GID (scratch ships no /etc/passwd); shared across every TankoVault image.
+# This is why the server binds 3000 rather than the privileged port 80 the nginx image used.
+USER 1001:1001
 EXPOSE 3000
 ENTRYPOINT ["/usr/local/bin/tankovault-frontend"]

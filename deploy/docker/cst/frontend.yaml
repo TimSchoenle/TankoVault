@@ -1,0 +1,33 @@
+# Container-structure-test contract for the frontend image built from
+# deploy/docker/Dockerfile.frontend (target `frontend`): the static musl axum server plus the
+# built Dioxus SPA bundle, on a `scratch` runtime.
+#
+# `scratch` ships no shell, so this suite is metadata + file assertions only. Run with:
+#   container-structure-test test --image <ref> --config deploy/docker/cst/frontend.yaml
+schemaVersion: "2.0.0"
+
+metadataTest:
+  # The migration target: unprivileged, non-root, UID and GID both 1001. This is precisely why
+  # the server binds the unprivileged port 3000 instead of 80.
+  user: "1001:1001"
+  entrypoint: ["/usr/local/bin/tankovault-frontend"]
+  exposedPorts: ["3000"]
+  envVars:
+    # The static bundle location the server reads at startup, baked into the image.
+    - key: "TANKOVAULT_FRONTEND__STATIC_DIR"
+      value: "/srv/www"
+
+fileExistenceTests:
+  - name: "frontend server binary present and executable"
+    path: "/usr/local/bin/tankovault-frontend"
+    shouldExist: true
+    isExecutableBy: "any"
+  - name: "SPA entry document served from the static dir"
+    path: "/srv/www/index.html"
+    shouldExist: true
+  - name: "CA trust store baked in for HTTPS upstreams"
+    path: "/etc/ssl/certs/ca-certificates.crt"
+    shouldExist: true
+  - name: "no shell (scratch, minimal attack surface)"
+    path: "/bin/sh"
+    shouldExist: false

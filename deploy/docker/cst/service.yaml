@@ -1,0 +1,32 @@
+# Container-structure-test contract for every non-browser backend service image built from
+# deploy/docker/Dockerfile (target `runtime`, --build-arg BIN=<api|worker|control-plane|
+# notifier|sync|challenge-solver|xtask>). All of these binaries share the same `scratch`
+# runtime stage, so one contract covers the lot: the only per-binary difference is which
+# service logic the identical entrypoint runs.
+#
+# `scratch` ships no shell, so this suite is limited to metadata + file assertions
+# (commandTests would need a shell that does not exist here). Run with:
+#   container-structure-test test --image <ref> --config deploy/docker/cst/service.yaml
+schemaVersion: "2.0.0"
+
+metadataTest:
+  # The migration target: unprivileged, non-root, UID and GID both 1001.
+  user: "1001:1001"
+  entrypoint: ["/usr/local/bin/tankovault-service"]
+
+fileExistenceTests:
+  - name: "service binary present and executable"
+    path: "/usr/local/bin/tankovault-service"
+    shouldExist: true
+    isExecutableBy: "any"
+  - name: "CA trust store baked in for outbound TLS"
+    path: "/etc/ssl/certs/ca-certificates.crt"
+    shouldExist: true
+  # The image must NOT ship a shell / package manager: `scratch` guarantees this, and asserting
+  # it turns any accidental base-image swap into a hard CI failure.
+  - name: "no shell (scratch, minimal attack surface)"
+    path: "/bin/sh"
+    shouldExist: false
+  - name: "no busybox shell"
+    path: "/bin/busybox"
+    shouldExist: false

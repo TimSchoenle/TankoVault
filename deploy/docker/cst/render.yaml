@@ -1,0 +1,58 @@
+# Container-structure-test contract for the render image built from deploy/docker/Dockerfile
+# (target `runtime-browser`, --build-arg BIN=render): the static musl service binary on a Debian
+# slim base that also provides Chromium for the headless-render tier (design §9).
+#
+# Unlike the `scratch` images this one has a real shell, so the migration to UID:GID 1001:1001 is
+# additionally proven at runtime with `id` (not just from image metadata) and the account is
+# checked in /etc/passwd. Run with:
+#   container-structure-test test --image <ref> --config deploy/docker/cst/render.yaml
+schemaVersion: "2.0.0"
+
+metadataTest:
+  # The migration target: unprivileged, non-root, UID and GID both 1001.
+  user: "1001:1001"
+  entrypoint: ["/usr/local/bin/tankovault-service"]
+  envVars:
+    - key: "TANKOVAULT_RENDER__CHROME_PATH"
+      value: "/usr/bin/chromium"
+    - key: "TANKOVAULT_RENDER__NO_SANDBOX"
+      value: "true"
+
+fileExistenceTests:
+  - name: "service binary present and executable"
+    path: "/usr/local/bin/tankovault-service"
+    shouldExist: true
+    isExecutableBy: "any"
+  - name: "Chromium binary present for the headless render tier"
+    path: "/usr/bin/chromium"
+    shouldExist: true
+    isExecutableBy: "any"
+  - name: "CA trust store present for outbound TLS"
+    path: "/etc/ssl/certs/ca-certificates.crt"
+    shouldExist: true
+  - name: "writable HOME provisioned for the Chromium profile"
+    path: "/home/nonroot"
+    shouldExist: true
+
+fileContentTests:
+  - name: "nonroot account is registered with UID/GID 1001"
+    path: "/etc/passwd"
+    expectedContents: ["nonroot:x:1001:1001:"]
+
+commandTests:
+  # Prove at container runtime (not just from image metadata) that the process runs as the
+  # unprivileged 1001:1001 account.
+  - name: "process runs as uid=1001 gid=1001"
+    command: "id"
+    args: ["-u"]
+    expectedOutput: ["1001"]
+  - name: "primary group is gid=1001"
+    command: "id"
+    args: ["-g"]
+    expectedOutput: ["1001"]
+  - name: "not running as root"
+    command: "id"
+    args: ["-un"]
+    # Anchored so it means "the username is not exactly root" — an unanchored "root" would also
+    # match the legitimate "nonroot" account name.
+    excludedOutput: ["^root$"]

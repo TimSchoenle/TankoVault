@@ -181,10 +181,33 @@ jobs:
           # ships on the default `scratch` runtime.
           target: ${{ matrix.bin == 'render' && 'runtime-browser' || 'runtime' }}
           push: false
+          # Load the built image into the local Docker daemon so the container-structure-test
+          # step below can inspect it by tag.
+          load: true
+          tags: tankovault-${{ matrix.bin }}:ci
           # Reproducible output: no attestation/provenance layer, and mtimes rewritten.
           provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # Enforce the image contract (design §21): non-root UID:GID 1001:1001, the expected
+      # entrypoint, the required baked-in files (service binary, CA trust store), and — for the
+      # render tier's Debian base — the absence of root and the presence of Chromium. The render
+      # binary uses its own contract; every scratch service shares deploy/docker/cst/service.yaml.
+      - name: install container-structure-test
+        run: |
+          curl -fsSL -o container-structure-test \
+            https://storage.googleapis.com/container-structure-test/v1.22.1/container-structure-test-linux-amd64
+          chmod +x container-structure-test
+          sudo mv container-structure-test /usr/local/bin/container-structure-test
+      - name: structure-test ${{ matrix.bin }} image
+        run: |
+          config="deploy/docker/cst/service.yaml"
+          if [ "${{ matrix.bin }}" = "render" ]; then
+            config="deploy/docker/cst/render.yaml"
+          fi
+          container-structure-test test \
+            --image "tankovault-${{ matrix.bin }}:ci" \
+            --config "$config"
 
   docker-frontend:
     name: docker build (frontend)
@@ -203,6 +226,24 @@ jobs:
           build-args: |
             SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
           push: false
+          # Load the built image into the local Docker daemon so the container-structure-test
+          # step below can inspect it by tag.
+          load: true
+          tags: tankovault-frontend:ci
           provenance: false
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,scope=frontend,mode=max
+      # Enforce the frontend image contract (design §21): non-root UID:GID 1001:1001, the
+      # unprivileged 3000 exposed port, the entrypoint, the static-dir env var, and the presence
+      # of the server binary + built SPA bundle (deploy/docker/cst/frontend.yaml).
+      - name: install container-structure-test
+        run: |
+          curl -fsSL -o container-structure-test \
+            https://storage.googleapis.com/container-structure-test/v1.22.1/container-structure-test-linux-amd64
+          chmod +x container-structure-test
+          sudo mv container-structure-test /usr/local/bin/container-structure-test
+      - name: structure-test frontend image
+        run: |
+          container-structure-test test \
+            --image "tankovault-frontend:ci" \
+            --config deploy/docker/cst/frontend.yaml

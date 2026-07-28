@@ -84,11 +84,17 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       chromium ca-certificates fonts-liberation \
  && rm -rf /var/lib/apt/lists/*
+# Dedicated unprivileged account (UID:GID 1001:1001) so the browser tier does not run as
+# root; matches the numeric nonroot user baked into the `scratch` runtime below. `--create-home`
+# gives Chromium a writable HOME for its profile/cache.
+RUN groupadd --gid 1001 nonroot \
+ && useradd --uid 1001 --gid 1001 --no-log-init --create-home nonroot
 COPY --from=builder /app/service /usr/local/bin/tankovault-service
 # Point chromiumoxide at the distro Chromium and run it without the sandbox (no user
 # namespaces inside the container). Consumed by the render service's config.
 ENV TANKOVAULT_RENDER__CHROME_PATH=/usr/bin/chromium \
     TANKOVAULT_RENDER__NO_SANDBOX=true
+USER 1001:1001
 ENTRYPOINT ["/usr/local/bin/tankovault-service"]
 
 # --- Runtime: scratch (static musl binary), nonroot. --------------------------------
@@ -99,6 +105,6 @@ ENTRYPOINT ["/usr/local/bin/tankovault-service"]
 FROM scratch AS runtime
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /app/service /usr/local/bin/tankovault-service
-# Numeric nonroot UID:GID (scratch ships no /etc/passwd); mirrors distroless `nonroot`.
-USER 65532:65532
+# Numeric nonroot UID:GID (scratch ships no /etc/passwd); shared across every TankoVault image.
+USER 1001:1001
 ENTRYPOINT ["/usr/local/bin/tankovault-service"]

@@ -1,0 +1,13 @@
+-- Reverse of `0021_username_not_an_email.up.sql`.
+--
+-- The first `.down.sql` in this tree, and the start of the convention: every migration from
+-- 0021 onward ships as a reversible `.up.sql` / `.down.sql` pair. Migrations 0001-0020 are
+-- sqlx *simple* (up-only) migrations and are deliberately left that way — retrofitting down
+-- scripts for a schema nobody can reach is busywork, and 0018 dropped `users.role` and the
+-- `user_role` type, so the pre-0018 schema is unrecoverable by DDL regardless. The rollback
+-- procedure for anything at or below 0020 is the point-in-time restore documented in
+-- `docs/OPERATIONS.md` §8.
+--
+-- This particular reversal is genuinely safe: dropping a `CHECK` constraint destroys no data
+-- and only widens what the table accepts, so it cannot fail on any row that exists.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS username_not_an_email;

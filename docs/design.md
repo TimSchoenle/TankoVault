@@ -169,7 +169,7 @@ tankovault/
 ├── web/
 │   └── frontend/                   # Dioxus app + Tailwind + assets
 ├── migrations/                     # sqlx migration SQL (versioned)
-├── deploy/                         # Dockerfiles, Helm chart, k8s manifests
+├── deploy/                         # Dockerfiles, container-structure tests, compose stack
 └── xtask/                          # dev tasks: db reset, seed, codegen
 ```
 
@@ -1024,17 +1024,26 @@ responsive masonry of 2:3 cards.
 - Each service is a small (`scratch`) container — a musl binary plus its loader on an empty
   base (multi-stage build; `cargo chef` for cached dependency layers). The `render` tier is the
   exception (Debian + Chromium). The frontend builds to static WASM+assets served by a CDN or the API.
-- **Kubernetes** via a Helm chart in `deploy/helm/tankovault` (consuming the shared
-  `deploy/helm/common` library chart; see its README):
-   - `api` and `worker` are `HorizontalPodAutoscaler`-scaled (worker on queue depth, api on CPU/RPS).
-   - `challenge-solver` is its own Deployment with a **FlareSolverr** companion container; scaled on
-     solve queue depth/latency and given a modest CPU/memory floor (a headless browser is heavy).
-   - `control-plane` scheduler uses leader election (single active scheduler).
-   - A migrations `Job` runs `sqlx migrate run` on deploy (gated before app rollout).
-   - Config via env + mounted secrets; Postgres/Redis/NATS as managed or in-cluster statefulsets;
-     solver back-end (endpoint, timeouts, max concurrency) is config-driven so it can be swapped.
-- **Environments**: local (docker-compose with Postgres/Redis/NATS + FlareSolverr + seed data),
-  staging, prod.
+- **Kubernetes** — *not implemented*, and this section previously claimed otherwise. It described
+  a Helm chart at `deploy/helm/tankovault` with HPAs, probe wiring and a linked README; that
+  directory has never contained a file. The claim is removed rather than aspirational, because
+  `deploy/README.md` linked to it as the production deployment path and an operator following it
+  reached a dead end. `docs/IMPLEMENTATION_STATUS.md` carries the live status. When it is built,
+  the shape below is still the intent, and most of its prerequisites already exist:
+   - `api` and `worker` `HorizontalPodAutoscaler`-scaled (worker on queue depth, api on CPU/RPS).
+   - `challenge-solver` as its own Deployment with a **FlareSolverr** companion container; scaled
+     on solve queue depth/latency, with a modest CPU/memory floor (a headless browser is heavy).
+   - `control-plane` scheduler under leader election — **already implemented**, through Redis, so
+     `replicas > 1` is safe there today.
+   - A migrations `Job` running `sqlx migrate run` gated before app rollout — **already the shape
+     compose uses**: migration is a discrete one-shot step, and no service migrates at startup.
+   - Probes against `/health` and `/ready`, and a `PodMonitor` against the isolated `9090` scrape
+     — **already exposed by every service**, the frontend included.
+   - Config via env + mounted secrets (see `docs/CONFIGURATION.md`); Postgres/Redis/NATS as
+     managed or in-cluster statefulsets; solver back-end (endpoint, timeouts, max concurrency) is
+     config-driven so it can be swapped.
+- **Environments**: local (docker-compose with Postgres/Redis/NATS + FlareSolverr + seed data) is
+  the only one that exists. Staging and prod are intent, not deployments.
 - **CI**: fmt + clippy + `cargo deny` + `cargo audit` + unit/integration tests (including adapter
   fixture tests and a Postgres-backed repo test via `sqlx`'s test harness) + build all images.
 

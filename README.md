@@ -127,8 +127,9 @@ Apply migrations only:
 docker compose -f deploy/docker-compose.yml run --rm migrate
 ```
 
-See [`deploy/README.md`](deploy/README.md) for single-service image builds, reproducible builds, and
-the Kubernetes / Helm chart.
+See [`deploy/README.md`](deploy/README.md) for single-service image builds and reproducible
+builds. `docker compose` on a single host is the only supported deployment shape today;
+Kubernetes is not implemented.
 
 ## Configuration
 
@@ -136,7 +137,11 @@ Every service reads layered config via `tankovault-config`: optional TOML at `$T
 overlaid by `TANKOVAULT_*` environment variables (`__` denotes nesting, e.g.
 `TANKOVAULT_DATABASE__URL`). The compose file sets dev defaults inline.
 
-**Replace these before any non-local use** (the compose defaults are dev-only):
+**[`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) is the complete reference** — every key, its
+default, which services read it, and the failure modes worth knowing (several are silent).
+
+**Required before any non-local use** — these have no working default and the stack fails fast
+rather than booting insecure:
 
 - `TANKOVAULT_AUTH__JWT_SECRET` — API token signing secret.
 - `TANKOVAULT_AUTH__PASSWORD_PEPPER` — optional server-side pepper mixed into every argon2id hash;
@@ -186,6 +191,7 @@ client, and the i18n rules.
 
 - [`docs/design.md`](docs/design.md) — authoritative architecture and build specification.
 - [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — running and operating the fleet.
+- [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — every `TANKOVAULT_*` key and its default.
 - [`docs/PROVIDERS.md`](docs/PROVIDERS.md) — provider adapters.
 - [`docs/READING_PROGRESS_AND_SYNC.md`](docs/READING_PROGRESS_AND_SYNC.md) — progress and AniList sync.
 - [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) — production checklist.

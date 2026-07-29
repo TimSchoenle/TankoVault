@@ -190,4 +190,5 @@ client, and the i18n rules.
 - [`docs/READING_PROGRESS_AND_SYNC.md`](docs/READING_PROGRESS_AND_SYNC.md) — progress and AniList sync.
 - [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) — production checklist.
 - [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) — current status.
+- [`docs/audit/`](docs/audit/README.md) — full codebase audit (2026-07-29): findings and cleanup roadmap.
 - [`openapi.json`](openapi.json) — canonical REST API spec (also served at `/scalar`).

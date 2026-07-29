@@ -188,8 +188,11 @@ pub fn build_router(
         router
     };
 
+    let principal = bearer_principal_resolver(state.jwt_secret.clone());
+
     let app = HttpStack::new(security, metrics.clone())
         .with_rate_limit(limiter)
+        .with_principal(Some(principal))
         .apply(
             router
                 .with_state(state)
@@ -200,6 +203,31 @@ pub fn build_router(
         );
 
     app.merge(tankovault_service::ops_router(health, metrics))
+}
+
+/// Identify the caller from a `Bearer` access token, for per-account rate limiting.
+///
+/// The signature is **verified** before the subject is returned, which is the whole
+/// requirement: `tankovault_service::ratelimit::Principal` is trusted by the limiter, so a
+/// resolver that read an unverified header would let any caller mint themselves an unlimited
+/// supply of fresh buckets — worse than the IP bucketing it replaces, not better.
+///
+/// Deliberately cheaper than [`crate::state::AuthUser`]: no database round trip, no suspension
+/// or permission check. This runs on *every* request including anonymous ones, and its only
+/// job is to name a bucket. A suspended account still gets rate limited under its own id; the
+/// handler is what refuses it.
+fn bearer_principal_resolver(
+    jwt_secret: std::sync::Arc<Vec<u8>>,
+) -> tankovault_service::http::PrincipalResolver {
+    std::sync::Arc::new(move |headers: &axum::http::HeaderMap| {
+        let token = headers
+            .get(axum::http::header::AUTHORIZATION)?
+            .to_str()
+            .ok()?
+            .strip_prefix("Bearer ")?;
+        let claims = tankovault_auth::verify_access_token(&jwt_secret, token).ok()?;
+        Some(claims.user_id()?.as_uuid().to_string())
+    })
 }
 
 /// Load the deployment's flag overrides and keep them fresh for the lifetime of the process.

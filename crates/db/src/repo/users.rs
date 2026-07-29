@@ -83,6 +83,17 @@ pub async fn create<'e, E: PgExecutor<'e>>(
 }
 
 /// Look up credentials by email or username (login accepts either).
+///
+/// The identifier is routed to **one** column, chosen by whether it contains `@`, rather than
+/// matched against both. `WHERE email = $1 OR username = $1` was ambiguous: a username
+/// containing `@` — which nothing stopped an operator writing before the validator was applied
+/// to every write path — could collide with a *different* account's address, and which row the
+/// planner returned decided whose password was checked. Routing removes the ambiguity
+/// regardless of what is already stored, because an address always contains `@` and a valid
+/// username never may.
+///
+/// It is also two indexed equality lookups instead of an `OR` the planner cannot serve from
+/// one index.
 pub async fn find_credentials<'e, E: PgExecutor<'e>>(
     exec: E,
     login: &str,
@@ -97,15 +108,27 @@ pub async fn find_credentials<'e, E: PgExecutor<'e>>(
         password_hash: String,
         email_verified: bool,
     }
-    let row = sqlx::query_as!(
-        Row,
-        "SELECT id, email, username, status AS \"status: AccountStatus\", created_at, \
-                password_hash, (email_verified_at IS NOT NULL) AS \"email_verified!\" \
-         FROM users WHERE email = $1 OR username = $1",
-        login,
-    )
-    .fetch_optional(exec)
-    .await?;
+    let row = if login.contains('@') {
+        sqlx::query_as!(
+            Row,
+            "SELECT id, email, username, status AS \"status: AccountStatus\", created_at, \
+                    password_hash, (email_verified_at IS NOT NULL) AS \"email_verified!\" \
+             FROM users WHERE email = $1",
+            login,
+        )
+        .fetch_optional(exec)
+        .await?
+    } else {
+        sqlx::query_as!(
+            Row,
+            "SELECT id, email, username, status AS \"status: AccountStatus\", created_at, \
+                    password_hash, (email_verified_at IS NOT NULL) AS \"email_verified!\" \
+             FROM users WHERE username = $1",
+            login,
+        )
+        .fetch_optional(exec)
+        .await?
+    };
 
     Ok(row.map(|r| Credentials {
         user: User {

@@ -189,6 +189,17 @@ pub async fn update_user(
         return Err(ApiError::BadRequest("nothing to update".to_owned()));
     }
 
+    // The same validators registration and `PATCH /v1/me/profile` run. This path was missed
+    // (SEC-9), so an operator could write a username containing `@` — which is exactly the
+    // value that makes a login identifier ambiguous between the `username` and `email`
+    // columns. A rule enforced on two of three write paths is not a rule.
+    if let Some(username) = username {
+        crate::auth::validate_username(username)?;
+    }
+    if let Some(email) = email {
+        crate::auth::validate_email(email)?;
+    }
+
     tankovault_db::repo::user_admin::update_identity(&state.pool, target, username, email).await?;
     audit(
         &state,

@@ -771,7 +771,10 @@ mod tests {
     #[test]
     fn a_username_may_not_contain_an_at_sign() {
         // The exploit: registering `victim@example.com` as a *username* made
-        // `WHERE email = $1 OR username = $1` match two rows.
+        // `WHERE email = $1 OR username = $1` match two rows. Both halves are closed now —
+        // `find_credentials` routes an identifier containing `@` to the email column only,
+        // and this validator runs on registration, `PATCH /v1/me/profile` *and*
+        // `PATCH /v1/admin/users/{id}`, which was the write path it previously missed.
         assert!(validate_username("victim@example.com").is_err());
         assert!(validate_username("aster").is_ok());
         assert!(validate_username("as.ter_1-x").is_ok());

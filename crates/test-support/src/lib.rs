@@ -22,13 +22,16 @@
 //! (`integration`) so the default `cargo test --workspace` unit path stays green without Docker.
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration as StdDuration;
 
 use axum::body::Body;
 use axum::http::{Request, Response, StatusCode};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Connection as _, PgConnection, PgPool};
 use tankovault_api::AppState;
+use tankovault_config::RateLimitConfig;
 use tankovault_domain::{AccountStatus, Permission, UserId};
+use tankovault_email::{EmailError, EmailMessage, EmailService};
 use tankovault_service::{
     AuditEvent, AuditOutcome, AuditSink, FeatureGate, Health, MetricsRegistry,
 };
@@ -193,6 +196,155 @@ impl AuditSink for RecordingAuditSink {
     }
 }
 
+/// An [`EmailService`] that captures every message instead of sending it.
+///
+/// # Why this exists
+///
+/// [`TestApp`] previously hard-wired the disabled default mailer, and `auth::register` forks on
+/// `state.mailer.is_enabled()`. The consequence was that the **email-verification half of
+/// registration had never been executed by any test** — every registration took the
+/// "no mailer, activate immediately" branch. So did password reset, confirmation resend, and
+/// the address-change notices. This double flips that fork on.
+///
+/// # Awaiting a fire-and-forget send
+///
+/// `api::mailer::send_in_background` spawns the send, so the message is not in the recorder
+/// when the HTTP response returns. [`Self::next_message`] awaits the spawned task through a
+/// channel rather than sleeping, so a test stays deterministic; the timeout is a failure
+/// deadline, not a delay.
+pub struct RecordingMailer {
+    enabled: bool,
+    sent: Mutex<Vec<EmailMessage>>,
+    tx: tokio::sync::mpsc::UnboundedSender<EmailMessage>,
+    rx: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<EmailMessage>>,
+}
+
+impl Default for RecordingMailer {
+    fn default() -> Self {
+        Self::enabled()
+    }
+}
+
+impl RecordingMailer {
+    /// A mailer that reports itself as configured, so the flows that branch on
+    /// `is_enabled()` take their email-bearing path.
+    #[must_use]
+    pub fn enabled() -> Self {
+        Self::with_enabled(true)
+    }
+
+    /// A mailer that records but reports itself as *not* configured — the shape of a
+    /// deployment without SMTP, which is the branch the rest of the suite exercises.
+    #[must_use]
+    pub fn disabled() -> Self {
+        Self::with_enabled(false)
+    }
+
+    fn with_enabled(enabled: bool) -> Self {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        Self {
+            enabled,
+            sent: Mutex::new(Vec::new()),
+            tx,
+            rx: tokio::sync::Mutex::new(rx),
+        }
+    }
+
+    /// Every message captured so far, in send order.
+    #[must_use]
+    pub fn sent(&self) -> Vec<EmailMessage> {
+        self.sent.lock().expect("mailer mutex").clone()
+    }
+
+    /// Await the next message, failing the test if none arrives.
+    ///
+    /// # Panics
+    /// If no message is delivered within ten seconds, which means the flow under test did not
+    /// send one.
+    pub async fn next_message(&self) -> EmailMessage {
+        let mut rx = self.rx.lock().await;
+        tokio::time::timeout(StdDuration::from_secs(10), rx.recv())
+            .await
+            .expect("a message should have been sent within the deadline")
+            .expect("the mailer's channel is kept open by the sender half")
+    }
+
+    /// The first `https?://…` run in `text`, with trailing punctuation trimmed.
+    ///
+    /// Reset and confirmation links are only ever reachable through the email body, so a test
+    /// that completes either flow has to read the link back out of the message the way a user
+    /// would.
+    #[must_use]
+    pub fn first_link(text: &str) -> Option<String> {
+        let start = text.find("http")?;
+        let rest = &text[start..];
+        let end = rest.find(|c: char| c.is_whitespace()).unwrap_or(rest.len());
+        Some(rest[..end].trim_end_matches(['.', ',', ')']).to_owned())
+    }
+}
+
+#[async_trait::async_trait]
+impl EmailService for RecordingMailer {
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    async fn send(&self, message: EmailMessage) -> Result<(), EmailError> {
+        self.sent
+            .lock()
+            .expect("mailer mutex")
+            .push(message.clone());
+        // A closed receiver means the test dropped its interest; recording still succeeded.
+        let _ = self.tx.send(message);
+        Ok(())
+    }
+}
+
+/// What a [`TestApp`] should be wired with, for the axes that change behaviour.
+///
+/// Defaults reproduce [`TestApp::spawn`] exactly, so an existing test is unaffected and a new
+/// one names only the axis it cares about.
+pub struct TestConfig {
+    mailer: Arc<dyn EmailService>,
+    rate_limit: RateLimitConfig,
+}
+
+impl Default for TestConfig {
+    fn default() -> Self {
+        Self {
+            mailer: tankovault_email::build(&tankovault_config::EmailConfig::default()),
+            rate_limit: RateLimitConfig::default(),
+        }
+    }
+}
+
+impl TestConfig {
+    /// The default wiring: no mailer, production rate limits.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Wire a specific mailer — see [`RecordingMailer`].
+    #[must_use]
+    pub fn with_mailer(mut self, mailer: Arc<dyn EmailService>) -> Self {
+        self.mailer = mailer;
+        self
+    }
+
+    /// Do not mount the rate limiter.
+    ///
+    /// For suites that issue more requests than a real client would in a minute — the
+    /// access-control matrix drives every admin route three times over. Without this the
+    /// limiter answers `429` part-way through and the suite reports an authorization failure
+    /// that is really a throttle.
+    #[must_use]
+    pub fn without_rate_limiting(mut self) -> Self {
+        self.rate_limit.enabled = false;
+        self
+    }
+}
+
 /// The real router wired to an isolated database, ready to answer `oneshot` requests.
 ///
 /// Holds the same JWT secret it signed [`AppState`] with, so [`Self::bearer`] mints tokens the
@@ -208,6 +360,11 @@ pub struct TestApp {
 impl TestApp {
     /// Stand up an ephemeral database and the fully-wired router against it.
     pub async fn spawn() -> Self {
+        Self::spawn_with(TestConfig::new()).await
+    }
+
+    /// As [`Self::spawn`], with the wiring axes in `cfg` overridden.
+    pub async fn spawn_with(cfg: TestConfig) -> Self {
         let db = TestDb::spawn().await;
         let audit = Arc::new(RecordingAuditSink::default());
 
@@ -235,14 +392,14 @@ impl TestApp {
             audit: audit.clone(),
             features: FeatureGate::defaults(),
             cookie_secure: false,
-            mailer: tankovault_email::build(&tankovault_config::EmailConfig::default()),
+            mailer: cfg.mailer,
             email_base_url: "http://localhost".to_owned(),
         };
 
         let router = tankovault_api::build_router(
             state,
             &tankovault_config::SecurityConfig::default(),
-            &tankovault_config::RateLimitConfig::default(),
+            &cfg.rate_limit,
             MetricsRegistry::disabled(),
             Health::builder().build(),
             None,

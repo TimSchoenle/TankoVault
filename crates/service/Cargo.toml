@@ -41,7 +41,6 @@ tower.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-uuid.workspace = true
 
 tankovault-db = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }

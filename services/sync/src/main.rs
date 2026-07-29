@@ -293,6 +293,18 @@ struct AppState {
     enrich_max: usize,
 }
 
+/// Whether `encoded` is a key made entirely of zero bytes.
+///
+/// Compares the *decoded* bytes rather than the string, so the several base64 spellings of 32
+/// zero bytes (with and without padding, with whitespace) are all caught rather than only the
+/// exact literal that happened to ship in the compose file.
+fn is_placeholder_key(encoded: &str) -> bool {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD
+        .decode(encoded.trim())
+        .is_ok_and(|bytes| !bytes.is_empty() && bytes.iter().all(|b| *b == 0))
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cfg: Config = tankovault_config::load()?;
@@ -314,6 +326,19 @@ async fn main() -> anyhow::Result<()> {
     let health_pool = pool.clone();
     let flags_pool = pool.clone();
 
+    // Refused in *every* profile, like the API's JWT placeholder check. This key seals every
+    // user's AniList access and refresh token at rest, and the published fallback was 32 zero
+    // bytes — a key anyone who has read `deploy/docker-compose.yml` already holds. The length
+    // is enforced by `from_base64_key` itself (it decodes into a `[u8; 32]`), so the only
+    // remaining hole was a well-known *value*.
+    if is_placeholder_key(&cfg.anilist.token_encryption_key) {
+        anyhow::bail!(
+            "refusing to start: anilist.token_encryption_key is the all-zero placeholder \
+             published in this repository. Every stored OAuth token sealed with it is \
+             readable by anyone with a copy of the database. Generate one with \
+             `openssl rand -base64 32` and set TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY."
+        );
+    }
     let secret = SecretBox::from_base64_key(&cfg.anilist.token_encryption_key)
         .map_err(|e| anyhow::anyhow!("invalid anilist.token_encryption_key: {e}"))?;
     let default_policy = cfg.anilist.default_conflict_policy;

@@ -28,7 +28,6 @@ sqlx = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
-anyhow = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }
 testcontainers-modules = { version = "0.13.0", features = ["postgres"] }

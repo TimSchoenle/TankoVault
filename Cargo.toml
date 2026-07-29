@@ -64,6 +64,9 @@ tankovault-auth = { path = "crates/auth" }
 tankovault-email = { path = "crates/email" }
 tankovault-matcher = { path = "crates/matcher" }
 tankovault-bus = { path = "crates/bus" }
+# Not referenced by any workspace member — `web/frontend` is excluded from the workspace
+# and uses its own path dep. Kept as the single place the crate is named, so a future
+# host-side consumer inherits the same path rather than inventing one.
 tankovault-api-client = { path = "crates/api-client" }
 
 # --- OpenAPI: schema derivation from handlers + browsable API docs ---
@@ -86,7 +89,6 @@ tower = { version = "0.5", features = ["util", "timeout", "limit"] }
 # `catch-panic`: turns a panicking handler into a 500 for that one request instead of a
 # process abort. See the `panic = "unwind"` note in `[profile.release]`.
 tower-http = { version = "0.7", features = ["trace", "cors", "compression-full", "timeout", "request-id", "set-header", "catch-panic"] }
-hyper = "1.5"
 
 # --- data / storage ---
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "json", "macros", "migrate"] }
@@ -120,14 +122,11 @@ chromiumoxide = { version = "0.9", default-features = false, features = ["bytes"
 # --- domain building blocks ---
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_with = "3"
 uuid = { version = "1", features = ["v7", "serde", "std"] }
 time = { version = "0.3", features = ["serde", "macros", "formatting", "parsing"] }
 thiserror = "2"
 anyhow = "1"
-validator = { version = "0.20", features = ["derive"] }
 figment = { version = "0.10", features = ["toml", "env"] }
-regex = "1.11"
 
 # --- auth / security ---
 argon2 = "0.5"          # 0.6 is only a pre-release (rc); 0.5 is the current stable.
@@ -135,7 +134,6 @@ jsonwebtoken = { version = "10", default-features = false, features = ["rust_cry
 aes-gcm = "0.11"
 rand = "0.8"
 sha2 = "0.10"
-hmac = "0.12"
 base64 = "0.22"
 # Constant-time comparison for the internal service-to-service token. Already in the tree
 # transitively (aes-gcm, argon2); declared here so the comparison is not hand-rolled.
@@ -144,15 +142,16 @@ subtle = "2"
 # --- observability ---
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
-tracing-opentelemetry = "0.33"
-opentelemetry = "0.32"
-opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic"] }
+# NOTE: the OpenTelemetry stack (`opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`,
+# `tracing-opentelemetry`) was declared here and used by zero members, while
+# `crates/config` exposed an `otlp_endpoint` knob that only logged "export is pending". A
+# config knob that silently does nothing is worse than an absent one: an operator who sets it
+# believes traces are being exported and finds out during an incident. Both the declarations
+# and the knob are removed. Re-add them together, with an actual `OpenTelemetryLayer` in
+# `crates/service/src/telemetry.rs`, or not at all.
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
 
-# --- scheduling ---
-tokio-cron-scheduler = "0.15"
 
 # --- email ---
 # rustls + ring to match the rest of the stack (no native-tls / OpenSSL in the

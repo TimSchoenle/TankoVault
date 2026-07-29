@@ -20,7 +20,6 @@ tankovault-service = { workspace = true }
 # the *table*, not the wreq/BoringSSL client stack the Docker build has to work around.
 tankovault-domain = { workspace = true }
 url = { workspace = true }
-tokio-util = { workspace = true }
 tankovault-solver = { workspace = true, features = ["axum"] }
 axum = { workspace = true }
 tokio = { workspace = true }

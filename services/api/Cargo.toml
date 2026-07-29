@@ -32,8 +32,6 @@ tokio-stream = { workspace = true }
 # tokio-stream's StreamExt has no equivalent.
 futures = { workspace = true }
 axum-extra = { workspace = true }
-tower = { workspace = true }
-tower-http = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

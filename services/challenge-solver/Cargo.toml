@@ -16,12 +16,10 @@ path = "src/main.rs"
 [dependencies]
 tankovault-config = { workspace = true }
 tankovault-service = { workspace = true }
-tokio-util = { workspace = true }
 tankovault-solver = { workspace = true, features = ["axum"] }
 axum = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 metrics = { workspace = true }

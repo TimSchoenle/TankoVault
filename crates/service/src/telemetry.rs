@@ -42,12 +42,5 @@ pub fn init_tracing(cfg: &TelemetryConfig) -> Result<(), ServiceError> {
             .map_err(|e| ServiceError::Tracing(e.to_string()))?;
     }
 
-    if cfg.otlp_endpoint.is_some() {
-        tracing::info!(
-            service = %cfg.service_name,
-            "OTLP endpoint configured; collector export is pending. Local tracing is active."
-        );
-    }
-
     Ok(())
 }

@@ -18,8 +18,6 @@ wreq-util = { workspace = true }
 url = { workspace = true }
 governor = { workspace = true }
 tokio = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 time = { workspace = true }

@@ -33,6 +33,8 @@ uuid = { workspace = true }
 anyhow = { workspace = true }
 # The service's HTTP error contract (`error.rs`) is a typed enum, not a substring match.
 thiserror = { workspace = true }
+# Decodes the token-encryption key at boot to reject the published all-zero placeholder.
+base64 = { workspace = true }
 tracing = { workspace = true }
 
 [lints]

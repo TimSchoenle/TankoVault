@@ -20,6 +20,10 @@ use progenitor_impl::{GenerationSettings, Generator, InterfaceStyle, TypePatch};
 async fn main() -> anyhow::Result<()> {
     let cmd = std::env::args().nth(1).unwrap_or_default();
 
+    if cmd == "install-hooks" {
+        return install_hooks();
+    }
+
     if cmd == "openapi" {
         let check = std::env::args().nth(2).as_deref() == Some("--check");
         return openapi(check);
@@ -104,6 +108,65 @@ fn sqlx_prepare(check: bool) -> anyhow::Result<()> {
             "written to .sqlx/"
         }
     );
+    Ok(())
+}
+
+/// Install `hooks/pre-commit` into `.git/hooks/pre-commit`.
+///
+/// This used to run from `xtask/build.rs`, i.e. on **every** `cargo build --workspace`. That is
+/// a build script mutating the developer's git configuration: a side effect outside `OUT_DIR`
+/// and outside the build sandbox, applied without consent, which also breaks hermetic build
+/// environments. The guards were well written; the design was the problem.
+///
+/// It is an explicit command now. The CI gate (`xtask openapi --check`) is what actually
+/// enforces the invariant — this hook only moves the discovery earlier, which is a
+/// convenience the developer should opt into.
+///
+/// # Errors
+/// When `.git/hooks` cannot be created or written.
+fn install_hooks() -> anyhow::Result<()> {
+    use std::fs;
+    use std::path::Path;
+
+    const MANAGED_MARKER: &str = "tankovault: managed by xtask";
+
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask/ has a parent directory")
+        .to_path_buf();
+    let git_dir = repo_root.join(".git");
+    if !git_dir.exists() {
+        anyhow::bail!("{} is not a git checkout", repo_root.display());
+    }
+
+    let hooks_dir = git_dir.join("hooks");
+    let hook_path = hooks_dir.join("pre-commit");
+    let template = include_str!("../hooks/pre-commit");
+
+    // Never clobber a hook we did not install ourselves.
+    if let Ok(existing) = fs::read_to_string(&hook_path) {
+        if existing == template {
+            println!("pre-commit hook is already up to date");
+            return Ok(());
+        }
+        if !existing.contains(MANAGED_MARKER) {
+            anyhow::bail!(
+                "{} exists and was not installed by xtask; move it aside first",
+                hook_path.display()
+            );
+        }
+    }
+
+    fs::create_dir_all(&hooks_dir)?;
+    fs::write(&hook_path, template)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook_path, fs::Permissions::from_mode(0o755))?;
+    }
+
+    println!("installed {}", hook_path.display());
     Ok(())
 }
 

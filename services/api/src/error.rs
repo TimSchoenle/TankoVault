@@ -58,6 +58,15 @@ pub enum ApiError {
     BadRequest(String),
     #[error("service unavailable")]
     Unavailable,
+    /// An internal service this request depends on is unreachable or answered with something
+    /// this service cannot represent. Distinct from [`Self::Internal`]: a `sync` outage is an
+    /// upstream fault, and reporting it as `500` made an operator problem look like a bug
+    /// here. See `crate::upstream`.
+    #[error("upstream unavailable")]
+    BadGateway,
+    /// An internal service did not answer within its budget.
+    #[error("upstream timed out")]
+    GatewayTimeout,
     #[error("internal error")]
     Internal,
 }
@@ -104,6 +113,16 @@ impl ApiError {
                 StatusCode::SERVICE_UNAVAILABLE,
                 "unavailable",
                 "the live notification stream is temporarily unavailable".into(),
+            ),
+            Self::BadGateway => (
+                StatusCode::BAD_GATEWAY,
+                "upstream_unavailable",
+                "a service this request depends on is unavailable; please try again".into(),
+            ),
+            Self::GatewayTimeout => (
+                StatusCode::GATEWAY_TIMEOUT,
+                "upstream_timeout",
+                "a service this request depends on did not respond in time".into(),
             ),
             Self::Internal => (
                 StatusCode::INTERNAL_SERVER_ERROR,

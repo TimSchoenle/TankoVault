@@ -36,17 +36,22 @@ pub struct AppState {
     pub password_pepper: Arc<Vec<u8>>,
     pub access_ttl: time::Duration,
     pub refresh_ttl: time::Duration,
-    /// Base URL of the control-plane, for proxying "Scan now".
-    pub control_plane_url: String,
-    /// Base URL of the `AniList` sync service, for proxying `/me/sync/anilist/*`.
-    pub sync_url: String,
-    /// Endpoint of the challenge-solver service, used by the "Test adapter" dry-run.
+    /// The control-plane, for proxying "Scan now".
+    pub control_plane: crate::upstream::Upstream,
+    /// The external-sync service, for proxying `/v1/me/sync/*` and the admin sync console.
+    pub sync: crate::upstream::Upstream,
+    /// Endpoint of the challenge-solver service, used by the "Test adapter" dry-run. A bare
+    /// URL rather than an [`crate::upstream::Upstream`]: it is handed to the adapter fetch
+    /// stack, which builds its own client.
     pub challenge_solver_url: String,
+    /// Presented to the challenge-solver by the adapter fetch stack, which cannot go through
+    /// [`crate::upstream::Upstream`].
+    pub internal_token: Option<tankovault_service::InternalToken>,
     /// Core-NATS bus for relaying live per-user notifications over SSE. `None` when NATS
     /// was unreachable at boot: the live-stream endpoint degrades to `503` while every
     /// other route (including the durable notifications list) keeps working.
     pub bus: Option<tankovault_bus::Bus>,
-    pub http: reqwest::Client,
+
     /// Where audit records go. A [`tankovault_service::NoopAuditSink`] when the operator
     /// disabled auditing, so no handler ever branches on the toggle.
     pub audit: Arc<dyn AuditSink>,

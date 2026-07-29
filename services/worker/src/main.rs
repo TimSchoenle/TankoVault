@@ -39,6 +39,10 @@ struct Config {
     /// Prometheus metrics. Togglable; disabling installs no recorder.
     #[serde(default)]
     metrics: tankovault_config::MetricsConfig,
+    /// Shared secret presented to `challenge-solver`. The worker exposes no contract of its
+    /// own, so this is outbound-only.
+    #[serde(default)]
+    internal: tankovault_config::InternalAuthConfig,
 }
 
 fn default_bind() -> String {
@@ -88,6 +92,7 @@ async fn main() -> anyhow::Result<()> {
     let cfg: Config = tankovault_config::load()?;
     tankovault_service::init_tracing(&cfg.telemetry)?;
     let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
     let shutdown = tankovault_service::install_shutdown();
 
     let pool = tankovault_db::connect(
@@ -112,6 +117,7 @@ async fn main() -> anyhow::Result<()> {
     let solver: Arc<dyn ChallengeSolver> = Arc::new(HttpChallengeSolver::new(
         cfg.worker.challenge_solver_endpoint.clone(),
         Duration::from_secs(90),
+        internal_token.as_ref().map(|t| t.expose().to_owned()),
     ));
     let session_store: Arc<dyn SessionStore> = Arc::new(InMemorySessionStore::default());
 

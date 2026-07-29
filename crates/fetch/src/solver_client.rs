@@ -12,13 +12,17 @@ use tankovault_solver::{ChallengeSolver, SolveError, SolveOutcome, SolveRequest}
 pub struct HttpChallengeSolver {
     client: wreq::Client,
     endpoint: String,
+    /// Presented as `X-Internal-Token`. The solver refuses unauthenticated callers, so this
+    /// is not optional in a production deployment — it is `Option` only because the token is
+    /// allowed to be absent outside the production profile.
+    token: Option<String>,
 }
 
 impl HttpChallengeSolver {
     /// Build a client for `endpoint` (e.g. `http://challenge-solver:8080`) with an
-    /// overall solve timeout.
+    /// overall solve timeout, presenting `token` to the solver.
     #[must_use]
-    pub fn new(endpoint: impl Into<String>, timeout: Duration) -> Self {
+    pub fn new(endpoint: impl Into<String>, timeout: Duration, token: Option<String>) -> Self {
         // Deliberately no emulation profile and no SSRF resolver: this talks to our own
         // service on the internal network, not to a provider.
         let client = wreq::Client::builder()
@@ -28,6 +32,7 @@ impl HttpChallengeSolver {
         Self {
             client,
             endpoint: endpoint.into(),
+            token,
         }
     }
 }
@@ -36,19 +41,17 @@ impl HttpChallengeSolver {
 impl ChallengeSolver for HttpChallengeSolver {
     async fn solve(&self, req: SolveRequest) -> Result<SolveOutcome, SolveError> {
         let url = format!("{}/v1/solve", self.endpoint.trim_end_matches('/'));
-        let resp = self
-            .client
-            .post(&url)
-            .json(&req)
-            .send()
-            .await
-            .map_err(|e| {
-                if e.is_timeout() {
-                    SolveError::Timeout
-                } else {
-                    SolveError::Transport(e.to_string())
-                }
-            })?;
+        let mut request = self.client.post(&url).json(&req);
+        if let Some(token) = &self.token {
+            request = request.header("x-internal-token", token.as_str());
+        }
+        let resp = request.send().await.map_err(|e| {
+            if e.is_timeout() {
+                SolveError::Timeout
+            } else {
+                SolveError::Transport(e.to_string())
+            }
+        })?;
 
         if !resp.status().is_success() {
             return Err(SolveError::Unsolved(format!(

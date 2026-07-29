@@ -81,6 +81,11 @@ struct Config {
     /// Runtime feature flags — how often this replica re-reads the operator's decisions.
     #[serde(default)]
     features: tankovault_config::FeaturesConfig,
+    /// Shared secret every caller must present. This service's whole contract is
+    /// privileged — it names the subject user in the path or body — so an unauthenticated
+    /// caller could read or rewrite any account's sync state.
+    #[serde(default)]
+    internal: tankovault_config::InternalAuthConfig,
 }
 
 /// Metadata-priority + tokenless enrichment-worker settings (design: worker queue syncing
@@ -291,6 +296,10 @@ async fn main() -> anyhow::Result<()> {
     let cfg: Config = tankovault_config::load()?;
     tankovault_service::init_tracing(&cfg.telemetry)?;
     let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    // Resolved before anything binds: a service in this tier that starts without a token
+    // silently downgrades to the unauthenticated behaviour the token exists to remove, so
+    // the production profile refuses to boot rather than serving privileged routes openly.
+    let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
     let shutdown = tankovault_service::install_shutdown();
 
     let pool = tankovault_db::connect(
@@ -388,6 +397,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = HttpStack::new(&cfg.security, metrics.clone())
         .with_rate_limit(limiter)
+        .with_internal_auth(internal_token)
         .apply(routes)
         .merge(tankovault_service::ops_router(health, metrics));
 

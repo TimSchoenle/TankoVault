@@ -4811,6 +4811,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tankovault-config",
+ "tankovault-domain",
  "tankovault-service",
  "tankovault-solver",
  "tokio",
@@ -4988,11 +4989,13 @@ dependencies = [
  "serde",
  "serde_json",
  "tankovault-config",
+ "tankovault-domain",
  "tankovault-service",
  "tankovault-solver",
  "tokio",
  "tokio-util",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -5009,6 +5012,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "subtle",
  "tankovault-config",
  "tankovault-db",
  "tankovault-domain",

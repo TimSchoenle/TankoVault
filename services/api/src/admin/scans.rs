@@ -53,19 +53,7 @@ pub async fn trigger_scan(
         return Err(ApiError::FeatureDisabled(Feature::ScanningFull));
     }
 
-    let url = format!(
-        "{}/internal/scans",
-        state.control_plane_url.trim_end_matches('/')
-    );
-    let resp = state.http.post(url).json(&req).send().await.map_err(|e| {
-        tracing::error!(error = %e, "control-plane unreachable");
-        ApiError::Internal
-    })?;
-
-    if !resp.status().is_success() {
-        return Err(ApiError::Internal);
-    }
-    let body: serde_json::Value = resp.json().await.map_err(|_| ApiError::Internal)?;
+    let Json(body) = state.control_plane.post("/internal/scans", &req).await?;
 
     audit(
         &state,

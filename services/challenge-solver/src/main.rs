@@ -7,7 +7,7 @@
 
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
 use serde::Deserialize;
@@ -33,6 +33,10 @@ struct Config {
     /// Prometheus metrics. Togglable; disabling installs no recorder.
     #[serde(default)]
     metrics: tankovault_config::MetricsConfig,
+    /// Shared secret every caller must present. `/v1/solve` fetches a caller-supplied URL
+    /// and returns the body, which is an SSRF primitive for anyone who can reach the port.
+    #[serde(default)]
+    internal: tankovault_config::InternalAuthConfig,
 }
 
 fn default_bind() -> String {
@@ -73,6 +77,10 @@ async fn main() -> anyhow::Result<()> {
     let cfg: Config = tankovault_config::load()?;
     tankovault_service::init_tracing(&cfg.telemetry)?;
     let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    // Resolved before anything binds: a service in this tier that starts without a token
+    // silently downgrades to the unauthenticated behaviour the token exists to remove, so
+    // the production profile refuses to boot rather than serving privileged routes openly.
+    let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
     let shutdown = tankovault_service::install_shutdown();
 
     let solver: Arc<dyn ChallengeSolver> = match cfg.solver.backend.as_str() {
@@ -94,6 +102,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = HttpStack::new(&cfg.security, metrics.clone())
         .with_rate_limit(limiter)
+        .with_internal_auth(internal_token)
         .apply(
             Router::new()
                 .route("/v1/solve", post(solve))
@@ -111,7 +120,30 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Reject a target URL the solver must not visit.
+///
+/// `SolveRequest.url` used to reach FlareSolverr's `request.get` unvalidated, so anything
+/// that could open a socket to this service had an arbitrary-URL fetcher that returns the
+/// body — cloud instance metadata, internal admin endpoints, `file:` reads. Same policy the
+/// crawler applies, including IP literals.
+///
+/// The check binds the address the caller *named*. FlareSolverr resolves independently, so
+/// this does not survive a DNS rebind; that needs egress restriction around the solver
+/// container.
+fn validate_target(raw: &str) -> Result<(), Response> {
+    tankovault_domain::ssrf::validate_str(raw)
+        .map(|_| ())
+        .map_err(|e| {
+            metrics::counter!("solve_attempts_total", "result" => "rejected").increment(1);
+            tracing::warn!(url = %raw, error = %e, "refused a solve target");
+            (StatusCode::FORBIDDEN, format!("refused target: {e}")).into_response()
+        })
+}
+
 async fn solve(State(state): State<AppState>, Json(req): Json<SolveRequest>) -> impl IntoResponse {
+    if let Err(rejection) = validate_target(&req.url) {
+        return rejection;
+    }
     let provider = req.provider.clone();
     match state.solver.solve(req).await {
         Ok(outcome) => {

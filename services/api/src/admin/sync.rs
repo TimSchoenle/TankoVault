@@ -172,25 +172,13 @@ pub async fn admin_sync_unlink(
     Json(req): Json<SyncAccountTarget>,
 ) -> ApiResult<Json<serde_json::Value>> {
     user.require(Permission::SyncAdminWrite).await?;
-    let url = format!(
-        "{}/v1/sync/{}/link",
-        state.sync_url.trim_end_matches('/'),
-        req.provider
-    );
-    let resp = state
-        .http
-        .delete(url)
-        .json(&serde_json::json!({ "user_id": req.user_id }))
-        .send()
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "sync service unreachable");
-            ApiError::Internal
-        })?;
-    if !resp.status().is_success() {
-        return Err(ApiError::Internal);
-    }
-    let value: serde_json::Value = resp.json().await.map_err(|_| ApiError::Internal)?;
+    let Json(value) = state
+        .sync
+        .delete(
+            &format!("/v1/sync/{}/link", req.provider),
+            &serde_json::json!({ "user_id": req.user_id }),
+        )
+        .await?;
     audit(
         &state,
         &user,

@@ -60,6 +60,28 @@ fn empty_object() -> serde_json::Value {
     serde_json::json!({})
 }
 
+/// Refuse a `base_url` that points anywhere the crawler must not go.
+///
+/// This is the *supplying* side of the SSRF guard, and it was missing: a stored provider row
+/// is not a one-off fetch. `ProvidersCreate` + `ProvidersTest` — a role well short of full
+/// admin — could point a provider at `http://169.254.169.254` and read the dry-run's parsed
+/// output or, on a parse failure, the error text containing it. Worse, the scheduled scan
+/// workers then keep hitting the target on a timer, long after the operator's grant is gone.
+///
+/// Resolution is performed here, not only scheme and IP-literal checks, because the value is
+/// being *persisted*: refusing to store a host that resolves internally is cheaper than
+/// rediscovering it on every scan.
+async fn validate_base_url(base_url: &str) -> ApiResult<()> {
+    tankovault_fetch::ssrf::validate_and_resolve(base_url)
+        .await
+        .map_err(|e| {
+            tracing::warn!(url = %base_url, error = %e, "refused a provider base_url");
+            ApiError::BadRequest(format!(
+                "base_url {base_url:?} is not an allowed target: {e}"
+            ))
+        })
+}
+
 /// Create a provider
 #[utoipa::path(
     post,
@@ -91,6 +113,7 @@ pub async fn create_provider(
             req.slug
         )));
     }
+    validate_base_url(&req.base_url).await?;
     let provider = tankovault_db::repo::providers::create(
         &state.pool,
         NewProvider {
@@ -155,6 +178,7 @@ pub async fn update_provider(
 ) -> ApiResult<Json<Provider>> {
     user.require(Permission::ProvidersWrite).await?;
     let before = tankovault_db::repo::providers::get(&state.pool, id).await?;
+    validate_base_url(&req.base_url).await?;
     let provider = tankovault_db::repo::providers::update(
         &state.pool,
         id,
@@ -294,18 +318,7 @@ pub async fn resolve_provider(
         provider_id: Some(id),
         mode: ScanMode::Fast,
     };
-    let url = format!(
-        "{}/internal/scans",
-        state.control_plane_url.trim_end_matches('/')
-    );
-    let resp = state.http.post(url).json(&req).send().await.map_err(|e| {
-        tracing::error!(error = %e, "control-plane unreachable");
-        ApiError::Internal
-    })?;
-    if !resp.status().is_success() {
-        return Err(ApiError::Internal);
-    }
-    let body: serde_json::Value = resp.json().await.map_err(|_| ApiError::Internal)?;
+    let Json(body) = state.control_plane.post("/internal/scans", &req).await?;
 
     audit(
         &state,
@@ -383,7 +396,11 @@ pub async fn test_adapter(
     user.require(Permission::ProvidersTest).await?;
     let req = body.map(|b| b.0).unwrap_or_default();
     let provider = tankovault_db::repo::providers::get(&state.pool, id).await?;
-    let (adapter, ctx) = build_test_context(&provider, &state.challenge_solver_url)?;
+    let (adapter, ctx) = build_test_context(
+        &provider,
+        &state.challenge_solver_url,
+        state.internal_token.as_ref(),
+    )?;
 
     let sample = tokio::time::timeout(Duration::from_secs(25), async {
         let latest = match adapter.list_latest(&ctx).await {
@@ -445,12 +462,14 @@ pub async fn test_adapter(
 fn build_test_context(
     provider: &Provider,
     solver_url: &str,
+    token: Option<&tankovault_service::InternalToken>,
 ) -> ApiResult<(Box<dyn SourceAdapter>, Ctx)> {
     let adapter = build_adapter(provider.adapter, &provider.slug, &provider.config)
         .map_err(|e| ApiError::BadRequest(format!("adapter build failed: {e}")))?;
     let solver: Arc<dyn ChallengeSolver> = Arc::new(HttpChallengeSolver::new(
         solver_url.to_owned(),
         Duration::from_secs(90),
+        token.map(|t| t.expose().to_owned()),
     ));
     let session_store: Arc<dyn SessionStore> = Arc::new(InMemorySessionStore::default());
     let mut cfg = ProviderFetchConfig::new(

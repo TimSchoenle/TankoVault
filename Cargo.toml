@@ -135,6 +135,9 @@ rand = "0.8"
 sha2 = "0.10"
 hmac = "0.12"
 base64 = "0.22"
+# Constant-time comparison for the internal service-to-service token. Already in the tree
+# transitively (aes-gcm, argon2); declared here so the comparison is not hand-rolled.
+subtle = "2"
 
 # --- observability ---
 tracing = "0.1"

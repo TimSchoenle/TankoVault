@@ -53,6 +53,10 @@ struct Config {
     /// Runtime feature flags — how often this replica re-reads the operator's decisions.
     #[serde(default)]
     features: tankovault_config::FeaturesConfig,
+    /// Shared secret every caller must present on `/internal/*`. Triggering scan runs is an
+    /// operator action; the endpoint's name is not an access control.
+    #[serde(default)]
+    internal: tankovault_config::InternalAuthConfig,
 }
 
 fn default_bind() -> String {
@@ -97,6 +101,10 @@ async fn main() -> anyhow::Result<()> {
     let cfg: Config = tankovault_config::load()?;
     tankovault_service::init_tracing(&cfg.telemetry)?;
     let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    // Resolved before anything binds: a service in this tier that starts without a token
+    // silently downgrades to the unauthenticated behaviour the token exists to remove, so
+    // the production profile refuses to boot rather than serving privileged routes openly.
+    let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
     let shutdown = tankovault_service::install_shutdown();
 
     let pool = tankovault_db::connect(
@@ -169,6 +177,7 @@ async fn main() -> anyhow::Result<()> {
     let limiter = RateLimiter::from_config(&cfg.rate_limit, RouteClassifier::new(), None);
     let app = HttpStack::new(&cfg.security, metrics.clone())
         .with_rate_limit(limiter)
+        .with_internal_auth(internal_token)
         .apply(
             Router::new()
                 .route("/internal/scans", post(trigger_scan))

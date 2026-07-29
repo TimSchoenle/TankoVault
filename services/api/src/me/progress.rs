@@ -260,12 +260,13 @@ pub(super) fn spawn_targeted_push(state: &AppState, user_id: UserId, series_id: 
         return;
     }
 
-    let http = state.http.clone();
-    let sync_url = state.sync_url.clone();
+    let sync = state.sync.clone();
     tokio::spawn(async move {
-        let url = format!("{}/v1/sync/push-series", sync_url.trim_end_matches('/'));
         let body = serde_json::json!({ "user_id": user_id, "series_id": series_id });
-        match http.post(url).json(&body).send().await {
+        let request = sync
+            .request(reqwest::Method::POST, "/v1/sync/push-series")
+            .json(&body);
+        match request.send().await {
             Ok(resp) if resp.status().is_success() => {}
             Ok(resp) => tracing::warn!(
                 status = %resp.status(),

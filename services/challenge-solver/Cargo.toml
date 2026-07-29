@@ -13,6 +13,8 @@ path = "src/main.rs"
 [dependencies]
 tankovault-config = { workspace = true }
 tankovault-service = { workspace = true }
+# For the SSRF address policy only — see the note in services/render/Cargo.toml.
+tankovault-domain = { workspace = true }
 tokio-util = { workspace = true }
 tankovault-solver = { workspace = true }
 axum = { workspace = true }

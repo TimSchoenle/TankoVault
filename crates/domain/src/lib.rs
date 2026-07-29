@@ -22,6 +22,7 @@ pub mod link;
 pub mod normalize;
 pub mod permissions;
 pub mod politeness;
+pub mod ssrf;
 
 pub use entities::{
     Author, Chapter, Notification, Provider, ReadProgress, ScanRun, ScanTask, Series, SeriesSource,

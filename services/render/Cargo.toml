@@ -13,6 +13,10 @@ path = "src/main.rs"
 [dependencies]
 tankovault-config = { workspace = true }
 tankovault-service = { workspace = true }
+# For the SSRF address policy only. Deliberately not `tankovault-fetch`: this service needs
+# the *table*, not the wreq/BoringSSL client stack the Docker build has to work around.
+tankovault-domain = { workspace = true }
+url = { workspace = true }
 tokio-util = { workspace = true }
 tankovault-solver = { workspace = true }
 axum = { workspace = true }

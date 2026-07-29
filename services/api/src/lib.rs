@@ -25,6 +25,7 @@ mod mailer;
 mod me;
 mod series;
 mod state;
+mod upstream;
 
 use axum::Router;
 pub use state::AppState;
@@ -34,6 +35,7 @@ use tankovault_service::{
     FeatureGate, FeatureLayer, Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier,
     RouteFeatures,
 };
+pub use upstream::Upstream;
 use utoipa::OpenApi as _;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;

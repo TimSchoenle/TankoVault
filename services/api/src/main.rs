@@ -55,6 +55,10 @@ struct Config {
     /// are on is an operator decision made in the control plane at runtime.
     #[serde(default)]
     features: tankovault_config::FeaturesConfig,
+    /// Shared secret presented to `sync`, `control-plane` and `challenge-solver`. Must be
+    /// identical on every service in the internal tier.
+    #[serde(default)]
+    internal: tankovault_config::InternalAuthConfig,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -118,6 +122,30 @@ fn is_production() -> bool {
     )
 }
 
+/// Placeholder secrets that ship in this repository, and are therefore public.
+///
+/// Kept as data rather than as a `matches!` inside one caller: the same list has to be
+/// consulted by the seed step and by any future secret. Returns the human name of the match
+/// so the refusal can say *which* placeholder was found.
+const KNOWN_PLACEHOLDERS: [(&str, &str); 4] = [
+    ("dev-jwt-secret-change-me", "development JWT secret"),
+    (
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "all-zero token encryption key",
+    ),
+    ("changeme12345", "default seed administrator password"),
+    ("change-me", "default email password"),
+];
+
+/// The name of the placeholder `value` matches, if any.
+fn known_placeholder(value: &str) -> Option<&'static str> {
+    let trimmed = value.trim();
+    KNOWN_PLACEHOLDERS
+        .iter()
+        .find(|(placeholder, _)| *placeholder == trimmed)
+        .map(|(_, name)| *name)
+}
+
 /// Fail fast on a misconfigured secret **before** the edge accepts a single request.
 ///
 /// A production deployment that boots with a missing or weak `jwt_secret` can have every session
@@ -130,6 +158,18 @@ fn is_production() -> bool {
 /// Returns an error in a production profile when `jwt_secret` is empty or shorter than
 /// [`MIN_JWT_SECRET_LEN`].
 fn validate_auth_secrets(auth: &AuthConfig, production: bool) -> anyhow::Result<()> {
+    // Checked in **every** profile, not just production. A weak-secret check a deployment
+    // can skip by forgetting one environment variable is not a check — and these exact
+    // strings shipped in the reference compose file, so they are what an operator who never
+    // set TANKOVAULT_PROFILE is running with.
+    if let Some(name) = known_placeholder(&auth.jwt_secret) {
+        anyhow::bail!(
+            "refusing to start: jwt_secret is the well-known {name} placeholder, which is \
+             published in this repository. Every session against it is forgeable by anyone \
+             who has read deploy/docker-compose.yml. Set TANKOVAULT_AUTH__JWT_SECRET."
+        );
+    }
+
     if !production {
         if auth.jwt_secret.len() < MIN_JWT_SECRET_LEN {
             tracing::warn!(
@@ -201,17 +241,33 @@ async fn main() -> anyhow::Result<()> {
     let features =
         tankovault_api::install_feature_gate(pool.clone(), &cfg.features, shutdown.clone()).await;
 
+    // One client for every internal hop, with connect and request timeouts. The previous
+    // `reqwest::Client::new()` had neither, and fed an unbounded `tokio::spawn` in
+    // `spawn_targeted_push` — a hung `sync` leaked a task and a socket per marked chapter.
+    let internal_http = tankovault_api::Upstream::client()?;
+    let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
+
     let state = AppState {
         pool: pool.clone(),
         jwt_secret: Arc::new(cfg.auth.jwt_secret.into_bytes()),
         password_pepper: Arc::new(cfg.auth.password_pepper.into_bytes()),
         access_ttl: time::Duration::minutes(cfg.auth.access_ttl_minutes),
         refresh_ttl: time::Duration::days(cfg.auth.refresh_ttl_days),
-        control_plane_url: cfg.control_plane_url,
-        sync_url: cfg.sync_url,
+        control_plane: tankovault_api::Upstream::new(
+            internal_http.clone(),
+            cfg.control_plane_url,
+            internal_token.clone(),
+            "control-plane",
+        ),
+        sync: tankovault_api::Upstream::new(
+            internal_http,
+            cfg.sync_url,
+            internal_token.clone(),
+            "sync",
+        ),
         challenge_solver_url: cfg.challenge_solver_url,
+        internal_token,
         bus,
-        http: reqwest::Client::new(),
         audit,
         features,
         cookie_secure: cfg.auth.cookie_secure,
@@ -345,6 +401,39 @@ mod tests {
             refresh_ttl_days: 30,
             cookie_secure: true,
         }
+    }
+
+    /// The published placeholder must be refused **outside** production too. A check an
+    /// operator can skip by forgetting `TANKOVAULT_PROFILE` is not a check, and this exact
+    /// string shipped in `deploy/docker-compose.yml`.
+    #[test]
+    fn the_published_placeholder_secret_is_refused_in_every_profile() {
+        for production in [true, false] {
+            let err =
+                validate_auth_secrets(&auth("dev-jwt-secret-change-me", "pepper"), production)
+                    .unwrap_err();
+            assert!(
+                err.to_string().contains("placeholder"),
+                "production={production}, got: {err}"
+            );
+        }
+        // Surrounding whitespace must not smuggle it past the comparison.
+        assert!(
+            validate_auth_secrets(&auth("  dev-jwt-secret-change-me  ", "pepper"), false).is_err()
+        );
+    }
+
+    #[test]
+    fn known_placeholders_are_named_in_the_refusal() {
+        assert_eq!(
+            super::known_placeholder("changeme12345"),
+            Some("default seed administrator password")
+        );
+        assert_eq!(
+            super::known_placeholder("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
+            Some("all-zero token encryption key")
+        );
+        assert_eq!(super::known_placeholder("a-real-looking-secret"), None);
     }
 
     #[test]

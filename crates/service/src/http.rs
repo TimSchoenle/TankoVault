@@ -41,11 +41,14 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(20);
 /// 4. **Security headers / CORS** — applied to *every* response, including the `429` from
 ///    the limiter and the `408` from the timeout.
 /// 5. **Rate limit** — sheds load before any real work, but after the cheap layers above.
-/// 6. **Timeout**, **body limit**, **compression** — the per-request work bounds.
+/// 6. **Internal auth** (internal tier only) — an unauthenticated caller is refused before
+///    it can spend the timeout or the body budget, but after the headers above are set.
+/// 7. **Timeout**, **body limit**, **compression** — the per-request work bounds.
 pub struct HttpStack {
     security: SecurityConfig,
     metrics: MetricsRegistry,
     limiter: Option<RateLimiter>,
+    internal_token: Option<crate::internal_auth::InternalToken>,
 }
 
 impl HttpStack {
@@ -56,6 +59,7 @@ impl HttpStack {
             security: security.clone(),
             metrics,
             limiter: None,
+            internal_token: None,
         }
     }
 
@@ -67,12 +71,32 @@ impl HttpStack {
         self
     }
 
+    /// Require [`crate::internal_auth::INTERNAL_TOKEN_HEADER`] on every routed request.
+    ///
+    /// For services in the internal tier (`sync`, `control-plane`, `render`,
+    /// `challenge-solver`), whose contract is privileged and whose only legitimate callers
+    /// are other services. Pass `None` to leave the tier unauthenticated, which
+    /// [`tankovault_config::InternalAuthConfig::resolve`] permits outside the production
+    /// profile so local development stays frictionless.
+    ///
+    /// Health and readiness stay reachable: [`ops_router`] is merged *outside* [`Self::apply`],
+    /// so an orchestrator never needs the secret.
+    #[must_use]
+    pub fn with_internal_auth(
+        mut self,
+        token: Option<crate::internal_auth::InternalToken>,
+    ) -> Self {
+        self.internal_token = token;
+        self
+    }
+
     /// Wrap `router` in the assembled stack.
     pub fn apply(self, router: Router) -> Router {
         let Self {
             security,
             metrics,
             limiter,
+            internal_token,
         } = self;
 
         // `option_layer` turns each optional concern into a no-op `Identity` when absent,
@@ -83,6 +107,12 @@ impl HttpStack {
         let metrics_layer = metrics
             .records_http_requests()
             .then(|| axum::middleware::from_fn(service_metrics::track_request));
+        // Innermost of the auth-ish layers but outside the work bounds: an unauthenticated
+        // caller must not be able to spend the body limit or the request timeout, and must
+        // still receive the security headers and a request id on the way out.
+        let internal_auth = internal_token.map(|token| {
+            axum::middleware::from_fn_with_state(token, crate::internal_auth::enforce)
+        });
         let cors = security.cors.is_enabled().then(|| build_cors(&security));
         let security_headers = security.security_headers.then(|| {
             axum::middleware::from_fn_with_state(security.clone(), apply_security_headers)
@@ -100,6 +130,7 @@ impl HttpStack {
                 StatusCode::REQUEST_TIMEOUT,
                 Duration::from_secs(security.request_timeout_secs.max(1)),
             ))
+            .layer(tower::util::option_layer(internal_auth))
             .layer(tower::util::option_layer(rate_limit))
             .layer(tower::util::option_layer(cors))
             .layer(tower::util::option_layer(security_headers))

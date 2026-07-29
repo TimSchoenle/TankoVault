@@ -21,6 +21,11 @@ pub(crate) struct Config {
     /// Prometheus metrics. Togglable; disabling installs no recorder.
     #[serde(default)]
     pub(crate) metrics: tankovault_config::MetricsConfig,
+    /// Shared secret every caller must present. Both routes fetch a caller-supplied URL
+    /// with a real browser and return the DOM *and the cookies it collected*, which is a
+    /// full internal-network read for anyone who can reach the port.
+    #[serde(default)]
+    pub(crate) internal: tankovault_config::InternalAuthConfig,
 }
 
 fn default_bind() -> String {

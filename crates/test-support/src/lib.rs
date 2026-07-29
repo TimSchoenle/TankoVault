@@ -160,6 +160,25 @@ impl TestDb {
 
         user_id
     }
+
+    /// Run a statement against this test's database.
+    ///
+    /// Exists for one job: **aging rows so a time-dependent branch can be reached**. Token
+    /// expiry (`RESET_TOKEN_TTL`, `VERIFY_TOKEN_TTL`, refresh lifetime) is compared against
+    /// `now()`, and there is no clock seam in `AppState` to move, so the only way to test the
+    /// expired branch is to backdate the row. That drives the same `expires_at <= now()`
+    /// comparison the handler makes, so dropping or inverting it still fails the test.
+    ///
+    /// `&'static str` deliberately: a test may not build SQL from a runtime value.
+    ///
+    /// # Panics
+    /// If the statement fails, which in a test always means the fixture is wrong.
+    pub async fn execute(&self, sql: &'static str) {
+        sqlx::query(sql)
+            .execute(&self.pool)
+            .await
+            .expect("test fixture statement");
+    }
 }
 
 /// An [`AuditSink`] that records every event in memory so a test can assert on the audit trail.

@@ -201,6 +201,29 @@ pub async fn delete<'e, E: PgExecutor<'e>>(exec: E, id: ProviderId) -> DbResult<
     Ok(())
 }
 
+/// Fetch several providers by id in one round trip.
+///
+/// The series-detail handler needs one provider per source group and used to call [`get`] in
+/// a loop — a textbook N+1 against a table that is small, operator-managed reference data.
+/// Rows come back in whatever order the planner produces; callers look up by id.
+///
+/// # Errors
+/// Propagates any database failure. Ids with no row are simply absent from the result.
+pub async fn get_many<'e, E: PgExecutor<'e>>(
+    exec: E,
+    ids: &[ProviderId],
+) -> DbResult<Vec<Provider>> {
+    let ids: Vec<Uuid> = ids.iter().map(|id| id.as_uuid()).collect();
+    let rows = sqlx::query_as!(
+        ProviderRow,
+        "SELECT id, slug, name, base_url, adapter AS \"adapter: AdapterKind\",                 config AS \"config: Json\", state AS \"state: ProviderState\",                 politeness AS \"politeness: SqlxJson<Politeness>\",                 last_full_scan_at, created_at, updated_at          FROM providers WHERE id = ANY($1)",
+        &ids,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows.into_iter().map(Into::into).collect())
+}
+
 /// A public-facing provider entry for the Discover filter list (frontend §9.3
 /// `GET /v1/providers`): identity plus how many distinct series it carries, so the UI can
 /// show "Provider (N)" options without exposing operator-only config/politeness.

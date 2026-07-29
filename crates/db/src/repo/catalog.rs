@@ -756,6 +756,42 @@ pub async fn list_chapters<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(Chapter::from).collect())
 }
 
+/// Distinct whole-chapter counts for a series, one row per provider.
+///
+/// The batched counterpart to [`count_full_chapters_across`]. `services/api`'s series-detail
+/// handler folds a series' sources into one group per provider and needs a count for each; it
+/// used to issue one `count_full_chapters_across` per group, which is an N+1 over a set the
+/// database can group in a single pass.
+///
+/// # Errors
+/// Propagates any database failure.
+pub async fn count_full_chapters_by_provider<'e, E: PgExecutor<'e>>(
+    exec: E,
+    series_id: SeriesId,
+) -> DbResult<Vec<(ProviderId, i32)>> {
+    #[derive(FromRow)]
+    struct Row {
+        provider_id: Uuid,
+        count: i64,
+    }
+    let rows = sqlx::query_as!(
+        Row,
+        "SELECT ss.provider_id, count(DISTINCT floor(c.number)) AS \"count!\"          FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id          WHERE ss.series_id = $1          GROUP BY ss.provider_id",
+        series_id.as_uuid(),
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            (
+                ProviderId::from_uuid(r.provider_id),
+                i32::try_from(r.count).unwrap_or(i32::MAX),
+            )
+        })
+        .collect())
+}
+
 /// The number of distinct **whole** chapters across a *set* of sources — the merge-aware
 /// counterpart to [`count_full_chapters`]. Used when several `series_sources` rows of the
 /// same provider are folded into one reader-visible "completing" source (design §10 same-source

@@ -44,6 +44,41 @@ x-internal: &internal
 
 x-db-url: &db-url "postgres://tankovault:tankovault@postgres:5432/tankovault"
 
+# ---- Container healthcheck for the scratch services ----------------------------------------
+# These images have no shell, no `wget` and no `curl`, so a `CMD-SHELL` probe is impossible —
+# which is why the eight app services carried no healthcheck at all and `depends_on` could only
+# ever say `service_started`. The one executable that is always present is the service binary,
+# so it probes itself: `--healthcheck` is an argv branch handled at the top of every `main`
+# before config or telemetry (`crates/service/src/healthcheck.rs`).
+#
+# The probe is a TCP connect to the service's *own* `bind_addr`, read from the same config the
+# server binds — so a rebind (the worker's `TANKOVAULT_BIND_ADDR: 0.0.0.0:8085`, say) is
+# followed automatically and nothing here names a port. It is liveness, not readiness:
+# "the listener is accepting" is what should trigger a restart, while "Postgres is reachable"
+# is a routing decision that `/ready` already answers over HTTP.
+#
+# `timeout: 3s` sits just above the probe's own 2s connect timeout, so the process exits with
+# a verdict rather than being killed without one.
+x-healthcheck: &healthcheck
+  test: ["CMD", "/usr/local/bin/tankovault-service", "--healthcheck"]
+  interval: 10s
+  timeout: 3s
+  retries: 5
+  start_period: 20s
+
+# ---- Runtime hardening for the scratch services --------------------------------------------
+# The images are already `scratch` + non-root, so the marginal gain is small — but all three of
+# these are free here and remove whole classes of escalation.
+#
+# `read_only` is safe by construction rather than by inspection: a `scratch` image *is* four
+# baked-in files (the binary, the musl loader, `libgcc_s`, the CA bundle) and nothing else, so
+# there is no writable path for a service to have quietly depended on. Not applied to `render`
+# — see the note there.
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
 services:
   # ---- Infrastructure ---------------------------------------------------------------
   postgres:
@@ -97,6 +132,9 @@ services:
       <<: *build
       args: { BIN: xtask }
     command: ["migrate"]
+    # One-shot: it runs, exits 0 and is gated on by `service_completed_successfully`, so a
+    # healthcheck would have nothing to report. Hardening still applies.
+    <<: *hardening
     environment:
       DATABASE_URL: *db-url
     depends_on:
@@ -108,6 +146,7 @@ services:
       <<: *build
       args: { BIN: xtask }
     command: ["seed"]
+    <<: *hardening
     environment:
       DATABASE_URL: *db-url
       # Required: `changeme12345` is published here, so it is not a password.
@@ -120,6 +159,8 @@ services:
   # ---- Services ---------------------------------------------------------------------
   api:
     deploy: { resources: { limits: { memory: 768m } } }
+    healthcheck: *healthcheck
+    <<: *hardening
     build:
       <<: *build
       args: { BIN: api }
@@ -194,6 +235,8 @@ services:
 
   control-plane:
     deploy: { resources: { limits: { memory: 512m } } }
+    healthcheck: *healthcheck
+    <<: *hardening
     build:
       <<: *build
       args: { BIN: control-plane }
@@ -209,6 +252,11 @@ services:
       redis: { condition: service_healthy }
 
   worker:
+    # The probe reads the same `bind_addr` the server binds, so it follows the ops listener
+    # rebound below to 8085 with nothing here naming a port — which also means it works
+    # unchanged across both replicas, neither of which publishes a host port.
+    healthcheck: *healthcheck
+    <<: *hardening
     build:
       <<: *build
       args: { BIN: worker }
@@ -226,13 +274,17 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
       nats: { condition: service_healthy }
-      challenge-solver: { condition: service_started }
+      # Was `service_started`. The worker's first scan can hit the solver immediately, so
+      # "the process exists" was not the guarantee this dependency needed.
+      challenge-solver: { condition: service_healthy }
     deploy:
       replicas: 2 # JetStream consumer group → free horizontal scale
       resources: { limits: { memory: 768m } }
 
   notifier:
     deploy: { resources: { limits: { memory: 384m } } }
+    healthcheck: *healthcheck
+    <<: *hardening
     build:
       <<: *build
       args: { BIN: notifier }
@@ -258,6 +310,8 @@ services:
 
   sync:
     deploy: { resources: { limits: { memory: 512m } } }
+    healthcheck: *healthcheck
+    <<: *hardening
     build:
       <<: *build
       args: { BIN: sync }
@@ -279,6 +333,8 @@ services:
 
   challenge-solver:
     deploy: { resources: { limits: { memory: 384m } } }
+    healthcheck: *healthcheck
+    <<: *hardening
     build:
       <<: *build
       args: { BIN: challenge-solver }
@@ -294,6 +350,19 @@ services:
   render:
     deploy: { resources: { limits: { memory: 2g } } }
     shm_size: 1gb
+    healthcheck: *healthcheck
+    # `cap_drop` + `no-new-privileges` matter most on this tier: it is the only one running a
+    # real browser against untrusted remote content, and Chromium here is already `--no-sandbox`
+    # (no user namespaces in the container), so nothing it does needs a capability.
+    #
+    # `read_only: true` is deliberately NOT set, unlike the scratch services. Those are safe by
+    # construction — the image has no writable path to depend on. This one is a full Debian base
+    # under a browser that writes a profile, a cache and any number of scratch files whose paths
+    # are not enumerable from here; guessing the tmpfs set wrong produces a silent crash loop on
+    # the tier that is hardest to debug. Turn it on only after an empirical pass with
+    # `--read-only` against a real render, and record the required mounts here when you do.
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     build:
       <<: *build
       target: runtime-browser
@@ -305,12 +374,19 @@ services:
 
   # ---- Frontend (Dioxus WASM SPA served by the axum `frontend` server) ---------------
   # The `frontend` server serves the built SPA and reverse-proxies /v1/* (REST + SSE) to `api`,
-  # giving the single origin the client's same-origin API calls (API_BASE = "") require. Like
-  # the other services it is a static musl binary on `scratch` (no shell), so — matching them —
-  # it carries no container healthcheck; `depends_on` handles startup ordering. This is the
-  # front door for the E2E stack: open http://localhost:3000.
+  # giving the single origin the client's same-origin API calls (API_BASE = "") require. This is
+  # the front door for the E2E stack: open http://localhost:3000.
   frontend:
     deploy: { resources: { limits: { memory: 256m } } }
+    # Same self-probe as the backends, but this image's entrypoint has its own name
+    # (deploy/docker/Dockerfile.frontend), so the anchor above cannot be reused verbatim.
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/tankovault-frontend", "--healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    <<: *hardening
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.frontend
@@ -321,7 +397,10 @@ services:
       TANKOVAULT_FRONTEND__API_UPSTREAM: http://api:8080
     ports: ["3000:3000"]
     depends_on:
-      api: { condition: service_started }
+      # Was `service_started`, which only means the API *process* exists — so every
+      # `compose up` raced the frontend against an API that was not yet listening. The API's
+      # healthcheck makes the ordering real.
+      api: { condition: service_healthy }
 
 volumes:
   pgdata:

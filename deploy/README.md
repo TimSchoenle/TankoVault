@@ -18,9 +18,10 @@ Container build and local orchestration for TankoVault (design §19).
   and ships both on a bare `scratch` image (like every backend service). The server serves the
   SPA and reverse-proxies `/v1/*` (REST + SSE) to the `api` service, so the SPA's same-origin
   API calls resolve without CORS.
-- `docker-compose.yml` — the full end-to-end local stack: Postgres 19, Redis 7, NATS
+- `docker-compose.yml` — the full end-to-end local stack: Postgres 17, Redis 7, NATS
   (JetStream), FlareSolverr, a one-shot `migrate`+`seed`, every backend service, and the
-  web frontend.
+  web frontend. **This is the only supported deployment shape** — see [Kubernetes](#kubernetes)
+  below.
 
 ## Quick start
 ```bash
@@ -31,11 +32,13 @@ This applies migrations, seeds a demo admin (`admin` / `changeme12345`) and a pl
 Madara provider, then starts all services and the frontend.
 
 **Open the app at http://localhost:3000** — the `frontend` server serves the SPA and proxies
-`/v1/*` to the API, so this single origin is all a browser needs. The API is also exposed
-directly on http://localhost:8080 for tooling/curl.
+`/v1/*` to the API, so this single origin is all a browser needs.
 
-Ports: **frontend `3000`**, api `8080`, control-plane `8081`, notifier `8082`, sync `8083`,
-render `8084`, challenge-solver `8090`, FlareSolverr `8191`.
+**Only port 3000 is published on the host.** Every other service listens on the compose network
+only; see the exposure note at the top of `docker-compose.yml` for why. In-network ports:
+api `8080`, control-plane `8081`, notifier `8082`, sync `8083`, render `8084`, worker (ops)
+`8085`, challenge-solver `8090`, FlareSolverr `8191`, and every backend's Prometheus scrape on
+`9090`.
 
 ### Why the frontend sits behind a proxy
 The WASM client calls the API same-origin (`web/frontend/src/api.rs` → `API_BASE = ""`) and
@@ -48,7 +51,10 @@ Every service reads layered config via `tankovault-config`: optional TOML at `$T
 then `TANKOVAULT_*` environment variables (`__` denotes nesting, e.g.
 `TANKOVAULT_DATABASE__URL`). The compose file sets these inline.
 
-**Replace before any non-local use** (the compose defaults are dev-only):
+The complete surface — every `TANKOVAULT_*` key, its default, and which service reads it — is
+[`docs/CONFIGURATION.md`](../docs/CONFIGURATION.md). The short version:
+
+**Required, with no working default** (compose fails fast rather than booting insecure):
 - `TANKOVAULT_AUTH__JWT_SECRET` — API token signing secret.
 - `TANKOVAULT_AUTH__PASSWORD_PEPPER` — *optional* server-side password pepper mixed into every
   argon2id hash so a database leak alone can't be brute-forced offline. Empty (the default)
@@ -94,18 +100,33 @@ docker compose -f deploy/docker-compose.yml run --rm migrate
   stack wires it so the behaviour matches a multi-replica deployment.
 - **NATS** exposes its HTTP monitoring port (`-m 8222`) purely so compose can healthcheck it
   (`/healthz`); backend services wait on `nats: service_healthy` before starting.
-- The **Rust service** containers are `scratch`-based (no shell, no OS), so they carry no
-  container-level healthcheck; `depends_on` ordering plus the infra healthchecks
-  (postgres/redis/nats) and the `migrate` completion gate handle startup sequencing. The
-  frontend is now a `scratch` static binary too, so it likewise carries no container
-  healthcheck (it still exposes `GET /healthz` for an external probe); the infra images do.
+- Every **Rust service** container carries a healthcheck, including the `scratch` ones. They
+  have no shell, no `wget` and no `curl`, so the binary probes *itself*: `--healthcheck` is an
+  argv branch handled before config loading (`crates/service/src/healthcheck.rs`) that TCP-
+  connects to the service's own `bind_addr` and exits 0/1. That is what lets `depends_on` say
+  `service_healthy` rather than `service_started` — previously the frontend started as soon as
+  the API *process* existed, which raced on every `compose up`.
+- The scratch containers additionally run `read_only: true`, `cap_drop: [ALL]` and
+  `no-new-privileges`. `read_only` is safe by construction there: the image *is* the binary,
+  the musl loader, `libgcc_s` and a CA bundle, so there is no writable path to depend on.
+  `render` gets the capability drop but not `read_only` — it is a Debian base under a Chromium
+  that writes a profile and a cache to paths not enumerable from here.
 
-## Kubernetes / Helm
-The Helm chart (design §19) lives in [`helm/tankovault`](helm/tankovault) and consumes the
-shared [`helm/common`](helm/common) library chart. It renders the whole fleet from one
-`values.yaml`: Deployments/Services, HPAs (api/worker/frontend), a control-plane singleton, the
-challenge-solver + FlareSolverr companion, a pre-install schema-migration Job, shared
-ConfigMap/Secret, optional PodMonitors, and optional in-cluster Postgres/Redis/NATS for dev.
-k8s HTTP probes are wired against each service's `/health` and `/ready` (the frontend's
-`/healthz`), and each backend exposes an isolated Prometheus scrape on port `9090`. See
-[`helm/tankovault/README.md`](helm/tankovault/README.md) for the full guide.
+## Kubernetes
+
+**Not implemented.** Tracked as design §19; `docs/IMPLEMENTATION_STATUS.md` is the live status.
+
+This section previously described a Helm chart at `deploy/helm/tankovault` — its values,
+HPAs, probe wiring and a linked `README.md` — none of which has ever existed: `deploy/helm/`
+held four empty, untracked directories. An operator following it reached a dead link. The
+claim is removed rather than replaced with a chart, because a chart nobody has rendered against
+a real cluster would be the same defect wearing different clothes.
+
+**The only supported deployment today is `deploy/docker-compose.yml` on a single host.** It has
+no replica story for the api and worker tiers beyond compose's own `replicas:`.
+
+What a future chart already has to build on, and would not have to invent: every service
+exposes `/health` (liveness) and `/ready` (readiness with per-dependency detail) on its main
+port and a Prometheus scrape on an isolated `9090`, schema migration is already a discrete
+one-shot step rather than something a service does at startup, and the control-plane scheduler
+already elects a leader through Redis — so a `Deployment` with `replicas > 1` is safe there.

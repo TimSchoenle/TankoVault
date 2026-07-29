@@ -6,7 +6,12 @@ Scope: 52,934 LOC (36,813 backend across 14 crates + 8 services, 16,121 frontend
 
 This document is the **index and prioritized roadmap**. The detailed findings — each with
 `file:line` evidence, exploit or cost model, and a concrete fix — live in the companion
-reports:
+reports.
+
+> **Remediation is in progress.** [`PROGRESS.md`](./PROGRESS.md) tracks the status of every
+> finding below and is the hand-off document — read it before starting work, and update it in
+> the same commit as your fix. It also lists the actions only a human can take (credential
+> rotation, history purge), which no code change can close.
 
 | Report | Findings | Focus |
 | --- | --- | --- |

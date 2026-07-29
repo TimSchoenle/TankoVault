@@ -165,6 +165,25 @@ impl Entity {
         }
     }
 
+    /// This entity's rail glyph (`DESIGN_SPEC` §6-7). The rail shipped without any, which is
+    /// why a quarter of the icon inventory was unreferenced.
+    fn icon(self) -> Icon {
+        match self {
+            Self::Overview => Icon::Dashboard,
+            Self::Merge => Icon::Merge,
+            Self::Providers => Icon::Layers,
+            Self::Scans => Icon::Radar,
+            Self::Solver => Icon::ShieldLock,
+            Self::AdapterTest => Icon::Code,
+            Self::Users => Icon::Group,
+            Self::Sync => Icon::CloudSync,
+            Self::Flags => Icon::Flag,
+            // Data-subject requests are one person's records, not a policy surface.
+            Self::Privacy => Icon::Person,
+            Self::Audit => Icon::History,
+        }
+    }
+
     /// The breadcrumb segment shown beside the wordmark.
     fn slug(self) -> &'static str {
         match self {
@@ -438,6 +457,7 @@ pub(crate) fn Console() -> Element {
                                 class: if entity == current { "ik-cons-entry active" } else { "ik-cons-entry" },
                                 "aria-current": if entity == current { "page" } else { "false" },
                                 onclick: move |_| selected.set(entity),
+                                Ic { icon: entity.icon(), size: 15 }
                                 span { {i18n.t(entity.label_key())} }
                                 RailCount { entity, counts: counts.clone() }
                             }

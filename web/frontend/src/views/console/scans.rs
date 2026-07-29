@@ -2,9 +2,9 @@
 //! and triage the most recent task failures with their errors.
 
 use crate::api;
+use crate::components::async_block;
 use crate::i18n::use_i18n;
 use crate::models::*;
-use crate::state::use_session;
 use crate::util::rel_time;
 use crate::views::console::run_state_pill;
 use crate::views::console::RefreshTick;
@@ -18,50 +18,33 @@ use progenitor_client::ResponseValue;
 pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
-    let session = use_session();
     let mut mode = use_signal(|| ScanMode::Fast);
     let mut message = use_signal(|| Option::<String>::None);
 
-    let runs = {
-        use_resource(move || {
-            tick.track();
-            let client = api.client();
-            async move {
-                if session.is_authenticated() {
-                    Some(
-                        client
-                            .list_scans()
-                            .send()
-                            .await
-                            .map(ResponseValue::into_inner)
-                            .map_err(|e| api::friendly_error(i18n, e)),
-                    )
-                } else {
-                    None
-                }
-            }
-        })
-    };
-    let failures = {
-        use_resource(move || {
-            tick.track();
-            let client = api.client();
-            async move {
-                if session.is_authenticated() {
-                    Some(
-                        client
-                            .scan_failures()
-                            .send()
-                            .await
-                            .map(ResponseValue::into_inner)
-                            .map_err(|e| api::friendly_error(i18n, e)),
-                    )
-                } else {
-                    None
-                }
-            }
-        })
-    };
+    let runs = use_resource(move || {
+        tick.track();
+        let client = api.client();
+        async move {
+            client
+                .list_scans()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))
+        }
+    });
+    let failures = use_resource(move || {
+        tick.track();
+        let client = api.client();
+        async move {
+            client
+                .scan_failures()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))
+        }
+    });
 
     let trigger = {
         move |_| {
@@ -92,16 +75,6 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
         }
     };
 
-    let all_runs = match &*runs.read_unchecked() {
-        Some(Some(Ok(list))) => list.clone(),
-        _ => Vec::new(),
-    };
-    let active: Vec<ScanRun> = all_runs
-        .iter()
-        .filter(|r| matches!(r.state, RunState::Running | RunState::Queued))
-        .cloned()
-        .collect();
-
     rsx! {
         section { class: "ik-tile", style: "margin-bottom:18px;",
             div { class: "ik-flex", style: "justify-content:space-between;flex-wrap:wrap;",
@@ -126,24 +99,53 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
                 p { class: "ik-muted", style: "margin:8px 0 0;", "{m}" }
             }
 
-            div { style: "margin-top:12px;",
-                div { class: "ik-subhead", {i18n.t("console.scans.active")} }
-                if active.is_empty() {
-                    p { class: "ik-muted", style: "font-size:13px;margin:6px 0 0;",
-                        {i18n.t("console.scans.noneActive")}
-                    }
-                } else {
-                    for r in active {
-                        RunProgress { key: "{r.id}", run: Signal::new(r) }
-                    }
-                }
+            // One fetch drives both the active-run strip and the history table, so both go
+            // through the helper once. A failed `list_scans` used to fall through
+            // `_ => Vec::new()` and render as "no runs" — indistinguishable from a quiet
+            // system, which on this screen is the exact wrong conclusion to invite.
+            {
+                async_block(
+                    &runs,
+                    tick.reload(),
+                    100,
+                    |all_runs| {
+                        let active: Vec<ScanRun> = all_runs
+                            .iter()
+                            .filter(|r| matches!(r.state, RunState::Running | RunState::Queued))
+                            .cloned()
+                            .collect();
+                        let all_runs = all_runs.clone();
+                        rsx! {
+                            div { style: "margin-top:12px;",
+                                div { class: "ik-subhead", {i18n.t("console.scans.active")} }
+                                if active.is_empty() {
+                                    p { class: "ik-muted", style: "font-size:13px;margin:6px 0 0;",
+                                        {i18n.t("console.scans.noneActive")}
+                                    }
+                                } else {
+                                    for r in active {
+                                        RunProgress { key: "{r.id}", run: Signal::new(r) }
+                                    }
+                                }
+                            }
+                            RunHistory { runs: Signal::new(all_runs) }
+                        }
+                    },
+                )
             }
-
-            RunHistory { runs: Signal::new(all_runs) }
-            FailuresPanel { failures: Signal::new(match &*failures.read_unchecked() {
-                Some(Some(Ok(list))) => list.clone(),
-                _ => Vec::new(),
-            }) }
+            {
+                async_block(
+                    &failures,
+                    tick.reload(),
+                    60,
+                    |rows| {
+                        let rows = rows.clone();
+                        rsx! {
+                            FailuresPanel { failures: Signal::new(rows) }
+                        }
+                    },
+                )
+            }
         }
     }
 }

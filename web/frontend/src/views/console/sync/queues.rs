@@ -2,7 +2,7 @@
 //! matched nothing locally.
 
 use crate::api;
-use crate::components::{EmptyBox, ErrorBox, SkeletonBlock};
+use crate::components::async_block_list;
 use crate::hooks::Reload;
 use crate::i18n::{use_i18n, Translator};
 use crate::models::*;
@@ -10,6 +10,19 @@ use crate::state::use_session;
 use crate::views::console::merge::SeriesMiniCard;
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
+
+/// The provider `<select>`'s options.
+///
+/// Deliberately **not** routed through `async_block_list`: this fetch decorates a control
+/// rather than being the surface, and both queues fall back to a hardcoded `anilist` option
+/// until it lands. Turning a `<select>`'s option list into a full-width error box would bury
+/// the queue the operator actually came for.
+fn provider_options(resource: &Resource<Result<Vec<ProviderInfo>, String>>) -> Vec<ProviderInfo> {
+    match &*resource.read() {
+        Some(Ok(list)) => list.clone(),
+        _ => Vec::new(),
+    }
+}
 
 /// The assign queue: pick a provider, optionally filter by title, and hand-assign an
 /// external id to any series the automatic matcher left unmapped (or open it in the
@@ -53,30 +66,24 @@ pub(super) fn AssignQueue(selected: Signal<Option<String>>, reload: Reload) -> E
         })
     };
 
-    let prov_list: Vec<ProviderInfo> = match &*providers.read_unchecked() {
-        Some(Ok(l)) => l.clone(),
-        _ => Vec::new(),
-    };
+    let prov_list = provider_options(&providers);
 
-    let body = match &*list.read_unchecked() {
-        None => rsx! { SkeletonBlock { height: 60 } },
-        Some(Err(e)) => {
-            let msg = e.clone();
-            rsx! { ErrorBox { message: msg, on_retry: move |()| reload.bump() } }
-        }
-        Some(Ok(l)) if l.is_empty() => rsx! {
-            EmptyBox { message: i18n.t("console.sync.assignEmpty") }
-        },
-        Some(Ok(l)) => {
-            let l = l.clone();
-            let prov = provider.read().clone();
-            rsx! {
-                for s in l {
-                    AssignRow { key: "{s.series_id}", series: Signal::new(s), provider: prov.clone(), selected, reload }
+    let empty = i18n.t("console.sync.assignEmpty");
+    let body = async_block_list(&list, reload, 60, &empty, |rows| {
+        let rows = rows.to_vec();
+        let prov = provider.read().clone();
+        rsx! {
+            for s in rows {
+                AssignRow {
+                    key: "{s.series_id}",
+                    series: Signal::new(s),
+                    provider: prov.clone(),
+                    selected,
+                    reload,
                 }
             }
         }
-    };
+    });
 
     rsx! {
         div { class: "ik-flex", style: "gap:8px;margin-bottom:10px;flex-wrap:wrap;",
@@ -226,29 +233,21 @@ pub(super) fn UnmatchedRemoteQueue(reload: Reload) -> Element {
         })
     };
 
-    let prov_list: Vec<ProviderInfo> = match &*providers.read_unchecked() {
-        Some(Ok(l)) => l.clone(),
-        _ => Vec::new(),
-    };
+    let prov_list = provider_options(&providers);
 
-    let body = match &*list.read_unchecked() {
-        None => rsx! { SkeletonBlock { height: 60 } },
-        Some(Err(e)) => {
-            let msg = e.clone();
-            rsx! { ErrorBox { message: msg, on_retry: move |()| reload.bump() } }
-        }
-        Some(Ok(l)) if l.is_empty() => rsx! {
-            EmptyBox { message: i18n.t("console.sync.remoteEmpty") }
-        },
-        Some(Ok(l)) => {
-            let l = l.clone();
-            rsx! {
-                for e in l {
-                    UnmatchedRemoteRow { key: "{e.user_id}-{e.external_id}", entry: Signal::new(e), reload }
+    let empty = i18n.t("console.sync.remoteEmpty");
+    let body = async_block_list(&list, reload, 60, &empty, |rows| {
+        let rows = rows.to_vec();
+        rsx! {
+            for e in rows {
+                UnmatchedRemoteRow {
+                    key: "{e.user_id}-{e.external_id}",
+                    entry: Signal::new(e),
+                    reload,
                 }
             }
         }
-    };
+    });
 
     rsx! {
         div { class: "ik-flex", style: "gap:8px;margin-bottom:10px;flex-wrap:wrap;",
@@ -347,15 +346,6 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
         })
     };
 
-    let suggested: Vec<SuggestedMatch> = match &*suggestions.read_unchecked() {
-        Some(Ok(l)) => l.clone(),
-        _ => Vec::new(),
-    };
-    let manual: Vec<SeriesSummary> = match &*results.read_unchecked() {
-        Some(Ok(l)) => l.clone(),
-        _ => Vec::new(),
-    };
-
     let type_line = {
         let mut parts = vec![en.status.clone()];
         if !en.content_type.is_empty() && en.content_type != "unknown" {
@@ -369,7 +359,41 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
     };
 
     let entry_url = provider_entry_url(&en.provider, &en.external_id);
-    let suggestions_pending = (*suggestions.read_unchecked()).is_none();
+
+    let user_id = UserId(en.user_id);
+    let entry_provider = en.provider.clone();
+    let entry_external_id = en.external_id.clone();
+    let no_suggestions = i18n.t("console.sync.noSuggestions");
+    let suggestions_body = async_block_list(&suggestions, reload, 40, &no_suggestions, |rows| {
+        let rows = rows.to_vec();
+        rsx! {
+            div { class: "ik-flex", style: "flex-direction:column;gap:6px;",
+                for s in rows {
+                    CandidateMatchRow {
+                        key: "sug-{s.series_id}",
+                        series_id: SeriesId(s.series_id),
+                        title: s.title.clone(),
+                        meta: suggestion_meta(i18n, &s),
+                        score: Some(s.score),
+                        user_id,
+                        provider: entry_provider.clone(),
+                        external_id: entry_external_id.clone(),
+                        reload,
+                    }
+                }
+            }
+        }
+    });
+
+    // The manual fallback is deliberately *not* an `async_block_list`: it stays empty until the
+    // operator has typed three characters, and an empty-state box under an untouched search
+    // field reads as a failure rather than as a prompt.
+    let manual: Vec<SeriesSummary> = match &*results.read() {
+        Some(Ok(l)) => l.clone(),
+        _ => Vec::new(),
+    };
+    let provider_for_manual = en.provider.clone();
+    let external_id_for_manual = en.external_id.clone();
 
     rsx! {
         div { class: "ik-row", style: "flex-direction:column;align-items:stretch;gap:8px;",
@@ -393,29 +417,7 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
             div { class: "ik-muted", style: "font-size:11px;text-transform:uppercase;letter-spacing:.04em;",
                 {i18n.t("console.sync.suggested")}
             }
-            if suggestions_pending {
-                SkeletonBlock { height: 40 }
-            } else if suggested.is_empty() {
-                div { class: "ik-muted", style: "font-size:12px;",
-                    {i18n.t("console.sync.noSuggestions")}
-                }
-            } else {
-                div { class: "ik-flex", style: "flex-direction:column;gap:6px;",
-                    for s in suggested {
-                        CandidateMatchRow {
-                            key: "sug-{s.series_id}",
-                            series_id: SeriesId(s.series_id),
-                            title: s.title.clone(),
-                            meta: suggestion_meta(i18n, &s),
-                            score: Some(s.score),
-                            user_id: UserId(en.user_id),
-                            provider: en.provider.clone(),
-                            external_id: en.external_id.clone(),
-                            reload,
-                        }
-                    }
-                }
-            }
+            {suggestions_body}
 
             input {
                 class: "ik-input",
@@ -440,9 +442,9 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
                                 format!("{kind} · {sources}")
                             },
                             score: None,
-                            user_id: UserId(en.user_id),
-                            provider: en.provider.clone(),
-                            external_id: en.external_id.clone(),
+                            user_id,
+                            provider: provider_for_manual.clone(),
+                            external_id: external_id_for_manual.clone(),
                             reload,
                         }
                     }

@@ -4,7 +4,7 @@ mod inspector;
 mod queues;
 
 use crate::api;
-use crate::components::{EmptyBox, ErrorBox, SkeletonBlock};
+use crate::components::async_block_list;
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::models::*;
@@ -39,24 +39,19 @@ pub(super) fn SyncAdminPanel() -> Element {
         })
     };
 
-    let accounts_body = match &*accounts.read_unchecked() {
-        None => rsx! { SkeletonBlock { height: 60 } },
-        Some(Err(e)) => {
-            let msg = e.clone();
-            rsx! { ErrorBox { message: msg, on_retry: move |()| reload.bump() } }
-        }
-        Some(Ok(list)) if list.is_empty() => rsx! {
-            EmptyBox { message: i18n.t("console.sync.noAccounts") }
-        },
-        Some(Ok(list)) => {
-            let list = list.clone();
-            rsx! {
-                for a in list {
-                    SyncAccountRow { key: "{a.user_id}-{a.provider}", account: Signal::new(a), reload }
+    let no_accounts = i18n.t("console.sync.noAccounts");
+    let accounts_body = async_block_list(&accounts, reload, 60, &no_accounts, |rows| {
+        let rows = rows.to_vec();
+        rsx! {
+            for a in rows {
+                SyncAccountRow {
+                    key: "{a.user_id}-{a.provider}",
+                    account: Signal::new(a),
+                    reload,
                 }
             }
         }
-    };
+    });
 
     rsx! {
         section { style: "margin-bottom:24px;",

@@ -2,7 +2,7 @@
 //! mapping for each known provider.
 
 use crate::api;
-use crate::components::{EmptyBox, ErrorBox, SkeletonBlock};
+use crate::components::{async_block_list, EmptyBox, ErrorBox};
 use crate::hooks::Reload;
 use crate::i18n::use_i18n;
 use crate::models::*;
@@ -63,8 +63,28 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
         };
     }
 
-    let results_body = match &*results.read_unchecked() {
-        Some(Ok(list)) if !list.is_empty() => {
+    // The search results render nothing at all until the operator has typed two characters, so
+    // this cannot use `async_block_list`: a skeleton or an empty-state box under an untouched
+    // field reads as a broken screen. A *failure* still has to be visible and retryable, which
+    // is what the search-specific `ErrorBox` below preserves.
+    let results_body = match &*results.read() {
+        None => rsx! {},
+        Some(Err(message)) => {
+            let message = message.clone();
+            // Retrying means re-running the query, and the resource is keyed on `query` — so
+            // writing the same value back is the retry.
+            rsx! {
+                ErrorBox {
+                    message,
+                    on_retry: move |()| {
+                        let current = query.peek().clone();
+                        query.set(current);
+                    },
+                }
+            }
+        }
+        Some(Ok(list)) if list.is_empty() => rsx! {},
+        Some(Ok(list)) => {
             let list = list.clone();
             rsx! {
                 div { style: "margin-top:8px;",
@@ -74,32 +94,21 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
                 }
             }
         }
-        Some(Err(e)) => rsx! {
-            div { class: "ik-empty", style: "font-size:12px;",
-                {i18n.args("console.sync.searchFailed", &[("message", e)])}
-            }
-        },
-        _ => rsx! {},
     };
 
-    let mappings_body = match &*mappings.read_unchecked() {
-        None => rsx! { SkeletonBlock { height: 40 } },
-        Some(Err(e)) => {
-            let msg = e.clone();
-            rsx! { ErrorBox { message: msg, on_retry: move |()| reload.bump() } }
-        }
-        Some(Ok(list)) if list.is_empty() => rsx! {
-            EmptyBox { message: i18n.t("console.sync.noMappings") }
-        },
-        Some(Ok(list)) => {
-            let list = list.clone();
-            rsx! {
-                for m in list {
-                    MappingPickRow { key: "{m.series_id}-{m.provider}", mapping: Signal::new(m), selected }
+    let no_mappings = i18n.t("console.sync.noMappings");
+    let mappings_body = async_block_list(&mappings, reload, 40, &no_mappings, |rows| {
+        let rows = rows.to_vec();
+        rsx! {
+            for m in rows {
+                MappingPickRow {
+                    key: "{m.series_id}-{m.provider}",
+                    mapping: Signal::new(m),
+                    selected,
                 }
             }
         }
-    };
+    });
 
     rsx! {
         input {
@@ -218,11 +227,15 @@ pub(super) fn SeriesSyncEditor(
         }
     });
 
-    let map_list: Vec<AdminSyncMapping> = match &*mappings.read_unchecked() {
+    // Both feed one editor grid whose own empty state ("no providers registered") already
+    // covers the not-yet-loaded case, so neither gets its own loading or error chrome. The
+    // editor rows below are what the operator came for; an error box over them would be worse
+    // than a grid that fills in a moment later.
+    let map_list: Vec<AdminSyncMapping> = match &*mappings.read() {
         Some(Ok(l)) => l.clone(),
         _ => Vec::new(),
     };
-    let prov_list: Vec<ProviderInfo> = match &*providers.read_unchecked() {
+    let prov_list: Vec<ProviderInfo> = match &*providers.read() {
         Some(Ok(l)) => l.clone(),
         _ => Vec::new(),
     };

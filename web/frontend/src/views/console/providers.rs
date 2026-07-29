@@ -13,11 +13,11 @@
 //! registration (`UpdateProvider` carries no `adapter`), so it is shown rather than offered as
 //! a segmented control, and there is no per-provider `language`.
 
-use super::shell::{
-    InlineConfirm, ListFooter, ListSearch, NoSelection, Section, SliderRow, TypeToConfirm,
-};
 use crate::api;
-use crate::components::{EmptyBox, async_view, ErrorLine, OutcomeLine, SkeletonBlock};
+use crate::components::{
+    async_view, EmptyBox, ErrorLine, HealthPill, InlineConfirm, Kpi, ListFooter, ListSearch,
+    NoSelection, OutcomeLine, Section, SkeletonBlock, SliderRow, TabBar, TabKind, TypeToConfirm,
+};
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -41,14 +41,16 @@ enum Tab {
     Danger,
 }
 
-impl Tab {
-    const ALL: [Tab; 5] = [
-        Self::Config,
-        Self::Politeness,
-        Self::Coverage,
-        Self::Runs,
-        Self::Danger,
-    ];
+impl TabKind for Tab {
+    fn all() -> &'static [Self] {
+        &[
+            Self::Config,
+            Self::Politeness,
+            Self::Coverage,
+            Self::Runs,
+            Self::Danger,
+        ]
+    }
 
     fn label_key(self) -> &'static str {
         match self {
@@ -253,7 +255,7 @@ fn ProviderRow(
             onclick: move |_| on_pick.call(id),
             div { class: "ik-flex", style: "gap:8px;",
                 span { style: "font-weight:600;font-size:13.5px;", "{provider.name}" }
-                HealthPill { state: provider_state_token(provider.state).to_owned() }
+                HealthPill { state: Some(provider.state) }
             }
             div { class: "ik-mono", style: "font-size:10.5px;color:var(--muted);margin-top:3px;word-break:break-word;",
                 "{meta}"
@@ -285,40 +287,6 @@ fn healthy_percent(stat: &ProviderStat) -> Option<f64> {
     Some((serving as f64 / stat.source_count as f64) * 100.0)
 }
 
-#[component]
-pub(super) fn HealthPill(state: String) -> Element {
-    let i18n = use_i18n();
-    let class = match state.as_str() {
-        "active" => "ik-pill jade",
-        "blocked" | "disabled" => "ik-pill vermilion",
-        _ => "ik-pill",
-    };
-    // The token doubles as the catalogue key. A state the frontend does not know a word for
-    // still renders as its raw token rather than as `Key '…' not found`.
-    let label = match state.as_str() {
-        "" => i18n.t("console.providerState.unknown"),
-        "active" | "degraded" | "challenged" | "solving" | "blocked" | "disabled" => {
-            i18n.t(&format!("console.providerState.{state}"))
-        }
-        _ => state,
-    };
-    rsx! {
-        span { class: "{class}", style: "font-size:9.5px;", "{label}" }
-    }
-}
-
-/// The wire token for a loaded provider's health state (matches the SQL enum / `HealthPill`).
-pub(super) fn provider_state_token(s: ProviderState) -> &'static str {
-    match s {
-        ProviderState::Active => "active",
-        ProviderState::Degraded => "degraded",
-        ProviderState::Challenged => "challenged",
-        ProviderState::Solving => "solving",
-        ProviderState::Blocked => "blocked",
-        ProviderState::Disabled => "disabled",
-    }
-}
-
 /// The full editor for one provider.
 #[component]
 fn ProviderInspector(
@@ -343,7 +311,7 @@ fn ProviderInspector(
     let original_config = config_editor_text(&provider.config);
     let is_disabled = provider.state == ProviderState::Disabled;
 
-    let mut tab = use_signal(|| Tab::Config);
+    let tab = use_signal(|| Tab::Config);
     // A fast scan walks what changed; a full one re-reads the catalogue. Per provider, because
     // re-reading every provider to re-check one is what operators were doing without it.
     let mut scan_mode = use_signal(|| ScanMode::Fast);
@@ -517,7 +485,7 @@ fn ProviderInspector(
                     div { style: "min-width:0;flex:1;",
                         div { class: "ik-flex", style: "gap:10px;flex-wrap:wrap;",
                             h2 { class: "ik-insp-title", "{provider.name}" }
-                            HealthPill { state: provider_state_token(provider.state).to_owned() }
+                            HealthPill { state: Some(provider.state) }
                         }
                         div { class: "ik-meta-line",
                             span { "{adapter_token(provider.adapter)}" }
@@ -587,16 +555,7 @@ fn ProviderInspector(
                         }
                     }
                 }
-                div { class: "ik-tabs flush", style: "margin-top:14px;",
-                    for entry in Tab::ALL {
-                        button {
-                            key: "{entry.label_key()}",
-                            class: if *tab.read() == entry { "ik-tab active" } else { "ik-tab" },
-                            onclick: move |_| tab.set(entry),
-                            {i18n.t(entry.label_key())}
-                        }
-                    }
-                }
+                TabBar { selected: tab, flush: true }
             }
             div { style: "padding:0 22px;",
                 OutcomeLine { outcome: outcome.read().clone() }
@@ -903,12 +862,12 @@ fn CoverageTab(stat: Option<ProviderStat>) -> Element {
     };
     rsx! {
         div { class: "ik-kpis",
-            Kpi { label: i18n.t("console.stats.col.series"), value: thousands(stat.series_count) }
-            Kpi { label: i18n.t("console.stats.col.sources"), value: thousands(stat.source_count) }
-            Kpi { label: i18n.t("console.stats.col.chapters"), value: thousands(stat.chapter_count) }
-            Kpi { label: i18n.t("console.providers.blocked"), value: thousands(stat.blocked_sources) }
-            Kpi { label: i18n.t("console.stats.col.new24h"), value: thousands(stat.chapters_24h) }
-            Kpi { label: i18n.t("console.stats.col.new7d"), value: thousands(stat.chapters_7d) }
+            Kpi { label: i18n.t("console.stats.col.series"), value: thousands(stat.series_count), large: true }
+            Kpi { label: i18n.t("console.stats.col.sources"), value: thousands(stat.source_count), large: true }
+            Kpi { label: i18n.t("console.stats.col.chapters"), value: thousands(stat.chapter_count), large: true }
+            Kpi { label: i18n.t("console.providers.blocked"), value: thousands(stat.blocked_sources), large: true }
+            Kpi { label: i18n.t("console.stats.col.new24h"), value: thousands(stat.chapters_24h), large: true }
+            Kpi { label: i18n.t("console.stats.col.new7d"), value: thousands(stat.chapters_7d), large: true }
         }
         div { class: "ik-meta-line", style: "margin-top:14px;",
             span {
@@ -935,16 +894,6 @@ fn CoverageTab(stat: Option<ProviderStat>) -> Element {
                     )
                 }
             }
-        }
-    }
-}
-
-#[component]
-fn Kpi(label: String, value: String) -> Element {
-    rsx! {
-        div { class: "ik-kpi",
-            div { class: "ik-kpi-label", "{label}" }
-            div { class: "ik-kpi-value", style: "font-size:24px;", "{value}" }
         }
     }
 }

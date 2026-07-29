@@ -531,6 +531,9 @@ table.ik-table { width: 100%; border-collapse: collapse; }
 .ik-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
 .ik-kpi-label { color: var(--muted); font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
 .ik-kpi-value { font-family: var(--font-display); font-size: 30px; line-height: 1.1; margin-top: 6px; font-variant-numeric: tabular-nums; }
+/* Standalone tiles (a provider's coverage row, a user's library counts) sit at a smaller
+   size than the nine-up system grid; four sites used to override this inline. */
+.ik-kpi-value.lg { font-size: 24px; }
 .ik-kpi-value.good { color: var(--jade-bright); }
 .ik-kpi-value.warn { color: var(--acc); }
 .ik-kpi-sub { color: var(--muted); font-size: 12px; margin-top: 4px; }

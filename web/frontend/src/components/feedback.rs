@@ -152,6 +152,51 @@ pub(crate) fn async_view<T: 'static>(
     }
 }
 
+/// [`async_view`] with a fixed-height [`SkeletonBlock`] as its loading state — the shape every
+/// console panel and sidebar card wants.
+///
+/// The console panels used to open-code this because they could not name their loading state in
+/// one expression, and open-coding it is how they ended up rendering a failed fetch as muted
+/// grey body text with no retry button. Naming the common case removes the excuse.
+pub(crate) fn async_block<T: 'static>(
+    resource: &Resource<Result<T, String>>,
+    reload: Reload,
+    height: u32,
+    content: impl FnOnce(&T) -> Element,
+) -> Element {
+    async_view(
+        resource,
+        reload,
+        || {
+            rsx! {
+                SkeletonBlock { height }
+            }
+        },
+        content,
+    )
+}
+
+/// [`async_list`] with a fixed-height [`SkeletonBlock`] as its loading state.
+pub(crate) fn async_block_list<T: 'static>(
+    resource: &Resource<Result<Vec<T>, String>>,
+    reload: Reload,
+    height: u32,
+    empty: &str,
+    content: impl FnOnce(&[T]) -> Element,
+) -> Element {
+    async_list(
+        resource,
+        reload,
+        || {
+            rsx! {
+                SkeletonBlock { height }
+            }
+        },
+        empty,
+        content,
+    )
+}
+
 /// [`async_view`] for a list: adds the "loaded, but there is nothing here" state, which is a
 /// different message from an error and must never look like one.
 ///

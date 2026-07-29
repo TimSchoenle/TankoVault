@@ -629,6 +629,7 @@
     "page": {
       "go": "Go",
       "goTo": "Go to",
+      "label": "Pagination",
       "next": "Next",
       "ofTotal": "of {pages}",
       "prev": "Prev"

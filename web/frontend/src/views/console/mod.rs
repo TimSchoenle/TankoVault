@@ -50,13 +50,14 @@ mod overview;
 mod privacy;
 mod providers;
 mod scans;
-mod shell;
 mod solver;
 mod stats;
 mod sync;
 mod users;
 
 use crate::api;
+use crate::components::EmptyBox;
+use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
@@ -64,7 +65,6 @@ use crate::state::capabilities::{use_capabilities, CapabilitySet};
 use crate::util::thousands;
 use crate::wire::types::{Feature, Permission};
 use dioxus::prelude::*;
-use crate::components::EmptyBox;
 use progenitor_client::ResponseValue;
 
 /// Auto-refresh cadence for the read-only entities.
@@ -74,18 +74,30 @@ const REFRESH_MS: u32 = 4000;
 ///
 /// One tick drives them all, so the whole dashboard is consistent at each cadence instead of
 /// each panel drifting on its own timer — and pausing is a single switch rather than nine.
+///
+/// A newtype over [`Reload`], not a second `Signal<u32>`. The two were structurally identical
+/// but not interchangeable, so a tick-driven panel had nothing to hand [`ErrorBox`] as its
+/// retry action — which is why five of them open-coded their error state as muted grey body
+/// text with no retry at all, quietly breaking the "a failed fetch is always visible and always
+/// retryable" invariant the helpers exist to hold. The distinct type is still worth keeping:
+/// in prop position it says "the shared console cadence", not "this panel's own reload".
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct RefreshTick(Signal<u32>);
+pub(super) struct RefreshTick(Reload);
 
 impl RefreshTick {
     /// Subscribe the calling reactive scope, so it refetches on the next tick.
     pub(super) fn track(self) {
-        let _ = self.0.read();
+        self.0.track();
     }
 
     /// Advance the tick, refetching every panel that tracks it.
-    pub(super) fn bump(mut self) {
-        self.0 += 1;
+    pub(super) fn bump(self) {
+        self.0.bump();
+    }
+
+    /// The underlying handle, for passing to `async_view` and friends as the retry action.
+    pub(super) fn reload(self) -> Reload {
+        self.0
     }
 }
 
@@ -277,7 +289,7 @@ pub(crate) fn Console() -> Element {
 
     // One tick drives every read-only panel's refetch: the background loop bumps it on a
     // cadence while `auto` is on, and the Refresh control bumps it on demand.
-    let tick = RefreshTick(use_signal(|| 0u32));
+    let tick = RefreshTick(use_reload());
     let auto = use_signal(|| true);
     let mut selected = use_signal(|| first);
     use_future(move || async move {

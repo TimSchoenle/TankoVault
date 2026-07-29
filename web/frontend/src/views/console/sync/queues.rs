@@ -2,7 +2,7 @@
 //! matched nothing locally.
 
 use crate::api;
-use crate::components::{SkeletonBlock, EmptyBox, ErrorBox};
+use crate::components::{EmptyBox, ErrorBox, SkeletonBlock};
 use crate::hooks::Reload;
 use crate::i18n::{use_i18n, Translator};
 use crate::models::*;

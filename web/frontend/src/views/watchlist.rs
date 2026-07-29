@@ -4,7 +4,7 @@
 //! the only mover). Each card carries a notify toggle and a remove action.
 
 use crate::api;
-use crate::components::{SkeletonBlock, async_list, Cover, AuthRequired};
+use crate::components::{async_list, AuthRequired, Cover, SkeletonBlock};
 use crate::hooks::{use_busy, use_outcome, use_reload, Busy, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};

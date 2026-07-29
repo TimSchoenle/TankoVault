@@ -1,9 +1,8 @@
 //! Notification preferences (§9.4) — a set of on/off toggles persisted verbatim as the open
 //! `notification_prefs` JSON document.
 
-use super::PanelCard;
 use crate::api;
-use crate::components::{OutcomeLine, SkeletonBlock};
+use crate::components::{OutcomeLine, PanelCard, SkeletonBlock};
 use crate::hooks::use_outcome;
 use crate::i18n::use_i18n;
 use crate::icons::Icon;

@@ -1,15 +1,13 @@
 //! Challenge & solver, plus the standalone adapter-test tab.
 
 use crate::api;
-use crate::components::{SkeletonBlock, EmptyBox, ErrorBox};
+use crate::components::{async_block_list, HealthPill};
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::use_session;
-use crate::views::console::providers::provider_state_token;
 use crate::views::console::providers::AdapterTestPanel;
-use crate::views::console::providers::HealthPill;
 use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
@@ -22,46 +20,29 @@ use progenitor_client::ResponseValue;
 pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
-    let session = use_session();
-    let reload = use_reload();
+    let reload = tick.reload();
     let res = use_resource(move || {
         tick.track();
-        reload.track();
         let client = api.client();
         async move {
-            if session.is_authenticated() {
-                client
-                    .list_providers()
-                    .send()
-                    .await
-                    .map(ResponseValue::into_inner)
-                    .map_err(|e| api::friendly_error(i18n, e))
-            } else {
-                Ok(Vec::new())
-            }
+            client
+                .list_providers()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
-    let body = match &*res.read_unchecked() {
-        None => rsx! { SkeletonBlock { height: 100 } },
-        Some(Err(e)) => {
-            let msg = e.clone();
-            rsx! {
-                ErrorBox { message: msg, on_retry: move |()| reload.bump() }
+    let empty = i18n.t("console.solver.noProviders");
+    let body = async_block_list(&res, reload, 100, &empty, |rows| {
+        let rows = rows.to_vec();
+        rsx! {
+            for p in rows {
+                SolverRow { key: "{p.id}", provider: p, reload }
             }
         }
-        Some(Ok(list)) if list.is_empty() => rsx! {
-            EmptyBox { message: i18n.t("console.solver.noProviders") }
-        },
-        Some(Ok(list)) => {
-            let rows = list.clone();
-            rsx! {
-                for p in rows {
-                    SolverRow { key: "{p.id}", provider: p, reload }
-                }
-            }
-        }
-    };
+    });
 
     rsx! {
         section { style: "margin-bottom:18px;",
@@ -139,7 +120,7 @@ pub(super) fn SolverRow(provider: Provider, reload: Reload) -> Element {
                 div { style: "font-weight:600;", "{provider.name}" }
                 div { class: "ik-mono ik-muted", style: "font-size:12px;", "{provider.base_url}" }
             }
-            HealthPill { state: provider_state_token(provider.state).to_owned() }
+            HealthPill { state: Some(provider.state) }
             if blocked {
                 button { class: "ik-btn", onclick: reenable, {i18n.t("console.solver.reenable")} }
             }
@@ -157,38 +138,26 @@ pub(super) fn SolverRow(provider: Provider, reload: Reload) -> Element {
 pub(super) fn AdapterTestTab() -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
-    let session = use_session();
+    let reload = use_reload();
     let res = use_resource(move || {
+        reload.track();
         let client = api.client();
         async move {
-            if session.is_authenticated() {
-                client
-                    .list_providers()
-                    .send()
-                    .await
-                    .map(ResponseValue::into_inner)
-                    .map_err(|e| api::friendly_error(i18n, e))
-            } else {
-                Ok(Vec::new())
-            }
+            client
+                .list_providers()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
     });
     let mut chosen = use_signal(|| Option::<String>::None);
 
-    let body = match &*res.read_unchecked() {
-        None => rsx! { SkeletonBlock { height: 60 } },
-        Some(Err(e)) => rsx! {
-            p { class: "ik-muted", style: "font-size:13px;",
-                {i18n.args("console.providers.unavailable", &[("message", e)])}
-            }
-        },
-        Some(Ok(list)) if list.is_empty() => rsx! {
-            EmptyBox { message: i18n.t("console.adapterTest.noProviders") }
-        },
-        Some(Ok(list)) => {
-            let opts = list.clone();
-            let sel = chosen.read().clone();
-            rsx! {
+    let empty = i18n.t("console.adapterTest.noProviders");
+    let body = async_block_list(&res, reload, 60, &empty, |rows| {
+        let opts = rows.to_vec();
+        let sel = chosen.read().clone();
+        rsx! {
                 div { class: "ik-flex", style: "margin-bottom:4px;",
                     label { class: "ik-muted", style: "font-size:13px;", {i18n.t("discover.provider")} }
                     select {
@@ -204,12 +173,11 @@ pub(super) fn AdapterTestTab() -> Element {
                         }
                     }
                 }
-                if let Some(pid) = chosen.read().clone().and_then(|v| v.parse::<ProviderId>().ok()) {
-                    AdapterTestPanel { provider_id: pid }
-                }
+            if let Some(pid) = chosen.read().clone().and_then(|v| v.parse::<ProviderId>().ok()) {
+                AdapterTestPanel { provider_id: pid }
             }
         }
-    };
+    });
 
     rsx! {
         section { style: "margin-bottom:18px;",

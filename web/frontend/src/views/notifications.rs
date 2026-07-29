@@ -6,7 +6,9 @@
 //! their line, rather than being dropped or crashing the list.
 
 use crate::api;
-use crate::components::{EmptyBox, async_list, AuthRequired, SkeletonRows, UnreadBadge};
+use crate::components::{
+    async_list, AuthRequired, EmptyBox, SkeletonRows, TabBar, TabKind, UnreadBadge,
+};
 use crate::hooks::use_reload;
 use crate::i18n::{use_i18n, Translator};
 use crate::icons::{Ic, Icon};
@@ -26,8 +28,10 @@ enum Tab {
     Sync,
 }
 
-impl Tab {
-    const ALL: [Tab; 4] = [Self::All, Self::Unread, Self::Chapters, Self::Sync];
+impl TabKind for Tab {
+    fn all() -> &'static [Self] {
+        &[Self::All, Self::Unread, Self::Chapters, Self::Sync]
+    }
 
     /// The catalogue key of this tab's display name (see [`crate::i18n`]).
     fn label_key(self) -> &'static str {
@@ -38,7 +42,9 @@ impl Tab {
             Self::Sync => "notifications.tab.sync",
         }
     }
+}
 
+impl Tab {
     fn matches(self, notification: &Notification) -> bool {
         match self {
             Self::All => true,
@@ -138,7 +144,7 @@ pub(crate) fn Notifications() -> Element {
     let api = api::use_api();
     let badge = use_context::<UnreadBadge>();
     let reload = use_reload();
-    let mut tab = use_signal(|| Tab::All);
+    let tab = use_signal(|| Tab::All);
 
     let notifications = use_resource(move || {
         reload.track();
@@ -218,16 +224,7 @@ pub(crate) fn Notifications() -> Element {
                 {i18n.t("notifications.markAllRead")}
             }
         }
-        div { class: "ik-tabs",
-            for t in Tab::ALL {
-                button {
-                    key: "{t.label_key()}",
-                    class: if current == t { "ik-tab active" } else { "ik-tab" },
-                    onclick: move |_| tab.set(t),
-                    {i18n.t(t.label_key())}
-                }
-            }
-        }
+        TabBar { selected: tab }
         {
             async_list(
                 &notifications,

@@ -4,9 +4,10 @@
 //! second provider needs no frontend change. Every claim on this screen comes from
 //! `GET /v1/me/sync/{provider}/status`: nothing is reported as connected while it is not.
 
-use super::PanelCard;
 use crate::api;
-use crate::components::{EmptyBox, async_list, async_view, ErrorLine, OutcomeLine, SkeletonBlock};
+use crate::components::{
+    async_list, async_view, EmptyBox, ErrorLine, OutcomeLine, PanelCard, SkeletonBlock,
+};
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};

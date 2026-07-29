@@ -1,14 +1,12 @@
 //! Per-provider statistics: catalogue footprint, content freshness and last-scan health.
 
 use crate::api;
+use crate::components::{async_block_list, HealthPill};
 use crate::i18n::use_i18n;
 use crate::models::*;
-use crate::state::use_session;
 use crate::util::{rel_time, thousands};
-use crate::views::console::providers::HealthPill;
 use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
-use crate::components::{SkeletonBlock, EmptyBox};
 use progenitor_client::ResponseValue;
 
 /// Per-provider statistics table (read-only, auto-refreshing): catalogue footprint,
@@ -17,74 +15,59 @@ use progenitor_client::ResponseValue;
 pub(super) fn ProviderStatsTable(tick: RefreshTick) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
-    let session = use_session();
-    let res = {
-        use_resource(move || {
-            tick.track();
-            let client = api.client();
-            async move {
-                if session.is_authenticated() {
-                    Some(
-                        client
-                            .provider_stats()
-                            .send()
-                            .await
-                            .map(ResponseValue::into_inner)
-                            .map_err(|e| api::friendly_error(i18n, e)),
-                    )
-                } else {
-                    None
-                }
-            }
-        })
-    };
-
-    let body = match &*res.read_unchecked() {
-        None | Some(None) => rsx! { SkeletonBlock { height: 120 } },
-        Some(Some(Err(e))) => {
-            rsx! {
-                p { class: "ik-muted", style: "font-size:13px;",
-                    {i18n.args("console.stats.unavailable", &[("message", e)])}
-                }
-            }
+    let res = use_resource(move || {
+        tick.track();
+        let client = api.client();
+        async move {
+            client
+                .provider_stats()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
-        Some(Some(Ok(list))) if list.is_empty() => rsx! {
-            EmptyBox { message: i18n.t("console.stats.empty") }
-        },
-        Some(Some(Ok(list))) => {
-            let rows = list.clone();
-            rsx! {
-                div { class: "ik-tablewrap",
-                    table { class: "ik-table ik-table-compact",
-                        thead {
-                            tr {
-                                th { {i18n.t("console.stats.col.provider")} }
-                                th { {i18n.t("console.stats.col.adapter")} }
-                                th { style: "text-align:right;", {i18n.t("console.stats.col.series")} }
-                                th { style: "text-align:right;", {i18n.t("console.stats.col.sources")} }
-                                th { style: "text-align:right;", {i18n.t("console.stats.col.chapters")} }
-                                th { style: "text-align:right;", {i18n.t("console.stats.col.day")} }
-                                th { style: "text-align:right;", {i18n.t("console.stats.col.week")} }
-                                th { {i18n.t("console.stats.col.newest")} }
-                                th { {i18n.t("console.stats.col.lastScan")} }
-                                th { {i18n.t("console.stats.col.lastRun")} }
-                            }
-                        }
-                        tbody {
-                            for p in rows {
-                                ProviderStatRow { key: "{p.provider_id}", stat: p }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
+    });
 
+    let empty = i18n.t("console.stats.empty");
     rsx! {
         section { style: "margin-bottom:18px;",
             h3 { {i18n.t("console.stats.title")} }
-            {body}
+            {
+                async_block_list(
+                    &res,
+                    tick.reload(),
+                    120,
+                    &empty,
+                    |rows| {
+                        let rows = rows.to_vec();
+                        rsx! {
+                            div { class: "ik-tablewrap",
+                                table { class: "ik-table ik-table-compact",
+                                    thead {
+                                        tr {
+                                            th { {i18n.t("console.stats.col.provider")} }
+                                            th { {i18n.t("console.stats.col.adapter")} }
+                                            th { style: "text-align:right;", {i18n.t("console.stats.col.series")} }
+                                            th { style: "text-align:right;", {i18n.t("console.stats.col.sources")} }
+                                            th { style: "text-align:right;", {i18n.t("console.stats.col.chapters")} }
+                                            th { style: "text-align:right;", {i18n.t("console.stats.col.day")} }
+                                            th { style: "text-align:right;", {i18n.t("console.stats.col.week")} }
+                                            th { {i18n.t("console.stats.col.newest")} }
+                                            th { {i18n.t("console.stats.col.lastScan")} }
+                                            th { {i18n.t("console.stats.col.lastRun")} }
+                                        }
+                                    }
+                                    tbody {
+                                        for p in rows {
+                                            ProviderStatRow { key: "{p.provider_id}", stat: p }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                )
+            }
         }
     }
 }
@@ -110,7 +93,7 @@ pub(super) fn ProviderStatRow(stat: ProviderStat) -> Element {
             td {
                 div { style: "font-weight:600;", "{s.name}" }
                 div { class: "ik-flex", style: "gap:6px;margin-top:2px;",
-                    HealthPill { state: s.state.clone() }
+                    HealthPill { state: s.state.parse().ok() }
                     span { class: "ik-mono ik-muted", style: "font-size:11px;", "{s.slug}" }
                 }
             }

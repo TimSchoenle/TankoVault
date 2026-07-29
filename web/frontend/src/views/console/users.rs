@@ -19,9 +19,11 @@
 //!   (`GET /v1/admin/privacy/requests/:id/export`), not per account.
 //!   TODO(api): needs `GET /v1/admin/users/:id/export`.
 
-use super::shell::{InlineConfirm, ListSearch, NoSelection, Section, TypeToConfirm};
 use crate::api;
-use crate::components::{async_view, ErrorLine, OutcomeLine, SkeletonBlock};
+use crate::components::{
+    async_view, CompactPager, ErrorLine, InlineConfirm, Kpi, ListSearch, NoSelection, OutcomeLine,
+    Section, SegControl, SkeletonBlock, TabBar, TabKind, TypeToConfirm, Window,
+};
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -51,14 +53,16 @@ enum Tab {
     Activity,
 }
 
-impl Tab {
-    const ALL: [Tab; 5] = [
-        Self::Identity,
-        Self::Sessions,
-        Self::Library,
-        Self::Privacy,
-        Self::Activity,
-    ];
+impl TabKind for Tab {
+    fn all() -> &'static [Self] {
+        &[
+            Self::Identity,
+            Self::Sessions,
+            Self::Library,
+            Self::Privacy,
+            Self::Activity,
+        ]
+    }
 
     fn label_key(self) -> &'static str {
         match self {
@@ -112,7 +116,7 @@ pub(super) fn UsersEntity() -> Element {
     let i18n = use_i18n();
     let reload = use_reload();
     let query = use_signal(String::new);
-    let mut page = use_signal(|| 0i64);
+    let page = use_signal(|| 0i64);
     let mut staff_only = use_signal(|| false);
     let mut status = use_signal(|| StatusFilter::Any);
     let mut selected = use_signal(|| Option::<String>::None);
@@ -167,9 +171,11 @@ pub(super) fn UsersEntity() -> Element {
         .read()
         .clone()
         .or_else(|| rows.first().map(|r| r.id.clone()));
-    let offset = *page.read() * PAGE_SIZE;
-    let has_prev = offset > 0;
-    let has_next = offset + page_len < total;
+    let window = Window {
+        offset: *page.read() * PAGE_SIZE,
+        page_len,
+        total,
+    };
 
     rsx! {
         div { class: "ik-cons-list",
@@ -244,36 +250,7 @@ pub(super) fn UsersEntity() -> Element {
                     },
                 )
             }
-            div { class: "ik-cons-foot",
-                span {
-                    {
-                        i18n.args(
-                            "console.users.range",
-                            &[
-                                ("first", &(offset + 1).to_string()),
-                                // The server page window, not the filtered subset — the
-                                // filtered count is what the `hits` chip above reports.
-                                ("last", &(offset + page_len).to_string()),
-                                ("total", &thousands(total)),
-                            ],
-                        )
-                    }
-                }
-                span { class: "hint", style: "display:flex;gap:6px;",
-                    button {
-                        class: "ik-btn xs",
-                        disabled: !has_prev,
-                        onclick: move |_| page -= 1,
-                        {i18n.t("common.previous")}
-                    }
-                    button {
-                        class: "ik-btn xs",
-                        disabled: !has_next,
-                        onclick: move |_| page += 1,
-                        {i18n.t("common.next")}
-                    }
-                }
-            }
+            CompactPager { page, window }
         }
         if let Some(id) = current {
             UserInspector {
@@ -400,7 +377,7 @@ fn UserEditor(
     let caps = use_capabilities();
     let busy = use_busy();
     let mut outcome = use_outcome();
-    let mut tab = use_signal(|| Tab::Identity);
+    let tab = use_signal(|| Tab::Identity);
 
     let can_write = caps.can(Permission::UsersWrite);
     let can_grant = caps.can(Permission::UsersPermissions);
@@ -589,16 +566,7 @@ fn UserEditor(
                     }
                 }
             }
-            div { class: "ik-tabs flush", style: "margin-top:14px;",
-                for entry in Tab::ALL {
-                    button {
-                        key: "{entry.label_key()}",
-                        class: if *tab.read() == entry { "ik-tab active" } else { "ik-tab" },
-                        onclick: move |_| tab.set(entry),
-                        {i18n.t(entry.label_key())}
-                    }
-                }
-            }
+            TabBar { selected: tab, flush: true }
         }
         div { style: "padding:0 22px;",
             if is_self {
@@ -655,18 +623,24 @@ fn UserEditor(
                                 }
                                 div { class: "ik-kv narrow",
                                     span { class: "k", {i18n.t("console.users.status")} }
-                                    div { class: "ik-seg", role: "radiogroup",
-                                        for option in [AccountStatus::Active, AccountStatus::Suspended] {
-                                            button {
-                                                key: "{option.label_key()}",
-                                                class: if *status_field.read() == option { "on" } else { "" },
-                                                role: "radio",
-                                                disabled: !can_write || is_self,
-                                                "aria-checked": if *status_field.read() == option { "true" } else { "false" },
-                                                onclick: move |_| status_field.set(option),
-                                                {i18n.t(option.label_key())}
+                                    SegControl {
+                                        options: vec![
+                                            (
+                                                AccountStatus::Active.to_string(),
+                                                i18n.t(AccountStatus::Active.label_key()),
+                                            ),
+                                            (
+                                                AccountStatus::Suspended.to_string(),
+                                                i18n.t(AccountStatus::Suspended.label_key()),
+                                            ),
+                                        ],
+                                        selected: status_field.read().to_string(),
+                                        disabled: !can_write || is_self,
+                                        on_select: move |value: String| {
+                                            if let Ok(next) = value.parse() {
+                                                status_field.set(next);
                                             }
-                                        }
+                                        },
                                     }
                                 }
                                 if *status_field.read() == AccountStatus::Suspended && status_dirty {
@@ -755,23 +729,20 @@ fn UserEditor(
                 div { class: "ik-cons-inspbody",
                     div { class: "ik-cons-col", style: "grid-column:1 / -1;",
                         div { class: "ik-kpis",
-                            div { class: "ik-kpi",
-                                div { class: "ik-kpi-label", {i18n.t("console.users.stat.tracked")} }
-                                div { class: "ik-kpi-value", style: "font-size:24px;",
-                                    "{thousands(user.tracked_count)}"
-                                }
+                            Kpi {
+                                label: i18n.t("console.users.stat.tracked"),
+                                value: thousands(user.tracked_count),
+                                large: true,
                             }
-                            div { class: "ik-kpi",
-                                div { class: "ik-kpi-label", {i18n.t("console.users.stat.linked")} }
-                                div { class: "ik-kpi-value", style: "font-size:24px;",
-                                    "{thousands(user.linked_accounts)}"
-                                }
+                            Kpi {
+                                label: i18n.t("console.users.stat.linked"),
+                                value: thousands(user.linked_accounts),
+                                large: true,
                             }
-                            div { class: "ik-kpi",
-                                div { class: "ik-kpi-label", {i18n.t("console.users.stat.sessions")} }
-                                div { class: "ik-kpi-value", style: "font-size:24px;",
-                                    "{thousands(user.active_sessions)}"
-                                }
+                            Kpi {
+                                label: i18n.t("console.users.stat.sessions"),
+                                value: thousands(user.active_sessions),
+                                large: true,
                             }
                         }
                     }

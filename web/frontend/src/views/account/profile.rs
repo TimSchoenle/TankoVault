@@ -32,9 +32,7 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
         // Checked here as well as on the server so the user is told what is missing before a
         // round trip, not after a 400. The server's check is the one that matters.
         if changing_email && password.is_empty() {
-            outcome.set(Some(Err(
-                i18n.t("account.profile.currentPasswordMissing")
-            )));
+            outcome.set(Some(Err(i18n.t("account.profile.currentPasswordMissing"))));
             return;
         }
         if !busy.claim() {

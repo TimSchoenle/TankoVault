@@ -6,9 +6,8 @@
 //! gone — it moves into the request queue below, which is exactly why the request form lists
 //! erasure as a kind an operator can act on.
 
-use super::PanelCard;
 use crate::api;
-use crate::components::{async_list, OutcomeLine, SkeletonRows};
+use crate::components::{async_list, OutcomeLine, PanelCard, SkeletonRows};
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::Icon;

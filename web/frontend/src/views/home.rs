@@ -4,7 +4,7 @@
 
 use crate::api;
 use crate::components::{
-    async_list, async_view, Cover, CoverCard, AuthRequired, SkeletonBlock, SkeletonRows,
+    async_list, async_view, AuthRequired, Cover, CoverCard, SkeletonBlock, SkeletonRows,
 };
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;

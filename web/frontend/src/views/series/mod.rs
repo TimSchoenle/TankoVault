@@ -19,7 +19,7 @@ mod model;
 mod tracking;
 
 use crate::api;
-use crate::components::{EmptyBox, async_view, Cover, ErrorBox, SkeletonBlock};
+use crate::components::{async_view, Cover, EmptyBox, ErrorBox, SkeletonBlock};
 use crate::hooks::{use_busy, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};

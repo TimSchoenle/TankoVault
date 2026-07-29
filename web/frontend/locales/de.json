@@ -629,6 +629,7 @@
     "page": {
       "go": "Los",
       "goTo": "Gehe zu",
+      "label": "Seitennavigation",
       "next": "Weiter",
       "ofTotal": "von {pages}",
       "prev": "Zurück"

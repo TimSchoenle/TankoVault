@@ -13,7 +13,7 @@
 //! Search (§7.6) shares the cover grid with a larger query echo and a result count.
 
 use crate::api;
-use crate::components::{async_list, async_view, CoverCard, SkeletonGrid};
+use crate::components::{async_list, async_view, CoverCard, Pagination, SkeletonGrid};
 use crate::hooks::use_reload;
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -729,112 +729,6 @@ fn ActiveFilters(
                                 Ic { icon: Icon::Close, size: 12 }
                             }
                         }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Collapsed sequence of page indices to render around `cur` (0-based). Always keeps the
-/// first and last page reachable and fills single-page gaps directly instead of spending an
-/// ellipsis on them, so long result sets don't spam a button per page (`None` = ellipsis).
-fn page_window(cur: usize, pages: usize) -> Vec<Option<usize>> {
-    if pages == 0 {
-        return Vec::new();
-    }
-    if pages <= 7 {
-        return (0..pages).map(Some).collect();
-    }
-    let last = pages - 1;
-    let mut keep = vec![0, last, cur];
-    if cur > 0 {
-        keep.push(cur - 1);
-    }
-    if cur < last {
-        keep.push(cur + 1);
-    }
-    keep.sort_unstable();
-    keep.dedup();
-
-    let mut out = Vec::with_capacity(keep.len() + 2);
-    let mut prev: Option<usize> = None;
-    for p in keep {
-        match prev {
-            Some(pv) if p == pv + 2 => out.push(Some(pv + 1)),
-            Some(pv) if p > pv + 1 => out.push(None),
-            _ => {}
-        }
-        out.push(Some(p));
-        prev = Some(p);
-    }
-    out
-}
-
-/// Jump-box handler: parses the typed page number (1-based) and moves there, clamped to range.
-fn jump_to_page(mut jump: Signal<String>, mut page: Signal<usize>, pages: usize) {
-    if let Ok(n) = jump.read().trim().parse::<usize>() {
-        if n >= 1 {
-            page.set((n - 1).min(pages.saturating_sub(1)));
-        }
-    }
-    jump.set(String::new());
-}
-
-#[component]
-fn Pagination(page: Signal<usize>, pages: usize, has_next: bool) -> Element {
-    let i18n = use_i18n();
-    let cur = *page.read();
-    let mut jump = use_signal(String::new);
-
-    rsx! {
-        div { class: "ik-pagination",
-            button {
-                class: "page",
-                disabled: cur == 0,
-                onclick: move |_| { if cur > 0 { page.set(cur - 1); } },
-                {i18n.t("discover.page.prev")}
-            }
-            for p in page_window(cur, pages) {
-                match p {
-                    Some(idx) => rsx! {
-                        button {
-                            class: if idx == cur { "page active" } else { "page" },
-                            onclick: move |_| page.set(idx),
-                            "{idx + 1}"
-                        }
-                    },
-                    None => rsx! { span { class: "ellipsis", "…" } },
-                }
-            }
-            button {
-                class: "page",
-                disabled: !has_next && cur + 1 >= pages,
-                onclick: move |_| page.set(cur + 1),
-                {i18n.t("discover.page.next")}
-            }
-            if pages > 1 {
-                div { class: "ik-page-jump",
-                    {i18n.t("discover.page.goTo")}
-                    input {
-                        r#type: "number",
-                        min: "1",
-                        max: "{pages}",
-                        value: "{jump.read()}",
-                        placeholder: "{cur + 1}",
-                        oninput: move |e| jump.set(e.value()),
-                        onkeydown: move |e| {
-                            if e.key() == Key::Enter {
-                                jump_to_page(jump, page, pages);
-                            }
-                        },
-                    }
-                    {i18n.args("discover.page.ofTotal", &[("pages", &pages.to_string())])}
-                    button {
-                        class: "page",
-                        r#type: "button",
-                        onclick: move |_| jump_to_page(jump, page, pages),
-                        {i18n.t("discover.page.go")}
                     }
                 }
             }

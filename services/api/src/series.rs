@@ -52,7 +52,7 @@ pub struct ListParams {
     pub year_max: Option<i32>,
     #[serde(default)]
     pub min_chapters: Option<i32>,
-    /// `updated | title | chapters | sources | year` (default `updated`).
+    /// `updated | title | chapters | sources | year | rating` (default `updated`).
     #[serde(default)]
     pub sort: Option<String>,
     /// Zero-based page index (alias: `cursor`).
@@ -66,6 +66,20 @@ pub struct ListParams {
 
 fn default_limit() -> i64 {
     40
+}
+
+/// Parse an optional query-string token, refusing an unrecognised one.
+///
+/// An empty value means "not supplied" — the frontend's select controls submit `""` for their
+/// "any" option, and treating that as a parse failure would 400 the default page.
+fn parse_param<T: std::str::FromStr>(raw: Option<&str>, name: &str) -> ApiResult<Option<T>> {
+    match raw.map(str::trim).filter(|v| !v.is_empty()) {
+        None => Ok(None),
+        Some(value) => value
+            .parse()
+            .map(Some)
+            .map_err(|_| ApiError::BadRequest(format!("unknown {name}: {value:?}"))),
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -131,10 +145,19 @@ pub async fn list(
         .or(params.cursor)
         .unwrap_or(0)
         .clamp(0, MAX_PAGE);
+    // Parsed at the edge rather than passed through as text. Previously an unrecognised
+    // `sort` silently fell back to recency and an unrecognised `content_type`/`status`
+    // matched nothing: both answered `200` with a page that looked plausible and was wrong.
+    // Binding the enums as their native Postgres types is also what lets the filters use an
+    // index — `s.content_type::text = $2` cast the column away from every one of them.
+    let sort = parse_param(params.sort.as_deref(), "sort")?.unwrap_or_default();
+    let content_type = parse_param(params.content_type.as_deref(), "content_type")?;
+    let status = parse_param(params.status.as_deref(), "status")?;
+
     let filter = SeriesFilter {
         query: params.query,
-        content_type: params.content_type.filter(|s| !s.is_empty()),
-        status: params.status.filter(|s| !s.is_empty()),
+        content_type,
+        status,
         provider_slug: params.provider.filter(|s| !s.is_empty()),
         tags: params.tag.into_iter().filter(|s| !s.is_empty()).collect(),
         exclude_tags: params
@@ -145,7 +168,7 @@ pub async fn list(
         year_min: params.year_min,
         year_max: params.year_max,
         min_chapters: params.min_chapters,
-        sort: params.sort.filter(|s| !s.is_empty()),
+        sort,
         limit,
         offset: page.saturating_mul(limit),
     };

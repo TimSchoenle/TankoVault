@@ -8460,7 +8460,7 @@
             }
           },
           {
-            "description": "`updated | title | chapters | sources | year` (default `updated`).",
+            "description": "`updated | title | chapters | sources | year | rating` (default `updated`).",
             "in": "query",
             "name": "sort",
             "required": false,

@@ -15,6 +15,10 @@ publish = false
 tankovault-domain = { workspace = true, features = ["sqlx"] }
 tankovault-matcher = { workspace = true }
 sqlx = { workspace = true }
+# For `try_join!` only, so the browse page and its match count overlap on the hottest public
+# route instead of costing two serial round trips. `sqlx`'s `runtime-tokio` feature already
+# puts tokio in the graph; this is a direct edge for the macro, not a new dependency.
+tokio = { workspace = true }
 uuid = { workspace = true }
 time = { workspace = true }
 serde = { workspace = true }
@@ -30,6 +34,12 @@ integration = []
 [dev-dependencies]
 tankovault-test-support = { path = "../test-support" }
 tokio = { workspace = true }
+# Integration tests do not inherit the crate's own dependencies. The privacy suite reads the
+# live schema out of `information_schema` and seeds fixtures directly, so it needs these.
+sqlx = { workspace = true }
+uuid = { workspace = true }
+time = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

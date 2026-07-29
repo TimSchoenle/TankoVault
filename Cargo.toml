@@ -45,7 +45,25 @@ rust_2018_idioms = { level = "warn", priority = -1 }
 [workspace.lints.clippy]
 # `pedantic` on as a warn-level group; individual noisy lints relaxed workspace-wide.
 pedantic = { level = "warn", priority = -1 }
+# The `cargo` group, which nothing enforced at compile time. It catches
+# `wildcard_dependencies` and the feature-naming lints at `cargo clippy` rather than only in
+# `cargo deny`, which runs as a separate job and is therefore skipped by anyone iterating
+# locally.
+cargo = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
+# Duplicate transitive versions are tracked as a *budget* in `deny.toml`, which denies them
+# against an explicit, dated skip list naming each in-flight upstream transition. This lint
+# would report the same 30-odd duplicates with no way to record why any of them is acceptable,
+# so the two would immediately disagree. One owner per policy.
+multiple_crate_versions = "allow"
+# Both stay allowed, and the audit's suggestion to drop them (OPS-2.2 item 4) was measured
+# rather than taken on faith. Its premise — that the codebase already writes `# Errors` and
+# `# Panics` by hand, so the allow is weaker than the practice — holds for `crates/service`
+# and the services, and does not hold for `crates/db`: enabling `missing_errors_doc` produces
+# **166** warnings there alone, one per public `Result`-returning repository function. Removing
+# these is a real documentation backlog with a real payoff, not a config change; do it crate by
+# crate with a `#![warn(...)]` at each module root, and delete the corresponding line here only
+# when the last one is clean.
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 must_use_candidate = "allow"

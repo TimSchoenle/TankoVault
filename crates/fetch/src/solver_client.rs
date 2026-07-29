@@ -10,7 +10,7 @@ use tankovault_solver::{ChallengeSolver, SolveError, SolveOutcome, SolveRequest}
 
 /// Client for the `challenge-solver` service `POST /v1/solve` endpoint.
 pub struct HttpChallengeSolver {
-    client: reqwest::Client,
+    client: wreq::Client,
     endpoint: String,
 }
 
@@ -19,10 +19,12 @@ impl HttpChallengeSolver {
     /// overall solve timeout.
     #[must_use]
     pub fn new(endpoint: impl Into<String>, timeout: Duration) -> Self {
-        let client = reqwest::Client::builder()
+        // Deliberately no emulation profile and no SSRF resolver: this talks to our own
+        // service on the internal network, not to a provider.
+        let client = wreq::Client::builder()
             .timeout(timeout)
             .build()
-            .expect("reqwest client builds with default TLS");
+            .expect("HTTP client builds with the bundled trust store");
         Self {
             client,
             endpoint: endpoint.into(),

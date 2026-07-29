@@ -298,6 +298,17 @@
         ],
         "type": "object"
       },
+      "BrowserEmulation": {
+        "description": "Which browser the fetch stack impersonates at the TLS/HTTP2 layer.\n\nProviders sit behind Cloudflare/DDoS-Guard, which fingerprint the TLS `ClientHello` and\nthe HTTP/2 SETTINGS frame and compare them against the `User-Agent` header. A mismatch\nis a stronger signal than an unknown client, so the whole profile — cipher suites,\nextension order, ALPS, header order and casing, and the user-agent itself — is picked as\none unit from a browser family rather than assembled field by field.\n\nFamilies, not versions: the concrete build is resolved to whatever the emulation\ncatalogue currently considers newest, so bumping the catalogue does not require a\ndatabase migration or an API-schema change.",
+        "enum": [
+          "chrome",
+          "firefox",
+          "safari",
+          "edge",
+          "ok_http"
+        ],
+        "type": "string"
+      },
       "Capabilities": {
         "description": "The caller's capabilities and the deployment's enabled features.",
         "properties": {
@@ -1199,10 +1210,21 @@
             "type": "integer"
           },
           "crawl_delay_ms": {
-            "description": "Minimum delay between requests, in milliseconds (from robots crawl-delay or config).",
+            "description": "Minimum delay between requests, in milliseconds.",
             "format": "int64",
             "minimum": 0,
             "type": "integer"
+          },
+          "emulation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BrowserEmulation",
+                "description": "Browser to impersonate, or `None` to crawl as an identifiable bot using `user_agent`."
+              }
+            ]
           },
           "rps": {
             "description": "Requests per second, per worker process (see the type-level note on fleet totals).",
@@ -1210,7 +1232,7 @@
             "type": "number"
           },
           "user_agent": {
-            "description": "User-agent sent on ordinary (non-challenge) requests.",
+            "description": "User-agent sent on ordinary (non-challenge) requests — **only when `emulation` is\n`None`**. An emulated client sends the user-agent belonging to its profile, because\na custom string over a browser TLS fingerprint is exactly the mismatch WAFs look for.",
             "type": "string"
           }
         },
@@ -1362,6 +1384,7 @@
             "$ref": "#/components/schemas/ProviderId"
           },
           "last_full_scan_at": {
+            "description": "Wire shape is a plain string (whatever `time`'s serde impl emits), never parsed\nclient-side — kept untyped here so the generated frontend type doesn't need a date\ncrate (mirrors the `no date crate in the bundle` constraint on the other timestamp\nfields below).",
             "type": [
               "string",
               "null"
@@ -1372,19 +1395,6 @@
           },
           "politeness": {
             "$ref": "#/components/schemas/Politeness"
-          },
-          "robots_at": {
-            "description": "Wire shape is a plain string (whatever `time`'s serde impl emits), never parsed\nclient-side — kept untyped here so the generated frontend type doesn't need a date\ncrate (mirrors the `no date crate in the bundle` constraint on the other timestamp\nfields below).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "robots_txt": {
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "slug": {
             "type": "string"
@@ -4098,7 +4108,7 @@
     },
     "/v1/admin/providers/{id}/test": {
       "post": {
-        "description": "Dry-run the provider's adapter against the live site and return the parsed sample so\noperators can fix selectors without a deploy (design §11/§17). Bounded by a timeout;\nSSRF/robots/rate-limit are enforced by the injected fetch stack.\n\nThe body is deliberately free-form JSON: it is a diagnostic dump whose shape follows\nwhatever the adapter managed to parse, and the console renders it verbatim. It is still\ndeclared as a schema so the generated client can return it, rather than forcing callers\nonto an untyped side channel.",
+        "description": "Dry-run the provider's adapter against the live site and return the parsed sample so\noperators can fix selectors without a deploy (design §11/§17). Bounded by a timeout;\nSSRF and rate limits are enforced by the injected fetch stack.\n\nThe body is deliberately free-form JSON: it is a diagnostic dump whose shape follows\nwhatever the adapter managed to parse, and the console renders it verbatim. It is still\ndeclared as a schema so the generated client can return it, rather than forcing callers\nonto an untyped side channel.",
         "operationId": "test_adapter",
         "parameters": [
           {

@@ -281,11 +281,16 @@ pub(super) fn run_state_pill(state: RunState) -> &'static str {
 
 /// Build the politeness JSON payload from the editor's string fields, or the catalogue key of
 /// the field that would not parse.
+///
+/// `emulation` is the wire token of a browser profile, or empty for "no emulation" — which
+/// must be sent as an explicit `null`, since omitting the key would let the server-side
+/// serde default put the provider back on Chrome.
 pub(super) fn politeness_json(
     rps: &str,
     concurrency: &str,
     crawl_delay_ms: &str,
     user_agent: &str,
+    emulation: &str,
 ) -> Result<serde_json::Value, &'static str> {
     let rps: f64 = rps.trim().parse().map_err(|_| "console.providers.badRps")?;
     let concurrency: u32 = concurrency
@@ -301,6 +306,11 @@ pub(super) fn politeness_json(
         "concurrency": concurrency,
         "crawl_delay_ms": crawl_delay_ms,
         "user_agent": user_agent,
+        "emulation": if emulation.is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::Value::String(emulation.to_owned())
+        },
     }))
 }
 

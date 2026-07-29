@@ -19,8 +19,6 @@ struct ProviderRow {
     config: Json,
     state: ProviderState,
     politeness: SqlxJson<Politeness>,
-    robots_txt: Option<String>,
-    robots_at: Option<OffsetDateTime>,
     last_full_scan_at: Option<OffsetDateTime>,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
@@ -37,8 +35,6 @@ impl From<ProviderRow> for Provider {
             config: r.config,
             state: r.state,
             politeness: r.politeness.0.clamped(),
-            robots_txt: r.robots_txt,
-            robots_at: r.robots_at,
             last_full_scan_at: r.last_full_scan_at,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -68,7 +64,7 @@ pub async fn create<'e, E: PgExecutor<'e>>(exec: E, new: NewProvider) -> DbResul
          VALUES ($1, $2, $3, $4, $5, $6, $7) \
          RETURNING id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
                    config AS \"config: Json\", state AS \"state: ProviderState\", \
-                   politeness AS \"politeness: SqlxJson<Politeness>\", robots_txt, robots_at, \
+                   politeness AS \"politeness: SqlxJson<Politeness>\", \
                    last_full_scan_at, created_at, updated_at",
         id.as_uuid(),
         new.slug,
@@ -97,7 +93,7 @@ pub async fn list<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<Provider>> {
         ProviderRow,
         "SELECT id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
                 config AS \"config: Json\", state AS \"state: ProviderState\", \
-                politeness AS \"politeness: SqlxJson<Politeness>\", robots_txt, robots_at, \
+                politeness AS \"politeness: SqlxJson<Politeness>\", \
                 last_full_scan_at, created_at, updated_at \
          FROM providers ORDER BY updated_at DESC",
     )
@@ -112,7 +108,7 @@ pub async fn get<'e, E: PgExecutor<'e>>(exec: E, id: ProviderId) -> DbResult<Pro
         ProviderRow,
         "SELECT id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
                 config AS \"config: Json\", state AS \"state: ProviderState\", \
-                politeness AS \"politeness: SqlxJson<Politeness>\", robots_txt, robots_at, \
+                politeness AS \"politeness: SqlxJson<Politeness>\", \
                 last_full_scan_at, created_at, updated_at \
          FROM providers WHERE id = $1",
         id.as_uuid(),
@@ -128,7 +124,7 @@ pub async fn get_by_slug<'e, E: PgExecutor<'e>>(exec: E, slug: &str) -> DbResult
         ProviderRow,
         "SELECT id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
                 config AS \"config: Json\", state AS \"state: ProviderState\", \
-                politeness AS \"politeness: SqlxJson<Politeness>\", robots_txt, robots_at, \
+                politeness AS \"politeness: SqlxJson<Politeness>\", \
                 last_full_scan_at, created_at, updated_at \
          FROM providers WHERE slug = $1",
         slug,
@@ -156,7 +152,7 @@ pub async fn update<'e, E: PgExecutor<'e>>(
          updated_at = now() WHERE id = $1 \
          RETURNING id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
                    config AS \"config: Json\", state AS \"state: ProviderState\", \
-                   politeness AS \"politeness: SqlxJson<Politeness>\", robots_txt, robots_at, \
+                   politeness AS \"politeness: SqlxJson<Politeness>\", \
                    last_full_scan_at, created_at, updated_at",
         id.as_uuid(),
         name,
@@ -202,22 +198,6 @@ pub async fn delete<'e, E: PgExecutor<'e>>(exec: E, id: ProviderId) -> DbResult<
     if result.rows_affected() == 0 {
         return Err(DbError::NotFound);
     }
-    Ok(())
-}
-
-/// Cache a provider's fetched robots.txt.
-pub async fn set_robots<'e, E: PgExecutor<'e>>(
-    exec: E,
-    id: ProviderId,
-    robots_txt: &str,
-) -> DbResult<()> {
-    sqlx::query!(
-        "UPDATE providers SET robots_txt = $2, robots_at = now() WHERE id = $1",
-        id.as_uuid(),
-        robots_txt,
-    )
-    .execute(exec)
-    .await?;
     Ok(())
 }
 

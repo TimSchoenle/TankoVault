@@ -151,7 +151,7 @@ tankovault/
 │   ├── domain/                     # pure types: Series, Chapter, Provider, enums. No I/O.
 │   ├── db/                         # sqlx repositories, migrations, query modules
 │   ├── adapters/                   # SourceAdapter trait + Madara/config-driven + custom adapters
-│   ├── fetch/                      # Fetcher trait, rate limiting, caching, robots, render + solver client
+│   ├── fetch/                      # Fetcher trait, browser emulation, rate limiting, caching, solver client
 │   ├── solver/                     # ChallengeSolver trait + detection + FlareSolverr/render back-ends
 │   ├── contracts/                  # message/event schemas shared over NATS (serde)
 │   ├── auth/                       # password hashing, JWT, RBAC guards
@@ -190,7 +190,7 @@ tankovault/
 | DB | **PostgreSQL 19** | Rich indexing (GIN, trigram, FTS), `ON CONFLICT` upserts, `SKIP LOCKED`. |
 | Cache / locks / rate state | **Redis 7** (`fred` client) | Hot read cache, distributed rate-limit counters, advisory locks. |
 | Message bus | **NATS JetStream** (`async-nats`) | Durable streams, consumer groups, backpressure. |
-| HTTP client (crawl) | **reqwest** (rustls) + `governor` (rate limit) | Mature, connection pooling, per-host limiting. |
+| HTTP client (crawl) | **wreq** (BoringSSL, browser TLS/HTTP2 emulation) + `governor` (rate limit) | Providers are WAF-fronted; a rustls handshake is fingerprintable regardless of headers. `wreq-util` supplies the matching profiles. Internal service-to-service HTTP stays on **reqwest** (rustls). |
 | HTML parsing | **scraper** (`html5ever`) + `selectors` | CSS-selector driven; pairs with config-driven adapters. |
 | Headless render (optional) | **chromiumoxide** in the `render` service | For JS-rendered listing pages only; isolated service. |
 | Challenge detection | Cheap classifier in `fetch` (status/headers/body markers) | Recognises Cloudflare/JS/Turnstile interstitials in ms, before a solve is attempted. |
@@ -263,9 +263,7 @@ CREATE TABLE providers (
   adapter      adapter_kind NOT NULL,
   config       jsonb NOT NULL DEFAULT '{}', -- selectors, pagination, latest-feed path
   state        provider_state NOT NULL DEFAULT 'active',
-  politeness   jsonb NOT NULL DEFAULT '{}', -- rps, concurrency, crawl_delay, user_agent
-  robots_txt   text,                        -- cached
-  robots_at    timestamptz,
+  politeness   jsonb NOT NULL DEFAULT '{}', -- rps, concurrency, crawl_delay, user_agent, emulation
   last_full_scan_at timestamptz,
   created_at   timestamptz NOT NULL DEFAULT now(),
   updated_at   timestamptz NOT NULL DEFAULT now()
@@ -572,7 +570,11 @@ guarantees a single active run of a given `(provider, mode)`.
 ## 9. The fetch layer & crawl posture
 
 The `fetch` crate is the only place network egress to providers happens. It is a composition of
-decorators over `reqwest`.
+decorators over **`wreq`** — a BoringSSL-backed client that reproduces a real browser's TLS
+`ClientHello` and HTTP/2 SETTINGS fingerprint. A generic rustls client is identifiable to
+Cloudflare/DDoS-Guard no matter which headers it sends, and a browser `User-Agent` over a
+non-browser handshake is a *stronger* bot signal than no disguise at all, so the handshake and the
+header set are selected together as one emulation profile (`Politeness::emulation`).
 
 ```rust
 #[async_trait]
@@ -580,14 +582,14 @@ pub trait Fetcher: Send + Sync {
     async fn get(&self, req: FetchRequest) -> Result<FetchResponse, FetchError>;
 }
 // Composed stack (outer → inner):
-//   RobotsFetcher      -> honours robots.txt + crawl-delay, refuses disallowed paths
+//   BackoffFetcher     -> honours provider-directed 429/503 + Retry-After
 //   RateLimitedFetcher -> per-provider governor + shared Redis token bucket; narrows its own
 //                         spacing when the provider answers 429/503, recovering on quiet
 //   CachedFetcher      -> ETag/Last-Modified conditional GETs, short-TTL body cache in Redis
 //   SolvingFetcher     -> detects bot-management challenges; on a hit, delegates to the
 //                         challenge-solver service and replays the request with the solved session
 //   RetryingFetcher    -> exponential backoff + jitter on transient errors
-//   BaseHttpFetcher    -> reqwest with realistic default headers and timeouts
+//   BaseHttpFetcher    -> wreq with a browser emulation profile, SSRF-validating DNS, timeouts
 ```
 
 **Challenge detection & solving (the modular bypass tier):**
@@ -628,13 +630,18 @@ pub enum ChallengeKind { CloudflareJs, CloudflareManaged, Turnstile, GenericJsIn
   provider to `blocked`.
 
 **Crawl posture (explicit and enforced by the code's shape):**
-- **Honours `robots.txt`** and crawl-delay per provider; disallowed paths are never fetched.
 - **Rate-limited and backed off** by default; conservative defaults, operator-tunable *downward* in
-  politeness but bounded by hard ceilings in config.
+  politeness but bounded by hard ceilings in config. This — not a `robots.txt` gate — is what bounds
+  the load a provider actually sees, and it is the part the code enforces.
 - **Conditional requests** (ETag/Last-Modified) to minimise load and bandwidth.
-- Sends a **stable, identifiable User-Agent** on ordinary requests (operator-configurable); when a
-  provider is behind a challenge, the solver-issued session User-Agent is used for the matching
-  `cf_clearance` cookie so the bypassed session stays valid.
+- **Presents a browser identity by default** (`Politeness::emulation`, Chrome unless changed): the
+  TLS/HTTP2 fingerprint and the `User-Agent` come from one profile so they cannot contradict each
+  other. Setting `emulation` to `null` reverts a provider to the identifiable `TankoVaultBot`
+  user-agent with no fingerprint spoofing. When a provider is behind a challenge, the solver-issued
+  session User-Agent overrides the profile's, because the `cf_clearance` cookie is bound to it.
+- **No `robots.txt` enforcement.** It was removed with the move to emulation rather than left as
+  dead code: a gate keyed on a user-agent the crawler no longer sends can only ever match the `*`
+  group, which would misrepresent what the provider agreed to. Politeness is the budget above.
 - **No image/content fetching path exists** in the public API — the `FetchResponse` body is treated as
   HTML/JSON for parsing only.
 
@@ -1014,7 +1021,7 @@ responsive masonry of 2:3 cards.
 
 ## 19. Deployment
 
-- Each service is a small static (`scratch`) container — a fully static musl binary on an empty
+- Each service is a small (`scratch`) container — a musl binary plus its loader on an empty
   base (multi-stage build; `cargo chef` for cached dependency layers). The `render` tier is the
   exception (Debian + Chromium). The frontend builds to static WASM+assets served by a CDN or the API.
 - **Kubernetes** via a Helm chart in `deploy/helm/tankovault` (consuming the shared
@@ -1036,7 +1043,7 @@ responsive masonry of 2:3 cards.
 ## 20. Phased delivery roadmap
 
 **Phase 0 — Foundations (workspace, DB, one provider end-to-end).**
-Workspace + crates skeleton; migrations; `domain` + `db`; the `fetch` stack with robots + rate limit +
+Workspace + crates skeleton; migrations; `domain` + `db`; the `fetch` stack with emulation + rate limit +
 SSRF guard; the `SourceAdapter` trait + generic/Madara adapter + fixtures for one Madara provider;
 `resolve_link` + tests. Deliverable: a `worker` binary that full-scans one provider into Postgres,
 links-only, idempotently.

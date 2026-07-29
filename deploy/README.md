@@ -6,10 +6,13 @@ Container build and local orchestration for TankoVault (design §19).
 - `docker/Dockerfile` — a single parameterised, cargo-chef-cached multi-stage build for the
   Rust services. Pick the binary with `--build-arg BIN=<name>` (`api`, `worker`,
   `control-plane`, `notifier`, `sync`, `challenge-solver`, `render`, `xtask`). Each binary is
-  compiled as a **fully static musl binary** and shipped on a bare `scratch` image (no OS, no
-  shell, no package manager — just the binary, a CA trust store, and a numeric nonroot user).
-  The `render` tier needs a real Chromium at runtime, so it uses the Debian `runtime-browser`
-  stage (`--target runtime-browser`) instead.
+  compiled natively on Alpine as a **musl binary** and shipped on a bare `scratch` image (no
+  OS, no shell, no package manager — just the binary, the musl loader and `libgcc_s` it
+  resolves, a CA trust store, and a numeric nonroot user). It is dynamically rather than
+  statically linked because `wreq`'s BoringSSL build script `dlopen`s libclang, which a
+  `crt-static` build script cannot do; see the Dockerfile's builder stage. The `render` tier
+  needs a real Chromium at runtime, so it uses the Debian `runtime-browser` stage
+  (`--target runtime-browser`) instead.
 - `docker/Dockerfile.frontend` — builds the Dioxus WASM SPA (`web/frontend/`) with the `dx`
   CLI, compiles the `frontend` axum server (`services/frontend/`) as a **static musl binary**,
   and ships both on a bare `scratch` image (like every backend service). The server serves the
@@ -57,7 +60,7 @@ then `TANKOVAULT_*` environment variables (`__` denotes nesting, e.g.
 
 ## Building a single service image
 ```bash
-# A backend service (static musl -> scratch):
+# A backend service (musl -> scratch):
 docker build -f deploy/docker/Dockerfile --build-arg BIN=api -t tankovault-api .
 # The render tier (Debian + Chromium):
 docker build -f deploy/docker/Dockerfile --build-arg BIN=render --target runtime-browser -t tankovault-render .

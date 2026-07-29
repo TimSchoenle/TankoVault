@@ -28,14 +28,10 @@ pub struct Provider {
     pub config: serde_json::Value,
     pub state: ProviderState,
     pub politeness: Politeness,
-    pub robots_txt: Option<String>,
     /// Wire shape is a plain string (whatever `time`'s serde impl emits), never parsed
     /// client-side — kept untyped here so the generated frontend type doesn't need a date
     /// crate (mirrors the `no date crate in the bundle` constraint on the other timestamp
     /// fields below).
-    #[serde(with = "time::serde::rfc3339::option")]
-    #[schema(value_type = Option<String>)]
-    pub robots_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub last_full_scan_at: Option<OffsetDateTime>,

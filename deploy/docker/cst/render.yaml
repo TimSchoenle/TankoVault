@@ -1,5 +1,5 @@
 # Container-structure-test contract for the render image built from deploy/docker/Dockerfile
-# (target `runtime-browser`, --build-arg BIN=render): the static musl service binary on a Debian
+# (target `runtime-browser`, --build-arg BIN=render): the musl service binary on a Debian
 # slim base that also provides Chromium for the headless-render tier (design §9).
 #
 # Unlike the `scratch` images this one has a real shell, so the migration to UID:GID 1001:1001 is

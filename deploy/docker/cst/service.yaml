@@ -22,6 +22,16 @@ fileExistenceTests:
   - name: "CA trust store baked in for outbound TLS"
     path: "/etc/ssl/certs/ca-certificates.crt"
     shouldExist: true
+  # The binary is musl-dynamic (BoringSSL forces a native, non-crt-static build — see the
+  # Dockerfile builder stage). Without these two the container fails at exec time with a
+  # bare "no such file or directory", which is why they are part of the contract.
+  - name: "musl loader present (the binary's ELF interpreter)"
+    path: "/lib/ld-musl-x86_64.so.1"
+    shouldExist: true
+    isExecutableBy: "any"
+  - name: "libgcc_s present (unwinder referenced by BoringSSL's C++ objects)"
+    path: "/usr/lib/libgcc_s.so.1"
+    shouldExist: true
   # The image must NOT ship a shell / package manager: `scratch` guarantees this, and asserting
   # it turns any accidental base-image swap into a hard CI failure.
   - name: "no shell (scratch, minimal attack surface)"

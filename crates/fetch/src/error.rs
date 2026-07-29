@@ -9,9 +9,6 @@ pub enum FetchError {
     /// Blocked by the SSRF guard.
     #[error("ssrf guard: {0}")]
     Ssrf(#[from] SsrfError),
-    /// The path is disallowed by the provider's robots.txt.
-    #[error("path disallowed by robots.txt: {0}")]
-    RobotsDisallowed(String),
     /// A non-success HTTP status the caller treats as an error.
     #[error("http status {0}")]
     Status(u16),

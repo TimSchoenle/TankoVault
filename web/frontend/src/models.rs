@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 pub(crate) use crate::wire::types::{
     AccountStatus, AdapterKind, AssignRemoteEntry, ChapterDto, ChapterRead, ConflictRow,
     ContentType, ContinueItem, CreateProvider, DismissRequest, FeedEntry, ForgotPasswordRequest,
-    LoginRequest, MarkRead, MergeRequest, PermissionPreset, Politeness, ProfileUpdate,
-    ProgressUpdate, Provider, ProviderId, ProviderInfo, ProviderStat, ProviderState,
+    LoginRequest, MarkRead, MergeRequest, PermissionPreset, Politeness, PolitenessEmulation,
+    ProfileUpdate, ProgressUpdate, Provider, ProviderId, ProviderInfo, ProviderStat, ProviderState,
     PublicProvider, RegisterRequest, RequestKind, RequestStatus, ResendVerificationRequest,
     ResetPasswordRequest, ResolveConflict, RunState, ScanMode, ScanRun, ScanRunProviderId,
     SeriesId, SeriesSourceId, SeriesStatus, SeriesSummary,

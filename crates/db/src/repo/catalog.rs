@@ -196,15 +196,31 @@ pub struct SeriesEnrichmentRow {
     pub canonical_title: String,
     pub description: Option<String>,
     pub cover_url: Option<String>,
+    /// The row's sort key, carried back so the caller can page from it. Part of the cursor,
+    /// not of the enrichment payload.
+    pub updated_at: OffsetDateTime,
 }
 
-/// List series for background metadata enrichment, oldest-updated first so a slow,
-/// rate-limited sweep eventually covers the whole catalogue. Plain offset paging is fine
-/// here — this is a background worker, not a hot path.
+/// One page of series for the background metadata-enrichment sweep, as a **keyset** walk.
+///
+/// `after` is the `(updated_at, id)` of the last row of the previous page, and `started_at`
+/// is the timestamp the sweep began. Both are load-bearing:
+///
+/// - The previous shape was `ORDER BY updated_at ASC LIMIT $1 OFFSET $2`, and enrichment
+///   *writes* `updated_at = now()`. So the sort key moved under the cursor: every enriched row
+///   jumped to the end of the ordering, the rows behind it shifted forward by one, and the
+///   next `OFFSET` skipped exactly those. The sweep silently missed series — not a slowdown,
+///   a correctness bug.
+/// - `updated_at < started_at` excludes rows this sweep has already touched, so a row cannot
+///   be handed back to the same run.
+/// - Keyset paging also drops the cost from O(n²/batch): `OFFSET` re-sorted the whole table
+///   per batch (5 000 sorts of 500 000 rows for a full catalogue), whereas this seeks straight
+///   into `series_enrichment_cursor_idx`.
 pub async fn list_series_for_enrichment<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
-    offset: i64,
+    after: Option<(OffsetDateTime, Uuid)>,
+    started_at: OffsetDateTime,
 ) -> DbResult<Vec<SeriesEnrichmentRow>> {
     #[derive(FromRow)]
     struct Row {
@@ -212,13 +228,23 @@ pub async fn list_series_for_enrichment<'e, E: PgExecutor<'e>>(
         canonical_title: String,
         description: Option<String>,
         cover_url: Option<String>,
+        updated_at: OffsetDateTime,
     }
+    let (after_updated, after_id) = match after {
+        Some((updated, id)) => (Some(updated), Some(id)),
+        None => (None, None),
+    };
     let rows = sqlx::query_as!(
         Row,
-        "SELECT id, canonical_title, description, cover_url FROM series \
-         ORDER BY updated_at ASC LIMIT $1 OFFSET $2",
+        "SELECT id, canonical_title, description, cover_url, updated_at FROM series \
+         WHERE updated_at < $4 \
+           AND ($2::timestamptz IS NULL OR (updated_at, id) > ($2, $3)) \
+         ORDER BY updated_at ASC, id ASC \
+         LIMIT $1",
         limit,
-        offset,
+        after_updated,
+        after_id,
+        started_at,
     )
     .fetch_all(exec)
     .await?;
@@ -229,6 +255,7 @@ pub async fn list_series_for_enrichment<'e, E: PgExecutor<'e>>(
             canonical_title: r.canonical_title,
             description: r.description,
             cover_url: r.cover_url,
+            updated_at: r.updated_at,
         })
         .collect())
 }

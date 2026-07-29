@@ -150,9 +150,20 @@ impl Fetcher for BaseHttpFetcher {
             })
             .collect();
 
+        // Pre-size from `Content-Length` when the server declares one, clamped to the cap so a
+        // hostile header cannot make us allocate 8 MiB for a 200-byte body. Growing from
+        // `Vec::new()` reallocated and copied about log2(n) times per fetch.
+        //
+        // The header is a hint, never a bound: the streaming check below is what actually
+        // enforces `MAX_BODY_BYTES`, because a server is free to send more than it announced.
+        let declared = resp
+            .content_length()
+            .and_then(|n| usize::try_from(n).ok())
+            .map_or(0, |n| n.min(MAX_BODY_BYTES));
+
         // Stream the body with a hard byte cap.
         let mut stream = resp.bytes_stream();
-        let mut buf: Vec<u8> = Vec::new();
+        let mut buf: Vec<u8> = Vec::with_capacity(declared);
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(map_wreq_err)?;
             if buf.len() + chunk.len() > MAX_BODY_BYTES {
@@ -160,7 +171,12 @@ impl Fetcher for BaseHttpFetcher {
             }
             buf.extend_from_slice(&chunk);
         }
-        let body = String::from_utf8_lossy(&buf).into_owned();
+        // `from_utf8` first: provider bodies are overwhelmingly valid UTF-8, and the happy path
+        // then *moves* the buffer instead of copying up to 8 MiB into a second allocation.
+        // `from_utf8_lossy` is kept for the rest, because a body with one bad byte is still
+        // worth parsing.
+        let body = String::from_utf8(buf)
+            .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
 
         Ok(FetchResponse {
             status,

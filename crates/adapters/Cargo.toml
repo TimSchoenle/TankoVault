@@ -21,6 +21,9 @@ thiserror = { workspace = true }
 time = { workspace = true }
 url = { workspace = true }
 tracing = { workspace = true }
+# `spawn_blocking`: HTML parsing is uninterruptible CPU (html5ever tokenise + tree-build) and
+# must not run on a Tokio worker thread, where it stalls every other task on the runtime.
+tokio = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

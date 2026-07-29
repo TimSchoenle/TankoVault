@@ -6,20 +6,94 @@
 
 use crate::error::AdapterError;
 use scraper::{ElementRef, Selector};
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, RwLock};
 use tankovault_domain::SeriesStatus;
+use tankovault_fetch::FetchResponse;
 use time::OffsetDateTime;
 use time::macros::format_description;
 use url::Url;
 
-/// Parse a CSS selector, mapping failures to a typed error.
+/// Compiled selectors, keyed by their source text.
+///
+/// Selectors come from `providers.config`, not from constants, so `LazyLock<Selector>` cannot
+/// be used — but the *set* of them is tiny and fixed for a deployment (a handful per provider
+/// row), which is exactly the shape a memo fits.
+///
+/// Without this, `Selector::parse` ran on every call of every extractor, and the extractors
+/// are called inside per-item loops: a 100-item catalogue page cost 200 re-parses of two
+/// constant strings, and a sitemap-shard page — kunmanga yields up to 20 000 entries in one
+/// page — cost 40 000, which is tens to hundreds of milliseconds of pure re-tokenising per
+/// page, on every page of every scan.
+static SELECTOR_CACHE: LazyLock<RwLock<HashMap<String, Arc<Selector>>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+
+/// Upper bound on distinct cached selectors.
+///
+/// The legitimate population is bounded by the provider table, so this is not a working-set
+/// limit but a guard against a pathological config turning a memo into a leak. On overflow the
+/// cache stops growing and later selectors are simply parsed each time — slower, never wrong.
+const SELECTOR_CACHE_CAP: usize = 4096;
+
+/// Parse a CSS selector, mapping failures to a typed error. Memoised — see [`SELECTOR_CACHE`].
+///
+/// Returns an `Arc` rather than a `Selector` so a cache hit is a refcount bump. Call sites are
+/// unchanged: `root.select(&sel)` coerces through the `Arc`.
 ///
 /// # Errors
 /// [`AdapterError::Selector`] if `spec` is not a valid selector.
-pub fn parse_selector(spec: &str) -> Result<Selector, AdapterError> {
-    Selector::parse(spec).map_err(|e| AdapterError::Selector {
+pub fn parse_selector(spec: &str) -> Result<Arc<Selector>, AdapterError> {
+    if let Ok(cache) = SELECTOR_CACHE.read() {
+        if let Some(hit) = cache.get(spec) {
+            return Ok(Arc::clone(hit));
+        }
+    }
+
+    let parsed = Arc::new(Selector::parse(spec).map_err(|e| AdapterError::Selector {
         selector: spec.to_owned(),
         reason: e.to_string(),
+    })?);
+
+    if let Ok(mut cache) = SELECTOR_CACHE.write() {
+        if cache.len() < SELECTOR_CACHE_CAP {
+            cache.insert(spec.to_owned(), Arc::clone(&parsed));
+        }
+    }
+    Ok(parsed)
+}
+
+/// Parse a response body as HTML and run `extract` over it on the blocking thread pool.
+///
+/// `Html::parse_document` is html5ever's full tokenise + tree-build: 5-50 ms of
+/// **uninterruptible** CPU for a 500 KB-2 MB catalogue page. Run inline on a Tokio worker
+/// thread, as every adapter did, that thread serves no other task for the whole window — and
+/// with several large pages parsing concurrently on a runtime sized to core count, *every*
+/// async task stalls, including the `JetStream` ack heartbeats the queue module is careful to
+/// keep on time.
+///
+/// The whole parse-and-extract phase has to move together, because `scraper::Html` and
+/// `ElementRef` are not `Send`: nothing borrowed from the document may cross back out, so the
+/// closure returns owned data. It also receives the [`FetchResponse`] — the diagnostics in
+/// [`AdapterError::missing`] and the challenge detectors need the envelope, and it is right
+/// there.
+///
+/// # Errors
+/// Whatever `extract` returns, or [`AdapterError::Parse`] if the blocking task panicked.
+pub async fn parse_blocking<T, F>(resp: FetchResponse, extract: F) -> Result<T, AdapterError>
+where
+    T: Send + 'static,
+    F: FnOnce(ElementRef<'_>, &FetchResponse) -> Result<T, AdapterError> + Send + 'static,
+{
+    tokio::task::spawn_blocking(move || {
+        let doc = scraper::Html::parse_document(&resp.body);
+        extract(doc.root_element(), &resp)
     })
+    .await
+    // A join error here means the blocking task panicked (or the runtime is shutting down).
+    // `Parse` rather than a new variant: from the caller's point of view the document could
+    // not be turned into data, which is what `Parse` means, and it is correctly classified as
+    // non-retryable — a panic will reproduce on replay.
+    .map_err(|e| AdapterError::Parse(format!("HTML parse task failed: {e}")))?
 }
 
 /// Split a `sel@attr` spec into `(selector, Some(attr))`, or `(selector, None)`.
@@ -238,6 +312,34 @@ mod tests {
         assert_eq!(parse_chapter_number("Volume 2 Chapter 10.5"), Some(10.5));
         assert_eq!(parse_chapter_number("CHAPTER 8"), Some(8.0));
         assert_eq!(parse_chapter_number("Ch. 99"), Some(99.0));
+    }
+
+    /// The point of the memo is that the second parse of the same spec is free. Pinned by
+    /// identity rather than by timing, which is the fact that actually matters and does not
+    /// flake on a loaded machine.
+    #[test]
+    fn selectors_are_parsed_once_and_reused() {
+        let spec = "div.selector-cache-probe > a.title";
+        let first = parse_selector(spec).unwrap();
+        let second = parse_selector(spec).unwrap();
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "a repeat parse must hit the cache; extractors call this inside per-item loops"
+        );
+        assert!(!Arc::ptr_eq(
+            &first,
+            &parse_selector("div.other-probe").unwrap()
+        ));
+    }
+
+    #[test]
+    fn an_invalid_selector_is_still_an_error_and_is_not_cached() {
+        assert!(matches!(
+            parse_selector(">>>not a selector<<<"),
+            Err(AdapterError::Selector { .. })
+        ));
+        // Twice, to prove the failure path does not poison or populate the cache.
+        assert!(parse_selector(">>>not a selector<<<").is_err());
     }
 
     #[test]

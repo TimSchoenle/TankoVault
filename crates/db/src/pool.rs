@@ -19,6 +19,13 @@ pub async fn connect(
     let pool = PgPoolOptions::new()
         .max_connections(max_connections)
         .acquire_timeout(Duration::from_secs(acquire_timeout_secs))
+        // sqlx defaults this to `true`, which sends a `SELECT 1` liveness probe on **every**
+        // acquisition — an extra network round trip per repository call, and series detail
+        // alone makes about eight. The probe buys very little here: the pool already discards
+        // a connection whose query fails, and a connection dropped between the probe and the
+        // real statement is not covered by it either. Turning it off trades a rare
+        // retryable error for a round trip on every call.
+        .test_before_acquire(false)
         .connect(url)
         .await?;
     Ok(pool)

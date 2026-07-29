@@ -3,15 +3,17 @@
 //! [`tankovault_db::repo::catalog::ingest_series`], so replays are safe.
 
 use sha2::{Digest, Sha256};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::hash::{Hash as _, Hasher as _};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tankovault_adapters::{ChapterMeta, Ctx, SeriesMeta, SourceAdapter, build_adapter};
 use tankovault_bus::Bus;
 use tankovault_contracts::{ChapterDiscovered, ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
 use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert};
-use tankovault_domain::{Provider, normalize_title};
-use tankovault_fetch::{ProviderFetchConfig, SessionStore, build_provider_fetcher};
+use tankovault_domain::{Provider, ProviderId, normalize_title};
+use tankovault_fetch::{Fetcher, ProviderFetchConfig, SessionStore, build_provider_fetcher};
 use tankovault_solver::ChallengeSolver;
 use time::OffsetDateTime;
 
@@ -33,15 +35,91 @@ pub(crate) struct Engine {
     pub(crate) worker_id: String,
     /// Safety cap on catalogue pages walked per full scan.
     pub(crate) max_catalog_pages: u32,
+    /// One fetch stack per provider, keyed by the politeness settings it was built from.
+    ///
+    /// This cache is load-bearing for **correctness**, not only speed. `RateLimitedFetcher`
+    /// owns the governor cell and the semaphore, and `Throttle` owns the adaptive 429
+    /// penalty — so a fetcher built per task made the configured `rps` and `concurrency` a
+    /// *per-task* budget. N concurrent tasks therefore offered N × rps to the provider, which
+    /// is what produced the 429 storms the backoff layer then spent wall-clock absorbing, and
+    /// the accumulated penalty was thrown away every task. The comment at
+    /// `crates/fetch/src/ratelimit.rs` claiming a per-provider limiter was simply false.
+    ///
+    /// The speed half: each rebuild also meant a fresh `wreq::Client` with its own connection
+    /// pool, so every task paid a TCP + TLS 1.3 handshake before its first byte — roughly
+    /// 500k handshakes on a full scan that should have needed about `concurrency` of them.
+    fetchers: Arc<Mutex<HashMap<ProviderId, CachedFetcher>>>,
+}
+
+/// Hash the provider settings a fetch stack is built from.
+///
+/// Only the inputs to `build_provider_fetcher`, so a change to an unrelated column (a display
+/// name, an adapter config key) does not throw away a warm connection pool and a rate limiter
+/// mid-run — while an operator lowering `rps` or switching emulation profile does take effect
+/// on the next task rather than at the next restart.
+fn politeness_fingerprint(provider: &Provider) -> u64 {
+    let p = &provider.politeness;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    // `f64` is not `Hash`; its bit pattern is, and equality of bit patterns is exactly the
+    // "unchanged" test wanted here.
+    p.rps.to_bits().hash(&mut hasher);
+    p.concurrency.hash(&mut hasher);
+    p.crawl_delay_ms.hash(&mut hasher);
+    p.user_agent.hash(&mut hasher);
+    format!("{:?}", p.emulation).hash(&mut hasher);
+    hasher.finish()
+}
+
+/// A built fetch stack plus the fingerprint of the settings that produced it.
+struct CachedFetcher {
+    /// Politeness + base URL as the provider row had them when this stack was built. An
+    /// operator lowering `rps` mid-run must take effect, so the entry is rebuilt on change
+    /// rather than pinned for the process lifetime.
+    fingerprint: u64,
+    fetcher: Arc<dyn Fetcher>,
 }
 
 impl Engine {
-    /// Build the per-provider adapter + injected fetch stack + context.
-    fn provider_context(
-        &self,
-        provider: &Provider,
-    ) -> anyhow::Result<(Box<dyn SourceAdapter>, Ctx)> {
-        let adapter = build_adapter(provider.adapter, &provider.slug, &provider.config)?;
+    /// Assemble the engine with an empty fetcher cache.
+    ///
+    /// A constructor rather than a struct literal so [`Engine::fetchers`] stays an
+    /// implementation detail — callers have no reason to know the cache exists, and one that
+    /// could be constructed pre-populated would be a way to get the sharing wrong.
+    pub(crate) fn new(
+        pool: PgPool,
+        bus: Option<Bus>,
+        solver: Arc<dyn ChallengeSolver>,
+        session_store: Arc<dyn SessionStore>,
+        worker_id: String,
+        max_catalog_pages: u32,
+    ) -> Self {
+        Self {
+            pool,
+            bus,
+            solver,
+            session_store,
+            worker_id,
+            max_catalog_pages,
+            fetchers: Arc::default(),
+        }
+    }
+
+    /// Build the fetch stack for `provider`, reusing the cached one when its settings are
+    /// unchanged.
+    fn fetcher_for(&self, provider: &Provider) -> anyhow::Result<Arc<dyn Fetcher>> {
+        let fingerprint = politeness_fingerprint(provider);
+
+        // A short critical section around a `HashMap`, held across no await point: a `std`
+        // mutex is the right primitive, and using `tokio::sync::RwLock` here would make
+        // `provider_context` async for no benefit.
+        {
+            let cache = self.fetchers.lock().expect("fetcher cache mutex poisoned");
+            if let Some(entry) = cache.get(&provider.id) {
+                if entry.fingerprint == fingerprint {
+                    return Ok(Arc::clone(&entry.fetcher));
+                }
+            }
+        }
 
         let mut fetch_cfg = ProviderFetchConfig::new(
             provider.politeness.user_agent.clone(),
@@ -54,12 +132,44 @@ impl Engine {
         fetch_cfg.crawl_delay_ms = provider.politeness.crawl_delay_ms;
         fetch_cfg.connect_timeout = Duration::from_secs(10);
         fetch_cfg.request_timeout = Duration::from_secs(30);
-
         let fetcher = build_provider_fetcher(fetch_cfg)?;
+
+        let mut cache = self.fetchers.lock().expect("fetcher cache mutex poisoned");
+        // Another task may have built one while this one was constructing. Either is
+        // correct, but keeping the stored entry means both callers share one limiter, which
+        // is the entire point — so only insert if it is still absent or stale.
+        let entry = cache
+            .entry(provider.id)
+            .and_modify(|existing| {
+                if existing.fingerprint != fingerprint {
+                    *existing = CachedFetcher {
+                        fingerprint,
+                        fetcher: Arc::clone(&fetcher),
+                    };
+                }
+            })
+            .or_insert_with(|| CachedFetcher {
+                fingerprint,
+                fetcher: Arc::clone(&fetcher),
+            });
+        Ok(Arc::clone(&entry.fetcher))
+    }
+
+    /// Build the per-provider adapter + injected fetch stack + context.
+    ///
+    /// The adapter is rebuilt per call and the fetch stack is not: `build_adapter` is cheap
+    /// and stateless, while the fetch stack carries the rate limiter, the connection pool and
+    /// the accumulated throttle penalty, all of which must be shared across a provider's
+    /// tasks to mean anything.
+    fn provider_context(
+        &self,
+        provider: &Provider,
+    ) -> anyhow::Result<(Box<dyn SourceAdapter>, Ctx)> {
+        let adapter = build_adapter(provider.adapter, &provider.slug, &provider.config)?;
         let ctx = Ctx {
             base_url: provider.base_url.clone(),
             provider_slug: provider.slug.clone(),
-            fetcher,
+            fetcher: self.fetcher_for(provider)?,
         };
         Ok((adapter, ctx))
     }
@@ -556,4 +666,76 @@ fn content_hash(meta: &SeriesMeta, chapters: &[ChapterMeta]) -> Vec<u8> {
         h.update(b"\n");
     }
     h.finalize().to_vec()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tankovault_domain::{AdapterKind, Politeness, ProviderState};
+
+    fn provider(rps: f64, ua: &str) -> Provider {
+        Provider {
+            id: ProviderId::from_uuid(uuid::Uuid::nil()),
+            slug: "demo".to_owned(),
+            name: "Demo".to_owned(),
+            base_url: "https://demo.test".to_owned(),
+            adapter: AdapterKind::Madara,
+            config: serde_json::json!({}),
+            state: ProviderState::Active,
+            politeness: Politeness {
+                rps,
+                concurrency: 2,
+                crawl_delay_ms: 0,
+                user_agent: ua.to_owned(),
+                emulation: None,
+            },
+            last_full_scan_at: None,
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            updated_at: OffsetDateTime::UNIX_EPOCH,
+        }
+    }
+
+    /// The cache key must change when — and only when — a setting the fetch stack is built
+    /// from changes. Too eager and every task rebuilds again (the bug this replaced); too
+    /// lazy and an operator lowering `rps` mid-run is ignored until the process restarts.
+    #[test]
+    fn the_fingerprint_tracks_exactly_the_settings_the_stack_is_built_from() {
+        let base = provider(1.0, "tankovault/1.0");
+        assert_eq!(
+            politeness_fingerprint(&base),
+            politeness_fingerprint(&provider(1.0, "tankovault/1.0")),
+            "identical politeness must reuse the stack, or the limiter is per-task again"
+        );
+
+        assert_ne!(
+            politeness_fingerprint(&base),
+            politeness_fingerprint(&provider(0.5, "tankovault/1.0")),
+            "lowering rps must take effect without a restart"
+        );
+        assert_ne!(
+            politeness_fingerprint(&base),
+            politeness_fingerprint(&provider(1.0, "other/1.0"))
+        );
+
+        // Fields the fetch stack does not read must NOT invalidate a warm connection pool,
+        // a rate limiter and an accumulated throttle penalty.
+        let mut renamed = provider(1.0, "tankovault/1.0");
+        renamed.name = "Renamed".to_owned();
+        renamed.config = serde_json::json!({ "unrelated": true });
+        renamed.state = ProviderState::Degraded;
+        assert_eq!(
+            politeness_fingerprint(&base),
+            politeness_fingerprint(&renamed),
+            "an unrelated column change must not throw away the fetch stack"
+        );
+    }
+
+    /// `rps` is an `f64`; hashing it at all requires going through the bit pattern.
+    #[test]
+    fn fractional_rates_are_distinguished() {
+        assert_ne!(
+            politeness_fingerprint(&provider(0.5, "ua")),
+            politeness_fingerprint(&provider(0.25, "ua"))
+        );
+    }
 }

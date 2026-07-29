@@ -2,9 +2,16 @@
 //! for the concurrency ceiling, a crawl-delay floor between requests, and a penalty the
 //! limiter imposes on **itself** when the provider says the budget is too high.
 //!
-//! The fetch stack is built per provider, so a single direct limiter is exactly the
-//! per-provider limiter the design calls for. (An aggregate cross-replica token bucket
-//! in Redis is a documented follow-up — see `docs/IMPLEMENTATION_STATUS.md`.)
+//! A single direct limiter is exactly the per-provider limiter the design calls for **as
+//! long as the whole stack is built once per provider and shared**. That is the caller's
+//! responsibility and it is easy to get wrong: the worker used to build a fresh stack for
+//! every scan task, which quietly turned `rps` and `concurrency` into a per-*task* budget —
+//! N concurrent tasks then offered N × rps to the provider, and the self-imposed penalty
+//! below was discarded each time. `Engine::fetcher_for` caches per provider id for that
+//! reason. Anything else constructing a fetch stack must do the same.
+//!
+//! (An aggregate cross-replica token bucket in Redis is a documented follow-up — see
+//! `docs/IMPLEMENTATION_STATUS.md`. Until then the budget is per worker *process*.)
 //!
 //! The configured budget is a guess made before the crawl: a provider's HTML pages and its
 //! JSON API rarely share a limit, and neither is published. Without feedback the crawler

@@ -121,14 +121,14 @@ async fn main() -> anyhow::Result<()> {
     ));
     let session_store: Arc<dyn SessionStore> = Arc::new(InMemorySessionStore::default());
 
-    let engine = Engine {
-        pool: pool.clone(),
-        bus: bus.clone(),
+    let engine = Engine::new(
+        pool.clone(),
+        bus.clone(),
         solver,
         session_store,
-        worker_id: format!("worker-{}", uuid::Uuid::now_v7()),
-        max_catalog_pages: cfg.worker.max_catalog_pages,
-    };
+        format!("worker-{}", uuid::Uuid::now_v7()),
+        cfg.worker.max_catalog_pages,
+    );
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.as_slice() {

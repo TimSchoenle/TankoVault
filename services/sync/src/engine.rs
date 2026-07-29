@@ -1079,9 +1079,19 @@ impl SyncEngine {
         {
             return Ok(report);
         }
-        let mut offset: i64 = 0;
+        // A keyset walk, not `OFFSET`. Enrichment writes `updated_at = now()`, which is the
+        // very column the sweep ordered by — so with `OFFSET` every enriched row jumped to
+        // the end of the ordering, the rows behind it shifted forward, and the next page's
+        // offset skipped exactly those. The sweep silently missed series.
+        //
+        // `started_at` fences the run: a row this sweep has already touched now sorts after
+        // it *and* fails `updated_at < started_at`, so it cannot come back around.
+        let started_at = OffsetDateTime::now_utc();
+        let mut cursor: Option<(OffsetDateTime, uuid::Uuid)> = None;
         while report.scanned < max_series {
-            let rows = catalog::list_series_for_enrichment(&self.pool, batch_size, offset).await?;
+            let rows =
+                catalog::list_series_for_enrichment(&self.pool, batch_size, cursor, started_at)
+                    .await?;
             if rows.is_empty() {
                 break;
             }
@@ -1090,6 +1100,9 @@ impl SyncEngine {
                 if report.scanned >= max_series {
                     break;
                 }
+                // Advanced before the work, not after: an enrichment that fails must still
+                // move the cursor, or a permanently-failing row stalls the sweep forever.
+                cursor = Some((row.updated_at, row.id.as_uuid()));
                 report.scanned += 1;
                 match self.enrich_series(&row).await {
                     Ok(true) => report.enriched += 1,
@@ -1100,7 +1113,6 @@ impl SyncEngine {
                     }
                 }
             }
-            offset += i64::try_from(fetched).unwrap_or(i64::MAX);
             if i64::try_from(fetched).unwrap_or(0) < batch_size {
                 break;
             }

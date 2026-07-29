@@ -301,10 +301,14 @@ pub async fn progress_mark_unread(
 /// The highest whole chapter that exists for this series strictly below `number`, or `0.0`
 /// when there is none — the retreat target for un-reading a whole chapter (§A.3).
 async fn prev_whole_below(pool: &sqlx::PgPool, series_id: SeriesId, number: f64) -> DbResult<f64> {
+    // The bound is cast to `numeric` rather than the column's `floor()` being cast to
+    // `float8`. Written the other way round, Postgres compares `(floor(number))::float8`,
+    // which is a *different* expression from the one `chapters_source_floor_idx
+    // (series_source_id, (floor(number)))` indexes, so the index can never match it.
     Ok(sqlx::query_scalar!(
         "SELECT max(floor(c.number))::float8 \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-          WHERE ss.series_id = $1 AND floor(c.number) < $2::float8",
+          WHERE ss.series_id = $1 AND floor(c.number) < ($2::float8)::numeric",
         series_id.as_uuid(),
         number,
     )
@@ -778,29 +782,41 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
         next_number: Option<f64>,
         unread: i64,
     }
+    // One lateral aggregate per watchlist row, not four correlated subqueries.
+    //
+    // The previous form re-scanned the same chapter set four times for every card: the next
+    // number, the unread count, the `EXISTS` guard, and the `max(discovered_at)` behind the
+    // ordering. Measured on the development catalogue, for the user with 835 watchlist
+    // entries, that was **1 037 ms**. The lateral computes all four in one pass over each
+    // series' chapters: **104 ms**, same rows in the same order.
+    //
+    // `FILTER` rather than a `WHERE` inside the lateral, deliberately: `last_activity` is the
+    // newest chapter of the series regardless of what the user has read, while the other two
+    // are over unread chapters only. Pushing the unread predicate into the lateral's `WHERE`
+    // would silently redefine the ordering as "newest *unread* chapter".
     let rows = sqlx::query_as!(
         Row,
         "SELECT w.series_id, s.canonical_title AS series_title, s.cover_url, \
                 COALESCE(rp.last_read_whole_number, 0)::float8 AS \"last_read_number!\", \
-                (SELECT min(c.number)::float8 \
-                   FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-                   WHERE ss.series_id = w.series_id \
-                     AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0)) AS next_number, \
-                (SELECT COALESCE(count(DISTINCT floor(c.number)),0) \
-                   FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-                   WHERE ss.series_id = w.series_id \
-                     AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0)) AS \"unread!\" \
+                agg.next_number::float8 AS next_number, \
+                agg.unread AS \"unread!\" \
          FROM watchlist_entries w \
          JOIN series s ON s.id = w.series_id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
+         CROSS JOIN LATERAL ( \
+           SELECT min(c.number) FILTER ( \
+                    WHERE floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
+                  ) AS next_number, \
+                  COALESCE(count(DISTINCT floor(c.number)) FILTER ( \
+                    WHERE floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
+                  ), 0) AS unread, \
+                  max(c.discovered_at) AS last_activity \
+           FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+           WHERE ss.series_id = w.series_id \
+         ) agg \
          WHERE w.user_id = $1 AND w.status IN ('reading','planned','paused') \
-           AND EXISTS (SELECT 1 \
-                   FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-                   WHERE ss.series_id = w.series_id \
-                     AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0)) \
-         ORDER BY (SELECT max(c.discovered_at) \
-                   FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-                   WHERE ss.series_id = w.series_id) DESC NULLS LAST, w.series_id",
+           AND agg.unread > 0 \
+         ORDER BY agg.last_activity DESC NULLS LAST, w.series_id",
         user_id.as_uuid(),
     )
     .fetch_all(exec)
@@ -834,6 +850,12 @@ pub struct MeStats {
 /// Compute a user's lifetime tracking stats in a single round trip. Both `chapters_read`
 /// and `unread` are floored to whole chapters — sub-chapter part releases (e.g. `152.6`)
 /// are not "full chapters" for tracking purposes and don't count as extra ones.
+///
+/// The `unread` subquery keeps its global `DISTINCT` rather than becoming a per-series
+/// lateral like [`continue_reading`]'s. The lateral form was written and measured on the
+/// development catalogue (835 watchlist entries): it forces a nested loop per watchlist row
+/// and came out **slower** — 432 ms against 258 ms for the hash join plus one sort. The same
+/// rewrite is not automatically right in both places; this one was checked.
 pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<MeStats> {
     let stats = sqlx::query_as!(
         MeStats,

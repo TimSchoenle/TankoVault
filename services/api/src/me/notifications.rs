@@ -149,6 +149,18 @@ pub async fn stream(
     let claims = tankovault_auth::verify_access_token(&state.jwt_secret, &q.access_token)?;
     let user_id = claims.user_id().ok_or(ApiError::Unauthorized)?;
 
+    // The same check the `AuthUser` extractor makes for every other route, which this one
+    // skipped because it does not use the extractor. A valid signature proves the token was
+    // ours; it does not prove the account still exists or is still permitted to act. Without
+    // this, a suspended or deleted user kept receiving their feed for the token's remaining
+    // lifetime — the one route where "revoke now" did not mean now.
+    let principal = tankovault_db::repo::permissions::resolve(&state.pool, user_id)
+        .await?
+        .ok_or(ApiError::Unauthorized)?;
+    if !principal.status.may_authenticate() {
+        return Err(ApiError::Suspended);
+    }
+
     let bus = state.bus.clone().ok_or(ApiError::Unavailable)?;
     let subscriber = bus
         .subscribe_user_notifications(user_id.as_uuid())
@@ -168,6 +180,14 @@ pub async fn stream(
         };
         Ok(event)
     });
+
+    // The stream outlives the token that opened it, so cap it at that token's own expiry.
+    // Without this the suspension check above runs only at connect time, and one long-lived
+    // `EventSource` keeps delivering forever. `EventSource` reconnects on its own when the
+    // stream ends, and the reconnect is re-checked — which is exactly the behaviour wanted.
+    let remaining = (claims.exp - OffsetDateTime::now_utc().unix_timestamp()).max(0);
+    let deadline = tokio::time::sleep(std::time::Duration::from_secs(remaining.unsigned_abs()));
+    let events = futures::StreamExt::take_until(events, deadline);
 
     Ok(Sse::new(events).keep_alive(KeepAlive::default()))
 }

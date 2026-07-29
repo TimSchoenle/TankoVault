@@ -22,7 +22,9 @@ reqwest = { workspace = true }
 tower = { workspace = true }
 # `fs` adds ServeDir/ServeFile (static bundle + SPA fallback); `set-header` and `trace`
 # already ride on the workspace feature set, merged here.
-tower-http = { workspace = true, features = ["fs"] }
+# `compression-full`: the WASM bundle is the largest thing this tier serves and was
+# shipped uncompressed. `set-header`/`trace` come from the workspace default set.
+tower-http = { workspace = true, features = ["fs", "compression-full"] }
 
 [lints]
 workspace = true

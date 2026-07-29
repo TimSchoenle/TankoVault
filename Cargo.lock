@@ -4720,6 +4720,7 @@ dependencies = [
  "axum",
  "axum-extra",
  "fred",
+ "futures",
  "metrics",
  "reqwest",
  "serde",

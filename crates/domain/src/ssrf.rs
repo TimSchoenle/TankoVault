@@ -3,8 +3,8 @@
 //! Pure and I/O-free, so it lives here rather than in `crates/fetch`: the crawler is not the
 //! only consumer. `services/render` drives a real browser at an operator- or caller-supplied
 //! URL and returns the DOM *and the cookies it collected*; `services/challenge-solver` hands
-//! a URL to FlareSolverr and returns the body. Both need this table, and neither should have
-//! to take a dependency on the whole `wreq`/BoringSSL fetch stack to get it — which is
+//! a URL to `FlareSolverr` and returns the body. Both need this table, and neither should have
+//! to take a dependency on the whole `wreq`/`BoringSSL` fetch stack to get it — which is
 //! exactly why they previously had no check at all.
 //!
 //! The DNS-time half of the guard (resolving a hostname and re-checking every resolved

@@ -7,7 +7,7 @@
 //!
 //! - **Upstream failures collapsed to `500`.** A `sync` outage was indistinguishable from a
 //!   bug in this process. [`Upstream`] maps transport failure to `502` and keeps upstream
-//!   `404`/`409` intact, so the `409` OpenAPI documents is now actually emittable.
+//!   `404`/`409` intact, so the `409` `OpenAPI` documents is now actually emittable.
 //! - **The internal token had nowhere to live.** Every outbound call must present
 //!   `X-Internal-Token`; a per-call-site convention would be forgotten exactly once, which is
 //!   all it takes. Attaching it here makes it structural.
@@ -128,7 +128,6 @@ impl Upstream {
     ///
     /// Returns the builder rather than sending, so the caller owns the `tokio::spawn`. Still
     /// goes through [`Self::authenticate`], which is the point.
-    #[must_use]
     pub fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         self.authenticate(self.http.request(method, self.url(path)))
     }

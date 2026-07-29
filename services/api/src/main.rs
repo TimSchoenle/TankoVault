@@ -74,7 +74,17 @@ struct AuthConfig {
     access_ttl_minutes: i64,
     #[serde(default = "default_refresh_days")]
     refresh_ttl_days: i64,
-    #[serde(default)]
+    /// Mark the refresh cookie `Secure`.
+    ///
+    /// Defaults to **true**. It was `#[serde(default)]` on a `bool` — that is `false` — and
+    /// nothing in the reference deployment set it, so the shipped stack sent a 30-day
+    /// credential over plain HTTP. One accidental `http://` on an untrusted network (a typo,
+    /// an old bookmark, a captive portal, SSL-strip) handed it over; with HSTS also off by
+    /// default, the browser had no memory that the origin should have been HTTPS.
+    ///
+    /// The opt-out exists for local HTTP development, where a `Secure` cookie is simply never
+    /// sent. Set it explicitly there; do not default it off for everyone.
+    #[serde(default = "tankovault_config::default_true")]
     cookie_secure: bool,
 }
 

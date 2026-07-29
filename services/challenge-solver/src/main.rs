@@ -122,27 +122,27 @@ async fn main() -> anyhow::Result<()> {
 
 /// Reject a target URL the solver must not visit.
 ///
-/// `SolveRequest.url` used to reach FlareSolverr's `request.get` unvalidated, so anything
+/// `SolveRequest.url` used to reach `FlareSolverr`'s `request.get` unvalidated, so anything
 /// that could open a socket to this service had an arbitrary-URL fetcher that returns the
 /// body — cloud instance metadata, internal admin endpoints, `file:` reads. Same policy the
 /// crawler applies, including IP literals.
 ///
-/// The check binds the address the caller *named*. FlareSolverr resolves independently, so
+/// The check binds the address the caller *named*. `FlareSolverr` resolves independently, so
 /// this does not survive a DNS rebind; that needs egress restriction around the solver
 /// container.
-fn validate_target(raw: &str) -> Result<(), Response> {
+fn validate_target(raw: &str) -> Result<(), Box<Response>> {
     tankovault_domain::ssrf::validate_str(raw)
         .map(|_| ())
         .map_err(|e| {
             metrics::counter!("solve_attempts_total", "result" => "rejected").increment(1);
             tracing::warn!(url = %raw, error = %e, "refused a solve target");
-            (StatusCode::FORBIDDEN, format!("refused target: {e}")).into_response()
+            Box::new((StatusCode::FORBIDDEN, format!("refused target: {e}")).into_response())
         })
 }
 
 async fn solve(State(state): State<AppState>, Json(req): Json<SolveRequest>) -> impl IntoResponse {
     if let Err(rejection) = validate_target(&req.url) {
-        return rejection;
+        return *rejection;
     }
     let provider = req.provider.clone();
     match state.solver.solve(req).await {

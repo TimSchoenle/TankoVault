@@ -20,11 +20,11 @@ that the audit did not.
 
 | Report | DONE | PARTIAL | OPEN | Other |
 | --- | --- | --- | --- | --- |
-| SECURITY (16) | 8 | 1 | 6 | 1 OPERATOR |
+| SECURITY (16+2) | 12 | 4 | 2 | — |
 | ARCHITECTURE (21) | 3 | 0 | 17 | 1 no-finding |
-| PERFORMANCE (20) | 1 | 0 | 18 | 1 no-finding |
+| PERFORMANCE (20) | 3 | 0 | 16 | 1 no-finding |
 | TESTING (21) | 3 | 0 | 18 | — |
-| FRONTEND (18) | 1 | 0 | 17 | — |
+| FRONTEND (18) | 2 | 0 | 16 | — |
 | BUILD_AND_OPS (31) | 9 | 1 | 21 | — |
 
 ---
@@ -52,19 +52,19 @@ should mark the security work complete until they are done.
 | SEC-2 | `render` / `challenge-solver` fetch any URL, unauthenticated | **DONE** | Both now require the internal token and validate the target through `tankovault_domain::ssrf::validate_str`. Chrome/FlareSolverr still resolve independently, so a DNS rebind is not covered — that needs `--host-resolver-rules` or an egress-restricted netns. Tracked as SEC-2b. |
 | SEC-2b | Renderer DNS rebinding | **OPEN** | Requires container-level egress restriction; no code change closes it. |
 | SEC-3 | `X-Forwarded-For` rate-limit bypass | **DONE** | Reads the right-most entry; regression tests in `crates/service/src/ratelimit/mod.rs`. Password length cap is SEC-3b. |
-| SEC-3b | No maximum password length ⇒ argon2 memory DoS | **OPEN** | Cap at 4096 bytes in `validate_registration` and `reset_password`. |
-| SEC-4 | Email change needs no re-auth or re-verification | **OPEN** | Next up. Needs: current-password check, pending-email column + confirmation token, `email_verified_at = NULL`, session revocation, `POST /v1/me/password`. |
+| SEC-3b | No maximum password length ⇒ argon2 memory DoS | **DONE** | `auth::MAX_PASSWORD_LEN` (4096), enforced by `validate_password` on registration, reset *and* the new authenticated change. |
+| SEC-4 | Email change needs no re-auth or re-verification | **DONE** | `patch_profile` requires `current_password` for an address change, `update_profile` clears `email_verified_at`, a confirmation goes to the new address and a warning to the old, and every session is revoked. `POST /v1/me/password` added — there was previously no authenticated path to a new password at all. The report's pending-email column is *not* implemented: with the password required, writing straight through plus forced re-verification closes the takeover, and a pending column adds a migration and a second confirmation state for no further protection. Revisit if the address is ever used for anything before confirmation. |
 | SEC-5 | SSRF guard bypassed by an IP-literal URL | **DONE** | `validate_url` range-checks literals; `admin/providers.rs` validates `base_url` on create *and* update via `validate_and_resolve`. Tests in `crates/domain/src/ssrf.rs`. |
 | SEC-6 | Live credentials committed | **PARTIAL** | Repo side done (untracked, `.gitignore` fixed, `local.env.example` added, placeholders refused in every profile). Rotation is OP-1..OP-3. |
-| SEC-7 | Cookie not `Secure` by default; no CSP | **OPEN** | Default `cookie_secure` to true; `__Host-` prefix; CSP on both the SPA shell and the API. |
-| SEC-8 | `/v1/me/stream` skips the suspension check, token in the URL | **OPEN** | Resolve the principal in `stream`; replace the query token with a short-lived ticket. |
-| SEC-9 | Username may contain `@`; login resolves ambiguously | **OPEN** | Character-class validator + DB `CHECK` + split the lookup on `@`. |
-| SEC-10 | Login timing side channel discloses account existence | **OPEN** | Hash a constant dummy PHC on the not-found branch. |
-| SEC-11 | `panic = "abort"` with no catch layer; `page * limit` overflow | **OPEN** | `CatchPanicLayer`, `saturating_mul`, `overflow-checks = true`. |
+| SEC-7 | Cookie not `Secure` by default; no CSP | **PARTIAL** | `cookie_secure` now defaults to true (it was `#[serde(default)]` on a `bool`); CSP added to both the API (`default-src 'none'`) and the SPA shell, plus `Cache-Control: no-cache`. The `__Host-` cookie prefix is **not** done — it requires `Path=/` rather than the current `/v1/auth`, which widens where the cookie is sent and deserves its own review. |
+| SEC-8 | `/v1/me/stream` skips the suspension check, token in the URL | **PARTIAL** | The principal is now resolved and `may_authenticate()` checked, and the stream is capped at the token's `exp` so the check re-runs on `EventSource`'s automatic reconnect. The token is **still in the query string** — replacing it with a short-lived ticket needs a Redis-backed store and a frontend change. |
+| SEC-9 | Username may contain `@`; login resolves ambiguously | **PARTIAL** | `validate_username` restricts to `[A-Za-z0-9_.-]` and is applied on registration *and* `patch_profile`. Still **OPEN**: the DB-level `CHECK (position('@' in username) = 0)` migration, applying the validator in `admin::update_user`, and splitting `find_credentials` on `@`. Existing rows are not retro-validated. |
+| SEC-10 | Login timing side channel discloses account existence | **PARTIAL** | `login` now verifies `DUMMY_PASSWORD_HASH` on the unknown-identifier branch, pinned by a test asserting the dummy's argon2 parameters match the live hasher's. `forgot_password`'s smaller channel is still open. |
+| SEC-11 | `panic = "abort"` with no catch layer; `page * limit` overflow | **DONE** | Release profile moved to `panic = "unwind"` with `overflow-checks = true`; `CatchPanicLayer` is the innermost layer of `HttpStack`; `page` is clamped to `MAX_PAGE` and the multiply saturates. |
 | SEC-12 | Rate-limit buckets are per-exact-IP | **PARTIAL** | IPv6 now buckets per /64 and junk keys are truncated. The `Principal` extension is still never inserted, so authenticated traffic is not bucketed per account — needs auth middleware ahead of the limiter. |
-| SEC-13 | `/scalar` served unauthenticated | **OPEN** | Config toggle, default off in production. |
-| SEC-14 | Username interpolated unescaped into HTML email | **OPEN** | Escape in `mailer.rs`; also fixed structurally by SEC-9. |
-| SEC-15 | GDPR self-export includes audit rows naming third parties | **OPEN** | Project the audit rows; drop `detail`. |
+| SEC-13 | `/scalar` served unauthenticated | **DONE** | `SecurityConfig::expose_api_docs`, defaulting to off under `TANKOVAULT_PROFILE=production` and on elsewhere. Also fixes PERF-14 (the 253 KB re-serialization per request). |
+| SEC-14 | Username interpolated unescaped into HTML email | **DONE** | `mailer::esc` on every interpolated value, with a regression test injecting an anchor. |
+| SEC-15 | GDPR self-export includes audit rows naming third parties | **DONE** | The export projects `created_at`/`action`/`outcome` and `target` only when the target is the subject; `detail` is dropped. |
 | SEC-16 | Unfixable advisory against an empty `deny.toml` ignore list | **OPEN** | See OPS-3.2. Check first whether `jsonwebtoken`'s `rust_crypto` feature already drops `rsa` — the manifest already sets `default-features = false`, but `rsa 0.9.10` still appears in `Cargo.lock`. |
 
 ### Design note — SEC-1, caller-asserted subject
@@ -118,14 +118,14 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | PERF-4 | Missing `series(updated_at)`; OFFSET enrichment sweep | **OPEN** | Includes a correctness bug: the sweep sets `updated_at = now()`, so enriched rows jump the cursor and unenriched series are skipped. |
 | PERF-5 | Selectors recompiled per element | **OPEN** | No `LazyLock`/`OnceLock` anywhere in `crates/` today. |
 | PERF-6 | `test_before_acquire` left at its default | **OPEN** | One line. |
-| PERF-7 | WASM bundle uncompressed, uncached, no ETag | **OPEN** | Pairs with FE-F18 and SEC-7 (same file). |
+| PERF-7 | WASM bundle uncompressed, uncached, no ETag | **DONE** | `CompressionLayer` plus `Cache-Control: no-cache` on the shell in `services/frontend`. `ServeDir` already supplied ETag/Last-Modified. |
 | PERF-8 | `reqwest::Client::new()` has no timeout; unbounded spawn | **DONE** | `Upstream::client()` sets connect (5 s) and request (25 s) timeouts; `spawn_targeted_push` goes through it. |
 | PERF-9 | CPU-bound parsing on the async executor | **OPEN** | No `spawn_blocking` anywhere today. |
 | PERF-10 | `GET /v1/series/{id}` N+1 | **OPEN** | |
 | PERF-11 | Ingest holds one transaction across ~1,200 INSERTs | **OPEN** | |
 | PERF-12 | `floor(number)` predicates non-sargable | **OPEN** | |
 | PERF-13 | Sync reconcile ~6 sequential queries per remote entry | **OPEN** | |
-| PERF-14 | `/scalar` re-serializes 253 KB per request | **OPEN** | Overlaps SEC-13; gating the route also fixes this. |
+| PERF-14 | `/scalar` re-serializes 253 KB per request | **DONE** | The route is unmounted in production (SEC-13). |
 | PERF-15 | `register_source_stubs` opens a transaction per entry | **OPEN** | |
 | PERF-16 | `FairQueue` polls lanes sequentially | **OPEN** | |
 | PERF-17 | Dev profile untuned | **OPEN** | Ready-to-paste `[profile.dev]` in the report. |
@@ -181,7 +181,7 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | FE-F15 | 14 unused icon variants behind an expired `#[allow(dead_code)]` | **OPEN** | |
 | FE-F16 | 27 ARIA attributes against 134 click handlers | **OPEN** | Worst: `series/chapters.rs:275`, a mouse-only `div` disclosure. |
 | FE-F17 | Two hardcoded English strings | **OPEN** | |
-| FE-F18 | No cache headers, no CSP on assets | **OPEN** | Same file as SEC-7 and PERF-7 — do all three together. |
+| FE-F18 | No cache headers, no CSP on assets | **DONE** | CSP (with `wasm-unsafe-eval`, which the app needs to boot), `Cache-Control: no-cache` on the shell, compression. |
 
 ---
 

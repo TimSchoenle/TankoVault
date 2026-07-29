@@ -123,13 +123,13 @@ async fn main() -> anyhow::Result<()> {
 /// This is a Rust-side check on the address the caller *named*. It does not survive a DNS
 /// rebind, because Chrome resolves independently of this process; constraining that requires
 /// `--host-resolver-rules` or an egress-restricted network namespace around the browser.
-fn validate_target(raw: &str) -> Result<(), Response> {
+fn validate_target(raw: &str) -> Result<(), Box<Response>> {
     tankovault_domain::ssrf::validate_str(raw)
         .map(|_| ())
         .map_err(|e| {
             metrics::counter!("render_requests_total", "result" => "rejected").increment(1);
             tracing::warn!(url = %raw, error = %e, "refused a render target");
-            (StatusCode::FORBIDDEN, format!("refused target: {e}")).into_response()
+            Box::new((StatusCode::FORBIDDEN, format!("refused target: {e}")).into_response())
         })
 }
 
@@ -138,7 +138,7 @@ async fn render(
     Json(req): Json<RenderRequest>,
 ) -> impl IntoResponse {
     if let Err(rejection) = validate_target(&req.url) {
-        return rejection;
+        return *rejection;
     }
     let url = req.url.clone();
     let opts = RenderOptions {
@@ -172,7 +172,7 @@ async fn render(
 
 async fn solve(State(state): State<AppState>, Json(req): Json<SolveRequest>) -> impl IntoResponse {
     if let Err(rejection) = validate_target(&req.url) {
-        return rejection;
+        return *rejection;
     }
     let provider = req.provider.clone();
     match state.solver.solve(req).await {

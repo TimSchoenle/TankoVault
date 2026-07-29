@@ -1104,6 +1104,21 @@
         "format": "uuid",
         "type": "string"
       },
+      "PasswordChange": {
+        "properties": {
+          "current_password": {
+            "type": "string"
+          },
+          "new_password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "type": "object"
+      },
       "Permission": {
         "description": "Everything a principal can be authorized to do.\n\nThe enum is exhaustive by design: a permission that exists only as a string somewhere\ncannot be listed in the admin UI, cannot be spell-checked by the compiler, and cannot be\naudited as a known capability. Adding a capability means adding a variant here and\nnothing else.",
         "enum": [
@@ -1317,6 +1332,13 @@
       },
       "ProfileUpdate": {
         "properties": {
+          "current_password": {
+            "description": "Required when `email` changes the address on the account. See [`patch_profile`].",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "email": {
             "type": [
               "string",
@@ -6642,6 +6664,56 @@
         ]
       }
     },
+    "/v1/me/password": {
+      "post": {
+        "description": "Change the caller's password, proving knowledge of the current one.\n\nThere was previously **no authenticated path to a new password at all** — the only route\nwas the emailed reset link, so a signed-in user who simply wanted to rotate their password\nhad to go through an out-of-band channel, and a user whose email had been taken over could\nnot lock the attacker out.\n\nEvery session is revoked on success, including the caller's: a password change is exactly\nwhen you want the other device signed out, and leaving the caller's own session alive would\nmean special-casing the one session an attacker is most likely to be holding.",
+        "operationId": "change_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Password changed; every session was revoked"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "New password fails the policy"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required, or current_password is wrong"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Change the password",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
     "/v1/me/privacy/requests": {
       "get": {
         "description": "The authenticated account's own requests, newest first, including resolved ones — the\nsubject is entitled to see how their requests were handled, not only which are outstanding.",
@@ -6811,7 +6883,7 @@
     },
     "/v1/me/profile": {
       "patch": {
-        "description": "Update the caller's username and/or email (frontend §9.4). A duplicate email/username\nsurfaces as `409 Conflict`.",
+        "description": "Update the caller's username and/or email (frontend §9.4). A duplicate email/username\nsurfaces as `409 Conflict`.\n\nChanging the **email address** additionally requires `current_password`, because the\naddress is the account's recovery channel. Without that check, anyone holding an access\ntoken for 15 minutes — a shared browser, a proxy log, a leaked SSE URL — could point the\naccount at their own address, request a password reset to it, and take the account over;\n`reset_password` would then revoke the real owner's sessions on the attacker's behalf.\n\nOn a successful change the new address starts **unverified**\n(`repo::users::update_profile` clears `email_verified_at`), a confirmation link is sent to\nit, a warning is sent to the *old* address, and every session is revoked — matching what\n`reset_password` already does for the other credential.",
         "operationId": "patch_profile",
         "requestBody": {
           "content": {
@@ -6834,6 +6906,16 @@
             },
             "description": "Updated profile"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid username or email"
+          },
           "401": {
             "content": {
               "application/json": {
@@ -6842,7 +6924,7 @@
                 }
               }
             },
-            "description": "authentication required"
+            "description": "authentication required, or current_password is wrong"
           },
           "409": {
             "content": {

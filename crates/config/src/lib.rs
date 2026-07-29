@@ -527,7 +527,13 @@ impl CorsConfig {
 }
 
 /// Edge hardening applied by the shared middleware stack.
+///
+/// `struct_excessive_bools` is allowed deliberately. The lint exists to catch boolean
+/// *parameters* that should have been an enum; these are independent operator toggles that
+/// map one-to-one onto `TANKOVAULT_SECURITY__*` environment variables. Collapsing them into
+/// an enum or a bitflag would make the config surface harder to write, not easier.
 #[derive(Debug, Clone, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct SecurityConfig {
     /// Cross-origin policy. See [`CorsConfig`].
     #[serde(default)]
@@ -555,6 +561,19 @@ pub struct SecurityConfig {
     /// used to collide or poison log correlation.
     #[serde(default)]
     pub trust_request_id: bool,
+    /// Serve the browsable API documentation (`/scalar`) and the `OpenAPI` document.
+    ///
+    /// **Defaults to off in the production profile and on everywhere else**, which is why
+    /// this default is a function that reads the environment rather than a literal: the
+    /// useful behaviour differs between the two, and requiring an operator to remember a
+    /// third variable to switch it off is how it stays on.
+    ///
+    /// Unauthenticated, it hands an attacker the complete admin surface — every
+    /// `/v1/admin/*` path, the permission vocabulary and exact request bodies — without a
+    /// single failed probe. That is reconnaissance rather than compromise, but it removes
+    /// the discovery cost of every other weakness.
+    #[serde(default = "SecurityConfig::default_expose_api_docs")]
+    pub expose_api_docs: bool,
 }
 
 impl SecurityConfig {
@@ -566,6 +585,9 @@ impl SecurityConfig {
     }
     fn default_hsts_max_age_secs() -> u64 {
         63_072_000
+    }
+    fn default_expose_api_docs() -> bool {
+        !is_production()
     }
 }
 
@@ -579,12 +601,19 @@ impl Default for SecurityConfig {
             hsts_max_age_secs: Self::default_hsts_max_age_secs(),
             security_headers: true,
             trust_request_id: false,
+            expose_api_docs: Self::default_expose_api_docs(),
         }
     }
 }
 
 /// Shared `serde` default for fields that are on unless explicitly disabled.
-fn default_true() -> bool {
+///
+/// Public so service-local config structs can use the same spelling. A security default that
+/// each service re-derives is a security default that one of them will get wrong — which is
+/// exactly what happened to `cookie_secure`, a `#[serde(default)]` `bool` that therefore
+/// defaulted to *off*.
+#[must_use]
+pub fn default_true() -> bool {
     true
 }
 

@@ -12,7 +12,7 @@
 //! The address table and the pre-flight check are I/O-free and live in
 //! [`tankovault_domain::ssrf`], so `services/render` and `services/challenge-solver` — which
 //! also fetch caller-supplied URLs — can apply the same policy without depending on this
-//! crate's `wreq`/BoringSSL stack. They are re-exported here so existing call sites are
+//! crate's `wreq`/`BoringSSL` stack. They are re-exported here so existing call sites are
 //! unchanged.
 
 use std::net::SocketAddr;

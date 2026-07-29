@@ -176,11 +176,21 @@ pub fn build_router(
     // disabled feature should still have been rate limited, tagged with a request id and
     // measured, so the middleware above it must run first. Applied here rather than in
     // `HttpStack` because the feature table is the API's own, not something every service has.
+    // `/scalar` publishes every admin path, the permission vocabulary and exact request
+    // bodies to anyone who asks, with no auth gate and no entry in `route_features()`. Off in
+    // the production profile by default (`SecurityConfig::expose_api_docs`), on in
+    // development where it is genuinely useful. Note this also removes a per-request
+    // re-serialization of the 253 KB document.
+    let router = if security.expose_api_docs {
+        router.merge(Scalar::with_url("/scalar", api))
+    } else {
+        router
+    };
+
     let app = HttpStack::new(security, metrics.clone())
         .with_rate_limit(limiter)
         .apply(
             router
-                .merge(Scalar::with_url("/scalar", api))
                 .with_state(state)
                 .layer(axum::middleware::from_fn_with_state(
                     features,
@@ -249,6 +259,7 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(me::capabilities))
         // account settings (§9.4)
         .routes(routes!(me::patch_profile))
+        .routes(routes!(me::change_password))
         .routes(routes!(me::sessions))
         .routes(routes!(me::delete_session))
         .routes(routes!(me::notification_prefs, me::put_notification_prefs))

@@ -124,6 +124,10 @@ impl HttpStack {
         // normalises back to. Each call wraps the previous one, so the **last** layer
         // listed is the outermost.
         router
+            // Innermost, so it wraps the handler itself. A panic becomes a 500 for the one
+            // request that caused it instead of taking down the replica — which is what
+            // happened while the release profile used `panic = "abort"` (see the note there).
+            .layer(tower_http::catch_panic::CatchPanicLayer::new())
             .layer(CompressionLayer::new())
             .layer(DefaultBodyLimit::max(security.max_body_bytes))
             .layer(TimeoutLayer::with_status_code(
@@ -225,6 +229,17 @@ async fn apply_security_headers(
     headers.insert(
         HeaderName::from_static("cross-origin-resource-policy"),
         HeaderValue::from_static("same-origin"),
+    );
+    // A JSON API needs to load nothing and be framed by nobody. `frame-ancestors` is the
+    // modern, CSP-level statement of the `X-Frame-Options` above; both are sent because the
+    // two are honoured by different browser generations.
+    //
+    // Deliberately not configurable: unlike CORS, there is no deployment shape in which an
+    // API response should be allowed to pull a script or be embedded in a frame, and a knob
+    // here would only be a way to turn the protection off.
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static("default-src 'none'; frame-ancestors 'none'; base-uri 'none'"),
     );
 
     if security.hsts {

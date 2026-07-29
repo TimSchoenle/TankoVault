@@ -83,7 +83,9 @@ futures = "0.3"
 axum = { version = "0.8", features = ["macros", "json", "query"] }
 axum-extra = { version = "0.12", features = ["cookie", "typed-header", "query"] }
 tower = { version = "0.5", features = ["util", "timeout", "limit"] }
-tower-http = { version = "0.7", features = ["trace", "cors", "compression-full", "timeout", "request-id", "set-header"] }
+# `catch-panic`: turns a panicking handler into a 500 for that one request instead of a
+# process abort. See the `panic = "unwind"` note in `[profile.release]`.
+tower-http = { version = "0.7", features = ["trace", "cors", "compression-full", "timeout", "request-id", "set-header", "catch-panic"] }
 hyper = "1.5"
 
 # --- data / storage ---
@@ -165,4 +167,15 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 strip = true
-panic = "abort"
+# `unwind`, not `abort`. With `abort`, a panic anywhere in a handler terminated the whole
+# process — so any single panicking code path (an overflow, an out-of-range slice, an
+# `unwrap` on a `HeaderValue`) let an unauthenticated client restart a replica at will and
+# take every in-flight request with it. Unwinding lets `CatchPanicLayer`
+# (`crates/service/src/http.rs`) turn it into a 500 for the one request that caused it.
+#
+# The cost is landing-pad code in the binary. That is the correct trade for a network
+# service: a panic here is a bug to fix, not a reason to drop everyone else's requests.
+panic = "unwind"
+# Silent wrapping in a pagination offset is worse than a caught error, and this workload is
+# nowhere near arithmetic-bound. Cheap insurance against the class of bug SEC-11 found.
+overflow-checks = true

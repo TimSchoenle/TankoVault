@@ -17,6 +17,12 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::openapi::SERIES_TAG;
 
+/// Highest accepted page index for the browse listing.
+///
+/// At the 100-item maximum page size this is 10 million rows deep — far past any real
+/// catalogue, and far short of the `i64` overflow the unbounded value allowed.
+const MAX_PAGE: i64 = 100_000;
+
 /// Query parameters for the Discover browse list (frontend §9.1). All filters are optional;
 /// `tag`/`exclude_tag` may repeat (`?tag=action&tag=drama`). Sorting and offset pagination
 /// are server-side; the total match count + next page are returned as response headers so
@@ -111,7 +117,19 @@ pub async fn list(
     }
 
     let limit = params.limit.clamp(1, 100);
-    let page = params.page.or(params.cursor).unwrap_or(0).max(0);
+    // `page` had no upper bound, so `page * limit` overflowed `i64` on
+    // `?page=92233720368547758&limit=100`. Release builds have `overflow-checks = false`, so
+    // it wrapped to a negative offset and produced a Postgres error; every debug and CI build
+    // panicked instead — and with `panic = "abort"` a panic in a handler terminates the
+    // *process*, taking every in-flight request on the replica with it.
+    //
+    // Both the clamp and the `saturating_mul` are kept: the clamp is the real bound (no
+    // catalogue has 100k pages), the saturation makes the arithmetic total regardless.
+    let page = params
+        .page
+        .or(params.cursor)
+        .unwrap_or(0)
+        .clamp(0, MAX_PAGE);
     let filter = SeriesFilter {
         query: params.query,
         content_type: params.content_type.filter(|s| !s.is_empty()),
@@ -128,7 +146,7 @@ pub async fn list(
         min_chapters: params.min_chapters,
         sort: params.sort.filter(|s| !s.is_empty()),
         limit,
-        offset: page * limit,
+        offset: page.saturating_mul(limit),
     };
     let out = tankovault_db::repo::catalog::list_series_filtered(&state.pool, &filter).await?;
 

@@ -33,7 +33,16 @@ use tankovault_domain::UserId;
 ///   artefact and these grant access to an entirely different service.
 ///
 /// The subject's own `audit_log` entries **are** included: they are records about the
-/// user and so fall within an access request.
+/// user and so fall within an access request. They are **projected**, not dumped:
+/// `created_at`, `action`, `outcome`, and `target` only when the target is the subject
+/// themselves. `detail` is dropped entirely.
+///
+/// Dumping whole rows leaked third parties. When the exporting user is an operator, their own
+/// audit rows describe actions taken *on other people* — `admin/users.rs` records
+/// `{"username": …, "email": …}` of the edited account, and `admin/privacy.rs` records another
+/// data subject's id. GDPR Art. 15(4) is explicit that an access request must not adversely
+/// affect the rights of others, and this is a file people forward by email. The compliance
+/// goal — showing the subject what was recorded about them — is fully met by the projection.
 pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<Json> {
     let export = sqlx::query_scalar!(
         "SELECT json_build_object( \
@@ -58,7 +67,12 @@ pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
                                 FROM sync_conflicts c WHERE c.user_id = $1), \
            'sync_history', (SELECT coalesce(json_agg(to_jsonb(h) ORDER BY h.created_at), '[]'::json) \
                               FROM sync_history h WHERE h.user_id = $1), \
-           'audit_entries', (SELECT coalesce(json_agg(to_jsonb(a) ORDER BY a.created_at), '[]'::json) \
+           'audit_entries', (SELECT coalesce(json_agg(json_build_object( \
+                                      'created_at', a.created_at, \
+                                      'action', a.action, \
+                                      'outcome', a.outcome, \
+                                      'target', CASE WHEN a.target = $1::text THEN a.target ELSE NULL END \
+                                    ) ORDER BY a.created_at), '[]'::json) \
                                FROM audit_log a WHERE a.actor_id = $1), \
            'permissions', (SELECT coalesce(json_agg(to_jsonb(g) - 'user_id' ORDER BY g.granted_at), '[]'::json) \
                              FROM user_permissions g WHERE g.user_id = $1), \

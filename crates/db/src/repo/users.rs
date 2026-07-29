@@ -510,11 +510,14 @@ pub async fn mark_email_verified<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId
 // Account settings (frontend §9.4)
 // ---------------------------------------------------------------------------
 
-/// Update a user's editable profile fields (username / email). `None` leaves a field
-/// unchanged (`COALESCE`). Returns the refreshed user.
+/// Apply a username and/or email change.
 ///
-/// # Errors
-/// [`DbError::Conflict`] if the new email or username is already taken.
+/// A **changed** email clears `email_verified_at`, so the new address inherits nothing from
+/// the old one. Previously it did: an attacker holding a 15-minute access token could point
+/// the account at their own address, which arrived already "verified", then drive a password
+/// reset to it and lock the owner out of an account whose recovery address they no longer
+/// controlled. `COALESCE` on the same-value case keeps a no-op PATCH from forcing a
+/// re-verification for nothing.
 pub async fn update_profile<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,
@@ -525,7 +528,11 @@ pub async fn update_profile<'e, E: PgExecutor<'e>>(
         UserRow,
         "UPDATE users SET \
             username = COALESCE($2, username), \
-            email = COALESCE($3, email) \
+            email = COALESCE($3, email), \
+            email_verified_at = CASE \
+                WHEN $3 IS NOT NULL AND $3 <> email THEN NULL \
+                ELSE email_verified_at \
+            END \
          WHERE id = $1 \
          RETURNING id, email, username, status AS \"status: AccountStatus\", created_at",
         id.as_uuid(),

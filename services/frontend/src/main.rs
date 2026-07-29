@@ -35,6 +35,7 @@ use axum::routing::{any, get};
 use serde::Deserialize;
 use tankovault_config::TelemetryConfig;
 use tower::ServiceBuilder;
+use tower_http::compression::CompressionLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
@@ -140,6 +141,31 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Content-Security-Policy for the SPA shell.
+///
+/// The access token lives only in memory, so the thing a CSP buys here is a hard ceiling on
+/// where an injected script could send it — previously there was none, and any regression
+/// that got script into the page (a compromised build artefact, a future
+/// `dangerous_inner_html`) could exfiltrate it to an arbitrary origin with nothing to stop it.
+///
+/// - `script-src 'self' 'wasm-unsafe-eval'` — `wasm-unsafe-eval` is required: WebAssembly
+///   instantiation is `eval`-shaped to the CSP engine, and without it the app does not boot.
+///   It does **not** re-enable `eval()` for JavaScript.
+/// - `connect-src 'self'` — the API is same-origin through this proxy by design, so this is
+///   the exfiltration ceiling. A split-origin deployment must widen it.
+/// - `img-src` allows any `https:` host and `data:` for remote cover art, which comes from
+///   whichever provider a series is sourced from and cannot be enumerated.
+const CSP: &str = "default-src 'self'; \
+                   script-src 'self' 'wasm-unsafe-eval'; \
+                   style-src 'self' 'unsafe-inline'; \
+                   connect-src 'self'; \
+                   img-src 'self' https: data:; \
+                   font-src 'self' data:; \
+                   object-src 'none'; \
+                   base-uri 'none'; \
+                   form-action 'self'; \
+                   frame-ancestors 'none'";
+
 /// Assemble the router: the health probe, the `/v1/*` proxy, and the static bundle (with SPA
 /// fallback and hardening headers) catching everything else.
 fn build_router(static_dir: &str, state: AppState) -> Router {
@@ -164,6 +190,20 @@ fn build_router(static_dir: &str, state: AppState) -> Router {
             header::X_FRAME_OPTIONS,
             HeaderValue::from_static("DENY"),
         ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(CSP),
+        ))
+        // The app shell must never be cached: it names the hashed bundle, so a stale copy
+        // pins the client to a retired build. Hashed assets carry their own immutable
+        // caching via `ServeDir`'s ETag/Last-Modified handling.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-cache"),
+        ))
+        // The WASM bundle is 1-3 MB and shipped uncompressed until now — the largest single
+        // cost of a cold load, and the API tier has had compression all along.
+        .layer(CompressionLayer::new())
         .service(bundle);
 
     Router::new()

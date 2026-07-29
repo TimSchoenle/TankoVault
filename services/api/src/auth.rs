@@ -31,6 +31,16 @@ const RESET_TOKEN_TTL: Duration = Duration::hours(1);
 /// user may not check their inbox immediately, but still bounded so stale links expire.
 const VERIFY_TOKEN_TTL: Duration = Duration::hours(24);
 
+/// A real argon2id hash, verified against on the unknown-identifier branch of [`login`] so
+/// both branches cost the same.
+///
+/// It must carry the *same* parameters the live hasher uses (`m=19456,t=2,p=1` —
+/// `crates/auth::password`'s `Params::default()`), or the constant-time property is lost to
+/// a parameter mismatch. The plaintext is irrelevant and no account has it; only the work
+/// factor matters. Pinned by a test that fails if the two ever drift.
+const DUMMY_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$\
+    c29tZXNhbHRzb21lc2FsdA$YQNhOkeeqk3xJHTvR0mCFcRXA3vsSPT/9ObTNfMlLKw";
+
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct RegisterRequest {
     pub email: String,
@@ -181,6 +191,11 @@ pub async fn login(
     // operator's privacy toggle, and the sink applies that.
     let Some(creds) = tankovault_db::repo::users::find_credentials(&state.pool, login).await?
     else {
+        // Pay the argon2 cost anyway. Returning here directly took ~1 ms against ~30-60 ms
+        // for a known identifier — two orders of magnitude, readable without statistics, so
+        // an attacker could enumerate the whole user base by timing a breach corpus. The
+        // result is discarded; only the elapsed time matters.
+        let _ = verify_password(&req.password, DUMMY_PASSWORD_HASH, &state.password_pepper);
         audit_anonymous(
             &state,
             &client,
@@ -457,11 +472,7 @@ pub async fn reset_password(
     State(state): State<AppState>,
     Json(req): Json<ResetPasswordRequest>,
 ) -> ApiResult<StatusCode> {
-    if req.new_password.len() < 8 {
-        return Err(ApiError::BadRequest(
-            "password must be at least 8 characters".into(),
-        ));
-    }
+    validate_password(&req.new_password)?;
 
     let token_hash = hash_refresh_token(&req.token);
     let record = tankovault_db::repo::users::find_password_reset(&state.pool, &token_hash)
@@ -582,7 +593,7 @@ pub async fn resend_verification(
 
 /// Issue and email a fresh single-use confirmation link for `user`. Reuses the high-entropy
 /// opaque-token generator; only the SHA-256 hash is stored, and delivery is fire-and-forget.
-async fn send_verification_email(state: &AppState, user: &User) -> ApiResult<()> {
+pub(crate) async fn send_verification_email(state: &AppState, user: &User) -> ApiResult<()> {
     let raw = generate_refresh_token();
     let token_hash = hash_refresh_token(&raw);
     let expires_at = OffsetDateTime::now_utc() + VERIFY_TOKEN_TTL;
@@ -656,21 +667,134 @@ async fn issue_session_tokens(
     Ok((jar.add(cookie), resp))
 }
 
-fn validate_registration(req: &RegisterRequest) -> ApiResult<()> {
-    let email = req.email.trim();
-    let username = req.username.trim();
-    if !email.contains('@') || email.len() < 3 {
-        return Err(ApiError::BadRequest("invalid email".into()));
-    }
+/// The character class a username may draw from.
+///
+/// `@` is excluded deliberately, and it is the whole point: `find_credentials` resolves a
+/// login with `WHERE email = $1 OR username = $1` against two *separate* unique constraints,
+/// so a username equal to another account's email made the query match two rows and
+/// `fetch_optional` silently take an arbitrary one. The victim was then locked out with a
+/// bare `401`, intermittently, depending on which row the planner returned.
+///
+/// Enforced in `validate_registration`, `patch_profile` and `admin::update_user` — every path
+/// that can write the column.
+const USERNAME_ALLOWED: fn(char) -> bool =
+    |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-');
+
+/// Upper bound on an accepted password, in bytes.
+///
+/// argon2id with `Params::default()` pins 19 MiB per verification. Without a cap, concurrent
+/// registrations were bounded only by the 1 MiB body limit, which is a cheap memory-exhaustion
+/// `DoS` on the API replica. 4096 is far above any real passphrase and far below anything that
+/// costs measurable extra hashing time.
+pub(crate) const MAX_PASSWORD_LEN: usize = 4096;
+
+/// Validate a username, for every path that writes the column.
+pub(crate) fn validate_username(username: &str) -> ApiResult<()> {
     if username.len() < 3 || username.len() > 32 {
         return Err(ApiError::BadRequest(
             "username must be 3–32 characters".into(),
         ));
     }
-    if req.password.len() < 8 {
+    if !username.chars().all(USERNAME_ALLOWED) {
+        return Err(ApiError::BadRequest(
+            "username may contain only letters, digits, '_', '.' and '-'".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Validate an email address, for every path that writes the column.
+///
+/// Deliberately shallow — the address is proven by the confirmation link, not by a regex —
+/// but it does bound the length, which `patch_profile` previously did not: it accepted a
+/// 1 MiB value, and an address with no `@` at all.
+pub(crate) fn validate_email(email: &str) -> ApiResult<()> {
+    if email.len() < 3 || email.len() > 254 || !email.contains('@') {
+        return Err(ApiError::BadRequest("invalid email".into()));
+    }
+    Ok(())
+}
+
+/// Validate a password, for registration, reset and the authenticated change.
+pub(crate) fn validate_password(password: &str) -> ApiResult<()> {
+    if password.len() < 8 {
         return Err(ApiError::BadRequest(
             "password must be at least 8 characters".into(),
         ));
     }
+    if password.len() > MAX_PASSWORD_LEN {
+        return Err(ApiError::BadRequest(format!(
+            "password must be at most {MAX_PASSWORD_LEN} characters"
+        )));
+    }
     Ok(())
+}
+
+fn validate_registration(req: &RegisterRequest) -> ApiResult<()> {
+    validate_email(req.email.trim())?;
+    validate_username(req.username.trim())?;
+    validate_password(&req.password)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The dummy hash must **parse** and must carry the live hasher's parameters. If it does
+    /// not parse, `verify_password` errors immediately and the unknown-identifier branch is
+    /// fast again — restoring the enumeration oracle without any visible symptom.
+    #[test]
+    fn the_dummy_hash_is_a_real_argon2id_hash_with_the_live_parameters() {
+        let live = hash_password("any password", b"");
+        let live = live.expect("the live hasher produces a PHC string");
+        let params = |h: &str| {
+            h.split('$')
+                .nth(3)
+                .expect("PHC string has a parameter segment")
+                .to_owned()
+        };
+        assert_eq!(
+            params(DUMMY_PASSWORD_HASH),
+            params(&live),
+            "the dummy hash's work factor must match the live hasher's, or the two login \
+             branches take measurably different time again"
+        );
+
+        // Parses, and does the work rather than erroring out of it.
+        assert!(
+            !verify_password("whatever", DUMMY_PASSWORD_HASH, b"")
+                .expect("the dummy hash parses as a PHC string"),
+            "the dummy hash must not verify against an arbitrary password"
+        );
+    }
+
+    #[test]
+    fn a_username_may_not_contain_an_at_sign() {
+        // The exploit: registering `victim@example.com` as a *username* made
+        // `WHERE email = $1 OR username = $1` match two rows.
+        assert!(validate_username("victim@example.com").is_err());
+        assert!(validate_username("aster").is_ok());
+        assert!(validate_username("as.ter_1-x").is_ok());
+        assert!(validate_username("no spaces").is_err());
+        assert!(validate_username("ünïcode").is_err());
+        assert!(validate_username("ab").is_err());
+        assert!(validate_username(&"a".repeat(33)).is_err());
+    }
+
+    #[test]
+    fn a_password_is_bounded_at_both_ends() {
+        assert!(validate_password("short").is_err());
+        assert!(validate_password("long enough").is_ok());
+        // Unbounded length meant a 1 MiB password pinned 19 MiB of argon2 memory per request.
+        assert!(validate_password(&"x".repeat(MAX_PASSWORD_LEN)).is_ok());
+        assert!(validate_password(&"x".repeat(MAX_PASSWORD_LEN + 1)).is_err());
+    }
+
+    #[test]
+    fn an_email_is_bounded_and_must_look_like_one() {
+        assert!(validate_email("a@b").is_ok());
+        assert!(validate_email("no-at-sign").is_err());
+        // patch_profile previously accepted a 1 MiB value with no `@`.
+        assert!(validate_email(&format!("{}@x", "a".repeat(300))).is_err());
+    }
 }

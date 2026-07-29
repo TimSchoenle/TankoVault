@@ -2627,6 +2627,38 @@ pub mod types {
             self.0.fmt(f)
         }
     }
+    #[doc = "`PasswordChange`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"current_password\","]
+    #[doc = "    \"new_password\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"current_password\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"new_password\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct PasswordChange {
+        pub current_password: ::std::string::String,
+        pub new_password: ::std::string::String,
+    }
+    impl PasswordChange {
+        pub fn builder() -> builder::PasswordChange {
+            Default::default()
+        }
+    }
     #[doc = "Everything a principal can be authorized to do.\n\nThe enum is exhaustive by design: a permission that exists only as a string somewhere\ncannot be listed in the admin UI, cannot be spell-checked by the compiler, and cannot be\naudited as a known capability. Adding a capability means adding a variant here and\nnothing else."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3317,6 +3349,13 @@ pub mod types {
     #[doc = "{"]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"current_password\": {"]
+    #[doc = "      \"description\": \"Required when `email` changes the address on the account. See [`patch_profile`].\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"email\": {"]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
@@ -3335,6 +3374,9 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct ProfileUpdate {
+        #[doc = "Required when `email` changes the address on the account. See [`patch_profile`]."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub current_password: ::std::option::Option<::std::string::String>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub email: ::std::option::Option<::std::string::String>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -3343,6 +3385,7 @@ pub mod types {
     impl ::std::default::Default for ProfileUpdate {
         fn default() -> Self {
             Self {
+                current_password: Default::default(),
                 email: Default::default(),
                 username: Default::default(),
             }
@@ -9907,6 +9950,60 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct PasswordChange {
+            current_password: ::std::result::Result<::std::string::String, ::std::string::String>,
+            new_password: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for PasswordChange {
+            fn default() -> Self {
+                Self {
+                    current_password: Err("no value supplied for current_password".to_string()),
+                    new_password: Err("no value supplied for new_password".to_string()),
+                }
+            }
+        }
+        impl PasswordChange {
+            pub fn current_password<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.current_password = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for current_password: {e}")
+                });
+                self
+            }
+            pub fn new_password<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.new_password = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for new_password: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<PasswordChange> for super::PasswordChange {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PasswordChange,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    current_password: value.current_password?,
+                    new_password: value.new_password?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::PasswordChange> for PasswordChange {
+            fn from(value: super::PasswordChange) -> Self {
+                Self {
+                    current_password: Ok(value.current_password),
+                    new_password: Ok(value.new_password),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct PermissionCatalogue {
             permissions: ::std::result::Result<
                 ::std::vec::Vec<super::PermissionInfo>,
@@ -10356,6 +10453,10 @@ pub mod types {
         }
         #[derive(Clone, Debug)]
         pub struct ProfileUpdate {
+            current_password: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             email: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
@@ -10368,12 +10469,23 @@ pub mod types {
         impl ::std::default::Default for ProfileUpdate {
             fn default() -> Self {
                 Self {
+                    current_password: Ok(Default::default()),
                     email: Ok(Default::default()),
                     username: Ok(Default::default()),
                 }
             }
         }
         impl ProfileUpdate {
+            pub fn current_password<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.current_password = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for current_password: {e}")
+                });
+                self
+            }
             pub fn email<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
@@ -10401,6 +10513,7 @@ pub mod types {
                 value: ProfileUpdate,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    current_password: value.current_password?,
                     email: value.email?,
                     username: value.username?,
                 })
@@ -10409,6 +10522,7 @@ pub mod types {
         impl ::std::convert::From<super::ProfileUpdate> for ProfileUpdate {
             fn from(value: super::ProfileUpdate) -> Self {
                 Self {
+                    current_password: Ok(value.current_password),
                     email: Ok(value.email),
                     username: Ok(value.username),
                 }
@@ -14622,6 +14736,10 @@ impl Client {
     pub fn mark_read(&self) -> builder::MarkRead<'_> {
         builder::MarkRead::new(self)
     }
+    #[doc = "Change the password\n\nChange the caller's password, proving knowledge of the current one.\n\nThere was previously **no authenticated path to a new password at all** — the only route\nwas the emailed reset link, so a signed-in user who simply wanted to rotate their password\nhad to go through an out-of-band channel, and a user whose email had been taken over could\nnot lock the attacker out.\n\nEvery session is revoked on success, including the caller's: a password change is exactly\nwhen you want the other device signed out, and leaving the caller's own session alive would\nmean special-casing the one session an attacker is most likely to be holding.\n\nSends a `POST` request to `/v1/me/password`\n\n```ignore\nlet response = client.change_password()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn change_password(&self) -> builder::ChangePassword<'_> {
+        builder::ChangePassword::new(self)
+    }
     #[doc = "List my data-subject requests\n\nThe authenticated account's own requests, newest first, including resolved ones — the\nsubject is entitled to see how their requests were handled, not only which are outstanding.\n\nSends a `GET` request to `/v1/me/privacy/requests`\n\n```ignore\nlet response = client.list_privacy_requests()\n    .send()\n    .await;\n```"]
     pub fn list_privacy_requests(&self) -> builder::ListPrivacyRequests<'_> {
         builder::ListPrivacyRequests::new(self)
@@ -14634,7 +14752,7 @@ impl Client {
     pub fn cancel_privacy_request(&self) -> builder::CancelPrivacyRequest<'_> {
         builder::CancelPrivacyRequest::new(self)
     }
-    #[doc = "Update the profile\n\nUpdate the caller's username and/or email (frontend §9.4). A duplicate email/username\nsurfaces as `409 Conflict`.\n\nSends a `PATCH` request to `/v1/me/profile`\n\n```ignore\nlet response = client.patch_profile()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Update the profile\n\nUpdate the caller's username and/or email (frontend §9.4). A duplicate email/username\nsurfaces as `409 Conflict`.\n\nChanging the **email address** additionally requires `current_password`, because the\naddress is the account's recovery channel. Without that check, anyone holding an access\ntoken for 15 minutes — a shared browser, a proxy log, a leaked SSE URL — could point the\naccount at their own address, request a password reset to it, and take the account over;\n`reset_password` would then revoke the real owner's sessions on the attacker's behalf.\n\nOn a successful change the new address starts **unverified**\n(`repo::users::update_profile` clears `email_verified_at`), a confirmation link is sent to\nit, a warning is sent to the *old* address, and every session is revoked — matching what\n`reset_password` already does for the other credential.\n\nSends a `PATCH` request to `/v1/me/profile`\n\n```ignore\nlet response = client.patch_profile()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn patch_profile(&self) -> builder::PatchProfile<'_> {
         builder::PatchProfile::new(self)
     }
@@ -19357,6 +19475,79 @@ pub mod builder {
             }
         }
     }
+    #[doc = "Builder for [`Client::change_password`]\n\n[`Client::change_password`]: super::Client::change_password"]
+    #[derive(Debug, Clone)]
+    pub struct ChangePassword<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::PasswordChange, String>,
+    }
+    impl<'a> ChangePassword<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::PasswordChange>,
+            <V as std::convert::TryInto<types::PasswordChange>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `PasswordChange` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::PasswordChange) -> types::builder::PasswordChange,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/password`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::PasswordChange::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/me/password", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "change_password",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
     #[doc = "Builder for [`Client::list_privacy_requests`]\n\n[`Client::list_privacy_requests`]: super::Client::list_privacy_requests"]
     #[derive(Debug, Clone)]
     pub struct ListPrivacyRequests<'a> {
@@ -19617,6 +19808,9 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

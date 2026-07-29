@@ -17,15 +17,15 @@ use serde::{Deserialize, Serialize};
 pub(crate) use crate::wire::types::{
     AccountStatus, AdapterKind, AssignRemoteEntry, ChapterDto, ChapterRead, ConflictRow,
     ContentType, ContinueItem, CreateProvider, DismissRequest, FeedEntry, ForgotPasswordRequest,
-    LoginRequest, MarkRead, MergeRequest, PermissionPreset, Politeness, PolitenessEmulation,
-    ProfileUpdate, ProgressUpdate, Provider, ProviderId, ProviderInfo, ProviderStat, ProviderState,
-    PublicProvider, RegisterRequest, RequestKind, RequestStatus, ResendVerificationRequest,
-    ResetPasswordRequest, ResolveConflict, RunState, ScanMode, ScanRun, ScanRunProviderId,
-    SeriesId, SeriesSourceId, SeriesStatus, SeriesSummary,
-    SetProviderState as SetProviderStateBody, SourceDto, SuggestedMatch, SyncExcluded, SyncOpts,
-    SyncPullBody, SyncPushBody, SyncSettingsPatch, SystemStats, Tag, TestAdapterBody,
-    TestAdapterRequest, TriggerScan, TriggerScanProviderId, UpdateProvider, UpsertMapping, UserId,
-    VerifyEmailRequest, WatchStatus, WatchlistItem, WatchlistUpsert,
+    LoginRequest, MarkRead, MarkReadTo, MergeRequest, PermissionPreset, Politeness,
+    PolitenessEmulation, ProfileUpdate, ProgressDto, ProgressUpdate, Provider, ProviderId,
+    ProviderInfo, ProviderStat, ProviderState, PublicProvider, RegisterRequest, RequestKind,
+    RequestStatus, ResendVerificationRequest, ResetPasswordRequest, ResolveConflict, RunState,
+    ScanMode, ScanRun, ScanRunProviderId, SeriesDetail, SeriesId, SeriesSourceId, SeriesStatus,
+    SeriesSummary, SetProviderState as SetProviderStateBody, SourceDto, SuggestedMatch,
+    SyncExcluded, SyncOpts, SyncPullBody, SyncPushBody, SyncSettingsPatch, SystemStats, Tag,
+    TestAdapterBody, TestAdapterRequest, TriggerScan, TriggerScanProviderId, UpdateProvider,
+    UpsertMapping, UserId, VerifyEmailRequest, WatchStatus, WatchlistItem, WatchlistUpsert,
 };
 
 // Generated names that read poorly at the call site keep a local alias.
@@ -296,7 +296,9 @@ impl AccountStatusExt for AccountStatus {
     fn pill_class(self) -> &'static str {
         match self {
             Self::Active => "ik-pill jade",
-            Self::Suspended => "ik-pill vermilion",
+            // Amber, not vermilion: a suspension is a state to notice and reverse, not a
+            // failure — vermilion is the app's destructive/accent role.
+            Self::Suspended => "ik-pill star",
         }
     }
 }

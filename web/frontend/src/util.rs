@@ -103,6 +103,30 @@ pub(crate) fn rel_time(i18n: Translator, ts: Option<&str>) -> String {
     i18n.args(age.key(), &[("count", &age.count().to_string())])
 }
 
+/// How recent a timestamp has to be to count as "hours fresh" — the chapter list tints a
+/// release jade below this and leaves it faint above.
+const FRESH_MS: f64 = 48.0 * 3_600_000.0;
+
+/// Whether `ts` is recent enough to be worth calling out. `None`, empty and unparseable
+/// timestamps are not fresh: an unknown age is never presented as a new one.
+pub(crate) fn is_fresh(ts: Option<&str>) -> bool {
+    let Some(s) = ts.filter(|s| !s.is_empty()) else {
+        return false;
+    };
+    let parsed = js_sys::Date::parse(s);
+    if parsed.is_nan() {
+        return false;
+    }
+    fresh_age(js_sys::Date::now() - parsed)
+}
+
+/// The freshness rule itself, split out from the clock so the boundary is testable on the host
+/// target — reading the browser clock needs a wasm runtime, deciding what the number means
+/// does not. A negative age means a clock skew, which is not evidence of freshness.
+fn fresh_age(age_ms: f64) -> bool {
+    (0.0..FRESH_MS).contains(&age_ms)
+}
+
 /// A millisecond age reduced to the unit it should be read in.
 ///
 /// Kept separate from the wording so the bucket boundaries stay unit-testable on the host
@@ -177,6 +201,22 @@ pub(crate) fn initial(text: &str) -> String {
         .to_string()
 }
 
+/// A two-letter monogram for a provider or tracker tile: the initials of a multi-word name,
+/// or the first two letters of a single-word one.
+pub(crate) fn monogram(name: &str) -> String {
+    let mut words = name.split_whitespace().filter(|word| !word.is_empty());
+    match (words.next(), words.next()) {
+        (Some(first), Some(second)) => format!("{}{}", initial(first), initial(second)),
+        (Some(only), None) => only
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .take(2)
+            .collect::<String>()
+            .to_uppercase(),
+        _ => "?".to_owned(),
+    }
+}
+
 /// The catalogue key of the time-of-day greeting, from the browser clock.
 pub(crate) fn greeting_key() -> &'static str {
     match js_sys::Date::new_0().get_hours() {
@@ -233,5 +273,31 @@ mod tests {
     fn initial_falls_back_for_empty_text() {
         assert_eq!(initial("kaz"), "K");
         assert_eq!(initial(""), "?");
+    }
+
+    #[test]
+    fn monograms_prefer_initials_then_fall_back_to_the_first_two_letters() {
+        assert_eq!(monogram("Asura Scans"), "AS");
+        assert_eq!(monogram("MangaDex"), "MA");
+        assert_eq!(monogram("Bato.to"), "BA");
+        assert_eq!(monogram(""), "?");
+    }
+
+    #[test]
+    fn a_missing_timestamp_is_never_presented_as_fresh() {
+        // Only the two arms that short-circuit before reading the browser clock; parsing one
+        // needs a wasm runtime, and the rule those arms guard is covered below.
+        assert!(!is_fresh(None));
+        assert!(!is_fresh(Some("")));
+    }
+
+    #[test]
+    fn freshness_covers_the_last_two_days_and_nothing_before_or_after() {
+        assert!(fresh_age(0.0));
+        assert!(fresh_age(3.0 * 3_600_000.0));
+        assert!(!fresh_age(FRESH_MS));
+        assert!(!fresh_age(FRESH_MS + 1.0));
+        // A future timestamp is a clock skew, not a new release.
+        assert!(!fresh_age(-1.0));
     }
 }

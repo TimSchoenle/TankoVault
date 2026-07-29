@@ -1,27 +1,38 @@
-//! User administration: the searchable directory, and a detail drawer per account with
-//! identity edits, suspension, forced sign-out, permission grants and erasure.
+//! Console · Users — the account directory and a full inspector per account.
 //!
-//! Deliberately **not** on the shared auto-refresh tick. The directory is a work surface —
-//! someone is typing in a search box or holding a permission checklist half-edited — and a
-//! background refetch landing mid-edit would discard it. It reloads after its own writes.
+//! Deliberately **off** the shared auto-refresh tick. This is a work surface: someone is
+//! holding a permission checklist half-edited or typing in an address field, and a background
+//! refetch landing mid-edit would discard it. It reloads after its own writes, and offers a
+//! manual reload for everything else.
 //!
-//! Every control here appears only when the reader holds the capability behind it, so an
-//! operator granted `users.read` alone sees a directory and no buttons. The server checks each
-//! call regardless; this only avoids offering work that would be refused.
+//! One `Save changes` applies whatever the reader is actually allowed to change — identity,
+//! account status, grants — each behind its own capability, so an operator with `users.read`
+//! alone gets a directory and no buttons. The server checks every call regardless; this only
+//! avoids offering work that would be refused.
+//!
+//! Two blocks the design draws have no endpoint and are therefore absent rather than stubbed:
+//!
+//! - *Per-device sessions* (device, location, per-row revoke) — the admin API exposes a live
+//!   session **count** and a revoke-all, not the rows.
+//!   TODO(api): needs `GET /v1/admin/users/:id/sessions`.
+//! - *Export everything* — subject export is reachable only through a filed privacy request
+//!   (`GET /v1/admin/privacy/requests/:id/export`), not per account.
+//!   TODO(api): needs `GET /v1/admin/users/:id/export`.
 
+use super::shell::{InlineConfirm, ListSearch, NoSelection, Section, TypeToConfirm};
 use crate::api;
-use crate::components::{async_view, ErrorLine, OutcomeLine, SkeletonRows};
+use crate::components::{async_view, ErrorLine, OutcomeLine, SkeletonBlock};
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
-use crate::models::{AccountStatusExt as _, PermissionPresetExt as _};
+use crate::models::{AccountStatusExt as _, AdminSyncAccount, PermissionPresetExt as _};
 use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
-use crate::util::{iso_date, thousands};
-use crate::views::console::RefreshTick;
+use crate::util::{initial, iso_date, monogram, rel_time, thousands};
 use crate::wire::types::{
     AccountStatus, AdminProfileUpdate, DeleteUser, DirectoryRow, GrantRow, Permission,
-    PermissionCatalogue, PermissionGroup, SetPermissions, SetUserStatus, UserDetailResponse,
+    PermissionCatalogue, PermissionGroup, PermissionInfo, SetPermissions, SetUserStatus,
+    SyncAccountTarget, UserDetailResponse, UserId,
 };
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
@@ -30,28 +41,93 @@ use std::collections::BTreeSet;
 /// Directory page size. Matches the server's own default; the server clamps regardless.
 const PAGE_SIZE: i64 = 25;
 
+/// The inspector's tab strip.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    Identity,
+    Sessions,
+    Library,
+    Privacy,
+    Activity,
+}
+
+impl Tab {
+    const ALL: [Tab; 5] = [
+        Self::Identity,
+        Self::Sessions,
+        Self::Library,
+        Self::Privacy,
+        Self::Activity,
+    ];
+
+    fn label_key(self) -> &'static str {
+        match self {
+            Self::Identity => "console.users.tab.identity",
+            Self::Sessions => "console.users.tab.sessions",
+            Self::Library => "console.users.tab.library",
+            Self::Privacy => "console.users.tab.privacy",
+            Self::Activity => "console.users.tab.activity",
+        }
+    }
+}
+
+/// Which accounts the list is showing.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StatusFilter {
+    Any,
+    Active,
+    Suspended,
+}
+
+impl StatusFilter {
+    fn next(self) -> Self {
+        match self {
+            Self::Any => Self::Active,
+            Self::Active => Self::Suspended,
+            Self::Suspended => Self::Any,
+        }
+    }
+
+    fn label_key(self) -> &'static str {
+        match self {
+            Self::Any => "console.users.filter.anyStatus",
+            Self::Active => "enum.accountStatus.active",
+            Self::Suspended => "enum.accountStatus.suspended",
+        }
+    }
+
+    fn accepts(self, row: &DirectoryRow) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Active => row.status == AccountStatus::Active,
+            Self::Suspended => row.status == AccountStatus::Suspended,
+        }
+    }
+}
+
+/// The list pane and the inspector pane, as the console shell's two grid children.
 #[component]
-pub(super) fn UsersPanel(tick: RefreshTick) -> Element {
+pub(super) fn UsersEntity() -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let reload = use_reload();
-    let mut search = use_signal(String::new);
+    let query = use_signal(String::new);
     let mut page = use_signal(|| 0i64);
-    // `None` closes the drawer; `Some(id)` opens it on that account.
-    let selected = use_signal(|| Option::<String>::None);
+    let mut staff_only = use_signal(|| false);
+    let mut status = use_signal(|| StatusFilter::Any);
+    let mut selected = use_signal(|| Option::<String>::None);
 
+    // The search term goes to the server (it matches username *and* email across the whole
+    // table); the two chips filter the page that comes back.
     let directory = use_resource(move || {
-        // The tick is tracked so a manual Refresh still reaches this panel, but the pause
-        // switch is what an operator uses while editing — see the module docs.
-        tick.track();
         reload.track();
-        let query = search.read().clone();
+        let search = query.read().clone();
         let offset = *page.read() * PAGE_SIZE;
         let client = api.client();
         async move {
             client
                 .list_users()
-                .search(query)
+                .search(search)
                 .limit(PAGE_SIZE)
                 .offset(offset)
                 .send()
@@ -61,190 +137,205 @@ pub(super) fn UsersPanel(tick: RefreshTick) -> Element {
         }
     });
 
-    rsx! {
-        section { style: "margin-bottom:18px;",
-            h3 { {i18n.t("console.tab.users")} }
+    let loaded = directory.read_unchecked().clone();
+    let (rows, total) = match &loaded {
+        Some(Ok(page_data)) => {
+            let filtered: Vec<DirectoryRow> = page_data
+                .users
+                .iter()
+                .filter(|row| status.read().accepts(row))
+                .filter(|row| !*staff_only.read() || row.permission_count > 0)
+                .cloned()
+                .collect();
+            (filtered, page_data.total)
+        }
+        _ => (Vec::new(), 0),
+    };
+    let current = selected
+        .read()
+        .clone()
+        .or_else(|| rows.first().map(|r| r.id.clone()));
+    let offset = *page.read() * PAGE_SIZE;
+    let has_prev = offset > 0;
+    let has_next = offset + i64::try_from(rows.len()).unwrap_or(0) < total;
 
-            div { class: "ik-flex", style: "gap:8px;margin-bottom:12px;flex-wrap:wrap;",
-                input {
-                    class: "ik-input",
-                    style: "max-width:320px;",
-                    r#type: "search",
+    rsx! {
+        div { class: "ik-cons-list",
+            div { class: "ik-cons-listhead",
+                ListSearch {
                     placeholder: i18n.t("console.users.searchPlaceholder"),
-                    value: "{search}",
-                    oninput: move |e| {
-                        search.set(e.value());
-                        // A new query invalidates the current offset; staying on page 3 of the
-                        // old result set shows an empty page and reads as "no matches".
-                        page.set(0);
-                    },
+                    query,
+                    hits: i18n.plural(
+                        "console.users.hits",
+                        i64::try_from(rows.len()).unwrap_or(0),
+                        &[],
+                    ),
+                }
+                div { class: "ik-flex", style: "gap:6px;flex-wrap:wrap;",
+                    button {
+                        class: if *staff_only.read() { "ik-chip active" } else { "ik-chip" },
+                        style: "font-size:11.5px;padding:4px 9px;",
+                        onclick: move |_| {
+                            let next = !*staff_only.read();
+                            staff_only.set(next);
+                        },
+                        {i18n.t("console.users.filter.staff")}
+                        if *staff_only.read() {
+                            Ic { icon: Icon::Close, size: 11 }
+                        }
+                    }
+                    button {
+                        class: if *status.read() == StatusFilter::Any { "ik-chip" } else { "ik-chip active" },
+                        style: "font-size:11.5px;padding:4px 9px;",
+                        onclick: move |_| {
+                            let next = status.read().next();
+                            status.set(next);
+                        },
+                        {i18n.t(status.read().label_key())}
+                    }
+                    button {
+                        class: "ik-btn xs",
+                        style: "margin-left:auto;",
+                        onclick: move |_| reload.bump(),
+                        Ic { icon: Icon::Refresh, size: 12 }
+                        {i18n.t("console.live.refresh")}
+                    }
                 }
             }
-
             {
                 async_view(
                     &directory,
                     reload,
-                    || rsx! { SkeletonRows { count: 4, height: 20 } },
-                    |data| {
-                        let total = data.total;
-                        let shown = i64::try_from(data.users.len()).unwrap_or(i64::MAX);
-                        let offset = *page.read() * PAGE_SIZE;
+                    || rsx! {
+                        div { style: "padding:12px;",
+                            SkeletonBlock { height: 180 }
+                        }
+                    },
+                    |_| {
+                        if rows.is_empty() {
+                            return rsx! {
+                                div { class: "ik-empty", style: "margin:12px;padding:24px;",
+                                    {i18n.t("console.users.empty")}
+                                }
+                            };
+                        }
                         rsx! {
-                            div { class: "ik-kpis", style: "margin-bottom:14px;",
-                                div { class: "ik-kpi",
-                                    div { class: "ik-kpi-label", {i18n.t("console.users.registered")} }
-                                    div { class: "ik-kpi-value", "{thousands(total)}" }
+                            for row in rows.clone() {
+                                UserRow {
+                                    key: "{row.id}",
+                                    row: row.clone(),
+                                    selected: current.as_deref() == Some(row.id.as_str()),
+                                    on_pick: move |id| selected.set(Some(id)),
                                 }
-                            }
-                            if data.users.is_empty() {
-                                div { class: "ik-empty", {i18n.t("console.users.empty")} }
-                            } else {
-                                div { class: "ik-tablewrap",
-                                    table { class: "ik-table ik-table-compact",
-                                        thead {
-                                            tr {
-                                                th { {i18n.t("console.users.col.user")} }
-                                                th { {i18n.t("console.users.col.email")} }
-                                                th { {i18n.t("console.users.col.status")} }
-                                                th { style: "text-align:right;", {i18n.t("console.users.col.permissions")} }
-                                                th { style: "text-align:right;", {i18n.t("console.users.col.tracked")} }
-                                                th { {i18n.t("console.users.col.lastLogin")} }
-                                                th { {i18n.t("console.users.col.joined")} }
-                                                th {}
-                                            }
-                                        }
-                                        tbody {
-                                            for row in data.users.iter().cloned() {
-                                                DirectoryRowView { key: "{row.id}", row, selected }
-                                            }
-                                        }
-                                    }
-                                }
-                                Pager { offset, shown, total, page }
                             }
                         }
                     },
                 )
             }
-
-            if let Some(id) = selected.read().clone() {
-                UserDrawer { key: "{id}", user_id: id, selected, reload }
-            }
-        }
-    }
-}
-
-/// Previous/next paging. Rendered only when there is more than one page to move between.
-#[component]
-fn Pager(offset: i64, shown: i64, total: i64, page: Signal<i64>) -> Element {
-    let i18n = use_i18n();
-    let mut page = page;
-    let first = offset + 1;
-    let last = offset + shown;
-    let has_prev = offset > 0;
-    let has_next = last < total;
-
-    if !has_prev && !has_next {
-        return rsx! {};
-    }
-    rsx! {
-        div { class: "ik-flex", style: "gap:8px;margin-top:10px;align-items:center;",
-            button {
-                class: "ik-btn",
-                disabled: !has_prev,
-                onclick: move |_| page -= 1,
-                {i18n.t("common.previous")}
-            }
-            span { class: "ik-muted", style: "font-size:12px;",
-                {
-                    i18n.args(
-                        "console.users.range",
-                        &[
-                            ("first", &first.to_string()),
-                            ("last", &last.to_string()),
-                            ("total", &thousands(total)),
-                        ],
-                    )
+            div { class: "ik-cons-foot",
+                span {
+                    {
+                        i18n.args(
+                            "console.users.range",
+                            &[
+                                ("first", &(offset + 1).to_string()),
+                                (
+                                    "last",
+                                    &(offset + i64::try_from(rows.len()).unwrap_or(0)).to_string(),
+                                ),
+                                ("total", &thousands(total)),
+                            ],
+                        )
+                    }
                 }
-            }
-            button {
-                class: "ik-btn",
-                disabled: !has_next,
-                onclick: move |_| page += 1,
-                {i18n.t("common.next")}
-            }
-        }
-    }
-}
-
-/// One directory row. Clicking it opens the detail drawer.
-#[component]
-fn DirectoryRowView(row: DirectoryRow, selected: Signal<Option<String>>) -> Element {
-    let i18n = use_i18n();
-    let mut selected = selected;
-    let id = row.id.clone();
-    let joined = iso_date(Some(&row.created_at)).to_owned();
-    let last_login = row.last_login_at.as_deref().map_or_else(
-        || i18n.t("console.users.never"),
-        |ts| iso_date(Some(ts)).to_owned(),
-    );
-
-    rsx! {
-        tr {
-            td {
-                "{row.username}"
-                if !row.email_verified {
-                    span {
-                        class: "ik-pill",
-                        style: "margin-left:6px;",
-                        title: i18n.t("console.users.unverifiedHint"),
-                        {i18n.t("console.users.unverified")}
+                span { class: "hint", style: "display:flex;gap:6px;",
+                    button {
+                        class: "ik-btn xs",
+                        disabled: !has_prev,
+                        onclick: move |_| page -= 1,
+                        {i18n.t("common.previous")}
+                    }
+                    button {
+                        class: "ik-btn xs",
+                        disabled: !has_next,
+                        onclick: move |_| page += 1,
+                        {i18n.t("common.next")}
                     }
                 }
             }
-            td { class: "ik-mono ik-muted", style: "font-size:12px;", "{row.email}" }
-            td { StatusPill { status: row.status } }
-            td { class: "ik-mono", style: "text-align:right;", "{row.permission_count}" }
-            td { class: "ik-mono", style: "text-align:right;", "{thousands(row.tracked_count)}" }
-            td { class: "ik-mono ik-muted", style: "font-size:12px;", "{last_login}" }
-            td { class: "ik-mono ik-muted", style: "font-size:12px;", "{joined}" }
-            td {
-                button {
-                    class: "ik-btn",
-                    onclick: move |_| selected.set(Some(id.clone())),
-                    {i18n.t("console.users.manage")}
+        }
+        if let Some(id) = current {
+            UserInspector {
+                key: "{id}",
+                user_id: id,
+                reload,
+                on_erased: move |()| selected.set(None),
+            }
+        } else {
+            NoSelection { message: i18n.t("console.users.pick") }
+        }
+    }
+}
+
+/// One directory row: who they are, what they hold, and the state their account is in.
+#[component]
+fn UserRow(row: DirectoryRow, selected: bool, on_pick: EventHandler<String>) -> Element {
+    let i18n = use_i18n();
+    let id = row.id.clone();
+    let staff = row.permission_count > 0;
+    let suspended = row.status == AccountStatus::Suspended;
+
+    let class = match (selected, suspended) {
+        (true, _) => "ik-cons-row selected",
+        (false, true) => "ik-cons-row dim",
+        (false, false) => "ik-cons-row",
+    };
+
+    rsx! {
+        button {
+            class: "{class}",
+            "aria-current": if selected { "true" } else { "false" },
+            onclick: move |_| on_pick.call(id.clone()),
+            div { class: "ik-flex", style: "gap:10px;",
+                span { class: if staff { "ik-avatar sm" } else { "ik-avatar sm neutral" },
+                    {initial(&row.username)}
+                }
+                span { style: "min-width:0;",
+                    span { style: "display:block;font-weight:600;font-size:13px;", "{row.username}" }
+                    span { class: "ik-mono", style: "display:block;font-size:10.5px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;",
+                        "{row.email} · "
+                        {
+                            i18n.args(
+                                "console.users.trackedShort",
+                                &[("count", &thousands(row.tracked_count))],
+                            )
+                        }
+                    }
+                }
+                span { style: "margin-left:auto;flex:none;display:flex;gap:6px;align-items:center;",
+                    if staff && !suspended {
+                        span { class: "ik-pill acc", style: "font-size:9.5px;",
+                            {i18n.t("console.users.role.staff")}
+                        }
+                    }
+                    span { class: row.status.pill_class(), style: "font-size:9.5px;",
+                        {i18n.t(row.status.label_key())}
+                    }
                 }
             }
         }
     }
 }
 
-/// Active/suspended, coloured so a suspended account is impossible to skim past.
+/// Fetches one account, then hands it to the editor keyed on its id so the editor's fields are
+/// seeded from real values rather than from empty defaults it has to reconcile later.
 #[component]
-fn StatusPill(status: AccountStatus) -> Element {
-    let i18n = use_i18n();
-    rsx! {
-        span { class: status.pill_class(), {i18n.t(status.label_key())} }
-    }
-}
-
-/// The per-account management surface: identity, state, sessions, grants, erasure.
-#[component]
-fn UserDrawer(user_id: String, selected: Signal<Option<String>>, reload: Reload) -> Element {
+fn UserInspector(user_id: String, reload: Reload, on_erased: EventHandler<()>) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
-    let session = use_session();
-    let caps = use_capabilities();
     let detail_reload = use_reload();
-    let mut selected = selected;
-
-    let can_write = caps.can(Permission::UsersWrite);
-    let can_grant = caps.can(Permission::UsersPermissions);
-    let can_sessions = caps.can(Permission::UsersSessions);
-    let can_delete = caps.can(Permission::UsersDelete);
-
     let id_for_fetch = user_id.clone();
+
     let detail = use_resource(move || {
         detail_reload.track();
         let id = id_for_fetch.clone();
@@ -261,76 +352,22 @@ fn UserDrawer(user_id: String, selected: Signal<Option<String>>, reload: Reload)
     });
 
     rsx! {
-        div { class: "ik-sidebar-card", style: "margin-top:16px;",
-            div { class: "ik-flex", style: "justify-content:space-between;align-items:center;",
-                div { class: "ik-flex", style: "gap:8px;",
-                    Ic { icon: Icon::Person, size: 18 }
-                    strong { {i18n.t("console.users.manageTitle")} }
-                }
-                button {
-                    class: "ik-btn",
-                    onclick: move |_| selected.set(None),
-                    {i18n.t("common.close")}
-                }
-            }
+        div { class: "ik-cons-insp",
             {
                 async_view(
                     &detail,
                     detail_reload,
-                    || rsx! { crate::components::SkeletonBlock { height: 240 } },
-                    |data| {
-                        // An administrator acting on their own account is refused by the server;
-                        // saying so here explains why the controls are absent instead of leaving
-                        // a drawer that looks broken.
-                        let is_self = session
-                            .username()
-                            .is_some_and(|name| name == data.user.username);
-                        rsx! {
-                            SummaryBlock { data: data.clone() }
-                            if is_self {
-                                p { class: "ik-muted", style: "font-size:12px;margin-top:12px;",
-                                    {i18n.t("console.users.selfNotice")}
-                                }
-                            }
-                            if can_write && !is_self {
-                                IdentityForm {
-                                    user_id: data.user.id.clone(),
-                                    username: data.user.username.clone(),
-                                    email: data.user.email.clone(),
-                                    reload,
-                                    detail_reload,
-                                }
-                                StatusControls {
-                                    user_id: data.user.id.clone(),
-                                    status: data.user.status,
-                                    email_verified: data.user.email_verified,
-                                    reload,
-                                    detail_reload,
-                                }
-                            }
-                            if can_sessions {
-                                SessionControls {
-                                    user_id: data.user.id.clone(),
-                                    active_sessions: data.user.active_sessions,
-                                    detail_reload,
-                                }
-                            }
-                            if can_grant && !is_self {
-                                PermissionEditor {
-                                    user_id: data.user.id.clone(),
-                                    granted: data.permissions.clone(),
-                                    reload,
-                                    detail_reload,
-                                }
-                            }
-                            if can_delete && !is_self {
-                                DangerZone {
-                                    user_id: data.user.id.clone(),
-                                    username: data.user.username.clone(),
-                                    selected,
-                                    reload,
-                                }
-                            }
+                    || rsx! {
+                        div { style: "padding:22px;",
+                            SkeletonBlock { height: 280 }
+                        }
+                    },
+                    |data| rsx! {
+                        UserEditor {
+                            data: data.clone(),
+                            reload,
+                            detail_reload,
+                            on_erased,
                         }
                     },
                 )
@@ -339,237 +376,566 @@ fn UserDrawer(user_id: String, selected: Signal<Option<String>>, reload: Reload)
     }
 }
 
-/// The read-only facts about an account, above every control that changes them.
 #[component]
-fn SummaryBlock(data: UserDetailResponse) -> Element {
+fn UserEditor(
+    data: UserDetailResponse,
+    reload: Reload,
+    detail_reload: Reload,
+    on_erased: EventHandler<()>,
+) -> Element {
+    let api = api::use_api();
     let i18n = use_i18n();
-    let user = &data.user;
+    let session = use_session();
+    let caps = use_capabilities();
+    let busy = use_busy();
+    let mut outcome = use_outcome();
+    let mut tab = use_signal(|| Tab::Identity);
+
+    let can_write = caps.can(Permission::UsersWrite);
+    let can_grant = caps.can(Permission::UsersPermissions);
+    let can_sessions = caps.can(Permission::UsersSessions);
+    let can_delete = caps.can(Permission::UsersDelete);
+    let can_sync = caps.can(Permission::SyncAdminWrite);
+
+    let user = data.user.clone();
+    let id = user.id.clone();
+    // The server refuses an administrator acting on their own account; saying so explains why
+    // the controls are absent instead of leaving an inspector that looks broken.
+    let is_self = session.username().is_some_and(|name| name == user.username);
+
+    let mut name_field = use_signal(|| user.username.clone());
+    let mut email_field = use_signal(|| user.email.clone());
+    let mut status_field = use_signal(|| user.status);
+    let mut suspend_reason = use_signal(String::new);
+    // Recorded in the audit trail, which is the only place it can survive the erasure.
+    let mut erase_reason = use_signal(String::new);
+    // Seeded from the server's answer and edited locally. Only tokens this build recognises are
+    // seeded: an inert grant left over from another version is shown separately rather than
+    // silently re-submitted as if it were current.
+    let chosen = use_signal(|| {
+        data.permissions
+            .iter()
+            .filter(|g| g.known)
+            .filter_map(|g| {
+                serde_json::from_value::<Permission>(serde_json::json!(g.permission)).ok()
+            })
+            .collect::<BTreeSet<Permission>>()
+    });
+    let granted_now: BTreeSet<Permission> = data
+        .permissions
+        .iter()
+        .filter(|g| g.known)
+        .filter_map(|g| serde_json::from_value::<Permission>(serde_json::json!(g.permission)).ok())
+        .collect();
+
+    let identity_dirty = *name_field.read() != user.username || *email_field.read() != user.email;
+    let status_dirty = *status_field.read() != user.status;
+    let grants_dirty = *chosen.read() != granted_now;
+    let dirty = (can_write && (identity_dirty || status_dirty)) || (can_grant && grants_dirty);
+
+    // One control, up to three calls — each only when the reader may make it and something
+    // actually changed. They run in order and stop at the first failure, so a rejected rename
+    // never silently applies a grant change alongside it.
+    let save = {
+        let user = user.clone();
+        move |_| {
+            if !busy.claim() {
+                return;
+            }
+            outcome.set(None);
+            let id = user.id.clone();
+            let identity = (can_write && identity_dirty).then(|| AdminProfileUpdate {
+                username: Some(name_field.peek().trim().to_owned()).filter(|v| *v != user.username),
+                email: Some(email_field.peek().trim().to_owned()).filter(|v| *v != user.email),
+            });
+            let status = (can_write && status_dirty).then(|| SetUserStatus {
+                status: *status_field.peek(),
+                reason: {
+                    let text = suspend_reason.peek().trim().to_owned();
+                    (!text.is_empty()).then_some(text)
+                },
+                // A suspension that leaves the account working until its access token expires
+                // is not what anyone means by suspending it.
+                revoke_sessions: Some(true),
+            });
+            let grants = (can_grant && grants_dirty).then(|| SetPermissions {
+                permissions: chosen.peek().iter().copied().collect(),
+            });
+            let client = api.client();
+            spawn(async move {
+                let mut failure = None;
+                if let Some(body) = identity {
+                    if let Err(e) = client.update_user().id(id.clone()).body(body).send().await {
+                        failure = Some(api::friendly_error(i18n, e));
+                    }
+                }
+                if failure.is_none() {
+                    if let Some(body) = status {
+                        if let Err(e) = client
+                            .set_user_status()
+                            .id(id.clone())
+                            .body(body)
+                            .send()
+                            .await
+                        {
+                            failure = Some(api::friendly_error(i18n, e));
+                        }
+                    }
+                }
+                if failure.is_none() {
+                    if let Some(body) = grants {
+                        if let Err(e) = client
+                            .set_user_permissions()
+                            .id(id.clone())
+                            .body(body)
+                            .send()
+                            .await
+                        {
+                            failure = Some(api::friendly_error(i18n, e));
+                        }
+                    }
+                }
+                match failure {
+                    None => {
+                        outcome.set(Some(Ok(i18n.t("console.users.saved"))));
+                        suspend_reason.set(String::new());
+                        detail_reload.bump();
+                        reload.bump();
+                    }
+                    Some(message) => outcome.set(Some(Err(message))),
+                }
+                busy.release();
+            });
+        }
+    };
+
+    // One clone per consumer: `rsx!` moves each into its own closure or child component.
+    let (id_header, id_sessions, id_verify, id_sync, id_erase) =
+        (id.clone(), id.clone(), id.clone(), id.clone(), id);
+    let staff = !data.permissions.is_empty();
     let joined = iso_date(Some(&user.created_at)).to_owned();
-    let last_login = user.last_login_at.as_deref().map_or_else(
-        || i18n.t("console.users.never"),
-        |ts| iso_date(Some(ts)).to_owned(),
-    );
+    let last_seen = rel_time(i18n, user.last_login_at.as_deref());
+    // The id is a uuid; its leading group is enough to recognise an account by, and the whole
+    // thing would crowd the meta line.
+    let short_id = user.id.get(0..8).unwrap_or(&user.id).to_owned();
 
     rsx! {
-        div { style: "margin-top:12px;",
-            div { class: "ik-flex", style: "gap:8px;align-items:center;",
-                strong { style: "font-size:15px;", "{user.username}" }
-                StatusPill { status: user.status }
-                if !user.email_verified {
-                    span { class: "ik-pill", {i18n.t("console.users.unverified")} }
+        div { class: "ik-cons-insphead",
+            div { class: "ik-flex", style: "align-items:flex-start;gap:14px;",
+                span { class: if staff { "ik-avatar lg" } else { "ik-avatar lg neutral" },
+                    {initial(&user.username)}
+                }
+                div { style: "min-width:0;flex:1;",
+                    div { class: "ik-flex", style: "gap:10px;flex-wrap:wrap;",
+                        h2 { class: "ik-insp-title", "{user.username}" }
+                        span { class: if staff { "ik-pill acc" } else { "ik-pill" }, style: "font-size:10px;",
+                            if staff {
+                                {i18n.t("console.users.role.staff")}
+                            } else {
+                                {i18n.t("console.users.role.reader")}
+                            }
+                        }
+                        if user.status == AccountStatus::Suspended {
+                            span { class: user.status.pill_class(), style: "font-size:10px;",
+                                {i18n.t(user.status.label_key())}
+                            }
+                        }
+                    }
+                    div { class: "ik-meta-line",
+                        span { "id {short_id}" }
+                        span { {i18n.args("console.users.joinedOn", &[("date", &joined)])} }
+                        span {
+                            {
+                                i18n.args(
+                                    "console.users.trackedShort",
+                                    &[("count", &thousands(user.tracked_count))],
+                                )
+                            }
+                        }
+                        span { class: "ok",
+                            {i18n.args("console.users.lastSeen", &[("when", &last_seen)])}
+                        }
+                    }
+                }
+                div { class: "ik-flex", style: "gap:7px;flex:none;flex-wrap:wrap;justify-content:flex-end;",
+                    if can_sessions {
+                        button {
+                            class: "ik-btn sm",
+                            disabled: busy.is_busy() || user.active_sessions == 0,
+                            onclick: move |_| {
+                                revoke_all(api, i18n, busy, outcome, detail_reload, id_header.clone());
+                            },
+                            {i18n.t("console.users.revokeSessions")}
+                        }
+                    }
+                    if (can_write || can_grant) && !is_self {
+                        button {
+                            class: "ik-btn sm primary",
+                            disabled: busy.is_busy() || !dirty,
+                            onclick: save,
+                            {i18n.t("console.users.save")}
+                        }
+                    }
                 }
             }
-            div { class: "ik-mono ik-muted", style: "font-size:12px;margin-top:2px;", "{user.email}" }
-            if let Some(reason) = user.suspension_reason.clone() {
-                p { style: "font-size:12px;margin:6px 0 0;color:var(--vermilion);",
-                    {i18n.args("console.users.suspendedFor", &[("reason", &reason)])}
+            div { class: "ik-tabs flush", style: "margin-top:14px;",
+                for entry in Tab::ALL {
+                    button {
+                        key: "{entry.label_key()}",
+                        class: if *tab.read() == entry { "ik-tab active" } else { "ik-tab" },
+                        onclick: move |_| tab.set(entry),
+                        {i18n.t(entry.label_key())}
+                    }
                 }
             }
-            div { class: "ik-kpis", style: "margin-top:12px;",
-                Stat { label: i18n.t("console.users.stat.sessions"), value: user.active_sessions }
-                Stat { label: i18n.t("console.users.stat.tracked"), value: user.tracked_count }
-                Stat { label: i18n.t("console.users.stat.linked"), value: user.linked_accounts }
-                Stat { label: i18n.t("console.users.stat.privacy"), value: user.open_privacy_requests }
+        }
+        div { style: "padding:0 22px;",
+            if is_self {
+                p { class: "ik-muted", style: "font-size:12px;margin:12px 0 0;",
+                    {i18n.t("console.users.selfNotice")}
+                }
             }
-            div { class: "ik-mono ik-muted", style: "font-size:11px;margin-top:8px;",
-                {i18n.args("console.users.joinedOn", &[("date", &joined)])}
-                " · "
-                {i18n.args("console.users.lastLoginOn", &[("date", &last_login)])}
-            }
+            OutcomeLine { outcome: outcome.read().clone() }
+        }
+        match *tab.read() {
+            Tab::Identity => rsx! {
+                div { class: "ik-cons-inspbody",
+                    div { class: "ik-cons-col",
+                        Section { label: i18n.t("console.users.identity"),
+                            div { style: "display:flex;flex-direction:column;gap:9px;",
+                                div { class: "ik-kv narrow",
+                                    label { class: "k", r#for: "tv-u-name", {i18n.t("auth.field.username")} }
+                                    input {
+                                        id: "tv-u-name",
+                                        class: "ik-input",
+                                        style: "font-size:12.5px;padding:9px 11px;",
+                                        disabled: !can_write || is_self,
+                                        value: "{name_field}",
+                                        oninput: move |e| name_field.set(e.value()),
+                                    }
+                                }
+                                div { class: "ik-kv narrow",
+                                    label { class: "k", r#for: "tv-u-email", {i18n.t("auth.field.email")} }
+                                    input {
+                                        id: "tv-u-email",
+                                        class: "ik-input",
+                                        style: "font-size:12.5px;padding:9px 11px;",
+                                        r#type: "email",
+                                        disabled: !can_write || is_self,
+                                        value: "{email_field}",
+                                        oninput: move |e| email_field.set(e.value()),
+                                    }
+                                }
+                                div { class: "ik-kv narrow",
+                                    span { class: "k", {i18n.t("console.users.verified")} }
+                                    if user.email_verified {
+                                        span { class: "ik-flex ik-mono", style: "gap:7px;font-size:12px;color:var(--jade-bright);",
+                                            Ic { icon: Icon::Check, size: 14 }
+                                            "{joined}"
+                                        }
+                                    } else {
+                                        VerifyEmailAction {
+                                            user_id: id_verify.clone(),
+                                            enabled: can_write && !is_self,
+                                            reload,
+                                            detail_reload,
+                                        }
+                                    }
+                                }
+                                div { class: "ik-kv narrow",
+                                    span { class: "k", {i18n.t("console.users.status")} }
+                                    div { class: "ik-seg", role: "radiogroup",
+                                        for option in [AccountStatus::Active, AccountStatus::Suspended] {
+                                            button {
+                                                key: "{option.label_key()}",
+                                                class: if *status_field.read() == option { "on" } else { "" },
+                                                role: "radio",
+                                                disabled: !can_write || is_self,
+                                                "aria-checked": if *status_field.read() == option { "true" } else { "false" },
+                                                onclick: move |_| status_field.set(option),
+                                                {i18n.t(option.label_key())}
+                                            }
+                                        }
+                                    }
+                                }
+                                if *status_field.read() == AccountStatus::Suspended && status_dirty {
+                                    div { class: "ik-kv narrow",
+                                        label { class: "k", r#for: "tv-u-reason", {i18n.t("console.users.suspendReason")} }
+                                        input {
+                                            id: "tv-u-reason",
+                                            class: "ik-input",
+                                            style: "font-size:12.5px;padding:9px 11px;",
+                                            placeholder: i18n.t("console.users.suspendReasonPlaceholder"),
+                                            value: "{suspend_reason}",
+                                            oninput: move |e| suspend_reason.set(e.value()),
+                                        }
+                                    }
+                                }
+                                if let Some(reason) = user.suspension_reason.clone() {
+                                    div { class: "ik-kv narrow",
+                                        span {}
+                                        span { class: "warn",
+                                            {i18n.args("console.users.suspendedFor", &[("reason", &reason)])}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if can_grant {
+                            PermissionGrants {
+                                grants: data.permissions.clone(),
+                                chosen,
+                                editable: !is_self,
+                            }
+                        }
+                    }
+                    div { class: "ik-cons-col",
+                        ExternalSync {
+                            user_id: id_sync.clone(),
+                            username: user.username.clone(),
+                            editable: can_sync,
+                        }
+                    }
+                }
+            },
+            Tab::Sessions => rsx! {
+                div { class: "ik-cons-inspbody",
+                    div { class: "ik-cons-col", style: "grid-column:1 / -1;max-width:620px;",
+                        Section { label: i18n.t("console.users.sessions"),
+                            div { class: "ik-listbox",
+                                div { class: "ik-listrow",
+                                    span { style: "font-size:12.5px;",
+                                        {
+                                            i18n.args(
+                                                "console.users.activeSessions",
+                                                &[("count", &user.active_sessions.to_string())],
+                                            )
+                                        }
+                                    }
+                                    if can_sessions {
+                                        button {
+                                            class: "ik-btn xs",
+                                            style: "margin-left:auto;",
+                                            disabled: busy.is_busy() || user.active_sessions == 0,
+                                            onclick: move |_| {
+                                                revoke_all(
+                                                    api,
+                                                    i18n,
+                                                    busy,
+                                                    outcome,
+                                                    detail_reload,
+                                                    id_sessions.clone(),
+                                                );
+                                            },
+                                            {i18n.t("console.users.revokeSessions")}
+                                        }
+                                    }
+                                }
+                            }
+                            // TODO(api): per-device rows need GET /v1/admin/users/:id/sessions.
+                            p { class: "ik-muted", style: "font-size:11.5px;line-height:1.5;margin:8px 0 0;",
+                                {i18n.t("console.users.sessionRowsUnavailable")}
+                            }
+                        }
+                    }
+                }
+            },
+            Tab::Library => rsx! {
+                div { class: "ik-cons-inspbody",
+                    div { class: "ik-cons-col", style: "grid-column:1 / -1;",
+                        div { class: "ik-kpis",
+                            div { class: "ik-kpi",
+                                div { class: "ik-kpi-label", {i18n.t("console.users.stat.tracked")} }
+                                div { class: "ik-kpi-value", style: "font-size:24px;",
+                                    "{thousands(user.tracked_count)}"
+                                }
+                            }
+                            div { class: "ik-kpi",
+                                div { class: "ik-kpi-label", {i18n.t("console.users.stat.linked")} }
+                                div { class: "ik-kpi-value", style: "font-size:24px;",
+                                    "{thousands(user.linked_accounts)}"
+                                }
+                            }
+                            div { class: "ik-kpi",
+                                div { class: "ik-kpi-label", {i18n.t("console.users.stat.sessions")} }
+                                div { class: "ik-kpi-value", style: "font-size:24px;",
+                                    "{thousands(user.active_sessions)}"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            Tab::Privacy => rsx! {
+                div { class: "ik-cons-inspbody",
+                    div { class: "ik-cons-col", style: "grid-column:1 / -1;max-width:620px;",
+                        Section { label: i18n.t("console.users.tab.privacy"),
+                            p { class: "ik-muted", style: "font-size:12px;line-height:1.5;margin:0 0 12px;",
+                                {
+                                    i18n.plural(
+                                        "console.users.openRequests",
+                                        user.open_privacy_requests,
+                                        &[],
+                                    )
+                                }
+                            }
+                            if can_delete && !is_self {
+                                div { class: "ik-field",
+                                    label { r#for: "tv-u-erase-reason", {i18n.t("console.users.deleteReason")} }
+                                    input {
+                                        id: "tv-u-erase-reason",
+                                        class: "ik-input",
+                                        style: "font-size:12.5px;padding:9px 11px;",
+                                        value: "{erase_reason}",
+                                        oninput: move |e| erase_reason.set(e.value()),
+                                    }
+                                }
+                                div { class: "ik-danger",
+                                    TypeToConfirm {
+                                        title: i18n.t("console.users.delete"),
+                                        body: i18n.args(
+                                            "console.users.eraseRadius",
+                                            &[("count", &thousands(user.tracked_count))],
+                                        ),
+                                        expect: user.username.clone(),
+                                        cta: i18n.t("console.users.deleteConfirmCta"),
+                                        busy: busy.is_busy(),
+                                        on_confirm: move |()| {
+                                            erase(
+                                                api,
+                                                i18n,
+                                                busy,
+                                                outcome,
+                                                id_erase.clone(),
+                                                user.username.clone(),
+                                                erase_reason.peek().trim().to_owned(),
+                                                reload,
+                                                on_erased,
+                                            );
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            Tab::Activity => rsx! {
+                div { class: "ik-cons-inspbody",
+                    div { class: "ik-cons-col", style: "grid-column:1 / -1;max-width:620px;",
+                        RecentActions { username: user.username.clone() }
+                    }
+                }
+            },
         }
     }
 }
 
-#[component]
-fn Stat(label: String, value: i64) -> Element {
-    rsx! {
-        div { class: "ik-kpi",
-            div { class: "ik-kpi-label", "{label}" }
-            div { class: "ik-kpi-value", "{thousands(value)}" }
-        }
-    }
-}
-
-/// Rename an account or change its address on the owner's behalf.
-#[component]
-fn IdentityForm(
+/// Erase an account.
+///
+/// A free function rather than a closure: it needs every handle the editor holds, and a closure
+/// that moves its captured signals into a spawned task can only be called once.
+#[allow(clippy::too_many_arguments)]
+fn erase(
+    api: api::Api,
+    i18n: crate::i18n::Translator,
+    busy: crate::hooks::Busy,
+    outcome: Signal<crate::hooks::Outcome>,
     user_id: String,
     username: String,
-    email: String,
+    reason: String,
     reload: Reload,
-    detail_reload: Reload,
-) -> Element {
-    let api = api::use_api();
-    let i18n = use_i18n();
-    let busy = use_busy();
-    let mut outcome = use_outcome();
-    let mut name_field = use_signal(|| username.clone());
-    let mut email_field = use_signal(|| email.clone());
-
-    let save = move |_| {
-        if !busy.claim() {
-            return;
-        }
-        outcome.set(None);
-        let id = user_id.clone();
-        // Only send what actually changed: the endpoint treats an omitted field as "leave it",
-        // and resubmitting an unchanged email would be an audit record of an edit that was not
-        // one.
-        let body = AdminProfileUpdate {
-            username: Some(name_field.peek().trim().to_owned()).filter(|v| *v != username),
-            email: Some(email_field.peek().trim().to_owned()).filter(|v| *v != email),
-        };
-        if body.username.is_none() && body.email.is_none() {
-            outcome.set(Some(Err(i18n.t("console.users.nothingToSave"))));
-            busy.release();
-            return;
-        }
-        let client = api.client();
-        spawn(async move {
-            match client.update_user().id(id).body(body).send().await {
-                Ok(_) => {
-                    outcome.set(Some(Ok(i18n.t("console.users.saved"))));
-                    detail_reload.bump();
-                    reload.bump();
-                }
-                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
-            }
-            busy.release();
-        });
-    };
-
-    rsx! {
-        div { class: "ik-subhead", style: "margin-top:18px;", {i18n.t("console.users.identity")} }
-        div { class: "ik-field",
-            label { r#for: "tv-user-name", {i18n.t("account.profile.displayName")} }
-            input {
-                id: "tv-user-name",
-                class: "ik-input",
-                value: "{name_field}",
-                oninput: move |e| name_field.set(e.value()),
-            }
-        }
-        div { class: "ik-field",
-            label { r#for: "tv-user-email", {i18n.t("auth.field.email")} }
-            input {
-                id: "tv-user-email",
-                class: "ik-input",
-                r#type: "email",
-                value: "{email_field}",
-                oninput: move |e| email_field.set(e.value()),
-            }
-        }
-        OutcomeLine { outcome: outcome.read().clone() }
-        button {
-            class: "ik-btn primary",
-            style: "margin-top:8px;",
-            disabled: busy.is_busy(),
-            onclick: save,
-            {i18n.t("console.users.save")}
-        }
+    on_erased: EventHandler<()>,
+) {
+    if !busy.claim() {
+        return;
     }
+    let mut outcome = outcome;
+    outcome.set(None);
+    let client = api.client();
+    spawn(async move {
+        let body = DeleteUser {
+            // The server re-checks this against the account it is about to erase;
+            // `TypeToConfirm` has already proved the operator typed it.
+            confirm_username: username,
+            reason: (!reason.is_empty()).then_some(reason),
+        };
+        match client.delete_user().id(user_id).body(body).send().await {
+            Ok(_) => {
+                on_erased.call(());
+                reload.bump();
+            }
+            Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+        }
+        busy.release();
+    });
 }
 
-/// Suspend, reinstate, or confirm an address administratively.
-#[component]
-fn StatusControls(
+/// Force an account out of every device it is signed in on. Free-standing for the same reason
+/// as [`erase`]: the header and the Sessions tab both offer it.
+fn revoke_all(
+    api: api::Api,
+    i18n: crate::i18n::Translator,
+    busy: crate::hooks::Busy,
+    outcome: Signal<crate::hooks::Outcome>,
+    detail_reload: Reload,
     user_id: String,
-    status: AccountStatus,
-    email_verified: bool,
+) {
+    if !busy.claim() {
+        return;
+    }
+    let mut outcome = outcome;
+    outcome.set(None);
+    let client = api.client();
+    spawn(async move {
+        match client.revoke_user_sessions().id(user_id).send().await {
+            Ok(_) => {
+                outcome.set(Some(Ok(i18n.t("console.users.signedOutEverywhere"))));
+                detail_reload.bump();
+            }
+            Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+        }
+        busy.release();
+    });
+}
+
+/// Confirm an address administratively, for an account that never clicked its link.
+#[component]
+fn VerifyEmailAction(
+    user_id: String,
+    enabled: bool,
     reload: Reload,
     detail_reload: Reload,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let busy = use_busy();
-    let mut outcome = use_outcome();
-    let mut reason = use_signal(String::new);
 
-    let suspended = status == AccountStatus::Suspended;
-    let id_status = user_id.clone();
-    let toggle = move |_| {
-        if !busy.claim() {
-            return;
-        }
-        outcome.set(None);
-        let id = id_status.clone();
-        let body = SetUserStatus {
-            status: if suspended {
-                AccountStatus::Active
-            } else {
-                AccountStatus::Suspended
-            },
-            reason: {
-                let text = reason.peek().trim().to_owned();
-                (!text.is_empty()).then_some(text)
-            },
-            // A suspension that leaves the account working until its access token expires is
-            // not what anyone means by suspending it.
-            revoke_sessions: Some(true),
-        };
-        let client = api.client();
-        spawn(async move {
-            match client.set_user_status().id(id).body(body).send().await {
-                Ok(_) => {
-                    reason.set(String::new());
-                    detail_reload.bump();
-                    reload.bump();
-                }
-                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
-            }
-            busy.release();
-        });
-    };
-
-    let id_verify = user_id.clone();
     let verify = move |_| {
         if !busy.claim() {
             return;
         }
-        outcome.set(None);
-        let id = id_verify.clone();
+        let id = user_id.clone();
         let client = api.client();
         spawn(async move {
-            match client.verify_user_email().id(id).send().await {
-                Ok(_) => {
-                    detail_reload.bump();
-                    reload.bump();
-                }
-                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+            if client.verify_user_email().id(id).send().await.is_ok() {
+                detail_reload.bump();
+                reload.bump();
             }
             busy.release();
         });
     };
 
     rsx! {
-        div { class: "ik-subhead", style: "margin-top:18px;", {i18n.t("console.users.access")} }
-        if !suspended {
-            div { class: "ik-field",
-                label { r#for: "tv-user-reason", {i18n.t("console.users.suspendReason")} }
-                input {
-                    id: "tv-user-reason",
-                    class: "ik-input",
-                    placeholder: i18n.t("console.users.suspendReasonPlaceholder"),
-                    value: "{reason}",
-                    oninput: move |e| reason.set(e.value()),
-                }
+        div { class: "ik-flex", style: "gap:8px;",
+            span {
+                class: "ik-mono",
+                style: "font-size:12px;color:var(--star);",
+                title: i18n.t("console.users.unverifiedHint"),
+                {i18n.t("console.users.unverified")}
             }
-        }
-        OutcomeLine { outcome: outcome.read().clone() }
-        div { class: "ik-flex", style: "gap:8px;margin-top:8px;flex-wrap:wrap;",
-            button {
-                class: "ik-btn",
-                style: if suspended { "" } else { "color:var(--vermilion);" },
-                disabled: busy.is_busy(),
-                onclick: toggle,
-                if suspended {
-                    {i18n.t("console.users.reinstate")}
-                } else {
-                    {i18n.t("console.users.suspend")}
-                }
-            }
-            if !email_verified {
-                button { class: "ik-btn", disabled: busy.is_busy(), onclick: verify,
+            if enabled {
+                button { class: "ik-btn xs", disabled: busy.is_busy(), onclick: verify,
                     {i18n.t("console.users.verifyEmail")}
                 }
             }
@@ -577,64 +943,20 @@ fn StatusControls(
     }
 }
 
-/// Force an account out of every device it is signed in on.
-#[component]
-fn SessionControls(user_id: String, active_sessions: i64, detail_reload: Reload) -> Element {
-    let api = api::use_api();
-    let i18n = use_i18n();
-    let busy = use_busy();
-
-    let revoke = move |_| {
-        if !busy.claim() {
-            return;
-        }
-        let id = user_id.clone();
-        let client = api.client();
-        spawn(async move {
-            let _ = client.revoke_user_sessions().id(id).send().await;
-            detail_reload.bump();
-            busy.release();
-        });
-    };
-
-    rsx! {
-        div { class: "ik-subhead", style: "margin-top:18px;", {i18n.t("console.users.sessions")} }
-        div { class: "ik-flex", style: "gap:8px;align-items:center;",
-            span { class: "ik-muted", style: "font-size:13px;",
-                {
-                    i18n.args(
-                        "console.users.activeSessions",
-                        &[("count", &active_sessions.to_string())],
-                    )
-                }
-            }
-            button {
-                class: "ik-btn",
-                disabled: busy.is_busy() || active_sessions == 0,
-                onclick: revoke,
-                {i18n.t("console.users.revokeSessions")}
-            }
-        }
-    }
-}
-
-/// The permission checklist, grouped, with the preset bundles as starting points.
+/// The permission checklist, grouped, with provenance and the preset bundles as starting
+/// points.
 ///
-/// Edits are local until submitted, and the whole set is sent at once — the server replaces it
-/// wholesale, so two administrators editing concurrently produce one of their two intents
-/// rather than an interleaving of both.
+/// Edits are local until the inspector's one Save submits them, and the whole set goes at once
+/// — the server replaces it wholesale, so two administrators editing concurrently produce one
+/// of their two intents rather than an interleaving of both.
 #[component]
-fn PermissionEditor(
-    user_id: String,
-    granted: Vec<GrantRow>,
-    reload: Reload,
-    detail_reload: Reload,
+fn PermissionGrants(
+    grants: Vec<GrantRow>,
+    chosen: Signal<BTreeSet<Permission>>,
+    editable: bool,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
-    let busy = use_busy();
-    let mut outcome = use_outcome();
-
     let catalogue = use_resource(move || {
         let client = api.client();
         async move {
@@ -647,98 +969,176 @@ fn PermissionEditor(
         }
     });
 
-    // Seeded from the server's answer and edited locally from there. Only tokens this build
-    // recognises are seeded: an inert grant left over from another version is shown separately
-    // below rather than silently re-submitted as if it were current.
-    let chosen = use_signal(|| {
-        granted
-            .iter()
-            .filter(|g| g.known)
-            .filter_map(|g| {
-                serde_json::from_value::<Permission>(serde_json::json!(g.permission)).ok()
-            })
-            .collect::<BTreeSet<Permission>>()
-    });
-    let unknown: Vec<String> = granted
+    let unknown: Vec<String> = grants
         .iter()
         .filter(|g| !g.known)
         .map(|g| g.permission.clone())
         .collect();
-
-    let save = move |_| {
-        if !busy.claim() {
-            return;
-        }
-        outcome.set(None);
-        let id = user_id.clone();
-        let body = SetPermissions {
-            permissions: chosen.peek().iter().copied().collect(),
-        };
-        let client = api.client();
-        spawn(async move {
-            match client.set_user_permissions().id(id).body(body).send().await {
-                Ok(_) => {
-                    outcome.set(Some(Ok(i18n.t("console.users.permissionsSaved"))));
-                    detail_reload.bump();
-                    reload.bump();
-                }
-                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
-            }
-            busy.release();
-        });
-    };
+    let loaded = catalogue.read_unchecked().clone();
 
     rsx! {
-        div { class: "ik-subhead", style: "margin-top:18px;", {i18n.t("console.users.permissions")} }
-        p { class: "ik-muted", style: "font-size:12px;margin-top:0;max-width:70ch;",
-            {i18n.t("console.users.permissionsIntro")}
-        }
-        if !unknown.is_empty() {
-            ErrorLine {
-                message: i18n.args(
-                    "console.users.unknownGrants",
-                    &[("tokens", &unknown.join(", "))],
-                ),
+        Section {
+            label: i18n.t("console.users.permissions"),
+            trailing: match &loaded {
+                Some(Ok(cat)) if editable => rsx! {
+                    PresetPicker { catalogue: cat.clone(), chosen }
+                },
+                _ => rsx! {},
+            },
+            if !unknown.is_empty() {
+                ErrorLine {
+                    message: i18n.args("console.users.unknownGrants", &[("tokens", &unknown.join(", "))]),
+                }
             }
-        }
-        {
-            match &*catalogue.read_unchecked() {
-                None => rsx! { crate::components::SkeletonBlock { height: 160 } },
-                Some(Err(message)) => rsx! { ErrorLine { message: message.clone() } },
+            match loaded {
+                None => rsx! { SkeletonBlock { height: 180 } },
+                Some(Err(message)) => rsx! { ErrorLine { message } },
                 Some(Ok(cat)) => rsx! {
-                    PresetRow { catalogue: cat.clone(), chosen }
-                    for (group, title_key) in PERMISSION_GROUPS {
-                        PermissionGroupBlock {
-                            key: "{title_key}",
-                            title: i18n.t(title_key),
-                            entries: cat
-                                .permissions
-                                .iter()
-                                .filter(|p| p.group == group)
-                                .cloned()
-                                .collect::<Vec<_>>(),
-                            chosen,
+                    div { class: "ik-listbox",
+                        for (group , title_key) in PERMISSION_GROUPS {
+                            GrantGroup {
+                                key: "{title_key}",
+                                title: i18n.t(title_key),
+                                entries: cat
+                                    .permissions
+                                    .iter()
+                                    .filter(|p| p.group == group)
+                                    .cloned()
+                                    .collect::<Vec<PermissionInfo>>(),
+                                grants: grants.clone(),
+                                chosen,
+                                editable,
+                            }
                         }
                     }
                 },
             }
+            p { class: "ik-muted", style: "font-size:11.5px;line-height:1.5;margin:8px 0 0;",
+                {i18n.t("console.users.grantLifetime")}
+            }
         }
-        OutcomeLine { outcome: outcome.read().clone() }
-        button {
-            class: "ik-btn primary",
-            style: "margin-top:10px;",
-            disabled: busy.is_busy(),
-            onclick: save,
-            {i18n.t("console.users.savePermissions")}
+    }
+}
+
+/// The preset bundles, applied as a starting point the operator then edits.
+///
+/// Applying one *replaces* the current selection rather than adding to it, which is what makes
+/// it a starting point rather than a cumulative grant — and why it is safe that presets are
+/// never stored: what gets saved is whatever is ticked afterwards.
+#[component]
+fn PresetPicker(catalogue: PermissionCatalogue, chosen: Signal<BTreeSet<Permission>>) -> Element {
+    let i18n = use_i18n();
+    let mut chosen = chosen;
+    rsx! {
+        select {
+            class: "ik-select",
+            style: "font-size:11.5px;padding:5px 8px;",
+            "aria-label": i18n.t("console.users.presets"),
+            onchange: move |event| {
+                let picked = event.value();
+                if let Some(preset) = catalogue.presets.iter().find(|p| p.key.to_string() == picked)
+                {
+                    chosen.set(preset.permissions.iter().copied().collect());
+                }
+            },
+            option { value: "", {i18n.t("console.users.presets")} }
+            for preset in catalogue.presets.iter() {
+                option { key: "{preset.key}", value: "{preset.key}", {i18n.t(preset.key.label_key())} }
+            }
+        }
+    }
+}
+
+/// One permission group: a sub-header and its rows.
+#[component]
+fn GrantGroup(
+    title: String,
+    entries: Vec<PermissionInfo>,
+    grants: Vec<GrantRow>,
+    chosen: Signal<BTreeSet<Permission>>,
+    editable: bool,
+) -> Element {
+    if entries.is_empty() {
+        return rsx! {};
+    }
+    rsx! {
+        div { class: "ik-grouphead", "{title}" }
+        for entry in entries {
+            GrantRowView {
+                key: "{entry.key}",
+                entry: entry.clone(),
+                provenance: grants
+                    .iter()
+                    .find(|g| g.permission == entry.key.to_string())
+                    .cloned(),
+                chosen,
+                editable,
+            }
+        }
+    }
+}
+
+/// One permission: the token, who granted it and when, and the tick that changes it.
+#[component]
+fn GrantRowView(
+    entry: PermissionInfo,
+    provenance: Option<GrantRow>,
+    chosen: Signal<BTreeSet<Permission>>,
+    editable: bool,
+) -> Element {
+    let i18n = use_i18n();
+    let mut chosen = chosen;
+    let key = entry.key;
+    let checked = chosen.read().contains(&key);
+    let token = key.to_string();
+
+    let by = provenance.and_then(|grant| {
+        let who = grant.granted_by?;
+        Some(i18n.args(
+            "console.users.grantedBy",
+            &[
+                ("who", &who),
+                ("when", &rel_time(i18n, Some(&grant.granted_at))),
+            ],
+        ))
+    });
+
+    rsx! {
+        label {
+            class: "ik-listrow",
+            style: "gap:10px;cursor:pointer;",
+            title: "{entry.description}",
+            input {
+                class: "ik-cbx",
+                r#type: "checkbox",
+                disabled: !editable,
+                checked,
+                onchange: move |event| {
+                    let mut set = chosen.write();
+                    if event.checked() {
+                        set.insert(key);
+                    } else {
+                        set.remove(&key);
+                    }
+                },
+            }
+            span {
+                class: "ik-mono",
+                style: if checked { "font-size:12.5px;color:var(--text);" } else { "font-size:12.5px;color:var(--muted);" },
+                "{token}"
+            }
+            if let Some(by) = by {
+                span { style: "margin-left:auto;font-size:11px;color:var(--faint);flex:none;", "{by}" }
+            }
         }
     }
 }
 
 /// The permission groups in display order, each with the catalogue key that titles it.
 const PERMISSION_GROUPS: [(PermissionGroup, &str); 8] = [
+    (PermissionGroup::Catalogue, "console.perm.group.catalogue"),
     (PermissionGroup::Providers, "console.perm.group.providers"),
     (PermissionGroup::Scanning, "console.perm.group.scanning"),
-    (PermissionGroup::Catalogue, "console.perm.group.catalogue"),
     (PermissionGroup::Sync, "console.perm.group.sync"),
     (PermissionGroup::Users, "console.perm.group.users"),
     (PermissionGroup::Privacy, "console.perm.group.privacy"),
@@ -749,189 +1149,246 @@ const PERMISSION_GROUPS: [(PermissionGroup, &str); 8] = [
     (PermissionGroup::Flags, "console.perm.group.flags"),
 ];
 
-/// The preset bundles, applied as a starting point the operator then edits.
-///
-/// Applying one *replaces* the current selection rather than adding to it, which is what makes
-/// it a starting point rather than a cumulative grant — and why it is safe that presets are
-/// never stored: what gets saved is whatever is ticked afterwards.
+/// This account's linked external trackers, with the two admin-side actions the API supports.
 #[component]
-fn PresetRow(catalogue: PermissionCatalogue, chosen: Signal<BTreeSet<Permission>>) -> Element {
+fn ExternalSync(user_id: String, username: String, editable: bool) -> Element {
+    let api = api::use_api();
     let i18n = use_i18n();
-    let mut chosen = chosen;
-    rsx! {
-        div { class: "ik-flex", style: "gap:6px;margin:8px 0;flex-wrap:wrap;align-items:center;",
-            span { class: "ik-muted", style: "font-size:12px;", {i18n.t("console.users.presets")} }
-            for preset in catalogue.presets.iter().cloned() {
-                button {
-                    key: "{preset.key}",
-                    class: "ik-btn",
-                    onclick: move |_| chosen.set(preset.permissions.iter().copied().collect()),
-                    {i18n.t(preset.key.label_key())}
-                }
-            }
-        }
-    }
-}
-
-/// One group of permission checkboxes.
-#[component]
-fn PermissionGroupBlock(
-    title: String,
-    entries: Vec<crate::wire::types::PermissionInfo>,
-    chosen: Signal<BTreeSet<Permission>>,
-) -> Element {
-    if entries.is_empty() {
+    let reload = use_reload();
+    let Ok(uuid) = uuid::Uuid::parse_str(&user_id) else {
         return rsx! {};
-    }
+    };
+
+    let accounts = use_resource(move || {
+        reload.track();
+        let client = api.client();
+        async move {
+            client
+                .list_sync_accounts()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))
+        }
+    });
+
     rsx! {
-        div { style: "margin-top:10px;",
-            div { class: "ik-muted", style: "font-size:12px;font-weight:600;", "{title}" }
-            for entry in entries {
-                PermissionCheckbox { key: "{entry.key}", entry, chosen }
+        Section { label: i18n.t("console.users.externalSync"),
+            {
+                async_view(
+                    &accounts,
+                    reload,
+                    || rsx! { SkeletonBlock { height: 90 } },
+                    |all| {
+                        let mine: Vec<AdminSyncAccount> = all
+                            .iter()
+                            .filter(|row| row.user_id == uuid)
+                            .cloned()
+                            .collect();
+                        if mine.is_empty() {
+                            return rsx! {
+                                p { class: "ik-muted", style: "font-size:12px;margin:0;",
+                                    {i18n.t("console.users.noSyncLinks")}
+                                }
+                            };
+                        }
+                        rsx! {
+                            div { class: "ik-listbox",
+                                for account in mine {
+                                    SyncLinkRow {
+                                        key: "{account.provider}",
+                                        account,
+                                        username: username.clone(),
+                                        editable,
+                                        reload,
+                                    }
+                                }
+                            }
+                        }
+                    },
+                )
             }
         }
     }
 }
 
-/// One permission, with the description that says what granting it actually allows.
+/// One linked tracker: force a pull, or unlink it behind an inline confirmation. Unlinking is
+/// reversible — the reader can relink themselves — so it asks once rather than demanding typing.
 #[component]
-fn PermissionCheckbox(
-    entry: crate::wire::types::PermissionInfo,
-    chosen: Signal<BTreeSet<Permission>>,
-) -> Element {
-    let mut chosen = chosen;
-    let key = entry.key;
-    let checked = chosen.read().contains(&key);
-    let token = key.to_string();
-
-    rsx! {
-        label {
-            class: "ik-flex",
-            style: "gap:8px;align-items:flex-start;padding:4px 0;",
-            input {
-                r#type: "checkbox",
-                style: "margin-top:3px;",
-                checked,
-                onchange: move |e| {
-                    let mut set = chosen.write();
-                    if e.checked() {
-                        set.insert(key);
-                    } else {
-                        set.remove(&key);
-                    }
-                },
-            }
-            span {
-                span { class: "ik-mono", style: "font-size:12px;", "{token}" }
-                span { class: "ik-muted", style: "font-size:12px;display:block;",
-                    "{entry.description}"
-                }
-            }
-        }
-    }
-}
-
-/// Erase the account. Behind an explicit arming step and a typed confirmation, because it
-/// cascades across every table and cannot be undone.
-#[component]
-fn DangerZone(
-    user_id: String,
+fn SyncLinkRow(
+    account: AdminSyncAccount,
     username: String,
-    selected: Signal<Option<String>>,
+    editable: bool,
     reload: Reload,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let busy = use_busy();
-    let mut outcome = use_outcome();
-    let mut armed = use_signal(|| false);
-    let mut typed = use_signal(String::new);
-    let mut reason = use_signal(String::new);
-    let mut selected = selected;
+    let mut confirming = use_signal(|| false);
+    let mut error = use_signal(|| Option::<String>::None);
 
-    let matches_username = typed.read().trim() == username;
+    let target = SyncAccountTarget {
+        provider: account.provider.clone(),
+        user_id: UserId(account.user_id),
+    };
+    let external = account
+        .external_username
+        .clone()
+        .unwrap_or_else(|| username.clone());
 
-    let delete = move |_| {
-        if !busy.claim() {
-            return;
-        }
-        outcome.set(None);
-        let id = user_id.clone();
-        let body = DeleteUser {
-            confirm_username: typed.peek().trim().to_owned(),
-            reason: {
-                let text = reason.peek().trim().to_owned();
-                (!text.is_empty()).then_some(text)
-            },
-        };
-        let client = api.client();
-        spawn(async move {
-            match client.delete_user().id(id).body(body).send().await {
-                Ok(_) => {
-                    // The account is gone, so the drawer has nothing left to show.
-                    selected.set(None);
-                    reload.bump();
-                }
-                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+    let pull = {
+        let target = target.clone();
+        move |_| {
+            if !busy.claim() {
+                return;
             }
-            busy.release();
-        });
+            error.set(None);
+            let target = target.clone();
+            let client = api.client();
+            spawn(async move {
+                if let Err(e) = client.admin_sync_pull().body(target).send().await {
+                    error.set(Some(api::friendly_error(i18n, e)));
+                }
+                reload.bump();
+                busy.release();
+            });
+        }
     };
 
+    let unlink = {
+        let target = target.clone();
+        move |()| {
+            if !busy.claim() {
+                return;
+            }
+            error.set(None);
+            let target = target.clone();
+            let client = api.client();
+            spawn(async move {
+                match client.admin_sync_unlink().body(target).send().await {
+                    Ok(_) => {
+                        confirming.set(false);
+                        reload.bump();
+                    }
+                    Err(e) => error.set(Some(api::friendly_error(i18n, e))),
+                }
+                busy.release();
+            });
+        }
+    };
+
+    if *confirming.read() {
+        return rsx! {
+            InlineConfirm {
+                title: i18n.args("console.users.unlinkTitle", &[("provider", &account.provider)]),
+                body: i18n.t("console.users.unlinkWhy"),
+                cta: i18n.t("console.users.unlink"),
+                busy: busy.is_busy(),
+                on_cancel: move |()| confirming.set(false),
+                on_confirm: unlink,
+            }
+        };
+    }
+
     rsx! {
-        div { class: "ik-subhead", style: "margin-top:18px;color:var(--vermilion);",
-            {i18n.t("console.users.dangerZone")}
-        }
-        p { class: "ik-muted", style: "font-size:12px;margin-top:0;max-width:70ch;",
-            {i18n.t("console.users.deleteIntro")}
-        }
-        if *armed.read() {
-            div { class: "ik-field",
-                label { r#for: "tv-user-delete-reason", {i18n.t("console.users.deleteReason")} }
-                input {
-                    id: "tv-user-delete-reason",
-                    class: "ik-input",
-                    value: "{reason}",
-                    oninput: move |e| reason.set(e.value()),
+        div { class: "ik-listrow",
+            span { class: "ik-mono-tile lg jade", {monogram(&account.provider)} }
+            div { style: "min-width:0;",
+                div { style: "font-weight:600;font-size:12.5px;", "{account.provider} · {external}" }
+                div { class: "ik-mono", style: "font-size:10.5px;color:var(--muted);margin-top:1px;",
+                    {
+                        i18n.args(
+                            "console.users.syncMeta",
+                            &[
+                                ("when", &rel_time(i18n, account.last_synced_at.as_deref())),
+                                ("conflicts", &account.pending_conflicts.to_string()),
+                            ],
+                        )
+                    }
+                }
+                if let Some(message) = error.read().clone() {
+                    ErrorLine { message }
                 }
             }
-            div { class: "ik-field",
-                label { r#for: "tv-user-delete-confirm",
-                    {i18n.args("console.users.deleteConfirmLabel", &[("username", &username)])}
-                }
-                input {
-                    id: "tv-user-delete-confirm",
-                    class: "ik-input",
-                    autocomplete: "off",
-                    value: "{typed}",
-                    oninput: move |e| typed.set(e.value()),
+            if editable {
+                div { class: "ik-flex", style: "margin-left:auto;gap:6px;flex:none;",
+                    button { class: "ik-btn xs", disabled: busy.is_busy(), onclick: pull,
+                        {i18n.t("console.users.forcePull")}
+                    }
+                    button {
+                        class: "ik-btn xs acc",
+                        disabled: busy.is_busy(),
+                        onclick: move |_| confirming.set(true),
+                        {i18n.t("console.users.unlink")}
+                    }
                 }
             }
-            OutcomeLine { outcome: outcome.read().clone() }
-            div { class: "ik-flex", style: "gap:8px;margin-top:8px;",
-                button {
-                    class: "ik-btn",
-                    style: "color:var(--vermilion);",
-                    disabled: busy.is_busy() || !matches_username,
-                    onclick: delete,
-                    Ic { icon: Icon::Delete, size: 14 }
-                    span { {i18n.t("console.users.deleteConfirmCta")} }
-                }
-                button {
-                    class: "ik-btn",
-                    onclick: move |_| {
-                        armed.set(false);
-                        typed.set(String::new());
+        }
+    }
+}
+
+/// What this account has actually done, out of the privileged-action trail.
+#[component]
+fn RecentActions(username: String) -> Element {
+    let api = api::use_api();
+    let i18n = use_i18n();
+    let caps = use_capabilities();
+    let reload = use_reload();
+
+    if !caps.can(Permission::AuditRead) {
+        return rsx! {};
+    }
+
+    let entries = use_resource(move || {
+        reload.track();
+        let client = api.client();
+        async move {
+            client
+                .audit_log()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))
+        }
+    });
+
+    rsx! {
+        Section { label: i18n.t("console.users.recentActions"),
+            {
+                async_view(
+                    &entries,
+                    reload,
+                    || rsx! { SkeletonBlock { height: 120 } },
+                    |all| {
+                        let mine: Vec<_> = all
+                            .iter()
+                            .filter(|entry| entry.actor.as_deref() == Some(username.as_str()))
+                            .take(10)
+                            .cloned()
+                            .collect();
+                        if mine.is_empty() {
+                            return rsx! {
+                                p { class: "ik-muted", style: "font-size:12px;margin:0;",
+                                    {i18n.t("console.users.noRecentActions")}
+                                }
+                            };
+                        }
+                        rsx! {
+                            div { class: "ik-timeline",
+                                for entry in mine {
+                                    div { key: "{entry.id}",
+                                        span { class: "val", "{entry.action}" }
+                                        if let Some(target) = entry.target.clone() {
+                                            " · {target}"
+                                        }
+                                        " · "
+                                        {rel_time(i18n, Some(&entry.created_at))}
+                                    }
+                                }
+                            }
+                        }
                     },
-                    {i18n.t("common.cancel")}
-                }
-            }
-        } else {
-            button {
-                class: "ik-btn",
-                style: "color:var(--vermilion);",
-                onclick: move |_| armed.set(true),
-                {i18n.t("console.users.delete")}
+                )
             }
         }
     }

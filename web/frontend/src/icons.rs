@@ -34,6 +34,7 @@ pub(crate) enum Icon {
     CloudSync,
     ArrowForward,
     ChevronRight,
+    ChevronDown,
     Close,
     Check,
     OpenInNew,
@@ -53,6 +54,7 @@ pub(crate) enum Icon {
     Cancel,
     // discover / misc
     Add,
+    Remove,
     Refresh,
     Public,
     Block,
@@ -150,6 +152,7 @@ fn path_for(icon: Icon) -> &'static str {
         }
         Icon::ArrowForward => r#"<path d="M5 12h14M13 6l6 6-6 6"/>"#,
         Icon::ChevronRight => r#"<path d="m9 6 6 6-6 6"/>"#,
+        Icon::ChevronDown => r#"<path d="m6 9 6 6 6-6"/>"#,
         Icon::Close => r#"<path d="M6 6l12 12M18 6 6 18"/>"#,
         Icon::Check => r#"<path d="m5 12 5 5 9-11"/>"#,
         Icon::OpenInNew => {
@@ -179,6 +182,7 @@ fn path_for(icon: Icon) -> &'static str {
         Icon::PauseCircle => r#"<circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/>"#,
         Icon::Cancel => r#"<circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/>"#,
         Icon::Add => r#"<path d="M12 5v14M5 12h14"/>"#,
+        Icon::Remove => r#"<path d="M5 12h14"/>"#,
         Icon::Refresh => r#"<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v5h-5"/>"#,
         Icon::Public => {
             r#"<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>"#

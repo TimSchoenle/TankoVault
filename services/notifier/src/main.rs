@@ -10,9 +10,9 @@
 mod channels;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use channels::{Alert, NotificationChannel};
-use futures::StreamExt;
 use serde::Deserialize;
 use tankovault_bus::Bus;
 use tankovault_contracts::{ChapterDiscovered, UserNotification, subjects};
@@ -122,41 +122,42 @@ async fn run_consumer(
             subjects::CHAPTER_DISCOVERED_SUBJECT,
         )
         .await?;
-    let mut messages = consumer.messages().await?;
-    tracing::info!("notifier consuming chapter.discovered events");
 
-    loop {
-        // Finish the message in hand, then stop: acking after the fan-out is what makes
-        // redelivery correct, and being killed between the two would drop a notification.
-        let next = tokio::select! {
-            () = shutdown.cancelled() => {
-                tracing::info!("notifier consumer stopping");
-                return Ok(());
+    // Retries on failure, where this loop previously acked. A fan-out error was logged and
+    // then the message was settled unconditionally, which is at-most-once delivery: a
+    // transient database blip or a Discord webhook timeout lost that chapter's notifications
+    // permanently, with one `warn!` as the only trace. The dedup claim inside `fan_out` is
+    // what makes redelivery safe — a re-run announces nothing that was already announced.
+    let policy = tankovault_bus::ConsumePolicy {
+        max_deliveries: 4,
+        // Minutes, not seconds: the failures worth retrying here are a busy database or a
+        // third-party webhook, and hammering either is how a blip becomes an outage.
+        backoff: |deliveries| match deliveries {
+            0 | 1 => Duration::from_secs(30),
+            2 => Duration::from_secs(120),
+            _ => Duration::from_secs(600),
+        },
+        // A fan-out over ten thousand watchers can outrun the ack deadline.
+        heartbeat: Some(tankovault_bus::TASK_ACK_HEARTBEAT),
+    };
+
+    tankovault_bus::consume(
+        consumer,
+        shutdown,
+        policy,
+        subjects::CHAPTER_DISCOVERED_SUBJECT,
+        move |event: ChapterDiscovered, _msg| {
+            let pool = pool.clone();
+            let bus = bus.clone();
+            let channels = Arc::clone(&channels);
+            let features = features.clone();
+            async move {
+                fan_out(&pool, &bus, &channels, &features, &event).await?;
+                Ok(tankovault_bus::Disposition::Ack)
             }
-            next = messages.next() => match next {
-                Some(next) => next,
-                None => break,
-            },
-        };
-        let msg = match next {
-            Ok(m) => m,
-            Err(e) => {
-                tracing::warn!(error = %e, "error pulling event");
-                continue;
-            }
-        };
-        match serde_json::from_slice::<ChapterDiscovered>(&msg.payload) {
-            Ok(event) => {
-                if let Err(e) = fan_out(&pool, &bus, &channels, &features, &event).await {
-                    tracing::warn!(error = %e, "fan-out failed");
-                }
-            }
-            Err(e) => tracing::warn!(error = %e, "undecodable event; dropping"),
-        }
-        if let Err(e) = msg.ack().await {
-            tracing::warn!(error = %e, "failed to ack event");
-        }
-    }
+        },
+    )
+    .await?;
     Ok(())
 }
 

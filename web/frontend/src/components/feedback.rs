@@ -84,6 +84,24 @@ pub(crate) fn SignInGate() -> Element {
     }
 }
 
+/// The whole "you must be signed in" screen: the page title plus [`SignInGate`].
+///
+/// Five protected views hand-rolled this same two-element body, and the fifth — `/console` —
+/// forgot it entirely and rendered a **permanent loading skeleton** to signed-out visitors
+/// instead. That is the worst failure mode available: it looks like the app is working, so
+/// the reader waits rather than signing in.
+///
+/// Deliberately a guard that callers early-return, not a wrapper taking `children`: every one
+/// of these views computes derived state after the check (a display name, a filtered list),
+/// and a wrapper would have to build that state before deciding not to show it.
+#[component]
+pub(crate) fn AuthRequired(title: String) -> Element {
+    rsx! {
+        h1 { class: "ik-page-title", "{title}" }
+        SignInGate {}
+    }
+}
+
 /// A thin brush-stroke section divider (the one signature device, §17.1).
 #[component]
 pub(crate) fn Brush() -> Element {

@@ -4,7 +4,7 @@
 
 use crate::api;
 use crate::components::{
-    async_list, async_view, Cover, CoverCard, SignInGate, SkeletonBlock, SkeletonRows,
+    async_list, async_view, Cover, CoverCard, AuthRequired, SkeletonBlock, SkeletonRows,
 };
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
@@ -100,10 +100,7 @@ pub(crate) fn Home() -> Element {
     });
 
     if !session.is_authenticated() {
-        return rsx! {
-            h1 { class: "ik-page-title", {i18n.t("nav.home")} }
-            SignInGate {}
-        };
+        return rsx! { AuthRequired { title: i18n.t("nav.home") } };
     }
 
     let name = session

@@ -11,6 +11,7 @@ use crate::i18n::use_i18n;
 use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
+use crate::components::EmptyBox;
 
 /// The provider this callback route is registered for. The sync service's `redirect_uri` is
 /// configured per provider; only `AniList` is registered today.
@@ -69,7 +70,7 @@ pub(crate) fn AnilistCallback(code: String) -> Element {
             }
         },
         None => rsx! {
-            div { class: "ik-empty", {i18n.t("account.callback.connecting")} }
+            EmptyBox { message: i18n.t("account.callback.connecting") }
         },
     }
 }

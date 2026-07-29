@@ -7,6 +7,7 @@ use crate::state::use_session;
 use crate::util::thousands;
 use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
+use crate::components::SkeletonBlock;
 use progenitor_client::ResponseValue;
 
 /// System-wide KPI header — the at-a-glance health of the whole system.
@@ -35,7 +36,7 @@ pub(super) fn SystemOverview(tick: RefreshTick) -> Element {
     });
 
     let body = match &*res.read_unchecked() {
-        None | Some(None) => rsx! { div { class: "ik-skeleton", style: "height:104px;" } },
+        None | Some(None) => rsx! { SkeletonBlock { height: 104 } },
         Some(Some(Err(e))) => {
             rsx! {
                 p { class: "ik-muted", style: "font-size:13px;",

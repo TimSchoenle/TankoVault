@@ -6,7 +6,7 @@
 
 use super::PanelCard;
 use crate::api;
-use crate::components::{async_list, async_view, ErrorLine, OutcomeLine, SkeletonBlock};
+use crate::components::{EmptyBox, async_list, async_view, ErrorLine, OutcomeLine, SkeletonBlock};
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -516,7 +516,7 @@ fn ConflictInbox(provider: String, show: Signal<bool>, parent_reload: Reload) ->
                             .collect();
                         if rows.is_empty() {
                             return rsx! {
-                                div { class: "ik-empty", {i18n.t("account.sync.conflictsEmpty")} }
+                                EmptyBox { message: i18n.t("account.sync.conflictsEmpty") }
                             };
                         }
                         rsx! {

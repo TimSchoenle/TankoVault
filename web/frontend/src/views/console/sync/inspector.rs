@@ -2,7 +2,7 @@
 //! mapping for each known provider.
 
 use crate::api;
-use crate::components::ErrorBox;
+use crate::components::{SkeletonBlock, EmptyBox, ErrorBox};
 use crate::hooks::Reload;
 use crate::i18n::use_i18n;
 use crate::models::*;
@@ -83,13 +83,13 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
     };
 
     let mappings_body = match &*mappings.read_unchecked() {
-        None => rsx! { div { class: "ik-skeleton", style: "height:40px;" } },
+        None => rsx! { SkeletonBlock { height: 40 } },
         Some(Err(e)) => {
             let msg = e.clone();
             rsx! { ErrorBox { message: msg, on_retry: move |()| reload.bump() } }
         }
         Some(Ok(list)) if list.is_empty() => rsx! {
-            div { class: "ik-empty", {i18n.t("console.sync.noMappings")} }
+            EmptyBox { message: i18n.t("console.sync.noMappings") }
         },
         Some(Ok(list)) => {
             let list = list.clone();
@@ -186,7 +186,7 @@ pub(super) fn SeriesSyncEditor(
     // with the search/pick-row flow above; parse it once here at the boundary.
     let Ok(sid) = series_id.parse::<SeriesId>() else {
         return rsx! {
-            div { class: "ik-empty", {i18n.t("console.sync.badSeriesId")} }
+            EmptyBox { message: i18n.t("console.sync.badSeriesId") }
         };
     };
 
@@ -241,7 +241,7 @@ pub(super) fn SeriesSyncEditor(
             {i18n.t("console.sync.externalMappings")}
         }
         if prov_list.is_empty() && map_list.is_empty() {
-            div { class: "ik-empty", {i18n.t("console.sync.noProvidersRegistered")} }
+            EmptyBox { message: i18n.t("console.sync.noProvidersRegistered") }
         }
         for p in prov_list.clone() {
             {

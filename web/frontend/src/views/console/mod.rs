@@ -64,6 +64,7 @@ use crate::state::capabilities::{use_capabilities, CapabilitySet};
 use crate::util::thousands;
 use crate::wire::types::{Feature, Permission};
 use dioxus::prelude::*;
+use crate::components::EmptyBox;
 use progenitor_client::ResponseValue;
 
 /// Auto-refresh cadence for the read-only entities.
@@ -241,9 +242,20 @@ pub(crate) fn Console() -> Element {
     let i18n = use_i18n();
     let api = api::use_api();
     let caps = use_capabilities();
+    let session = crate::state::use_session();
+
+    // The gate every other protected route has, and this one did not. `/console` is a public
+    // route (the rail link is merely hidden while signed out), so a bookmark, a shared link,
+    // a session expiry with the page open, or signing out from here all land on it — and
+    // capabilities are cleared to `Loading` whenever there is no session, so `is_ready()`
+    // below was permanently false and the skeleton was permanent with it.
+    if !session.is_authenticated() {
+        return rsx! { crate::components::AuthRequired { title: i18n.t("nav.console") } };
+    }
 
     // Held back until the capability fetch lands: rendering "operators only" first and the
-    // console a moment later reads as a permission error to anyone who blinks.
+    // console a moment later reads as a permission error to anyone who blinks. Reachable only
+    // for a signed-in reader now, so it is a genuine in-flight fetch rather than a dead end.
     if !caps.is_ready() {
         return rsx! {
             h1 { class: "ik-page-title", {i18n.t("nav.console")} }
@@ -259,7 +271,7 @@ pub(crate) fn Console() -> Element {
     let Some(&first) = visible.first() else {
         return rsx! {
             h1 { class: "ik-page-title", {i18n.t("nav.console")} }
-            div { class: "ik-empty", {i18n.t("console.operatorsOnly")} }
+            EmptyBox { message: i18n.t("console.operatorsOnly") }
         };
     };
 

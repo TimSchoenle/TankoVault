@@ -7,6 +7,7 @@ use crate::state::use_session;
 use crate::util::rel_time;
 use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
+use crate::components::{SkeletonBlock, EmptyBox};
 use progenitor_client::ResponseValue;
 
 /// Privileged-action audit trail (design §16): recent operator actions, newest first.
@@ -37,7 +38,7 @@ pub(super) fn AuditPanel(tick: RefreshTick) -> Element {
     };
 
     let body = match &*res.read_unchecked() {
-        None | Some(None) => rsx! { div { class: "ik-skeleton", style: "height:80px;" } },
+        None | Some(None) => rsx! { SkeletonBlock { height: 80 } },
         Some(Some(Err(e))) => {
             rsx! {
                 p { class: "ik-muted", style: "font-size:13px;",
@@ -46,7 +47,7 @@ pub(super) fn AuditPanel(tick: RefreshTick) -> Element {
             }
         }
         Some(Some(Ok(list))) if list.is_empty() => rsx! {
-            div { class: "ik-empty", {i18n.t("console.audit.empty")} }
+            EmptyBox { message: i18n.t("console.audit.empty") }
         },
         Some(Some(Ok(list))) => {
             let rows = list.clone();

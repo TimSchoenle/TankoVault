@@ -4790,6 +4790,7 @@ dependencies = [
 name = "tankovault-bus"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-nats",
  "bytes",
  "futures",
@@ -4798,6 +4799,7 @@ dependencies = [
  "tankovault-contracts",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "uuid",
 ]

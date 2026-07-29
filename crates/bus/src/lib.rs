@@ -471,9 +471,164 @@ impl Bus {
     }
 }
 
+/// What a handler wants done with a message that did not succeed.
+///
+/// Returned rather than decided inside [`consume`], because only the handler's own layer can
+/// tell "the provider blocked us, try again in five minutes" from "this markup will fail
+/// identically forever".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Disposition {
+    /// Done with this message; settle it.
+    Ack,
+    /// Hand it back for redelivery, subject to [`ConsumePolicy::max_deliveries`].
+    Retry,
+}
+
+/// How [`consume`] treats a handler failure.
+pub struct ConsumePolicy {
+    /// Deliveries after which a retryable failure is settled anyway, so one poisoned message
+    /// cannot occupy a consumer forever.
+    pub max_deliveries: u64,
+    /// Delay before redelivery, given the current delivery count.
+    pub backoff: fn(u64) -> Duration,
+    /// Extend the redelivery deadline every this often while the handler runs. `None` for
+    /// handlers that always finish well inside [`TASK_ACK_WAIT`].
+    pub heartbeat: Option<Duration>,
+}
+
+impl Default for ConsumePolicy {
+    /// One delivery, no retry: what a handler whose failures are not time-fixable wants.
+    fn default() -> Self {
+        Self {
+            max_deliveries: 1,
+            backoff: |_| Duration::from_secs(60),
+            heartbeat: None,
+        }
+    }
+}
+
+/// Drive a durable pull consumer until `shutdown` is cancelled or the stream ends.
+///
+/// This exists because the same loop was hand-rolled three times with three different
+/// meanings, and one of them was wrong: the notifier acked a message whose fan-out had
+/// **failed**, which is at-most-once delivery — a notification lost with a `warn!` as its only
+/// trace — while the control-plane's aggregator had no shutdown arm at all and could not drain
+/// on `SIGTERM`. Delivery semantics are not something three call sites should each decide.
+///
+/// The contract:
+/// - Cancellation is checked only *between* messages, never mid-handler. Being killed between
+///   the work and the ack is precisely what redelivery is for, but it is still a duplicate,
+///   so the message in hand is always finished first.
+/// - A handler returning `Ok(Disposition::Ack)` settles the message; `Ok(Disposition::Retry)`
+///   or `Err(_)` hands it back with [`retry_later`] until `max_deliveries`, then settles it.
+/// - An undecodable payload is dropped and acked. It will never decode, so redelivering it
+///   only blocks the consumer.
+/// - A failed ack is logged, not fatal: the stream redelivers, and handlers are expected to be
+///   idempotent, which is the same assumption every one of these call sites already made.
+///
+/// # Errors
+/// [`BusError::Jetstream`] if the message stream itself cannot be opened.
+pub async fn consume<T, F, Fut>(
+    consumer: BrokerConsumer,
+    shutdown: tokio_util::sync::CancellationToken,
+    policy: ConsumePolicy,
+    what: &str,
+    handler: F,
+) -> Result<(), BusError>
+where
+    T: serde::de::DeserializeOwned,
+    F: Fn(T, BrokerMessage) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<Disposition>>,
+{
+    let mut messages = consumer
+        .messages()
+        .await
+        .map_err(|e| BusError::Jetstream(e.to_string()))?;
+    tracing::info!(subject = what, "consuming");
+
+    loop {
+        let next = tokio::select! {
+            () = shutdown.cancelled() => {
+                tracing::info!(subject = what, "consumer stopping");
+                return Ok(());
+            }
+            next = messages.next() => match next {
+                Some(next) => next,
+                None => break,
+            },
+        };
+        let msg = match next {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::warn!(subject = what, error = %e, "error pulling message");
+                continue;
+            }
+        };
+
+        let Ok(decoded) = serde_json::from_slice::<T>(&msg.payload) else {
+            tracing::warn!(subject = what, "undecodable message; dropping");
+            ack_or_warn(&msg, what).await;
+            continue;
+        };
+
+        let deliveries = delivery_count(&msg);
+        let outcome = match policy.heartbeat {
+            Some(every) => with_ack_heartbeat(&msg, every, handler(decoded, msg.clone())).await,
+            None => handler(decoded, msg.clone()).await,
+        };
+
+        let retry = match outcome {
+            Ok(Disposition::Ack) => false,
+            Ok(Disposition::Retry) => true,
+            Err(e) => {
+                tracing::warn!(subject = what, error = %e, deliveries, "handler failed");
+                true
+            }
+        };
+
+        if retry && deliveries < policy.max_deliveries {
+            let delay = (policy.backoff)(deliveries);
+            if let Err(e) = retry_later(&msg, delay).await {
+                tracing::warn!(
+                    subject = what,
+                    error = %e,
+                    "could not requeue; it will be redelivered when the ack deadline lapses"
+                );
+            }
+            continue;
+        }
+        if retry {
+            tracing::warn!(
+                subject = what,
+                deliveries,
+                "giving up after {} deliveries; settling the message",
+                policy.max_deliveries
+            );
+        }
+        ack_or_warn(&msg, what).await;
+    }
+    Ok(())
+}
+
+/// Settle `msg`, logging rather than failing if the ack does not land.
+async fn ack_or_warn(msg: &jetstream::Message, what: &str) {
+    if let Err(e) = msg.ack().await {
+        tracing::warn!(subject = what, error = %e, "failed to ack message");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_default_policy_does_not_retry() {
+        // A caller that has not thought about redelivery gets at-most-one-attempt, not an
+        // accidental infinite requeue.
+        let policy = ConsumePolicy::default();
+        assert_eq!(policy.max_deliveries, 1);
+        assert!(policy.heartbeat.is_none());
+    }
 
     #[test]
     fn heartbeat_fits_comfortably_inside_the_redelivery_deadline() {

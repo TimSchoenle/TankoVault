@@ -155,8 +155,9 @@ async fn main() -> anyhow::Result<()> {
     // terminal `scan.progress` event so the console SSE need not DB-poll to a conclusion.
     let agg_pool = pool.clone();
     let agg_bus = bus.clone();
+    let agg_shutdown = shutdown.clone();
     tokio::spawn(async move {
-        if let Err(e) = aggregator::run(agg_pool, agg_bus).await {
+        if let Err(e) = aggregator::run(agg_pool, agg_bus, agg_shutdown).await {
             tracing::error!(error = %e, "progress aggregator exited");
         }
     });

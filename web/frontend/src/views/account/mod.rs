@@ -12,7 +12,7 @@ mod sync;
 pub(crate) use callback::AnilistCallback;
 
 use crate::api;
-use crate::components::SignInGate;
+use crate::components::AuthRequired;
 use crate::i18n::use_i18n;
 use crate::state::capabilities::{use_capabilities, CapabilitySet};
 use crate::state::use_session;
@@ -82,10 +82,7 @@ pub(crate) fn Account() -> Element {
     let mut panel = use_signal(|| Panel::Profile);
 
     if !session.is_authenticated() {
-        return rsx! {
-            h1 { class: "ik-page-title", {i18n.t("nav.account")} }
-            SignInGate {}
-        };
+        return rsx! { AuthRequired { title: i18n.t("nav.account") } };
     }
 
     let name = session

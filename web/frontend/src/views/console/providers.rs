@@ -17,7 +17,7 @@ use super::shell::{
     InlineConfirm, ListFooter, ListSearch, NoSelection, Section, SliderRow, TypeToConfirm,
 };
 use crate::api;
-use crate::components::{async_view, ErrorLine, OutcomeLine, SkeletonBlock};
+use crate::components::{EmptyBox, async_view, ErrorLine, OutcomeLine, SkeletonBlock};
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -898,7 +898,7 @@ fn CoverageTab(stat: Option<ProviderStat>) -> Element {
     let i18n = use_i18n();
     let Some(stat) = stat else {
         return rsx! {
-            div { class: "ik-empty", {i18n.t("console.providers.noStats")} }
+            EmptyBox { message: i18n.t("console.providers.noStats") }
         };
     };
     rsx! {
@@ -983,7 +983,7 @@ fn RunsTab(provider_id: ProviderId) -> Element {
                 .collect();
             if mine.is_empty() {
                 return rsx! {
-                    div { class: "ik-empty", {i18n.t("console.providers.noRuns")} }
+                    EmptyBox { message: i18n.t("console.providers.noRuns") }
                 };
             }
             rsx! {

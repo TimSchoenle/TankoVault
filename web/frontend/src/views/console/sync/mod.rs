@@ -4,7 +4,7 @@ mod inspector;
 mod queues;
 
 use crate::api;
-use crate::components::ErrorBox;
+use crate::components::{SkeletonBlock, EmptyBox, ErrorBox};
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::models::*;
@@ -40,13 +40,13 @@ pub(super) fn SyncAdminPanel() -> Element {
     };
 
     let accounts_body = match &*accounts.read_unchecked() {
-        None => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
+        None => rsx! { SkeletonBlock { height: 60 } },
         Some(Err(e)) => {
             let msg = e.clone();
             rsx! { ErrorBox { message: msg, on_retry: move |()| reload.bump() } }
         }
         Some(Ok(list)) if list.is_empty() => rsx! {
-            div { class: "ik-empty", {i18n.t("console.sync.noAccounts")} }
+            EmptyBox { message: i18n.t("console.sync.noAccounts") }
         },
         Some(Ok(list)) => {
             let list = list.clone();

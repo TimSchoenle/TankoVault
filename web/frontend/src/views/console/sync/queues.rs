@@ -2,7 +2,7 @@
 //! matched nothing locally.
 
 use crate::api;
-use crate::components::ErrorBox;
+use crate::components::{SkeletonBlock, EmptyBox, ErrorBox};
 use crate::hooks::Reload;
 use crate::i18n::{use_i18n, Translator};
 use crate::models::*;
@@ -59,13 +59,13 @@ pub(super) fn AssignQueue(selected: Signal<Option<String>>, reload: Reload) -> E
     };
 
     let body = match &*list.read_unchecked() {
-        None => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
+        None => rsx! { SkeletonBlock { height: 60 } },
         Some(Err(e)) => {
             let msg = e.clone();
             rsx! { ErrorBox { message: msg, on_retry: move |()| reload.bump() } }
         }
         Some(Ok(l)) if l.is_empty() => rsx! {
-            div { class: "ik-empty", {i18n.t("console.sync.assignEmpty")} }
+            EmptyBox { message: i18n.t("console.sync.assignEmpty") }
         },
         Some(Ok(l)) => {
             let l = l.clone();
@@ -232,13 +232,13 @@ pub(super) fn UnmatchedRemoteQueue(reload: Reload) -> Element {
     };
 
     let body = match &*list.read_unchecked() {
-        None => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
+        None => rsx! { SkeletonBlock { height: 60 } },
         Some(Err(e)) => {
             let msg = e.clone();
             rsx! { ErrorBox { message: msg, on_retry: move |()| reload.bump() } }
         }
         Some(Ok(l)) if l.is_empty() => rsx! {
-            div { class: "ik-empty", {i18n.t("console.sync.remoteEmpty")} }
+            EmptyBox { message: i18n.t("console.sync.remoteEmpty") }
         },
         Some(Ok(l)) => {
             let l = l.clone();
@@ -394,7 +394,7 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
                 {i18n.t("console.sync.suggested")}
             }
             if suggestions_pending {
-                div { class: "ik-skeleton", style: "height:40px;" }
+                SkeletonBlock { height: 40 }
             } else if suggested.is_empty() {
                 div { class: "ik-muted", style: "font-size:12px;",
                     {i18n.t("console.sync.noSuggestions")}

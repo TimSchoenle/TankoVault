@@ -2,7 +2,7 @@
 //! read-only series card the compare view is built from.
 
 use crate::api;
-use crate::components::{Cover, ErrorBox};
+use crate::components::{SkeletonBlock, EmptyBox, Cover, ErrorBox};
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::models::*;
@@ -30,7 +30,7 @@ pub(super) fn MergeQueue() -> Element {
     });
 
     let body = match &*resource.read_unchecked() {
-        None => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
+        None => rsx! { SkeletonBlock { height: 60 } },
         Some(Err(e)) => {
             let msg = e.clone();
             rsx! {
@@ -38,7 +38,7 @@ pub(super) fn MergeQueue() -> Element {
             }
         }
         Some(Ok(list)) if list.is_empty() => rsx! {
-            div { class: "ik-empty", {i18n.t("console.merge.empty")} }
+            EmptyBox { message: i18n.t("console.merge.empty") }
         },
         Some(Ok(list)) => {
             let list = list.clone();
@@ -210,7 +210,7 @@ pub(super) fn SeriesMiniCard(series_id: SeriesId) -> Element {
     });
 
     match &*res.read_unchecked() {
-        None => rsx! { div { class: "ik-skeleton", style: "height:120px;" } },
+        None => rsx! { SkeletonBlock { height: 120 } },
         Some(Err(e)) => rsx! {
             div { class: "ik-empty", style: "font-size:12px;",
                 {i18n.args("console.merge.seriesUnavailable", &[("message", e)])}

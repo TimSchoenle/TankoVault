@@ -138,7 +138,15 @@ pub(super) fn UsersEntity() -> Element {
     });
 
     let loaded = directory.read_unchecked().clone();
-    let (rows, total) = match &loaded {
+    // Three separate counts, deliberately, because conflating two of them was a bug: `rows`
+    // is what this client *shows* after the status and staff filters, `page_len` is what the
+    // server actually returned for this window, and `total` is the whole directory.
+    //
+    // Pagination arithmetic must use `page_len`. It used `rows.len()`, so any active filter
+    // made the page look shorter than it was: `has_next` went false while later pages still
+    // existed (filtering to a single staff member on page 1 hid every other page), and the
+    // "1-N of TOTAL" line reported a client-side count against a server-side total.
+    let (rows, page_len, total) = match &loaded {
         Some(Ok(page_data)) => {
             let filtered: Vec<DirectoryRow> = page_data
                 .users
@@ -147,9 +155,13 @@ pub(super) fn UsersEntity() -> Element {
                 .filter(|row| !*staff_only.read() || row.permission_count > 0)
                 .cloned()
                 .collect();
-            (filtered, page_data.total)
+            (
+                filtered,
+                i64::try_from(page_data.users.len()).unwrap_or(0),
+                page_data.total,
+            )
         }
-        _ => (Vec::new(), 0),
+        _ => (Vec::new(), 0, 0),
     };
     let current = selected
         .read()
@@ -157,7 +169,7 @@ pub(super) fn UsersEntity() -> Element {
         .or_else(|| rows.first().map(|r| r.id.clone()));
     let offset = *page.read() * PAGE_SIZE;
     let has_prev = offset > 0;
-    let has_next = offset + i64::try_from(rows.len()).unwrap_or(0) < total;
+    let has_next = offset + page_len < total;
 
     rsx! {
         div { class: "ik-cons-list",
@@ -239,10 +251,9 @@ pub(super) fn UsersEntity() -> Element {
                             "console.users.range",
                             &[
                                 ("first", &(offset + 1).to_string()),
-                                (
-                                    "last",
-                                    &(offset + i64::try_from(rows.len()).unwrap_or(0)).to_string(),
-                                ),
+                                // The server page window, not the filtered subset — the
+                                // filtered count is what the `hits` chip above reports.
+                                ("last", &(offset + page_len).to_string()),
                                 ("total", &thousands(total)),
                             ],
                         )

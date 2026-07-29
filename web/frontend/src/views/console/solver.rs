@@ -1,7 +1,7 @@
 //! Challenge & solver, plus the standalone adapter-test tab.
 
 use crate::api;
-use crate::components::ErrorBox;
+use crate::components::{SkeletonBlock, EmptyBox, ErrorBox};
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -43,7 +43,7 @@ pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
     });
 
     let body = match &*res.read_unchecked() {
-        None => rsx! { div { class: "ik-skeleton", style: "height:100px;" } },
+        None => rsx! { SkeletonBlock { height: 100 } },
         Some(Err(e)) => {
             let msg = e.clone();
             rsx! {
@@ -51,7 +51,7 @@ pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
             }
         }
         Some(Ok(list)) if list.is_empty() => rsx! {
-            div { class: "ik-empty", {i18n.t("console.solver.noProviders")} }
+            EmptyBox { message: i18n.t("console.solver.noProviders") }
         },
         Some(Ok(list)) => {
             let rows = list.clone();
@@ -176,14 +176,14 @@ pub(super) fn AdapterTestTab() -> Element {
     let mut chosen = use_signal(|| Option::<String>::None);
 
     let body = match &*res.read_unchecked() {
-        None => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
+        None => rsx! { SkeletonBlock { height: 60 } },
         Some(Err(e)) => rsx! {
             p { class: "ik-muted", style: "font-size:13px;",
                 {i18n.args("console.providers.unavailable", &[("message", e)])}
             }
         },
         Some(Ok(list)) if list.is_empty() => rsx! {
-            div { class: "ik-empty", {i18n.t("console.adapterTest.noProviders")} }
+            EmptyBox { message: i18n.t("console.adapterTest.noProviders") }
         },
         Some(Ok(list)) => {
             let opts = list.clone();

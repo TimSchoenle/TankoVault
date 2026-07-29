@@ -4,7 +4,7 @@
 //! the only mover). Each card carries a notify toggle and a remove action.
 
 use crate::api;
-use crate::components::{async_list, Cover, SignInGate};
+use crate::components::{SkeletonBlock, async_list, Cover, AuthRequired};
 use crate::hooks::{use_busy, use_outcome, use_reload, Busy, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -52,10 +52,7 @@ pub(crate) fn Watchlist() -> Element {
     });
 
     if !session.is_authenticated() {
-        return rsx! {
-            h1 { class: "ik-page-title", {i18n.t("nav.watchlist")} }
-            SignInGate {}
-        };
+        return rsx! { AuthRequired { title: i18n.t("nav.watchlist") } };
     }
 
     let sync_now = move |_| {
@@ -120,7 +117,7 @@ pub(crate) fn Watchlist() -> Element {
                         for _ in 0..5 {
                             div { class: "ik-col",
                                 div { class: "ik-skeleton", style: "height:16px;width:60%;margin-bottom:12px;" }
-                                div { class: "ik-skeleton", style: "height:64px;" }
+                                SkeletonBlock { height: 64 }
                             }
                         }
                     }

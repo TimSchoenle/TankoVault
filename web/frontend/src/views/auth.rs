@@ -2,6 +2,7 @@
 //! is set as an httpOnly cookie by the API. On success we route to Discover.
 
 use crate::api;
+use crate::components::Field;
 use crate::hooks::use_busy;
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -172,46 +173,43 @@ pub(crate) fn Login() -> Element {
             }
 
             if is_register {
-                div { class: "ik-field",
-                    label { {i18n.t("auth.field.email")} }
-                    input {
-                        class: "ik-input",
-                        r#type: "email",
-                        value: "{email}",
-                        oninput: move |e| email.set(e.value()),
-                    }
+                Field {
+                    id: "tv-auth-email",
+                    label: i18n.t("auth.field.email"),
+                    kind: "email",
+                    autocomplete: "email",
+                    value: email(),
+                    on_input: move |v| email.set(v),
+                    on_enter: move |()| submit.call(()),
                 }
-                div { class: "ik-field",
-                    label { {i18n.t("auth.field.username")} }
-                    input {
-                        class: "ik-input",
-                        value: "{username}",
-                        oninput: move |e| username.set(e.value()),
-                    }
+                Field {
+                    id: "tv-auth-username",
+                    label: i18n.t("auth.field.username"),
+                    autocomplete: "username",
+                    value: username(),
+                    on_input: move |v| username.set(v),
+                    on_enter: move |()| submit.call(()),
                 }
             } else {
-                div { class: "ik-field",
-                    label { {i18n.t("auth.field.emailOrUsername")} }
-                    input {
-                        class: "ik-input",
-                        value: "{login}",
-                        oninput: move |e| login.set(e.value()),
-                    }
+                Field {
+                    id: "tv-auth-login",
+                    label: i18n.t("auth.field.emailOrUsername"),
+                    autocomplete: "username",
+                    value: login(),
+                    on_input: move |v| login.set(v),
+                    on_enter: move |()| submit.call(()),
                 }
             }
-            div { class: "ik-field",
-                label { {i18n.t("auth.field.password")} }
-                input {
-                    class: "ik-input",
-                    r#type: "password",
-                    value: "{password}",
-                    oninput: move |e| password.set(e.value()),
-                    onkeydown: move |e| {
-                        if e.key() == Key::Enter {
-                            submit.call(());
-                        }
-                    },
-                }
+            Field {
+                id: "tv-auth-password",
+                label: i18n.t("auth.field.password"),
+                kind: "password",
+                // `new-password` on the register form is what tells a password manager to
+                // offer to *generate* one rather than fill the existing one.
+                autocomplete: if is_register { "new-password" } else { "current-password" },
+                value: password(),
+                on_input: move |v| password.set(v),
+                on_enter: move |()| submit.call(()),
             }
 
             if !is_register {

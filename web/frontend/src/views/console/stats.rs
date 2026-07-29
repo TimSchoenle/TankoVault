@@ -8,6 +8,7 @@ use crate::util::{rel_time, thousands};
 use crate::views::console::providers::HealthPill;
 use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
+use crate::components::{SkeletonBlock, EmptyBox};
 use progenitor_client::ResponseValue;
 
 /// Per-provider statistics table (read-only, auto-refreshing): catalogue footprint,
@@ -39,7 +40,7 @@ pub(super) fn ProviderStatsTable(tick: RefreshTick) -> Element {
     };
 
     let body = match &*res.read_unchecked() {
-        None | Some(None) => rsx! { div { class: "ik-skeleton", style: "height:120px;" } },
+        None | Some(None) => rsx! { SkeletonBlock { height: 120 } },
         Some(Some(Err(e))) => {
             rsx! {
                 p { class: "ik-muted", style: "font-size:13px;",
@@ -48,7 +49,7 @@ pub(super) fn ProviderStatsTable(tick: RefreshTick) -> Element {
             }
         }
         Some(Some(Ok(list))) if list.is_empty() => rsx! {
-            div { class: "ik-empty", {i18n.t("console.stats.empty")} }
+            EmptyBox { message: i18n.t("console.stats.empty") }
         },
         Some(Some(Ok(list))) => {
             let rows = list.clone();

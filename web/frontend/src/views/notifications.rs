@@ -6,7 +6,7 @@
 //! their line, rather than being dropped or crashing the list.
 
 use crate::api;
-use crate::components::{async_list, SignInGate, SkeletonRows, UnreadBadge};
+use crate::components::{EmptyBox, async_list, AuthRequired, SkeletonRows, UnreadBadge};
 use crate::hooks::use_reload;
 use crate::i18n::{use_i18n, Translator};
 use crate::icons::{Ic, Icon};
@@ -170,10 +170,7 @@ pub(crate) fn Notifications() -> Element {
     });
 
     if !session.is_authenticated() {
-        return rsx! {
-            h1 { class: "ik-page-title", {i18n.t("nav.notifications")} }
-            SignInGate {}
-        };
+        return rsx! { AuthRequired { title: i18n.t("nav.notifications") } };
     }
 
     let mark_all = move |_| {
@@ -242,7 +239,7 @@ pub(crate) fn Notifications() -> Element {
                         items.iter().filter(|n| current.matches(n)).collect();
                     if filtered.is_empty() {
                         return rsx! {
-                            div { class: "ik-empty", {i18n.t("notifications.emptyFilter")} }
+                            EmptyBox { message: i18n.t("notifications.emptyFilter") }
                         };
                     }
                     rsx! {

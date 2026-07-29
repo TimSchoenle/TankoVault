@@ -12,6 +12,7 @@
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use dioxus::prelude::*;
+use crate::components::EmptyBox;
 
 /// A mono uppercase section label, optionally with something right-aligned beside it.
 #[component]
@@ -196,7 +197,7 @@ pub(super) fn ListFooter(count: String, #[props(default = true)] keys: bool) -> 
 pub(super) fn NoSelection(message: String) -> Element {
     rsx! {
         div { class: "ik-cons-pane",
-            div { class: "ik-empty", "{message}" }
+            EmptyBox { message: "{message}" }
         }
     }
 }

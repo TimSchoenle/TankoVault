@@ -19,7 +19,7 @@ mod model;
 mod tracking;
 
 use crate::api;
-use crate::components::{async_view, Cover, ErrorBox, SkeletonBlock};
+use crate::components::{EmptyBox, async_view, Cover, ErrorBox, SkeletonBlock};
 use crate::hooks::{use_busy, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -53,7 +53,7 @@ pub(crate) fn Series(id: String) -> Element {
     let i18n = use_i18n();
     let Ok(id) = id.parse::<SeriesId>() else {
         return rsx! {
-            div { class: "ik-empty", {i18n.t("series.badLink")} }
+            EmptyBox { message: i18n.t("series.badLink") }
         };
     };
 
@@ -220,7 +220,7 @@ pub(crate) fn Series(id: String) -> Element {
                     }
                 }
                 if loaded.sources.is_empty() {
-                    div { class: "ik-empty", {i18n.t("series.noSources")} }
+                    EmptyBox { message: i18n.t("series.noSources") }
                 } else {
                     {
                         async_view(
@@ -230,7 +230,7 @@ pub(crate) fn Series(id: String) -> Element {
                             |_| {
                                 if merged.is_empty() {
                                     return rsx! {
-                                        div { class: "ik-empty", {i18n.t("series.noChapters")} }
+                                        EmptyBox { message: i18n.t("series.noChapters") }
                                     };
                                 }
                                 rsx! {

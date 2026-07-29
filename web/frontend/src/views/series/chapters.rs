@@ -272,8 +272,10 @@ fn GroupRows(
             }
         }
         if has_full && !parts.is_empty() && !hide_parts {
-            div {
+            button {
                 class: "ik-chapter-toggle",
+                r#type: "button",
+                "aria-expanded": if *expanded.read() { "true" } else { "false" },
                 onclick: move |_| {
                     let next = !*expanded.read();
                     expanded.set(next);

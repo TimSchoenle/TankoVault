@@ -20,13 +20,19 @@ use crate::i18n::Translator;
 /// memory until they navigate away.
 ///
 /// # Errors
-/// A short, already-worded message when any step of the DOM dance is unavailable. Every failure
-/// here means the browser is missing something ordinary, so the wording is deliberately generic
-/// rather than naming an API the reader has never heard of.
-pub(crate) fn save_text_file(filename: &str, mime: &str, contents: &str) -> Result<(), String> {
+/// A **catalogue key**, not a sentence. Every failure here means the browser is missing
+/// something ordinary, so there is one generic message rather than one per DOM call — but it
+/// used to be baked in as English and handed verbatim to the reader by both callers, in
+/// contradiction of this module's own contract (see the module docs). Callers hold a
+/// [`Translator`]; resolving there is the same pattern `politeness_json` uses.
+pub(crate) fn save_text_file(
+    filename: &str,
+    mime: &str,
+    contents: &str,
+) -> Result<(), &'static str> {
     use wasm_bindgen::JsCast as _;
 
-    let failed = || "your browser would not accept the download".to_owned();
+    let failed = || "common.downloadRefused";
 
     let parts = js_sys::Array::new();
     parts.push(&wasm_bindgen::JsValue::from_str(contents));

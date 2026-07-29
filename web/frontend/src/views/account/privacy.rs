@@ -68,7 +68,7 @@ fn ExportCard() -> Element {
                                 Ok(()) => {
                                     outcome.set(Some(Ok(i18n.t("account.privacy.export.done"))));
                                 }
-                                Err(message) => outcome.set(Some(Err(message))),
+                                Err(key) => outcome.set(Some(Err(i18n.t(key)))),
                             }
                         }
                         Err(_) => outcome.set(Some(Err(i18n.t("account.privacy.export.failed")))),

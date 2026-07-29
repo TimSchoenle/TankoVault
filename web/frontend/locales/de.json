@@ -162,6 +162,7 @@
     "backToSignIn": "Zurück zur Anmeldung",
     "cancel": "Abbrechen",
     "close": "Schließen",
+    "downloadRefused": "Dein Browser hat den Download abgelehnt.",
     "markRead": "Als gelesen markieren",
     "markUnread": "Als ungelesen markieren",
     "next": "Weiter",
@@ -389,6 +390,7 @@
       "metaToday": "{count} neue Kap. heute",
       "migrateWarning": "Domainwechsel — {count} Serien werden beim nächsten Scan neu verlinkt",
       "missingFields": "Slug, Name und Basis-URL sind alle erforderlich.",
+      "namePlaceholder": "Beispiel-Scans",
       "new": "Neuer Anbieter",
       "noRuns": "Noch keine Scan-Läufe für diesen Anbieter.",
       "noStats": "Noch keine Statistiken für diesen Anbieter.",
@@ -638,6 +640,8 @@
     "presetsSoon": "Das Speichern von Filtervorlagen kommt bald.",
     "provider": "Anbieter",
     "releaseYear": "Erscheinungsjahr",
+    "releaseYearFrom": "Frühestes Erscheinungsjahr",
+    "releaseYearTo": "Spätestes Erscheinungsjahr",
     "resetFilters": "Filter zurücksetzen",
     "sort": {
       "chapters": "Meiste Kapitel",
@@ -773,7 +777,9 @@
     },
     "home": "Start",
     "notifications": "Benachrichtigungen",
+    "railLabel": "Hauptnavigation",
     "search": "Suche",
+    "skipToContent": "Zum Inhalt springen",
     "tagline": "FINDEN · VERFOLGEN · SYNCHRONISIEREN",
     "watchlist": "Merkliste"
   },
@@ -919,7 +925,11 @@
   "topbar": {
     "anilistConnect": "AniList verbinden",
     "anilistSynced": "Mit AniList synchronisiert",
-    "searchPlaceholder": "Serien, Tags, Autoren suchen…"
+    "searchPlaceholder": "Serien, Tags, Autoren suchen…",
+    "unreadCount": {
+      "one": "{count} ungelesene Benachrichtigung",
+      "other": "{count} ungelesene Benachrichtigungen"
+    }
   },
   "verifyEmail": {
     "confirmed": "E-Mail bestätigt. Wir bringen dich zu deiner Bibliothek…",

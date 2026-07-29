@@ -336,13 +336,13 @@ fn ExportButton(id: uuid::Uuid, busy: Busy, outcome: Signal<crate::hooks::Outcom
                 Ok(response) => {
                     let body = response.into_inner();
                     let saved = serde_json::to_string_pretty(&body)
-                        .map_err(|_| i18n.t("console.privacy.exportFailed"))
+                        .map_err(|_| "console.privacy.exportFailed")
                         .and_then(|json| {
                             crate::util::save_text_file(&filename, "application/json", &json)
                         });
                     match saved {
                         Ok(()) => outcome.set(Some(Ok(i18n.t("console.privacy.exportDone")))),
-                        Err(message) => outcome.set(Some(Err(message))),
+                        Err(key) => outcome.set(Some(Err(i18n.t(key)))),
                     }
                 }
                 Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),

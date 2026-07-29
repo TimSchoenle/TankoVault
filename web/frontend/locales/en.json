@@ -162,6 +162,7 @@
     "backToSignIn": "Back to sign in",
     "cancel": "Cancel",
     "close": "Close",
+    "downloadRefused": "Your browser would not accept the download.",
     "markRead": "Mark read",
     "markUnread": "Mark unread",
     "next": "Next",
@@ -389,6 +390,7 @@
       "metaToday": "{count} new ch today",
       "migrateWarning": "domain change — {count} series will be re-pathed on the next scan",
       "missingFields": "Slug, name and base URL are all required.",
+      "namePlaceholder": "Acme Scans",
       "new": "New provider",
       "noRuns": "No scan runs for this provider yet.",
       "noStats": "No statistics for this provider yet.",
@@ -638,6 +640,8 @@
     "presetsSoon": "Saving filter presets is coming soon.",
     "provider": "Provider",
     "releaseYear": "Release year",
+    "releaseYearFrom": "Earliest release year",
+    "releaseYearTo": "Latest release year",
     "resetFilters": "Reset filters",
     "sort": {
       "chapters": "Most chapters",
@@ -773,7 +777,9 @@
     },
     "home": "Home",
     "notifications": "Notifications",
+    "railLabel": "Main",
     "search": "Search",
+    "skipToContent": "Skip to content",
     "tagline": "SOURCE · TRACK · SYNC",
     "watchlist": "Watchlist"
   },
@@ -919,7 +925,11 @@
   "topbar": {
     "anilistConnect": "Connect AniList",
     "anilistSynced": "AniList synced",
-    "searchPlaceholder": "Search series, tags, authors…"
+    "searchPlaceholder": "Search series, tags, authors…",
+    "unreadCount": {
+      "one": "{count} unread notification",
+      "other": "{count} unread notifications"
+    }
   },
   "verifyEmail": {
     "confirmed": "Email confirmed. Taking you to your library…",

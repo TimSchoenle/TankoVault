@@ -469,10 +469,15 @@ fn FilterPanel(
                 div { class: "ik-range-row",
                     span { "{year_min}" }
                     input {
+                        id: "tv-year-min",
                         class: "ik-range",
                         r#type: "range",
-                        min: "1970",
-                        max: "2026",
+                        // The constants, not literals: the bounds used to be duplicated here
+                        // as strings, so narrowing the declared range would have left two
+                        // sliders offering years the query no longer sends.
+                        min: "{YEAR_MIN}",
+                        max: "{YEAR_MAX}",
+                        "aria-label": i18n.t("discover.releaseYearFrom"),
                         value: "{year_min}",
                         oninput: move |e| {
                             if let Ok(v) = e.value().parse::<i32>() { year_min.set(v); }
@@ -481,10 +486,12 @@ fn FilterPanel(
                     span { "{year_max}" }
                 }
                 input {
+                    id: "tv-year-max",
                     class: "ik-range",
                     r#type: "range",
-                    min: "1970",
-                    max: "2026",
+                    min: "{YEAR_MIN}",
+                    max: "{YEAR_MAX}",
+                    "aria-label": i18n.t("discover.releaseYearTo"),
                     value: "{year_max}",
                     oninput: move |e| {
                         if let Ok(v) = e.value().parse::<i32>() { year_max.set(v); }
@@ -494,11 +501,12 @@ fn FilterPanel(
 
             // MIN. CHAPTERS — server-side (§9.1).
             div { class: "ik-filter-group",
-                div { class: "lbl",
+                label { class: "lbl", r#for: "tv-min-chapters",
                     {i18n.t("discover.minChapters")}
                     span { class: "ik-mono", style: "color:var(--muted);", "{min_ch}+" }
                 }
                 input {
+                    id: "tv-min-chapters",
                     class: "ik-range",
                     r#type: "range",
                     min: "0",

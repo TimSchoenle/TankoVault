@@ -1182,6 +1182,9 @@ pub(super) fn CreateProviderForm(reload: Reload, on_done: EventHandler<()>) -> E
                     input {
                         id: "tv-new-slug",
                         class: "ik-input ik-mono",
+                        // An illustrative slug, not copy: a slug is `[a-z0-9-]` in every
+                        // locale, and so is the example URL two fields down. The display-name
+                        // example beside them *is* copy, so it comes from the catalogue.
                         placeholder: "acme-scans",
                         value: "{slug}",
                         oninput: move |e| slug.set(e.value()),
@@ -1192,7 +1195,7 @@ pub(super) fn CreateProviderForm(reload: Reload, on_done: EventHandler<()>) -> E
                     input {
                         id: "tv-new-name",
                         class: "ik-input",
-                        placeholder: "Acme Scans",
+                        placeholder: i18n.t("console.providers.namePlaceholder"),
                         value: "{name}",
                         oninput: move |e| name.set(e.value()),
                     }

@@ -30,12 +30,17 @@ pub(crate) fn Shell() -> Element {
     use_capability_sync();
     use_live_notifications();
 
+    let i18n = crate::i18n::use_i18n();
     rsx! {
         div { class: "ik-app",
+            // First focusable element on every route. The rail is ~10 stops deep and sits
+            // ahead of the content in the DOM, so without this a keyboard reader tabs the
+            // whole navigation again on every single page.
+            a { class: "ik-skip", href: "#ik-content", {i18n.t("nav.skipToContent")} }
             Rail {}
             main { class: "ik-main",
                 TopBar {}
-                section { class: "ik-content", Outlet::<Route> {} }
+                section { id: "ik-content", class: "ik-content", Outlet::<Route> {} }
             }
         }
     }

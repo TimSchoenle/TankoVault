@@ -841,6 +841,7 @@
     "hideParts": "Hide parts",
     "inWatchlist": "In watchlist",
     "loadMore": "load {count} more",
+    "markFailed": "Chapter {number} could not be updated.",
     "menuTitle": "Open ch {number} on",
     "moreSources": "{count} more carrying this chapter",
     "newestFirst": "newest first",

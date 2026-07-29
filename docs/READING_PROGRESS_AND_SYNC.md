@@ -159,9 +159,17 @@ to either scalar.
 is_whole(number) := number == floor(number)
 
 read(number) when is_whole(number):      number <= last_read_whole_number
-read(number) when NOT is_whole(number):  last_read_part_number IS NOT NULL
-                                          AND number <= last_read_part_number
+read(number) when NOT is_whole(number):  floor(number) <= last_read_whole_number
+                                          OR (last_read_part_number IS NOT NULL
+                                              AND number <= last_read_part_number)
 ```
+
+The first clause of the part case is what makes the whole rule self-consistent: a part is a
+fragment shipped *ahead of* the chapter it floors to, so once that whole chapter is read the
+part is read too — which is exactly why "mark read" below is a no-op there. Dropping the
+clause would report such a part unread while refusing to mark it read: a dead toggle. One
+implementation, `ReadProgress::covers`, owns this rule; SQL read models mirror both clauses
+inline.
 
 **Mark chapter `number` read** ("mark read to here" is exactly this rule applied to `N`):
 ```
@@ -184,7 +192,15 @@ if is_whole(number):
                               strictly below `number`
     last_read_part_number  = NULL
 else:
-    if number == last_read_part_number:
+    if floor(number) <= last_read_whole_number:
+        -- the part is covered by the whole chapter that contains it, so un-reading it
+        -- necessarily un-reads that chapter: the whole frontier retreats below it and the
+        -- part frontier picks up whatever part is still read underneath.
+        last_read_whole_number = the previous whole chapter number that exists for this
+                                  series strictly below `floor(number)`
+        last_read_part_number  = the previous part number strictly below `number` that is
+                                  still > the new last_read_whole_number, or NULL if none
+    elif number == last_read_part_number:
         last_read_part_number = NULL
     else:
         last_read_part_number = the previous part number strictly below `number` that is

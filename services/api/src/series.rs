@@ -396,10 +396,14 @@ pub async fn chapters(
     // user with no progress row yet still gets `Some(false)` per chapter (they simply
     // haven't read anything), so the frontend shows the mark-read control; only anonymous
     // callers get `None`. This is independent of any external (AniList) link.
+    //
+    // Both frontiers are needed, not just the whole-chapter one: a part release read ahead of
+    // the whole frontier is recorded solely in `last_read_part_number`, so deciding read-state
+    // from the whole frontier alone reports every such part as unread forever.
     let user = optional_user(&state, &headers);
     let progress = match user {
         Some(user_id) => {
-            tankovault_db::repo::tracking::progress_get(&state.pool, user_id, id).await?
+            tankovault_db::repo::tracking::progress_get_full(&state.pool, user_id, id).await?
         }
         None => None,
     };
@@ -414,7 +418,7 @@ pub async fn chapters(
                 published_at: c.published_at,
                 read: user
                     .is_some()
-                    .then(|| progress.is_some_and(|last| c.number <= last)),
+                    .then(|| progress.is_some_and(|p| p.covers(c.number))),
             })
         })
         .collect::<ApiResult<Vec<_>>>()?;

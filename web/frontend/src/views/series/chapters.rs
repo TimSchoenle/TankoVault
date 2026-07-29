@@ -9,7 +9,8 @@ use super::model::{
     chapter_key, group_chapters, ChapterGroup, ChapterKey, MergedChapter, RankedSource,
 };
 use crate::api;
-use crate::hooks::{use_busy, Reload};
+use crate::components::OutcomeLine;
+use crate::hooks::{use_busy, use_outcome, Outcome, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::{ChapterRead, SeriesId, SeriesSourceId};
@@ -44,6 +45,10 @@ pub(super) fn ChapterSection(
     let mut shown = use_signal(|| PAGE);
     // At most one source menu is open at a time, keyed by the chapter it belongs to.
     let open_menu = use_signal(|| Option::<ChapterKey>::None);
+    // One shared slot for read-toggle failures: the rows are a table, so an error rendered
+    // per row would reflow the list under the pointer. Held here, above the list, it stays
+    // where the reader is looking after a click.
+    let mark_error = use_outcome();
 
     // Counts describe the whole series, never the current filter: a chip that renamed itself
     // once you clicked it would make the two numbers impossible to compare.
@@ -150,6 +155,8 @@ pub(super) fn ChapterSection(
             }
         }
 
+        OutcomeLine { outcome: mark_error.read().clone() }
+
         div { class: "ik-chtable",
             for (index , group) in groups.into_iter().take(visible).enumerate() {
                 GroupRows {
@@ -162,6 +169,7 @@ pub(super) fn ChapterSection(
                     next_up,
                     hide_parts: *hide_parts.read(),
                     reload,
+                    mark_error,
                 }
             }
             if let Some((from, to)) = remaining_range {
@@ -228,6 +236,8 @@ fn GroupRows(
     next_up: Option<ChapterKey>,
     hide_parts: bool,
     reload: Reload,
+    /// Shared slot for a failed read-toggle, owned by [`ChapterSection`].
+    mark_error: Signal<Outcome>,
 ) -> Element {
     let i18n = use_i18n();
     let mut expanded = use_signal(|| false);
@@ -258,6 +268,7 @@ fn GroupRows(
                 next_up,
                 is_part: false,
                 reload,
+                mark_error,
             }
         }
         if has_full && !parts.is_empty() && !hide_parts {
@@ -287,6 +298,7 @@ fn GroupRows(
                     next_up,
                     is_part: true,
                     reload,
+                    mark_error,
                 }
             }
         }
@@ -303,10 +315,13 @@ fn ChapterRow(
     next_up: Option<ChapterKey>,
     is_part: bool,
     reload: Reload,
+    /// Shared slot for a failed read-toggle, owned by [`ChapterSection`].
+    mark_error: Signal<Outcome>,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let busy = use_busy();
+    let mut mark_error = mark_error;
 
     let key = chapter_key(chapter.number);
     let is_next = next_up == Some(key);
@@ -339,23 +354,33 @@ fn ChapterRow(
 
     // Per-chapter read toggle, kept on the read indicator itself so the row gains no column.
     // The endpoint applies the two-scalar rule server-side, so marking a part release advances
-    // the part frontier and never corrupts whole-chapter progress.
+    // the part frontier and never corrupts whole-chapter progress; external services that have
+    // no notion of parts only ever receive the whole-chapter frontier.
+    //
+    // A failure is named rather than swallowed: the row's only feedback is the refetched read
+    // state, so a discarded error is indistinguishable from a button that does nothing.
+    let failed_label = i18n.args("series.markFailed", &[("number", &label_number)]);
     let toggle_read = move |_| {
         if !busy.claim() {
             return;
         }
+        mark_error.set(None);
+        let failed_label = failed_label.clone();
         let client = api.client();
         spawn(async move {
-            if client
+            match client
                 .put_chapter_progress()
                 .series_id(series_id)
                 .number(number)
                 .body(ChapterRead { read: !is_read })
                 .send()
                 .await
-                .is_ok()
             {
-                reload.bump();
+                Ok(_) => reload.bump(),
+                Err(e) => {
+                    let reason = api::friendly_error(i18n, e);
+                    mark_error.set(Some(Err(format!("{failed_label} {reason}"))));
+                }
             }
             busy.release();
         });

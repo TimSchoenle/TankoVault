@@ -101,6 +101,25 @@ pub struct ReadProgress {
     pub last_read_part_number: Option<f64>,
 }
 
+impl ReadProgress {
+    /// Whether chapter `number` counts as read (design v2 §A.3).
+    ///
+    /// A part release (`152.5`) belongs *to* the whole chapter it floors to — sources ship
+    /// parts ahead of the compiled chapter, they are not chapters that follow it — so reading
+    /// whole chapter `152` covers every `152.x`. Only ahead of the whole frontier does the
+    /// part frontier decide. Callers that hold a whole frontier but no part frontier must not
+    /// hand-roll `number <= whole`: that silently reports every part release as unread while
+    /// [`progress_mark_read`] treats marking one a no-op, leaving a dead toggle in the UI.
+    ///
+    /// Read models that must decide this in SQL mirror the same two clauses inline (see
+    /// [`feed`]); this is the definition they mirror.
+    #[must_use]
+    pub fn covers(self, number: f64) -> bool {
+        number.floor() <= self.last_read_whole_number
+            || (!is_whole(number) && self.last_read_part_number.is_some_and(|p| number <= p))
+    }
+}
+
 /// Whether `number` denotes a whole chapter (integer-valued) rather than a part release.
 #[must_use]
 fn is_whole(number: f64) -> bool {
@@ -160,23 +179,6 @@ async fn progress_write<'e, E: PgExecutor<'e>>(
     .execute(exec)
     .await?;
     Ok(())
-}
-
-/// Get a user's whole-chapter frontier for a series, if tracked.
-pub async fn progress_get<'e, E: PgExecutor<'e>>(
-    exec: E,
-    user_id: UserId,
-    series_id: SeriesId,
-) -> DbResult<Option<f64>> {
-    let n = sqlx::query_scalar!(
-        "SELECT last_read_whole_number::float8 AS \"last_read_whole_number!\" FROM read_progress \
-         WHERE user_id = $1 AND series_id = $2",
-        user_id.as_uuid(),
-        series_id.as_uuid(),
-    )
-    .fetch_optional(exec)
-    .await?;
-    Ok(n)
 }
 
 /// Get both of a user's read frontiers for a series, if tracked (design v2 §A.6
@@ -277,36 +279,59 @@ pub async fn progress_mark_unread(
     let mut part = cur.last_read_part_number;
 
     if is_whole(number) {
-        // The previous whole chapter that exists for this series strictly below `number`.
-        whole = sqlx::query_scalar!(
-            "SELECT max(floor(c.number))::float8 \
-               FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-              WHERE ss.series_id = $1 AND floor(c.number) < $2::float8",
-            series_id.as_uuid(),
-            number,
-        )
-        .fetch_one(pool)
-        .await?
-        .unwrap_or(0.0);
+        whole = prev_whole_below(pool, series_id, number).await?;
         part = None;
+    } else if number.floor() <= whole {
+        // A part of an already-read whole chapter (`152.5` while the frontier is at `152`).
+        // Un-reading it necessarily un-reads the chapter that contains it, so the whole
+        // frontier retreats below that chapter and the part frontier picks up whatever part
+        // is still read underneath. Without this branch the two frontiers cannot express
+        // "152.5 unread", and the write would be a silent no-op.
+        whole = prev_whole_below(pool, series_id, number.floor()).await?;
+        part = prev_part_below(pool, series_id, number, whole).await?;
     } else if part == Some(number) {
         part = None;
     } else {
-        // The previous part strictly below `number` that is still ahead of the whole frontier.
-        part = sqlx::query_scalar!(
-            "SELECT max(c.number)::float8 \
-               FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-              WHERE ss.series_id = $1 AND c.number < $2::float8 AND c.number > $3::float8 \
-                AND c.number <> floor(c.number)",
-            series_id.as_uuid(),
-            number,
-            whole,
-        )
-        .fetch_one(pool)
-        .await?;
+        part = prev_part_below(pool, series_id, number, whole).await?;
     }
 
     progress_write(pool, user_id, series_id, whole, part).await
+}
+
+/// The highest whole chapter that exists for this series strictly below `number`, or `0.0`
+/// when there is none — the retreat target for un-reading a whole chapter (§A.3).
+async fn prev_whole_below(pool: &sqlx::PgPool, series_id: SeriesId, number: f64) -> DbResult<f64> {
+    Ok(sqlx::query_scalar!(
+        "SELECT max(floor(c.number))::float8 \
+           FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+          WHERE ss.series_id = $1 AND floor(c.number) < $2::float8",
+        series_id.as_uuid(),
+        number,
+    )
+    .fetch_one(pool)
+    .await?
+    .unwrap_or(0.0))
+}
+
+/// The highest part release that exists for this series strictly below `number` and still
+/// ahead of the whole frontier `whole` — the retreat target for un-reading a part (§A.3).
+async fn prev_part_below(
+    pool: &sqlx::PgPool,
+    series_id: SeriesId,
+    number: f64,
+    whole: f64,
+) -> DbResult<Option<f64>> {
+    Ok(sqlx::query_scalar!(
+        "SELECT max(c.number)::float8 \
+           FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+          WHERE ss.series_id = $1 AND c.number < $2::float8 AND c.number > $3::float8 \
+            AND c.number <> floor(c.number)",
+        series_id.as_uuid(),
+        number,
+        whole,
+    )
+    .fetch_one(pool)
+    .await?)
 }
 
 /// Set a watchlist entry's status without disturbing its `notify` flag, inserting the
@@ -900,4 +925,59 @@ pub async fn recommendations<'e, E: PgExecutor<'e>>(
             source_count: r.source_count,
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ReadProgress;
+
+    fn progress(whole: f64, part: Option<f64>) -> ReadProgress {
+        ReadProgress {
+            last_read_whole_number: whole,
+            last_read_part_number: part,
+        }
+    }
+
+    #[test]
+    fn whole_chapters_are_read_up_to_the_whole_frontier() {
+        let p = progress(152.0, None);
+        assert!(p.covers(151.0));
+        assert!(p.covers(152.0));
+        assert!(!p.covers(153.0));
+    }
+
+    #[test]
+    fn a_part_read_ahead_of_the_whole_frontier_is_read() {
+        // The case the two-scalar model exists for: 152.5 read while chapter 152 itself is
+        // not out yet. Deciding this from the whole frontier alone reports it unread forever.
+        let p = progress(151.0, Some(152.5));
+        assert!(p.covers(152.4));
+        assert!(p.covers(152.5));
+        assert!(!p.covers(152.6));
+        assert!(!p.covers(152.0));
+    }
+
+    #[test]
+    fn parts_of_an_already_read_whole_chapter_are_read() {
+        // Parts are fragments shipped ahead of the compiled chapter, so reading whole 152
+        // covers every 152.x — the same reason `progress_mark_read` treats marking one a
+        // no-op. Disagreeing here would leave that no-op behind a live "mark read" button.
+        let p = progress(152.0, None);
+        assert!(p.covers(152.1));
+        assert!(p.covers(152.9));
+        assert!(!p.covers(153.1));
+    }
+
+    #[test]
+    fn a_zero_frontier_covers_only_chapter_zero_and_its_parts() {
+        // `0` is this schema's "nothing read" sentinel *and* a legitimate chapter number, so
+        // a zero frontier reads as "chapter 0 done". Every SQL read model resolves the
+        // ambiguity the same way (`floor(c.number) > COALESCE(last_read_whole_number, 0)`);
+        // callers that must distinguish "no row" from "frontier 0" check the `Option` from
+        // `progress_get_full` instead of asking this method.
+        let p = progress(0.0, None);
+        assert!(p.covers(0.0));
+        assert!(p.covers(0.5));
+        assert!(!p.covers(1.0));
+    }
 }

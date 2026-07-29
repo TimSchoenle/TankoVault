@@ -841,6 +841,7 @@
     "hideParts": "Teile ausblenden",
     "inWatchlist": "Auf der Merkliste",
     "loadMore": "{count} weitere laden",
+    "markFailed": "Kapitel {number} konnte nicht aktualisiert werden.",
     "menuTitle": "Kap. {number} öffnen bei",
     "moreSources": "{count} weitere führen dieses Kapitel",
     "newestFirst": "neueste zuerst",

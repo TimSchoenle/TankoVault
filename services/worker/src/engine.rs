@@ -738,4 +738,141 @@ mod tests {
             politeness_fingerprint(&provider(0.25, "ua"))
         );
     }
+
+    fn meta(title: &str, description: Option<&str>) -> SeriesMeta {
+        SeriesMeta {
+            title: title.to_owned(),
+            alt_titles: Vec::new(),
+            description: description.map(str::to_owned),
+            cover_url: None,
+            tags: Vec::new(),
+            authors: Vec::new(),
+            status: tankovault_domain::SeriesStatus::Ongoing,
+            content_type: tankovault_domain::ContentType::Manga,
+            release_year: Some(2020),
+        }
+    }
+
+    fn chapter(number: f64, title: Option<&str>, path: &str) -> ChapterMeta {
+        ChapterMeta {
+            number,
+            title: title.map(str::to_owned),
+            path: path.to_owned(),
+            published_at: None,
+        }
+    }
+
+    /// Determinism is the entire contract. `content_hash` gates whether a scan reports "no
+    /// change"; a hash that varied for identical input would make every scan look like a
+    /// change (harmless but wasteful), and one that is *stable* across a real change stops all
+    /// updates for that series silently, which is the failure nobody notices.
+    #[test]
+    fn the_content_hash_is_deterministic_for_identical_input() {
+        let chapters = vec![
+            chapter(1.0, Some("Awakening"), "/manga/x/1/"),
+            chapter(2.0, None, "/manga/x/2/"),
+        ];
+        assert_eq!(
+            content_hash(&meta("Solo Leveling", Some("blurb")), &chapters),
+            content_hash(&meta("Solo Leveling", Some("blurb")), &chapters),
+        );
+    }
+
+    /// Every field the hash is documented to cover must actually change it.
+    #[test]
+    fn the_content_hash_changes_when_a_covered_field_changes() {
+        let base_meta = meta("Solo Leveling", Some("blurb"));
+        let base = vec![chapter(1.0, None, "/manga/x/1/")];
+        let baseline = content_hash(&base_meta, &base);
+
+        assert_ne!(
+            baseline,
+            content_hash(&meta("Solo Levelling", Some("blurb")), &base),
+            "a retitled series must be seen as changed"
+        );
+        assert_ne!(
+            baseline,
+            content_hash(&meta("Solo Leveling", Some("rewritten")), &base),
+            "a rewritten description must be seen as changed"
+        );
+        assert_ne!(
+            baseline,
+            content_hash(&base_meta, &[chapter(1.5, None, "/manga/x/1/")]),
+            "a renumbered chapter must be seen as changed"
+        );
+        assert_ne!(
+            baseline,
+            content_hash(&base_meta, &[chapter(1.0, None, "/manga/x/1-v2/")]),
+            "a relinked chapter must be seen as changed"
+        );
+        assert_ne!(
+            baseline,
+            content_hash(
+                &base_meta,
+                &[
+                    chapter(1.0, None, "/manga/x/1/"),
+                    chapter(2.0, None, "/manga/x/2/"),
+                ]
+            ),
+            "a new chapter must be seen as changed — this is the case the whole scan exists for"
+        );
+    }
+
+    /// Two things the hash deliberately does *not* cover, pinned so a future reader does not
+    /// assume either.
+    ///
+    /// 1. **Chapter titles are not hashed.** The doc comment says "title + chapter (number,
+    ///    path) pairs" and means the *series* title. A chapter retitled in place therefore
+    ///    reports "no change". That is a deliberate trade — scanlation sites edit chapter
+    ///    labels constantly and the link is what the reader follows — but it is invisible from
+    ///    the call site, so it is asserted here rather than left to be rediscovered.
+    /// 2. **Order is significant.** Permuting the chapter list changes the hash, so a provider
+    ///    that reorders its listing reports a change and the scan re-ingests. That costs work
+    ///    but is never *wrong*; the opposite (an order-insensitive hash) would be cheaper and
+    ///    is what a future refactor is likely to reach for, so the current behaviour is pinned
+    ///    rather than left ambiguous.
+    #[test]
+    fn the_content_hash_ignores_chapter_titles_and_respects_chapter_order() {
+        let series = meta("Solo Leveling", None);
+        let untitled = vec![chapter(1.0, None, "/manga/x/1/")];
+        let titled = vec![chapter(1.0, Some("Awakening"), "/manga/x/1/")];
+        assert_eq!(
+            content_hash(&series, &untitled),
+            content_hash(&series, &titled),
+            "chapter titles are outside the hash; if that changes, change this test on purpose"
+        );
+
+        let ascending = vec![
+            chapter(1.0, None, "/manga/x/1/"),
+            chapter(2.0, None, "/manga/x/2/"),
+        ];
+        let descending = vec![
+            chapter(2.0, None, "/manga/x/2/"),
+            chapter(1.0, None, "/manga/x/1/"),
+        ];
+        assert_ne!(
+            content_hash(&series, &ascending),
+            content_hash(&series, &descending),
+            "the hash is order-sensitive today; making it order-insensitive is a behaviour \
+             change, not a cleanup"
+        );
+    }
+
+    /// A chapter path cannot be made to look like a different chapter list by embedding the
+    /// framing bytes the hash uses to separate entries.
+    ///
+    /// The hash writes `number | path \n` per chapter with no length prefix, so a path
+    /// containing those bytes is the classic way two distinct inputs collide. Providers
+    /// control this string.
+    #[test]
+    fn a_chapter_path_carrying_the_separator_bytes_does_not_forge_another_chapter() {
+        let series = meta("X", None);
+        let smuggled = vec![chapter(1.0, None, "/a/\n\u{0}|/b/")];
+        let genuine = vec![chapter(1.0, None, "/a/"), chapter(1.0, None, "/b/")];
+        assert_ne!(
+            content_hash(&series, &smuggled),
+            content_hash(&series, &genuine),
+            "a provider-supplied path must not be able to impersonate a second chapter"
+        );
+    }
 }

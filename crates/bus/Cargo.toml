@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "NATS JetStream connection, stream provisioning, publish and consume helpers."
+# Not published: this is a workspace-internal crate. Also what lets `cargo deny`
+# skip license-checking our own code.
+publish = false
 
 [dependencies]
 tankovault-contracts = { workspace = true }

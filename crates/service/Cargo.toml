@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Shared production runtime for TankoVault services: bootstrap, graceful shutdown, health probes, middleware, rate limiting, audit and metrics."
+# Not published: this is a workspace-internal crate. Also what lets `cargo deny`
+# skip license-checking our own code.
+publish = false
 
 [lints]
 workspace = true

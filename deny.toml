@@ -1,16 +1,55 @@
 # cargo-deny configuration — license, advisory, and supply-chain gates run in CI
 # (design §3 "Workspace lints", §19 CI, §21 DoD). Schema v2 (cargo-deny 0.14+).
+#
+# The rule for this file: an exception must be **explicit, dated and justified**. An empty
+# `ignore = []` against a graph containing four unfixable advisories is not a strict policy —
+# it is a permanently red gate that everyone learns to merge past, which is strictly worse
+# than a documented exception, because a genuinely *new* advisory then looks exactly like the
+# old ones and gets merged past too.
 
 [advisories]
 version = 2
-# RustSec advisory DB is checked for the whole dependency graph. Add specific
-# advisory IDs here (with a comment + rationale) only when a fix is unavailable.
-ignore = []
+# Every entry MUST carry: the crate, why no fix is possible, why it is not exploitable here,
+# and a review date. Re-review quarterly. When an entry's reasoning stops being true, the fix
+# is to delete the entry and let the gate go red — not to extend the date.
+ignore = [
+    # RUSTSEC-2023-0071 — "Marvin Attack": a timing sidechannel in `rsa` 0.9.x enabling RSA
+    # key recovery. Reaches the graph only via `jsonwebtoken`, whose `rust_crypto` feature
+    # pulls `rsa` unconditionally. Note the audit's suggested fix (`default-features = false`)
+    # is already applied and does not help: `rsa` comes from `rust_crypto` itself, and
+    # jsonwebtoken 10 exposes no HMAC-only feature.
+    #
+    # Not exploitable here: `crates/auth/src/token.rs` pins `Algorithm::HS256` on both the
+    # issuing and the verifying side, with a test that fails if that ever changes, so no RSA
+    # code path is entered. There is no fixed upstream release of `rsa` 0.9.
+    #
+    # Reviewed 2026-07-29. Re-review 2026-10-29, or immediately if HS256 ever stops being the
+    # only accepted algorithm.
+    "RUSTSEC-2023-0071",
+
+    # RUSTSEC-2024-0436 — `paste` is unmaintained. Transitive and compile-time only (a proc
+    # macro that concatenates identifiers); no runtime surface, no fix available.
+    # Reviewed 2026-07-29. Re-review 2026-10-29.
+    "RUSTSEC-2024-0436",
+
+    # RUSTSEC-2025-0111 — `rustls-pemfile` is unmaintained. Reaches the graph only through
+    # `bollard` → `testcontainers`, which is a **dev-dependency**: not in any shipped binary,
+    # only in the test harness that talks to the local Docker socket.
+    # Reviewed 2026-07-29. Re-review 2026-10-29, or when testcontainers updates bollard.
+    "RUSTSEC-2025-0111",
+
+    # RUSTSEC-2025-0134 — "Tarmageddon": `tokio-tar` mis-parses PAX extended headers, allowing
+    # file smuggling. Same path as above — `testcontainers` only, dev-dependency only — and
+    # the only archives it parses are Docker image layers this repository's own CI builds.
+    # No safe upgrade is published.
+    # Reviewed 2026-07-29. Re-review 2026-10-29.
+    "RUSTSEC-2025-0134",
+]
 
 [licenses]
 version = 2
-# SPDX ids permitted across the dependency graph. Kept deliberately permissive-but-
-# explicit: any dependency introducing a license outside this set fails CI for review.
+# SPDX ids permitted across the dependency graph. Deliberately permissive-but-explicit: any
+# dependency introducing a licence outside this set fails CI for review.
 allow = [
     "MIT",
     "Apache-2.0",
@@ -18,21 +57,116 @@ allow = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
-    "Unicode-DFS-2016",
     "Unicode-3.0",
     "Zlib",
     "MPL-2.0",
     "CC0-1.0",
     "BSL-1.0",
-    "OpenSSL",
+    # `quoted_printable`, via lettre's MIME encoder. Public-domain-equivalent, no attribution
+    # requirement — strictly more permissive than everything above it.
+    "0BSD",
+    # `webpki-roots` / `webpki-root-certs`: the Mozilla CA bundle. A data licence with no
+    # copyleft and no attribution requirement, which is the right shape for a trust store
+    # compiled into a binary.
+    "CDLA-Permissive-2.0",
+
+    # ---------------------------------------------------------------------------------
+    # GPL-3.0 — `wreq-util`. This is a real decision, not a formality. Read before editing.
+    # ---------------------------------------------------------------------------------
+    # `wreq-util` supplies the browser-emulation profiles (`Emulation`, `EmulationOS`) that
+    # `crates/fetch/src/base.rs` builds every provider client from. It is load-bearing for the
+    # crawl stack and cannot simply be dropped. `wreq` itself is Apache-2.0; only this
+    # companion crate is GPL-3.0.
+    #
+    # The licence entered the tree with the reqwest→wreq migration and this gate has been
+    # failing ever since. (The audit reported the *advisories* half of the red `deny` job and
+    # missed this half.) Allowing it here makes the gate meaningful again for new problems; it
+    # does not answer the licensing question, which is:
+    #
+    #   GPL-3.0 obligations attach on **conveying** the work. Running it as a network service
+    #   is not conveying — that is AGPL's additional clause, which GPL-3.0 does not have — so
+    #   a privately hosted deployment triggers nothing. **Distributing the Docker images** —
+    #   the registry push proposed in the audit's Phase 6 — *is* conveying, and would require
+    #   offering corresponding source for the whole combined work.
+    #
+    # If TankoVault is ever published or its images distributed, resolve this first:
+    # relicense the project, vendor an Apache-2.0 emulation profile set, or drop the
+    # dependency. Tracked as OP-6 in docs/audit/PROGRESS.md.
+    # Reviewed 2026-07-29.
+    "GPL-3.0",
 ]
 confidence-threshold = 0.8
+# Every workspace member is `publish = false` and carries no `license` field. Licence-checking
+# our own crates only produces noise about code whose licence is the repository's.
+private = { ignore = true }
 
 [bans]
-# Duplicate versions are a warning (transitive drift is common on a latest-stable
-# policy), not a hard failure; wildcard version requirements are discouraged.
-multiple-versions = "warn"
-wildcards = "warn"
+# `warn` on both of these made them invisible: 86 crates at two or more versions produce
+# enough output that nobody reads it, so a genuinely new duplicate — or a wildcard
+# requirement, which is a supply-chain hazard in its own right — arrived silently inside the
+# noise. `deny` plus an explicit skip list inverts that: the current state is written down and
+# reviewable, and anything new fails.
+multiple-versions = "deny"
+wildcards = "deny"
+# Workspace-internal crates are `{ workspace = true }` path dependencies with no version
+# requirement, which reads as a wildcard. The hazard `wildcards` exists to catch is a
+# *registry* dependency that can silently resolve to anything; a path dependency inside this
+# repository cannot.
+allow-wildcard-paths = true
+
+# Crates that must NEVER enter the graph, whoever pulls them in.
+deny = [
+    # The `scratch` runtime image ships no OpenSSL and no OS CA store, and the crawl stack is
+    # BoringSSL-only (`wreq`). A transitive `openssl-sys` links against a library that is not
+    # in the image, so it fails at **exec** time in production rather than at build time in
+    # CI — the worst failure mode available. Catch it here instead.
+    { crate = "openssl-sys", reason = "the scratch runtime ships no OpenSSL; use rustls, or wreq's BoringSSL" },
+    { crate = "openssl", reason = "see openssl-sys" },
+    # `native-tls` is how `openssl-sys` usually arrives.
+    { crate = "native-tls", reason = "pulls openssl-sys; use rustls" },
+]
+
+# Duplicate versions present as of 2026-07-29, all transitive and all mid-transition upstream.
+# This list is a record of the current state, not an approval: shrinking it is ordinary
+# maintenance, and adding to it should be a conscious note in the pull request that does so.
+skip = [
+    # The `rand` 0.8 → 0.9 ecosystem migration, which drags its whole cluster along.
+    { crate = "rand" },
+    { crate = "rand_chacha" },
+    { crate = "rand_core" },
+    { crate = "getrandom" },
+    # RustCrypto trait-crate majors, split across the argon2/aes-gcm/sha2 consumers.
+    { crate = "block-buffer" },
+    { crate = "crypto-common" },
+    { crate = "digest" },
+    { crate = "hkdf" },
+    { crate = "hmac" },
+    { crate = "sha2" },
+    { crate = "cpufeatures" },
+    # Long-tail utility crates where two majors coexist across the graph.
+    { crate = "bitflags" },
+    { crate = "hashbrown" },
+    { crate = "itertools" },
+    { crate = "nom" },
+    { crate = "shlex" },
+    { crate = "socket2" },
+    { crate = "syn" },
+    { crate = "etcetera" },
+    { crate = "r-efi" },
+    # TLS root stores: `webpki-roots` majors, pulled by different clients.
+    { crate = "webpki-roots" },
+    { crate = "webpki-root-certs" },
+    # `tower-http` 0.6 arrives transitively; ours is pinned at 0.7.
+    { crate = "tower-http" },
+    # Platform shims, present on any graph touching Windows or macOS bindings.
+    { crate = "windows-sys" },
+    { crate = "windows-link" },
+    { crate = "windows-registry" },
+    { crate = "windows-result" },
+    { crate = "windows-strings" },
+    { crate = "core-foundation" },
+    { crate = "redox_syscall" },
+]
 
 [sources]
 unknown-registry = "deny"

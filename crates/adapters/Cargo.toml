@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "SourceAdapter trait and config-driven (Madara/generic) provider adapters."
+# Not published: this is a workspace-internal crate. Also what lets `cargo deny`
+# skip license-checking our own code.
+publish = false
 
 [dependencies]
 tankovault-domain = { workspace = true }

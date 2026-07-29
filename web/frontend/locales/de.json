@@ -76,7 +76,11 @@
       }
     },
     "profile": {
+      "currentPassword": "Aktuelles Passwort",
+      "currentPasswordHint": "Erforderlich, um deine E-Mail-Adresse zu ändern. Alle Sitzungen werden beendet, und die neue Adresse muss bestätigt werden, bevor du dich damit anmelden oder dein Passwort zurücksetzen kannst.",
+      "currentPasswordMissing": "Gib dein aktuelles Passwort ein, um die E-Mail-Adresse zu ändern.",
       "displayName": "Anzeigename",
+      "emailChanged": "E-Mail aktualisiert. Prüfe die neue Adresse auf den Bestätigungslink — du wurdest überall abgemeldet.",
       "emailPlaceholder": "neue E-Mail-Adresse",
       "nothingToSave": "Gib zuerst einen neuen Anzeigenamen oder eine neue E-Mail-Adresse ein.",
       "save": "Profil speichern",

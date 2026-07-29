@@ -76,7 +76,11 @@
       }
     },
     "profile": {
+      "currentPassword": "Current password",
+      "currentPasswordHint": "Required to change your email address. Everyone will be signed out, and the new address must be confirmed before it can be used to sign in or reset your password.",
+      "currentPasswordMissing": "Enter your current password to change your email address.",
       "displayName": "Display name",
+      "emailChanged": "Email updated. Check the new address for a confirmation link — you have been signed out everywhere.",
       "emailPlaceholder": "new email address",
       "nothingToSave": "Enter a new display name or email first.",
       "save": "Save profile",

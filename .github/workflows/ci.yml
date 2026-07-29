@@ -27,10 +27,14 @@ jobs:
   lint:
     name: fmt + clippy
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # No version here on purpose: `rust-toolchain.toml` pins it, and naming a version in
+      # both places is how they drift apart. The action honours the file.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.94.0"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       # The provider fetch stack links BoringSSL (`wreq`), which its build script compiles
@@ -46,14 +50,21 @@ jobs:
   test:
     name: test (workspace)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
       - uses: Swatinem/rust-cache@v2
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
       - name: cargo test
         run: cargo test --workspace --all-targets
+      # `--all-targets` silently EXCLUDES doc tests, so every `///` example in the workspace
+      # was unverified. This is the run that compiles them.
+      - name: doc tests
+        run: cargo test --workspace --doc
       # Fails if a backend DTO changed without regenerating the OpenAPI artifacts
       # (services/api/src/openapi.rs -> xtask openapi -> openapi.json + the progenitor
       # crates/api-client client, consumed by the frontend via web/frontend/src/wire.rs). A
@@ -71,9 +82,10 @@ jobs:
   sqlx:
     name: sqlx offline cache
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
-        image: postgres:19beta2
+        image: postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -92,7 +104,9 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/tankovault
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
       - uses: Swatinem/rust-cache@v2
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
@@ -111,10 +125,13 @@ jobs:
   integration:
     name: integration (testcontainers)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
       - uses: Swatinem/rust-cache@v2
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
@@ -123,24 +140,127 @@ jobs:
       - name: repo + HTTP access-control integration suites
         run: cargo test -p tankovault-db -p tankovault-api --features integration
 
+  # `web/frontend` is excluded from the host workspace (it targets wasm32), so none of the
+  # jobs above touch it. This job ran `cargo check` alone, which meant its 41 tests and the
+  # full `clippy::pedantic` set it declares in its own Cargo.toml executed nowhere at all —
+  # quality machinery that was configured but never load-bearing.
   frontend:
-    name: frontend (wasm32)
+    name: frontend (test + clippy + wasm32)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.94.0"
           targets: wasm32-unknown-unknown
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: web/frontend
+      # Host target, not wasm32: these are pure logic tests (chapter part-grouping, the
+      # notification classifier, the i18n catalogue-parity check) with no DOM dependency, so
+      # they run without a browser. Anything needing a DOM would need wasm-bindgen-test.
+      - name: cargo test (host)
+        working-directory: web/frontend
+        run: cargo test
+      - name: clippy (pedantic, as declared by the crate)
+        working-directory: web/frontend
+        run: cargo clippy --all-targets -- -D warnings
       - name: cargo check (wasm)
         working-directory: web/frontend
         run: cargo check --target wasm32-unknown-unknown
 
+  # `assets/main.css` is Tailwind CLI output committed so a build without Node still works.
+  # Nothing checked that the committed file matched what `input.css` currently produces, so a
+  # class added to a component and used in `rsx!` could silently have no style behind it.
+  css:
+    name: tailwind output is current
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: install the Tailwind CLI
+        working-directory: web/frontend
+        run: npm ci
+      - name: rebuild and compare
+        working-directory: web/frontend
+        run: |
+          npm run css:build
+          if ! git diff --quiet -- assets/main.css; then
+            echo "::error::assets/main.css is stale. Run 'npm run css:build' in web/frontend and commit the result."
+            git diff --stat -- assets/main.css
+            exit 1
+          fi
+
+  # The audit that produced docs/audit found a live AniList client secret and a live AES-256
+  # data-encryption key committed in `deploy/local.env`. This job is what would have caught
+  # them at the pull request, which is the only point at which the fix is cheap.
+  secrets:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: a secret removed in the tip commit is still a leaked secret.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # `rust-version = "1.85"` in the workspace manifest was a claim nothing verified. This job
+  # makes it true or makes it fail. It deliberately builds with the *minimum* rather than the
+  # pinned toolchain, so `rust-toolchain.toml` is overridden here on purpose.
+  msrv:
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.85"
+      - uses: Swatinem/rust-cache@v2
+      - name: BoringSSL build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+      # `--locked` so the check measures this lockfile's dependency set rather than whatever
+      # a resolver picks today. `RUSTFLAGS` is cleared: `-D warnings` would fail the job on
+      # lints an older compiler happens to emit, which is not what MSRV means.
+      - name: cargo check
+        env:
+          RUSTFLAGS: ""
+          RUSTUP_TOOLCHAIN: "1.85"
+        run: cargo check --workspace --locked
+
+  # Measurement only, with no threshold yet: the audit's finding is that coverage is unevenly
+  # distributed (the 10 largest modules hold 11 tests across 9,600 LOC), and a number nobody
+  # has seen is not something to gate on. Add a ratchet once there is a baseline to ratchet.
+  coverage:
+    name: coverage (report only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: BoringSSL build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+      - name: cargo llvm-cov
+        run: cargo llvm-cov --workspace --all-targets --summary-only
+
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
@@ -150,6 +270,7 @@ jobs:
   audit:
     name: cargo-audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: rustsec/audit-check@v2
@@ -159,6 +280,7 @@ jobs:
   docker:
     name: docker build
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: [lint, test]
     strategy:
       fail-fast: false
@@ -223,6 +345,7 @@ jobs:
   docker-frontend:
     name: docker build (frontend)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v4

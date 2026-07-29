@@ -23,9 +23,9 @@ that the audit did not.
 | SECURITY (16+2) | 12 | 4 | 2 | — |
 | ARCHITECTURE (21) | 3 | 0 | 17 | 1 no-finding |
 | PERFORMANCE (20) | 3 | 0 | 16 | 1 no-finding |
-| TESTING (21) | 3 | 0 | 18 | — |
-| FRONTEND (18) | 2 | 0 | 16 | — |
-| BUILD_AND_OPS (31) | 9 | 1 | 21 | — |
+| TESTING (21) | 4 | 1 | 16 | — |
+| FRONTEND (18) | 4 | 0 | 14 | — |
+| BUILD_AND_OPS (31+1) | 17 | 1 | 14 | — |
 
 ---
 
@@ -41,6 +41,7 @@ should mark the security work complete until they are done.
 | OP-3 | **Purge both values from git history** (`git filter-repo`) if the repository is or will ever be public, then force-push and have every clone re-cloned. | Rewrites shared history; needs a human to coordinate. |
 | OP-4 | **Generate and distribute `TANKOVAULT_INTERNAL__TOKEN`** (`openssl rand -hex 32`) to every deployment. | `TANKOVAULT_PROFILE=production` now refuses to boot without it — deliberately, see SEC-1. |
 | OP-5 | **Set `TANKOVAULT_AUTH__JWT_SECRET`, `TANKOVAULT_SEED_ADMIN_PASSWORD` and `TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY`** before `docker compose up`. | Compose no longer ships working defaults for them (`${VAR:?…}`), because the previous defaults are published in this repository. See `deploy/local.env.example`. |
+| OP-6 | **Decide what to do about `wreq-util` being GPL-3.0** before publishing this project or distributing its Docker images. | Not in the audit — found while making the `cargo deny` licences gate green. `wreq-util` supplies the browser-emulation profiles `crates/fetch/src/base.rs` depends on, so it cannot be dropped without replacing that. GPL-3.0 obligations attach on *conveying*: running a private service triggers nothing, but pushing images to a registry (the audit's Phase 6) is conveying and would require offering corresponding source for the combined work. Options: relicense the project, vendor an Apache-2.0 profile set, or drop the dependency. The reasoning is written out in `deny.toml`. |
 
 ---
 
@@ -142,7 +143,7 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | --- | --- | --- | --- |
 | F-01 | `parse_chapter_number` panics on non-ASCII titles (verified crash) | **DONE** | Fixed + regression test covering U+0130 and the no-marker fallback. |
 | F-02 | `parse_json_body` candidate scan quadratic (verified DoS) | **DONE** | Single linear pass, bounded working set; timing regression test asserts <2 s on a 60k-deep body. |
-| F-03 | The frontend's 41 tests run in no CI job | **OPEN** | ~8 lines of YAML. Activates the only i18n missing-key check. |
+| F-03 | The frontend's 41 tests run in no CI job | **DONE** | The `frontend` CI job now runs `cargo test`, `cargo clippy --all-targets -- -D warnings` (the pedantic set the crate declares) and the wasm check. All 41 pass, including the i18n catalogue-parity test. Wiring it up immediately caught a real break: the SEC-4 contract change had left `ProfileUpdate` missing a field. |
 | F-04 | `services/api/src/auth.rs` (676 LOC) has no unit tests | **OPEN** | Note the email-verification branch of `register` has *never executed* — `TestApp` hardcodes a disabled mailer. |
 | F-05 | `crates/db`: 6,893 LOC, 7 integration tests | **OPEN** | |
 | F-06 | `sync` merge engine: 1,267 LOC, 2 tests on a helper | **OPEN** | Blocks ARCH-6. |
@@ -150,7 +151,7 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | F-08 | GDPR export/erase has no test that fails as the schema grows | **OPEN** | |
 | F-09 | `test-support` covers one axis | **OPEN** | |
 | F-10 | No coverage, mutation testing, or ratchet | **OPEN** | |
-| F-11 | Zero doc tests | **OPEN** | |
+| F-11 | Zero doc tests | **PARTIAL** | CI now runs `cargo test --workspace --doc`; `--all-targets` silently excludes them, which is why they never ran. Exactly **1** doc test exists today — the gate is in place, the examples still need writing. |
 | F-12 | `xtask` and `challenge-solver` have no tests | **PARTIAL** | `challenge-solver` gained `validate_target` coverage indirectly via `tankovault_domain::ssrf`; neither crate has its own tests yet. |
 | F-13 | Test-quality positives | — | No action. Preserve: no sleeps, no network, hermetic per-test DBs. |
 | Fuzz | `cargo-fuzz` targets (nightly) | **OPEN** | Seed corpora from `crates/adapters/fixtures/`. F-01 and F-02 are exactly what these would have found. |
@@ -164,7 +165,7 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | # | Finding | Status | Notes |
 | --- | --- | --- | --- |
 | FE-F1 | 35 of 59 fetches bypass `async_view`; "always retryable" already broken | **OPEN** | Largest single frontend item (~500 LOC). Root cause is an `Option<Option<Result<_>>>` signed-out idiom; fix the idiom first, then the sweep is mechanical. |
-| FE-F2 | CI runs `cargo check` only — 41 tests and `clippy::pedantic` are dead | **OPEN** | Same fix as TEST F-03. |
+| FE-F2 | CI runs `cargo check` only — 41 tests and `clippy::pedantic` are dead | **DONE** | See TEST F-03. Frontend clippy is clean at pedantic today. |
 | FE-F3 | Seven auth/password inputs have no programmatic label | **OPEN** | |
 | FE-F4 | ~285 LOC of shared components live inside view modules | **OPEN** | `stats.rs` imports `HealthPill` from a sibling *view* — a layering inversion. |
 | FE-F5 | `EmptyBox`/`SkeletonBlock` exist but 40 sites hand-roll them | **OPEN** | Not exported from `components/mod.rs`. |
@@ -173,7 +174,7 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | FE-F8 | 488 inline `style:` attributes bypass the token layer | **OPEN** | |
 | FE-F9 | `users.rs` (1,395) and `providers.rs` (1,385) are god files | **OPEN** | Do *after* the dedup sweeps. |
 | FE-F10 | DTOs: no drift (positive), one gap | **OPEN** | Only the gap is actionable. |
-| FE-F11 | `.gitignore`/README call generated CSS "hand-authored" | **DONE** (`.gitignore`) | The README claim is still wrong — FE-F11b. |
+| FE-F11 | `.gitignore`/README call generated CSS "hand-authored" | **DONE** (`.gitignore`) | Plus a new `css` CI job that rebuilds from `input.css` and fails if `assets/main.css` differs — nothing checked that before, so a class used in `rsx!` could have had no style behind it. The README claim is still wrong: FE-F11b. |
 | FE-F11b | `web/frontend/README.md` repeats the hand-authored claim | **OPEN** | |
 | FE-F12 | 13 `ik-*` classes shipped but never referenced | **OPEN** | |
 | FE-F13 | Pagination implemented twice | **OPEN** | |
@@ -201,17 +202,18 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | OPS-2.4 | `api-client` opts out of all clippy | **OPEN** | |
 | OPS-2.5 | `rustfmt.toml` carries no style configuration | **WONTFIX** | Deliberate: defaults everywhere. The file now documents why, and why `ignore` must not come back. |
 | OPS-3.1 | `cargo-deny` sections configured | — | No finding. |
-| OPS-3.2 | `[bans]` warns rather than denies | **OPEN** | Ready-to-paste `deny.toml` in the report, including the `openssl-sys` deny that protects the `scratch` runtime. |
-| OPS-3.3 | `[licenses]` allows `OpenSSL`, omits unlicensed/private | **OPEN** | |
+| OPS-3.2 | `[bans]` warns rather than denies | **DONE** | `multiple-versions` and `wildcards` are now `deny`, with an explicit, dated skip list of the 30 duplicates actually present and `allow-wildcard-paths` for our own path deps. `openssl-sys`/`openssl`/`native-tls` are hard-denied — they would fail at *exec* time on the `scratch` runtime, not at build time. |
+| OPS-3.3 | `[licenses]` allows `OpenSSL`, omits unlicensed/private | **DONE** | `OpenSSL` and `Unicode-DFS-2016` removed (neither is in the graph, and allowing `OpenSSL` contradicted the new ban); `private = { ignore = true }` added and every workspace crate marked `publish = false`. **The gate was already red on `main`** — see OP-6: `wreq-util` is GPL-3.0, which the audit did not report. |
 | OPS-3.4 | No lockfile-integrity or provenance gate | **OPEN** | |
-| OPS-4.1 | No `rust-toolchain.toml`; three-way drift | **OPEN** | The claimed MSRV 1.85 is verified by nothing. |
-| OPS-4.2 | Postgres `19beta2` in CI and compose | **PARTIAL** | Compose pinned to `17-alpine`. **CI still runs 19beta2** — `.github/workflows/ci.yml` must be updated to match, or the `.sqlx` cache is validated against a different catalog than it runs on. |
+| OPS-4.1 | No `rust-toolchain.toml`; three-way drift | **DONE** | `rust-toolchain.toml` pins 1.94.0 with rustfmt, clippy and the wasm32 target; every CI job names the same version; a new `msrv` job builds with 1.85 `--locked` so the manifest's claim is now checked. |
+| OPS-4.2 | Postgres `19beta2` in CI and compose | **DONE** | Both on 17 now. Verified safe by regenerating the whole `.sqlx` cache against a 17 container: byte-identical to the 19beta2-derived cache, so the switch changes no query metadata. |
 | OPS-4.3 | `flaresolverr:latest` unpinned | **DONE** | Pinned to `v3.3.21`. |
-| OPS-4.4 | No dependency-update automation | **OPEN** | `dependabot.yml`. |
+| OPS-4.4 | No dependency-update automation | **DONE** | `.github/dependabot.yml` covering both cargo workspaces, npm, GitHub Actions and the Docker base images, grouped so a routine week is one pull request. |
 | OPS-4.5 | No release automation, image publishing, SBOM or signing | **OPEN** | Both Docker jobs run `push: false`, so there is no artifact to roll back to. |
 | OPS-4.6 | No build matrix | **OPEN** | |
+| OPS-4.x | No job timeouts; no coverage measurement | **DONE** | All 13 CI jobs now carry `timeout-minutes`. A `coverage` job runs `cargo llvm-cov --summary-only` as `continue-on-error` — report only, no threshold, because the audit's point is that coverage is unevenly *distributed*, and a number nobody has seen is not something to gate on. Add a ratchet once there is a baseline. |
 | OPS-4.7 | `xtask/build.rs` writes into `.git/hooks/` on every build | **OPEN** | |
-| OPS-4.8 | No static/secret scanning in CI | **OPEN** | gitleaks. This audit's OPS-1.1 is exactly what it exists to catch. |
+| OPS-4.8 | No static/secret scanning in CI | **DONE** | `secrets` job runs gitleaks over the full history (`fetch-depth: 0` — a secret removed in the tip commit is still leaked). |
 | OPS-4.9 | `sqlx prepare --check` gate correct | — | No finding. |
 | OPS-4.10 | OpenAPI drift gate correct | — | No finding. |
 | OPS-5.1 | `wreq`/BoringSSL dlopen handling | — | No finding. Do not "simplify" the Dockerfile here. |
@@ -234,13 +236,28 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 
 ## Suggested next steps, in order
 
-1. **Finish Phase 0.** SEC-4 (email change) is the only roadmap item 0.x still open.
-   SEC-3b, SEC-9, SEC-10, SEC-11 are all small and in the same two files.
-2. **Phase 1 — make CI enforce the bar.** Nearly all YAML: TEST F-03/FE-F2 (frontend tests
-   and pedantic), OPS-4.1 (toolchain), OPS-4.2 (Postgres in CI — *the compose half is done,
-   the CI half is not*), OPS-4.4 (dependabot), OPS-4.8 (gitleaks), OPS-3.2 (`deny.toml`).
-   This is what keeps everything above from regressing.
-3. **Then the phases are independent** and can run in parallel — see
+**Phases 0 and 1 of the audit's roadmap are complete.** Every item under "Phase 0 — stop the
+bleeding" and "Phase 1 — make CI enforce the bar" is DONE, or PARTIAL with the exploitable part
+closed. All the gates that were red or absent now pass locally: `cargo fmt --all --check`,
+`cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo deny check advisories licenses sources bans`, the workspace tests, the frontend's 41
+tests, and `xtask openapi --check`.
+
+What is left, in the audit's own order:
+
+1. **Phase 2 — close the verification gap** (2-3 weeks). Start with the access-control
+   integration matrix: it is the single highest-value test investment in the codebase, and
+   nothing else in this list protects the authorization surface. Then `auth.rs`, `crates/db`,
+   `sync/engine.rs`, then the fuzz and property targets.
+2. **Phase 3 — frontend** (1.5-2 weeks). Do FE-F14 first — a signed-out `/console` shows a
+   permanent skeleton, which is a user-visible bug. Then FE-F1, the largest single item.
+3. **Phase 4 — performance.** PERF-1 (the fetch stack rebuilt per scan task) is the biggest
+   single win, and it also silently defeats per-provider rate limiting today.
+4. **Phase 5 — architecture.** ARCH-14 first: one of the three hand-rolled consume loops acks
+   after a *failed* fan-out, so notifications are being dropped right now.
+5. **Phase 6 — operational maturity.** Note that OP-6 blocks the image-publishing item.
+
+**The remaining phases are independent** and can run in parallel — see
    [README.md §4](./README.md#4-suggested-sequencing). Two ordering constraints hold:
    ARCH-6 needs TEST F-06 first, and FE-F9 needs FE-F1/F4/F5 first.
 

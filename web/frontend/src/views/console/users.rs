@@ -109,6 +109,19 @@ impl StatusFilter {
     }
 }
 
+/// The permissions in `grants` this build recognises, as a set.
+///
+/// Grants arrive as wire tokens. One this build does not know is *not* dropped silently — it is
+/// surfaced separately as an "unknown grant" — but it must stay out of the editable set, or
+/// saving would re-submit an inert token as if it were current.
+fn known_permissions(grants: &[GrantRow]) -> BTreeSet<Permission> {
+    grants
+        .iter()
+        .filter(|g| g.known)
+        .filter_map(|g| serde_json::from_value::<Permission>(serde_json::json!(g.permission)).ok())
+        .collect()
+}
+
 /// The list pane and the inspector pane, as the console shell's two grid children.
 #[component]
 pub(super) fn UsersEntity() -> Element {
@@ -141,7 +154,11 @@ pub(super) fn UsersEntity() -> Element {
         }
     });
 
-    let loaded = directory.read_unchecked().clone();
+    // Memoised, not a plain `let`: this clones the whole directory page and then clones every
+    // surviving row again, and it used to re-run on every render of this component — including
+    // each of the 25 rows' hover-state changes and every keystroke in the search box. As a
+    // `use_memo` it re-runs only when the fetch, the status chip or the staff chip changes.
+    //
     // Three separate counts, deliberately, because conflating two of them was a bug: `rows`
     // is what this client *shows* after the status and staff filters, `page_len` is what the
     // server actually returned for this window, and `total` is the whole directory.
@@ -150,13 +167,15 @@ pub(super) fn UsersEntity() -> Element {
     // made the page look shorter than it was: `has_next` went false while later pages still
     // existed (filtering to a single staff member on page 1 hid every other page), and the
     // "1-N of TOTAL" line reported a client-side count against a server-side total.
-    let (rows, page_len, total) = match &loaded {
+    let page_state = use_memo(move || match &*directory.read() {
         Some(Ok(page_data)) => {
+            let status = *status.read();
+            let staff_only = *staff_only.read();
             let filtered: Vec<DirectoryRow> = page_data
                 .users
                 .iter()
-                .filter(|row| status.read().accepts(row))
-                .filter(|row| !*staff_only.read() || row.permission_count > 0)
+                .filter(|row| status.accepts(row))
+                .filter(|row| !staff_only || row.permission_count > 0)
                 .cloned()
                 .collect();
             (
@@ -166,7 +185,8 @@ pub(super) fn UsersEntity() -> Element {
             )
         }
         _ => (Vec::new(), 0, 0),
-    };
+    });
+    let (rows, page_len, total) = page_state.read().clone();
     let current = selected
         .read()
         .clone()
@@ -400,21 +420,18 @@ fn UserEditor(
     // Seeded from the server's answer and edited locally. Only tokens this build recognises are
     // seeded: an inert grant left over from another version is shown separately rather than
     // silently re-submitted as if it were current.
-    let chosen = use_signal(|| {
-        data.permissions
-            .iter()
-            .filter(|g| g.known)
-            .filter_map(|g| {
-                serde_json::from_value::<Permission>(serde_json::json!(g.permission)).ok()
-            })
-            .collect::<BTreeSet<Permission>>()
+    //
+    // Built once and used for *both* the editor's seed and the dirty comparison. The same set
+    // used to be constructed twice in consecutive statements — each doing a `serde_json`
+    // round-trip per grant — and two independently-computed sets that are then compared for
+    // dirtiness is exactly the shape where editing one and not the other yields a phantom
+    // "unsaved changes" state. Deliberately not a `use_memo`: `data` is a prop that changes
+    // when the detail refetches, and a memo would freeze the comparison at the first render.
+    let granted_now = known_permissions(&data.permissions);
+    let chosen = use_signal({
+        let seed = granted_now.clone();
+        move || seed
     });
-    let granted_now: BTreeSet<Permission> = data
-        .permissions
-        .iter()
-        .filter(|g| g.known)
-        .filter_map(|g| serde_json::from_value::<Permission>(serde_json::json!(g.permission)).ok())
-        .collect();
 
     let identity_dirty = *name_field.read() != user.username || *email_field.read() != user.email;
     let status_dirty = *status_field.read() != user.status;
@@ -1373,5 +1390,44 @@ fn RecentActions(username: String) -> Element {
                 )
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn grant(permission: &str, known: bool) -> GrantRow {
+        GrantRow {
+            granted_at: "2026-07-29T00:00:00Z".to_owned(),
+            granted_by: None,
+            known,
+            permission: permission.to_owned(),
+        }
+    }
+
+    /// A grant left over from a build that had a capability this one does not must stay out of
+    /// the editable set: it is surfaced separately as an "unknown grant", and folding it in
+    /// would re-submit an inert token on the next save as if it were current.
+    #[test]
+    fn only_recognised_tokens_enter_the_editable_set() {
+        let rows = vec![
+            grant("users.read", true),
+            grant("providers.write", true),
+            grant("timetravel.admin", false),
+        ];
+        let known = known_permissions(&rows);
+        assert_eq!(
+            known,
+            BTreeSet::from([Permission::UsersRead, Permission::ProvidersWrite])
+        );
+    }
+
+    /// `known: true` is the server's claim, not this build's. A token it cannot parse is
+    /// dropped rather than panicking, so a server ahead of this frontend degrades quietly.
+    #[test]
+    fn a_token_this_build_cannot_parse_is_dropped_even_when_flagged_known() {
+        let known = known_permissions(&[grant("not.a.permission", true)]);
+        assert!(known.is_empty());
     }
 }

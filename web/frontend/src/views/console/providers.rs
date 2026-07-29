@@ -104,21 +104,26 @@ pub(super) fn ProvidersEntity() -> Element {
         }
     });
 
-    let all = providers.read_unchecked().clone();
-    let stat_rows = stats.read_unchecked().clone().unwrap_or_default();
-    let needle = query.read().trim().to_lowercase();
-    let rows: Vec<Provider> = match &all {
-        Some(Ok(list)) => list
-            .iter()
-            .filter(|p| {
-                needle.is_empty()
-                    || p.slug.to_lowercase().contains(&needle)
-                    || p.name.to_lowercase().contains(&needle)
-            })
-            .cloned()
-            .collect(),
-        _ => Vec::new(),
-    };
+    // Memoised: this clones the provider list, lower-cases the needle and every candidate, and
+    // clones each survivor — on every render, which on this screen means every keystroke in the
+    // filter box *and* every row selection.
+    let filtered = use_memo(move || {
+        let needle = query.read().trim().to_lowercase();
+        match &*providers.read() {
+            Some(Ok(list)) => list
+                .iter()
+                .filter(|p| {
+                    needle.is_empty()
+                        || p.slug.to_lowercase().contains(&needle)
+                        || p.name.to_lowercase().contains(&needle)
+                })
+                .cloned()
+                .collect::<Vec<Provider>>(),
+            _ => Vec::new(),
+        }
+    });
+    let stat_rows = stats.read().clone().unwrap_or_default();
+    let rows = filtered.read().clone();
 
     // Land on the first row rather than an empty inspector: the console is read far more often
     // than it is edited, and an empty right pane wastes the first look.

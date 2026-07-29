@@ -355,18 +355,22 @@ pub(crate) fn Console() -> Element {
 
     // Groups with nothing visible in them are dropped whole: a kicker over an empty stretch of
     // rail reads as a broken list.
-    let groups: Vec<(&str, Vec<Entity>)> = RAIL
-        .iter()
-        .map(|(key, entities)| {
-            let shown = entities
-                .iter()
-                .copied()
-                .filter(|entity| entity.is_visible(&caps))
-                .collect::<Vec<_>>();
-            (*key, shown)
-        })
-        .filter(|(_, shown)| !shown.is_empty())
-        .collect();
+    //
+    // Memoised because this component re-renders on the shared 4s tick, and the rail's shape
+    // depends on nothing that changes between ticks — only on the capability set.
+    let groups = use_memo(move || {
+        RAIL.iter()
+            .map(|(key, entities)| {
+                let shown = entities
+                    .iter()
+                    .copied()
+                    .filter(|entity| entity.is_visible(&caps))
+                    .collect::<Vec<_>>();
+                (*key, shown)
+            })
+            .filter(|(_, shown)| !shown.is_empty())
+            .collect::<Vec<(&str, Vec<Entity>)>>()
+    });
 
     let counts = stats.read_unchecked().clone().flatten();
     let body_class = if current.is_master_detail() {
@@ -449,7 +453,7 @@ pub(crate) fn Console() -> Element {
             }
             div { class: "{body_class}",
                 nav { class: "ik-cons-rail", "aria-label": i18n.t("console.title"),
-                    for (group_key , entities) in groups {
+                    for (group_key , entities) in groups.read().clone() {
                         div { key: "{group_key}", class: "grp", {i18n.t(group_key)} }
                         for entity in entities {
                             button {

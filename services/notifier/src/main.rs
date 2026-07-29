@@ -29,6 +29,11 @@ struct Config {
     telemetry: tankovault_config::TelemetryConfig,
     #[serde(default)]
     channels: channels::ChannelsConfig,
+    /// The shared `TANKOVAULT_EMAIL__*` relay configuration, identical to the API's. The
+    /// notifier used to carry its own SMTP URL and `From` address, which is how it ended up
+    /// with a different envelope-sender policy than the mail the API sends.
+    #[serde(default)]
+    email: tankovault_config::EmailConfig,
     #[serde(default = "default_bind")]
     bind_addr: String,
     /// Edge hardening for the ops listener.
@@ -90,7 +95,7 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    let external = Arc::new(channels::build(&cfg.channels));
+    let external = Arc::new(channels::build(&cfg.channels, &cfg.email));
     if external.is_empty() {
         tracing::info!("no external notification channels configured (in-app only)");
     } else {

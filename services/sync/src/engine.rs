@@ -153,10 +153,9 @@ impl SyncEngine {
     }
 
     fn provider(&self, slug: &str) -> anyhow::Result<&dyn ExternalProvider> {
-        self.providers
-            .get(slug)
-            .map(Box::as_ref)
-            .ok_or_else(|| anyhow!("unknown sync provider: {slug}"))
+        self.providers.get(slug).map(Box::as_ref).ok_or_else(|| {
+            anyhow::Error::new(crate::error::SyncError::UnknownProvider(slug.to_owned()))
+        })
     }
 
     /// The registered providers, for `GET /v1/sync/providers`.
@@ -411,7 +410,9 @@ impl SyncEngine {
     ) -> anyhow::Result<String> {
         let account = sync::get_account(&self.pool, user_id, slug)
             .await?
-            .ok_or_else(|| anyhow!("no {} account linked for user", provider.display_name()))?;
+            .ok_or_else(|| {
+                crate::error::SyncError::NotLinked(provider.display_name().to_owned())
+            })?;
 
         if let (Some(expiry), Some(refresh_ct)) =
             (account.expires_at, account.refresh_token.as_ref())

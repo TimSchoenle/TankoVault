@@ -9,6 +9,12 @@ description = "ChallengeSolver trait, fast challenge detection, and FlareSolverr
 # skip license-checking our own code.
 publish = false
 
+[features]
+default = []
+# The shared `POST /v1/solve` router, merged by both `challenge-solver` and `render`. Behind a
+# feature so consumers that only want the trait and the detection helpers do not pull axum.
+axum = ["dep:axum", "dep:metrics", "dep:tankovault-domain"]
+
 [dependencies]
 async-trait = { workspace = true }
 serde = { workspace = true }
@@ -17,6 +23,11 @@ wreq = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 time = { workspace = true }
+
+axum = { workspace = true, optional = true }
+metrics = { workspace = true, optional = true }
+# The SSRF address policy for the solve target. Pure and I/O-free — see the module docs there.
+tankovault-domain = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

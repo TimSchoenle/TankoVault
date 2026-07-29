@@ -14,6 +14,8 @@
 mod detection;
 mod fake;
 mod flaresolverr;
+#[cfg(feature = "axum")]
+pub mod http;
 mod types;
 
 pub use detection::{ResponseView, detect_challenge, detect_challenge_body, is_rate_limit_page};

@@ -27,8 +27,11 @@
 
 mod anilist;
 mod engine;
+mod error;
 mod mapping;
 mod provider;
+
+use crate::error::AppError;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -36,7 +39,6 @@ use std::time::Duration;
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
@@ -611,30 +613,4 @@ async fn list_history(
         )
         .await?;
     Ok(Json(rows))
-}
-
-/// Thin error wrapper: surfaces the message to the caller (the API) and a `502` since most
-/// failures originate upstream at the provider; an unknown provider slug is `404`, a missing
-/// link is `409`.
-struct AppError(anyhow::Error);
-
-impl From<anyhow::Error> for AppError {
-    fn from(err: anyhow::Error) -> Self {
-        Self(err)
-    }
-}
-
-impl IntoResponse for AppError {
-    fn into_response(self) -> axum::response::Response {
-        let message = self.0.to_string();
-        let status = if message.contains("unknown sync provider") {
-            StatusCode::NOT_FOUND
-        } else if message.contains("account linked") {
-            StatusCode::CONFLICT
-        } else {
-            StatusCode::BAD_GATEWAY
-        };
-        tracing::warn!(error = %message, "sync request failed");
-        (status, message).into_response()
-    }
 }

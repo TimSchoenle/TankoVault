@@ -25,7 +25,7 @@ use axum::routing::post;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use tankovault_service::{Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier};
-use tankovault_solver::{ChallengeSolver, SolveRequest};
+use tankovault_solver::ChallengeSolver;
 
 use crate::browser::{BrowserManager, RenderOptions};
 use crate::config::Config;
@@ -97,8 +97,9 @@ async fn main() -> anyhow::Result<()> {
         .apply(
             Router::new()
                 .route("/v1/render", post(render))
-                .route("/v1/solve", post(solve))
-                .with_state(state),
+                .with_state(state.clone())
+                // The solve contract itself is defined once, in `tankovault_solver::http`.
+                .merge(tankovault_solver::http::solver_router(state.solver)),
         )
         // Readiness is "listening": the browser is launched lazily by design (see the
         // module docs), so probing it here would report a healthy replica as down until
@@ -166,24 +167,6 @@ async fn render(
             metrics::counter!("render_requests_total", "result" => "error").increment(1);
             tracing::warn!(%url, error = %e, "render failed");
             (StatusCode::BAD_GATEWAY, format!("render failed: {e}")).into_response()
-        }
-    }
-}
-
-async fn solve(State(state): State<AppState>, Json(req): Json<SolveRequest>) -> impl IntoResponse {
-    if let Err(rejection) = validate_target(&req.url) {
-        return *rejection;
-    }
-    let provider = req.provider.clone();
-    match state.solver.solve(req).await {
-        Ok(outcome) => {
-            metrics::counter!("solve_attempts_total", "result" => "ok").increment(1);
-            (StatusCode::OK, Json(outcome)).into_response()
-        }
-        Err(e) => {
-            metrics::counter!("solve_attempts_total", "result" => "error").increment(1);
-            tracing::warn!(%provider, error = %e, "solve failed");
-            (StatusCode::BAD_GATEWAY, format!("solve failed: {e}")).into_response()
         }
     }
 }

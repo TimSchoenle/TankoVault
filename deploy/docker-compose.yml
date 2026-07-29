@@ -241,6 +241,17 @@ services:
       TANKOVAULT_TELEMETRY__SERVICE_NAME: notifier
       TANKOVAULT_DATABASE__URL: *db-url
       TANKOVAULT_NATS__URL: nats://nats:4222
+      # The notifier's email channel shares the API's relay configuration rather than
+      # carrying its own SMTP URL, so both send with the same envelope-sender policy — the
+      # one relays that enforce "send as" actually accept. Name the recipients to enable it.
+      TANKOVAULT_EMAIL__HOST: "${TANKOVAULT_EMAIL__HOST:-}"
+      TANKOVAULT_EMAIL__PORT: "${TANKOVAULT_EMAIL__PORT:-587}"
+      TANKOVAULT_EMAIL__SECURITY: "${TANKOVAULT_EMAIL__SECURITY:-starttls}"
+      TANKOVAULT_EMAIL__USERNAME: "${TANKOVAULT_EMAIL__USERNAME:-}"
+      TANKOVAULT_EMAIL__PASSWORD: "${TANKOVAULT_EMAIL__PASSWORD:-}"
+      TANKOVAULT_EMAIL__FROM: "${TANKOVAULT_EMAIL__FROM:-}"
+      # Comma-free JSON array, e.g. '["ops@example.com"]'. Empty disables the channel.
+      TANKOVAULT_CHANNELS__EMAIL_TO: "${TANKOVAULT_NOTIFIER_EMAIL_TO:-[]}"
     depends_on:
       migrate: { condition: service_completed_successfully }
       nats: { condition: service_healthy }

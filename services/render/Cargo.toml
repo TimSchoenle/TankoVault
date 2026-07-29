@@ -21,7 +21,7 @@ tankovault-service = { workspace = true }
 tankovault-domain = { workspace = true }
 url = { workspace = true }
 tokio-util = { workspace = true }
-tankovault-solver = { workspace = true }
+tankovault-solver = { workspace = true, features = ["axum"] }
 axum = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

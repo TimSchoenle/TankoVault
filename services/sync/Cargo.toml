@@ -31,6 +31,8 @@ serde_json = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }
 anyhow = { workspace = true }
+# The service's HTTP error contract (`error.rs`) is a typed enum, not a substring match.
+thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [lints]

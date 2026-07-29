@@ -5,16 +5,11 @@
 //! [`ChallengeSolver`] back-end (`FlareSolverr` by default). Isolating the browser/solver
 //! runtime here lets it scale independently of the workers.
 
-use axum::extract::State;
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
-use axum::routing::post;
-use axum::{Json, Router};
 use serde::Deserialize;
 use std::sync::Arc;
 use tankovault_config::TelemetryConfig;
 use tankovault_service::{Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier};
-use tankovault_solver::{ChallengeSolver, FlareSolverrSolver, SolveRequest};
+use tankovault_solver::{ChallengeSolver, FlareSolverrSolver};
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -103,11 +98,8 @@ async fn main() -> anyhow::Result<()> {
     let app = HttpStack::new(&cfg.security, metrics.clone())
         .with_rate_limit(limiter)
         .with_internal_auth(internal_token)
-        .apply(
-            Router::new()
-                .route("/v1/solve", post(solve))
-                .with_state(state),
-        )
+        // One definition of the contract, shared with `render` — see `tankovault_solver::http`.
+        .apply(tankovault_solver::http::solver_router(state.solver))
         // This service holds no state of its own and reaches no database, so readiness is
         // simply "listening" — the upstream FlareSolverr is deliberately not probed: it is
         // launched lazily and a solve already degrades to `502` when it is unavailable.
@@ -118,42 +110,4 @@ async fn main() -> anyhow::Result<()> {
 
     tankovault_service::serve(&cfg.bind_addr, app, shutdown).await?;
     Ok(())
-}
-
-/// Reject a target URL the solver must not visit.
-///
-/// `SolveRequest.url` used to reach `FlareSolverr`'s `request.get` unvalidated, so anything
-/// that could open a socket to this service had an arbitrary-URL fetcher that returns the
-/// body — cloud instance metadata, internal admin endpoints, `file:` reads. Same policy the
-/// crawler applies, including IP literals.
-///
-/// The check binds the address the caller *named*. `FlareSolverr` resolves independently, so
-/// this does not survive a DNS rebind; that needs egress restriction around the solver
-/// container.
-fn validate_target(raw: &str) -> Result<(), Box<Response>> {
-    tankovault_domain::ssrf::validate_str(raw)
-        .map(|_| ())
-        .map_err(|e| {
-            metrics::counter!("solve_attempts_total", "result" => "rejected").increment(1);
-            tracing::warn!(url = %raw, error = %e, "refused a solve target");
-            Box::new((StatusCode::FORBIDDEN, format!("refused target: {e}")).into_response())
-        })
-}
-
-async fn solve(State(state): State<AppState>, Json(req): Json<SolveRequest>) -> impl IntoResponse {
-    if let Err(rejection) = validate_target(&req.url) {
-        return *rejection;
-    }
-    let provider = req.provider.clone();
-    match state.solver.solve(req).await {
-        Ok(outcome) => {
-            metrics::counter!("solve_attempts_total", "result" => "ok").increment(1);
-            (StatusCode::OK, Json(outcome)).into_response()
-        }
-        Err(e) => {
-            metrics::counter!("solve_attempts_total", "result" => "error").increment(1);
-            tracing::warn!(%provider, error = %e, "solve failed");
-            (StatusCode::BAD_GATEWAY, format!("solve failed: {e}")).into_response()
-        }
-    }
 }

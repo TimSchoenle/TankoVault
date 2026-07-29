@@ -1,0 +1,247 @@
+name: Release
+
+# Builds, attests and (once unblocked) publishes the nine service images for a tag.
+#
+# ---------------------------------------------------------------------------------------------
+# PUBLISHING IS DELIBERATELY DISABLED. Read this before enabling it.
+# ---------------------------------------------------------------------------------------------
+# `wreq-util` — which supplies the browser-emulation profiles `crates/fetch/src/base.rs` depends
+# on — is **GPL-3.0**. See the reasoning block in `deny.toml` and OP-6 in
+# `docs/audit/PROGRESS.md`.
+#
+# GPL-3.0 obligations attach on *conveying*. Running a private service triggers nothing; pushing
+# an image to a registry is conveying the combined work and triggers the source-offer obligation
+# for all of it. That is a licensing decision for a human, not something a workflow should make
+# by being merged.
+#
+# So this workflow builds every image exactly as a release would, generates an SBOM for each,
+# and stops there. Every publishing step is gated on the repository variable `ALLOW_IMAGE_PUBLISH`
+# being the literal string `true`, which is unset today. To enable:
+#
+#   1. Resolve OP-6 — relicense the project, vendor an Apache-2.0 emulation profile set, or drop
+#      the dependency. Whichever it is, record it in `deny.toml`.
+#   2. `gh variable set ALLOW_IMAGE_PUBLISH --body true`
+#
+# Until then the `publish` job is skipped and this is a build-and-attest pipeline. That is still
+# worth having on its own: it is the difference between "the release build works" being something
+# CI knows and something someone finds out at 2am.
+#
+# What this closes (audit OPS-4.5): both CI docker jobs run `push: false`, so there has never
+# been an artifact to roll back *to*, no digest to pin in a manifest, and no bill of materials —
+# which matters more than usual here, because a `scratch` image has no package manager for a
+# conventional scanner to interrogate.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # Resolve the publish decision once, so nine matrix legs cannot disagree about it and the
+  # reason it is off appears in the run summary rather than only in this file's comments.
+  gate:
+    name: publish gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      publish: ${{ steps.decide.outputs.publish }}
+    steps:
+      - id: decide
+        env:
+          ALLOW: ${{ vars.ALLOW_IMAGE_PUBLISH }}
+        run: |
+          if [ "$ALLOW" = "true" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Image publishing is ENABLED. Confirm OP-6 (wreq-util is GPL-3.0) is resolved."
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Image publishing is disabled (ALLOW_IMAGE_PUBLISH is not 'true'). Building and attesting only — see OP-6, wreq-util is GPL-3.0."
+          fi
+
+  images:
+    name: ${{ matrix.bin }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: [gate]
+    permissions:
+      contents: read
+      # Both only take effect when the gate opens; requesting them unconditionally keeps the
+      # enabled and disabled paths identical apart from the `if`s.
+      packages: write
+      id-token: write # cosign keyless (Fulcio/Rekor via the OIDC token)
+    strategy:
+      fail-fast: false
+      matrix:
+        # `include` rather than a bare list: the render tier needs the Debian
+        # `runtime-browser` stage, and the frontend is built from a different Dockerfile
+        # entirely (WASM bundle + axum server). Expressing that as `${{ x == y && a || b }}`
+        # inline is how the two get out of step.
+        include:
+          - { bin: api, file: deploy/docker/Dockerfile, target: runtime }
+          - { bin: worker, file: deploy/docker/Dockerfile, target: runtime }
+          - { bin: control-plane, file: deploy/docker/Dockerfile, target: runtime }
+          - { bin: notifier, file: deploy/docker/Dockerfile, target: runtime }
+          - { bin: sync, file: deploy/docker/Dockerfile, target: runtime }
+          - { bin: challenge-solver, file: deploy/docker/Dockerfile, target: runtime }
+          - { bin: render, file: deploy/docker/Dockerfile, target: runtime-browser }
+          - { bin: xtask, file: deploy/docker/Dockerfile, target: runtime }
+          - { bin: frontend, file: deploy/docker/Dockerfile.frontend, target: frontend }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Same derivation as ci.yml: clamps image layer mtimes to the commit timestamp so a
+      # rebuild of the same commit is byte-identical.
+      - name: derive SOURCE_DATE_EPOCH
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+
+      - name: image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.bin }}
+          # `type=sha` is the one that always exists, so there is a pinnable reference even for
+          # a `workflow_dispatch` run off a branch. `latest` only ever tracks a real semver tag.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: log in to ${{ env.REGISTRY }}
+        if: needs.gate.outputs.publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: build ${{ matrix.bin }}
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          build-args: |
+            BIN=${{ matrix.bin }}
+            SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          push: ${{ needs.gate.outputs.publish == 'true' }}
+          # When not publishing, load into the local daemon so the SBOM and structure-test
+          # steps have something to inspect.
+          load: ${{ needs.gate.outputs.publish != 'true' }}
+          # `provenance: false` matches ci.yml and is a deliberate reproducibility trade: an
+          # attestation layer carries build timestamps, which breaks byte-identical rebuilds.
+          # The cost is no SLSA attestation, which the SBOM below partly compensates for.
+          provenance: false
+          cache-from: type=gha,scope=release-${{ matrix.bin }}
+          cache-to: type=gha,scope=release-${{ matrix.bin }},mode=max
+
+      # The image contract, enforced against the artefact that would actually ship rather than
+      # only against the CI build.
+      - name: install container-structure-test
+        run: |
+          curl -fsSL -o container-structure-test \
+            https://storage.googleapis.com/container-structure-test/v1.22.1/container-structure-test-linux-amd64
+          chmod +x container-structure-test
+          sudo mv container-structure-test /usr/local/bin/container-structure-test
+
+      # `metadata-action` emits its tags newline-separated; every step below needs exactly one
+      # reference, so resolve it once instead of re-parsing the list three times.
+      - name: resolve the primary image reference
+        id: ref
+        run: |
+          printf '%s\n' '${{ steps.meta.outputs.tags }}' | head -n1 \
+            | sed 's/^/image=/' >> "$GITHUB_OUTPUT"
+
+      - name: structure-test ${{ matrix.bin }}
+        if: needs.gate.outputs.publish != 'true'
+        run: |
+          case "${{ matrix.bin }}" in
+            render)   config=deploy/docker/cst/render.yaml ;;
+            frontend) config=deploy/docker/cst/frontend.yaml ;;
+            *)        config=deploy/docker/cst/service.yaml ;;
+          esac
+          container-structure-test test \
+            --image "${{ steps.ref.outputs.image }}" \
+            --config "$config"
+
+      # A `scratch` image defeats every package-manager-based scanner: there is no apt/apk
+      # database to read, so a running container cannot be mapped back to its dependency set at
+      # all. Syft reads the Rust binary's own metadata instead, which is the only way these
+      # images become scannable after the fact.
+      - name: SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.ref.outputs.image }}
+          format: spdx-json
+          artifact-name: sbom-${{ matrix.bin }}.spdx.json
+          output-file: sbom-${{ matrix.bin }}.spdx.json
+
+      - name: attach SBOM to the run
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.bin }}
+          path: sbom-${{ matrix.bin }}.spdx.json
+          retention-days: 90
+
+      - name: install cosign
+        if: needs.gate.outputs.publish == 'true'
+        uses: sigstore/cosign-installer@v3
+
+      # Keyless: the identity is this workflow's OIDC token, recorded in Rekor. No private key
+      # to store, rotate or leak — and verification names the workflow that produced the image
+      # rather than "whoever held the key".
+      - name: sign the published digest
+        if: needs.gate.outputs.publish == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.bin }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      - name: attest the SBOM against the published digest
+        if: needs.gate.outputs.publish == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.bin }}
+        run: |
+          cosign attest --yes --predicate "sbom-${{ matrix.bin }}.spdx.json" \
+            --type spdxjson "${IMAGE}@${DIGEST}"
+
+  summary:
+    name: release summary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [gate, images]
+    if: always()
+    steps:
+      - run: |
+          {
+            echo "## Release ${{ github.ref_name }}"
+            echo
+            if [ "${{ needs.gate.outputs.publish }}" = "true" ]; then
+              echo "Images **published** to \`${{ env.REGISTRY }}/${{ github.repository }}/*\` and signed with cosign."
+            else
+              echo "Images **built and attested only — not published.**"
+              echo
+              echo "\`wreq-util\` is GPL-3.0 and pushing an image is *conveying* the combined work,"
+              echo "which triggers the source-offer obligation. See OP-6 in \`docs/audit/PROGRESS.md\`"
+              echo "and the reasoning in \`deny.toml\`. Set the repository variable"
+              echo "\`ALLOW_IMAGE_PUBLISH=true\` once that is resolved."
+            fi
+            echo
+            echo "SBOMs are attached to this run as artifacts (one per image, SPDX JSON)."
+          } >> "$GITHUB_STEP_SUMMARY"

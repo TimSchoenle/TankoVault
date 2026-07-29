@@ -28,7 +28,7 @@
 # Base images are pinned by digest, cargo resolves against the committed `Cargo.lock`
 # (`--locked`), and image layer timestamps are clamped to `SOURCE_DATE_EPOCH` when supplied
 # (`--build-arg SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)`). Together with the release
-# profile (`strip`, `panic=abort`, `codegen-units=1`) this yields byte-stable images.
+# profile (`strip`, `codegen-units=1`, `lto`) this yields byte-stable images.
 
 ARG RUST_VERSION=1.94
 # Passed through so BuildKit can clamp layer mtimes for reproducible images. Empty is fine.
@@ -55,6 +55,18 @@ RUN apk add --no-cache musl-dev g++ cmake make nasm perl git clang-dev ca-certif
 # `bindgen` dlopens libclang at build-script time and does not search Alpine's lib dir on
 # its own.
 ENV LIBCLANG_PATH=/usr/lib
+# `cargo auditable build` is a drop-in for `cargo build` that embeds the resolved dependency
+# list into the binary itself (a `.dep-v0` ELF section). Without it a running container cannot
+# be mapped back to its dependency set at all — which matters far more here than in a normal
+# image, because `scratch` ships no package manager for a conventional scanner to interrogate.
+# The embedded manifest survives the release profile's `strip = true` (verified), so nothing
+# about the profile changes. Read it back with
+# `cargo audit bin /usr/local/bin/tankovault-service`.
+#
+# Pinned: an unpinned `cargo install` here is an unreviewed toolchain change on every cache
+# miss, and a future release raising its MSRV above the pinned RUST_VERSION would break all
+# nine image builds at once.
+RUN cargo install cargo-auditable --locked --version 0.7.5
 
 # --- Plan: capture the dependency recipe from the whole workspace. -----------------
 FROM chef AS planner
@@ -89,9 +101,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 COPY . .
 # `BIN` is declared here (after cook) so changing it does not bust the dependency cache.
 ARG BIN
+# `cargo auditable` rather than plain `cargo build`: see the chef stage. It wraps only
+# *workspace* members (RUSTC_WORKSPACE_WRAPPER), so the cargo-chef dependency cache above is
+# untouched and the layer ordering below still holds.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --locked --bin "${BIN}" \
+    cargo auditable build --release --locked --bin "${BIN}" \
  && cp "target/release/${BIN}" /app/service
 
 # --- Runtime (browser): Debian slim + Chromium for the optional `render` service. ---

@@ -74,6 +74,41 @@ jobs:
       - name: OpenAPI artifacts are up to date
         run: cargo run -p xtask -- openapi --check
 
+  # Feature-combination legs. Every other job compiles the *one* feature set the services
+  # happen to select, so `crates/service`'s `db` and `redis` features and `crates/domain`'s
+  # `sqlx` feature had exactly one combination that was ever built — a `#[cfg(feature = ...)]`
+  # that stopped compiling with a feature off, or a crate that only builds because a sibling
+  # unified a feature onto it, would not have been caught anywhere.
+  #
+  # This is the cheap two-thirds of the audit's OPS-4.6. A second OS leg and an `aarch64` image
+  # leg are deliberately NOT added: the fetch stack compiles BoringSSL from C/C++/asm, so a
+  # QEMU-emulated arm64 build costs upwards of an hour, and `Dockerfile.frontend` already
+  # parameterises `BUILD_TARGET` for the day a native arm64 runner is available. Windows/macOS
+  # legs would only cover the *dev* platform; nothing ships there.
+  features:
+    name: feature combinations
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
+      - uses: Swatinem/rust-cache@v2
+      - name: BoringSSL build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+      # Libraries only. The services are binaries that require their features, so
+      # `--no-default-features` across the workspace would fail for reasons that are not bugs;
+      # the crates are where an unbuildable combination actually hides.
+      - name: crates with no default features
+        run: |
+          cargo check --no-default-features \
+            -p tankovault-domain -p tankovault-service -p tankovault-config \
+            -p tankovault-contracts -p tankovault-fetch -p tankovault-solver \
+            -p tankovault-matcher -p tankovault-auth -p tankovault-email
+      - name: workspace with all features
+        run: cargo check --workspace --all-targets --all-features
+
   # Verifies the committed sqlx offline query cache (`.sqlx/`) against a real, migrated
   # Postgres: `cargo sqlx prepare --check` recompiles every `query!`/`query_as!` macro
   # against the live schema and fails if the cache is stale (a query or migration changed
@@ -276,6 +311,32 @@ jobs:
       - uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  # `cargo-deny` and `cargo-audit` detect *vulnerable* dependencies. Neither notices a
+  # dependency set that quietly changed: `Cargo.lock` is committed and the Docker builds pass
+  # `--locked`, but nothing verified that a pull request's manifest edit came with the
+  # corresponding lockfile update. A PR that bumps a version range without regenerating the
+  # lockfile passes every other gate and then makes the image build a different resolution
+  # from the one that was reviewed.
+  supply-chain:
+    name: lockfile integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
+      # `--locked` makes cargo refuse to touch `Cargo.lock`; resolving metadata is what forces
+      # it to notice that the lockfile does not satisfy the manifests. `--offline` so a
+      # registry hiccup cannot turn this into a flake — the lockfile pins everything it needs.
+      - name: Cargo.lock satisfies every manifest
+        run: cargo metadata --locked --offline --format-version 1 > /dev/null
+      # Same guarantee for the workspace-excluded WASM frontend, which has its own lockfile and
+      # is therefore covered by none of the jobs above.
+      - name: web/frontend Cargo.lock satisfies its manifest
+        working-directory: web/frontend
+        run: cargo metadata --locked --offline --format-version 1 > /dev/null
 
   docker:
     name: docker build

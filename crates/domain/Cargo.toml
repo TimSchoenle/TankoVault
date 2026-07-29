@@ -30,6 +30,7 @@ sqlx = { workspace = true, optional = true, default-features = false, features =
 sqlx = ["dep:sqlx"]
 
 [dev-dependencies]
+proptest = { workspace = true }
 serde_json = { workspace = true }
 
 [lints]

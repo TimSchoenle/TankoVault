@@ -19,5 +19,8 @@ time = { workspace = true }
 # proxies, which is what lets `xtask openapi` generate a typed client for them.
 utoipa = { workspace = true }
 
+[dev-dependencies]
+proptest = { workspace = true }
+
 [lints]
 workspace = true

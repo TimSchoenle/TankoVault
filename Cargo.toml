@@ -87,8 +87,15 @@ axum = { version = "0.8", features = ["macros", "json", "query"] }
 axum-extra = { version = "0.12", features = ["cookie", "typed-header", "query"] }
 tower = { version = "0.5", features = ["util", "timeout", "limit"] }
 # `catch-panic`: turns a panicking handler into a 500 for that one request instead of a
-# process abort. See the `panic = "unwind"` note in `[profile.release]`.
+# process abort. See the `panic = "unwind"` note in the release profile at the end of this file.
 tower-http = { version = "0.7", features = ["trace", "cors", "compression-full", "timeout", "request-id", "set-header", "catch-panic"] }
+
+# --- testing ---
+# Property-based testing on stable. Chosen over `quickcheck`/`arbitrary` because the
+# invariants worth pinning here (idempotence, symmetry, serde round-trips) need shrinking to
+# a minimal counterexample far more than they need coverage-guided input generation, and
+# because it runs in the ordinary `cargo test` job with no extra toolchain.
+proptest = { version = "1", default-features = false, features = ["std", "bit-set"] }
 
 # --- data / storage ---
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "json", "macros", "migrate"] }
@@ -160,6 +167,28 @@ metrics-exporter-prometheus = { version = "0.18", default-features = false }
 # running Tokio reactor at `build()` time; a connection-per-send transport is plenty
 # for the notifier's occasional alerts and keeps construction runtime-independent.
 lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "smtp-transport", "tokio1", "tokio1-rustls", "ring", "webpki-roots"] }
+
+# The dev profile was entirely untuned (PERFORMANCE §17): only the release profile below
+# existed, so every edit-rebuild cycle paid cargo's defaults across ~600 lockfile entries — a
+# C/asm BoringSSL build, both TLS stacks, `chromiumoxide`, `scraper` and the whole sqlx macro
+# machinery.
+[profile.dev]
+# Full DWARF across that many crates produces very large object files and dominates *link*
+# time, which is paid on every single rebuild. Line tables keep backtraces resolvable, which is
+# the only thing the debug info is actually used for here.
+debug = "line-tables-only"
+incremental = true
+
+# Dependencies change rarely; workspace crates change constantly. Optimise the former once and
+# leave the latter at `opt-level = 0` so incremental rebuilds stay fast.
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+# `argon2` is deliberately expensive by design and is 10-50x slower unoptimised, so at
+# `opt-level = 0` it dominates the wall-clock of every auth test.
+[profile.test.package.argon2]
+opt-level = 3
 
 [profile.release]
 opt-level = 3

@@ -66,3 +66,45 @@ pub struct ProviderInfo {
 pub struct AuthorizeUrl {
     pub url: String,
 }
+
+/// One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).
+///
+/// Produced by `services/sync` from a repository row and re-published verbatim by
+/// `services/api`. It lives here rather than on the row struct for the reason given in
+/// [`crate::admin`]: a `SELECT` column rename must not be able to rewrite the public API
+/// without a compile error. The published component name is pinned to `ConflictRow` — the
+/// move is an internal layering fix and must not rename anything on the wire.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = ConflictRow)]
+pub struct ConflictView {
+    pub id: uuid::Uuid,
+    pub series_id: uuid::Uuid,
+    pub series_title: String,
+    pub provider: String,
+    /// Which tracked field disagrees, e.g. `progress` or `status`.
+    pub field: String,
+    pub local_value: String,
+    pub remote_value: String,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
+    pub detected_at: time::OffsetDateTime,
+}
+
+/// One row of the user-facing sync history (design v2 §B.6 `GET /v1/me/sync/history`).
+/// See [`ConflictView`] for why it lives here.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = HistoryRow)]
+pub struct HistoryView {
+    pub id: uuid::Uuid,
+    pub series_id: uuid::Uuid,
+    pub series_title: String,
+    pub provider: String,
+    /// What the engine did, e.g. `pull`, `push` or `resolve`.
+    pub action: String,
+    /// Free-form, action-specific detail (the changed field and its before/after values).
+    #[schema(value_type = Object)]
+    pub detail: serde_json::Value,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
+    pub created_at: time::OffsetDateTime,
+}

@@ -26,6 +26,7 @@ mod me;
 mod series;
 mod state;
 mod upstream;
+mod views;
 
 use axum::Router;
 pub use state::AppState;

@@ -822,7 +822,7 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
 /// `chapters_read` is the sum of whole chapters below each series' last-read marker — an
 /// honest proxy over stored progress (there is no per-chapter read-event log, so a daily
 /// "streak" is intentionally omitted rather than fabricated).
-#[derive(Debug, Clone, Default, serde::Serialize, FromRow, utoipa::ToSchema)]
+#[derive(Debug, Clone, Default, serde::Serialize, FromRow)]
 pub struct MeStats {
     pub tracking: i64,
     pub reading: i64,

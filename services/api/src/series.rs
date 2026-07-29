@@ -16,6 +16,7 @@ use tankovault_domain::{
 use utoipa::{IntoParams, ToSchema};
 
 use crate::openapi::SERIES_TAG;
+use crate::views::IntoView;
 
 /// Highest accepted page index for the browse listing.
 ///
@@ -481,15 +482,14 @@ pub async fn tags(State(state): State<AppState>) -> ApiResult<Json<Vec<tankovaul
     path = "/v1/providers",
     tag = SERIES_TAG,
     responses(
-        (status = 200, description = "Enabled providers", body = Vec<tankovault_db::repo::providers::PublicProvider>),
+        (status = 200, description = "Enabled providers", body = Vec<tankovault_contracts::catalogue::PublicProviderView>),
     )
 )]
 pub async fn providers(
     State(state): State<AppState>,
-) -> ApiResult<Json<Vec<tankovault_db::repo::providers::PublicProvider>>> {
-    Ok(Json(
-        tankovault_db::repo::providers::list_public(&state.pool).await?,
-    ))
+) -> ApiResult<Json<Vec<tankovault_contracts::catalogue::PublicProviderView>>> {
+    let rows = tankovault_db::repo::providers::list_public(&state.pool).await?;
+    Ok(Json(rows.into_view()))
 }
 
 #[cfg(test)]

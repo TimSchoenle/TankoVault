@@ -305,15 +305,15 @@ pub async fn sync_settings_patch(
 
 /// List pending sync conflicts
 ///
-/// The caller's pending conflicts across all providers (§B.6). Rows are `ConflictRow`, the
-/// same type the sync service reads from the database.
+/// The caller's pending conflicts across all providers (§B.6). Rows are
+/// `tankovault_contracts::sync::ConflictView`, the shape the sync service publishes.
 #[utoipa::path(
     get,
     path = "/v1/me/sync/conflicts",
     tag = ME_SYNC_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Pending conflicts, forwarded from the sync service", body = Vec<tankovault_db::repo::sync::ConflictRow>),
+        (status = 200, description = "Pending conflicts, forwarded from the sync service", body = Vec<tankovault_contracts::sync::ConflictView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
@@ -377,8 +377,8 @@ pub struct HistoryParams {
 
 /// Get sync history
 ///
-/// A page of the caller's sync history (§B.6). Rows are `HistoryRow`, the same type the sync
-/// service reads from the database.
+/// A page of the caller's sync history (§B.6). Rows are
+/// `tankovault_contracts::sync::HistoryView`, the shape the sync service publishes.
 #[utoipa::path(
     get,
     path = "/v1/me/sync/history",
@@ -386,7 +386,7 @@ pub struct HistoryParams {
     params(HistoryParams),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "A page of sync history, forwarded from the sync service", body = Vec<tankovault_db::repo::sync::HistoryRow>),
+        (status = 200, description = "A page of sync history, forwarded from the sync service", body = Vec<tankovault_contracts::sync::HistoryView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]

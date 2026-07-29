@@ -16,7 +16,7 @@ use tankovault_domain::UserId;
 use time::OffsetDateTime;
 
 /// A stored override, with the provenance the control plane displays.
-#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct OverrideRow {
     /// The feature key. A string rather than the enum so an override left behind by another
     /// build stays *visible* to an operator instead of vanishing from the page that is the
@@ -26,7 +26,6 @@ pub struct OverrideRow {
     /// Why the switch was flipped, if the operator said.
     pub note: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub updated_at: OffsetDateTime,
     /// Username of the operator who last changed it; `None` once that account is erased.
     pub updated_by: Option<String>,

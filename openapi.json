@@ -386,7 +386,7 @@
         "type": "object"
       },
       "ConflictRow": {
-        "description": "One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).\n\nSchema'd and `Deserialize` because `services/api` re-publishes this row under\n`/v1/me/sync/conflicts`, so it has to appear in the `OpenAPI` document for the generated\nclient to expose the endpoint at all.",
+        "description": "One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).\n\nProduced by `services/sync` from a repository row and re-published verbatim by\n`services/api`. It lives here rather than on the row struct for the reason given in\n[`crate::admin`]: a `SELECT` column rename must not be able to rewrite the public API\nwithout a compile error. The published component name is pinned to `ConflictRow` — the\nmove is an internal layering fix and must not rename anything on the wire.",
         "properties": {
           "detected_at": {
             "type": "string"
@@ -904,7 +904,7 @@
         "type": "object"
       },
       "HistoryRow": {
-        "description": "One row of the user-facing sync history (design v2 §B.6 `GET /v1/me/sync/history`).\n\nSchema'd and `Deserialize` for the same reason as [`ConflictRow`]: `services/api`\nre-publishes it, so the generated client needs it in the `OpenAPI` document.",
+        "description": "One row of the user-facing sync history (design v2 §B.6 `GET /v1/me/sync/history`).\nSee [`ConflictView`] for why it lives here.",
         "properties": {
           "action": {
             "description": "What the engine did, e.g. `pull`, `push` or `resolve`.",
@@ -1573,7 +1573,7 @@
         "type": "string"
       },
       "PublicProvider": {
-        "description": "A public-facing provider entry for the Discover filter list (frontend §9.3\n`GET /v1/providers`): identity plus how many distinct series it carries, so the UI can\nshow \"Provider (N)\" options without exposing operator-only config/politeness.",
+        "description": "A provider entry for the Discover filter list: identity plus how many distinct series it\ncarries, so the UI can show \"Provider (N)\" options without exposing operator-only\nconfig/politeness.",
         "properties": {
           "id": {
             "format": "uuid",
@@ -1696,7 +1696,7 @@
         "type": "object"
       },
       "RequestKind": {
-        "description": "What the subject is exercising. Mirrors the `gdpr_request_kind` SQL enum.",
+        "description": "What a data subject is exercising (GDPR Chapter III). Mirrors the `gdpr_request_kind` SQL\nenum, whose `sqlx`-typed counterpart stays in `tankovault_db` — this crate must not depend\non the driver.",
         "enum": [
           "access",
           "portability",
@@ -1756,7 +1756,7 @@
         "type": "object"
       },
       "RequestStatus": {
-        "description": "Where a request is in its lifecycle. Mirrors the `gdpr_request_status` SQL enum.",
+        "description": "Where a data-subject request is in its lifecycle. Mirrors the `gdpr_request_status` SQL\nenum; see [`PrivacyRequestKind`] for why the mirror exists.",
         "enum": [
           "pending",
           "in_progress",
@@ -2310,7 +2310,7 @@
         "type": "object"
       },
       "SystemStats": {
-        "description": "System-wide rollup for the console header (single-row query).",
+        "description": "System-wide rollup for the console header.",
         "properties": {
           "chapters_1h": {
             "format": "int64",
@@ -2556,7 +2556,7 @@
         "type": "object"
       },
       "UserDetail": {
-        "description": "Everything the user-detail panel shows, minus the grant list (fetched separately by\n[`crate::repo::permissions::list_for_user`] so the panel can refresh just that part after\nan edit).",
+        "description": "Everything the user-detail panel shows, minus the grant list (fetched separately by\n`tankovault_db::repo::permissions::list_for_user` so the panel can refresh just that part\nafter an edit).",
         "properties": {
           "active_sessions": {
             "description": "Live login sessions. Tells an operator whether a suspension will actually take effect\nwithout also revoking sessions.",
@@ -7409,7 +7409,7 @@
     },
     "/v1/me/sync/conflicts": {
       "get": {
-        "description": "The caller's pending conflicts across all providers (§B.6). Rows are `ConflictRow`, the\nsame type the sync service reads from the database.",
+        "description": "The caller's pending conflicts across all providers (§B.6). Rows are\n`tankovault_contracts::sync::ConflictView`, the shape the sync service publishes.",
         "operationId": "sync_conflicts",
         "responses": {
           "200": {
@@ -7511,7 +7511,7 @@
     },
     "/v1/me/sync/history": {
       "get": {
-        "description": "A page of the caller's sync history (§B.6). Rows are `HistoryRow`, the same type the sync\nservice reads from the database.",
+        "description": "A page of the caller's sync history (§B.6). Rows are\n`tankovault_contracts::sync::HistoryView`, the shape the sync service publishes.",
         "operationId": "sync_history",
         "parameters": [
           {

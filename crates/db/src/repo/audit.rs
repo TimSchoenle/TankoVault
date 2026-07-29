@@ -68,7 +68,7 @@ pub async fn prune_older_than<'e, E: PgExecutor<'e>>(
 }
 
 /// One privileged-action record enriched with the actor's username, for the console feed.
-#[derive(Debug, Clone, serde::Serialize, FromRow, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct AuditView {
     pub id: Uuid,
     /// Actor username (`None` for system-originated actions or a since-deleted user).
@@ -77,7 +77,6 @@ pub struct AuditView {
     pub target: Option<String>,
     pub detail: Json,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
 }
 

@@ -999,13 +999,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).\n\nSchema'd and `Deserialize` because `services/api` re-publishes this row under\n`/v1/me/sync/conflicts`, so it has to appear in the `OpenAPI` document for the generated\nclient to expose the endpoint at all."]
+    #[doc = "One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).\n\nProduced by `services/sync` from a repository row and re-published verbatim by\n`services/api`. It lives here rather than on the row struct for the reason given in\n[`crate::admin`]: a `SELECT` column rename must not be able to rewrite the public API\nwithout a compile error. The published component name is pinned to `ConflictRow` — the\nmove is an internal layering fix and must not rename anything on the wire."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).\\n\\nSchema'd and `Deserialize` because `services/api` re-publishes this row under\\n`/v1/me/sync/conflicts`, so it has to appear in the `OpenAPI` document for the generated\\nclient to expose the endpoint at all.\","]
+    #[doc = "  \"description\": \"One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).\\n\\nProduced by `services/sync` from a repository row and re-published verbatim by\\n`services/api`. It lives here rather than on the row struct for the reason given in\\n[`crate::admin`]: a `SELECT` column rename must not be able to rewrite the public API\\nwithout a compile error. The published component name is pinned to `ConflictRow` — the\\nmove is an internal layering fix and must not rename anything on the wire.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"detected_at\","]
@@ -2223,13 +2223,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One row of the user-facing sync history (design v2 §B.6 `GET /v1/me/sync/history`).\n\nSchema'd and `Deserialize` for the same reason as [`ConflictRow`]: `services/api`\nre-publishes it, so the generated client needs it in the `OpenAPI` document."]
+    #[doc = "One row of the user-facing sync history (design v2 §B.6 `GET /v1/me/sync/history`).\nSee [`ConflictView`] for why it lives here."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One row of the user-facing sync history (design v2 §B.6 `GET /v1/me/sync/history`).\\n\\nSchema'd and `Deserialize` for the same reason as [`ConflictRow`]: `services/api`\\nre-publishes it, so the generated client needs it in the `OpenAPI` document.\","]
+    #[doc = "  \"description\": \"One row of the user-facing sync history (design v2 §B.6 `GET /v1/me/sync/history`).\\nSee [`ConflictView`] for why it lives here.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"action\","]
@@ -3873,13 +3873,13 @@ pub mod types {
             value.parse()
         }
     }
-    #[doc = "A public-facing provider entry for the Discover filter list (frontend §9.3\n`GET /v1/providers`): identity plus how many distinct series it carries, so the UI can\nshow \"Provider (N)\" options without exposing operator-only config/politeness."]
+    #[doc = "A provider entry for the Discover filter list: identity plus how many distinct series it\ncarries, so the UI can show \"Provider (N)\" options without exposing operator-only\nconfig/politeness."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A public-facing provider entry for the Discover filter list (frontend §9.3\\n`GET /v1/providers`): identity plus how many distinct series it carries, so the UI can\\nshow \\\"Provider (N)\\\" options without exposing operator-only config/politeness.\","]
+    #[doc = "  \"description\": \"A provider entry for the Discover filter list: identity plus how many distinct series it\\ncarries, so the UI can show \\\"Provider (N)\\\" options without exposing operator-only\\nconfig/politeness.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"id\","]
@@ -4082,13 +4082,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "What the subject is exercising. Mirrors the `gdpr_request_kind` SQL enum."]
+    #[doc = "What a data subject is exercising (GDPR Chapter III). Mirrors the `gdpr_request_kind` SQL\nenum, whose `sqlx`-typed counterpart stays in `tankovault_db` — this crate must not depend\non the driver."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"What the subject is exercising. Mirrors the `gdpr_request_kind` SQL enum.\","]
+    #[doc = "  \"description\": \"What a data subject is exercising (GDPR Chapter III). Mirrors the `gdpr_request_kind` SQL\\nenum, whose `sqlx`-typed counterpart stays in `tankovault_db` — this crate must not depend\\non the driver.\","]
     #[doc = "  \"type\": \"string\","]
     #[doc = "  \"enum\": ["]
     #[doc = "    \"access\","]
@@ -4250,13 +4250,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Where a request is in its lifecycle. Mirrors the `gdpr_request_status` SQL enum."]
+    #[doc = "Where a data-subject request is in its lifecycle. Mirrors the `gdpr_request_status` SQL\nenum; see [`PrivacyRequestKind`] for why the mirror exists."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Where a request is in its lifecycle. Mirrors the `gdpr_request_status` SQL enum.\","]
+    #[doc = "  \"description\": \"Where a data-subject request is in its lifecycle. Mirrors the `gdpr_request_status` SQL\\nenum; see [`PrivacyRequestKind`] for why the mirror exists.\","]
     #[doc = "  \"type\": \"string\","]
     #[doc = "  \"enum\": ["]
     #[doc = "    \"pending\","]
@@ -5821,13 +5821,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "System-wide rollup for the console header (single-row query)."]
+    #[doc = "System-wide rollup for the console header."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"System-wide rollup for the console header (single-row query).\","]
+    #[doc = "  \"description\": \"System-wide rollup for the console header.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"chapters_1h\","]
@@ -6431,13 +6431,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Everything the user-detail panel shows, minus the grant list (fetched separately by\n[`crate::repo::permissions::list_for_user`] so the panel can refresh just that part after\nan edit)."]
+    #[doc = "Everything the user-detail panel shows, minus the grant list (fetched separately by\n`tankovault_db::repo::permissions::list_for_user` so the panel can refresh just that part\nafter an edit)."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Everything the user-detail panel shows, minus the grant list (fetched separately by\\n[`crate::repo::permissions::list_for_user`] so the panel can refresh just that part after\\nan edit).\","]
+    #[doc = "  \"description\": \"Everything the user-detail panel shows, minus the grant list (fetched separately by\\n`tankovault_db::repo::permissions::list_for_user` so the panel can refresh just that part\\nafter an edit).\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"active_sessions\","]
@@ -14792,7 +14792,7 @@ impl Client {
     pub fn stream(&self) -> builder::Stream<'_> {
         builder::Stream::new(self)
     }
-    #[doc = "List pending sync conflicts\n\nThe caller's pending conflicts across all providers (§B.6). Rows are `ConflictRow`, the\nsame type the sync service reads from the database.\n\nSends a `GET` request to `/v1/me/sync/conflicts`\n\n```ignore\nlet response = client.sync_conflicts()\n    .send()\n    .await;\n```"]
+    #[doc = "List pending sync conflicts\n\nThe caller's pending conflicts across all providers (§B.6). Rows are\n`tankovault_contracts::sync::ConflictView`, the shape the sync service publishes.\n\nSends a `GET` request to `/v1/me/sync/conflicts`\n\n```ignore\nlet response = client.sync_conflicts()\n    .send()\n    .await;\n```"]
     pub fn sync_conflicts(&self) -> builder::SyncConflicts<'_> {
         builder::SyncConflicts::new(self)
     }
@@ -14800,7 +14800,7 @@ impl Client {
     pub fn sync_resolve_conflict(&self) -> builder::SyncResolveConflict<'_> {
         builder::SyncResolveConflict::new(self)
     }
-    #[doc = "Get sync history\n\nA page of the caller's sync history (§B.6). Rows are `HistoryRow`, the same type the sync\nservice reads from the database.\n\nSends a `GET` request to `/v1/me/sync/history`\n\n```ignore\nlet response = client.sync_history()\n    .page(page)\n    .provider(provider)\n    .series_id(series_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Get sync history\n\nA page of the caller's sync history (§B.6). Rows are\n`tankovault_contracts::sync::HistoryView`, the shape the sync service publishes.\n\nSends a `GET` request to `/v1/me/sync/history`\n\n```ignore\nlet response = client.sync_history()\n    .page(page)\n    .provider(provider)\n    .series_id(series_id)\n    .send()\n    .await;\n```"]
     pub fn sync_history(&self) -> builder::SyncHistory<'_> {
         builder::SyncHistory::new(self)
     }

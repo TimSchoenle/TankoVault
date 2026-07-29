@@ -29,17 +29,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// What the subject is exercising. Mirrors the `gdpr_request_kind` SQL enum.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    sqlx::Type,
-    utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, sqlx::Type)]
 #[sqlx(type_name = "gdpr_request_kind", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum RequestKind {
@@ -75,17 +65,7 @@ impl RequestKind {
 }
 
 /// Where a request is in its lifecycle. Mirrors the `gdpr_request_status` SQL enum.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    sqlx::Type,
-    utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, sqlx::Type)]
 #[sqlx(type_name = "gdpr_request_status", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum RequestStatus {
@@ -107,20 +87,17 @@ impl RequestStatus {
 }
 
 /// A request as the subject sees it, and the shape the operator queue extends.
-#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct RequestRow {
     pub id: Uuid,
     pub kind: RequestKind,
     pub status: RequestStatus,
     pub detail: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub requested_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub due_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339::option")]
-    #[schema(value_type = Option<String>)]
     pub resolved_at: Option<OffsetDateTime>,
     /// How it was resolved, or — for a rejection — why. Art. 12(4) obliges the controller to
     /// give reasons for a refusal, so a rejected request without this is incomplete.
@@ -130,16 +107,13 @@ pub struct RequestRow {
 /// A queue entry as the operator sees it: the subject's identity (while they still exist) and
 /// who is handling it.
 ///
-/// The subject-facing fields are a nested `request` rather than `#[serde(flatten)]`. Flattening
-/// reads better on the wire, but `utoipa` cannot describe it: a flattened field contributes no
-/// properties to the generated schema, so the typed client ended up with a struct missing every
-/// field the queue actually renders. A nested object is honest about its shape and survives
-/// code generation.
-#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+/// The subject-facing fields are a nested `request` rather than `#[serde(flatten)]`, matching
+/// `tankovault_contracts::admin::AdminPrivacyRequestView` — the wire type this converts to,
+/// whose docs record why a flattened field cannot be described in `OpenAPI`.
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct AdminRequestRow {
     pub request: RequestRow,
     /// The subject's id, or `None` once they have been erased.
-    #[schema(value_type = Option<String>)]
     pub user_id: Option<Uuid>,
     /// The subject's username. `None` means the account is gone — for a completed erasure
     /// that is the expected end state, not missing data.

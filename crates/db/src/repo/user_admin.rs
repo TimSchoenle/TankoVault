@@ -22,9 +22,8 @@ use uuid::Uuid;
 /// user's actual capabilities are what the detail view is for. The count is enough to answer
 /// "which of these accounts are privileged at all", which is the question the list is scanned
 /// for.
-#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct DirectoryRow {
-    #[schema(value_type = String)]
     pub id: Uuid,
     pub email: String,
     pub username: String,
@@ -37,16 +36,14 @@ pub struct DirectoryRow {
     /// How many series the user tracks — the cheapest signal of a real, in-use account.
     pub tracked_count: i64,
     #[serde(with = "time::serde::rfc3339::option")]
-    #[schema(value_type = Option<String>)]
     pub last_login_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
 }
 
 /// A page of the directory plus the unfiltered-by-page total, so the UI can render
 /// "showing 1–25 of 312" without a second request.
-#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct DirectoryPage {
     pub users: Vec<DirectoryRow>,
     /// Total matching the current search, ignoring `limit`/`offset`.
@@ -135,9 +132,8 @@ pub async fn directory<'e, E: PgExecutor<'e>>(
 /// Everything the user-detail panel shows, minus the grant list (fetched separately by
 /// [`crate::repo::permissions::list_for_user`] so the panel can refresh just that part after
 /// an edit).
-#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct UserDetail {
-    #[schema(value_type = String)]
     pub id: Uuid,
     pub email: String,
     pub username: String,
@@ -145,13 +141,10 @@ pub struct UserDetail {
     pub email_verified: bool,
     pub suspension_reason: Option<String>,
     #[serde(with = "time::serde::rfc3339::option")]
-    #[schema(value_type = Option<String>)]
     pub suspended_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339::option")]
-    #[schema(value_type = Option<String>)]
     pub last_login_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
     /// Live login sessions. Tells an operator whether a suspension will actually take effect
     /// without also revoking sessions.

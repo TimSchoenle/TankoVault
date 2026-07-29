@@ -5,6 +5,7 @@ use crate::audit::audit;
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::ADMIN_PROVIDERS_TAG;
 use crate::state::{AppState, AuthUser};
+use crate::views::IntoView;
 use axum::Json;
 use axum::extract::{Path, State};
 use serde::Deserialize;
@@ -340,7 +341,7 @@ pub async fn resolve_provider(
     tag = ADMIN_PROVIDERS_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Per-provider stats", body = Vec<tankovault_db::repo::stats::ProviderStat>),
+        (status = 200, description = "Per-provider stats", body = Vec<tankovault_contracts::admin::ProviderStatView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
@@ -348,11 +349,10 @@ pub async fn resolve_provider(
 pub async fn provider_stats(
     State(state): State<AppState>,
     user: AuthUser,
-) -> ApiResult<Json<Vec<tankovault_db::repo::stats::ProviderStat>>> {
+) -> ApiResult<Json<Vec<tankovault_contracts::admin::ProviderStatView>>> {
     user.require(Permission::ProvidersRead).await?;
-    Ok(Json(
-        tankovault_db::repo::stats::provider_stats(&state.pool).await?,
-    ))
+    let rows = tankovault_db::repo::stats::provider_stats(&state.pool).await?;
+    Ok(Json(rows.into_view()))
 }
 
 #[derive(Debug, Deserialize, Default, ToSchema)]

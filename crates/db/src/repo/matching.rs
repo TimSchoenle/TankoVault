@@ -99,7 +99,7 @@ pub async fn record_merge_candidate<'e, E: PgExecutor<'e>>(
 
 /// A pending merge candidate enriched with both series' display titles, for the operator
 /// review queue (design §11 `GET /v1/admin/merge-candidates`).
-#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct MergeCandidateView {
     pub id: Uuid,
     pub series_id: SeriesId,
@@ -109,7 +109,6 @@ pub struct MergeCandidateView {
     pub score: f32,
     pub reason: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub created_at: time::OffsetDateTime,
 }
 

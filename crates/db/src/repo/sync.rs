@@ -12,7 +12,6 @@ use serde_json::Value as Json;
 use sqlx::{FromRow, PgExecutor};
 use tankovault_domain::{SeriesId, UserId};
 use time::OffsetDateTime;
-use utoipa::ToSchema;
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
@@ -117,7 +116,7 @@ pub async fn insert_conflict<'e, E: PgExecutor<'e>>(
 /// Schema'd and `Deserialize` because `services/api` re-publishes this row under
 /// `/v1/me/sync/conflicts`, so it has to appear in the `OpenAPI` document for the generated
 /// client to expose the endpoint at all.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct ConflictRow {
     pub id: Uuid,
     pub series_id: Uuid,
@@ -128,7 +127,6 @@ pub struct ConflictRow {
     pub local_value: String,
     pub remote_value: String,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub detected_at: OffsetDateTime,
 }
 
@@ -242,7 +240,7 @@ pub async fn append_history<'e, E: PgExecutor<'e>>(
 ///
 /// Schema'd and `Deserialize` for the same reason as [`ConflictRow`]: `services/api`
 /// re-publishes it, so the generated client needs it in the `OpenAPI` document.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct HistoryRow {
     pub id: Uuid,
     pub series_id: Uuid,
@@ -251,10 +249,8 @@ pub struct HistoryRow {
     /// What the engine did, e.g. `pull`, `push` or `resolve`.
     pub action: String,
     /// Free-form, action-specific detail (the changed field and its before/after values).
-    #[schema(value_type = Object)]
     pub detail: Json,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
 }
 
@@ -610,21 +606,19 @@ pub async fn delete_mapping<'e, E: PgExecutor<'e>>(
 /// One row of the admin Sync console's "Linked accounts" table. The automatic-sync policy
 /// columns and pending-conflict count (design v2 §B.7) are read-only operator visibility —
 /// they are user settings, never operator-overridable.
-#[derive(Debug, Clone, Serialize, FromRow, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, FromRow)]
 pub struct AdminAccountRow {
     pub user_id: Uuid,
     pub username: String,
     pub provider: String,
     pub external_username: Option<String>,
     #[serde(with = "time::serde::rfc3339::option")]
-    #[schema(value_type = Option<String>)]
     pub last_synced_at: Option<OffsetDateTime>,
     pub last_error: Option<String>,
     pub auto_sync_enabled: bool,
     pub conflict_policy: String,
     pub pending_conflicts: i64,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
 }
 
@@ -652,14 +646,13 @@ pub async fn admin_list_accounts<'e, E: PgExecutor<'e>>(
 }
 
 /// One row of the admin Sync console's "Series mappings" table.
-#[derive(Debug, Clone, Serialize, FromRow, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, FromRow)]
 pub struct AdminMappingRow {
     pub series_id: Uuid,
     pub series_title: String,
     pub provider: String,
     pub external_id: String,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub updated_at: OffsetDateTime,
 }
 
@@ -705,7 +698,7 @@ pub async fn admin_list_mappings_for_series<'e, E: PgExecutor<'e>>(
 
 /// One row of the admin Sync console's "Assign queue" — a canonical series that has **no**
 /// external mapping for the given provider yet, so an operator can review and assign one.
-#[derive(Debug, Clone, Serialize, FromRow, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, FromRow)]
 pub struct UnmappedSeriesRow {
     pub series_id: Uuid,
     pub series_title: String,
@@ -797,7 +790,7 @@ pub async fn upsert_remote_entry<'e, E: PgExecutor<'e>>(
 
 /// One row of the admin console's "Unmatched remote entries" queue: a fetched provider entry
 /// the auto-matcher could not confidently link to a local series.
-#[derive(Debug, Clone, Serialize, FromRow, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, FromRow)]
 pub struct RemoteEntryRow {
     pub user_id: Uuid,
     pub username: String,

@@ -72,7 +72,7 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(
 }
 
 /// A single grant, with its provenance, for the user-detail view.
-#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct GrantRow {
     /// The permission token. A string rather than the enum because a row surviving from a
     /// build that had a capability this one does not must still be *visible* to an
@@ -81,7 +81,6 @@ pub struct GrantRow {
     /// Whether this build recognises the token. `false` means the grant is inert.
     pub known: bool,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub granted_at: OffsetDateTime,
     /// Who granted it, or `None` for a grant made by the migration from the old role model
     /// or by an administrator since erased.

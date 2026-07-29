@@ -25,12 +25,12 @@ use crate::audit::{audit, audit_failure};
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::ADMIN_USERS_TAG;
 use crate::state::{AppState, AuthUser};
+use crate::views::IntoView;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
-use tankovault_db::repo::permissions::GrantRow;
-use tankovault_db::repo::user_admin::{DirectoryPage, UserDetail};
+use tankovault_contracts::admin::{GrantView, UserDetailView, UserDirectoryPage};
 use tankovault_domain::{
     AccountStatus, Permission, PermissionGroup, PermissionPreset, PermissionSet, UserId,
 };
@@ -63,7 +63,7 @@ pub struct DirectoryQuery {
     params(DirectoryQuery),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "A page of the user directory", body = DirectoryPage),
+        (status = 200, description = "A page of the user directory", body = UserDirectoryPage),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
@@ -72,23 +72,41 @@ pub async fn list_users(
     State(state): State<AppState>,
     user: AuthUser,
     Query(q): Query<DirectoryQuery>,
-) -> ApiResult<Json<DirectoryPage>> {
+) -> ApiResult<Json<UserDirectoryPage>> {
     user.require(Permission::UsersRead).await?;
     let search = q.search.unwrap_or_default();
     let limit = q.limit.unwrap_or(50).clamp(1, MAX_PAGE);
     let offset = q.offset.unwrap_or(0).max(0);
     Ok(Json(
         tankovault_db::repo::user_admin::directory(&state.pool, search.trim(), limit, offset)
-            .await?,
+            .await?
+            .into_view(),
     ))
 }
 
 /// One account's administrative detail, together with its grants.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct UserDetailResponse {
-    pub user: UserDetail,
+    pub user: UserDetailView,
     /// The account's permission grants, with provenance.
-    pub permissions: Vec<GrantRow>,
+    pub permissions: Vec<GrantView>,
+}
+
+/// Read one account's detail panel: the account row plus its grants.
+///
+/// Every mutating handler below answers with the *re-read* state rather than echoing its own
+/// input, so the client always renders what the database now holds. That made the same two
+/// queries appear five times; they live here instead.
+async fn user_detail_response(
+    state: &AppState,
+    target: UserId,
+) -> ApiResult<Json<UserDetailResponse>> {
+    let user = tankovault_db::repo::user_admin::detail(&state.pool, target).await?;
+    let permissions = tankovault_db::repo::permissions::list_for_user(&state.pool, target).await?;
+    Ok(Json(UserDetailResponse {
+        user: user.into_view(),
+        permissions: permissions.into_view(),
+    }))
 }
 
 /// Get a user
@@ -115,10 +133,7 @@ pub async fn get_user(
 ) -> ApiResult<Json<UserDetailResponse>> {
     user.require(Permission::UsersRead).await?;
     let target = UserId::from_uuid(id);
-    Ok(Json(UserDetailResponse {
-        user: tankovault_db::repo::user_admin::detail(&state.pool, target).await?,
-        permissions: tankovault_db::repo::permissions::list_for_user(&state.pool, target).await?,
-    }))
+    user_detail_response(&state, target).await
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -184,10 +199,7 @@ pub async fn update_user(
     )
     .await;
 
-    Ok(Json(UserDetailResponse {
-        user: tankovault_db::repo::user_admin::detail(&state.pool, target).await?,
-        permissions: tankovault_db::repo::permissions::list_for_user(&state.pool, target).await?,
-    }))
+    user_detail_response(&state, target).await
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -271,10 +283,7 @@ pub async fn set_user_status(
     )
     .await;
 
-    Ok(Json(UserDetailResponse {
-        user: tankovault_db::repo::user_admin::detail(&state.pool, target).await?,
-        permissions: tankovault_db::repo::permissions::list_for_user(&state.pool, target).await?,
-    }))
+    user_detail_response(&state, target).await
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -346,10 +355,7 @@ pub async fn set_user_permissions(
     )
     .await;
 
-    Ok(Json(UserDetailResponse {
-        user: tankovault_db::repo::user_admin::detail(&state.pool, target).await?,
-        permissions: tankovault_db::repo::permissions::list_for_user(&state.pool, target).await?,
-    }))
+    user_detail_response(&state, target).await
 }
 
 /// Revoke a user's sessions
@@ -421,10 +427,7 @@ pub async fn verify_user_email(
         &serde_json::json!({}),
     )
     .await;
-    Ok(Json(UserDetailResponse {
-        user: tankovault_db::repo::user_admin::detail(&state.pool, target).await?,
-        permissions: tankovault_db::repo::permissions::list_for_user(&state.pool, target).await?,
-    }))
+    user_detail_response(&state, target).await
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

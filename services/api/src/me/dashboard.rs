@@ -3,6 +3,7 @@
 use crate::error::ApiResult;
 use crate::openapi::ME_DASHBOARD_TAG;
 use crate::state::{AppState, AuthUser};
+use crate::views::IntoView;
 use axum::Json;
 use axum::extract::State;
 use serde::Serialize;
@@ -106,15 +107,17 @@ pub async fn recommendations(
     tag = ME_DASHBOARD_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Lifetime stats", body = tankovault_db::repo::tracking::MeStats),
+        (status = 200, description = "Lifetime stats", body = tankovault_contracts::me::MeStatsView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn stats(
     State(state): State<AppState>,
     user: AuthUser,
-) -> ApiResult<Json<tankovault_db::repo::tracking::MeStats>> {
+) -> ApiResult<Json<tankovault_contracts::me::MeStatsView>> {
     Ok(Json(
-        tankovault_db::repo::tracking::me_stats(&state.pool, user.user_id).await?,
+        tankovault_db::repo::tracking::me_stats(&state.pool, user.user_id)
+            .await?
+            .into_view(),
     ))
 }

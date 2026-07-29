@@ -4,6 +4,7 @@ use crate::audit::audit;
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::ADMIN_SCANS_TAG;
 use crate::state::{AppState, AuthUser};
+use crate::views::IntoView;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -127,7 +128,7 @@ pub async fn list_scans(
     tag = ADMIN_SCANS_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Up to 25 most recent failed tasks", body = Vec<tankovault_db::repo::scans::FailedTaskView>),
+        (status = 200, description = "Up to 25 most recent failed tasks", body = Vec<tankovault_contracts::admin::FailedTaskView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
@@ -135,11 +136,10 @@ pub async fn list_scans(
 pub async fn scan_failures(
     State(state): State<AppState>,
     user: AuthUser,
-) -> ApiResult<Json<Vec<tankovault_db::repo::scans::FailedTaskView>>> {
+) -> ApiResult<Json<Vec<tankovault_contracts::admin::FailedTaskView>>> {
     user.require(Permission::ScansRead).await?;
-    Ok(Json(
-        tankovault_db::repo::scans::recent_failed_tasks(&state.pool, 25).await?,
-    ))
+    let rows = tankovault_db::repo::scans::recent_failed_tasks(&state.pool, 25).await?;
+    Ok(Json(rows.into_view()))
 }
 
 /// Live scan-progress stream

@@ -204,7 +204,7 @@ pub async fn delete<'e, E: PgExecutor<'e>>(exec: E, id: ProviderId) -> DbResult<
 /// A public-facing provider entry for the Discover filter list (frontend §9.3
 /// `GET /v1/providers`): identity plus how many distinct series it carries, so the UI can
 /// show "Provider (N)" options without exposing operator-only config/politeness.
-#[derive(Debug, Clone, serde::Serialize, FromRow, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct PublicProvider {
     pub id: Uuid,
     pub slug: String,

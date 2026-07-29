@@ -5,13 +5,13 @@
 //! - resolves the host and **rejects private, loopback, link-local, CGNAT, benchmarking,
 //!   documentation, and cloud-metadata IP ranges** (`169.254.169.254`, RFC1918, `::1`, …),
 //! - re-checks **after DNS resolution and on every redirect** by injecting a validating
-//!   [`reqwest::dns::Resolve`] so the client only ever connects to vetted public IPs —
+//!   [`wreq::dns::Resolve`] so the client only ever connects to vetted public IPs —
 //!   closing the DNS-rebinding / redirect-to-internal hole.
 
-use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use thiserror::Error;
 use url::Url;
+use wreq::dns::{Addrs, Name, Resolve, Resolving};
 
 /// Reasons a URL/host is rejected by the guard.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -107,7 +107,7 @@ pub async fn resolve_checked(host: &str) -> Result<Vec<SocketAddr>, SsrfError> {
     Ok(allowed)
 }
 
-/// A [`reqwest::dns::Resolve`] that filters out forbidden addresses at connect time, for
+/// A [`wreq::dns::Resolve`] that filters out forbidden addresses at connect time, for
 /// the initial request and every redirect hop. Injected into the base client so no code
 /// path can connect to an internal address, even under DNS rebinding.
 #[derive(Debug, Default, Clone)]

@@ -1,14 +1,14 @@
 //! # tankovault-fetch
 //!
 //! The **only** place network egress to providers happens (design §9). A composition of
-//! decorators over `reqwest`, outer → inner:
+//! decorators over `wreq`, outer → inner:
 //!
 //! ```text
-//! RobotsFetcher      -> honours robots.txt + crawl-delay; refuses disallowed paths
-//! RateLimitedFetcher -> per-provider governor + concurrency cap
+//! BackoffFetcher     -> honours provider-directed 429/503 + Retry-After
+//! RateLimitedFetcher -> per-provider governor + concurrency cap + crawl delay
 //! SolvingFetcher     -> detects bot-management challenges; delegates to a ChallengeSolver
 //! RetryingFetcher    -> exponential backoff + jitter on transient errors
-//! BaseHttpFetcher    -> reqwest with a validating (SSRF-safe) DNS resolver + realistic headers
+//! BaseHttpFetcher    -> wreq with browser emulation + a validating (SSRF-safe) DNS resolver
 //! ```
 //!
 //! Hard invariant: **no image/content fetch path exists**. [`FetchResponse::body`] is
@@ -21,7 +21,6 @@ mod error;
 mod fetcher;
 mod ratelimit;
 mod retry;
-mod robots;
 mod solver_client;
 mod solving;
 pub mod ssrf;
@@ -34,7 +33,6 @@ pub use error::FetchError;
 pub use fetcher::Fetcher;
 pub use ratelimit::{RateLimitedFetcher, ThrottlePolicy};
 pub use retry::RetryingFetcher;
-pub use robots::{RobotsFetcher, RobotsRules};
 pub use solver_client::HttpChallengeSolver;
 pub use solving::{InMemorySessionStore, SessionStore, SolvedSession, SolvingFetcher};
 pub use types::{FetchRequest, FetchResponse};

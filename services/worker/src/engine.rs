@@ -11,7 +11,7 @@ use tankovault_contracts::{ChapterDiscovered, ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
 use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert};
 use tankovault_domain::{Provider, normalize_title};
-use tankovault_fetch::{ProviderFetchConfig, RobotsRules, SessionStore, build_provider_fetcher};
+use tankovault_fetch::{ProviderFetchConfig, SessionStore, build_provider_fetcher};
 use tankovault_solver::ChallengeSolver;
 use time::OffsetDateTime;
 
@@ -43,27 +43,15 @@ impl Engine {
     ) -> anyhow::Result<(Box<dyn SourceAdapter>, Ctx)> {
         let adapter = build_adapter(provider.adapter, &provider.slug, &provider.config)?;
 
-        let robots = provider
-            .robots_txt
-            .as_deref()
-            .map(|txt| RobotsRules::parse(txt, &provider.politeness.user_agent));
-
         let mut fetch_cfg = ProviderFetchConfig::new(
             provider.politeness.user_agent.clone(),
             self.solver.clone(),
             self.session_store.clone(),
         );
+        fetch_cfg.emulation = provider.politeness.emulation;
         fetch_cfg.rps = provider.politeness.rps;
         fetch_cfg.concurrency = provider.politeness.concurrency;
-        let robots_delay_ms = robots
-            .as_ref()
-            .and_then(|r| r.crawl_delay)
-            .filter(|d| d.is_finite() && *d > 0.0)
-            .map(|d| Duration::from_secs_f64(d).as_millis())
-            .and_then(|ms| u64::try_from(ms).ok())
-            .unwrap_or(0);
-        fetch_cfg.crawl_delay_ms = provider.politeness.crawl_delay_ms.max(robots_delay_ms);
-        fetch_cfg.robots = robots;
+        fetch_cfg.crawl_delay_ms = provider.politeness.crawl_delay_ms;
         fetch_cfg.connect_timeout = Duration::from_secs(10);
         fetch_cfg.request_timeout = Duration::from_secs(30);
 

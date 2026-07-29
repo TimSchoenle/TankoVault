@@ -16,7 +16,7 @@ use tankovault_domain::{
     AdapterKind, Permission, Politeness, Provider, ProviderId, ProviderState, ScanMode,
 };
 use tankovault_fetch::{
-    HttpChallengeSolver, InMemorySessionStore, ProviderFetchConfig, RobotsRules, SessionStore,
+    HttpChallengeSolver, InMemorySessionStore, ProviderFetchConfig, SessionStore,
     build_provider_fetcher,
 };
 use tankovault_solver::ChallengeSolver;
@@ -353,7 +353,7 @@ pub struct TestAdapterRequest {
 ///
 /// Dry-run the provider's adapter against the live site and return the parsed sample so
 /// operators can fix selectors without a deploy (design §11/§17). Bounded by a timeout;
-/// SSRF/robots/rate-limit are enforced by the injected fetch stack.
+/// SSRF and rate limits are enforced by the injected fetch stack.
 ///
 /// The body is deliberately free-form JSON: it is a diagnostic dump whose shape follows
 /// whatever the adapter managed to parse, and the console renders it verbatim. It is still
@@ -448,10 +448,6 @@ fn build_test_context(
 ) -> ApiResult<(Box<dyn SourceAdapter>, Ctx)> {
     let adapter = build_adapter(provider.adapter, &provider.slug, &provider.config)
         .map_err(|e| ApiError::BadRequest(format!("adapter build failed: {e}")))?;
-    let robots = provider
-        .robots_txt
-        .as_deref()
-        .map(|txt| RobotsRules::parse(txt, &provider.politeness.user_agent));
     let solver: Arc<dyn ChallengeSolver> = Arc::new(HttpChallengeSolver::new(
         solver_url.to_owned(),
         Duration::from_secs(90),
@@ -462,9 +458,9 @@ fn build_test_context(
         solver,
         session_store,
     );
+    cfg.emulation = provider.politeness.emulation;
     cfg.rps = provider.politeness.rps;
     cfg.concurrency = provider.politeness.concurrency;
-    cfg.robots = robots;
     cfg.connect_timeout = Duration::from_secs(10);
     cfg.request_timeout = Duration::from_secs(20);
     let fetcher = build_provider_fetcher(cfg).map_err(|e| {

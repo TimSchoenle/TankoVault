@@ -33,6 +33,11 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      # The provider fetch stack links BoringSSL (`wreq`), which its build script compiles
+      # from C/C++ source. Installed explicitly rather than relying on whatever the hosted
+      # runner image happens to ship.
+      - name: BoringSSL build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
       - name: rustfmt
         run: cargo fmt --all --check
       - name: clippy
@@ -45,6 +50,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: BoringSSL build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
       - name: cargo test
         run: cargo test --workspace --all-targets
       # Fails if a backend DTO changed without regenerating the OpenAPI artifacts
@@ -87,6 +94,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: BoringSSL build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
       - name: install sqlx-cli
         run: cargo install sqlx-cli --no-default-features --features rustls,postgres --locked
       - name: apply migrations
@@ -107,6 +116,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: BoringSSL build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
       # SQLX_OFFLINE (inherited) resolves the query macros from the committed cache at compile
       # time; the container supplies the live database the tests run against at runtime.
       - name: repo + HTTP access-control integration suites
@@ -177,8 +188,8 @@ jobs:
             BIN=${{ matrix.bin }}
             SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
           # The render tier needs a real browser at runtime (Chromium), so it selects the
-          # dedicated runtime-browser stage; every other binary is a static musl build that
-          # ships on the default `scratch` runtime.
+          # dedicated runtime-browser stage; every other binary is a musl build that ships on
+          # the default `scratch` runtime.
           target: ${{ matrix.bin == 'render' && 'runtime-browser' || 'runtime' }}
           push: false
           # Load the built image into the local Docker daemon so the container-structure-test

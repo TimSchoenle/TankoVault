@@ -12,7 +12,7 @@ use std::time::Duration;
 
 /// A FlareSolverr-backed solver.
 pub struct FlareSolverrSolver {
-    client: reqwest::Client,
+    client: wreq::Client,
     /// Base endpoint, e.g. `http://flaresolverr:8191`.
     endpoint: String,
     /// Per-solve time budget handed to `FlareSolverr` (`maxTimeout`, ms).
@@ -28,10 +28,13 @@ impl FlareSolverrSolver {
     pub fn new(endpoint: impl Into<String>, max_timeout_ms: u64, session_ttl_secs: u64) -> Self {
         // A generous client timeout above FlareSolverr's own budget, so its timeout wins
         // and is reported as `SolveError::Timeout` rather than a transport error.
-        let client = reqwest::Client::builder()
+        //
+        // No emulation profile here: `FlareSolverr` is a companion container on the internal
+        // network, not a provider to blend in with.
+        let client = wreq::Client::builder()
             .timeout(Duration::from_millis(max_timeout_ms + 15_000))
             .build()
-            .expect("reqwest client builds with default TLS");
+            .expect("HTTP client builds with the bundled trust store");
         Self {
             client,
             endpoint: endpoint.into(),
@@ -96,7 +99,7 @@ impl ChallengeSolver for FlareSolverrSolver {
             })?;
 
         let parsed: FsResponse = http
-            .json()
+            .json::<FsResponse>()
             .await
             .map_err(|e| SolveError::Malformed(e.to_string()))?;
 

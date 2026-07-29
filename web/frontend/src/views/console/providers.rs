@@ -328,6 +328,14 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
     let mut concurrency = use_signal(|| pro.politeness.concurrency.unwrap_or(2).to_string());
     let mut crawl_delay_ms = use_signal(|| pro.politeness.crawl_delay_ms.unwrap_or(0).to_string());
     let mut user_agent = use_signal(|| pro.politeness.user_agent.clone().unwrap_or_default());
+    // Empty string is the "no emulation" sentinel, matching `politeness_json`. The generated
+    // client models a nullable `$ref` as an untagged two-variant enum, as it does for
+    // `ScanRunProviderId`; `Variant0` is the raw JSON fallback.
+    let mut emulation = use_signal(|| match &pro.politeness.emulation {
+        Some(PolitenessEmulation::Variant1(e)) => e.to_string(),
+        Some(PolitenessEmulation::Variant0(v)) => v.as_str().unwrap_or_default().to_owned(),
+        None => String::new(),
+    });
 
     let on_save_logic = {
         let original_base = original_base.clone();
@@ -352,6 +360,7 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
                 &concurrency.read(),
                 &crawl_delay_ms.read(),
                 &user_agent.read(),
+                &emulation.read(),
             ) {
                 Ok(v) => v,
                 Err(key) => {
@@ -622,15 +631,32 @@ pub(super) fn ProviderCard(provider: Signal<Provider>, reload: Reload) -> Elemen
                             }
                         }
                     }
+                    Field { label: i18n.t("console.providers.field.emulation"),
+                        select {
+                            class: "ik-input",
+                            value: "{emulation}",
+                            onchange: move |e| emulation.set(e.value()),
+                            option { value: "chrome", "Chrome" }
+                            option { value: "firefox", "Firefox" }
+                            option { value: "safari", "Safari" }
+                            option { value: "edge", "Edge" }
+                            option { value: "ok_http", "OkHttp (Android)" }
+                            option { value: "", {i18n.t("console.providers.emulationNone")} }
+                        }
+                    }
                     Field { label: i18n.t("console.providers.field.userAgent"),
                         input {
                             class: "ik-input ik-mono",
                             value: "{user_agent}",
                             oninput: move |e| user_agent.set(e.value()),
+                            disabled: !emulation.read().is_empty(),
                         }
                     }
                     div { class: "ik-muted", style: "font-size:12px;",
                         {i18n.t("console.providers.clampNote")}
+                    }
+                    div { class: "ik-muted", style: "font-size:12px;",
+                        {i18n.t("console.providers.emulationNote")}
                     }
                     if *confirm_migrate.read() {
                         div { class: "ik-flex",

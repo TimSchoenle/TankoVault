@@ -4,13 +4,14 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "The provider fetch stack: SSRF guard, robots, rate limiting, caching, solving, retry."
+description = "The provider fetch stack: SSRF guard, browser emulation, rate limiting, solving, retry."
 
 [dependencies]
 tankovault-domain = { workspace = true }
 tankovault-solver = { workspace = true }
 async-trait = { workspace = true }
-reqwest = { workspace = true }
+wreq = { workspace = true }
+wreq-util = { workspace = true }
 url = { workspace = true }
 governor = { workspace = true }
 tokio = { workspace = true }

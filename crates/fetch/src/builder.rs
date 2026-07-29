@@ -1,8 +1,8 @@
 //! Compose the provider fetch stack.
 //!
-//! The stack is built **per provider** (each carries its own politeness, robots rules,
-//! and default UA), outer → inner:
-//! `Robots → Backoff → RateLimited → Solving → Retry → Base`.
+//! The stack is built **per provider** (each carries its own politeness and browser
+//! identity), outer → inner:
+//! `Backoff → RateLimited → Solving → Retry → Base`.
 //!
 //! The two waiting layers answer different questions and are deliberately not merged.
 //! `RateLimited` enforces the budget **we** chose (rps/concurrency/crawl-delay); `Backoff`
@@ -17,24 +17,25 @@ use crate::error::FetchError;
 use crate::fetcher::Fetcher;
 use crate::ratelimit::{RateLimitedFetcher, ThrottlePolicy};
 use crate::retry::RetryingFetcher;
-use crate::robots::{RobotsFetcher, RobotsRules};
 use crate::solving::{SessionStore, SolvingFetcher};
 use std::sync::Arc;
 use std::time::Duration;
+use tankovault_domain::BrowserEmulation;
 use tankovault_solver::ChallengeSolver;
 
 /// Everything needed to build a provider's fetch stack.
 pub struct ProviderFetchConfig {
-    /// Default user-agent for ordinary requests.
+    /// Default user-agent for ordinary requests. Ignored while `emulation` is `Some`, where
+    /// the profile's own user-agent must be used to match the TLS/HTTP2 fingerprint.
     pub user_agent: String,
+    /// Browser to impersonate, or `None` to crawl as an identifiable bot.
+    pub emulation: Option<BrowserEmulation>,
     /// Requests per second (already clamped to policy).
     pub rps: f64,
     /// Max concurrent requests.
     pub concurrency: u32,
     /// Crawl-delay floor between requests, ms.
     pub crawl_delay_ms: u64,
-    /// Parsed robots rules, or `None` to skip robots enforcement.
-    pub robots: Option<RobotsRules>,
     /// TCP connect timeout.
     pub connect_timeout: Duration,
     /// Whole-request timeout.
@@ -71,10 +72,10 @@ impl ProviderFetchConfig {
     ) -> Self {
         Self {
             user_agent: user_agent.into(),
+            emulation: Some(BrowserEmulation::Chrome),
             rps: 1.0,
             concurrency: 2,
             crawl_delay_ms: 0,
-            robots: None,
             connect_timeout: Duration::from_secs(10),
             request_timeout: Duration::from_secs(30),
             max_attempts: 4,
@@ -96,7 +97,12 @@ impl ProviderFetchConfig {
 /// # Errors
 /// Returns [`FetchError`] if the base HTTP client cannot be constructed.
 pub fn build_provider_fetcher(cfg: ProviderFetchConfig) -> Result<Arc<dyn Fetcher>, FetchError> {
-    let base = BaseHttpFetcher::new(cfg.user_agent, cfg.connect_timeout, cfg.request_timeout)?;
+    let base = BaseHttpFetcher::new(
+        cfg.user_agent,
+        cfg.emulation,
+        cfg.connect_timeout,
+        cfg.request_timeout,
+    )?;
     let retry = RetryingFetcher::new(
         base,
         cfg.max_attempts,
@@ -117,6 +123,5 @@ pub fn build_provider_fetcher(cfg: ProviderFetchConfig) -> Result<Arc<dyn Fetche
         cfg.backoff_base,
         cfg.backoff_max,
     );
-    let robots = RobotsFetcher::new(backoff, cfg.robots);
-    Ok(Arc::new(robots))
+    Ok(Arc::new(backoff))
 }

@@ -41,4 +41,4 @@ pub use normalize::normalize_title;
 pub use permissions::{
     ParsePermissionError, Permission, PermissionGroup, PermissionPreset, PermissionSet,
 };
-pub use politeness::Politeness;
+pub use politeness::{BrowserEmulation, Politeness};

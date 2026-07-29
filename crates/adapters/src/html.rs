@@ -111,18 +111,24 @@ pub fn parse_year(text: &str) -> Option<i32> {
 
 /// Parse a chapter number from listing text, preferring the number after a
 /// chapter/episode marker so `"Volume 2 Chapter 10.5"` yields `10.5`, not `2`.
+///
+/// The marker search and the tail slice both run against the lowercased copy. Indexing the
+/// *original* with an offset found in the lowercased string is a panic: `to_lowercase` is not
+/// length-preserving (`"İ"` is 2 bytes and lowercases to 3), so the offset can land inside a
+/// multi-byte character. Only ASCII digits are read afterwards, so the case folding is
+/// immaterial to the result.
 #[must_use]
 pub fn parse_chapter_number(text: &str) -> Option<f64> {
     let lower = text.to_lowercase();
     for marker in ["chapter", "episode", "chap", "ch.", "ch ", "#"] {
         if let Some(idx) = lower.find(marker) {
-            let tail = &text[idx + marker.len()..];
+            let tail = &lower[idx + marker.len()..];
             if let Some(n) = parse_number(tail) {
                 return Some(n);
             }
         }
     }
-    parse_number(text)
+    parse_number(&lower)
 }
 
 /// Resolve `href` against the absolute `page_url` and reduce it to a **relative** path
@@ -212,6 +218,27 @@ pub fn unescape_entities(s: &str) -> String {
 mod tests {
     use super::*;
     use scraper::Html;
+
+    /// Regression: `to_lowercase` is not length-preserving, so a byte offset found in the
+    /// lowercased copy must never be applied to the original. `"İ"` (U+0130, 2 bytes) folds
+    /// to `"i̇"` (3 bytes), which shifted every later offset and split a multi-byte character.
+    /// Reachable from any provider's chapter-anchor text.
+    #[test]
+    fn parse_chapter_number_survives_non_length_preserving_case_folding() {
+        assert_eq!(parse_chapter_number("İİİİ Chapter 12"), Some(12.0));
+        assert_eq!(parse_chapter_number("İ#7"), Some(7.0));
+        assert_eq!(parse_chapter_number("ΣΣΣ Episode 3.5 ΣΣ"), Some(3.5));
+        // No marker: the fallback path must be boundary-safe too.
+        assert_eq!(parse_chapter_number("İİİ 42"), Some(42.0));
+        assert_eq!(parse_chapter_number("İİİ"), None);
+    }
+
+    #[test]
+    fn parse_chapter_number_prefers_the_marker() {
+        assert_eq!(parse_chapter_number("Volume 2 Chapter 10.5"), Some(10.5));
+        assert_eq!(parse_chapter_number("CHAPTER 8"), Some(8.0));
+        assert_eq!(parse_chapter_number("Ch. 99"), Some(99.0));
+    }
 
     #[test]
     fn splits_attr_suffix() {

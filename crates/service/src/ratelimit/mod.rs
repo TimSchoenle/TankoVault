@@ -37,7 +37,7 @@ use axum::extract::{ConnectInfo, MatchedPath, Request};
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 use tankovault_config::{RateLimitConfig, RateLimitPolicy};
@@ -329,28 +329,37 @@ impl RateLimiter {
         }
         if self.trust_forwarded_for {
             if let Some(ip) = forwarded_client_ip(req.headers()) {
-                return format!("ip:{ip}");
+                return format!("ip:{}", bucket_ip(&ip));
             }
         }
         req.extensions()
             .get::<ConnectInfo<SocketAddr>>()
             .map_or_else(
                 || "ip:unknown".to_owned(),
-                |ConnectInfo(addr)| format!("ip:{}", addr.ip()),
+                |ConnectInfo(addr)| format!("ip:{}", canonicalise(addr.ip())),
             )
     }
 }
 
-/// The left-most entry of `X-Forwarded-For`, or `X-Real-IP`.
+/// The **right-most** entry of `X-Forwarded-For`, or `X-Real-IP`.
 ///
 /// Only consulted when the operator has enabled `trust_forwarded_for`; otherwise these
 /// headers are entirely client-controlled and would defeat the limiter.
+///
+/// Right-most, not left-most: the reverse proxy in front of us *appends* the peer it
+/// actually accepted the connection from (`services/frontend`, mirroring nginx's
+/// `$proxy_add_x_forwarded_for`), so every entry to the left of that one was supplied by
+/// the client and is forgeable. Reading the left-most entry handed any caller a fresh
+/// bucket per request, which removed the auth limiter entirely — unlimited online password
+/// guessing and reset-mail flooding.
+///
+/// This assumes exactly one trusted hop in front of the service. That is what
+/// `deploy/docker-compose.yml` deploys; if another proxy is added, it must also append, and
+/// `trust_forwarded_for` must stay off wherever the service is reachable directly.
 fn forwarded_client_ip(headers: &HeaderMap) -> Option<String> {
     if let Some(forwarded) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-        // The left-most entry is the original client; everything after it was appended by
-        // successive proxies.
-        if let Some(first) = forwarded.split(',').next() {
-            let trimmed = first.trim();
+        if let Some(last) = forwarded.rsplit(',').next() {
+            let trimmed = last.trim();
             if !trimmed.is_empty() {
                 return Some(trimmed.to_owned());
             }
@@ -362,6 +371,35 @@ fn forwarded_client_ip(headers: &HeaderMap) -> Option<String> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
+}
+
+/// Collapse an address to the unit an attacker cannot cheaply multiply.
+///
+/// IPv6 is masked to its /64 prefix: the standard residential and VPS allocation is a routed
+/// /64, so bucketing on the full address gave one attacker 2^64 distinct budgets — and, with
+/// the Redis store, 2^64 distinct keys to grow the counter store with. IPv4 keeps its full
+/// address, where an extra address costs real money.
+fn canonicalise(ip: IpAddr) -> String {
+    match ip {
+        IpAddr::V4(v4) => v4.to_string(),
+        IpAddr::V6(v6) => {
+            let s = v6.segments();
+            format!("{:x}:{:x}:{:x}:{:x}::/64", s[0], s[1], s[2], s[3])
+        }
+    }
+}
+
+/// [`canonicalise`] for a header-sourced string, falling back to the raw value (bounded, so
+/// a junk header cannot be used to mint unlimited keys) when it does not parse as an address.
+fn bucket_ip(raw: &str) -> String {
+    raw.parse::<IpAddr>().map_or_else(
+        |_| {
+            let mut trimmed = raw.to_owned();
+            trimmed.truncate(45); // max textual IPv6 length; longer is not an address
+            trimmed
+        },
+        canonicalise,
+    )
 }
 
 /// Opaque carrier for a Redis client, so callers need not name `fred` types and the
@@ -509,15 +547,64 @@ mod tests {
         );
     }
 
+    /// Regression: reading the left-most entry let any caller mint a fresh bucket per
+    /// request by sending their own `X-Forwarded-For`, which removed the auth limiter.
     #[test]
-    fn forwarded_for_takes_the_leftmost_entry() {
+    fn forwarded_for_takes_the_rightmost_entry() {
         let mut headers = HeaderMap::new();
-        headers.insert("x-forwarded-for", "203.0.113.7, 10.0.0.1".parse().unwrap());
+        headers.insert(
+            "x-forwarded-for",
+            "10.0.0.1, 192.168.0.5, 203.0.113.7".parse().unwrap(),
+        );
         assert_eq!(
             forwarded_client_ip(&headers).as_deref(),
             Some("203.0.113.7"),
-            "the original client is left-most; later entries are proxy hops"
+            "only the entry our own proxy appended is trustworthy"
         );
+    }
+
+    #[test]
+    fn a_client_supplied_forwarded_for_cannot_mint_a_new_bucket() {
+        let appended_by_our_proxy = "203.0.113.7";
+        let mut first = HeaderMap::new();
+        first.insert(
+            "x-forwarded-for",
+            format!("1.2.3.4, {appended_by_our_proxy}").parse().unwrap(),
+        );
+        let mut second = HeaderMap::new();
+        second.insert(
+            "x-forwarded-for",
+            format!("5.6.7.8, {appended_by_our_proxy}").parse().unwrap(),
+        );
+        assert_eq!(
+            forwarded_client_ip(&first),
+            forwarded_client_ip(&second),
+            "a forged prefix must not change the bucket"
+        );
+    }
+
+    /// A routed /64 is the standard residential and VPS allocation, so bucketing on the full
+    /// v6 address gave one attacker 2^64 budgets and 2^64 Redis keys.
+    #[test]
+    fn ipv6_buckets_collapse_to_the_64_prefix() {
+        let a = bucket_ip("2001:db8:1:2:3:4:5:6");
+        let b = bucket_ip("2001:db8:1:2:ffff:ffff:ffff:ffff");
+        assert_eq!(a, b);
+        assert_eq!(a, "2001:db8:1:2::/64");
+        assert_ne!(a, bucket_ip("2001:db8:1:3::1"));
+    }
+
+    #[test]
+    fn ipv4_buckets_keep_the_full_address() {
+        assert_eq!(bucket_ip("203.0.113.7"), "203.0.113.7");
+        assert_ne!(bucket_ip("203.0.113.7"), bucket_ip("203.0.113.8"));
+    }
+
+    /// A junk header must not become an unbounded key-space either.
+    #[test]
+    fn unparseable_forwarded_values_are_truncated() {
+        assert_eq!(bucket_ip("not-an-ip").len(), "not-an-ip".len());
+        assert_eq!(bucket_ip(&"x".repeat(10_000)).len(), 45);
     }
 
     #[test]

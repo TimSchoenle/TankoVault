@@ -76,19 +76,30 @@ fn is_forbidden_v6(ip: Ipv6Addr) -> bool {
         || (seg[0] == 0x2001 && seg[1] == 0x0db8) // 2001:db8::/32 documentation
 }
 
-/// Validate the scheme and presence of a host. Cheap pre-flight before any I/O; the
-/// address-range check happens at DNS time via [`SsrfResolver`].
+/// Validate the scheme, the presence of a host, and — when the authority is an IP literal
+/// — the address range.
+///
+/// The literal check is load-bearing, not belt-and-braces: `hyper-util`'s `HttpConnector`
+/// short-circuits DNS whenever the authority parses as an IP, so [`SsrfResolver`] is never
+/// consulted for `http://127.0.0.1/` or `http://169.254.169.254/`. Hostnames are still
+/// checked at connect time by the resolver, which additionally covers DNS rebinding.
 ///
 /// # Errors
-/// [`SsrfError::Scheme`] / [`SsrfError::NoHost`].
+/// [`SsrfError::Scheme`] / [`SsrfError::NoHost`] / [`SsrfError::ForbiddenAddress`].
 pub fn validate_url(url: &Url) -> Result<(), SsrfError> {
     if !matches!(url.scheme(), "http" | "https") {
         return Err(SsrfError::Scheme(url.scheme().to_owned()));
     }
-    if url.host_str().is_none() {
-        return Err(SsrfError::NoHost);
+    match url.host() {
+        None => Err(SsrfError::NoHost),
+        Some(url::Host::Ipv4(ip)) if is_forbidden_ip(IpAddr::V4(ip)) => {
+            Err(SsrfError::ForbiddenAddress(ip.to_string()))
+        }
+        Some(url::Host::Ipv6(ip)) if is_forbidden_ip(IpAddr::V6(ip)) => {
+            Err(SsrfError::ForbiddenAddress(ip.to_string()))
+        }
+        Some(_) => Ok(()),
     }
-    Ok(())
 }
 
 /// Resolve `host` and return only the vetted (public) addresses, erroring if none remain.
@@ -199,5 +210,32 @@ mod tests {
     fn validate_url_accepts_http_https() {
         assert!(validate_url(&Url::parse("https://example.com/x").unwrap()).is_ok());
         assert!(validate_url(&Url::parse("http://example.com/x").unwrap()).is_ok());
+    }
+
+    /// Regression: the connector skips the custom resolver for IP-literal authorities, so
+    /// the range check has to happen here or not at all.
+    #[test]
+    fn validate_url_rejects_ip_literals_in_forbidden_ranges() {
+        for raw in [
+            "http://169.254.169.254/latest/meta-data/",
+            "http://127.0.0.1/",
+            "http://10.0.0.1/",
+            "https://192.168.1.1/",
+            "http://[::1]:5432/",
+            "http://[fd00::1]/",
+            "http://[::ffff:169.254.169.254]/",
+        ] {
+            let url = Url::parse(raw).unwrap();
+            assert!(
+                matches!(validate_url(&url), Err(SsrfError::ForbiddenAddress(_))),
+                "{raw} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_url_accepts_public_ip_literals() {
+        assert!(validate_url(&Url::parse("http://1.1.1.1/").unwrap()).is_ok());
+        assert!(validate_url(&Url::parse("http://[2606:4700:4700::1111]/").unwrap()).is_ok());
     }
 }

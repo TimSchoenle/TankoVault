@@ -4,7 +4,31 @@ This file tracks the build state of the system described in [`design.md`](./desi
 Update it at the end of every coding session: mark what landed, and leave a precise
 "pick up next" list so the next session starts without re-deriving context.
 
-**Last updated:** 2026-07-27 (Session 18 — frontend migrated off nginx to a scratch-based axum server)
+**Last updated:** 2026-07-29 (Session 19 — part-release read state was invisible to the series page)
+
+> **Session 19 — marking a part release read did nothing visible.** `GET /v1/series/:id/chapters`
+> decided each chapter's `read` flag from the whole-chapter frontier alone
+> (`c.number <= last_read_whole_number`), so a part read *ahead* of that frontier — recorded only
+> in `last_read_part_number`, which is the entire reason the two-scalar model exists (§A.1) — came
+> back `read: false` forever. The write was landing correctly; the row simply never changed, and
+> the frontend discarded the response with `.is_ok()`, so nothing was shown either way. The
+> AniList link was incidental: it makes the second half of the bug reachable, because a pulled
+> remote progress raises the whole frontier past a part, and `progress_mark_read` then treats
+> marking that part a deliberate no-op ("already covered") — a genuinely dead button under the old
+> read rule. Sync itself was already correct: `push_series_inner` and `reconcile_series` both read
+> `progress_state`, i.e. the whole frontier only, so AniList never sees a fractional number.
+>
+> Fixes: the §A.3 read rule now lives in one place, `ReadProgress::covers` (`crates/db`), and says
+> a part is read when the whole chapter containing it is read *or* the part frontier reaches it —
+> the second clause is what `feed`'s SQL already did and what makes `progress_mark_read`'s no-op
+> coherent. `series::chapters()` switched from `progress_get` to `progress_get_full` + `covers`
+> (`progress_get`, now unused and the exact shape of the footgun, was deleted).
+> `progress_mark_unread` gained the symmetric branch: un-reading a part of an already-read whole
+> chapter retreats the whole frontier below that chapter and re-derives the part frontier, instead
+> of silently writing back the state it was given. The chapter rows now surface a failed toggle
+> through a shared `OutcomeLine` (`series.markFailed`) rather than swallowing the error. §A.3 of
+> `docs/READING_PROGRESS_AND_SYNC.md` was corrected — its `read()` definition contradicted its own
+> `mark read` no-op, which is how the dead button got specified in the first place.
 
 > **Session 18 — the frontend image dropped nginx for an axum static server on `scratch`.** The
 > web edge is now `services/frontend` (`tankovault-frontend`, binary `frontend`): an axum app that
@@ -401,7 +425,7 @@ cargo check --workspace
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 
-# Run all unit tests (113 green).
+# Run all unit tests (341 green; the ~100 DB integration tests are #[ignore]d without Postgres).
 cargo test --workspace
 
 # Full E2E stack (Postgres + Redis + NATS + FlareSolverr + all services + web frontend).

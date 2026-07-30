@@ -4862,6 +4862,39 @@ pub mod types {
             self.0.fmt(f)
         }
     }
+    #[doc = "What the control plane answers when a scan is planned: the runs it created.\n\nPublished by `services/control-plane` on its internal `POST /internal/scans`, and\nrepublished verbatim by `services/api` on `POST /v1/admin/scans` and\n`POST /v1/admin/providers/{id}/resolve`. It lives here, rather than staying a private\nstruct in the control plane's `main.rs`, for the reason ARCH-10 exists: while the producer\nowned the only definition, the API could declare nothing more specific than\n`serde_json::Value`, so the console's \"N scans queued\" was reading a field no compiler had\never connected to the field the planner writes. Both ends now name this type, so removing\n`run_ids` fails to build at the producer *and* the republisher."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What the control plane answers when a scan is planned: the runs it created.\\n\\nPublished by `services/control-plane` on its internal `POST /internal/scans`, and\\nrepublished verbatim by `services/api` on `POST /v1/admin/scans` and\\n`POST /v1/admin/providers/{id}/resolve`. It lives here, rather than staying a private\\nstruct in the control plane's `main.rs`, for the reason ARCH-10 exists: while the producer\\nowned the only definition, the API could declare nothing more specific than\\n`serde_json::Value`, so the console's \\\"N scans queued\\\" was reading a field no compiler had\\never connected to the field the planner writes. Both ends now name this type, so removing\\n`run_ids` fails to build at the producer *and* the republisher.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"run_ids\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"run_ids\": {"]
+    #[doc = "      \"description\": \"One id per run planned — one per provider when the request names none.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/ScanRunId\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct ScanTriggered {
+        #[doc = "One id per run planned — one per provider when the request names none."]
+        pub run_ids: ::std::vec::Vec<ScanRunId>,
+    }
+    impl ScanTriggered {
+        pub fn builder() -> builder::ScanTriggered {
+            Default::default()
+        }
+    }
     #[doc = "`SeriesDetail`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -12018,6 +12051,47 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct ScanTriggered {
+            run_ids:
+                ::std::result::Result<::std::vec::Vec<super::ScanRunId>, ::std::string::String>,
+        }
+        impl ::std::default::Default for ScanTriggered {
+            fn default() -> Self {
+                Self {
+                    run_ids: Err("no value supplied for run_ids".to_string()),
+                }
+            }
+        }
+        impl ScanTriggered {
+            pub fn run_ids<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::ScanRunId>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.run_ids = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for run_ids: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<ScanTriggered> for super::ScanTriggered {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ScanTriggered,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    run_ids: value.run_ids?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::ScanTriggered> for ScanTriggered {
+            fn from(value: super::ScanTriggered) -> Self {
+                Self {
+                    run_ids: Ok(value.run_ids),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct SeriesDetail {
             alt_titles: ::std::result::Result<
                 ::std::vec::Vec<::std::string::String>,
@@ -16218,7 +16292,9 @@ pub mod builder {
             self
         }
         #[doc = "Sends a `POST` request to `/v1/admin/providers/{id}/resolve`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ScanTriggered>, Error<types::ProblemDetails>> {
             let Self { client, id } = self;
             let id = id.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -16249,7 +16325,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => Ok(ResponseValue::empty(response)),
+                200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -16579,7 +16655,9 @@ pub mod builder {
             self
         }
         #[doc = "Sends a `POST` request to `/v1/admin/scans`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ScanTriggered>, Error<types::ProblemDetails>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::TriggerScan::try_from(v).map_err(|e| e.to_string()))
@@ -16609,7 +16687,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => Ok(ResponseValue::empty(response)),
+                200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -17238,7 +17316,9 @@ pub mod builder {
             self
         }
         #[doc = "Sends a `POST` request to `/v1/admin/sync/pull`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::SyncAccountTarget::try_from(v).map_err(|e| e.to_string()))
@@ -17268,7 +17348,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => Ok(ResponseValue::empty(response)),
+                200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -17316,7 +17396,9 @@ pub mod builder {
             self
         }
         #[doc = "Sends a `POST` request to `/v1/admin/sync/push`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::SyncAccountTarget::try_from(v).map_err(|e| e.to_string()))
@@ -17346,7 +17428,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => Ok(ResponseValue::empty(response)),
+                200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -17569,7 +17651,9 @@ pub mod builder {
             self
         }
         #[doc = "Sends a `POST` request to `/v1/admin/sync/unlink`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::SyncAccountTarget::try_from(v).map_err(|e| e.to_string()))
@@ -17599,7 +17683,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => Ok(ResponseValue::empty(response)),
+                200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -20538,7 +20622,9 @@ pub mod builder {
             self
         }
         #[doc = "Sends a `POST` request to `/v1/me/sync/conflicts/{id}/resolve`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
             let Self { client, id, body } = self;
             let id = id.map_err(Error::InvalidRequest)?;
             let body = body
@@ -20573,7 +20659,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => Ok(ResponseValue::empty(response)),
+                200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -20749,7 +20835,9 @@ pub mod builder {
             self
         }
         #[doc = "Sends a `DELETE` request to `/v1/me/sync/{provider}`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
             let Self { client, provider } = self;
             let provider = provider.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -20780,7 +20868,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => Ok(ResponseValue::empty(response)),
+                200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -20886,7 +20974,9 @@ pub mod builder {
             self
         }
         #[doc = "Sends a `GET` request to `/v1/me/sync/{provider}/callback`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
             let Self {
                 client,
                 provider,
@@ -20923,7 +21013,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => Ok(ResponseValue::empty(response)),
+                200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -20971,7 +21061,9 @@ pub mod builder {
             self
         }
         #[doc = "Sends a `POST` request to `/v1/me/sync/{provider}/pull`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
             let Self {
                 client,
                 provider,
@@ -21008,7 +21100,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => Ok(ResponseValue::empty(response)),
+                200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -21053,7 +21145,9 @@ pub mod builder {
             self
         }
         #[doc = "Sends a `POST` request to `/v1/me/sync/{provider}/push`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
             let Self {
                 client,
                 provider,
@@ -21090,7 +21184,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => Ok(ResponseValue::empty(response)),
+                200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

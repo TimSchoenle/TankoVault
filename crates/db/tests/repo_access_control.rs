@@ -204,3 +204,61 @@ async fn cancel_own_is_scoped_to_the_owner() {
         .expect("cancel own");
     assert!(cancelled_by_owner, "the owner may cancel their own request");
 }
+
+/// The admin user directory finds an account regardless of how the operator types its name.
+///
+/// The bug this pins: `username`/`email` are `citext`, but the search predicate was
+/// `u.username LIKE '%' || $1 || '%'`, and the concatenation produces `text` — so the
+/// comparison resolved to a case-*sensitive* `text ~~ text`. Searching for `alice` returned
+/// nothing for a user registered as `Alice`, in the one screen an operator uses to find a
+/// person they have been given a name for. Same root cause as `repo::users::CiText`, but a
+/// parameter wrapper cannot fix it: the concatenation, not the parameter, carries the type,
+/// so the predicate is `ILIKE` now.
+///
+/// The empty-search short-circuit is asserted alongside because it is the branch the
+/// unfiltered console listing takes on every page load, and it must stay a listing rather
+/// than becoming a `LIKE '%%'` scan.
+#[tokio::test]
+async fn the_admin_directory_search_is_case_insensitive_on_both_columns() {
+    let db = TestDb::spawn().await;
+    db.seed_user("Alice", &[], AccountStatus::Active).await;
+    db.seed_user("bob", &[], AccountStatus::Active).await;
+
+    let found = |search: &str| {
+        let pool = db.pool.clone();
+        let search = search.to_owned();
+        async move {
+            user_admin::directory(&pool, &search, 50, 0)
+                .await
+                .expect("directory")
+        }
+    };
+
+    for search in ["alice", "Alice", "ALICE", "lic"] {
+        let page = found(search).await;
+        assert_eq!(
+            page.users
+                .iter()
+                .map(|r| r.username.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Alice"],
+            "search={search:?} must find the account however it was capitalised"
+        );
+        assert_eq!(
+            page.total, 1,
+            "search={search:?}: the total must match the rows"
+        );
+    }
+
+    // The email column is searched too, and `seed_user` derives it from the username — so this
+    // only matches through `email`, which is where the second copy of the predicate lives.
+    let page = found("ALICE@EXAMPLE.TEST").await;
+    assert_eq!(
+        page.total, 1,
+        "the email predicate must be case-insensitive too"
+    );
+
+    // An empty search is every account, not a pattern match against nothing.
+    let all = found("").await;
+    assert_eq!(all.total, 2);
+}

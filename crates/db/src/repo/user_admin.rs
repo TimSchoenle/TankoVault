@@ -80,13 +80,22 @@ pub async fn directory<'e, E: PgExecutor<'e>>(
     }
     // `$1 = ''` short-circuits the pattern match so an unfiltered listing does not pay for a
     // `LIKE '%%'` scan predicate on every row.
+    //
+    // `ILIKE`, not `LIKE`, and that is a fix rather than a preference. `username`/`email` are
+    // `citext`, but `'%' || $1 || '%'` concatenates down to `text`, so `citext ~~ text`
+    // resolved to a plain case-sensitive `text ~~ text` — an operator searching for `alice`
+    // found nothing for a user who registered as `Alice`. Same root cause as
+    // `repo::users::CiText`, which fixes the equality lookups; a wrapper cannot fix this one
+    // because the concatenation, not the parameter, is what carries the type. Read that
+    // type's doc comment for why the schema's intent silently stops holding at the operator.
+    // A leading wildcard forecloses an index either way, so `ILIKE` costs nothing here.
     let rows = sqlx::query_as!(
         Row,
         "WITH matched AS ( \
              SELECT u.* FROM users u \
              WHERE $1 = '' \
-                OR u.username LIKE '%' || $1 || '%' \
-                OR u.email LIKE '%' || $1 || '%' \
+                OR u.username ILIKE '%' || $1 || '%' \
+                OR u.email ILIKE '%' || $1 || '%' \
          ) \
          SELECT m.id, m.email::text AS \"email!\", m.username::text AS \"username!\", \
                 m.status AS \"status: AccountStatus\", \

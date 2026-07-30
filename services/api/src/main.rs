@@ -84,6 +84,12 @@ struct AuthConfig {
     ///
     /// The opt-out exists for local HTTP development, where a `Secure` cookie is simply never
     /// sent. Set it explicitly there; do not default it off for everyone.
+    ///
+    /// It also selects the cookie's **name and path**: `__Host-refresh_token` at `Path=/` when
+    /// on, the unprefixed `refresh_token` at `/v1/auth` when off, because a `__Host-` cookie
+    /// without `Secure` is refused by the browser rather than downgraded. Flipping this setting
+    /// therefore invalidates every already-issued refresh cookie — one forced sign-in, once. See
+    /// `auth::session::refresh_cookie` for the review behind the wider path.
     #[serde(default = "tankovault_config::default_true")]
     cookie_secure: bool,
 }
@@ -244,9 +250,10 @@ async fn main() -> anyhow::Result<()> {
     // from booting, so a failure here degrades the feature to `503` rather than aborting.
     let bus = tankovault_api::connect_bus(cfg.nats.as_ref()).await;
 
-    // Likewise Redis: it only sharpens rate limiting across replicas, so an outage
-    // downgrades to per-replica counters instead of refusing to start.
+    // Likewise Redis: it sharpens rate limiting across replicas and holds the SSE stream
+    // tickets, so an outage downgrades both to per-process state instead of refusing to start.
     let redis = connect_redis(cfg.redis.as_ref()).await;
+    let stream_tickets = stream_ticket_store(redis.as_ref());
 
     // Build the transactional email back-end. A missing/invalid relay degrades to a no-op
     // mailer (logs and drops) so the edge still boots and login/registration keep working.
@@ -287,6 +294,7 @@ async fn main() -> anyhow::Result<()> {
         challenge_solver_url: cfg.challenge_solver_url,
         internal_token,
         bus,
+        stream_tickets,
         audit,
         features,
         cookie_secure: cfg.auth.cookie_secure,
@@ -308,7 +316,7 @@ async fn main() -> anyhow::Result<()> {
         &cfg.rate_limit,
         metrics,
         health,
-        redis,
+        redis.map(tankovault_service::ratelimit::RedisStoreHandle::new),
     );
 
     tankovault_service::serve(&cfg.bind_addr, app, shutdown).await?;
@@ -383,29 +391,63 @@ fn spawn_audit_retention(
     });
 }
 
-/// Connect Redis for shared rate-limit counters, or `None` when unconfigured/unreachable.
+/// Connect Redis, or `None` when unconfigured/unreachable.
+///
+/// One client for both of this service's Redis users — the cross-replica rate-limit counters and
+/// the SSE stream-ticket store — as `tankovault_service::ratelimit::redis` already assumes ("the
+/// same connection is typically shared with other Redis users in the process"). Neither is worth
+/// refusing to boot over: rate limits degrade to per-replica counters and tickets to per-process
+/// ones, both with a warning.
 async fn connect_redis(
     cfg: Option<&tankovault_config::RedisConfig>,
-) -> Option<tankovault_service::ratelimit::RedisStoreHandle> {
+) -> Option<fred::clients::Client> {
     let cfg = cfg?;
     match fred::prelude::Builder::from_config(fred::prelude::Config::from_url(&cfg.url).ok()?)
         .build()
     {
         Ok(client) => match fred::prelude::ClientLike::init(&client).await {
             Ok(_) => {
-                tracing::info!("connected to redis for shared rate-limit counters");
-                Some(tankovault_service::ratelimit::RedisStoreHandle::new(client))
+                tracing::info!("connected to redis for rate-limit counters and stream tickets");
+                Some(client)
             }
             Err(e) => {
-                tracing::warn!(error = %e, "redis unreachable; rate limits stay per replica");
+                tracing::warn!(
+                    error = %e,
+                    "redis unreachable; rate limits stay per replica and stream tickets per process"
+                );
                 None
             }
         },
         Err(e) => {
-            tracing::warn!(error = %e, "invalid redis configuration; rate limits stay per replica");
+            tracing::warn!(
+                error = %e,
+                "invalid redis configuration; rate limits stay per replica and stream tickets per process"
+            );
             None
         }
     }
+}
+
+/// The stream-ticket store this deployment gets.
+///
+/// Redis where it is available, this process otherwise. The fallback is **wrong across
+/// replicas** — a ticket minted on one is unknown to the others, so opening the stream fails
+/// until a retry happens to land on the minting replica — and it says so loudly rather than
+/// degrading in silence. Refusing to boot instead would take the whole edge down for a
+/// best-effort notification badge.
+fn stream_ticket_store(
+    redis: Option<&fred::clients::Client>,
+) -> std::sync::Arc<dyn tankovault_api::stream_tickets::StreamTicketStore> {
+    if let Some(client) = redis {
+        return std::sync::Arc::new(tankovault_api::stream_tickets::RedisStreamTickets::new(
+            client.clone(),
+        ));
+    }
+    tracing::warn!(
+        "no redis: SSE stream tickets are per-process, so /v1/me/stream will fail to open \
+         behind more than one api replica"
+    );
+    std::sync::Arc::new(tankovault_api::stream_tickets::MemoryStreamTickets::new())
 }
 
 #[cfg(test)]

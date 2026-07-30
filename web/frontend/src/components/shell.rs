@@ -53,11 +53,11 @@ pub(crate) fn Shell() -> Element {
 ///
 /// The recurring half is not optional. Without it the in-memory token goes stale ~15 minutes
 /// after boot and every authenticated call starts 401ing until the user manually reloads.
-/// The SSE stream suffers worst: `EventSource` bakes the token into its URL and, per spec,
-/// stops reconnecting for good the first time a reconnect attempt draws a non-200 — so one
-/// stale-token 401 kills live notifications permanently. Refreshing ahead of expiry keeps the
-/// session token current, and because the stream below is keyed on it, the connection is
-/// transparently re-opened with a valid token before that can happen.
+/// The SSE stream used to suffer worst: `EventSource` baked the access token into its URL and, per
+/// spec, stops reconnecting for good the first time a reconnect attempt draws a non-200 — so one
+/// stale-token 401 killed live notifications permanently. Since SEC-8 the stream authenticates with
+/// a ticket it mints per attempt and drives its own reconnect (`crate::live`), so it no longer
+/// depends on the token staying fresh — but every other authenticated call still does.
 ///
 /// Crucially, a *failed* refresh is not a sign-out. Only a genuine `401` — the refresh
 /// session really is gone: expired past its 30-day window, rotated away, or reuse-revoked —
@@ -160,17 +160,19 @@ fn use_capability_sync() {
 ///
 /// `use_resource` restarts when the token changes — dropping the previous `EventSource` and
 /// closing its connection — so a sign-out or a silent refresh transparently tears the stream
-/// down or re-establishes it.
+/// down or re-establishes it. The token is read only to decide *whether* to run and to key the
+/// resource; the stream authenticates with a single-use ticket [`crate::live::run`] mints for
+/// itself, so it is never in the URL (SEC-8).
 fn use_live_notifications() {
     let session = use_session();
     let api = api::use_api();
     let badge = use_context::<UnreadBadge>();
 
     use_resource(move || {
-        let token = session.token_value();
+        let signed_in = session.is_authenticated();
         async move {
-            if let Some(token) = token {
-                crate::live::run(api, token, badge).await;
+            if signed_in {
+                crate::live::run(api, badge).await;
             }
         }
     });

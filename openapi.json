@@ -2190,6 +2190,26 @@
         ],
         "type": "object"
       },
+      "StreamTicket": {
+        "description": "A freshly minted stream ticket.",
+        "properties": {
+          "expires_in": {
+            "description": "Seconds until it expires. Redeem immediately; this is for diagnostics, not scheduling.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ticket": {
+            "description": "The opaque value to pass as `?ticket=` when opening the stream.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket",
+          "expires_in"
+        ],
+        "type": "object"
+      },
       "SuggestedMatch": {
         "description": "One ranked suggestion for the admin \"match every loaded entry\" screen: a local series the\nmatcher thinks the remote entry could be, with enough info (title, type, sources) to\neyeball it and its confidence `score` in `[0,1]`.",
         "properties": {
@@ -2762,6 +2782,12 @@
       "bearer_auth": {
         "scheme": "bearer",
         "type": "http"
+      },
+      "stream_ticket": {
+        "description": "Single-use, 30-second ticket from `POST /v1/me/stream-ticket`. `EventSource` cannot set an `Authorization` header, so the credential has to ride in the URL; making it single-use and short-lived is what stops the access log, `Referer` header and browser history that record it from being worth reading (SEC-8).",
+        "in": "query",
+        "name": "ticket",
+        "type": "apiKey"
       }
     }
   },
@@ -6146,7 +6172,7 @@
     },
     "/v1/auth/password/forgot": {
       "post": {
-        "description": "Always responds `202 Accepted`, whether or not the address is registered, so the\nendpoint can't be used to probe which emails have accounts. When the address does exist\nand email is configured, a single-use, time-limited reset link is sent.",
+        "description": "Always responds `202 Accepted`, whether or not the address is registered, so the\nendpoint can't be used to probe which emails have accounts. When the address does exist\nand email is configured, a single-use, time-limited reset link is sent.\n\n**Every** account-dependent step happens on a detached task (SEC-10). The uniform `202`\nwas previously defeated by timing: the known-address branch generated a token, hashed it\nand performed an `INSERT` — a write, so a WAL flush — before answering, while the unknown\nbranch returned straight after the lookup. That is a smaller gap than `login`'s two orders\nof magnitude but it is the same oracle, and it needs no credentials at all to read. With\nthe whole body spawned, this handler's only statement is the spawn, so there is no branch\nleft for a response time to disclose.\n\nThe return type is deliberately `StatusCode` rather than `ApiResult<StatusCode>`: the\nanti-enumeration property is \"this endpoint has exactly one answer\", and making that a\ntype rather than a convention means a later edit cannot reintroduce a second one.",
         "operationId": "forgot_password",
         "requestBody": {
           "content": {
@@ -6332,7 +6358,7 @@
     },
     "/v1/auth/verify-email/resend": {
       "post": {
-        "description": "Always responds `202 Accepted`, whether or not the address is registered or already\nconfirmed, so the endpoint can't be used to probe which emails have accounts. A fresh\nlink is only sent when the address exists, is still unconfirmed, and email is configured.",
+        "description": "Always responds `202 Accepted`, whether or not the address is registered or already\nconfirmed, so the endpoint can't be used to probe which emails have accounts. A fresh\nlink is only sent when the address exists, is still unconfirmed, and email is configured.\n\nSpawned in full, for the reason `auth::password::forgot_password` explains at length\n(SEC-10). This endpoint's channel was in fact the wider of the two: the known-and-unconfirmed\nbranch performed the token `INSERT`, while both \"no such address\" *and* \"already confirmed\"\nreturned straight after the lookup — so the timing separated three states rather than two,\nand \"this address exists and has not been confirmed\" is the more useful answer of the pair.\nThe audit named `forgot_password`; this is the same defect in the sibling handler.",
         "operationId": "resend_verification",
         "requestBody": {
           "content": {
@@ -7405,13 +7431,13 @@
     },
     "/v1/me/stream": {
       "get": {
-        "description": "Server-Sent Events of live per-user notifications (design §14, §17.4). Authenticated by the\n`access_token` query parameter (not the `Authorization` header — `EventSource` cannot set\nit), it subscribes to the user's core-NATS subject and relays each `UserNotification` as a\n`notification` SSE event, with a periodic keep-alive comment so proxies keep the connection\nopen. Ownership is implicit: the subscription is scoped to the token's own `user_id`.",
+        "description": "Server-Sent Events of live per-user notifications (design §14, §17.4). Authenticated by a\nsingle-use `ticket` query parameter obtained from `POST /v1/me/stream-ticket` — not the\n`Authorization` header, which `EventSource` cannot set. It subscribes to the ticket's own\nuser's core-NATS subject and relays each `UserNotification` as a `notification` SSE event,\nwith a periodic keep-alive comment so proxies keep the connection open. Ownership is\nimplicit: the subscription is scoped to the user the ticket was minted for.\n\nThe ticket is consumed here, so `EventSource`'s *automatic* reconnect cannot re-open this\nstream — the client has to mint a new ticket per attempt (`web/frontend/src/live.rs` does).\nThat is a feature rather than a cost: re-minting goes through `AuthUser`, so a suspension\napplied mid-stream is caught by the mint call as well as by the check below.",
         "operationId": "stream",
         "parameters": [
           {
-            "description": "Access token, passed as a query parameter because the browser `EventSource` API\ncannot attach an `Authorization` header (design §17.4). It is verified exactly like\na `Bearer` token and never logged.",
+            "description": "Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (design §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.",
             "in": "query",
-            "name": "access_token",
+            "name": "ticket",
             "required": true,
             "schema": {
               "type": "string"
@@ -7433,7 +7459,7 @@
                 }
               }
             },
-            "description": "missing or invalid access_token"
+            "description": "missing, expired, or already-redeemed ticket"
           },
           "503": {
             "content": {
@@ -7446,7 +7472,59 @@
             "description": "the live notification stream is temporarily unavailable"
           }
         },
+        "security": [
+          {
+            "stream_ticket": []
+          }
+        ],
         "summary": "Live notification stream",
+        "tags": [
+          "me-notifications"
+        ]
+      }
+    },
+    "/v1/me/stream-ticket": {
+      "post": {
+        "description": "Exchanges the caller's `Bearer` session for a single-use, 30-second credential that\n`EventSource` can carry in a query string. Mint one per connection attempt — including each\nreconnect, since redeeming a ticket spends it.",
+        "operationId": "stream_ticket",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StreamTicket"
+                }
+              }
+            },
+            "description": "A single-use ticket for `GET /v1/me/stream`"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the ticket store is temporarily unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Mint a stream ticket",
         "tags": [
           "me-notifications"
         ]

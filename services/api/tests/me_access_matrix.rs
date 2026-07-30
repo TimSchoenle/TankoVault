@@ -37,10 +37,16 @@ use tankovault_domain::{AccountStatus, UserId};
 enum Credential {
     /// The `Authorization: Bearer …` header, like every other route.
     Header,
-    /// An `access_token` query parameter. `EventSource` cannot set headers, so `/v1/me/stream`
-    /// takes its token in the URL (SEC-8). It is still a full access token and all three legs
-    /// still apply — they just have to be driven through the query string.
-    Query,
+    /// A single-use `ticket` query parameter. `EventSource` cannot set headers, so
+    /// `/v1/me/stream` takes its credential in the URL — a short-lived ticket rather than the
+    /// access token it used to be (SEC-8). All three legs still apply; they are just driven
+    /// through the query string, with a ticket minted per request because redeeming spends it.
+    ///
+    /// The ticket is minted **through the store**, not through `POST /v1/me/stream-ticket`: that
+    /// endpoint is gated by `AuthUser`, which refuses a suspended account, so going through it
+    /// would make the suspended leg assert the mint endpoint's check instead of the stream's own
+    /// — which is the exact check SEC-8 found missing here.
+    StreamTicket,
 }
 
 /// One authenticated endpoint, as the matrix drives it.
@@ -151,9 +157,10 @@ fn me_gates() -> Vec<Gate> {
             )
         },
         Gate {
-            credential: Credential::Query,
+            credential: Credential::StreamTicket,
             ..get("/v1/me/stream", "/v1/me/stream")
         },
+        gate("POST", "/v1/me/stream-ticket", "/v1/me/stream-ticket"),
         // --- dashboard ---
         get("/v1/me/continue", "/v1/me/continue"),
         get("/v1/me/feed", "/v1/me/feed"),
@@ -330,65 +337,67 @@ fn covered_elsewhere() -> Vec<(&'static str, &'static str)> {
         .collect()
 }
 
+/// A seeded account, in the two forms the matrix has to present it in.
+struct Caller {
+    bearer: String,
+    user: UserId,
+}
+
+/// Build the URI and `Authorization` header for one leg of one gate.
+///
+/// `caller` is `None` for the anonymous leg. A `StreamTicket` route still needs *a* ticket in the
+/// URL there, because `Query` extraction runs before the handler and a missing parameter would
+/// answer `400` and never reach the check under test — so the anonymous leg presents a value that
+/// cannot redeem.
+async fn credential_for(
+    app: &TestApp,
+    gate: &Gate,
+    caller: Option<&Caller>,
+) -> (String, Option<String>) {
+    match (gate.credential, caller) {
+        (Credential::StreamTicket, Some(caller)) => {
+            let ticket = app.stream_ticket(caller.user).await;
+            (with_ticket(gate.path, &ticket), None)
+        }
+        (Credential::StreamTicket, None) => (with_ticket(gate.path, "not-a-ticket"), None),
+        (Credential::Header, caller) => (gate.path.to_owned(), caller.map(|c| c.bearer.clone())),
+    }
+}
+
+/// Append the query credential the `Credential::StreamTicket` routes read.
+fn with_ticket(path: &str, ticket: &str) -> String {
+    let separator = if path.contains('?') { '&' } else { '?' };
+    format!("{path}{separator}ticket={ticket}")
+}
+
+/// Assemble the request for one leg, given the URI and header `credential_for` decided.
+fn build(gate: &Gate, uri: String, bearer: Option<String>) -> Request<Body> {
+    let mut builder = Request::builder().method(gate.method).uri(uri);
+    if let Some(value) = bearer {
+        builder = builder.header(header::AUTHORIZATION, value);
+    }
+    match (gate.body)() {
+        Some(json) => builder
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_vec(&json).expect("serialize")))
+            .expect("build request"),
+        None => builder.body(Body::empty()).expect("build request"),
+    }
+}
+
 /// Drive one request and return its status **without draining the body**.
 ///
 /// `/v1/me/stream` answers with a Server-Sent-Events stream that does not end; reading it to
 /// completion would hang the suite. The matrix asserts on the status line only.
-async fn status_of(app: &TestApp, gate: &Gate, credential: Option<&str>) -> StatusCode {
-    let (uri, header_value) = match (gate.credential, credential) {
-        (Credential::Query, Some(bearer)) => {
-            // The query form carries the raw JWT, not the `Bearer …` header value.
-            let raw = bearer.strip_prefix("Bearer ").unwrap_or(bearer);
-            (replace_access_token(gate.path, raw), None)
-        }
-        (Credential::Query, None) => (
-            // No credential at all would fail `Query` extraction with a `400` and never reach
-            // the check, so the anonymous leg presents a token that cannot verify.
-            replace_access_token(gate.path, "not-a-token"),
-            None,
-        ),
-        (Credential::Header, cred) => (gate.path.to_owned(), cred),
-    };
-
-    let mut builder = Request::builder().method(gate.method).uri(uri);
-    if let Some(value) = header_value {
-        builder = builder.header(header::AUTHORIZATION, value);
-    }
-    let request = match (gate.body)() {
-        Some(json) => builder
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(serde_json::to_vec(&json).expect("serialize")))
-            .expect("build request"),
-        None => builder.body(Body::empty()).expect("build request"),
-    };
-    app.request(request).await.status()
-}
-
-/// Append the query credential the `Credential::Query` routes read.
-fn replace_access_token(path: &str, token: &str) -> String {
-    let separator = if path.contains('?') { '&' } else { '?' };
-    format!("{path}{separator}access_token={token}")
+async fn status_of(app: &TestApp, gate: &Gate, caller: Option<&Caller>) -> StatusCode {
+    let (uri, bearer) = credential_for(app, gate, caller).await;
+    app.request(build(gate, uri, bearer)).await.status()
 }
 
 /// Read a response body as JSON, for the legs that assert on the problem document.
-async fn problem_of(app: &TestApp, gate: &Gate, credential: &str) -> (StatusCode, Value) {
-    let raw = credential.strip_prefix("Bearer ").unwrap_or(credential);
-    let (uri, header_value) = match gate.credential {
-        Credential::Query => (replace_access_token(gate.path, raw), None),
-        Credential::Header => (gate.path.to_owned(), Some(credential)),
-    };
-    let mut builder = Request::builder().method(gate.method).uri(uri);
-    if let Some(value) = header_value {
-        builder = builder.header(header::AUTHORIZATION, value);
-    }
-    let request = match (gate.body)() {
-        Some(json) => builder
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(serde_json::to_vec(&json).expect("serialize")))
-            .expect("build request"),
-        None => builder.body(Body::empty()).expect("build request"),
-    };
-    let response = app.request(request).await;
+async fn problem_of(app: &TestApp, gate: &Gate, caller: &Caller) -> (StatusCode, Value) {
+    let (uri, bearer) = credential_for(app, gate, Some(caller)).await;
+    let response = app.request(build(gate, uri, bearer)).await;
     let status = response.status();
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
@@ -397,8 +406,12 @@ async fn problem_of(app: &TestApp, gate: &Gate, credential: &str) -> (StatusCode
     (status, json)
 }
 
-async fn a_user(app: &TestApp, username: &str, status: AccountStatus) -> UserId {
-    app.seed_user(username, &[], status).await
+async fn a_user(app: &TestApp, username: &str, status: AccountStatus) -> Caller {
+    let user = app.seed_user(username, &[], status).await;
+    Caller {
+        bearer: app.bearer(user),
+        user,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -438,10 +451,9 @@ async fn no_me_endpoint_answers_without_a_session() {
 async fn every_me_endpoint_refuses_a_suspended_account() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
     let banned = a_user(&app, "banned", AccountStatus::Suspended).await;
-    let bearer = app.bearer(banned);
 
     for gate in me_gates() {
-        let (status, body) = problem_of(&app, &gate, &bearer).await;
+        let (status, body) = problem_of(&app, &gate, &banned).await;
         assert_eq!(
             status,
             StatusCode::FORBIDDEN,
@@ -467,13 +479,12 @@ async fn every_me_endpoint_refuses_a_suspended_account() {
 async fn every_me_endpoint_admits_an_ordinary_account() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
     let plain = a_user(&app, "plain", AccountStatus::Active).await;
-    let bearer = app.bearer(plain);
 
     for gate in me_gates() {
         if gate.admitted_leg_skipped.is_some() {
             continue;
         }
-        let status = status_of(&app, &gate, Some(&bearer)).await;
+        let status = status_of(&app, &gate, Some(&plain)).await;
         assert!(
             status != StatusCode::UNAUTHORIZED && status != StatusCode::FORBIDDEN,
             "{} {} must admit an ordinary account, got {status}",
@@ -551,5 +562,95 @@ async fn every_published_endpoint_is_covered_by_one_of_these_matrices() {
     assert!(
         stale.is_empty(),
         "these matrix rows name endpoints the service no longer publishes: {stale:?}"
+    );
+}
+
+/// A stream ticket opens the stream exactly once.
+///
+/// The credential still travels in the query string, where `TraceLayer`, the frontend proxy, every
+/// reverse-proxy access log and the browser's own history record it (SEC-8). What makes that
+/// acceptable is that the recorded value is already spent by the time the log line exists — so
+/// "single use" is the whole security property, and it is enforced across the real router here
+/// rather than only in the store's unit tests.
+///
+/// `503` is the success signal: this harness wires no NATS, so a ticket the handler *accepted*
+/// lands on "the live stream is unavailable". A rejected one is `401`. The pair is what makes the
+/// two outcomes distinguishable without an SSE stream that never ends.
+#[tokio::test]
+async fn a_stream_ticket_cannot_open_the_stream_twice() {
+    let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
+    let reader = a_user(&app, "streamer", AccountStatus::Active).await;
+    let ticket = app.stream_ticket(reader.user).await;
+
+    let first = app
+        .request(
+            Request::builder()
+                .method("GET")
+                .uri(with_ticket("/v1/me/stream", &ticket))
+                .body(Body::empty())
+                .expect("build request"),
+        )
+        .await;
+    assert_eq!(
+        first.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a fresh ticket must be accepted; 503 is this harness's no-NATS answer"
+    );
+
+    let replay = app
+        .request(
+            Request::builder()
+                .method("GET")
+                .uri(with_ticket("/v1/me/stream", &ticket))
+                .body(Body::empty())
+                .expect("build request"),
+        )
+        .await;
+    assert_eq!(
+        replay.status(),
+        StatusCode::UNAUTHORIZED,
+        "a spent ticket must not open a second stream — this is what makes a leaked log line \
+         worthless"
+    );
+}
+
+/// The mint endpoint hands out a ticket the stream accepts.
+///
+/// The two halves are wired through separate state, so they can drift: a mint that stored under a
+/// different key, or a stream that read a different query parameter, would leave the endpoint
+/// answering `200` and the stream answering `401` forever. That is exactly the shape of the bug
+/// this work found on the frontend side (`?token=` against `?access_token=`), where nothing
+/// connected the producer of the URL to the reader of it.
+#[tokio::test]
+async fn the_minted_ticket_is_the_one_the_stream_accepts() {
+    let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
+    let reader = a_user(&app, "minter", AccountStatus::Active).await;
+
+    let (status, body) = app
+        .call("POST", "/v1/me/stream-ticket", Some(&reader.bearer), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let ticket = body["ticket"].as_str().expect("a ticket value").to_owned();
+    assert!(!ticket.is_empty());
+    assert!(
+        body["expires_in"]
+            .as_u64()
+            .is_some_and(|s| s > 0 && s <= 60),
+        "a stream ticket must be short-lived, got {body}"
+    );
+
+    let response = app
+        .request(
+            Request::builder()
+                .method("GET")
+                .uri(with_ticket("/v1/me/stream", &ticket))
+                .body(Body::empty())
+                .expect("build request"),
+        )
+        .await;
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "the minted ticket must be accepted by the stream, not rejected as unknown"
     );
 }

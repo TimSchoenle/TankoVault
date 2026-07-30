@@ -48,7 +48,7 @@
 //! list means the generated client can't silently lose a type just because a handler's
 //! signature changes.
 
-use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
 pub const AUTH_TAG: &str = "auth";
@@ -71,6 +71,16 @@ pub const ADMIN_OVERVIEW_TAG: &str = "admin-overview";
 /// The bearer-JWT `Authorization` header accepted by [`crate::state::AuthUser`].
 pub const BEARER_AUTH: &str = "bearer_auth";
 
+/// The single-use `ticket` query parameter accepted by `GET /v1/me/stream`.
+///
+/// `GET /v1/me/stream` used to be documented as needing no authentication at all — it was listed
+/// by name as the one operation whose credential no scheme in this document could express,
+/// because a raw bearer token in a query string is not an `OpenAPI` security scheme. Replacing it
+/// with a ticket (SEC-8) made it expressible: an `apiKey` in `query` is exactly what this is, so
+/// the operation now *declares* its requirement like every other private route, and
+/// `tests/openapi_contract.rs` no longer needs an exception for it.
+pub const STREAM_TICKET_AUTH: &str = "stream_ticket";
+
 struct SecurityAddon;
 
 impl Modify for SecurityAddon {
@@ -79,6 +89,17 @@ impl Modify for SecurityAddon {
             components.add_security_scheme(
                 BEARER_AUTH,
                 SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer)),
+            );
+            components.add_security_scheme(
+                STREAM_TICKET_AUTH,
+                SecurityScheme::ApiKey(ApiKey::Query(ApiKeyValue::with_description(
+                    "ticket",
+                    "Single-use, 30-second ticket from `POST /v1/me/stream-ticket`. \
+                     `EventSource` cannot set an `Authorization` header, so the credential has \
+                     to ride in the URL; making it single-use and short-lived is what stops the \
+                     access log, `Referer` header and browser history that record it from being \
+                     worth reading (SEC-8).",
+                ))),
             );
         }
     }
@@ -190,6 +211,7 @@ impl Modify for SecurityAddon {
     crate::me::MarkReadTo,
     crate::me::SyncExcluded,
     crate::me::MarkRead,
+    crate::me::StreamTicket,
     crate::me::FeedEntry,
     crate::me::ContinueItem,
     crate::me::ProfileUpdate,

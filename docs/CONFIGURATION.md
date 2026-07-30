@@ -94,7 +94,7 @@ a service only if that service names it — the *Services* column is the authori
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
-| `TANKOVAULT_REDIS__URL` | *(optional)* | api, control-plane | Absent on `api` → the limiter silently falls back to per-replica in-memory counters, so the effective limit is multiplied by the replica count. Absent on `control-plane` → this replica assumes it is the sole scheduler leader. Both are fail-open by design; both are wrong for a multi-replica deployment. |
+| `TANKOVAULT_REDIS__URL` | *(optional)* | api, control-plane | Absent on `api` → two fallbacks, both per-process: the rate limiter falls back to in-memory counters, so the effective limit is multiplied by the replica count, **and** the SSE stream tickets (`POST /v1/me/stream-ticket` → `GET /v1/me/stream`) become process-local, so with more than one `api` replica a ticket minted on one is unredeemable on the others and the live-notification stream fails to open. Absent on `control-plane` → this replica assumes it is the sole scheduler leader. All fail-open by design; all wrong for a multi-replica deployment. |
 
 ### `nats` — JetStream
 
@@ -237,7 +237,7 @@ that can disagree.
 | `TANKOVAULT_AUTH__PASSWORD_PEPPER` | `""` | Optional server-side secret mixed into every argon2id hash, so a database leak alone cannot be brute-forced offline. **Once set it must never change** or every existing password stops verifying, and it must be given to both `api` and the `seed` step with the same value. |
 | `TANKOVAULT_AUTH__ACCESS_TTL_MINUTES` | `15` | |
 | `TANKOVAULT_AUTH__REFRESH_TTL_DAYS` | `30` | |
-| `TANKOVAULT_AUTH__COOKIE_SECURE` | `true` | Turn off **only** for local plain-HTTP development, where a `Secure` cookie is simply never sent. This is a 30-day credential. |
+| `TANKOVAULT_AUTH__COOKIE_SECURE` | `true` | Turn off **only** for local plain-HTTP development, where a `Secure` cookie is simply never sent. This is a 30-day credential. It also selects the cookie's **name and path**: `__Host-refresh_token` at `Path=/` when on, plain `refresh_token` at `/v1/auth` when off — a `__Host-` cookie without `Secure` is refused by the browser rather than downgraded, so the two configurations cannot share a spelling. Consequence: **flipping this setting signs everyone out once**, because already-issued cookies are stored under the other name. |
 
 ### `control-plane`
 

@@ -25,6 +25,7 @@ mod mailer;
 mod me;
 mod series;
 mod state;
+pub mod stream_tickets;
 mod upstream;
 mod views;
 
@@ -307,8 +308,9 @@ fn documented_router() -> OpenApiRouter<AppState> {
             me::create_privacy_request
         ))
         .routes(routes!(me::cancel_privacy_request))
-        // live per-user notification stream (SSE; token in query — EventSource cannot set headers)
-        .routes(routes!(me::stream))
+        // live SSE stream + the mint for its query credential (a single-use ticket since SEC-8,
+        // not the access token). Both gated by the one `/v1/me/stream` prefix rule below.
+        .routes(routes!(me::stream, me::stream_ticket))
         // me — external sync, provider-keyed (proxied to the sync service; design: generalized
         // multi-provider sync)
         .routes(routes!(me::sync_providers))

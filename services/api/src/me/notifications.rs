@@ -118,27 +118,78 @@ pub async fn feed(
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct StreamQuery {
-    /// Access token, passed as a query parameter because the browser `EventSource` API
-    /// cannot attach an `Authorization` header (design §17.4). It is verified exactly like
-    /// a `Bearer` token and never logged.
-    pub access_token: String,
+    /// Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because
+    /// the browser `EventSource` API cannot attach an `Authorization` header (design §17.4).
+    ///
+    /// Was the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a
+    /// span field, preserved verbatim by the frontend proxy, written to every reverse-proxy
+    /// access log and kept in browser history — so the credential that rides here must be worth
+    /// nothing by the time anyone reads it back. This one is spent by the request that carries
+    /// it, expires in 30 seconds, and opens nothing but this stream.
+    pub ticket: String,
+}
+
+/// A freshly minted stream ticket.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct StreamTicket {
+    /// The opaque value to pass as `?ticket=` when opening the stream.
+    pub ticket: String,
+    /// Seconds until it expires. Redeem immediately; this is for diagnostics, not scheduling.
+    pub expires_in: u64,
+}
+
+/// Mint a stream ticket
+///
+/// Exchanges the caller's `Bearer` session for a single-use, 30-second credential that
+/// `EventSource` can carry in a query string. Mint one per connection attempt — including each
+/// reconnect, since redeeming a ticket spends it.
+#[utoipa::path(
+    post,
+    path = "/v1/me/stream-ticket",
+    tag = ME_NOTIFICATIONS_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "A single-use ticket for `GET /v1/me/stream`", body = StreamTicket),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 503, description = "the ticket store is temporarily unavailable", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn stream_ticket(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<StreamTicket>> {
+    let ticket = state.stream_tickets.mint(user.user_id).await.map_err(|e| {
+        tracing::warn!(error = %e, "failed to mint a stream ticket");
+        ApiError::Unavailable
+    })?;
+    Ok(Json(StreamTicket {
+        ticket,
+        expires_in: crate::stream_tickets::TICKET_TTL.as_secs(),
+    }))
 }
 
 /// Live notification stream
 ///
-/// Server-Sent Events of live per-user notifications (design §14, §17.4). Authenticated by the
-/// `access_token` query parameter (not the `Authorization` header — `EventSource` cannot set
-/// it), it subscribes to the user's core-NATS subject and relays each `UserNotification` as a
-/// `notification` SSE event, with a periodic keep-alive comment so proxies keep the connection
-/// open. Ownership is implicit: the subscription is scoped to the token's own `user_id`.
+/// Server-Sent Events of live per-user notifications (design §14, §17.4). Authenticated by a
+/// single-use `ticket` query parameter obtained from `POST /v1/me/stream-ticket` — not the
+/// `Authorization` header, which `EventSource` cannot set. It subscribes to the ticket's own
+/// user's core-NATS subject and relays each `UserNotification` as a `notification` SSE event,
+/// with a periodic keep-alive comment so proxies keep the connection open. Ownership is
+/// implicit: the subscription is scoped to the user the ticket was minted for.
+///
+/// The ticket is consumed here, so `EventSource`'s *automatic* reconnect cannot re-open this
+/// stream — the client has to mint a new ticket per attempt (`web/frontend/src/live.rs` does).
+/// That is a feature rather than a cost: re-minting goes through `AuthUser`, so a suspension
+/// applied mid-stream is caught by the mint call as well as by the check below.
 #[utoipa::path(
     get,
     path = "/v1/me/stream",
     tag = ME_NOTIFICATIONS_TAG,
     params(StreamQuery),
+    security(("stream_ticket" = [])),
     responses(
         (status = 200, description = "SSE stream of `notification` events", content_type = "text/event-stream"),
-        (status = 401, description = "missing or invalid access_token", body = crate::error::ProblemDetails),
+        (status = 401, description = "missing, expired, or already-redeemed ticket", body = crate::error::ProblemDetails),
         (status = 503, description = "the live notification stream is temporarily unavailable", body = crate::error::ProblemDetails),
     )
 )]
@@ -146,14 +197,21 @@ pub async fn stream(
     State(state): State<AppState>,
     Query(q): Query<StreamQuery>,
 ) -> ApiResult<Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>>> {
-    let claims = tankovault_auth::verify_access_token(&state.jwt_secret, &q.access_token)?;
-    let user_id = claims.user_id().ok_or(ApiError::Unauthorized)?;
+    let user_id = state
+        .stream_tickets
+        .consume(&q.ticket)
+        .await
+        .map_err(|e| {
+            tracing::warn!(error = %e, "failed to redeem a stream ticket");
+            ApiError::Unavailable
+        })?
+        .ok_or(ApiError::Unauthorized)?;
 
     // The same check the `AuthUser` extractor makes for every other route, which this one
-    // skipped because it does not use the extractor. A valid signature proves the token was
-    // ours; it does not prove the account still exists or is still permitted to act. Without
-    // this, a suspended or deleted user kept receiving their feed for the token's remaining
-    // lifetime — the one route where "revoke now" did not mean now.
+    // skipped because it does not use the extractor. A redeemed ticket proves the holder had a
+    // session 30 seconds ago; it does not prove the account still exists or is still permitted
+    // to act. Without this, a suspended or deleted user kept receiving their feed for the
+    // token's remaining lifetime — the one route where "revoke now" did not mean now.
     let principal = tankovault_db::repo::permissions::resolve(&state.pool, user_id)
         .await?
         .ok_or(ApiError::Unauthorized)?;
@@ -181,12 +239,13 @@ pub async fn stream(
         Ok(event)
     });
 
-    // The stream outlives the token that opened it, so cap it at that token's own expiry.
-    // Without this the suspension check above runs only at connect time, and one long-lived
-    // `EventSource` keeps delivering forever. `EventSource` reconnects on its own when the
-    // stream ends, and the reconnect is re-checked — which is exactly the behaviour wanted.
-    let remaining = (claims.exp - OffsetDateTime::now_utc().unix_timestamp()).max(0);
-    let deadline = tokio::time::sleep(std::time::Duration::from_secs(remaining.unsigned_abs()));
+    // Cap the stream so the checks above re-run. Without this they happen only at connect time
+    // and one long-lived connection keeps delivering forever, which is the half of SEC-8 that
+    // made a suspension take up to 15 minutes to bite. The bound is the access-token lifetime —
+    // the same cadence it was when the token's own `exp` capped the stream, deliberately, so
+    // replacing the credential with a ticket did not quietly extend the window. When the stream
+    // ends the client re-mints and reconnects, and the mint call is itself an `AuthUser` check.
+    let deadline = tokio::time::sleep(state.access_ttl.unsigned_abs());
     let events = futures::StreamExt::take_until(events, deadline);
 
     Ok(Sse::new(events).keep_alive(KeepAlive::default()))

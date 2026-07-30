@@ -7,8 +7,11 @@
 //!
 //! ## Why one origin
 //!
-//! The WASM client issues same-origin `/v1/...` requests (`web/frontend/src/api.rs`) and opens
-//! the live-notification stream (`/v1/me/stream`) via the browser `EventSource` API. Serving
+//! The WASM client issues same-origin `/v1/...` requests (`web/frontend/src/api/mod.rs`) and opens
+//! the live-notification stream (`/v1/me/stream`) via the browser `EventSource` API. One origin is
+//! also what makes the refresh cookie's `__Host-` prefix workable: the prefix requires `Path=/`,
+//! and everything that path now reaches is served from here (see `auth::session::refresh_cookie`
+//! in `services/api` for the review). Serving
 //! the SPA and proxying `/v1/*` from the same origin is what makes those calls resolve without
 //! a cross-origin hop — no CORS — and the proxy streams responses unbuffered so Server-Sent
 //! Events flush to the browser the instant the API emits them.
@@ -346,7 +349,10 @@ async fn proxy(
 ) -> Response {
     let (parts, body) = req.into_parts();
 
-    // Preserve the full path and query verbatim (tokens ride in the SSE stream's query string).
+    // Preserve the full path and query verbatim: the SSE stream's credential rides in its query
+    // string, because `EventSource` cannot set a header. It is a single-use, 30-second ticket
+    // rather than an access token (SEC-8) precisely because this hop — and every reverse proxy in
+    // front of it — records the URI it forwards.
     let path_and_query = parts
         .uri
         .path_and_query()

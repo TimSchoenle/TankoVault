@@ -51,6 +51,10 @@ pub struct AppState {
     /// was unreachable at boot: the live-stream endpoint degrades to `503` while every
     /// other route (including the durable notifications list) keeps working.
     pub bus: Option<tankovault_bus::Bus>,
+    /// Single-use, 30-second tickets for opening `GET /v1/me/stream` — the credential that
+    /// replaced the access token in that route's query string (SEC-8). Redis-backed where Redis
+    /// is available, per-process otherwise; see [`crate::stream_tickets`].
+    pub stream_tickets: Arc<dyn crate::stream_tickets::StreamTicketStore>,
 
     /// Where audit records go. A [`tankovault_service::NoopAuditSink`] when the operator
     /// disabled auditing, so no handler ever branches on the toggle.

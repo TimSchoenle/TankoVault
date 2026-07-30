@@ -5510,6 +5510,45 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "A freshly minted stream ticket."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A freshly minted stream ticket.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"expires_in\","]
+    #[doc = "    \"ticket\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"expires_in\": {"]
+    #[doc = "      \"description\": \"Seconds until it expires. Redeem immediately; this is for diagnostics, not scheduling.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"ticket\": {"]
+    #[doc = "      \"description\": \"The opaque value to pass as `?ticket=` when opening the stream.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct StreamTicket {
+        #[doc = "Seconds until it expires. Redeem immediately; this is for diagnostics, not scheduling."]
+        pub expires_in: i64,
+        #[doc = "The opaque value to pass as `?ticket=` when opening the stream."]
+        pub ticket: ::std::string::String,
+    }
+    impl StreamTicket {
+        pub fn builder() -> builder::StreamTicket {
+            Default::default()
+        }
+    }
     #[doc = "One ranked suggestion for the admin \"match every loaded entry\" screen: a local series the\nmatcher thinks the remote entry could be, with enough info (title, type, sources) to\neyeball it and its confidence `score` in `[0,1]`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -12814,6 +12853,60 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct StreamTicket {
+            expires_in: ::std::result::Result<i64, ::std::string::String>,
+            ticket: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for StreamTicket {
+            fn default() -> Self {
+                Self {
+                    expires_in: Err("no value supplied for expires_in".to_string()),
+                    ticket: Err("no value supplied for ticket".to_string()),
+                }
+            }
+        }
+        impl StreamTicket {
+            pub fn expires_in<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.expires_in = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for expires_in: {e}"));
+                self
+            }
+            pub fn ticket<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ticket = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ticket: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<StreamTicket> for super::StreamTicket {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StreamTicket,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    expires_in: value.expires_in?,
+                    ticket: value.ticket?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::StreamTicket> for StreamTicket {
+            fn from(value: super::StreamTicket) -> Self {
+                Self {
+                    expires_in: Ok(value.expires_in),
+                    ticket: Ok(value.ticket),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct SuggestedMatch {
             content_type: ::std::result::Result<::std::string::String, ::std::string::String>,
             release_year: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
@@ -14750,7 +14843,7 @@ impl Client {
     pub fn logout(&self) -> builder::Logout<'_> {
         builder::Logout::new(self)
     }
-    #[doc = "Request a password-reset email\n\nAlways responds `202 Accepted`, whether or not the address is registered, so the\nendpoint can't be used to probe which emails have accounts. When the address does exist\nand email is configured, a single-use, time-limited reset link is sent.\n\nSends a `POST` request to `/v1/auth/password/forgot`\n\n```ignore\nlet response = client.forgot_password()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Request a password-reset email\n\nAlways responds `202 Accepted`, whether or not the address is registered, so the\nendpoint can't be used to probe which emails have accounts. When the address does exist\nand email is configured, a single-use, time-limited reset link is sent.\n\n**Every** account-dependent step happens on a detached task (SEC-10). The uniform `202`\nwas previously defeated by timing: the known-address branch generated a token, hashed it\nand performed an `INSERT` — a write, so a WAL flush — before answering, while the unknown\nbranch returned straight after the lookup. That is a smaller gap than `login`'s two orders\nof magnitude but it is the same oracle, and it needs no credentials at all to read. With\nthe whole body spawned, this handler's only statement is the spawn, so there is no branch\nleft for a response time to disclose.\n\nThe return type is deliberately `StatusCode` rather than `ApiResult<StatusCode>`: the\nanti-enumeration property is \"this endpoint has exactly one answer\", and making that a\ntype rather than a convention means a later edit cannot reintroduce a second one.\n\nSends a `POST` request to `/v1/auth/password/forgot`\n\n```ignore\nlet response = client.forgot_password()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn forgot_password(&self) -> builder::ForgotPassword<'_> {
         builder::ForgotPassword::new(self)
     }
@@ -14770,7 +14863,7 @@ impl Client {
     pub fn verify_email(&self) -> builder::VerifyEmail<'_> {
         builder::VerifyEmail::new(self)
     }
-    #[doc = "Resend the email-confirmation link\n\nAlways responds `202 Accepted`, whether or not the address is registered or already\nconfirmed, so the endpoint can't be used to probe which emails have accounts. A fresh\nlink is only sent when the address exists, is still unconfirmed, and email is configured.\n\nSends a `POST` request to `/v1/auth/verify-email/resend`\n\n```ignore\nlet response = client.resend_verification()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Resend the email-confirmation link\n\nAlways responds `202 Accepted`, whether or not the address is registered or already\nconfirmed, so the endpoint can't be used to probe which emails have accounts. A fresh\nlink is only sent when the address exists, is still unconfirmed, and email is configured.\n\nSpawned in full, for the reason `auth::password::forgot_password` explains at length\n(SEC-10). This endpoint's channel was in fact the wider of the two: the known-and-unconfirmed\nbranch performed the token `INSERT`, while both \"no such address\" *and* \"already confirmed\"\nreturned straight after the lookup — so the timing separated three states rather than two,\nand \"this address exists and has not been confirmed\" is the more useful answer of the pair.\nThe audit named `forgot_password`; this is the same defect in the sibling handler.\n\nSends a `POST` request to `/v1/auth/verify-email/resend`\n\n```ignore\nlet response = client.resend_verification()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn resend_verification(&self) -> builder::ResendVerification<'_> {
         builder::ResendVerification::new(self)
     }
@@ -14862,9 +14955,13 @@ impl Client {
     pub fn stats(&self) -> builder::Stats<'_> {
         builder::Stats::new(self)
     }
-    #[doc = "Live notification stream\n\nServer-Sent Events of live per-user notifications (design §14, §17.4). Authenticated by the\n`access_token` query parameter (not the `Authorization` header — `EventSource` cannot set\nit), it subscribes to the user's core-NATS subject and relays each `UserNotification` as a\n`notification` SSE event, with a periodic keep-alive comment so proxies keep the connection\nopen. Ownership is implicit: the subscription is scoped to the token's own `user_id`.\n\nSends a `GET` request to `/v1/me/stream`\n\nArguments:\n- `access_token`: Access token, passed as a query parameter because the browser `EventSource` API\ncannot attach an `Authorization` header (design §17.4). It is verified exactly like\na `Bearer` token and never logged.\n```ignore\nlet response = client.stream()\n    .access_token(access_token)\n    .send()\n    .await;\n```"]
+    #[doc = "Live notification stream\n\nServer-Sent Events of live per-user notifications (design §14, §17.4). Authenticated by a\nsingle-use `ticket` query parameter obtained from `POST /v1/me/stream-ticket` — not the\n`Authorization` header, which `EventSource` cannot set. It subscribes to the ticket's own\nuser's core-NATS subject and relays each `UserNotification` as a `notification` SSE event,\nwith a periodic keep-alive comment so proxies keep the connection open. Ownership is\nimplicit: the subscription is scoped to the user the ticket was minted for.\n\nThe ticket is consumed here, so `EventSource`'s *automatic* reconnect cannot re-open this\nstream — the client has to mint a new ticket per attempt (`web/frontend/src/live.rs` does).\nThat is a feature rather than a cost: re-minting goes through `AuthUser`, so a suspension\napplied mid-stream is caught by the mint call as well as by the check below.\n\nSends a `GET` request to `/v1/me/stream`\n\nArguments:\n- `ticket`: Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (design §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.\n```ignore\nlet response = client.stream()\n    .ticket(ticket)\n    .send()\n    .await;\n```"]
     pub fn stream(&self) -> builder::Stream<'_> {
         builder::Stream::new(self)
+    }
+    #[doc = "Mint a stream ticket\n\nExchanges the caller's `Bearer` session for a single-use, 30-second credential that\n`EventSource` can carry in a query string. Mint one per connection attempt — including each\nreconnect, since redeeming a ticket spends it.\n\nSends a `POST` request to `/v1/me/stream-ticket`\n\n```ignore\nlet response = client.stream_ticket()\n    .send()\n    .await;\n```"]
+    pub fn stream_ticket(&self) -> builder::StreamTicket<'_> {
+        builder::StreamTicket::new(self)
     }
     #[doc = "List pending sync conflicts\n\nThe caller's pending conflicts across all providers (§B.6). Rows are\n`tankovault_contracts::sync::ConflictView`, the shape the sync service publishes.\n\nSends a `GET` request to `/v1/me/sync/conflicts`\n\n```ignore\nlet response = client.sync_conflicts()\n    .send()\n    .await;\n```"]
     pub fn sync_conflicts(&self) -> builder::SyncConflicts<'_> {
@@ -20472,31 +20569,28 @@ pub mod builder {
     #[derive(Debug, Clone)]
     pub struct Stream<'a> {
         client: &'a super::Client,
-        access_token: Result<::std::string::String, String>,
+        ticket: Result<::std::string::String, String>,
     }
     impl<'a> Stream<'a> {
         pub fn new(client: &'a super::Client) -> Self {
             Self {
                 client: client,
-                access_token: Err("access_token was not initialized".to_string()),
+                ticket: Err("ticket was not initialized".to_string()),
             }
         }
-        pub fn access_token<V>(mut self, value: V) -> Self
+        pub fn ticket<V>(mut self, value: V) -> Self
         where
             V: std::convert::TryInto<::std::string::String>,
         {
-            self.access_token = value.try_into().map_err(|_| {
-                "conversion to `:: std :: string :: String` for access_token failed".to_string()
+            self.ticket = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for ticket failed".to_string()
             });
             self
         }
         #[doc = "Sends a `GET` request to `/v1/me/stream`"]
         pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<types::ProblemDetails>> {
-            let Self {
-                client,
-                access_token,
-            } = self;
-            let access_token = access_token.map_err(Error::InvalidRequest)?;
+            let Self { client, ticket } = self;
+            let ticket = ticket.map_err(Error::InvalidRequest)?;
             let url = format!("{}/v1/me/stream", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
@@ -20507,10 +20601,7 @@ pub mod builder {
             let mut request = client
                 .client
                 .get(url)
-                .query(&progenitor_client::QueryParam::new(
-                    "access_token",
-                    &access_token,
-                ))
+                .query(&progenitor_client::QueryParam::new("ticket", &ticket))
                 .headers(header_map)
                 .build()?;
             let info = OperationInfo {
@@ -20522,6 +20613,55 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => Ok(ResponseValue::stream(response)),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                503u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::stream_ticket`]\n\n[`Client::stream_ticket`]: super::Client::stream_ticket"]
+    #[derive(Debug, Clone)]
+    pub struct StreamTicket<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> StreamTicket<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/stream-ticket`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StreamTicket>, Error<types::ProblemDetails>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/me/stream-ticket", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "stream_ticket",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

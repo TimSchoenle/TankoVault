@@ -47,6 +47,10 @@ utoipa-axum = { workspace = true }
 utoipa-scalar = { workspace = true }
 fred = { workspace = true }
 tokio-util = { workspace = true }
+# `crate::stream_tickets::StreamTicketStore` is held as `Arc<dyn …>` in `AppState`, and its two
+# methods are `async`. Native async fns in traits are not dyn compatible, so the seam needs this
+# — the same reason `tankovault_service::ratelimit::RateLimitStore` uses it.
+async-trait = { workspace = true }
 
 [features]
 # Opt-in: the HTTP integration suites need Docker (an ephemeral Postgres via the harness). Off

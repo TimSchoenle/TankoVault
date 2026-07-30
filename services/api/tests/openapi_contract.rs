@@ -70,13 +70,14 @@ fn every_security_requirement_names_a_defined_scheme() {
 /// from the route actually being open — `me_access_matrix.rs` covers enforcement — and it is
 /// the one a client author trips over.
 ///
-/// `GET /v1/me/stream` is the single exception and is listed by name: it takes its credential
-/// in the query string because `EventSource` cannot set headers (SEC-8), which no `security`
-/// scheme in this document expresses.
+/// There is **no exception any more**. `GET /v1/me/stream` used to be listed here by name as the
+/// one operation whose credential no `security` scheme could express, because it carried a raw
+/// access token in the query string. SEC-8 replaced that with a single-use ticket, and a ticket in
+/// a query parameter is precisely an `apiKey`/`in: query` scheme — so the operation declares its
+/// requirement like every other private route and the carve-out is gone. Do not add another: an
+/// operation that cannot express how it is authenticated is a finding, not a special case.
 #[test]
 fn every_private_operation_declares_a_security_requirement() {
-    const QUERY_CREDENTIALLED: &[&str] = &["GET /v1/me/stream"];
-
     let spec = document();
     let mut undeclared: Vec<String> = Vec::new();
     for (path, item) in spec["paths"].as_object().expect("paths") {
@@ -85,9 +86,6 @@ fn every_private_operation_declares_a_security_requirement() {
         }
         for (method, operation) in item.as_object().expect("path item") {
             let op = format!("{} {path}", method.to_uppercase());
-            if QUERY_CREDENTIALLED.contains(&op.as_str()) {
-                continue;
-            }
             let declared = operation
                 .get("security")
                 .and_then(Value::as_array)
@@ -101,5 +99,57 @@ fn every_private_operation_declares_a_security_requirement() {
     assert!(
         undeclared.is_empty(),
         "these private operations are documented as needing no session: {undeclared:?}"
+    );
+}
+
+/// The stream's declared credential is the query parameter the handler actually reads.
+///
+/// Three artefacts have to agree on the string `ticket`: the `apiKey` scheme in
+/// `components.securitySchemes`, the operation's own query parameter, and — outside this
+/// workspace, so outside any compiler that could check it — `web/frontend/src/api.rs`, which
+/// hand-builds the `EventSource` URL because `EventSource` is created by the browser rather than
+/// by the generated client.
+///
+/// That hand-built URL is where a real, shipped bug lived: the frontend sent
+/// `?token=…` while the handler required `?access_token=…`, so `Query<StreamQuery>` rejected every
+/// connection with `400` and live notifications had never worked. Nothing noticed, because
+/// `live.rs` treats a stream failure as a silent best-effort degradation. The frontend carries the
+/// matching half of this assertion (`the_stream_url_uses_the_parameter_the_published_document_declares`).
+#[test]
+fn the_stream_credential_is_declared_under_the_name_the_handler_reads() {
+    let spec = document();
+
+    let scheme = &spec["components"]["securitySchemes"]["stream_ticket"];
+    assert_eq!(scheme["type"], "apiKey");
+    assert_eq!(scheme["in"], "query");
+    assert_eq!(
+        scheme["name"], "ticket",
+        "the scheme must name the query parameter the handler extracts"
+    );
+
+    let operation = &spec["paths"]["/v1/me/stream"]["get"];
+    let parameters = operation["parameters"]
+        .as_array()
+        .expect("the stream declares its query parameters");
+    let names: Vec<&str> = parameters
+        .iter()
+        .filter(|p| p["in"] == "query")
+        .filter_map(|p| p["name"].as_str())
+        .collect();
+    assert_eq!(
+        names,
+        vec!["ticket"],
+        "the stream takes exactly one query credential, named `ticket`"
+    );
+    assert!(
+        parameters.iter().all(|p| p["required"] == true),
+        "an optional credential would make the route reachable without one"
+    );
+
+    // And the mint endpoint it points at must exist, or the scheme documents a flow no client
+    // can start.
+    assert!(
+        spec["paths"]["/v1/me/stream-ticket"]["post"].is_object(),
+        "the ticket scheme is unusable without the endpoint that mints one"
     );
 }

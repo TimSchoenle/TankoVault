@@ -25,9 +25,9 @@ that the audit did not.
 | PERFORMANCE (21) | 19 | 0 | 0 | 1 wontfix, 1 no-finding |
 | TESTING (23) | 20 | 2 | 0 | 1 no-finding |
 | FRONTEND (20) | 18 | 0 | 0 | 1 wontfix, 1 no-finding |
-| BUILD_AND_OPS (52) | 40 | 4 | 0 | 1 wontfix, 7 no-finding |
+| BUILD_AND_OPS (53) | 42 | 3 | 0 | 1 wontfix, 7 no-finding |
 
-**136 DONE · 7 PARTIAL · 3 WONTFIX · 1 OPEN · 11 no-finding**, across 158 tracked rows.
+**138 DONE · 6 PARTIAL · 3 WONTFIX · 1 OPEN · 11 no-finding**, across 159 tracked rows.
 
 The row count rose from 148 because **ten report sections had no row at all** — see OPS-10.5.
 Cross-checking every `###` heading in each report against the keys in these tables is now done
@@ -40,10 +40,10 @@ PARTIALs each name what is left in their own Notes rather than in this table.
 The rows below are authoritative; this summary is a convenience — and it is a *count* of them
 rather than a hand-maintained tally, because the hand-maintained version had drifted twice.
 Recount rather than increment (`git log` for the script that does it). **A row in this file is a
-claim, not evidence.** Verify before you rely on one — this remediation has now found six
-defects by doing exactly that, two of them in the last session: two orphaned feature-gate rules
-that no route had ever matched, and the audit's own two "directly actionable" OPS-1.5 items,
-both of which turned out to fix nothing.
+claim, not evidence.** Verify before you rely on one — this remediation has now found seven
+defects by doing exactly that, the latest being a shared-config block no service composed
+(OPS-10.6), turned up by the first run of the gate that was supposed to only compare a document
+against the code.
 
 ---
 
@@ -268,9 +268,10 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | OPS-9.3 | The two generated artifacts dominate repo diffs | **DONE** | New `.gitattributes`: `openapi.json`, `crates/api-client/src/lib.rs` and `.sqlx/*.json` are `linguist-generated -diff`. `-diff` suppresses the diff *body*, not the fact that the file changed — `--stat` and the file list still show it, and `--text` still prints it on demand. `Cargo.lock` keeps `linguist-generated` but **not** `-diff`, deliberately: a lockfile change is exactly what a reviewer should read, since it is how a dependency actually enters the build. The file also normalises line endings, which is not in the report and belongs with it: this repository is developed on Windows and built on Linux, and a CRLF shebang is a container that fails to start with `no such file or directory` naming a file that is plainly there. |
 | OPS-10.1 | `deploy/README.md` documents a Helm chart that does not exist | **DONE** | Closed with OPS-5.2, which deleted the claim rather than building a chart. |
 | OPS-10.2 | `IMPLEMENTATION_STATUS.md` current-state table still says nginx | **DONE** | Already corrected when the axum static server landed; re-verified. The line now describes the `scratch` image and says nginx was retired in Session 18. Its "k8s/Helm still pending" is consistent with OPS-5.2's resolution. |
-| OPS-10.3 | `xtask` command surface: four gaps | **PARTIAL** | Two of four closed, one already closed, one declined. **`ci`** is here, and the report called it the highest value for the effort: `cargo run -p xtask -- ci` runs every offline gate CI runs, in CI's order, stopping at the first failure — `fmt`, pedantic clippy with all features, the offline tests, **the doc tests as their own invocation**, the OpenAPI drift check, and the three `web/frontend` gates. Written as a table of `cargo` argument slices rather than a shell script, with a test asserting no gate smuggles a shell metacharacter: this runs on a machine whose shell is `PowerShell` and gates a pipeline whose shell is `sh`, and the one command whose purpose is to make the two agree must not itself depend on which is running. **Running it found its own first defect**: the OpenAPI gate was `cargo run -p xtask -- openapi --check`, exactly as CI spells it, and that cannot be a gate *of* `xtask ci` — cargo rebuilds the binary before running it, and on Windows the executing `xtask.exe` is locked, so the command died with `failed to remove file … Access is denied` and reported it as an OpenAPI **drift** failure, which it was not. It is an in-process call now, which is better anyway, and a test asserts no gate ever shells back into this binary. Three more tests pin what the structure is *for* — that the doc-test gate never gains `--all-targets` (which silently excludes doc tests, the F-11 defect), and that the frontend gates run in `web/frontend`, since the host workspace excludes it and that exclusion is why its tests once ran nowhere. What `ci` deliberately omits is listed in its module docs and printed on success, because a local command that needs Docker, Node, promtool and gitleaks is a local command nobody runs — which puts it back where §2.1 found it. **`install-hooks`** landed with OPS-4.7. **`TANKOVAULT_CONFIRM_RESET`** is documented in `docs/CONFIGURATION.md` now, closing the sub-finding. **`config-docs --check`** is *not* done and is what remains of this row: `docs/CONFIGURATION.md` is hand-written, so it can drift from `crates/config` with nothing to notice — the same shape as OPS-2.4 and OPS-1.5, and it should be closed the same way. `dev`/`up` is declined: `docker compose up --build` is one line, already in `deploy/README.md` and `CONTRIBUTING.md`, and wrapping it adds a second thing to keep in step with compose. |
+| OPS-10.3 | `xtask` command surface: four gaps | **DONE** | Three of four closed, one already closed, one declined. **`ci`** is here, and the report called it the highest value for the effort: `cargo run -p xtask -- ci` runs every offline gate CI runs, in CI's order, stopping at the first failure — `fmt`, pedantic clippy with all features, the offline tests, **the doc tests as their own invocation**, the OpenAPI drift check, and the three `web/frontend` gates. Written as a table of `cargo` argument slices rather than a shell script, with a test asserting no gate smuggles a shell metacharacter: this runs on a machine whose shell is `PowerShell` and gates a pipeline whose shell is `sh`, and the one command whose purpose is to make the two agree must not itself depend on which is running. **Running it found its own first defect**: the OpenAPI gate was `cargo run -p xtask -- openapi --check`, exactly as CI spells it, and that cannot be a gate *of* `xtask ci` — cargo rebuilds the binary before running it, and on Windows the executing `xtask.exe` is locked, so the command died with `failed to remove file … Access is denied` and reported it as an OpenAPI **drift** failure, which it was not. It is an in-process call now, which is better anyway, and a test asserts no gate ever shells back into this binary. Three more tests pin what the structure is *for* — that the doc-test gate never gains `--all-targets` (which silently excludes doc tests, the F-11 defect), and that the frontend gates run in `web/frontend`, since the host workspace excludes it and that exclusion is why its tests once ran nowhere. What `ci` deliberately omits is listed in its module docs and printed on success, because a local command that needs Docker, Node, promtool and gitleaks is a local command nobody runs — which puts it back where §2.1 found it. **`install-hooks`** landed with OPS-4.7. **`TANKOVAULT_CONFIRM_RESET`** is documented in `docs/CONFIGURATION.md` now, closing the sub-finding. **`config-docs`** closes the last gap and the row with it. `docs/CONFIGURATION.md` documents 106 keys by hand and nothing connected it to the structs those keys are read into, which is worse here than the usual doc-drift because figment *ignores* an unknown `TANKOVAULT_*` key rather than rejecting it — so a stale row costs an operator a silent no-op, exactly the failure the document's own §8 exists to record. The surface is derived, not listed: `xtask/src/config_docs/surface.rs` parses the `#[derive(Deserialize)]` structs with `syn` and descends from each service's root `Config` into the shared blocks it composes, and because the codebase also reads configuration *outside* the layering it scans `std::env::var` call sites too — `TANKOVAULT_PROFILE` and `TANKOVAULT_CONFIRM_RESET` appear in no struct at all, and the second of those is the sub-finding this row already had to fix by hand. The walker models the `serde` subset this repository uses and **refuses** the rest: a `flatten` or a container `rename_all` rewrites the key path, so meeting one is a hard error rather than a guess, because a gate that mis-derives blesses a wrong document with a green tick. The document side has one rule worth knowing: **keys are read from the leftmost cell of a table row and nowhere else**, since the prose names retired keys and `grep` hints constantly and treating every backticked token as a claim would fire the gate on correct sentences; the `` `…__GLOBAL__PER_MINUTE` / `__BURST` `` shorthand the document already used is expanded, and §8's rows are the *inverse* claim, asserted absent from the code. It lives in a test rather than a CI step or an `xtask ci` gate — unlike `openapi --check` there is no write half, and a comparison between two committed artefacts is a test here; the command exists to print the derived surface, which is what makes a failure fixable. **Its first run found a real defect**, OPS-10.6. `dev`/`up` is declined: `docker compose up --build` is one line, already in `deploy/README.md` and `CONTRIBUTING.md`, and wrapping it adds a second thing to keep in step with compose. |
 | OPS-10.4 | No `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md` or `LICENSE` | **PARTIAL** | Three of four added; the fourth is not a repository decision. `SECURITY.md` — the report's urgent one, for a project that crawls third-party sites and stores OAuth tokens — gives a private disclosure channel, a scope section naming the internal tier and the SSRF guard by module, and, unusually, the *known* issues an operator is affected by today: SEC-2b and the OP-1/OP-2 rotation, which are tracked rather than secret and which a reporter would otherwise spend their time rediscovering. `CONTRIBUTING.md` leads with `xtask ci` and then covers only the things that are not guessable from the tree — which artifacts are generated and what regenerates them, when the `.sqlx` cache needs rebuilding and when it does not, that suppressions are `expect` and must say *why*, and where the conventions live. `CHANGELOG.md` is `Unreleased` only, honestly: no tag has shipped, every crate is `0.1.0`, and the release workflow deliberately does not push. **`LICENSE` is left to a human**, and not by omission — choosing one is entangled with OP-6, since `wreq-util` is GPL-3.0 and the licence chosen determines whether the images can be distributed at all. Picking one here would be deciding that question in a commit message. |
 | OPS-10.5 | `README.md` is accurate | **DONE** | It was, and had since stopped being: the layout block still promised a Helm chart (the same claim OPS-5.2 deleted everywhere else), and the tech-stack section said **PostgreSQL 19** after OPS-4.2 moved the whole stack to 17 — a fix that corrected the compose file, CI and the `.sqlx` cache while leaving three prose copies behind, in `README.md`, `docs/design.md` (twice) and `docs/IMPLEMENTATION_STATUS.md`. All four corrected, and the `xtask` line now lists the commands that exist. **The row is also the reason the nine rows above it exist.** Cross-checking `### N.M` headings in `BUILD_AND_OPS.md` against the keys in this table showed ten report sections with no row at all — §1.7, §7.4, §9.1-9.3 and §10.1-10.5 — the same gap ARCH-5b was, and for the same reason: this file's numbering diverged from the report's and the tail fell through it. A section with no row is not tracked as open or closed; it is simply absent, which is the one state a tracker must not have. |
+| OPS-10.6 | `HttpConfig` published a key no service read | **DONE** | Not in the audit; found by the first run of OPS-10.3's `config-docs` gate, which reported no `TANKOVAULT_HTTP__*` key on the derived side at all. `crates/config`'s `HttpConfig` was a public block whose one field was `bind_addr`, and **nothing composed it** — all eight services declare a root-level `bind_addr` with their own port default, because the address a service binds is the opposite of a shared decision. Its only consumer was the loader's own unit test, which used it to show that an absent optional block still materialises with its defaults; that test now demonstrates the same property with `MetricsConfig`, a block a service really reads. Deleted rather than documented: the alternative was a §4 row for a setting that does nothing, and two spellings of one setting — one of them wired to nothing — is where the drift this gate exists for starts. Recorded here because "checked, and the shared crate has one block too many" and "never checked" look identical in an empty tracker. |
 
 ---
 
@@ -294,9 +295,9 @@ which needs container-level egress restriction and no commit closes.
 ### The pattern worth carrying forward
 
 **Writing a test for untested code is how this remediation finds real defects, and it has now
-done so six times.** F-05b and F-05c; then TRACK-1, F-01b and P-03; then the two orphaned
-feature-gate rules the F-09 work turned up. Most were *silent* — no error, no log line, no
-failing gate:
+done so seven times.** F-05b and F-05c; then TRACK-1, F-01b and P-03; then the two orphaned
+feature-gate rules the F-09 work turned up; now OPS-10.6. Most were *silent* — no error, no log
+line, no failing gate:
 
 - **TRACK-1** — five implementations of "has this user read this chapter?" disagreed, so part
   releases counted as unread in three places, a dashboard card could not be cleared, and the
@@ -308,6 +309,9 @@ failing gate:
 - **F-09's side finding** — two feature-gate rules named paths no route has ever had. Harmless
   as they stood, and worth deleting: a rule that gates nothing while looking like it gates
   something is how the next person concludes their endpoint is already covered.
+- **OPS-10.6** — `crates/config` published an `HttpConfig` block, and no service composed it.
+  The same shape one level up: a shared aggregate that looks like the place a new service gets
+  its listener from, wired to nothing, next to the root-level `bind_addr` all eight actually use.
 
 Two lessons about *how*. F-01b came from writing the fuzz target's **oracle**, not from running
 the fuzzer — and the file already had a property over that function which was passing
@@ -351,14 +355,10 @@ as `chrome_crashpad_handler: --database is required` plus a SIGTRAP.
 3. **OPS-2.2's documentation backlog.** `missing_errors_doc` is 166 warnings in `crates/db`
    alone. Do it crate by crate with a `#![warn(...)]` at each module root, and delete the
    corresponding `allow` from `[workspace.lints]` only when the last one is clean.
-4. **OPS-10.3's `config-docs --check`.** `docs/CONFIGURATION.md` is hand-written, so it can
-   drift from `crates/config` with nothing to notice — the same shape as OPS-2.4 and OPS-1.5,
-   and it should be closed the same way: derive the key list and fail when the document and the
-   config structs disagree.
-5. **`LICENSE`** (OPS-10.4) is a human decision, not an omission — it is entangled with OP-6,
+4. **`LICENSE`** (OPS-10.4) is a human decision, not an omission — it is entangled with OP-6,
    since `wreq-util` being GPL-3.0 means the licence chosen determines whether the images can be
    distributed at all.
-6. **FE-F8 — the inline-style layer.** WONTFIX with reasoning: it needs a decision about whether
+5. **FE-F8 — the inline-style layer.** WONTFIX with reasoning: it needs a decision about whether
    `ik-*` gets a real utility tier, not a mechanical sweep.
 
 Two things no commit can close: the credential rotation (OP-1..OP-3) and the GPL-3.0 question
@@ -418,11 +418,14 @@ Worth knowing before adding to them:
   expand `concat!`, so the browse `WHERE` clause (F-05) and the unread predicate (TRACK-1) are
   each written out three and four times respectively. Both had drifted, and nothing in the build
   could notice. The differential test *is* the factoring, since the code cannot be.
-- **Ask what connects two artefacts that must agree.** ARCH-1, ARCH-10, Access-b, SEC-8 and
-  TRACK-1 were all found this way, and each was closed by making the answer "the compiler" or,
+- **Ask what connects two artefacts that must agree.** ARCH-1, ARCH-10, Access-b, SEC-8,
+  TRACK-1 and OPS-10.3 were all found this way, and each was closed by making the answer "the compiler" or,
   failing that, a test that reads the published artefact. `web/frontend` is outside the
   workspace, so a URL it builds and a struct the API deserializes have **no** compile-time
-  relationship at all — those get tested against the committed `openapi.json` from both sides.
+  relationship at all — those get tested against the committed `openapi.json` from both sides. A
+  document is an artefact too: `docs/CONFIGURATION.md` and the config structs are now compared by
+  `xtask::config_docs`, deriving the key list from `syn` over the structs plus the `std::env::var`
+  call sites rather than keeping a second list by hand.
 - **Doc examples are contracts, not illustration** (F-11). Each of the three written so far
   includes the case that looks like a bug and is not — `normalize_title("Manga") == "manga"`,
   `decide`'s ambiguous band — because that is the one a future reader would otherwise

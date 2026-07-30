@@ -39,6 +39,15 @@ TANKOVAULT_CHANNELS__EMAIL_TO='["ops@example.com"]'
 An **unknown** `TANKOVAULT_*` key is ignored, not rejected. A typo therefore fails silently —
 so does a key that has been removed (see [§8](#8-removed-keys)).
 
+> **This document is gated.** `cargo run -p xtask -- config-docs --check` derives every
+> `TANKOVAULT_*` key from the config structs and from the `std::env::var` call sites, and fails
+> if this document does not match — in either direction. It reads keys from the **leftmost cell
+> of a table row** and nowhere else, so a key named in a Notes cell is explanation rather than a
+> claim that it exists. A cell may continue with a suffix (`` `…__GLOBAL__PER_MINUTE` /
+> `__BURST` ``), which replaces the last segment of the key before it. Keys under
+> [§8](#8-removed-keys) are the inverse claim and are asserted **absent** from the code.
+> `cargo run -p xtask -- config-docs` (no `--check`) prints the derived list.
+
 ---
 
 ## 2. Required values
@@ -284,7 +293,7 @@ that can disagree.
 | `TANKOVAULT_METADATA__ENRICH_INTERVAL_SECS` | `3600` | |
 | `TANKOVAULT_METADATA__ENRICH_BATCH` | `200` | Series per database page. |
 | `TANKOVAULT_METADATA__ENRICH_MAX_SERIES` | `500` | Upper bound per sweep. |
-| `TANKOVAULT_METADATA__PRIORITY__DESCRIPTION` | `["anilist","adapter"]` | Which source wins per field. Also `__TITLE`, `__COVER`, `__DEFAULT`. Only `anilist` and `adapter` are accepted; anything else is a startup error rather than a silently ignored entry. |
+| `TANKOVAULT_METADATA__PRIORITY__DESCRIPTION` / `__TITLE` / `__COVER` / `__DEFAULT` | `["anilist","adapter"]` | Which source wins per field; `__DEFAULT` is the fallback order for fields without one of their own. Only `anilist` and `adapter` are accepted; anything else is a startup error rather than a silently ignored entry. |
 
 ### `challenge-solver`
 

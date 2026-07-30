@@ -73,6 +73,12 @@ jobs:
       # for commits made without it.
       - name: OpenAPI artifacts are up to date
         run: cargo run -p xtask -- openapi --check
+      # `docs/CONFIGURATION.md` is gated too, but by a *test* rather than a step here
+      # (`xtask::config_docs`, run by `cargo test` above). Unlike the OpenAPI artifacts there is
+      # nothing to regenerate — the document is prose — so the check has no write half that has
+      # to live in a command, and it follows the same shape as the other artefact-agreement
+      # checks in this repository. `cargo run -p xtask -- config-docs` prints the derived
+      # surface when one of them fails.
 
   # Feature-combination legs. Every other job compiles the *one* feature set the services
   # happen to select, so `crates/service`'s `db` and `redis` features and `crates/domain`'s

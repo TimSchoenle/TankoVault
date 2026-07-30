@@ -9,6 +9,9 @@
 //!   `progenitor`. No database needed.
 //! - `xtask ci` — run every offline gate CI runs, in CI's order, stopping at the first
 //!   failure. No database, no Docker, no network; see `ci.rs` for what it deliberately omits.
+//! - `xtask config-docs [--check]` — print the `TANKOVAULT_*` surface derived from the config
+//!   structs, or (with `--check`) fail if `docs/CONFIGURATION.md` no longer matches it. No
+//!   database.
 //! - `xtask coverage-ratchet [report.json]` — fail if line coverage has dropped below the
 //!   floor committed in `.github/coverage-floor.txt`. Reads a `cargo llvm-cov report --json`
 //!   document (default `target/llvm-cov/coverage.json`); runs no tests itself. No database.
@@ -20,6 +23,7 @@
 //! `openapi` does not.
 
 mod ci;
+mod config_docs;
 mod coverage;
 
 use progenitor_impl::{GenerationSettings, Generator, InterfaceStyle, TypePatch};
@@ -51,6 +55,13 @@ async fn main() -> anyhow::Result<()> {
         return openapi(check);
     }
 
+    // Does `docs/CONFIGURATION.md` still describe the keys the config structs read? Reads
+    // source and one markdown file; no database, no network.
+    if cmd == "config-docs" {
+        let check = std::env::args().nth(2).as_deref() == Some("--check");
+        return config_docs::run(workspace_root(), check);
+    }
+
     // Regenerate the committed sqlx offline query cache (`.sqlx/`). Shells out to `sqlx-cli`,
     // which manages its own `DATABASE_URL` connection, so this runs before the pool below.
     if cmd == "sqlx-prepare" {
@@ -72,7 +83,8 @@ async fn main() -> anyhow::Result<()> {
         other => {
             eprintln!(
                 "unknown command {other:?}; usage: xtask \
-                 <migrate|reset|seed|openapi [--check]|sqlx-prepare [--check]>"
+                 <migrate|reset|seed|openapi [--check]|config-docs [--check]|\
+                 sqlx-prepare [--check]>"
             );
             std::process::exit(2);
         }

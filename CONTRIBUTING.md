@@ -65,6 +65,14 @@ starts clean.
 generated. Change a handler's `#[utoipa::path]` or a `crates/contracts` type and run
 `cargo run -p xtask -- openapi`; `--check` is a CI gate. Never edit either by hand.
 
+**Configuration.** `docs/CONFIGURATION.md` is the surface — every `TANKOVAULT_*` key, its
+default, and which services read it. Add, rename or retire a config field and the document has
+to follow: a test derives the surface from the config structs and the `std::env::var` call sites
+and fails on a disagreement in either direction. An unknown key is *ignored* at boot rather than
+rejected, so without that test a stale row costs an operator a silent no-op. Keys are read from
+the leftmost cell of a table row only; `cargo run -p xtask -- config-docs` prints the derived
+list.
+
 **SQL.** The `query!` macros are checked against the committed `.sqlx/` cache. Change any query
 *text* and run `cargo run -p xtask -- sqlx-prepare` against a migrated Postgres 17. Moving a
 query between files needs nothing — the cache is keyed on the text, not the location. The whole

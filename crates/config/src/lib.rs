@@ -16,6 +16,12 @@
 //! holding fifteen unrelated aggregates, which every service in the workspace compiled in full
 //! to use one of them.
 //!
+//! What is deliberately **not** here any more: an `HttpConfig` block. It published
+//! `TANKOVAULT_HTTP__BIND_ADDR` and **no service composed it** — all eight declare a root-level
+//! `bind_addr` with their own port default instead, because the listener a service binds is not
+//! a shared decision. Two spellings of one setting, one of them wired to nothing, is how the
+//! drift `xtask config-docs` now gates for begins; found by that gate's first run.
+//!
 //! What is deliberately **not** here: `MetadataPriorityConfig` and its `SOURCE_*` string keys
 //! moved to `tankovault_domain::metadata_priority`. "`AniList`'s description beats the
 //! adapter's" is a statement about the catalogue, not about configuration layering, and this
@@ -28,7 +34,6 @@ mod database;
 mod email;
 mod error;
 mod features;
-mod http;
 mod internal_auth;
 mod loader;
 mod matching;
@@ -44,7 +49,6 @@ pub use database::DatabaseConfig;
 pub use email::{EmailConfig, EmailSecurity};
 pub use error::ConfigError;
 pub use features::FeaturesConfig;
-pub use http::HttpConfig;
 pub use internal_auth::{InternalAuthConfig, MIN_INTERNAL_TOKEN_LEN};
 pub use loader::{default_true, is_production, load};
 pub use matching::MatchingConfig;

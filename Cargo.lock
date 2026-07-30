@@ -6475,6 +6475,7 @@ dependencies = [
  "progenitor-impl",
  "proptest",
  "serde_json",
+ "syn 2.0.119",
  "tankovault-adapters",
  "tankovault-api",
  "tankovault-auth",

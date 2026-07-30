@@ -42,14 +42,14 @@ pub fn is_production() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::{DatabaseConfig, HttpConfig, load};
+    use crate::{DatabaseConfig, MetricsConfig, load};
     use serde::Deserialize;
 
     #[derive(Debug, Deserialize)]
     struct Sample {
         database: DatabaseConfig,
         #[serde(default)]
-        http: HttpConfig,
+        metrics: MetricsConfig,
     }
 
     #[test]
@@ -70,7 +70,9 @@ mod tests {
             assert_eq!(cfg.database.max_connections, 32);
             // Untouched nested default still applies.
             assert_eq!(cfg.database.acquire_timeout_secs, 10);
-            assert_eq!(cfg.http.bind_addr, "0.0.0.0:8080");
+            // A block nothing in the environment mentions at all still materialises with its
+            // own defaults, rather than being absent.
+            assert_eq!(cfg.metrics.route, "/metrics");
             Ok(())
         });
     }

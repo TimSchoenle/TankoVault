@@ -123,6 +123,12 @@ tankovault-api-client = { path = "crates/api-client" }
 # manifests (BUILD_AND_OPS §1.7).
 progenitor-client = "0.14.0"
 progenitor-impl = "0.14.0"
+# `xtask config-docs` reads the configuration surface out of the config structs themselves
+# rather than out of a hand-kept list, so it needs a real Rust parser. Pinned to the major
+# version already in the tree via the proc-macro crates, so it adds no `multiple-versions`
+# entry to `deny.toml`'s budget. `full` is what `syn::parse_file` needs; the derive-only
+# default feature set parses attributes and items but not whole files.
+syn = { version = "2", features = ["full"] }
 utoipa = { version = "5", features = ["uuid", "axum_extras"] }
 utoipa-axum = "0.2"
 utoipa-scalar = { version = "0.3", features = ["axum"] }

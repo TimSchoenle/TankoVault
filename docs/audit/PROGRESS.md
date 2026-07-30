@@ -21,13 +21,13 @@ that the audit did not.
 | Report | DONE | PARTIAL | OPEN | Other |
 | --- | --- | --- | --- | --- |
 | SECURITY (18) | 13 | 4 | 1 | — |
-| ARCHITECTURE (22) | 13 | 2 | 6 | 1 no-finding |
+| ARCHITECTURE (24) | 19 | 2 | 2 | 1 no-finding |
 | PERFORMANCE (21) | 17 | 0 | 2 | 1 wontfix, 1 no-finding |
 | TESTING (17) | 9 | 3 | 4 | 1 no-finding |
 | FRONTEND (20) | 17 | 0 | 1 | 1 wontfix, 1 no-finding |
 | BUILD_AND_OPS (41) | 27 | 4 | 4 | 1 wontfix, 5 no-finding |
 
-**96 DONE · 13 PARTIAL · 3 WONTFIX · 18 OPEN · 9 no-finding**, across 139 tracked rows.
+**102 DONE · 13 PARTIAL · 3 WONTFIX · 14 OPEN · 9 no-finding**, across 141 tracked rows.
 
 The rows below are authoritative; this summary is a convenience — and it is now a *count* of
 them rather than a hand-maintained tally, which the previous version had drifted from (it
@@ -254,17 +254,23 @@ remainder. Every gate passes: `cargo fmt --all --check`, `cargo clippy --workspa
 tests, every integration target, `cargo test --workspace --doc`, `xtask openapi --check`, the
 frontend's 50 tests and its wasm build.
 
+**The architecture track is now essentially closed.** ARCH-3, 5, 5b, 6, 7, 8 and half of 19
+landed this session, so 19 of 24 `ARCHITECTURE` rows are DONE and the two still open are the
+smallest ones left.
+
 What is genuinely left, in the order it is worth doing:
 
-1. **TEST F-05 — the rest of `crates/db`.** GDPR export/erase, ingest and the new batched
-   fan-out/reconciliation paths are covered now; `catalog.rs`'s read models, `sync.rs` and
-   `users.rs` still hold most of the untested SQL.
-2. **ARCH-3/5/7/8/19 — the remaining module splits, plus ARCH-16 step 3.** All hygiene now that
-   ARCH-12, ARCH-18, ARCH-20 and ARCH-6 have landed. ARCH-16's remaining half — hoisting
-   `resolve_canonical_series` out of `crates/db` so matching policy stops living in the
-   repository layer — is the only one that moves a decision rather than moving code.
-3. **TEST Access — the access-control integration matrix.** Still the single highest-value test
+1. **TEST F-05 — the rest of `crates/db`.** GDPR export/erase, ingest and the batched
+   fan-out/reconciliation paths are covered; the newly split `catalog/browse.rs`,
+   `sync/admin_views.rs` and `users.rs` still hold most of the untested SQL. The splits make
+   this easier to scope than it was — one test module per repository module.
+2. **TEST Access — the access-control integration matrix.** Still the single highest-value test
    investment in the codebase per the audit's own roadmap.
+3. **The last two architecture rows.** `ARCH-19`'s remaining half (`admin/users.rs`, 613 lines
+   — the same treatment `auth.rs` just had) and `ARCH-10` (typing the 20 proxy handlers'
+   response bodies, which `Upstream` made a one-place change). Then **ARCH-16 step 3**, the only
+   remaining item that moves a decision rather than code: hoisting `resolve_canonical_series`
+   out of `crates/db` so matching policy stops living in the repository layer.
 4. **Fuzz targets (TEST).** `cargo-fuzz` on `parse_chapter_number`, `parse_json_body` under
    `-timeout=2`, and HTML extraction, seeded from `crates/adapters/fixtures/`. The two verified
    defects this audit found (F-01, F-02) are exactly what these would have caught, so the value
@@ -297,3 +303,15 @@ Worth knowing before adding to them:
 - **Regression tests carry the story.** Every fix above that could silently come back has a
   test whose doc comment says what the bug was, so a future reader does not "simplify" it
   away. Please keep doing that.
+- **A module split re-exports with a glob and keeps the submodules `pub`.** `catalog`,
+  `tracking`, `repo::sync`, `engine` and `auth` all do this, so every pre-split path still
+  resolves and callers narrow to `repo::tracking::notifications::…` one at a time instead of in
+  one sweep. For handlers the glob is *required*, not stylistic: `#[utoipa::path]` generates a
+  sibling `__path_<handler>` that `routes!()` resolves alongside the function.
+- **A `#[allow(clippy::too_many_arguments)]` is a parameter struct waiting to happen.** All
+  three in `repo::sync` are gone (ARCH-5b); two became structs and the third turned out to mark
+  dead code. Adjacent same-typed arguments are the actual hazard — transposing them compiles.
+- **Do not slice source files with bare `Get-Content`** on Windows: PowerShell 5.1 decodes
+  UTF-8 as Windows-1252 and the damage compounds across passes (ARCH-19b). Pass `-Encoding
+  utf8`, or use `[System.IO.File]::ReadAllText`. If a split touched doc comments, regenerating
+  `openapi.json` is the cheapest end-to-end check that nothing was mangled.

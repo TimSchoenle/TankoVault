@@ -7,6 +7,8 @@
 //! - `xtask openapi` — regenerate `openapi.json` (the canonical spec) and the typed Rust
 //!   API client (`crates/api-client/src/lib.rs`) from the api service's `utoipa` schemas via
 //!   `progenitor`. No database needed.
+//! - `xtask ci` — run every offline gate CI runs, in CI's order, stopping at the first
+//!   failure. No database, no Docker, no network; see `ci.rs` for what it deliberately omits.
 //! - `xtask coverage-ratchet [report.json]` — fail if line coverage has dropped below the
 //!   floor committed in `.github/coverage-floor.txt`. Reads a `cargo llvm-cov report --json`
 //!   document (default `target/llvm-cov/coverage.json`); runs no tests itself. No database.
@@ -17,6 +19,7 @@
 //! `migrate`/`reset`/`seed`/`sqlx-prepare` read `DATABASE_URL` from the environment;
 //! `openapi` does not.
 
+mod ci;
 mod coverage;
 
 use progenitor_impl::{GenerationSettings, Generator, InterfaceStyle, TypePatch};
@@ -29,18 +32,18 @@ async fn main() -> anyhow::Result<()> {
         return install_hooks();
     }
 
+    // Every offline gate CI runs, in CI's order. No database, no Docker, no network.
+    if cmd == "ci" {
+        return ci::run(workspace_root());
+    }
+
     // The coverage ratchet. Reads the report `cargo llvm-cov` just wrote and compares it
     // against the committed floor; needs no database and no network.
     if cmd == "coverage-ratchet" {
         let report = std::env::args()
             .nth(2)
             .unwrap_or_else(|| "target/llvm-cov/coverage.json".to_owned());
-        return coverage::run(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .expect("xtask sits directly under the workspace root"),
-            std::path::Path::new(&report),
-        );
+        return coverage::run(workspace_root(), std::path::Path::new(&report));
     }
 
     if cmd == "openapi" {
@@ -505,6 +508,17 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// The workspace root, derived from this crate's manifest directory.
+///
+/// `xtask` sits directly under it by construction (it is a workspace member at `xtask/`), so
+/// this is exact rather than a search — and it is right regardless of the shell's working
+/// directory, which is what lets `cargo run -p xtask -- ci` work from anywhere in the tree.
+fn workspace_root() -> &'static std::path::Path {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask sits directly under the workspace root")
 }
 
 #[cfg(test)]

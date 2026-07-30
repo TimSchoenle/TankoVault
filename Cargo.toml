@@ -115,6 +115,14 @@ tankovault-api-client = { path = "crates/api-client" }
 # The derived spec is exported by `xtask openapi` and fed to `progenitor` (an xtask dep) to
 # regenerate the typed `crates/api-client`, which the frontend consumes; `utoipa-scalar`
 # serves the same spec as a browsable UI at `/scalar`.
+# `progenitor` generates `crates/api-client` from that spec. The two halves are pinned here
+# rather than in their own manifests because they **must** stay in lockstep — `progenitor-impl`
+# (in `xtask`) emits code against `progenitor-client`'s (in `crates/api-client`) runtime types,
+# and bumping only one produces a generated crate that does not compile, or worse compiles
+# against a changed `ResponseValue`. They were two hand-maintained `"0.14.0"` literals in two
+# manifests (BUILD_AND_OPS §1.7).
+progenitor-client = "0.14.0"
+progenitor-impl = "0.14.0"
 utoipa = { version = "5", features = ["uuid", "axum_extras"] }
 utoipa-axum = "0.2"
 utoipa-scalar = { version = "0.3", features = ["axum"] }

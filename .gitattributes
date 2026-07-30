@@ -1,0 +1,29 @@
+# Generated artifacts that are committed on purpose but should not be read as review surface.
+#
+# `openapi.json` and `crates/api-client/src/lib.rs` are ~1 MB of `utoipa` → `progenitor` output
+# in a repository whose hand-written source is a fraction of that (BUILD_AND_OPS §9.3), and
+# `xtask openapi --check` is what guarantees they match the code — so a reviewer reading their
+# diff is reading the same information twice, at length.
+#
+# `-diff` suppresses the diff body, not the fact that the file changed: `git diff --stat` and
+# GitHub's file list still show it, and `git diff --text` still prints it when someone genuinely
+# wants to look. `linguist-generated` keeps them out of language statistics and collapses them
+# in pull requests.
+#
+# `Cargo.lock` keeps `linguist-generated` but *not* `-diff`: a lockfile change is exactly what a
+# reviewer should be reading, since it is how a dependency actually enters the build.
+openapi.json                 linguist-generated=true -diff
+crates/api-client/src/lib.rs linguist-generated=true -diff
+.sqlx/*.json                 linguist-generated=true -diff
+Cargo.lock                   linguist-generated=true
+
+# The repository is developed on Windows and built on Linux. Normalise line endings in the
+# index so a checkout on either platform produces the same content hash, and keep the shell
+# scripts and Dockerfiles LF whatever the developer's `core.autocrlf` says — a CRLF shebang
+# line is a container that fails to start with `no such file or directory`, naming a file that
+# is plainly there.
+* text=auto
+*.sh          text eol=lf
+Dockerfile*   text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf

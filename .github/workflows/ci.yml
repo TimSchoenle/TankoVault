@@ -186,6 +186,38 @@ jobs:
       - name: repo + HTTP access-control + sync-reconciliation integration suites
         run: cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features integration
 
+  # `openapi --check` proves the committed artifacts match the code. It says nothing about
+  # whether the *contract* still holds: removing an endpoint, narrowing a type, or making an
+  # optional field required all pass it cleanly, as long as the artifacts were regenerated
+  # (BUILD_AND_OPS §9.2).
+  #
+  # That matters here specifically because the SPA is deployed as its own image and its own
+  # compose service, so a version skew window always exists. A breaking change ships silently
+  # and lands as a deserialization failure in somebody's browser.
+  #
+  # Pull requests only: the comparison is against the base branch's spec, and there is nothing
+  # to compare a push to `main` with.
+  openapi-breaking:
+    name: openapi breaking changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The base branch's `openapi.json` has to be reachable, which a shallow clone's single
+          # commit is not.
+          fetch-depth: 0
+      - name: the base branch's spec
+        run: git show "origin/${{ github.base_ref }}:openapi.json" > /tmp/base-openapi.json
+      - uses: oasdiff/oasdiff-action/breaking@main
+        with:
+          base: /tmp/base-openapi.json
+          revision: openapi.json
+          # `ERR` only: `oasdiff` also reports non-breaking and warning-level differences, and
+          # gating on those would fail every pull request that adds a field.
+          fail-on: ERR
+
   # `web/frontend` is excluded from the host workspace (it targets wasm32), so none of the
   # jobs above touch it. This job ran `cargo check` alone, which meant its 41 tests and the
   # full `clippy::pedantic` set it declares in its own Cargo.toml executed nowhere at all —

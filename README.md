@@ -75,14 +75,15 @@ crates/
 services/       api, control-plane, worker, notifier, sync, challenge-solver, render, frontend
 web/frontend/   Dioxus WASM SPA + Tailwind (excluded from the host workspace)
 migrations/     versioned sqlx migration SQL
-deploy/         Dockerfiles, docker-compose, Helm chart
-xtask/          dev/ops tasks: migrate, reset, seed, openapi, sqlx-prepare
+deploy/         Dockerfiles, docker-compose (+ an observability overlay), local env example
+xtask/          dev/ops tasks: ci, migrate, reset, seed, openapi, sqlx-prepare,
+                install-hooks, coverage-ratchet
 ```
 
 ## Tech stack
 
 - **Runtime / web** — Tokio, Axum, tower / tower-http
-- **Storage** — PostgreSQL 19 via SQLx (compile-time-checked SQL), Redis 7 via `fred`
+- **Storage** — PostgreSQL 17 via SQLx (compile-time-checked SQL), Redis 7 via `fred`
 - **Messaging** — NATS JetStream (`async-nats`)
 - **Crawl** — `wreq` + `wreq-util` (BoringSSL; browser TLS/HTTP2 fingerprint emulation) with
   `governor` rate limiting, `scraper` HTML parsing, optional `chromiumoxide` headless render.

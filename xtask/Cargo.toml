@@ -20,7 +20,7 @@ tankovault-api = { path = "../services/api" }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
-progenitor-impl = "0.14.0"
+progenitor-impl = { workspace = true }
 openapiv3 = "2.2.0"
 
 [dev-dependencies]

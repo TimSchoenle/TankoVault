@@ -22,19 +22,24 @@ that the audit did not.
 | --- | --- | --- | --- | --- |
 | SECURITY (18) | 16 | 1 | 1 | — |
 | ARCHITECTURE (24) | 23 | 0 | 0 | 1 no-finding |
-| PERFORMANCE (21) | 17 | 0 | 2 | 1 wontfix, 1 no-finding |
-| TESTING (23) | 20 | 0 | 2 | 1 no-finding |
-| FRONTEND (20) | 17 | 0 | 1 | 1 wontfix, 1 no-finding |
-| BUILD_AND_OPS (42) | 29 | 4 | 3 | 1 wontfix, 5 no-finding |
+| PERFORMANCE (21) | 19 | 0 | 0 | 1 wontfix, 1 no-finding |
+| TESTING (23) | 20 | 2 | 0 | 1 no-finding |
+| FRONTEND (20) | 18 | 0 | 0 | 1 wontfix, 1 no-finding |
+| BUILD_AND_OPS (42) | 34 | 2 | 0 | 1 wontfix, 5 no-finding |
 
-**122 DONE · 5 PARTIAL · 3 WONTFIX · 9 OPEN · 9 no-finding**, across 148 tracked rows.
+**130 DONE · 5 PARTIAL · 3 WONTFIX · 1 OPEN · 9 no-finding**, across 148 tracked rows.
+
+The single OPEN row is **SEC-2b**, renderer DNS rebinding, which no commit can close: it needs
+container-level egress restriction. Every other row a commit can close is closed, and the five
+PARTIALs each name what is left in their own Notes rather than in this table.
 
 The rows below are authoritative; this summary is a convenience — and it is a *count* of them
 rather than a hand-maintained tally, because the hand-maintained version had drifted twice.
-Recount rather than increment: this pass corrected the `Prop` row, which listed four items as
-open that had already landed two commits earlier, and the `ARCH-6b` row, which offered an
-upstream fix that does not exist. **A row in this file is a claim, not evidence.** Verify before
-you rely on one — three of this session's defects were found by doing exactly that.
+Recount rather than increment (`git log` for the script that does it). **A row in this file is a
+claim, not evidence.** Verify before you rely on one — this remediation has now found six
+defects by doing exactly that, two of them in the last session: two orphaned feature-gate rules
+that no route had ever matched, and the audit's own two "directly actionable" OPS-1.5 items,
+both of which turned out to fix nothing.
 
 ---
 
@@ -252,30 +257,40 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | OPS-8.2 | `otlp_endpoint` is an inert knob | **DONE** | Removed, together with the four OTel workspace deps. It only ever logged "collector export is pending" — an operator who set it believed traces were exported and would have found out during an incident. `Cargo.toml` and `crates/config` both say to re-add the knob and the layer together or not at all. |
 | OPS-8.3 | No dashboards, alerts or recording rules | **DONE** | `deploy/observability/` plus a `docker-compose.observability.yml` **overlay**, so a plain `compose up` is unchanged and the main file's "only `frontend` is published" invariant stays literally true of the main file. 31 recording rules, 25 alerts, a 22-panel provisioned dashboard, and `docs/OBSERVABILITY.md`. Built from an enumeration of the nine metrics the workspace *actually* emits, not the four the docs listed — `http_feature_disabled_total`, `scan_tasks_served_total`, `solve_attempts_total` and `render_requests_total` were emitted and documented nowhere, and `OPERATIONS.md` §2 is now the full set. Four properties of the real metrics shaped the design: there is no `service` label, so `job` is the only service identifier and Prometheus gets one job *per service*; `status` is the exact code, not a class, despite a source comment saying otherwise; `route` is the matched path with `unmatched` folding; and `/health`/`/ready` are absent from all of it because `ops_router` merges outside `HttpStack`. Two exporters close gaps without adding Rust: `blackbox_exporter` probes `/ready` (its JSON body cannot be scraped as exposition, so this is the only way a Postgres outage or an exhausted pool is alertable), and `prometheus-nats-exporter` supplies the queue depth no service emits — worker consumers are named `tankovault-workers-<mode>-<slug>`, so relabelling recovers the same `provider`/`scan` dimensions and backlog sits on one graph with throughput. Every threshold is argued in place; the best two invent no number at all (`TankoVaultFastScanBacklogImpossible` derives its threshold from OPERATIONS.md §7's one-fast-task-per-provider invariant, so it rescales with the provider set and lapses if that invariant does, and the latency thresholds are real `LATENCY_BUCKETS` boundaries, since an off-boundary value alerts on interpolation rather than on data), and the two that could not be grounded are labelled `grounding: baseline-needed` rather than dressed up as derived. **No Alertmanager**: there is no groundable receiver for this deployment, and a pipeline that delivers nowhere is exactly the defect OPS-8.2 removed. Validated live, not merely parsed, and a new CI job runs the checkable part with the same pinned Prometheus image the overlay uses — so the promtool that validates the rules is the Prometheus that will evaluate them. `promtool check config` plus four `promtool test rules` cases, which is what caught two PromQL bugs that parse perfectly: an `unless` between series differing only in the compared label (so it never cancels) and a 5xx ratio with no traffic floor (so one 500 on an idle instance reads as 100% failure). That gate matters because a rule file which fails to parse takes its whole group with it, disarming every alert built on it, and Prometheus reports that on a page nobody visits until an incident. What is still uninstrumented is listed with its call site rather than approximated: provider 429/backoff (log-only, the largest remaining gap), fast email-delivery failures, the settle half of ARCH-14, fan-out truncation, and DB pool depth short of exhaustion. |
 | OPS-8.3b | `http_requests_in_flight` leaked on every client disconnect | **DONE** | Not in the audit; found enumerating the metrics for OPS-8.3. The gauge decremented *after* `next.run(req).await`, and a client disconnect drops that future, so the decrement never ran — while `GET /v1/me/stream` is SSE whose **normal** termination is the browser closing the connection. The gauge therefore rose by one for every notification stream ever opened and never came back, so the one number an operator reaches for to answer "is this saturated?" was monotonically increasing regardless of load. Now a `Drop` guard, which is the only construction that survives cancellation: the decrement rides the guard's drop rather than reaching a line, so an abandoned future releases it too. This is also why in-flight is a dashboard panel and not an alert. Regression test drops the response future mid-flight and asserts the gauge returns to its prior value. |
+| OPS-1.7 | Dependency unification exemplary — no finding, one suggestion | **DONE** | The no-finding half stands. The suggestion is taken: `progenitor-client` and `progenitor-impl` were two hand-maintained `"0.14.0"` literals in two manifests, and they are not independent — `progenitor-impl` (in `xtask`) emits code against `progenitor-client`'s (in `crates/api-client`) runtime types, so bumping one produces a generated crate that either fails to compile or, worse, compiles against a changed `ResponseValue`. Both are `[workspace.dependencies]` now, with that reasoning at the declaration. **This row did not exist** — see the note under OPS-10.5. |
+| OPS-7.4 | Production defaults mostly sane, two worth a second look | — | **No finding, verified rather than assumed.** Both of the report's UNVERIFIED doubts resolve in the safe direction: `SecurityConfig::hsts` is `#[serde(default)]` on a `bool`, i.e. **false** — the audit read it as defaulting true, which would have made the reference stack's explicit `false` a sign the default was wrong for the common case; it is not. And `RateLimitConfig::trust_forwarded_for` is `false`, as the report hoped, with the forging hazard written out at the field. Row added rather than left implicit, because "checked, and the answer is fine" and "never checked" look identical in an empty tracker. |
+| OPS-9.1 | Generation and drift detection correctly wired | — | No finding. Duplicates OPS-4.10 in the report's own numbering. |
+| OPS-9.2 | No breaking-change detection on the spec | **DONE** | `openapi --check` proves the committed artifacts match the code and says nothing about whether the *contract* still holds: removing an endpoint, narrowing a type or making an optional field required all pass it cleanly once the artifacts are regenerated. That matters here specifically because the SPA ships as its own image and its own compose service, so a version-skew window always exists and a breaking change lands as a deserialization failure in somebody's browser. A new `openapi-breaking` job diffs `openapi.json` against the base branch's copy with `oasdiff`, `fail-on: ERR` — pull requests only, since there is nothing to compare a push to `main` against, and `fetch-depth: 0` because a shallow clone cannot reach the base commit. `ERR` only on purpose: `oasdiff` also reports non-breaking differences, and gating on those would fail every pull request that adds a field. |
+| OPS-9.3 | The two generated artifacts dominate repo diffs | **DONE** | New `.gitattributes`: `openapi.json`, `crates/api-client/src/lib.rs` and `.sqlx/*.json` are `linguist-generated -diff`. `-diff` suppresses the diff *body*, not the fact that the file changed — `--stat` and the file list still show it, and `--text` still prints it on demand. `Cargo.lock` keeps `linguist-generated` but **not** `-diff`, deliberately: a lockfile change is exactly what a reviewer should read, since it is how a dependency actually enters the build. The file also normalises line endings, which is not in the report and belongs with it: this repository is developed on Windows and built on Linux, and a CRLF shebang is a container that fails to start with `no such file or directory` naming a file that is plainly there. |
+| OPS-10.1 | `deploy/README.md` documents a Helm chart that does not exist | **DONE** | Closed with OPS-5.2, which deleted the claim rather than building a chart. |
+| OPS-10.2 | `IMPLEMENTATION_STATUS.md` current-state table still says nginx | **DONE** | Already corrected when the axum static server landed; re-verified. The line now describes the `scratch` image and says nginx was retired in Session 18. Its "k8s/Helm still pending" is consistent with OPS-5.2's resolution. |
+| OPS-10.3 | `xtask` command surface: four gaps | **PARTIAL** | Two of four closed, one already closed, one declined. **`ci`** is here, and the report called it the highest value for the effort: `cargo run -p xtask -- ci` runs every offline gate CI runs, in CI's order, stopping at the first failure — `fmt`, pedantic clippy with all features, the offline tests, **the doc tests as their own invocation**, the OpenAPI drift check, and the three `web/frontend` gates. Written as a table of `cargo` argument slices rather than a shell script, with a test asserting no gate smuggles a shell metacharacter: this runs on a machine whose shell is `PowerShell` and gates a pipeline whose shell is `sh`, and the one command whose purpose is to make the two agree must not itself depend on which is running. Two more tests pin what the structure is *for* — that the doc-test gate never gains `--all-targets` (which silently excludes doc tests, the F-11 defect), and that the frontend gates run in `web/frontend`, since the host workspace excludes it and that exclusion is why its tests once ran nowhere. What `ci` deliberately omits is listed in its module docs and printed on success, because a local command that needs Docker, Node, promtool and gitleaks is a local command nobody runs — which puts it back where §2.1 found it. **`install-hooks`** landed with OPS-4.7. **`TANKOVAULT_CONFIRM_RESET`** is documented in `docs/CONFIGURATION.md` now, closing the sub-finding. **`config-docs --check`** is *not* done and is what remains of this row: `docs/CONFIGURATION.md` is hand-written, so it can drift from `crates/config` with nothing to notice — the same shape as OPS-2.4 and OPS-1.5, and it should be closed the same way. `dev`/`up` is declined: `docker compose up --build` is one line, already in `deploy/README.md` and `CONTRIBUTING.md`, and wrapping it adds a second thing to keep in step with compose. |
+| OPS-10.4 | No `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md` or `LICENSE` | **PARTIAL** | Three of four added; the fourth is not a repository decision. `SECURITY.md` — the report's urgent one, for a project that crawls third-party sites and stores OAuth tokens — gives a private disclosure channel, a scope section naming the internal tier and the SSRF guard by module, and, unusually, the *known* issues an operator is affected by today: SEC-2b and the OP-1/OP-2 rotation, which are tracked rather than secret and which a reporter would otherwise spend their time rediscovering. `CONTRIBUTING.md` leads with `xtask ci` and then covers only the things that are not guessable from the tree — which artifacts are generated and what regenerates them, when the `.sqlx` cache needs rebuilding and when it does not, that suppressions are `expect` and must say *why*, and where the conventions live. `CHANGELOG.md` is `Unreleased` only, honestly: no tag has shipped, every crate is `0.1.0`, and the release workflow deliberately does not push. **`LICENSE` is left to a human**, and not by omission — choosing one is entangled with OP-6, since `wreq-util` is GPL-3.0 and the licence chosen determines whether the images can be distributed at all. Picking one here would be deciding that question in a commit message. |
+| OPS-10.5 | `README.md` is accurate | **DONE** | It was, and had since stopped being: the layout block still promised a Helm chart (the same claim OPS-5.2 deleted everywhere else), and the tech-stack section said **PostgreSQL 19** after OPS-4.2 moved the whole stack to 17 — a fix that corrected the compose file, CI and the `.sqlx` cache while leaving three prose copies behind, in `README.md`, `docs/design.md` (twice) and `docs/IMPLEMENTATION_STATUS.md`. All four corrected, and the `xtask` line now lists the commands that exist. **The row is also the reason the nine rows above it exist.** Cross-checking `### N.M` headings in `BUILD_AND_OPS.md` against the keys in this table showed ten report sections with no row at all — §1.7, §7.4, §9.1-9.3 and §10.1-10.5 — the same gap ARCH-5b was, and for the same reason: this file's numbering diverged from the report's and the tail fell through it. A section with no row is not tracked as open or closed; it is simply absent, which is the one state a tracker must not have. |
 
 ---
 
 ## Suggested next steps, in order
 
-**Every roadmap phase is now substantially complete.** Gates: `cargo fmt --all --check`, `cargo
-clippy --workspace --all-targets --all-features -- -D warnings`, `cargo deny check advisories
-licenses sources bans`, **510 unit tests**, every integration target (`crates/db` **118**,
-`services/api` 86, the F-06 sync suite 55), **13 doc tests**, `xtask openapi --check`,
-`promtool check config` + `test rules`, and the frontend's 51 tests, clippy and wasm build. The
-workspace also compiles with **no `DATABASE_URL` set**, which is what proves the `.sqlx` offline
-cache covers every query.
+**Every row a commit can close is closed.** Gates: `cargo fmt --all --check`, `cargo clippy
+--workspace --all-targets --all-features -- -D warnings`, `cargo deny check advisories licenses
+sources bans -D unnecessary-skip`, **527 offline tests across 69 targets**, every integration
+target (`crates/db` **118**, `services/api` **90**, the F-06 sync suite 55), **13 doc tests**,
+`xtask openapi --check`, **`xtask coverage-ratchet`**, `promtool check config` + `test rules`,
+and the frontend's **54** tests, clippy and wasm build. The workspace also compiles with **no
+`DATABASE_URL` set**, which is what proves the `.sqlx` offline cache covers every query.
 
-**Three tracks are closed.** ARCHITECTURE: all 23 findings, ARCH-6b and ARCH-16 step 3 included.
-TESTING: fuzz targets, property suites, doc examples and the `crates/db` coverage all landed, so
-every module of `crates/db` now has an integration suite. SECURITY: every row a commit can close
-is closed — what remains is SEC-2b (container egress, no code change closes it) and SEC-6
-(rotation, OP-1..OP-3).
+**Five tracks are closed.** ARCHITECTURE (all 23), PERFORMANCE, FRONTEND, BUILD_AND_OPS and
+SECURITY-except-SEC-2b. TESTING is two PARTIALs, each naming its own remainder. The single OPEN
+row in the whole tracker is **SEC-2b** — renderer DNS rebinding, which needs container-level
+egress restriction and no commit closes.
 
 ### The pattern worth carrying forward
 
 **Writing a test for untested code is how this remediation finds real defects, and it has now
-done so five times.** F-05b and F-05c last session; this session TRACK-1, F-01b, and P-03. Three
-of those were *silent* — no error, no log line, no failing gate:
+done so six times.** F-05b and F-05c; then TRACK-1, F-01b and P-03; then the two orphaned
+feature-gate rules the F-09 work turned up. Most were *silent* — no error, no log line, no
+failing gate:
 
 - **TRACK-1** — five implementations of "has this user read this chapter?" disagreed, so part
   releases counted as unread in three places, a dashboard card could not be cleared, and the
@@ -284,27 +299,53 @@ of those were *silent* — no error, no log line, no failing gate:
   freezes `latest_chapter` forever, and serialises to `null` on the bus.
 - **SEC-8's side finding** — the frontend sent `?token=` while the handler read `?access_token=`,
   so **live notifications had never worked at all**.
+- **F-09's side finding** — two feature-gate rules named paths no route has ever had. Harmless
+  as they stood, and worth deleting: a rule that gates nothing while looking like it gates
+  something is how the next person concludes their endpoint is already covered.
 
-Two lessons about *how* they were found. F-01b came from writing the fuzz target's **oracle**,
-not from running the fuzzer — and the file already had a property over that function which was
-passing **vacuously**, because proptest's `".*"` cannot generate a 309-digit string. And three
-defects came from asking what connects two artefacts that must agree: SQL versus Rust, a
-`format!` in one crate versus a `Deserialize` in another, a handler versus its own annotation.
-**When two things must agree and nothing checks them, that is where to look next.**
+Two lessons about *how*. F-01b came from writing the fuzz target's **oracle**, not from running
+the fuzzer — and the file already had a property over that function which was passing
+**vacuously**, because proptest's `".*"` cannot generate a 309-digit string. And most of them
+came from asking what connects two artefacts that must agree: SQL versus Rust, a `format!` in
+one crate versus a `Deserialize` in another, a handler versus its own annotation, a gate table
+versus the published document. **When two things must agree and nothing checks them, that is
+where to look next.**
+
+A second pattern earned its place this session: **a suppression is a claim, and an `allow` never
+re-checks its claim.** Converting all ~45 to `#[expect]` (OPS-2.3) immediately invalidated seven,
+one of them carrying a comment that explicitly argued why it was necessary. The same shape closed
+OPS-1.5 (`-D unnecessary-skip` on the duplicate-version budget) and OPS-2.4 (a test that the
+generated crate's hand-copied lint block still matches the workspace's). **Where the codebase
+records a decision in prose, ask what would notice when the prose stops being true.**
+
+And a third, from OPS-1.5 and OPS-5.4: **the audit's recommendations are claims too.** Its two
+"directly actionable" duplicate-version items both turned out to fix nothing — bumping `rand`
+relocates two of eight edges, and the `tower-http` duplicate comes from `reqwest`. Meanwhile the
+`read_only` question OPS-5.4 left open was answered in ten minutes by building a probe image and
+running `docker diff`, which also surfaced the failure mode that made it look hard: a bare
+`tmpfs: [/home/nonroot]` mounts root-owned over the account's own home, and Chromium reports that
+as `chrome_crashpad_handler: --database is required` plus a SIGTRAP.
 
 ### What is genuinely left
 
-1. **OPS build hygiene — the largest remaining cluster, and the only one still unstarted.**
-   OPS-1.5 (86 crates at 2+ versions), OPS-2.3 (36 `#[allow(...)]` escapes), OPS-2.4
-   (`api-client` opts out of clippy), OPS-4.6 (no OS/arch legs), OPS-5.4 (`read_only` on
-   `render`), and PERF-18 (the `api` binary links two TLS stacks — related, since it is a
-   dependency-graph problem).
-2. **F-10 — coverage ratchet.** The `coverage` job reports and gates nothing, deliberately, until
-   there is a baseline. There is one now, so this is ready to act on.
-3. **F-09 — `test-support` covers one axis**, and it is what blocks the last F-11 gap: an
-   executable doc example for `crates/db` needs a database.
-4. **PERF-19** (allocation waste) and **FE-F10** (one DTO gap) — small.
-5. **FE-F8 — the inline-style layer.** WONTFIX with reasoning: it needs a decision about whether
+1. **F-10's second half — mutation testing.** The coverage ratchet is in (floor 23.8%, measured
+   24.85%). `cargo-mutants` over the pure decision cores — `engine/plan.rs`, `crates/matcher`,
+   `flags.rs`, `mapping.rs` — is where it would pay, because the audit's specific worry is tests
+   that assert on constants rather than behaviour, which is exactly what mutation analysis
+   reports. Time-boxed and `continue-on-error`, per the argument in `fuzz/README.md`; not a
+   required check.
+2. **F-09's remaining axes**, in the report's own priority order: a deterministic `Clock` (the
+   largest single unlock — token expiry, rate-limit windows, backoff and the sync ancestor
+   comparison are only testable at their boundaries today, and it means threading a clock through
+   `AppState`); entity builders for the `crates/db` suites; a scriptable HTTP upstream
+   (`wiremock`) for the `AniList`, notifier-webhook and render paths; a seeded RNG; snapshot
+   assertions. None blocks anything currently written — they are what would make the *next* suite
+   cheap. The `Clock` is also what unblocks the last F-11 gap, an executable doc example for
+   `crates/db`.
+3. **OPS-2.2's documentation backlog.** `missing_errors_doc` is 166 warnings in `crates/db`
+   alone. Do it crate by crate with a `#![warn(...)]` at each module root, and delete the
+   corresponding `allow` from `[workspace.lints]` only when the last one is clean.
+4. **FE-F8 — the inline-style layer.** WONTFIX with reasoning: it needs a decision about whether
    `ik-*` gets a real utility tier, not a mechanical sweep.
 
 Two things no commit can close: the credential rotation (OP-1..OP-3) and the GPL-3.0 question
@@ -312,6 +353,12 @@ Two things no commit can close: the credential rotation (OP-1..OP-3) and the GPL
 does not push. **OP-1/OP-2 remain urgent**: F-05c means some accounts may have been unable to
 sign in or recover at all, so the rotation should be sequenced with a look at whether any live
 account is stuck in that state.
+
+One operational note that is nobody's audit row. `[profile.dev] incremental = true` (PERF-17) is
+right for iteration and it is not free: `target/debug/incremental` reached **132 GB** during this
+session and filled the disk mid-build, which surfaces as `couldn't create a temp dir` from
+`rustc` rather than as anything recognisable. `rm -rf target/debug/incremental` is safe and costs
+one rebuild.
 
 ## Conventions the fixes so far have adopted
 
@@ -367,3 +414,33 @@ Worth knowing before adding to them:
   includes the case that looks like a bug and is not — `normalize_title("Manga") == "manga"`,
   `decide`'s ambiguous band — because that is the one a future reader would otherwise
   "simplify" away.
+- **Every suppression is `#[expect(…, reason = "…")]`, never `#[allow]`** (OPS-2.3), enforced by
+  `clippy::allow_attributes` and `allow_attributes_without_reason` in both workspaces' lint
+  tables. The attribute is a *claim* about the code beneath it, and an `allow` never re-checks
+  its claim while an `expect` warns the moment it stops holding. Seven stopped holding the day
+  the conversion landed, one of them carrying a comment that argued explicitly for why it was
+  needed. Same idea in two other places: `-D unnecessary-skip` on `deny.toml`'s duplicate-version
+  budget, so a skip cannot outlive the duplicate it records; and
+  `crates/api-client/tests/workspace_lints.rs`, because that crate is the one member that cannot
+  write `[lints] workspace = true` and its copy of the rustc lints had nothing keeping it honest.
+  **Where the codebase records a decision in prose, ask what would notice when the prose stops
+  being true.**
+- **The wire carries the answer; the client does not re-derive it.** A closed vocabulary belongs
+  in `crates/contracts` where `utoipa` publishes it and `progenitor` generates it (FE-F10's
+  `ConflictPolicy`), and a derived property belongs on the row that needs it, computed where its
+  definition lives (`AdminRequestRow::needs_export`, beside the `overdue` field that already
+  worked this way). Where a list genuinely cannot be derived — Rust cannot enumerate an enum's
+  variants without a macro — the array stays hand-written and a test reads the accepted set out
+  of the committed `openapi.json`, which is the only artefact connecting the two workspaces.
+- **A proxy keeps the contract; only the implementation moves.** PERF-18 moved the adapter
+  dry-run to the worker rather than putting it behind a Cargo feature, because a default-off
+  feature ships an image serving fewer routes than `openapi.json` declares and a generated client
+  with a method that 404s — the same declaration-vs-implementation split as ARCH-1, ARCH-10 and
+  Access-b. The regenerated document was byte-identical, which is the check that says the move
+  was a move. Authorization and auditing stay at the tier that knows about operators.
+- **Before answering an operational question from reading, try measuring it.** OPS-5.4's
+  `read_only` question had been open on the grounds that a browser's writable set is not
+  enumerable from the Dockerfile; a probe image and `docker diff` answered it in minutes, and
+  turned up the failure mode that made it look hard. OPS-1.5's two "directly actionable" items
+  both turned out to fix nothing once `cargo tree -i` was run against them. PERF-18's delta was
+  marked UNVERIFIED in the report and is 557 → 487 crates.

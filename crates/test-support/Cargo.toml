@@ -28,6 +28,13 @@ async-trait = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }
 testcontainers-modules = { version = "0.13.0", features = ["postgres"] }
+# Declared directly, at the version `testcontainers-modules` already resolves to, for one
+# feature: `reusable-containers`. `testcontainers-modules` does not forward it (it forwards
+# `blocking`, `http_wait`, `properties-config` and `watchdog` and nothing else), and without it
+# every `--features integration` run leaked one Postgres container per test binary — see
+# ARCH-6b. Keep the version in lockstep with the `testcontainers-modules` bump, or `cargo deny`
+# will fail on `multiple-versions`.
+testcontainers = { version = "0.25.0", features = ["reusable-containers"] }
 
 [lints]
 workspace = true

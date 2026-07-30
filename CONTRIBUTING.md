@@ -9,7 +9,7 @@ cargo run -p xtask -- ci
 That runs every gate CI runs that needs no Docker, no network and no database — `fmt`, pedantic
 `clippy` with all features, the offline tests, the doc tests, the OpenAPI drift check, and the
 three `web/frontend` gates — in CI's order, stopping at the first failure. It exists because the
-alternative is reading `ci.yml` and replicating seventeen jobs by hand, which is how
+alternative is reading `ci.yml` and replicating eighteen jobs by hand, which is how
 `cargo fmt --all --check` came to be red on `main` and stay red.
 
 What it does **not** cover, and CI still does: the integration suites (Docker), the `sqlx`

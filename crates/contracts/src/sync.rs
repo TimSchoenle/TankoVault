@@ -12,6 +12,7 @@
 //! same ones, the generated client and the real payload cannot disagree.
 
 use serde::{Deserialize, Serialize};
+use tankovault_domain::Feature;
 use utoipa::ToSchema;
 
 /// Whether a user has linked a provider and, when linked, who they are connected as.
@@ -107,4 +108,31 @@ pub struct HistoryView {
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub created_at: time::OffsetDateTime,
+}
+
+/// The feature flag gating each route of the external-sync surface, keyed on the path **suffix**
+/// beneath the surface's mount point.
+///
+/// # Why the mapping lives here
+///
+/// The same surface is gated at two hops with different prefixes: `services/api` mounts it under
+/// `/v1/me/sync` and `services/sync` serves it under `/v1/sync`. Both used to maintain their own
+/// `RouteFeatures` table, and the tables had already drifted — the API gated `/conflicts` and
+/// `/history` but not `/push-series` — with no test asserting they agreed (ARCH-18). Declaring the
+/// mapping once, suffix-keyed, means adding a route gates it at *both* hops or neither.
+///
+/// A tier that does not serve a suffix still gates it: a rule for a path nothing routes to never
+/// matches, and the alternative — each tier filtering the list to what it happens to mount — is
+/// exactly the per-tier judgement that drifted in the first place.
+///
+/// `""` is the whole-surface rule. `RouteFeatures` resolves longest-prefix-first, so the specific
+/// suffixes below win over it regardless of the order here.
+#[must_use]
+pub const fn sync_route_features() -> &'static [(&'static str, Feature)] {
+    &[
+        ("", Feature::SyncExternal),
+        ("/push-series", Feature::SyncAutoPush),
+        ("/conflicts", Feature::SyncConflictReview),
+        ("/history", Feature::SyncHistory),
+    ]
 }

@@ -20,10 +20,9 @@
 //! only the contractual cases keeps the change proportionate — this is an error *contract*,
 //! not an exhaustive taxonomy of everything that can go wrong.
 
-use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use serde::Serialize;
+use tankovault_service::problem::Problem;
 
 /// A failure with a defined place in this service's HTTP contract.
 #[derive(Debug, thiserror::Error)]
@@ -57,18 +56,6 @@ impl SyncError {
     }
 }
 
-/// RFC 9457 `application/problem+json`, matching `services/api/src/error.rs`.
-///
-/// Shared shape so the API's `Upstream` client parses one error format from every internal
-/// service rather than a different one per peer.
-#[derive(Serialize)]
-struct ProblemDetails {
-    r#type: String,
-    title: String,
-    status: u16,
-    detail: String,
-}
-
 /// The service's handler error: a typed contract failure, or anything else.
 pub(crate) struct AppError(anyhow::Error);
 
@@ -95,13 +82,7 @@ impl IntoResponse for AppError {
         };
 
         tracing::warn!(error = %self.0, %status, "sync request failed");
-        let body = Json(ProblemDetails {
-            r#type: format!("about:blank#{kind}"),
-            title: kind.to_owned(),
-            status: status.as_u16(),
-            detail,
-        });
-        (status, body).into_response()
+        Problem::new(status, kind, detail).into_response()
     }
 }
 

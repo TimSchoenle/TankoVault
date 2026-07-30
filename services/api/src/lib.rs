@@ -90,7 +90,18 @@ pub fn route_classifier() -> RouteClassifier {
 /// feature flag; it is turning the service off, which the orchestrator already does better.
 #[must_use]
 pub fn route_features() -> RouteFeatures {
-    RouteFeatures::new()
+    // The external-sync surface's gates come from the single declaration in
+    // `tankovault_contracts::sync`, prefixed with this tier's mount point, so the API and the
+    // sync service cannot drift apart on which routes are gated (ARCH-18). The finer sync flags
+    // that govern *behaviour* rather than routes (scheduled pull) are still checked where that
+    // behaviour happens.
+    let sync = tankovault_contracts::sync::sync_route_features()
+        .iter()
+        .fold(RouteFeatures::new(), |table, (suffix, feature)| {
+            table.gate(format!("/v1/me/sync{suffix}"), *feature)
+        });
+
+    sync
         // --- public catalogue ---
         .gate("/v1/series", Feature::CatalogueBrowse)
         .gate("/v1/tags", Feature::CatalogueBrowse)
@@ -124,13 +135,6 @@ pub fn route_features() -> RouteFeatures {
             "/v1/me/notification-prefs",
             Feature::NotificationsPreferences,
         )
-        // --- external sync ---
-        // The `/v1/me/sync` prefix covers the whole user-facing surface; the finer sync flags
-        // (auto-push, scheduled pull) govern *behaviour* rather than routes and are checked
-        // where that behaviour happens.
-        .gate("/v1/me/sync", Feature::SyncExternal)
-        .gate("/v1/me/sync/conflicts", Feature::SyncConflictReview)
-        .gate("/v1/me/sync/history", Feature::SyncHistory)
         // --- operator surfaces ---
         .gate("/v1/admin/providers", Feature::AdminProviders)
         .gate("/v1/admin/providers/{id}/test", Feature::AdminAdapterTest)
@@ -503,6 +507,25 @@ mod tests {
             features.required(&Method::GET, "/v1/me/sync/history"),
             Some(Feature::SyncHistory)
         );
+    }
+
+    /// Every suffix in the shared declaration is actually gated under this tier's prefix.
+    ///
+    /// The two tiers used to keep independent tables and had already drifted — the API gated
+    /// `/conflicts` and `/history` but not `/push-series` — with nothing asserting they agreed
+    /// (ARCH-18). `services/sync` carries the mirror of this test, so adding a suffix to the
+    /// shared list and forgetting one tier's prefix now fails the build on that tier.
+    #[test]
+    fn the_shared_sync_declaration_is_applied_under_this_tier_s_prefix() {
+        let features = route_features();
+        for (suffix, expected) in tankovault_contracts::sync::sync_route_features() {
+            let path = format!("/v1/me/sync{suffix}");
+            assert_eq!(
+                features.required(&Method::GET, &path),
+                Some(*expected),
+                "{path} is not gated by the feature the shared declaration names"
+            );
+        }
     }
 
     #[test]

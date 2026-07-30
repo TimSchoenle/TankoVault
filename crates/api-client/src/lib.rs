@@ -3247,13 +3247,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "RFC 9457 `application/problem+json` error body shape produced by [`ApiError`]. Declared\npurely for `OpenAPI` documentation — [`ApiError::into_response`] builds the JSON by hand so\nruntime callers never construct this type."]
+    #[doc = "RFC 9457 `application/problem+json` error body shape produced by [`ApiError`]. Declared\npurely for `OpenAPI` documentation — `tankovault_service::problem` builds the JSON, so runtime\ncallers never construct this type. It mirrors `problem::ProblemBody`; a test asserts the two\nagree field for field, since only this copy is published to clients."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"RFC 9457 `application/problem+json` error body shape produced by [`ApiError`]. Declared\\npurely for `OpenAPI` documentation — [`ApiError::into_response`] builds the JSON by hand so\\nruntime callers never construct this type.\","]
+    #[doc = "  \"description\": \"RFC 9457 `application/problem+json` error body shape produced by [`ApiError`]. Declared\\npurely for `OpenAPI` documentation — `tankovault_service::problem` builds the JSON, so runtime\\ncallers never construct this type. It mirrors `problem::ProblemBody`; a test asserts the two\\nagree field for field, since only this copy is published to clients.\","]
     #[doc = "  \"examples\": ["]
     #[doc = "    {"]
     #[doc = "      \"detail\": \"resource not found\","]

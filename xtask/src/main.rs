@@ -507,18 +507,27 @@ mod tests {
     /// A uniform generator would essentially never produce a `type` or `examples` key, so the
     /// properties below would only ever exercise the pass-through path.
     fn any_document() -> impl Strategy<Value = serde_json::Value> {
-        // Leaves are strings only, and that is a statement about the *rewriter*, not a
-        // convenience. A `type` member that is not a string — `[null]`, `[false]`, `[7]` — is
-        // not something OpenAPI can express, and the converter is provably not idempotent on
-        // it. That behaviour is pinned by `a_non_string_type_member_is_not_idempotent`; the
-        // generator stays inside well-formed documents so the property below says something
-        // about real specs rather than re-deriving the same known edge on every run.
+        // A `type` member that is not a string — `[null]`, `[false]`, `[[]]` — is not something
+        // OpenAPI can express, and the converter is provably not idempotent on it. That behaviour
+        // is pinned explicitly by `a_non_string_type_member_is_not_idempotent`, so the generator
+        // must stay inside well-formed documents; otherwise this property just re-derives the same
+        // known edge on a random schedule.
+        //
+        // Restricting `leaf` to strings was not enough to achieve that, and this generator was
+        // failing intermittently because of it: `prop_recursive` can hand a `type` key an *array*,
+        // whose elements are then arbitrary sub-documents rather than leaves — `{"type": [[]]}`.
+        // So `type` gets its own strategy (a string, or 3.1's array-of-strings union) and is
+        // inserted separately from the recursive keys, which makes the invariant structural rather
+        // than hopeful.
+        let type_token = prop::sample::select(vec![
+            "string", "integer", "boolean", "null", "object", "array",
+        ]);
         let leaf = prop::sample::select(vec![
             "string", "integer", "boolean", "null", "object", "3.1.0", "3.0.3", "x", "",
         ])
         .prop_map(serde_json::Value::from);
+        // Deliberately without `type`: it is added from `type_token` below.
         let key = prop::sample::select(vec![
-            "type".to_owned(),
             "examples".to_owned(),
             "openapi".to_owned(),
             "properties".to_owned(),
@@ -526,11 +535,23 @@ mod tests {
             "description".to_owned(),
         ]);
         leaf.prop_recursive(4, 24, 4, move |inner| {
+            let well_formed_type = prop_oneof![
+                type_token.clone().prop_map(serde_json::Value::from),
+                prop::collection::vec(type_token.clone(), 0..4).prop_map(serde_json::Value::from),
+            ];
             prop_oneof![
                 prop::collection::vec(inner.clone(), 0..4).prop_map(serde_json::Value::from),
-                prop::collection::hash_map(key.clone(), inner, 0..4).prop_map(|m| {
-                    serde_json::Value::from(m.into_iter().collect::<serde_json::Map<_, _>>())
-                }),
+                (
+                    prop::collection::hash_map(key.clone(), inner, 0..4),
+                    prop::option::of(well_formed_type),
+                )
+                    .prop_map(|(entries, type_value)| {
+                        let mut map: serde_json::Map<_, _> = entries.into_iter().collect();
+                        if let Some(type_value) = type_value {
+                            map.insert("type".to_owned(), type_value);
+                        }
+                        serde_json::Value::from(map)
+                    }),
             ]
         })
     }

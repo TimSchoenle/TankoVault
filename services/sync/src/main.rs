@@ -296,6 +296,20 @@ struct AppState {
     enrich_max: usize,
 }
 
+/// This service's feature-gate table, built from the single suffix-keyed declaration in
+/// `tankovault_contracts::sync` (ARCH-18).
+///
+/// The API gates the same surface under `/v1/me/sync` from the same list. Maintaining the two
+/// tables independently had already let them drift: the API gated `/conflicts` and `/history` but
+/// not `/push-series`, and nothing asserted they agreed.
+fn route_features() -> RouteFeatures {
+    tankovault_contracts::sync::sync_route_features()
+        .iter()
+        .fold(RouteFeatures::new(), |table, (suffix, feature)| {
+            table.gate(format!("/v1/sync{suffix}"), *feature)
+        })
+}
+
 /// Whether `encoded` is a key made entirely of zero bytes.
 ///
 /// Compares the *decoded* bytes rather than the string, so the several base64 spellings of 32
@@ -408,14 +422,7 @@ async fn main() -> anyhow::Result<()> {
         // service is reachable from anywhere on the internal network and a switch an operator
         // has thrown should hold where the work happens, not only at the edge in front of it.
         .layer(axum::middleware::from_fn_with_state(
-            FeatureLayer::new(
-                features.clone(),
-                RouteFeatures::new()
-                    .gate("/v1/sync", Feature::SyncExternal)
-                    .gate("/v1/sync/push-series", Feature::SyncAutoPush)
-                    .gate("/v1/sync/conflicts", Feature::SyncConflictReview)
-                    .gate("/v1/sync/history", Feature::SyncHistory),
-            ),
+            FeatureLayer::new(features.clone(), route_features()),
             tankovault_service::flags::enforce,
         ));
 
@@ -650,4 +657,28 @@ async fn list_history(
         )
         .await?;
     Ok(Json(rows))
+}
+
+#[cfg(test)]
+mod route_feature_tests {
+    use super::route_features;
+    use axum::http::Method;
+
+    /// Every suffix in the shared declaration is actually gated under this tier's prefix.
+    ///
+    /// The mirror of the same test in `services/api`. The two tiers used to keep independent
+    /// tables and had already drifted — the API gated `/conflicts` and `/history` but not
+    /// `/push-series` — with nothing asserting they agreed (ARCH-18).
+    #[test]
+    fn the_shared_sync_declaration_is_applied_under_this_tier_s_prefix() {
+        let features = route_features();
+        for (suffix, expected) in tankovault_contracts::sync::sync_route_features() {
+            let path = format!("/v1/sync{suffix}");
+            assert_eq!(
+                features.required(&Method::GET, &path),
+                Some(*expected),
+                "{path} is not gated by the feature the shared declaration names"
+            );
+        }
+    }
 }

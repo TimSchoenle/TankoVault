@@ -5093,6 +5093,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tankovault-domain",
+ "tankovault-service",
  "thiserror",
  "time",
  "tokio",

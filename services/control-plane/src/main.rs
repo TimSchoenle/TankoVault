@@ -22,6 +22,7 @@ use tankovault_contracts::{ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
 use tankovault_domain::{Feature, Provider, ProviderId, ScanMode, ScanRunId};
 use tankovault_service::health::PostgresCheck;
+use tankovault_service::problem::Problem;
 use tankovault_service::{
     FeatureGate, Health, HttpStack, MetricsRegistry, PostgresFlagSource, RateLimiter,
     RouteClassifier,
@@ -214,15 +215,16 @@ struct TriggerResponse {
 async fn trigger_scan(
     State(state): State<AppState>,
     Json(req): Json<TriggerRequest>,
-) -> Result<Json<TriggerResponse>, (StatusCode, String)> {
+) -> Result<Json<TriggerResponse>, Problem> {
     // The API refuses a full scan on the same flag before it ever reaches here. Repeating the
     // check is not redundant: this endpoint is reachable by anything on the internal network,
     // and a switch an operator has thrown should hold at the component that does the work, not
     // only at the one that happens to be in front of it today.
     if req.mode == ScanMode::Full && !state.features.is_enabled(Feature::ScanningFull) {
-        return Err((
+        return Err(Problem::new(
             StatusCode::NOT_FOUND,
-            "full catalogue scans are switched off".to_owned(),
+            "feature_disabled",
+            "full catalogue scans are switched off",
         ));
     }
 
@@ -384,6 +386,13 @@ async fn tick(maybe: &mut Option<tokio::time::Interval>) {
     }
 }
 
-fn internal<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
-    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+/// Log the cause and answer with an opaque `500` [`Problem`].
+///
+/// This used to be `(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())`, which put the raw
+/// `Display` of a database or bus error on the wire — connection strings and SQL included — and
+/// left no trace in the log. It is now the other way around, which is the only correct way
+/// around, and it emits the same RFC 9457 body as every other service (ARCH-12).
+fn internal<E: std::fmt::Display>(e: E) -> Problem {
+    tracing::error!(error = %e, "control-plane request failed");
+    Problem::internal()
 }

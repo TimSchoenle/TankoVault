@@ -4,5 +4,13 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
-cc d5d804535162654ebfa0f7d05145c8d2460dd50b36b1821930ed2151d148c2ed # shrinks to document = Object {"type": Array [Null]}
-cc a54973876bcf8bed42714cb45c05892ae11e99dc3e8645b9e0f86d1b3e505b6c # shrinks to document = Object {"openapi": Object {"type": Array [Bool(false)]}}
+#
+# The three seeds previously stored here were all the same class of malformed
+# input — a `type` member whose array holds a non-string (`[null]`, `[false]`,
+# `[[]]`). They were recorded before `any_document` was meant to exclude such
+# documents, and because the exclusion was incomplete they kept replaying, so
+# `the_downgrade_is_idempotent` was red on a random schedule. `any_document` now
+# generates `type` from a dedicated well-formed strategy, and the non-idempotence
+# on malformed input is pinned directly by
+# `a_non_string_type_member_is_not_idempotent`. Replaying values the strategy can
+# no longer produce would only re-assert that known edge as a failure.

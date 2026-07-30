@@ -734,8 +734,10 @@ PG19.
   DWARF)` warning: the `dx`-bundled `wasm-opt` can't parse the release build's debug info, so
   it is skipped and the **unoptimised** wasm is shipped (~1.4 MB, functional). Harmless for
   local E2E; to shrink for prod, strip DWARF / disable debug in the wasm build.
-- The frontend crate's package name is `tankovault-frontend`, so `dx` emits the bundle under
-  `target/dx/tankovault-frontend/release/web/public` (not `.../tankovault/...`). The Dockerfile finds
-  it by `-path '*/web/public'` rather than hardcoding the app name.
+- The SPA crate's package name is `tankovault-web` (renamed from `tankovault-frontend`, which
+  `services/frontend` already owns — see OPS-1.6), so `dx` emits the bundle under
+  `target/dx/tankovault-web/release/web/public` (not `.../tankovault/...`). The Dockerfile finds
+  it by `-path '*/web/public'` rather than hardcoding the app name, which is why the rename needed
+  no build change.
 - nginx `/v1/*` proxy relies on the compose network's embedded DNS (`127.0.0.11`); it only
   resolves `api` **inside** the compose network, not via a bare `docker run`.

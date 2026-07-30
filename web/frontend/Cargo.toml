@@ -1,5 +1,9 @@
 [package]
-name = "tankovault-frontend"
+# Not `tankovault-frontend`: `services/frontend` already owns that name in the host workspace,
+# and two packages sharing one name made `cargo <cmd> -p tankovault-frontend` resolve to
+# whichever workspace the cwd happened to be in (OPS-1.6). Legal, because this crate is excluded
+# from the host workspace — but a silent, cwd-dependent target is not something to rely on.
+name = "tankovault-web"
 version = "0.1.0"
 edition = "2021"
 authors = ["TankoVault contributors"]

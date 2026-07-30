@@ -20,16 +20,19 @@ that the audit did not.
 
 | Report | DONE | PARTIAL | OPEN | Other |
 | --- | --- | --- | --- | --- |
-| SECURITY (16+2) | 14 | 2 | 2 | — |
-| ARCHITECTURE (21) | 10 | 1 | 9 | 1 no-finding |
-| PERFORMANCE (20) | 16 | 0 | 3 | 2 no-finding/wontfix |
-| TESTING (21) | 8 | 3 | 10 | — |
-| FRONTEND (18+1) | 17 | 0 | 1 | 1 wontfix |
-| BUILD_AND_OPS (31+1) | 26 | 4 | 2 | — |
+| SECURITY (18) | 13 | 4 | 1 | — |
+| ARCHITECTURE (21) | 11 | 1 | 8 | 1 no-finding |
+| PERFORMANCE (21) | 17 | 0 | 2 | 1 wontfix, 1 no-finding |
+| TESTING (17) | 9 | 3 | 4 | 1 no-finding |
+| FRONTEND (20) | 17 | 0 | 1 | 1 wontfix, 1 no-finding |
+| BUILD_AND_OPS (41) | 27 | 4 | 4 | 1 wontfix, 5 no-finding |
 
-**88 DONE · 12 PARTIAL · 3 WONTFIX · 26 OPEN**, across 129 tracked rows.
+**94 DONE · 12 PARTIAL · 3 WONTFIX · 20 OPEN · 9 no-finding**, across 138 tracked rows.
 
-The rows below are authoritative; this summary is a convenience.
+The rows below are authoritative; this summary is a convenience — and it is now a *count* of
+them rather than a hand-maintained tally, which the previous version had drifted from (it
+reported 2 open `BUILD_AND_OPS` rows against an actual 4, and 2 partial `SECURITY` rows against
+an actual 4). Recount rather than increment.
 
 ---
 
@@ -70,7 +73,7 @@ should mark the security work complete until they are done.
 | SEC-13 | `/scalar` served unauthenticated | **DONE** | `SecurityConfig::expose_api_docs`, defaulting to off under `TANKOVAULT_PROFILE=production` and on elsewhere. Also fixes PERF-14 (the 253 KB re-serialization per request). |
 | SEC-14 | Username interpolated unescaped into HTML email | **DONE** | `mailer::esc` on every interpolated value, with a regression test injecting an anchor. |
 | SEC-15 | GDPR self-export includes audit rows naming third parties | **DONE** | The export projects `created_at`/`action`/`outcome` and `target` only when the target is the subject; `detail` is dropped. |
-| SEC-16 | Unfixable advisory against an empty `deny.toml` ignore list | **OPEN** | See OPS-3.2. Check first whether `jsonwebtoken`'s `rust_crypto` feature already drops `rsa` — the manifest already sets `default-features = false`, but `rsa 0.9.10` still appears in `Cargo.lock`. |
+| SEC-16 | Unfixable advisory against an empty `deny.toml` ignore list | **DONE** | The documented, dated ignore list landed with OPS-3.2. The open question is now answered rather than assumed: `cargo tree -i rsa` shows `rsa 0.9.10 ← jsonwebtoken 10.3.0`, and `cargo tree -p jsonwebtoken -e features` shows `rust_crypto` enabling `rsa feature "default"` unconditionally — so the audit's suggested `default-features = false` (already applied) cannot drop it, and jsonwebtoken 10 exposes no HMAC-only feature. Non-exploitable because `crates/auth/src/token.rs` pins `Algorithm::HS256` on both the issuing and verifying side, with a test that fails if that changes. Reasoning and review date live in `deny.toml`. |
 
 ### Design note — SEC-1, caller-asserted subject
 
@@ -100,13 +103,13 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | ARCH-9 | (same as ARCH-4 in the report's numbering) | **DONE** | |
 | ARCH-10 | Proxy handlers return `Json<Value>` while OpenAPI declares typed bodies | **OPEN** | `Upstream` makes this a one-place change now. |
 | ARCH-11 | `sync` routes HTTP status by substring-matching error text | **DONE** | `services/sync/src/error.rs`. Typed variants for the two failures with HTTP meaning, downcast through `anyhow` so they survive `.context()`, exhaustive status mapping by construction, RFC 9457 body matching the API's. Test pins that a message merely *containing* the old needles is no longer misrouted. |
-| ARCH-12 | Four distinct error shapes across eight services | **OPEN** | Hoist `ProblemDetails` into `crates/service/src/problem.rs`. |
+| ARCH-12 | Four distinct error shapes across eight services | **DONE** | `crates/service/src/problem.rs` owns the one RFC 9457 encoding: `Problem { status, kind, detail }`, a single `IntoResponse`, and the `IntoProblem` trait each service implements on its own `thiserror` enum. `services/api::ApiError` is now an implementor rather than the definition; `sync` dropped its private copy of the body struct; `control-plane`'s `(StatusCode, String)` tuples and `render`/`solver`'s inline `format!` strings are gone. Two real fixes fell out: `control-plane::internal` used to put the raw `Display` of a database or bus error on the wire (connection strings, SQL) *and* leave no log entry — now the reverse — and nothing previously set `Content-Type: application/problem+json`, because `Json` sets `application/json` and no copy overrode it. A test in `services/api` deserializes a real error response into the published `ProblemDetails` schema, so the documentation copy cannot drift from the body actually sent. |
 | ARCH-13 | `notifier` reimplements SMTP instead of using `crates/email` | **DONE** | `EmailChannel` is a thin adapter over `EmailService`, built from the shared `TANKOVAULT_EMAIL__*` config. `lettre` dropped from the service. This fixed a real delivery bug: the private copy did not resolve the envelope sender from the SMTP login, so operator alerts were rejected (`550 5.7.60`) by relays that accepted the API's password-reset mail. |
 | ARCH-14 | JetStream consume loop hand-rolled three times | **DONE** | `crates/bus::consume` owns shutdown, decode, heartbeat, retry-vs-settle and the undecodable drop; handlers return a `Disposition` so the retry judgement stays with the layer that can make it. Fixed two real bugs: the notifier acked after a **failed** fan-out (at-most-once — notifications lost with one `warn!`), and the control-plane aggregator had no cancellation arm so it could not drain on `SIGTERM`. |
 | ARCH-15 | `POST /v1/solve` duplicated byte-for-byte | **DONE** | Defined once in `tankovault_solver::http::solver_router`, behind an `axum` feature so trait-only consumers do not pull axum. The SSRF target check travels with it, so one copy cannot forget it. |
 | ARCH-16 | Canonicalisation implemented twice with different thresholds | **OPEN** | |
 | ARCH-17 | `crates/test-support` inverts crate/service layering | **DONE** | Split in two: `crates/test-support` keeps the ephemeral Postgres, seeding and token minting and now depends on **no** `services/*` crate; the in-process router harness moved to `services/api/test-support` (`tankovault-api-test-support`). `cargo tree -p tankovault-db -e normal,dev` no longer contains `tankovault-api`. The report also asked to move the crate out of `crates/` — not done, deliberately: the reason to move it was the inverted dependency, and with that gone it is an ordinary leaf crate that belongs where the other `crates/` live. The `api ↔ api-test-support` dev cycle stays, documented in the new manifest. |
-| ARCH-18 | Feature-flag route tables duplicated | **OPEN** | |
+| ARCH-18 | Feature-flag route tables duplicated | **DONE** | `tankovault_contracts::sync::sync_route_features()` declares the suffix → `Feature` mapping once; both `services/api` (`/v1/me/sync`) and `services/sync` (`/v1/sync`) fold it into their own `RouteFeatures` with their own prefix, and each carries a test asserting every suffix in the shared list is gated under its prefix. The drift the audit found was real: the API gated `/conflicts` and `/history` but not `/push-series`. A tier now gates suffixes it does not serve — harmless, since a rule for an unrouted path never matches, and the alternative is the per-tier judgement that drifted in the first place. |
 | ARCH-19 | `auth.rs` (676) and `admin/users.rs` (643) approaching god size | **OPEN** | |
 | ARCH-20 | Outbound pacing implemented three times | **OPEN** | `sync`'s `Pacer` lacks the `Retry-After` handling `crates/fetch` has. |
 | ARCH-21 | Verified-clean non-findings | — | No action. |
@@ -156,10 +159,11 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | F-09 | `test-support` covers one axis | **OPEN** | |
 | F-10 | No coverage, mutation testing, or ratchet | **OPEN** | |
 | F-11 | Zero doc tests | **PARTIAL** | CI now runs `cargo test --workspace --doc`; `--all-targets` silently excludes them, which is why they never ran. Exactly **1** doc test exists today — the gate is in place, the examples still need writing. |
-| F-12 | `xtask` and `challenge-solver` have no tests | **PARTIAL** | `challenge-solver` is covered via the shared solve router; `xtask` still has none. |
+| F-12 | `xtask` and `challenge-solver` have no tests | **DONE** | `challenge-solver` is covered via the shared solve router. `xtask` now has 11 tests over the 3.1→3.0 downgrade — the highest-risk thing it does, since `openapi --check` compares two artifacts *both* produced by that function, so a bug there is invisible to the gate. Two of them are proptests; one was intermittently red, see Prop-b. |
 | F-13 | Test-quality positives | — | No action. Preserve: no sleeps, no network, hermetic per-test DBs. |
 | Fuzz | `cargo-fuzz` targets (nightly) | **OPEN** | Seed corpora from `crates/adapters/fixtures/`. F-01 and F-02 are exactly what these would have found. |
-| Prop | `proptest` targets (stable) | **OPEN** | `normalize_title` idempotence, `token_set_ratio` symmetry, `content_hash` determinism, `contracts::sync` serde round-trips. |
+| Prop | `proptest` targets (stable) | **PARTIAL** | Still open for `normalize_title` idempotence, `token_set_ratio` symmetry, `content_hash` determinism and `contracts::sync` serde round-trips. Separately: the one proptest that *does* exist (`xtask`'s `the_downgrade_is_idempotent`) was red on a random schedule and is now fixed — see the row below. |
+| Prop-b | `xtask`'s existing proptest was intermittently red | **DONE** | Not in the audit; found running the full suite. `any_document`'s comment claimed it "stays inside well-formed documents", but restricting the *leaf* strategy to strings does not achieve that: `prop_recursive` can hand a `type` key an array whose elements are arbitrary sub-documents, e.g. `{"type": [[]]}` — on which the 3.1→3.0 downgrade is genuinely not idempotent. Three saved regression seeds, all of this class, then replayed on every run, so the gate was permanently red-by-seed and merged past. `type` now comes from a dedicated well-formed strategy inserted separately from the recursive keys, making the invariant structural; the stale seeds are removed with the reasoning recorded in their place, since the malformed-input behaviour is already pinned directly by `a_non_string_type_member_is_not_idempotent`. |
 | Access | Access-control integration matrix | **OPEN** | The single highest-value test investment in the codebase per the roadmap. |
 
 ---
@@ -178,8 +182,8 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | FE-F8 | 488 inline `style:` attributes bypass the token layer | **WONTFIX** | Attempted and reverted, deliberately. `.ik-table-compact td` is specificity 0-2-1, so single-class utilities cannot win the cascade where the inline style did — every converted cell in the (table-heavy) console would silently regress. The fixes available are a tripled selector or `!important`, both worse than 53 inline styles. This needs a decision about whether `ik-*` gets a real utility tier (`@layer`), which is a design-system call rather than a sweep. |
 | FE-F9 | `users.rs` (1,395) and `providers.rs` (1,385) are god files | **DONE** | `discover.rs` → 3 modules + `views/search.rs`; `users.rs` → 6; `providers.rs` → 8. Largest module 1,433 → 830 lines. Done after the dedup sweeps, as the roadmap sequenced it. |
 | FE-F10 | DTOs: no drift (positive), one gap | **OPEN** | Only the gap is actionable. |
-| FE-F11 | `.gitignore`/README call generated CSS "hand-authored" | **DONE** (`.gitignore`) | Plus a new `css` CI job that rebuilds from `input.css` and fails if `assets/main.css` differs — nothing checked that before, so a class used in `rsx!` could have had no style behind it. The README claim is still wrong: FE-F11b. |
-| FE-F11b | `web/frontend/README.md` repeats the hand-authored claim | **OPEN** | |
+| FE-F11 | `.gitignore`/README call generated CSS "hand-authored" | **DONE** | Plus a new `css` CI job that rebuilds from `input.css` and fails if `assets/main.css` differs — nothing checked that before, so a class used in `rsx!` could have had no style behind it. |
+| FE-F11b | `web/frontend/README.md` repeats the hand-authored claim | — | **No finding.** The README's §Styling already says `assets/main.css` is "**generated** by the Tailwind **v4** CLI from `input.css`" and tells the reader to re-run `css:build`; "hand-authored" appears nowhere in it. The audit reached this claim through `.gitignore`'s "see web/frontend/README.md" cross-reference rather than by reading the README, which is why the two disagreed — and `.gitignore` was the one that was wrong. |
 | FE-F12 | 13 `ik-*` classes shipped but never referenced | **DONE** | 14 dead rules removed — one more than the audit counted (`.ik-chapter`, missed because `ik-chapter-toggle` is a live prefix). Both directions of the used/defined check are now zero. |
 | FE-F13 | Pagination implemented twice | **DONE** | `components/pagination.rs` holds the shared offset arithmetic and its tests. The two chromes stay visually distinct, which they legitimately are. |
 | FE-F13b | Users pagination compared a client-filtered count against a server total | **DONE** | `has_next` and the "1-N of TOTAL" line used `rows.len()` *after* the status and staff filters ran, so filtering to a single staff member on page 1 hid every later page. Split into three counts: shown, returned, total. |
@@ -200,7 +204,7 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | OPS-1.3 | Unused dependencies | **DONE** | Twelve declarations removed. `crates/solver`'s `tracing` was correctly listed as unused by the audit but is now genuinely used by the shared `/v1/solve` router added this session, so it stays. |
 | OPS-1.4 | Dead `[workspace.dependencies]`, incl. the whole OTel stack | **DONE** | Six dead entries and all four OTel crates removed. `tankovault-api-client` deliberately kept with a note explaining why (`web/frontend` is outside the workspace and uses its own path dep). |
 | OPS-1.5 | 86 crates at 2+ versions | **OPEN** | |
-| OPS-1.6 | Two crates named `tankovault-frontend` | **OPEN** | |
+| OPS-1.6 | Two crates named `tankovault-frontend` | **DONE** | The SPA crate is `tankovault-web`; `services/frontend` keeps `tankovault-frontend`, matching the `tankovault-<service>` convention for everything in the host workspace. No build change was needed: CI drives the SPA with `working-directory: web/frontend` (never `-p`), the binary target is already the generic `app`, and `Dockerfile.frontend` locates the `dx` bundle by `-path '*/web/public'` rather than by app name — which is exactly the property the rename tested. |
 | OPS-2.1 | `cargo fmt --all --check` red — CI's first gate | **DONE** | `rustfmt.toml`'s `ignore` is nightly-only; removed, generator formats instead. Verified `cargo fmt --all --check` and `xtask openapi --check` now both pass. |
 | OPS-2.2 | `[workspace.lints]` leaves three gaps | **PARTIAL** | `clippy::cargo` landed. The rest was measured and rejected with numbers rather than opinion: `nursery` is 62 warnings (31 `missing_const_for_fn`), and `missing_errors_doc` is 166 in `crates/db` alone — the audit's claim that the codebase already writes `# Errors` by hand holds for the services but not for `crates/db`. |
 | OPS-2.3 | 36 `#[allow(...)]` escapes | **OPEN** | |
@@ -223,7 +227,7 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | OPS-4.10 | OpenAPI drift gate correct | — | No finding. |
 | OPS-5.1 | `wreq`/BoringSSL dlopen handling | — | No finding. Do not "simplify" the Dockerfile here. |
 | OPS-5.2 | Helm chart documented in detail, directory empty | **DONE** | Claim **deleted** rather than a chart built. A chart nobody has rendered against a real cluster is the same defect wearing different clothes, and `docs/IMPLEMENTATION_STATUS.md` already said "k8s/Helm still pending" — two docs were the outliers. `deploy/README.md` and `docs/design.md` corrected, the four empty `deploy/helm/` dirs deleted. §19 now records what a future chart would not have to reinvent. |
-| OPS-5.3 | No healthchecks and no resource limits in compose | **DONE** (code) | Memory limits on all 12 services, `shm_size` on `render`/`flaresolverr`. `crates/service/src/healthcheck.rs` adds the `--healthcheck` argv branch, wired into all seven backend services (the frontend server's copy lands with OPS-8.1). A TCP connect rather than an HTTP GET: `challenge-solver` has no HTTP client, and "the listener is accepting" is what liveness should mean. The compose `healthcheck:` stanzas are the remaining step. |
+| OPS-5.3 | No healthchecks and no resource limits in compose | **DONE** | Memory limits on all 12 services, `shm_size` on `render`/`flaresolverr`. `crates/service/src/healthcheck.rs` adds the `--healthcheck` argv branch, wired into all seven backend services plus `services/frontend` (via OPS-8.1). A TCP connect rather than an HTTP GET: `challenge-solver` has no HTTP client, and "the listener is accepting" is what liveness should mean. The compose stanzas are in place too — one `x-healthcheck` anchor on all seven scratch services, the frontend's own binary path, and native probes for `postgres`/`redis`/`nats`. `migrate` and `seed` are deliberately without one (they exit); `flaresolverr` is third-party. |
 | OPS-5.4 | No read-only rootfs or capability drop | **PARTIAL** | `cap_drop` and `no-new-privileges` everywhere; `read_only` on the scratch services but not `render`, which needs a writable Chrome profile. |
 | OPS-6.1 | Startup migration concurrency | — | No finding; document it. |
 | OPS-6.2 | Zero `.down.sql` — no rollback | **DONE** | Reversible pattern set by migration `0021`, documented in `docs/OPERATIONS.md` §8. |
@@ -249,23 +253,24 @@ frontend's 50 tests and its wasm build.
 
 What is genuinely left, in the order it is worth doing:
 
-1. ~~**TEST F-06 — the sync merge engine.**~~ **Done** — see the row above. ARCH-6, the split of
-   that same god module, is now unblocked.
-2. **TEST F-05 — the rest of `crates/db`.** GDPR export/erase and ingest are covered now;
-   `catalog.rs`, `sync.rs` and `users.rs` still hold most of the untested SQL.
-3. ~~**PERF-3, PERF-13, PERF-15 — the remaining sequential-query loops.**~~ **Done** — all three
-   rows above. `crates/db/tests/repo_batching.rs` pins the semantics that only a real Postgres
-   shows: the `DISTINCT ON` tie-breaks, the nullable-column present-flag encoding, and that the
-   prefetched exclusion set agrees with `is_sync_excluded` across the whole §A.5 precedence
-   matrix.
-4. **ARCH-3/5/7/8/12/16/17/18/19/20 — the module splits and the remaining duplication.** All
-   are hygiene rather than defects; ARCH-12 (four error shapes across eight services) is the
-   one with a user-visible consequence, and `services/sync/src/error.rs` is now the pattern to
-   copy.
-5. **Fuzz targets (TEST).** `cargo-fuzz` on `parse_chapter_number`, `parse_json_body` under
+1. **TEST F-05 — the rest of `crates/db`.** GDPR export/erase, ingest and the new batched
+   fan-out/reconciliation paths are covered now; `catalog.rs`'s read models, `sync.rs` and
+   `users.rs` still hold most of the untested SQL.
+2. **ARCH-3/5/7/8/16/19/20 — the module splits and the remaining duplication.** All are hygiene
+   rather than defects now that ARCH-12 and ARCH-18 have landed. ARCH-6 (splitting
+   `sync/engine.rs`) is the one worth doing first: it was blocked on F-06, which is now done, and
+   the reconciliation suite is the safety net that makes the split checkable. ARCH-20 (outbound
+   pacing implemented three times) is the one with a behavioural consequence — `sync`'s `Pacer`
+   lacks the `Retry-After` handling `crates/fetch` has.
+3. **TEST Access — the access-control integration matrix.** Still the single highest-value test
+   investment in the codebase per the audit's own roadmap.
+4. **Fuzz targets (TEST).** `cargo-fuzz` on `parse_chapter_number`, `parse_json_body` under
    `-timeout=2`, and HTML extraction, seeded from `crates/adapters/fixtures/`. The two verified
    defects this audit found (F-01, F-02) are exactly what these would have caught, so the value
    is demonstrated rather than theoretical.
+5. **OPS-1.5 / 2.3 / 2.4 / 8.3 — the remaining build hygiene**, and **FE-F10**'s single DTO gap.
+   OPS-8.3 (no dashboards, alerts or recording rules) is the largest of these and the only one
+   an operator would feel.
 6. **FE-F8 — the inline-style layer.** Marked WONTFIX above with reasoning: it needs a decision
    about whether the `ik-*` layer gets a real utility tier, not a mechanical sweep.
 

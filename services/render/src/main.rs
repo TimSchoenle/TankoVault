@@ -24,6 +24,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use tankovault_service::problem::Problem;
 use tankovault_service::{Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier};
 use tankovault_solver::ChallengeSolver;
 
@@ -139,7 +140,16 @@ fn validate_target(raw: &str) -> Result<(), Box<Response>> {
         .map_err(|e| {
             metrics::counter!("render_requests_total", "result" => "rejected").increment(1);
             tracing::warn!(url = %raw, error = %e, "refused a render target");
-            Box::new((StatusCode::FORBIDDEN, format!("refused target: {e}")).into_response())
+            // The reason is safe to return: it names only the caller's own URL and which policy
+            // rule refused it, which is what makes a misconfigured provider debuggable.
+            Box::new(
+                Problem::new(
+                    StatusCode::FORBIDDEN,
+                    "refused_target",
+                    format!("refused target: {e}"),
+                )
+                .into_response(),
+            )
         })
 }
 
@@ -175,7 +185,9 @@ async fn render(
         Err(e) => {
             metrics::counter!("render_requests_total", "result" => "error").increment(1);
             tracing::warn!(%url, error = %e, "render failed");
-            (StatusCode::BAD_GATEWAY, format!("render failed: {e}")).into_response()
+            // The cause is in the log; the caller gets the shared RFC 9457 shape so the API's
+            // `Upstream` client parses one error format from every internal peer (ARCH-12).
+            Problem::bad_gateway().into_response()
         }
     }
 }

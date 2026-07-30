@@ -17,6 +17,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
 use std::sync::Arc;
+use tankovault_service::problem::Problem;
 
 /// The router fragment both solver-hosting services merge.
 ///
@@ -41,7 +42,14 @@ async fn solve(
     if let Err(e) = tankovault_domain::ssrf::validate_str(&req.url) {
         metrics::counter!("solve_attempts_total", "result" => "rejected").increment(1);
         tracing::warn!(url = %req.url, error = %e, "refused a solve target");
-        return (StatusCode::FORBIDDEN, format!("refused target: {e}")).into_response();
+        // The reason names only the caller's own URL and the policy rule that refused it, which
+        // is what makes a misconfigured provider debuggable.
+        return Problem::new(
+            StatusCode::FORBIDDEN,
+            "refused_target",
+            format!("refused target: {e}"),
+        )
+        .into_response();
     }
 
     let provider = req.provider.clone();
@@ -53,7 +61,9 @@ async fn solve(
         Err(e) => {
             metrics::counter!("solve_attempts_total", "result" => "error").increment(1);
             tracing::warn!(%provider, error = %e, "solve failed");
-            (StatusCode::BAD_GATEWAY, format!("solve failed: {e}")).into_response()
+            // The cause is in the log; the caller gets the one RFC 9457 shape every service
+            // emits, so `tankovault_fetch::HttpChallengeSolver` parses one format (ARCH-12).
+            Problem::bad_gateway().into_response()
         }
     }
 }

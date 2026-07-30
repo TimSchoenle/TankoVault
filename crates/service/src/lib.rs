@@ -53,6 +53,7 @@ pub mod healthcheck;
 pub mod http;
 pub mod internal_auth;
 pub mod metrics;
+pub mod problem;
 pub mod ratelimit;
 pub mod shutdown;
 pub mod telemetry;
@@ -64,6 +65,7 @@ pub use healthcheck::{HEALTHCHECK_FLAG, run_and_exit as run_healthcheck_and_exit
 pub use http::{HttpStack, metrics_router, ops_router, serve, spawn_metrics_server};
 pub use internal_auth::{INTERNAL_TOKEN_HEADER, InternalToken};
 pub use metrics::MetricsRegistry;
+pub use problem::{IntoProblem, Problem};
 pub use ratelimit::{RateLimiter, RouteClass, RouteClassifier};
 pub use shutdown::install_shutdown;
 pub use telemetry::init_tracing;

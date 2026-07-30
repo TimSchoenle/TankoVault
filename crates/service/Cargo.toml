@@ -50,3 +50,6 @@ fred = { workspace = true, optional = true, features = ["i-scripts"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
+# `tests/prop_ratelimit.rs` (TEST P-07). Already in the lockfile via five other members, so
+# this adds no new resolution and nothing to `cargo deny`'s duplicate budget.
+proptest = { workspace = true }

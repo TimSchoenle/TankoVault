@@ -1,5 +1,28 @@
 //! Read models for the Home surfaces: the unread feed, continue-reading cards, lifetime
 //! stats and tag-overlap recommendations (frontend §9.3).
+//!
+//! # The unread predicate is written out four times
+//!
+//! Three statements here and one in [`watchlist`](super::watchlist) each decide "has this user
+//! read this chapter?" in SQL, and [`ReadProgress::covers`](super::ReadProgress::covers) decides
+//! the same thing in Rust. `sqlx`'s checked macros need a string literal and will not expand
+//! `concat!`, so the predicate cannot be factored out; every copy is spelled identically, as the
+//! negation of `covers`:
+//!
+//! ```text
+//! floor(c.number) > COALESCE(rp.last_read_whole_number, 0)
+//!   AND NOT (c.number <> floor(c.number)
+//!            AND rp.last_read_part_number IS NOT NULL
+//!            AND c.number <= rp.last_read_part_number)
+//! ```
+//!
+//! The leading conjunct is the sargable one and comes first on purpose: it is the expression
+//! `chapters_source_floor_idx (series_source_id, (floor(number)))` indexes (PERF-12), and the
+//! part clause is a cheap residual filter over what it returns.
+//!
+//! Nothing but `crates/db/tests/repo_tracking.rs` can notice a copy drifting: three of these
+//! four used to carry only the first conjunct, which reported every part release read ahead of
+//! the whole frontier as unread — see that suite's `TRACK-1` note.
 
 use crate::error::DbResult;
 use crate::repo::catalog::SeriesListItem;
@@ -52,10 +75,11 @@ pub async fn feed<'e, E: PgExecutor<'e>>(
          JOIN providers p ON p.id = ss.provider_id \
          JOIN chapters c ON c.series_source_id = ss.id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
-         WHERE w.user_id = $1 AND NOT ( \
-               floor(c.number) <= COALESCE(rp.last_read_whole_number, 0) \
-               OR (c.number <> floor(c.number) AND rp.last_read_part_number IS NOT NULL \
-                   AND c.number <= rp.last_read_part_number)) \
+         WHERE w.user_id = $1 \
+           AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
+           AND NOT (c.number <> floor(c.number) \
+                    AND rp.last_read_part_number IS NOT NULL \
+                    AND c.number <= rp.last_read_part_number) \
          ORDER BY c.discovered_at DESC \
          LIMIT $2",
         user_id.as_uuid(),
@@ -97,6 +121,12 @@ pub struct ContinueCard {
 /// `EXISTS` and ties on activity are broken by `series_id` for a deterministic order. `unread`
 /// counts distinct **whole** chapters (`floor(number)`) — sub-chapter part releases (e.g.
 /// `152.1`..`152.6`) collapse into the one chapter they belong to rather than inflating the badge.
+///
+/// Both aggregates filter on the module's unread predicate, so a whole chapter that exists only
+/// as parts the user has already read is neither counted nor offered as `next_number`. Filtering
+/// on the whole frontier alone — as this did — left a card that could not be cleared: the badge
+/// claimed one unread, `next_number` pointed at a part already read, and marking that part read
+/// again is a deliberate no-op in [`progress_mark_read`](super::progress_mark_read).
 pub async fn continue_reading<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -134,9 +164,15 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
          CROSS JOIN LATERAL ( \
            SELECT min(c.number) FILTER ( \
                     WHERE floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
+                      AND NOT (c.number <> floor(c.number) \
+                               AND rp.last_read_part_number IS NOT NULL \
+                               AND c.number <= rp.last_read_part_number) \
                   ) AS next_number, \
                   COALESCE(count(DISTINCT floor(c.number)) FILTER ( \
                     WHERE floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
+                      AND NOT (c.number <> floor(c.number) \
+                               AND rp.last_read_part_number IS NOT NULL \
+                               AND c.number <= rp.last_read_part_number) \
                   ), 0) AS unread, \
                   max(c.discovered_at) AS last_activity \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
@@ -199,7 +235,11 @@ pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResu
                JOIN series_sources ss ON ss.series_id = w.series_id \
                JOIN chapters c ON c.series_source_id = ss.id \
                LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
-               WHERE w.user_id = $1 AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
+               WHERE w.user_id = $1 \
+                 AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
+                 AND NOT (c.number <> floor(c.number) \
+                          AND rp.last_read_part_number IS NOT NULL \
+                          AND c.number <= rp.last_read_part_number) \
            ) q) AS \"unread!\"",
         user_id.as_uuid(),
     )

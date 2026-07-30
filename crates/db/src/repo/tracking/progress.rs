@@ -207,10 +207,24 @@ pub async fn progress_mark_unread(
         // "152.5 unread", and the write would be a silent no-op.
         whole = prev_whole_below(pool, series_id, number.floor()).await?;
         part = prev_part_below(pool, series_id, number, whole).await?;
-    } else if part == Some(number) {
-        part = None;
     } else {
-        part = prev_part_below(pool, series_id, number, whole).await?;
+        // Ahead of the whole frontier: the part frontier is the only thing that can move, and
+        // it may only move **backwards**. Both halves of that are load-bearing.
+        part = match part {
+            // Nothing ahead of the whole frontier was read, so there is nothing to un-read.
+            // Retreating from here would *advance* the frontier onto a part release the user
+            // has not read — un-reading one chapter would mark another read.
+            None => None,
+            // The frontier already sits below `number`: it is unread, and saying so again is a
+            // no-op rather than a reason to move.
+            Some(p) if p < number => Some(p),
+            // `number` is at or below the frontier, so the frontier retreats to the highest
+            // part release the catalogue holds below it. Being *at* the frontier used to be a
+            // separate branch that cleared it outright, which threw away every earlier part of
+            // the same chapter: with `152.1`..`152.6` read, un-reading `152.6` reported the
+            // other five unread too, from one click and with no undo.
+            Some(_) => prev_part_below(pool, series_id, number, whole).await?,
+        };
     }
 
     progress_write(pool, user_id, series_id, whole, part).await
@@ -235,8 +249,15 @@ async fn prev_whole_below(pool: &sqlx::PgPool, series_id: SeriesId, number: f64)
     .unwrap_or(0.0))
 }
 
-/// The highest part release that exists for this series strictly below `number` and still
-/// ahead of the whole frontier `whole` — the retreat target for un-reading a part (§A.3).
+/// The highest part release that exists for this series strictly below `number` and belonging to
+/// a chapter strictly **ahead** of the whole frontier `whole` — the retreat target for un-reading
+/// a part (§A.3).
+///
+/// The lower bound is `floor(c.number) > whole`, not `c.number > whole`: a part of the whole
+/// frontier's own chapter (`152.5` with the frontier at `152`) is already covered by that
+/// frontier, so making it the part frontier records nothing and is the one shape §A.1 does not
+/// need. Every other write site produces `floor(part) > whole`; this one used to be able to
+/// produce `floor(part) == whole`.
 async fn prev_part_below(
     pool: &sqlx::PgPool,
     series_id: SeriesId,
@@ -246,7 +267,8 @@ async fn prev_part_below(
     Ok(sqlx::query_scalar!(
         "SELECT max(c.number)::float8 \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-          WHERE ss.series_id = $1 AND c.number < $2::float8 AND c.number > $3::float8 \
+          WHERE ss.series_id = $1 AND c.number < $2::float8 \
+            AND floor(c.number) > ($3::float8)::numeric \
             AND c.number <> floor(c.number)",
         series_id.as_uuid(),
         number,

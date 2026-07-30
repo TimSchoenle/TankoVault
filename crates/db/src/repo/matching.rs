@@ -262,6 +262,31 @@ pub async fn dismiss_merge_candidate<'e, E: PgExecutor<'e>>(
 /// and external mappings, resolve any related merge candidates, then delete it. All
 /// child-table moves are idempotent (`ON CONFLICT`), and read-progress keeps the furthest
 /// point.
+///
+/// # The read-progress merge
+///
+/// Both frontiers take the furthest of the two rows, and the part frontier is then dropped if the
+/// merged **whole** frontier covers it — the same staleness rule
+/// [`progress_set`](crate::repo::tracking::progress_set) and
+/// [`progress_mark_read`](crate::repo::tracking::progress_mark_read) apply (`floor(part) <=
+/// whole`), so all three write paths uphold §A.1 identically.
+///
+/// The condition used to be `whole >= floor(part) **AND** part = 0`, which only ever cleared the
+/// frontier when there was no part frontier at all — and the `>= floor(part)` half, the actual
+/// staleness test, could therefore never fire. Merging a user who was at whole `6` on the survivor
+/// with their own row at part `4.5` on the absorbed series produced `(6, 4.5)`, which §A.1 forbids.
+/// It changed no answer (`covers` and every read model already treat `4.5` as read at `floor(4.5)
+/// <= 6`) and the next `progress_set` cleared it, which is why it was invisible; the invariant is
+/// documented, so a read model is entitled to trust it.
+///
+/// # Merge candidates
+///
+/// The `UPDATE merge_candidates` below is belt-and-braces: both of that table's series columns are
+/// `ON DELETE CASCADE`, so every row naming `drop_id` is removed by the `DELETE FROM series` that
+/// follows regardless. What matters — and what `repo_matching.rs` asserts — is that no *unresolved*
+/// candidate is left naming a series that no longer exists, because
+/// [`list_open_merge_candidates`] inner-joins both sides and such a row would silently vanish from
+/// the operator's queue while staying open in the table.
 // A straight-line sequence of per-table union inserts reads more clearly as one function
 // than split across arbitrary helpers just to dodge the line-count lint.
 #[allow(clippy::too_many_lines)]
@@ -360,14 +385,13 @@ pub async fn merge_series(
             SET last_read_whole_number = \
                     GREATEST(read_progress.last_read_whole_number, EXCLUDED.last_read_whole_number), \
                 last_read_part_number = CASE \
-                    WHEN GREATEST(read_progress.last_read_whole_number, EXCLUDED.last_read_whole_number) \
-                         >= floor(GREATEST(COALESCE(read_progress.last_read_part_number, 0), \
-                                           COALESCE(EXCLUDED.last_read_part_number, 0))) \
-                     AND GREATEST(COALESCE(read_progress.last_read_part_number, 0), \
-                                  COALESCE(EXCLUDED.last_read_part_number, 0)) = 0 \
+                    WHEN floor(GREATEST(COALESCE(read_progress.last_read_part_number, 0), \
+                                        COALESCE(EXCLUDED.last_read_part_number, 0))) \
+                         <= GREATEST(read_progress.last_read_whole_number, \
+                                     EXCLUDED.last_read_whole_number) \
                     THEN NULL \
-                    ELSE NULLIF(GREATEST(COALESCE(read_progress.last_read_part_number, 0), \
-                                         COALESCE(EXCLUDED.last_read_part_number, 0)), 0) END, \
+                    ELSE GREATEST(COALESCE(read_progress.last_read_part_number, 0), \
+                                  COALESCE(EXCLUDED.last_read_part_number, 0)) END, \
                 updated_at = now()",
         keep,
         drop,

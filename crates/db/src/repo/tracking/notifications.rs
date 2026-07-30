@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 
+use super::ReadProgress;
 use crate::error::DbResult;
 use serde_json::Value as Json;
 use sqlx::{FromRow, PgExecutor};
@@ -138,11 +139,22 @@ pub async fn notifications_mark_read<'e, E: PgExecutor<'e>>(
 /// A watcher who opted into notifications for a series, with their read progress.
 pub struct Watcher {
     pub user_id: UserId,
-    pub last_read_number: Option<f64>,
+    /// Both read frontiers for this series, or `None` when the user has no progress row at all.
+    /// Ask [`ReadProgress::covers`](super::ReadProgress::covers) whether a chapter is read; do
+    /// not compare against a single frontier by hand.
+    pub progress: Option<ReadProgress>,
 }
 
-/// All users watching `series_id` with `notify = true`, plus their read progress, so
-/// the notifier can skip chapters at or below what a user has already read.
+/// All users watching `series_id` with `notify = true`, plus **both** their read frontiers, so
+/// the notifier can skip a chapter the user has already read.
+///
+/// It returns the frontiers rather than a boolean because the decision is
+/// [`ReadProgress::covers`](super::ReadProgress::covers), and that method's own documentation
+/// forbids the caller from hand-rolling `number <= whole` — which is exactly what the notifier
+/// did while this query returned only the whole frontier. The effect was that every *part*
+/// release of an already-read chapter was announced as new: with the frontier at `152`, chapter
+/// `152.5` satisfied `152.5 > 152` and went out as a notification for a chapter the user had
+/// finished. `covers` says it is read, so nothing should be sent.
 pub async fn watchers_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -150,11 +162,13 @@ pub async fn watchers_for_series<'e, E: PgExecutor<'e>>(
     #[derive(FromRow)]
     struct Row {
         user_id: Uuid,
-        last_read_number: Option<f64>,
+        whole: Option<f64>,
+        part: Option<f64>,
     }
     let rows = sqlx::query_as!(
         Row,
-        "SELECT w.user_id, rp.last_read_whole_number::float8 AS last_read_number \
+        "SELECT w.user_id, rp.last_read_whole_number::float8 AS whole, \
+                rp.last_read_part_number::float8 AS part \
          FROM watchlist_entries w \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
          WHERE w.series_id = $1 AND w.notify",
@@ -166,7 +180,13 @@ pub async fn watchers_for_series<'e, E: PgExecutor<'e>>(
         .into_iter()
         .map(|r| Watcher {
             user_id: UserId::from_uuid(r.user_id),
-            last_read_number: r.last_read_number,
+            // `whole` is NULL only when the `LEFT JOIN` found no row at all, so the whole
+            // frontier is what decides whether the user has any progress; the part frontier is
+            // legitimately NULL for a user who has one.
+            progress: r.whole.map(|whole| ReadProgress {
+                last_read_whole_number: whole,
+                last_read_part_number: r.part,
+            }),
         })
         .collect())
 }

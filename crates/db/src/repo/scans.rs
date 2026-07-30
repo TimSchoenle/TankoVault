@@ -2,6 +2,15 @@
 //! the `JetStream` stream is the truth for **dispatch** (design §2). A durable
 //! `SELECT ... FOR UPDATE SKIP LOCKED` claim path is provided as the fallback/audit
 //! mechanism when the broker is unavailable.
+//!
+//! # Settle once
+//!
+//! `scan_runs.done_tasks` / `.failed_tasks` are counts of *tasks*, not of settle calls, and
+//! [`finalize_if_complete`] compares their sum against `total_tasks` to decide a run is over.
+//! That only holds if a task can be counted at most once, so every statement that settles a task
+//! ([`complete_task`], [`fail_task`], [`skip_task`]) and the claim that precedes it
+//! ([`claim_task`]) excludes the same three terminal states. Delivery is at-least-once, so this
+//! is a live path, not a theoretical one: see `crates/db/tests/repo_scans.rs`.
 
 use crate::error::{DbError, DbResult};
 use serde_json::Value as Json;
@@ -270,6 +279,14 @@ pub async fn create_tasks<'e, E: PgExecutor<'e>>(
 
 /// Mark a task claimed by a worker (the normal path: the worker already has the message
 /// from `JetStream` and records the claim for audit/progress).
+///
+/// A task that has already **settled** is not re-claimed. That guard is what makes the run
+/// counters honest under at-least-once delivery: without it a redelivery of a task the worker
+/// already completed put the row back into `claimed`, which re-opened
+/// [`complete_task`]'s `state <> 'done'` guard and incremented `done_tasks` a second time for
+/// one task. `finalize_if_complete` fires on `done_tasks + failed_tasks >= total_tasks`, so two
+/// counts for one task finalise the run — and emit its single terminal event — while other
+/// tasks are still running.
 pub async fn claim_task<'e, E: PgExecutor<'e>>(
     exec: E,
     task_id: ScanTaskId,
@@ -277,7 +294,8 @@ pub async fn claim_task<'e, E: PgExecutor<'e>>(
 ) -> DbResult<()> {
     sqlx::query!(
         "UPDATE scan_tasks SET state = 'claimed', worker_id = $2, claimed_at = now(), \
-         attempts = attempts + 1 WHERE id = $1",
+         attempts = attempts + 1 \
+         WHERE id = $1 AND state NOT IN ('done','failed','skipped')",
         task_id.as_uuid(),
         worker_id,
     )
@@ -312,13 +330,18 @@ pub async fn claim_next_queued<'e, E: PgExecutor<'e>>(
 }
 
 /// Mark a task done and increment the run's done counter, atomically per statement.
+///
+/// The guard excludes **every** terminal state, not just `done`: a task is counted once, on the
+/// first settle that reaches it. Guarding only `state <> 'done'` let a redelivery that failed
+/// after an earlier success add a `failed_tasks` count on top of the `done_tasks` one, taking
+/// `done_tasks + failed_tasks` above `total_tasks` — see [`claim_task`].
 pub async fn complete_task<'e, E: PgExecutor<'e>>(exec: E, task_id: ScanTaskId) -> DbResult<()> {
     // Two statements would race on the counter under concurrency; a CTE keeps them in
     // one round trip and lets each worker's increment commit independently.
     sqlx::query!(
         "WITH done AS ( \
             UPDATE scan_tasks SET state = 'done', finished_at = now() \
-            WHERE id = $1 AND state <> 'done' RETURNING run_id \
+            WHERE id = $1 AND state NOT IN ('done','failed','skipped') RETURNING run_id \
          ) \
          UPDATE scan_runs SET done_tasks = done_tasks + 1 \
          WHERE id = (SELECT run_id FROM done)",
@@ -330,6 +353,10 @@ pub async fn complete_task<'e, E: PgExecutor<'e>>(exec: E, task_id: ScanTaskId) 
 }
 
 /// Mark a task failed with an error, incrementing the run's failed counter.
+///
+/// Same settle-once guard as [`complete_task`]: an already-settled task keeps the state and the
+/// count it first reached, so a redelivery cannot turn a completed task into a failed one and
+/// have the run count it twice.
 pub async fn fail_task<'e, E: PgExecutor<'e>>(
     exec: E,
     task_id: ScanTaskId,
@@ -338,7 +365,7 @@ pub async fn fail_task<'e, E: PgExecutor<'e>>(
     sqlx::query!(
         "WITH failed AS ( \
             UPDATE scan_tasks SET state = 'failed', error = $2, finished_at = now() \
-            WHERE id = $1 AND state <> 'failed' RETURNING run_id \
+            WHERE id = $1 AND state NOT IN ('done','failed','skipped') RETURNING run_id \
          ) \
          UPDATE scan_runs SET failed_tasks = failed_tasks + 1 \
          WHERE id = (SELECT run_id FROM failed)",
@@ -389,11 +416,15 @@ pub async fn recent_failed_tasks<'e, E: PgExecutor<'e>>(
 }
 
 /// Mark a task skipped (unchanged content, no work needed) and count it as done.
+///
+/// Same settle-once guard as [`complete_task`]. `failed` joined the exclusion list here: it was
+/// the one terminal state this statement did not exclude, so a failed task could be skipped
+/// afterwards and add a `done_tasks` count next to its `failed_tasks` one.
 pub async fn skip_task<'e, E: PgExecutor<'e>>(exec: E, task_id: ScanTaskId) -> DbResult<()> {
     sqlx::query!(
         "WITH skipped AS ( \
             UPDATE scan_tasks SET state = 'skipped', finished_at = now() \
-            WHERE id = $1 AND state NOT IN ('done','skipped') RETURNING run_id \
+            WHERE id = $1 AND state NOT IN ('done','failed','skipped') RETURNING run_id \
          ) \
          UPDATE scan_runs SET done_tasks = done_tasks + 1 \
          WHERE id = (SELECT run_id FROM skipped)",

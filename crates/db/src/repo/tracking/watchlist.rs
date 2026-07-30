@@ -168,6 +168,11 @@ pub struct WatchlistCard {
 
 /// List a user's watchlist with the embedded title/cover/progress each card needs. `unread`
 /// counts distinct whole chapters (`floor(number)`) so part releases don't inflate it.
+///
+/// The filter is the fourth copy of the unread predicate documented on
+/// [`dashboard`](super::dashboard); it must stay the negation of
+/// [`ReadProgress::covers`](super::ReadProgress::covers), or this badge disagrees with the feed
+/// that links to the same chapters.
 pub async fn watchlist_detailed<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -192,7 +197,10 @@ pub async fn watchlist_detailed<'e, E: PgExecutor<'e>>(
                 (SELECT COALESCE(count(DISTINCT floor(c.number)),0) \
                    FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
                    WHERE ss.series_id = w.series_id \
-                     AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0)) AS \"unread!\" \
+                     AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
+                     AND NOT (c.number <> floor(c.number) \
+                              AND rp.last_read_part_number IS NOT NULL \
+                              AND c.number <= rp.last_read_part_number)) AS \"unread!\" \
          FROM watchlist_entries w \
          JOIN series s ON s.id = w.series_id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \

@@ -196,12 +196,15 @@ async fn fan_out(
     let watchers =
         tankovault_db::repo::tracking::watchers_for_series(pool, event.series_id).await?;
 
-    // Don't notify for a chapter the user has already read past (rescan safety).
+    // Don't notify for a chapter the user has already read (rescan safety). The judgement is
+    // `ReadProgress::covers`, never a comparison against one frontier: a part release belongs to
+    // the whole chapter it floors to, so `152.5` is already read once `152` is, and the previous
+    // `chapter_number > last_read_number` form announced every such part as new.
     let unread_by: Vec<tankovault_domain::UserId> = watchers
         .into_iter()
         .filter(|w| {
-            w.last_read_number
-                .is_none_or(|last| event.chapter_number > last)
+            w.progress
+                .is_none_or(|progress| !progress.covers(event.chapter_number))
         })
         .map(|w| w.user_id)
         .collect();

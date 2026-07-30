@@ -13,6 +13,11 @@ use axum::http::{Request, Response, StatusCode, header};
 use serde_json::json;
 use tankovault_api_test_support::TestApp;
 
+/// The cookie name a deployment that marks cookies `Secure` issues — which the harness now does
+/// by default, matching production (SEC-7). The `__Host-` prefix makes `Secure`, `Path=/` and the
+/// absence of `Domain` browser-enforced instead of merely configured.
+const REFRESH_COOKIE: &str = "__Host-refresh_token";
+
 /// Build a POST request, optionally carrying a refresh cookie and/or a JSON body.
 fn post(
     path: &str,
@@ -21,7 +26,7 @@ fn post(
 ) -> Request<Body> {
     let mut builder = Request::builder().method("POST").uri(path);
     if let Some(cookie) = refresh_cookie {
-        builder = builder.header(header::COOKIE, format!("refresh_token={cookie}"));
+        builder = builder.header(header::COOKIE, format!("{REFRESH_COOKIE}={cookie}"));
     }
     match body {
         Some(json) => builder
@@ -32,11 +37,11 @@ fn post(
     }
 }
 
-/// The value of the `refresh_token` cookie a response set, if any.
+/// The value of the refresh cookie a response set, if any.
 fn refresh_cookie(resp: &Response<Body>) -> Option<String> {
     for value in resp.headers().get_all(header::SET_COOKIE) {
         let Ok(text) = value.to_str() else { continue };
-        if let Some(rest) = text.strip_prefix("refresh_token=") {
+        if let Some(rest) = text.strip_prefix(&format!("{REFRESH_COOKIE}=")) {
             let token = rest.split(';').next().unwrap_or_default();
             // A cleared cookie (logout / reuse) has an empty value; treat that as "none".
             if !token.is_empty() {

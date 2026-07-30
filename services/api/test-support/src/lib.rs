@@ -17,6 +17,7 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{Request, Response, StatusCode};
 use tankovault_api::AppState;
+use tankovault_api::stream_tickets::{MemoryStreamTickets, StreamTicketStore as _};
 use tankovault_config::RateLimitConfig;
 use tankovault_domain::{AccountStatus, Permission, UserId};
 use tankovault_email::EmailService;
@@ -32,6 +33,7 @@ use tower::ServiceExt as _;
 pub struct TestConfig {
     mailer: Arc<dyn EmailService>,
     rate_limit: RateLimitConfig,
+    cookie_secure: bool,
 }
 
 impl Default for TestConfig {
@@ -39,6 +41,11 @@ impl Default for TestConfig {
         Self {
             mailer: tankovault_email::build(&tankovault_config::EmailConfig::default()),
             rate_limit: RateLimitConfig::default(),
+            // Matches the production default, which is what makes the suite exercise the
+            // `__Host-refresh_token` / `Path=/` shape a real deployment issues (SEC-7). The
+            // previous `false` meant every cookie assertion in the suite was checking the
+            // local-HTTP development spelling.
+            cookie_secure: true,
         }
     }
 }
@@ -68,6 +75,15 @@ impl TestConfig {
         self.rate_limit.enabled = false;
         self
     }
+
+    /// Wire the local-HTTP development cookie shape: no `Secure`, no `__Host-` prefix, and the
+    /// narrow `Path=/v1/auth` (SEC-7). For the test that pins that opt-out; everything else
+    /// should stay on the production default.
+    #[must_use]
+    pub fn with_insecure_cookies(mut self) -> Self {
+        self.cookie_secure = false;
+        self
+    }
 }
 
 /// The real router wired to an isolated database, ready to answer `oneshot` requests.
@@ -80,6 +96,8 @@ pub struct TestApp {
     /// The in-memory audit sink capturing every emitted event.
     pub audit: Arc<RecordingAuditSink>,
     router: axum::Router,
+    /// The same store the router was built with, so [`Self::stream_ticket`] can mint one.
+    stream_tickets: Arc<MemoryStreamTickets>,
 }
 
 impl TestApp {
@@ -92,6 +110,10 @@ impl TestApp {
     pub async fn spawn_with(cfg: TestConfig) -> Self {
         let db = TestDb::spawn().await;
         let audit = Arc::new(RecordingAuditSink::default());
+        // Held as well as handed to the router so a test can mint a ticket for an arbitrary
+        // account — which the access matrix needs, because the mint *endpoint* refuses the
+        // suspended account whose stream leg it has to drive. See `Self::stream_ticket`.
+        let stream_tickets = Arc::new(MemoryStreamTickets::new());
 
         let state = AppState {
             pool: db.pool.clone(),
@@ -114,9 +136,10 @@ impl TestApp {
             challenge_solver_url: "http://challenge-solver.invalid".to_owned(),
             internal_token: None,
             bus: None,
+            stream_tickets: stream_tickets.clone(),
             audit: audit.clone(),
             features: FeatureGate::defaults(),
-            cookie_secure: false,
+            cookie_secure: cfg.cookie_secure,
             mailer: cfg.mailer,
             email_base_url: "http://localhost".to_owned(),
         };
@@ -130,7 +153,25 @@ impl TestApp {
             None,
         );
 
-        Self { db, audit, router }
+        Self {
+            db,
+            audit,
+            router,
+            stream_tickets,
+        }
+    }
+
+    /// Mint a single-use stream ticket for `user`, bypassing `POST /v1/me/stream-ticket`.
+    ///
+    /// Needed because the mint endpoint is gated by `AuthUser`, which refuses a suspended
+    /// account — so the access matrix could not otherwise drive `GET /v1/me/stream`'s *own*
+    /// suspension check, which is the leg SEC-8 exists for. Going through the store directly
+    /// keeps that leg in the sweep instead of dropping the row.
+    pub async fn stream_ticket(&self, user: UserId) -> String {
+        self.stream_tickets
+            .mint(user)
+            .await
+            .expect("the in-memory ticket store cannot fail")
     }
 
     /// Seed a user with the given capabilities and status. See [`TestDb::seed_user`].

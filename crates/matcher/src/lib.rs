@@ -202,6 +202,89 @@ pub fn best_match(query: &Query, candidates: &[Candidate]) -> Option<(SeriesId, 
 }
 
 /// Decide how to canonicalise the query given its candidates and thresholds.
+///
+/// Three outcomes, and the middle one is why this is a function rather than a comparison:
+/// at or above [`Thresholds::high`] the source attaches to the existing series, below
+/// [`Thresholds::low`] a new canonical series is created, and *between* them nothing is
+/// decided automatically — the source is created and a merge candidate is queued for an
+/// operator. Collapsing that band into either neighbour is how a catalogue either splits one
+/// work across two entries or silently merges two different ones.
+///
+/// Only the best-scoring candidate is considered, so a long candidate list cannot outvote it.
+///
+/// The realistic case — the same work listed by a second provider:
+///
+/// ```
+/// use tankovault_domain::{ContentType, SeriesId};
+/// use tankovault_matcher::{Candidate, Decision, Query, Thresholds, decide};
+///
+/// let existing = SeriesId::new();
+/// let query = Query {
+///     normalized_title: "solo leveling".to_owned(),
+///     content_type: ContentType::Manhwa,
+///     release_year: Some(2018),
+///     tags: Vec::new(),
+///     authors: Vec::new(),
+/// };
+/// let same_work = Candidate {
+///     series_id: existing,
+///     normalized_title: "solo leveling".to_owned(),
+///     // Even a poor raw trigram score attaches here: [`score`] takes the *stronger* of the
+///     // trigram similarity and a token-set ratio, and identical titles agree completely.
+///     similarity: 0.2,
+///     content_type: ContentType::Manhwa,
+///     release_year: Some(2018),
+///     tags: Vec::new(),
+///     authors: Vec::new(),
+/// };
+/// assert_eq!(
+///     decide(&query, &[same_work], Thresholds::default()),
+///     Decision::Attach(existing),
+/// );
+/// ```
+///
+/// The three bands, with every corroborating signal switched off (unknown medium, no year,
+/// unrelated titles) so the score *is* the trigram similarity and the boundaries are visible:
+///
+/// ```
+/// use tankovault_domain::{ContentType, SeriesId};
+/// use tankovault_matcher::{Candidate, Decision, Query, Thresholds, decide};
+///
+/// let existing = SeriesId::new();
+/// let query = Query {
+///     normalized_title: "solo leveling".to_owned(),
+///     content_type: ContentType::Unknown,
+///     release_year: None,
+///     tags: Vec::new(),
+///     authors: Vec::new(),
+/// };
+/// let scoring = |similarity| Candidate {
+///     series_id: existing,
+///     normalized_title: "berserk".to_owned(),
+///     similarity,
+///     content_type: ContentType::Unknown,
+///     release_year: None,
+///     tags: Vec::new(),
+///     authors: Vec::new(),
+/// };
+///
+/// assert_eq!(
+///     decide(&query, &[scoring(0.9)], Thresholds::default()),
+///     Decision::Attach(existing),
+/// );
+/// assert!(matches!(
+///     decide(&query, &[scoring(0.7)], Thresholds::default()),
+///     Decision::Ambiguous { candidate, .. } if candidate == existing
+/// ));
+/// assert_eq!(
+///     decide(&query, &[scoring(0.3)], Thresholds::default()),
+///     Decision::Create,
+/// );
+///
+/// // No candidates at all is the same answer as a bad one: the first source of a work has
+/// // nothing to match against.
+/// assert_eq!(decide(&query, &[], Thresholds::default()), Decision::Create);
+/// ```
 #[must_use]
 pub fn decide(query: &Query, candidates: &[Candidate], thresholds: Thresholds) -> Decision {
     let best = candidates

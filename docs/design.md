@@ -870,7 +870,11 @@ never persisted; they are starting points, not stored roles.
 > (the capability set) and `crates/db/src/repo/permissions.rs` (per-request resolution).
 
 **SSRF — critical for this system.** Workers and the "test adapter" endpoint fetch operator-supplied
-URLs. Guard rails in the `fetch` crate:
+URLs. The policy lives in `tankovault_domain::ssrf` — address table, pre-flight check, and the
+`dns`-gated `validate_and_resolve` a handler calls before *storing* a URL — so `render`,
+`challenge-solver` and `services/api` apply it without linking the crawl stack. `crates/fetch`
+re-exports all of it and adds the one piece that is genuinely its own, a `wreq::dns::Resolve` that
+re-checks at connect time and on every redirect hop. Guard rails:
 - Allow only `http`/`https` schemes.
 - Resolve host and **reject private, loopback, link-local, and metadata IP ranges** (block
   `169.254.169.254`, RFC1918, `::1`, etc.) — re-checked after DNS resolution and on redirects

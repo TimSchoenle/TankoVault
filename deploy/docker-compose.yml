@@ -72,8 +72,10 @@ x-healthcheck: &healthcheck
 #
 # `read_only` is safe by construction rather than by inspection: a `scratch` image *is* four
 # baked-in files (the binary, the musl loader, `libgcc_s`, the CA bundle) and nothing else, so
-# there is no writable path for a service to have quietly depended on. Not applied to `render`
-# — see the note there.
+# there is no writable path for a service to have quietly depended on. `render` is read-only
+# too, but sets it inline rather than merging this anchor: it is the one tier whose writable
+# set had to be measured rather than reasoned about, and it needs two `tmpfs` mounts the
+# scratch services must not have. See the note there.
 x-hardening: &hardening
   read_only: true
   cap_drop: [ALL]
@@ -351,16 +353,37 @@ services:
     deploy: { resources: { limits: { memory: 2g } } }
     shm_size: 1gb
     healthcheck: *healthcheck
-    # `cap_drop` + `no-new-privileges` matter most on this tier: it is the only one running a
-    # real browser against untrusted remote content, and Chromium here is already `--no-sandbox`
-    # (no user namespaces in the container), so nothing it does needs a capability.
+    # Hardening matters most on this tier: it is the only one running a real browser against
+    # untrusted remote content, and Chromium here is already `--no-sandbox` (no user namespaces
+    # in the container), so nothing it does needs a capability.
     #
-    # `read_only: true` is deliberately NOT set, unlike the scratch services. Those are safe by
-    # construction — the image has no writable path to depend on. This one is a full Debian base
-    # under a browser that writes a profile, a cache and any number of scratch files whose paths
-    # are not enumerable from here; guessing the tmpfs set wrong produces a silent crash loop on
-    # the tier that is hardest to debug. Turn it on only after an empirical pass with
-    # `--read-only` against a real render, and record the required mounts here when you do.
+    # `read_only` is set here rather than merged from `*hardening`, because unlike the scratch
+    # services — which are safe by construction, having no writable path to depend on — this is
+    # a full Debian base under a browser, so the writable set had to be *measured*. It was:
+    # `docker diff` over a headless render in an image mirroring `runtime-browser` shows every
+    # write landing under exactly two prefixes, and nowhere else.
+    #
+    #   /tmp            chromiumoxide's per-launch `--user-data-dir` (a `tempfile` directory,
+    #                   which is why no fixed profile path appears here) plus Chromium's own
+    #                   scratch files.
+    #   /home/nonroot   $HOME: `.cache/fontconfig`, `.config/chromium/Crash Reports` and
+    #                   `.local/share/pki/nssdb`, all created on first launch.
+    #
+    # `/dev/shm` is the third writable path and needs no entry: Docker mounts it as tmpfs
+    # regardless of `read_only`, and `shm_size` above is what sizes it.
+    #
+    # **`uid`/`gid` on the `$HOME` mount are load-bearing.** A bare `tmpfs: [/home/nonroot]`
+    # mounts root-owned mode 755 over the account's own home, so the process cannot write to it
+    # — and the failure is not a permission error but `chrome_crashpad_handler: --database is
+    # required` followed by a SIGTRAP, which reads like a Chromium bug rather than a mount
+    # option. `/tmp` needs no ownership: tmpfs defaults to 1777 there.
+    #
+    # Verified end to end at both extremes: a `data:` URL and a live HTTPS page both render with
+    # a read-only root and these two mounts, with no crashpad or NSS failure.
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=256m
+      - /home/nonroot:rw,nosuid,nodev,noexec,size=128m,uid=1001,gid=1001
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     build:

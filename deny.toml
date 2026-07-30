@@ -126,9 +126,25 @@ deny = [
     { crate = "native-tls", reason = "pulls openssl-sys; use rustls" },
 ]
 
-# Duplicate versions present as of 2026-07-29, all transitive and all mid-transition upstream.
+# Duplicate versions present as of 2026-07-30, all transitive and all mid-transition upstream.
 # This list is a record of the current state, not an approval: shrinking it is ordinary
 # maintenance, and adding to it should be a conscious note in the pull request that does so.
+#
+# The list does not have to be trusted, and the date does not have to be believed. CI runs
+# `cargo deny check … -D unnecessary-skip`, which fails on an entry naming a crate that no
+# longer has two versions — so an entry cannot outlive the duplicate it records, and the pull
+# request that collapses one is the pull request that deletes its line. Every entry below was
+# re-verified under `cargo tree --target all -d` on 2026-07-30; none was stale.
+#
+# Two corrections to BUILD_AND_OPS §1.5, both found by checking rather than reading:
+#
+#   * `rand` at three majors is **not** collapsible by bumping our own pin. Our two consumers
+#     (`crates/auth`, `crates/fetch`) are two of *eight* dependents of 0.8 — the others are
+#     `fred`, `jsonwebtoken`, `nkeys`, `nuid`, `num-bigint-dig` and `tokio-websockets` — so
+#     moving ours to 0.10 would relocate two edges and remove no version. Revisit when
+#     `jsonwebtoken` and `fred` move, not before.
+#   * `tower-http` 0.6 is pulled by `reqwest` 0.13, not by anything this workspace chooses.
+#     There is nothing to fix short of dropping `reqwest`.
 skip = [
     # The `rand` 0.8 → 0.9 ecosystem migration, which drags its whole cluster along.
     { crate = "rand" },

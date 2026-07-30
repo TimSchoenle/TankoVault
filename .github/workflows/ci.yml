@@ -80,11 +80,22 @@ jobs:
   # that stopped compiling with a feature off, or a crate that only builds because a sibling
   # unified a feature onto it, would not have been caught anywhere.
   #
-  # This is the cheap two-thirds of the audit's OPS-4.6. A second OS leg and an `aarch64` image
-  # leg are deliberately NOT added: the fetch stack compiles BoringSSL from C/C++/asm, so a
-  # QEMU-emulated arm64 build costs upwards of an hour, and `Dockerfile.frontend` already
-  # parameterises `BUILD_TARGET` for the day a native arm64 runner is available. Windows/macOS
-  # legs would only cover the *dev* platform; nothing ships there.
+  # This is the feature axis of the audit's OPS-4.6. The other two axes are settled below and
+  # here, rather than left open:
+  #
+  #   * **arch** — the `docker-arm64` job at the bottom of this file builds every image for
+  #     `linux/arm64` on a *native* arm runner. It is opt-in behind a repository variable
+  #     because those runners are free only on public repositories; the reasoning is written
+  #     out there. QEMU emulation is not the fallback: the fetch stack compiles BoringSSL from
+  #     C/C++/asm, which under emulation costs upwards of an hour per image.
+  #   * **OS** — no Windows or macOS leg, deliberately and permanently. Nothing ships on
+  #     either: every artifact is a musl binary in a `scratch` or Debian image. A Windows leg
+  #     would cover the *development* platform, where a break is discovered by the developer
+  #     within seconds of making it, at the cost of a BoringSSL toolchain (nasm + cmake) on
+  #     every run. The Windows-specific hazards this project has actually hit are tooling
+  #     hazards — PowerShell's cp1252 decoding of UTF-8 source, `Select-String` clearing `$?`
+  #     after a native command — and no CI leg detects either. They are documented in
+  #     `docs/audit/PROGRESS.md` instead.
   features:
     name: feature combinations
     runs-on: ubuntu-latest
@@ -300,7 +311,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
+          # `-D unnecessary-skip` makes the duplicate-version budget shrink *visibly*.
+          # `[bans].skip` is `deny.toml`'s record of the duplicates that exist today, and
+          # `multiple-versions = "deny"` already fails on a new one — but nothing noticed an
+          # entry whose duplicate had since resolved upstream, so the list could only ever grow
+          # and its dated comment could only ever drift (BUILD_AND_OPS §1.5). This turns
+          # cargo-deny's `unnecessary-skip` warning into an error, so the pull request that
+          # happens to collapse a duplicate is the one that deletes its skip line.
           command: check advisories licenses sources bans
+          # `command-arguments`, not `arguments`: the action composes
+          # `[arguments] [command] [command-arguments]`, and cargo-deny only accepts `-D`
+          # after the subcommand.
+          command-arguments: -D unnecessary-skip
 
   audit:
     name: cargo-audit
@@ -444,6 +466,73 @@ jobs:
           fi
           container-structure-test test \
             --image "tankovault-${{ matrix.bin }}:ci" \
+            --config "$config"
+
+  # Cross-architecture image build, opt-in.
+  #
+  # Every service image is `FROM scratch` over a musl binary and `Dockerfile.frontend` already
+  # parameterises `BUILD_TARGET`, so nothing in the build is x86-specific — but "nothing looks
+  # x86-specific" is not evidence, which is what this job supplies. It runs on a **native** arm
+  # runner: QEMU is not a substitute here, because `wreq` compiles BoringSSL from C/C++/assembly
+  # and an emulated build of it costs upwards of an hour per image.
+  #
+  # Gated on the `ENABLE_ARM64_CI` repository variable, and gated rather than simply added
+  # because `ubuntu-24.04-arm` runners are free only on **public** repositories; on a private
+  # one they bill. The same shape as `ALLOW_IMAGE_PUBLISH` in `release.yml`: the leg exists and
+  # is correct, and turning it on is a deployment decision rather than a code change. Set the
+  # variable to any non-empty value to enable it.
+  #
+  # Scoped to the two images whose *content* differs by architecture — a `scratch` service
+  # (the musl binary plus the loader and `libgcc_s` it resolves) and the `render` tier (a
+  # Debian base with a distro Chromium, the one image whose base packages are arch-specific).
+  # Building all eight would triple the wall clock to re-prove the same Dockerfile.
+  docker-arm64:
+    name: docker build (arm64)
+    if: vars.ENABLE_ARM64_CI != ''
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    needs: [lint, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        bin: [api, render]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: derive SOURCE_DATE_EPOCH
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+      - name: build ${{ matrix.bin }} image (linux/arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/arm64
+          build-args: |
+            BIN=${{ matrix.bin }}
+            SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+          target: ${{ matrix.bin == 'render' && 'runtime-browser' || 'runtime' }}
+          push: false
+          load: true
+          tags: tankovault-${{ matrix.bin }}:ci-arm64
+          provenance: false
+          cache-from: type=gha,scope=arm64-${{ matrix.bin }}
+          cache-to: type=gha,scope=arm64-${{ matrix.bin }},mode=max
+      # The same image contract as the amd64 leg. `container-structure-test` ships a separate
+      # arm64 binary; the config files are architecture-independent.
+      - name: install container-structure-test
+        run: |
+          curl -fsSL -o container-structure-test \
+            https://storage.googleapis.com/container-structure-test/v1.22.1/container-structure-test-linux-arm64
+          chmod +x container-structure-test
+          sudo mv container-structure-test /usr/local/bin/container-structure-test
+      - name: structure-test ${{ matrix.bin }} image
+        run: |
+          config="deploy/docker/cst/service.yaml"
+          if [ "${{ matrix.bin }}" = "render" ]; then
+            config="deploy/docker/cst/render.yaml"
+          fi
+          container-structure-test test \
+            --image "tankovault-${{ matrix.bin }}:ci-arm64" \
             --config "$config"
 
   docker-frontend:

@@ -1,4 +1,4 @@
-//! The canonical series â‡† external id correspondence, cached so a later sync skips matching.
+//! The canonical series ⇆ external id correspondence, cached so a later sync skips matching.
 
 use crate::error::DbResult;
 use sqlx::PgExecutor;
@@ -77,7 +77,7 @@ pub async fn list_linked_providers<'e, E: PgExecutor<'e>>(
     Ok(providers)
 }
 
-/// Remove a seriesâ†”external mapping for `provider`. Returns `true` if a row was removed.
+/// Remove a series↔external mapping for `provider`. Returns `true` if a row was removed.
 /// The next pull/push re-resolves the series from scratch (title match or search).
 pub async fn delete_mapping<'e, E: PgExecutor<'e>>(
     exec: E,
@@ -96,10 +96,10 @@ pub async fn delete_mapping<'e, E: PgExecutor<'e>>(
 
 /// Record (or refresh) the mapping for several series in one statement.
 ///
-/// The batched form of [`upsert_mapping`] (PERF-13). `DISTINCT ON (series_id) â€¦ ORDER BY
+/// The batched form of [`upsert_mapping`] (PERF-13). `DISTINCT ON (series_id) … ORDER BY
 /// series_id, ord DESC` reproduces the sequential loop's semantics precisely: `sync_mappings` is
 /// keyed on `(series_id, provider)`, so when two remote ids resolve to one series the *last* one
-/// wins, just as repeated `upsert_mapping` calls would have left it â€” and without it Postgres
+/// wins, just as repeated `upsert_mapping` calls would have left it — and without it Postgres
 /// would abort the statement for touching the same row twice.
 pub async fn upsert_mappings<'e, E: PgExecutor<'e>>(
     exec: E,

@@ -1,4 +1,4 @@
-//! The three-way merge's common-ancestor snapshot (design v2 Â§B.2/Â§B.3).
+//! The three-way merge's common-ancestor snapshot (design v2 §B.2/§B.3).
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
@@ -6,7 +6,7 @@ use tankovault_domain::SeriesId;
 use time::OffsetDateTime;
 
 /// The "common ancestor" snapshot recorded at the last successful reconciliation of a mapped
-/// series, so the engine can tell which side(s) actually changed since (design v2 Â§B.3).
+/// series, so the engine can tell which side(s) actually changed since (design v2 §B.3).
 #[derive(Debug, Clone, FromRow)]
 pub struct SyncSnapshot {
     pub last_synced_local_progress: Option<f64>,
@@ -52,7 +52,7 @@ pub struct AgreedSnapshot<'a> {
 }
 
 /// Record the agreed values as the new three-way-merge snapshot after a reconciliation
-/// (design v2 Â§B.3). The `sync_mappings` row must already exist.
+/// (design v2 §B.3). The `sync_mappings` row must already exist.
 pub async fn record_snapshot<'e, E: PgExecutor<'e>>(
     exec: E,
     agreed: &AgreedSnapshot<'_>,

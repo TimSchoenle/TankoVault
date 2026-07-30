@@ -1,4 +1,4 @@
-//! Conflicts left for the user to resolve under the `ask_me` policy (design v2 Â§B.3/Â§B.6).
+//! Conflicts left for the user to resolve under the `ask_me` policy (design v2 §B.3/§B.6).
 
 use crate::error::DbResult;
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,7 @@ pub struct NewConflict<'a> {
     pub remote_value: &'a str,
 }
 
-/// Queue a genuine, unresolved conflict for the `ask_me` policy (design v2 Â§B.3). Idempotent:
+/// Queue a genuine, unresolved conflict for the `ask_me` policy (design v2 §B.3). Idempotent:
 /// the unique partial index guarantees at most one pending row per
 /// `(user, series, provider, field)`, so re-detection never double-queues.
 pub async fn insert_conflict<'e, E: PgExecutor<'e>>(
@@ -57,7 +57,7 @@ pub async fn insert_conflict<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// One pending conflict awaiting the user's decision (design v2 Â§B.6 `GET /v1/me/sync/conflicts`).
+/// One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).
 ///
 /// Schema'd and `Deserialize` because `services/api` re-publishes this row under
 /// `/v1/me/sync/conflicts`, so it has to appear in the `OpenAPI` document for the generated

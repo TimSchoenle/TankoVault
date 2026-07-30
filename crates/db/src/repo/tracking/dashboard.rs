@@ -1,5 +1,5 @@
 //! Read models for the Home surfaces: the unread feed, continue-reading cards, lifetime
-//! stats and tag-overlap recommendations (frontend Â§9.3).
+//! stats and tag-overlap recommendations (frontend §9.3).
 
 use crate::error::DbResult;
 use crate::repo::catalog::SeriesListItem;
@@ -21,7 +21,7 @@ pub struct FeedItem {
     pub discovered_at: OffsetDateTime,
 }
 
-/// The user's "new chapters" feed (design Â§11 `GET /v1/me/feed`): chapters on watched
+/// The user's "new chapters" feed (design §11 `GET /v1/me/feed`): chapters on watched
 /// series strictly above the user's read progress, most recently discovered first. Rows
 /// are per source; the caller may group across providers.
 pub async fn feed<'e, E: PgExecutor<'e>>(
@@ -79,7 +79,7 @@ pub async fn feed<'e, E: PgExecutor<'e>>(
 }
 
 /// A "continue reading" card: a tracked, in-progress series with unread chapters, ordered
-/// by the most recent chapter activity (frontend Â§9.3 `GET /v1/me/continue`).
+/// by the most recent chapter activity (frontend §9.3 `GET /v1/me/continue`).
 #[derive(Debug, Clone)]
 pub struct ContinueCard {
     pub series_id: SeriesId,
@@ -95,7 +95,7 @@ pub struct ContinueCard {
 /// one unread chapter, freshest activity first. Returns **every** matching series (no cap) so
 /// the rail size is stable across requests; the `unread > 0` requirement is enforced in SQL via
 /// `EXISTS` and ties on activity are broken by `series_id` for a deterministic order. `unread`
-/// counts distinct **whole** chapters (`floor(number)`) â€” sub-chapter part releases (e.g.
+/// counts distinct **whole** chapters (`floor(number)`) — sub-chapter part releases (e.g.
 /// `152.1`..`152.6`) collapse into the one chapter they belong to rather than inflating the badge.
 pub async fn continue_reading<'e, E: PgExecutor<'e>>(
     exec: E,
@@ -162,8 +162,8 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Lifetime reading stats for the Home/Profile headline (frontend Â§9.3 `GET /v1/me/stats`).
-/// `chapters_read` is the sum of whole chapters below each series' last-read marker â€” an
+/// Lifetime reading stats for the Home/Profile headline (frontend §9.3 `GET /v1/me/stats`).
+/// `chapters_read` is the sum of whole chapters below each series' last-read marker — an
 /// honest proxy over stored progress (there is no per-chapter read-event log, so a daily
 /// "streak" is intentionally omitted rather than fabricated).
 #[derive(Debug, Clone, Default, serde::Serialize, FromRow)]
@@ -176,13 +176,13 @@ pub struct MeStats {
 }
 
 /// Compute a user's lifetime tracking stats in a single round trip. Both `chapters_read`
-/// and `unread` are floored to whole chapters â€” sub-chapter part releases (e.g. `152.6`)
+/// and `unread` are floored to whole chapters — sub-chapter part releases (e.g. `152.6`)
 /// are not "full chapters" for tracking purposes and don't count as extra ones.
 ///
 /// The `unread` subquery keeps its global `DISTINCT` rather than becoming a per-series
 /// lateral like [`continue_reading`]'s. The lateral form was written and measured on the
 /// development catalogue (835 watchlist entries): it forces a nested loop per watchlist row
-/// and came out **slower** â€” 432 ms against 258 ms for the hash join plus one sort. The same
+/// and came out **slower** — 432 ms against 258 ms for the hash join plus one sort. The same
 /// rewrite is not automatically right in both places; this one was checked.
 pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<MeStats> {
     let stats = sqlx::query_as!(
@@ -208,7 +208,7 @@ pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResu
     Ok(stats)
 }
 
-/// "Because you read" recommendations (frontend Â§9.3, *Stub*): series that share a tag with
+/// "Because you read" recommendations (frontend §9.3, *Stub*): series that share a tag with
 /// the user's watchlist and are not already tracked, most shared tags first. Returns an
 /// empty vec when the user has no tagged watchlist yet (the API falls back to recent series).
 pub async fn recommendations<'e, E: PgExecutor<'e>>(

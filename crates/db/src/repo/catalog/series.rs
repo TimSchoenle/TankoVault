@@ -1,4 +1,4 @@
-﻿//! Canonical series: the row every provider source attaches to, and the matcher-backed
+//! Canonical series: the row every provider source attaches to, and the matcher-backed
 //! decision about which existing series a newly-scanned one *is*.
 
 use crate::error::{DbError, DbResult};
@@ -52,12 +52,12 @@ impl TryFrom<SeriesRow> for Series {
 }
 
 /// Resolve the canonical series for a scanned source using the canonicalisation pipeline
-/// (design Â§10): trigram candidate lookup + [`tankovault_matcher`] scoring.
+/// (design §10): trigram candidate lookup + [`tankovault_matcher`] scoring.
 ///
-/// - **High confidence** â†’ attach the source to the existing series.
-/// - **Ambiguous band** â†’ create a new series *and* record a `merge_candidate` for
+/// - **High confidence** → attach the source to the existing series.
+/// - **Ambiguous band** → create a new series *and* record a `merge_candidate` for
 ///   operator review (one-click merge/split in the console).
-/// - **Low/no confidence** â†’ create a new canonical series.
+/// - **Low/no confidence** → create a new canonical series.
 ///
 /// Runs inside the ingest transaction so lookup + create are atomic for a single worker.
 /// Concurrent first-creation of the same title across providers can still produce two
@@ -82,7 +82,7 @@ pub async fn resolve_canonical_series(
 
     // No tag/author signal on the query side here: a scanned source's own tags/authors
     // aren't threaded into `SeriesUpsert` (they're written separately in `ingest_series`).
-    // The bonus simply never fires â€” unchanged behaviour from before this field existed.
+    // The bonus simply never fires — unchanged behaviour from before this field existed.
     let query = tankovault_matcher::Query {
         normalized_title: meta.normalized_title.clone(),
         content_type: meta.content_type,

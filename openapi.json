@@ -1619,7 +1619,7 @@
         "type": "object"
       },
       "RegisterResponse": {
-        "description": "The result of [`register`]. Registration has two outcomes depending on whether email\ndelivery is configured:\n\n- Email enabled: the account is created **unconfirmed**, a confirmation link is emailed,\n  and no session is issued (`verification_required = true`, `access_token` absent). The\n  user must click the link before they can sign in.\n- Email not configured (dev/self-host without SMTP): confirmation cannot be delivered, so\n  the account is activated immediately and a session is issued exactly like [`login`]\n  (`verification_required = false`, `access_token` present).",
+        "description": "The result of [`register`]. Registration has two outcomes depending on whether email\ndelivery is configured:\n\n- Email enabled: the account is created **unconfirmed**, a confirmation link is emailed,\n  and no session is issued (`verification_required = true`, `access_token` absent). The\n  user must click the link before they can sign in.\n- Email not configured (dev/self-host without SMTP): confirmation cannot be delivered, so\n  the account is activated immediately and a session is issued exactly like\n  [`super::login::login`] (`verification_required = false`, `access_token` present).",
         "properties": {
           "access_token": {
             "description": "The issued bearer access token — present only when the account was activated\nimmediately (email delivery not configured). Mirrors [`TokenResponse::access_token`].",

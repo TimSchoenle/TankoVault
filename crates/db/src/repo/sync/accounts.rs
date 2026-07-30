@@ -1,6 +1,6 @@
 //! Linked provider accounts and their automatic-sync settings.
 //!
-//! `access_token`/`refresh_token` hold **ciphertext only** â€” the sync service seals them with
+//! `access_token`/`refresh_token` hold **ciphertext only** — the sync service seals them with
 //! `tankovault_auth::SecretBox` before they reach this layer.
 
 use crate::error::DbResult;
@@ -26,12 +26,12 @@ pub struct ExternalAccount {
     pub last_synced_at: Option<OffsetDateTime>,
     /// The most recent sync failure message, if any. Cleared on the next successful sync
     /// (`mark_synced`); set by `record_sync_error`. Admin-visible only (design: Sync console
-    /// tab) â€” never surfaced on the user-facing status endpoint.
+    /// tab) — never surfaced on the user-facing status endpoint.
     pub last_error: Option<String>,
     /// Whether automatic sync (reactive push + scheduled reconciliation) is enabled for this
-    /// account (design v2 Â§B.2). Seeded `true` on link.
+    /// account (design v2 §B.2). Seeded `true` on link.
     pub auto_sync_enabled: bool,
-    /// The persisted per-account conflict policy token (design v2 Â§B.3): one of
+    /// The persisted per-account conflict policy token (design v2 §B.3): one of
     /// `local_wins` | `remote_wins` | `newest_wins` | `ask_me`. Seeded from the service
     /// default on link.
     pub conflict_policy: String,
@@ -110,7 +110,7 @@ pub async fn get_account<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Update a linked account's automatic-sync policy (design v2 Â§B.2/Â§B.6). Either field may be
+/// Update a linked account's automatic-sync policy (design v2 §B.2/§B.6). Either field may be
 /// left `None` to keep its current value. Seeds are set at link time via `seed_account_policy`.
 pub async fn update_account_settings<'e, E: PgExecutor<'e>>(
     exec: E,
@@ -135,7 +135,7 @@ pub async fn update_account_settings<'e, E: PgExecutor<'e>>(
 }
 
 /// Seed the per-account conflict policy from the service default the first time an account is
-/// linked, without disturbing an existing user choice (design v2 Â§B.1: the env default is only
+/// linked, without disturbing an existing user choice (design v2 §B.1: the env default is only
 /// the seed). No-op once the user has set anything.
 pub async fn seed_account_policy<'e, E: PgExecutor<'e>>(
     exec: E,
@@ -156,7 +156,7 @@ pub async fn seed_account_policy<'e, E: PgExecutor<'e>>(
 }
 
 /// Every linked account with automatic sync enabled, as `(user_id, provider)` pairs, for the
-/// scheduled reconciliation loop (design v2 Â§B.4).
+/// scheduled reconciliation loop (design v2 §B.4).
 pub async fn list_auto_sync_accounts<'e, E: PgExecutor<'e>>(
     exec: E,
 ) -> DbResult<Vec<(UserId, String)>> {

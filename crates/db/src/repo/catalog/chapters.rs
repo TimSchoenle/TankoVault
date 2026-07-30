@@ -1,4 +1,4 @@
-﻿//! Chapters: idempotent upserts that report which rows were genuinely new, plus the counts
+//! Chapters: idempotent upserts that report which rows were genuinely new, plus the counts
 //! and listings the reading surfaces read back.
 
 use crate::error::DbResult;
@@ -88,7 +88,7 @@ pub async fn upsert_chapter<'e, E: PgExecutor<'e>>(
 /// The per-chapter [`upsert_chapter`] is kept for the single-chapter callers, but the ingest
 /// path must not use it: a series with two thousand chapters meant two thousand sequential
 /// round trips, each one holding open the transaction that also holds row locks on the shared
-/// `tags` and `authors` rows â€” so one slow series blocked every other provider's ingest.
+/// `tags` and `authors` rows — so one slow series blocked every other provider's ingest.
 ///
 /// Same `xmax = 0` trick as the single-row version: an inserted row has `xmax` 0, an updated
 /// one does not, so one statement gives both the idempotent upsert and the new-chapter
@@ -96,7 +96,7 @@ pub async fn upsert_chapter<'e, E: PgExecutor<'e>>(
 ///
 /// `DISTINCT ON` is load-bearing. `ON CONFLICT DO UPDATE` cannot touch the same row twice in
 /// one statement (Postgres raises `21000`), and a provider listing the same chapter number
-/// twice on one page is a real and recurring occurrence â€” the last spelling wins, matching
+/// twice on one page is a real and recurring occurrence — the last spelling wins, matching
 /// the row-at-a-time loop this replaces.
 pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
     exec: E,
@@ -161,9 +161,9 @@ pub async fn max_chapter_number<'e, E: PgExecutor<'e>>(
     Ok(max)
 }
 
-/// The number of distinct **whole** chapters a source has â€” sub-chapter part releases
+/// The number of distinct **whole** chapters a source has — sub-chapter part releases
 /// (e.g. `152.1`..`152.6`, fractional `number`) collapse into the one whole chapter they
-/// belong to instead of each counting as its own chapter (frontend Â§9.2 "Read on" +
+/// belong to instead of each counting as its own chapter (frontend §9.2 "Read on" +
 /// hero stat; mirrors the `floor(number)` tracking-count convention in
 /// `repo::tracking`). Deliberately distinct from `series_sources.chapter_count`, which
 /// stays a raw scanned-row count used for scan/sync bookkeeping.
@@ -234,9 +234,9 @@ pub async fn count_full_chapters_by_provider<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// The number of distinct **whole** chapters across a *set* of sources â€” the merge-aware
+/// The number of distinct **whole** chapters across a *set* of sources — the merge-aware
 /// counterpart to [`count_full_chapters`]. Used when several `series_sources` rows of the
-/// same provider are folded into one reader-visible "completing" source (design Â§10 same-source
+/// same provider are folded into one reader-visible "completing" source (design §10 same-source
 /// smart merge): counting each entry separately and summing would double-count a whole chapter
 /// two entries happen to share, so the count is taken over the *union* of their chapters.
 /// An empty slice yields `0`.
@@ -256,7 +256,7 @@ pub async fn count_full_chapters_across<'e, E: PgExecutor<'e>>(
 }
 
 /// List the chapters spanning a *set* of sources as a single de-duplicated, newest-first
-/// list â€” the merge-aware counterpart to [`list_chapters`]. When several `series_sources`
+/// list — the merge-aware counterpart to [`list_chapters`]. When several `series_sources`
 /// rows of the same provider are folded into one "completing" source, their chapter lists are
 /// complementary (e.g. one entry carries the early chapters, another the later ones); this
 /// unions them and, when two entries expose the *same* chapter number, keeps a single row

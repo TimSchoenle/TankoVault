@@ -1,5 +1,5 @@
-//! Snapshots of what a provider's list actually held, kept for every fetched entry whether or
-//! not it matched â€” the unmatched ones are the queue the admin console works.
+//! Snapshots of what a provider's list actually held (design §15), kept for every fetched
+//! entry whether or not it matched — the unmatched ones are the queue the admin console works.
 
 use crate::error::DbResult;
 use sqlx::PgExecutor;

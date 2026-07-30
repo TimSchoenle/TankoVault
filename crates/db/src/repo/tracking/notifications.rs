@@ -1,6 +1,6 @@
 //! Notifications and the notifier's fan-out primitives.
 //!
-//! `services/notifier` needs exactly this module and nothing else in `tracking` â€” which is
+//! `services/notifier` needs exactly this module and nothing else in `tracking` — which is
 //! the observation ARCH-5 was making about the old single file.
 
 use std::collections::HashMap;
@@ -15,7 +15,7 @@ use uuid::Uuid;
 /// Insert one identical notification for each user in `user_ids`, returning `(user, id)` pairs.
 ///
 /// One statement rather than one per user (PERF-3): a fan-out writes the *same* document to
-/// every watcher â€” only `user_id` varies â€” so `kind` and `payload` are bound once and only the
+/// every watcher — only `user_id` varies — so `kind` and `payload` are bound once and only the
 /// user list is unnested. Ids are generated client-side so `RETURNING` can be paired back to
 /// its user without a second lookup.
 pub async fn notifications_create_many<'e, E: PgExecutor<'e>>(
@@ -95,7 +95,7 @@ pub async fn notifications_list<'e, E: PgExecutor<'e>>(
 /// client round-trip. Backed by the `notifications_user_unread` partial index.
 ///
 /// Grouped rather than one query per user (PERF-3). Users with no unread rows are absent from
-/// the map â€” `GROUP BY` cannot invent a zero row â€” so callers must treat a miss as `0`.
+/// the map — `GROUP BY` cannot invent a zero row — so callers must treat a miss as `0`.
 pub async fn notifications_unread_counts<'e, E: PgExecutor<'e>>(
     exec: E,
     user_ids: &[UserId],
@@ -172,7 +172,7 @@ pub async fn watchers_for_series<'e, E: PgExecutor<'e>>(
 }
 
 /// Claim the `(user, series, chapter)` dedup slot for every user in `user_ids` at once,
-/// returning the subset that was actually claimed â€” i.e. the users this chapter is genuinely
+/// returning the subset that was actually claimed — i.e. the users this chapter is genuinely
 /// new to.
 ///
 /// # Why this is set-based

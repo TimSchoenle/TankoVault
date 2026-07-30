@@ -1,4 +1,4 @@
-﻿//! Metadata enrichment: the sweep's work list, folding resolved upstream metadata into a
+//! Metadata enrichment: the sweep's work list, folding resolved upstream metadata into a
 //! series, and the alternative-title / tag / author link tables it writes.
 
 use crate::error::DbResult;
@@ -28,11 +28,11 @@ pub struct SeriesEnrichmentRow {
 /// - The previous shape was `ORDER BY updated_at ASC LIMIT $1 OFFSET $2`, and enrichment
 ///   *writes* `updated_at = now()`. So the sort key moved under the cursor: every enriched row
 ///   jumped to the end of the ordering, the rows behind it shifted forward by one, and the
-///   next `OFFSET` skipped exactly those. The sweep silently missed series â€” not a slowdown,
+///   next `OFFSET` skipped exactly those. The sweep silently missed series — not a slowdown,
 ///   a correctness bug.
 /// - `updated_at < started_at` excludes rows this sweep has already touched, so a row cannot
 ///   be handed back to the same run.
-/// - Keyset paging also drops the cost from O(nÂ²/batch): `OFFSET` re-sorted the whole table
+/// - Keyset paging also drops the cost from O(n²/batch): `OFFSET` re-sorted the whole table
 ///   per batch (5 000 sorts of 500 000 rows for a full catalogue), whereas this seeks straight
 ///   into `series_enrichment_cursor_idx`.
 pub async fn list_series_for_enrichment<'e, E: PgExecutor<'e>>(
@@ -96,7 +96,7 @@ pub struct MetadataEnrichment<'a> {
 
 /// Apply an enrichment batch to a series in one transaction: overwrite description/cover
 /// (priority already applied by the caller) and additively record alternative titles, tags,
-/// and authors. Idempotent â€” re-running converges to the same rows.
+/// and authors. Idempotent — re-running converges to the same rows.
 pub async fn apply_enrichment(
     pool: &sqlx::PgPool,
     series_id: SeriesId,
@@ -177,7 +177,7 @@ pub async fn add_series_titles(
 }
 
 /// A URL-safe, lowercase identity key for a display name (tag or author). Deliberately
-/// distinct from [`normalize_title`] â€” that function drops "noise" words like "scan" or
+/// distinct from [`normalize_title`] — that function drops "noise" words like "scan" or
 /// "comic" which would wrongly mangle a genre or a person's name.
 fn slugify(name: &str) -> String {
     let mut slug = String::with_capacity(name.len());
@@ -194,7 +194,7 @@ fn slugify(name: &str) -> String {
     slug.trim_end_matches('-').to_owned()
 }
 
-/// Add genre/tag names to a series (idempotent, additive-only â€” never removes a tag a
+/// Add genre/tag names to a series (idempotent, additive-only — never removes a tag a
 /// different source contributed). Empty/unslugifiable names are skipped.
 pub async fn add_series_tags(
     conn: &mut sqlx::PgConnection,
@@ -235,7 +235,7 @@ pub async fn add_series_tags(
     Ok(())
 }
 
-/// Add author/artist credits to a series (idempotent, additive-only â€” mirrors
+/// Add author/artist credits to a series (idempotent, additive-only — mirrors
 /// [`add_series_tags`]).
 pub async fn add_series_authors(
     conn: &mut sqlx::PgConnection,

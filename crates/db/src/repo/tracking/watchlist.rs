@@ -150,7 +150,7 @@ pub async fn watchlist_statuses_for_user<'e, E: PgExecutor<'e>>(
 }
 
 /// A watchlist row enriched with the series title + cover and the user's progress, so the
-/// Watchlist board renders each card without an N+1 `series_detail` fetch (frontend Â§9.3).
+/// Watchlist board renders each card without an N+1 `series_detail` fetch (frontend §9.3).
 #[derive(Debug, Clone)]
 pub struct WatchlistCard {
     pub series_id: SeriesId,
@@ -162,7 +162,7 @@ pub struct WatchlistCard {
     pub last_read_number: Option<f64>,
     /// Distinct chapters strictly above the user's progress, across all sources.
     pub unread: i64,
-    /// Whether this series is opted out of external sync (design v2 Â§A.5).
+    /// Whether this series is opted out of external sync (design v2 §A.5).
     pub sync_excluded: bool,
 }
 

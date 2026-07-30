@@ -1,4 +1,4 @@
-﻿//! Sync engine: OAuth linking plus provider â‡† local pull/push, a targeted single-series push,
+//! Sync engine: OAuth linking plus provider ⇆ local pull/push, a targeted single-series push,
 //! metadata enrichment, and the multi-provider registry (design: generalized multi-provider
 //! sync).
 //!
@@ -6,7 +6,7 @@
 //! [`tokens::TokenVault`]. Series are mapped to canonical works by reusing `tankovault_matcher`
 //! over trigram candidates, then cached in `sync_mappings` so later syncs skip re-matching.
 //! Reconciling progress across the two sides is delegated to the pure [`crate::mapping`] logic.
-//! Status crosses the provider boundary as `WatchStatus` â€” provider-specific vocabularies (e.g.
+//! Status crosses the provider boundary as `WatchStatus` — provider-specific vocabularies (e.g.
 //! `AniListStatus`) never leave their own provider module.
 //!
 //! # Layout (ARCH-6)
@@ -21,11 +21,11 @@
 //! | [`tokens`] | the encryption key; sealing, opening and refreshing OAuth tokens |
 //! | [`accounts`] | linking, unlinking, the status card, settings and the effective policy |
 //! | [`conflicts`] | the conflict/history read models and manual resolution |
-//! | [`resolve`] | series â‡† external-id matching in both directions |
+//! | [`resolve`] | series ⇆ external-id matching in both directions |
 //! | [`reconcile`] | the account-wide three-way merge (I/O half) |
 //! | [`push`] | the targeted single-series push |
 //! | [`enrich`] | the tokenless public-metadata sweep |
-//! | [`plan`] | the three-way merge rules themselves â€” pure, no I/O, unit-tested |
+//! | [`plan`] | the three-way merge rules themselves — pure, no I/O, unit-tested |
 //!
 //! The key seam is `plan` vs `reconcile`: the merge *decisions* are now a pure function over
 //! values, so they are testable without a pool and a provider behind them.
@@ -66,7 +66,7 @@ use registry::ProviderRegistry;
 use resolve::SeriesResolver;
 use tokens::TokenVault;
 
-/// The stateful sync engine, shared behind an `Arc` in service state. A faÃ§ade over the
+/// The stateful sync engine, shared behind an `Arc` in service state. A façade over the
 /// collaborators listed in the module docs; it delegates and holds no logic itself.
 pub(crate) struct SyncEngine {
     registry: Arc<ProviderRegistry>,

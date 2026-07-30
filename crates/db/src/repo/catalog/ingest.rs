@@ -1,4 +1,4 @@
-﻿//! Composite ingest (worker `series` task): one transaction, idempotent, returning the
+//! Composite ingest (worker `series` task): one transaction, idempotent, returning the
 //! genuinely new chapters for the `chapter.discovered` fan-out.
 
 use super::chapters::{ChapterUpsert, upsert_chapters};
@@ -64,7 +64,7 @@ pub async fn ingest_series(
     .await?;
 
     // One statement, not one per chapter. A series with two thousand chapters used to mean
-    // two thousand sequential round trips inside this transaction â€” which also holds row
+    // two thousand sequential round trips inside this transaction — which also holds row
     // locks on the shared `tags`/`authors` rows, so a single slow series stalled every other
     // provider's ingest behind it.
     let mut new_chapters = upsert_chapters(&mut *tx, source_id, &scanned.chapters).await?;

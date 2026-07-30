@@ -1,5 +1,5 @@
 //! Read progress: the whole-chapter frontier per series, the mark-read/unread transitions
-//! that move it, and the per-series exclusion from external sync (design v2 Â§A.5).
+//! that move it, and the per-series exclusion from external sync (design v2 §A.5).
 
 use std::collections::{HashMap, HashSet};
 
@@ -9,7 +9,7 @@ use tankovault_domain::{SeriesId, UserId};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-/// A user's two independent read frontiers for a series (design v2 Â§A.1): the highest whole
+/// A user's two independent read frontiers for a series (design v2 §A.1): the highest whole
 /// chapter read, plus an optional part-release frontier ahead of it.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ReadProgress {
@@ -20,10 +20,10 @@ pub struct ReadProgress {
 }
 
 impl ReadProgress {
-    /// Whether chapter `number` counts as read (design v2 Â§A.3).
+    /// Whether chapter `number` counts as read (design v2 §A.3).
     ///
-    /// A part release (`152.5`) belongs *to* the whole chapter it floors to â€” sources ship
-    /// parts ahead of the compiled chapter, they are not chapters that follow it â€” so reading
+    /// A part release (`152.5`) belongs *to* the whole chapter it floors to — sources ship
+    /// parts ahead of the compiled chapter, they are not chapters that follow it — so reading
     /// whole chapter `152` covers every `152.x`. Only ahead of the whole frontier does the
     /// part frontier decide. Callers that hold a whole frontier but no part frontier must not
     /// hand-roll `number <= whole`: that silently reports every part release as unread while
@@ -45,7 +45,7 @@ fn is_whole(number: f64) -> bool {
 }
 
 /// Set a user's whole-chapter frontier for a series outright, clearing any now-stale part
-/// frontier (design v2 Â§A.3 / Â§B.5). Used by the renamed `PUT /v1/me/progress/:series_id`
+/// frontier (design v2 §A.3 / §B.5). Used by the renamed `PUT /v1/me/progress/:series_id`
 /// endpoint (which keeps its "set progress to N" semantics) and by external-sync pulls that
 /// adopt a remote integer progress.
 pub async fn progress_set<'e, E: PgExecutor<'e>>(
@@ -74,7 +74,7 @@ pub async fn progress_set<'e, E: PgExecutor<'e>>(
 }
 
 /// Low-level write of both frontiers at once. Callers are responsible for upholding the
-/// Â§A.1 invariant (`last_read_part_number IS NULL OR floor(part) >= whole`).
+/// §A.1 invariant (`last_read_part_number IS NULL OR floor(part) >= whole`).
 async fn progress_write<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -99,7 +99,7 @@ async fn progress_write<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Get both of a user's read frontiers for a series, if tracked (design v2 Â§A.6
+/// Get both of a user's read frontiers for a series, if tracked (design v2 §A.6
 /// `GET /v1/me/progress/:series_id`).
 pub async fn progress_get_full<'e, E: PgExecutor<'e>>(
     exec: E,
@@ -128,7 +128,7 @@ pub async fn progress_get_full<'e, E: PgExecutor<'e>>(
 }
 
 /// Get a user's whole-chapter frontier together with when it last changed, if tracked. Used
-/// by external sync to reconcile progress under a `NewestWins` conflict policy (design Â§B.3).
+/// by external sync to reconcile progress under a `NewestWins` conflict policy (design §B.3).
 pub async fn progress_state<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -151,7 +151,7 @@ pub async fn progress_state<'e, E: PgExecutor<'e>>(
     Ok(row.map(|r| (r.last, r.updated_at)))
 }
 
-/// Apply the Â§A.3 "mark chapter read" rule for a single chapter `number`, advancing whichever
+/// Apply the §A.3 "mark chapter read" rule for a single chapter `number`, advancing whichever
 /// frontier is appropriate and never letting a part release corrupt whole-chapter progress.
 pub async fn progress_mark_read(
     pool: &sqlx::PgPool,
@@ -181,7 +181,7 @@ pub async fn progress_mark_read(
     progress_write(pool, user_id, series_id, whole, part).await
 }
 
-/// Apply the Â§A.3 "mark chapter unread" rule for a single chapter `number`, retreating the
+/// Apply the §A.3 "mark chapter unread" rule for a single chapter `number`, retreating the
 /// relevant frontier to just before it. Retreating the whole frontier also clears any part
 /// frontier (everything after `number` is un-read).
 pub async fn progress_mark_unread(
@@ -217,7 +217,7 @@ pub async fn progress_mark_unread(
 }
 
 /// The highest whole chapter that exists for this series strictly below `number`, or `0.0`
-/// when there is none â€” the retreat target for un-reading a whole chapter (Â§A.3).
+/// when there is none — the retreat target for un-reading a whole chapter (§A.3).
 async fn prev_whole_below(pool: &sqlx::PgPool, series_id: SeriesId, number: f64) -> DbResult<f64> {
     // The bound is cast to `numeric` rather than the column's `floor()` being cast to
     // `float8`. Written the other way round, Postgres compares `(floor(number))::float8`,
@@ -236,7 +236,7 @@ async fn prev_whole_below(pool: &sqlx::PgPool, series_id: SeriesId, number: f64)
 }
 
 /// The highest part release that exists for this series strictly below `number` and still
-/// ahead of the whole frontier `whole` â€” the retreat target for un-reading a part (Â§A.3).
+/// ahead of the whole frontier `whole` — the retreat target for un-reading a part (§A.3).
 async fn prev_part_below(
     pool: &sqlx::PgPool,
     series_id: SeriesId,
@@ -276,7 +276,7 @@ pub async fn set_sync_excluded<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Upsert a per-provider override of the blanket exclusion flag (design v2 Â§A.5): a specific
+/// Upsert a per-provider override of the blanket exclusion flag (design v2 §A.5): a specific
 /// provider's inclusion/exclusion, taking precedence over `watchlist_entries.sync_excluded`.
 pub async fn set_sync_override<'e, E: PgExecutor<'e>>(
     exec: E,
@@ -299,7 +299,7 @@ pub async fn set_sync_override<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// The single choke point every sync path calls before touching a series (design v2 Â§A.5).
+/// The single choke point every sync path calls before touching a series (design v2 §A.5).
 /// Precedence: a per-provider override wins outright; otherwise the blanket `sync_excluded`
 /// flag; otherwise included. A series not on the watchlist at all is treated as included
 /// (there is nothing to exclude yet).
@@ -332,7 +332,7 @@ pub async fn is_sync_excluded<'e, E: PgExecutor<'e>>(
 /// reproduced exactly: a per-provider override wins outright, otherwise the blanket
 /// `watchlist_entries.sync_excluded` flag, otherwise included.
 ///
-/// A series absent from the returned set is included â€” which is also the answer for a series
+/// A series absent from the returned set is included — which is also the answer for a series
 /// not on the watchlist at all, matching [`is_sync_excluded`]'s `COALESCE(..., false)` tail.
 pub async fn sync_excluded_series<'e, E: PgExecutor<'e>>(
     exec: E,
@@ -424,7 +424,7 @@ mod tests {
     #[test]
     fn parts_of_an_already_read_whole_chapter_are_read() {
         // Parts are fragments shipped ahead of the compiled chapter, so reading whole 152
-        // covers every 152.x â€” the same reason `progress_mark_read` treats marking one a
+        // covers every 152.x — the same reason `progress_mark_read` treats marking one a
         // no-op. Disagreeing here would leave that no-op behind a live "mark read" button.
         let p = progress(152.0, None);
         assert!(p.covers(152.1));

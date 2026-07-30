@@ -1,5 +1,5 @@
 //! The user-facing sync history: a transparency log of what the automatic engine did
-//! (design v2 Â§B.2).
+//! (design v2 §B.2).
 
 use crate::error::DbResult;
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,7 @@ use tankovault_domain::{SeriesId, UserId};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-/// Append one row to the user-facing sync history (design v2 Â§B.2): a transparency log of what
+/// Append one row to the user-facing sync history (design v2 §B.2): a transparency log of what
 /// the automatic engine actually did.
 pub async fn append_history<'e, E: PgExecutor<'e>>(
     exec: E,
@@ -33,7 +33,7 @@ pub async fn append_history<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// One row of the user-facing sync history (design v2 Â§B.6 `GET /v1/me/sync/history`).
+/// One row of the user-facing sync history (design v2 §B.6 `GET /v1/me/sync/history`).
 ///
 /// Schema'd and `Deserialize` for the same reason as [`ConflictRow`]: `services/api`
 /// re-publishes it, so the generated client needs it in the `OpenAPI` document.

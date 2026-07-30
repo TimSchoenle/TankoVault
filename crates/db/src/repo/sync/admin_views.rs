@@ -1,7 +1,7 @@
 //! Read models for the admin Sync console.
 //!
 //! Consumed only by `services/api/src/admin/sync.rs`; everything else in this module tree is
-//! read by `services/sync`. Keeping the two apart is the point of ARCH-5b â€” two services with
+//! read by `services/sync`. Keeping the two apart is the point of ARCH-5b — two services with
 //! disjoint needs used to compile the same 1,007-line module.
 
 use crate::error::DbResult;
@@ -12,7 +12,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// One row of the admin Sync console's "Linked accounts" table. The automatic-sync policy
-/// columns and pending-conflict count (design v2 Â§B.7) are read-only operator visibility â€”
+/// columns and pending-conflict count (design v2 §B.7) are read-only operator visibility —
 /// they are user settings, never operator-overridable.
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct AdminAccountRow {
@@ -64,7 +64,7 @@ pub struct AdminMappingRow {
     pub updated_at: OffsetDateTime,
 }
 
-/// All seriesâ†”external mappings across every provider, most recently updated first.
+/// All series↔external mappings across every provider, most recently updated first.
 pub async fn admin_list_mappings<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
@@ -104,7 +104,7 @@ pub async fn admin_list_mappings_for_series<'e, E: PgExecutor<'e>>(
     Ok(rows)
 }
 
-/// One row of the admin Sync console's "Assign queue" â€” a canonical series that has **no**
+/// One row of the admin Sync console's "Assign queue" — a canonical series that has **no**
 /// external mapping for the given provider yet, so an operator can review and assign one.
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct UnmappedSeriesRow {
@@ -115,7 +115,7 @@ pub struct UnmappedSeriesRow {
 }
 
 /// Series lacking a mapping for `provider`, richest (most sources) first so the operator
-/// works the most-connected â€” and therefore highest-value â€” entries at the top of the
+/// works the most-connected — and therefore highest-value — entries at the top of the
 /// assign queue. An optional case-insensitive title `query` narrows the list.
 pub async fn admin_list_unmapped<'e, E: PgExecutor<'e>>(
     exec: E,

@@ -1,4 +1,4 @@
-﻿//! Read models for the browse/discover surfaces: the plain series listing, the filtered and
+//! Read models for the browse/discover surfaces: the plain series listing, the filtered and
 //! sorted one behind `GET /v1/series`, and the per-series title/tag/author reads.
 
 use crate::error::DbResult;
@@ -99,7 +99,7 @@ pub async fn list_series<'e, E: PgExecutor<'e>>(
 }
 
 // ---------------------------------------------------------------------------
-// Read model: filtered/sorted/paginated series listing (GET /v1/series, Â§9.1)
+// Read model: filtered/sorted/paginated series listing (GET /v1/series, §9.1)
 // ---------------------------------------------------------------------------
 
 /// How the Discover grid is ordered.
@@ -119,7 +119,7 @@ pub enum SeriesSort {
     Year,
     /// Accepted, and ordered by recency. There is no rating column yet; the token is in the
     /// design and the frontend's sort control offers it, so refusing it would break a visible
-    /// control for no gain. Ordering by recency is the honest fallback â€” and it is declared
+    /// control for no gain. Ordering by recency is the honest fallback — and it is declared
     /// here rather than hidden in a `_ =>` arm, so adding the column later is a change to one
     /// obvious place.
     Rating,
@@ -166,7 +166,7 @@ impl std::str::FromStr for SeriesSort {
 #[error("unknown sort order: {0:?}")]
 pub struct ParseSeriesSortError(pub String);
 
-/// Server-side filter/sort/paginate criteria for the Discover grid (frontend Â§9.1).
+/// Server-side filter/sort/paginate criteria for the Discover grid (frontend §9.1).
 ///
 /// Every field is optional; `None`/empty means "no constraint". The enum filters bind as
 /// their native Postgres enum types rather than as text: `s.content_type::text = $2` cast the
@@ -212,20 +212,20 @@ struct FilteredRow {
 }
 
 /// Query the browse list with server-side filtering, sorting and offset pagination
-/// (frontend Â§9.1). Returns the page plus the total match count for the pager.
+/// (frontend §9.1). Returns the page plus the total match count for the pager.
 ///
-/// # Why this is two statements â€” not five, and not one
+/// # Why this is two statements — not five, and not one
 ///
 /// It was **five** near-identical `query_as!` blocks differing only in `ORDER BY`, each
 /// repeating the same nine-predicate `WHERE` and eleven binds. Adding a filter meant five
 /// identical edits, and any one of them drifting produced a filter that applied under four
-/// sort orders and not the fifth â€” on a predicate set that includes provider scoping and tag
+/// sort orders and not the fifth — on a predicate set that includes provider scoping and tag
 /// exclusion. The shared text cannot be factored into a constant: `sqlx`'s compile-time
 /// macros need a string *literal* and do not expand `concat!` (checked, not assumed).
 ///
 /// It is not one statement either. Folding all six orders into bound `CASE` expressions does
-/// work â€” Postgres constant-folds the inactive branches under a custom plan and still reaches
-/// `series_title_sort_idx` for `title` â€” but it puts two correlated aggregate subqueries
+/// work — Postgres constant-folds the inactive branches under a custom plan and still reaches
+/// `series_title_sort_idx` for `title` — but it puts two correlated aggregate subqueries
 /// (`chapters`, `sources`) into the sort key of *every* browse request, and under a generic
 /// plan the default order loses `series_updated_idx` and falls back to a parallel seq scan.
 /// The default order is the unauthenticated, highest-traffic route in the product, so it gets
@@ -239,12 +239,12 @@ struct FilteredRow {
 /// # Why the total is a separate query
 ///
 /// The page query used to carry `count(*) OVER()`. A window function with no `PARTITION BY`
-/// is evaluated over the whole result set, so Postgres materialised *every* matching row â€”
-/// including the per-row `source_count` subquery â€” before the `LIMIT` could take 40. On the
+/// is evaluated over the whole result set, so Postgres materialised *every* matching row —
+/// including the per-row `source_count` subquery — before the `LIMIT` could take 40. On the
 /// development catalogue that meant a full sequential scan, a top-N sort and 66 MB spilled to
 /// disk to return 40 rows: 179 ms. Counting separately lets the page query stop at `LIMIT`
 /// and lets the count run as an index-only scan, and the two are issued concurrently so the
-/// pair costs one round trip. Same catalogue, same filters: 179 ms â†’ ~5 ms.
+/// pair costs one round trip. Same catalogue, same filters: 179 ms → ~5 ms.
 ///
 /// Takes `&PgPool` rather than a generic executor precisely so the two can overlap.
 pub async fn list_series_filtered(pool: &PgPool, filter: &SeriesFilter) -> DbResult<SeriesPage> {
@@ -425,7 +425,7 @@ async fn fetch_page_by_sort_token(
 
 /// How many rows match the filter, ignoring `limit`/`offset`.
 ///
-/// The predicate list is [`fetch_filtered_page`]'s and must stay that way â€” a total that
+/// The predicate list is [`fetch_filtered_page`]'s and must stay that way — a total that
 /// disagrees with the page is a pager offering a page that comes back empty.
 async fn count_filtered(
     pool: &PgPool,
@@ -471,7 +471,7 @@ async fn count_filtered(
     Ok(total)
 }
 
-/// Alternative titles of a series (design Â§9.2 enrichment). Empty when none are recorded.
+/// Alternative titles of a series (design §9.2 enrichment). Empty when none are recorded.
 pub async fn list_series_titles<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -514,7 +514,7 @@ pub async fn list_series_authors<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Tags attached to a series, alphabetically (design Â§9.2 enrichment).
+/// Tags attached to a series, alphabetically (design §9.2 enrichment).
 pub async fn list_series_tags<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -543,7 +543,7 @@ pub async fn list_series_tags<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// List all tags/genres, alphabetically (design Â§11 `GET /v1/tags`).
+/// List all tags/genres, alphabetically (design §11 `GET /v1/tags`).
 pub async fn list_tags<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<tankovault_domain::Tag>> {
     #[derive(FromRow)]
     struct Row {
@@ -574,7 +574,7 @@ mod sort_tests {
     /// The bug this pins: `SeriesFilter::sort` was an `Option<String>` matched with a
     /// trailing `_ =>` arm, so `?sort=titel` returned a `200` ordered by recency. It also
     /// pins the token strings themselves, which are bound straight into the `ORDER BY`
-    /// `CASE` expressions â€” renaming one there without renaming it here would silently
+    /// `CASE` expressions — renaming one there without renaming it here would silently
     /// disable that sort order.
     #[test]
     fn every_sort_token_round_trips_and_unknown_is_refused() {

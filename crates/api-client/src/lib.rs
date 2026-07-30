@@ -3957,13 +3957,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "The result of [`register`]. Registration has two outcomes depending on whether email\ndelivery is configured:\n\n- Email enabled: the account is created **unconfirmed**, a confirmation link is emailed,\n  and no session is issued (`verification_required = true`, `access_token` absent). The\n  user must click the link before they can sign in.\n- Email not configured (dev/self-host without SMTP): confirmation cannot be delivered, so\n  the account is activated immediately and a session is issued exactly like [`login`]\n  (`verification_required = false`, `access_token` present)."]
+    #[doc = "The result of [`register`]. Registration has two outcomes depending on whether email\ndelivery is configured:\n\n- Email enabled: the account is created **unconfirmed**, a confirmation link is emailed,\n  and no session is issued (`verification_required = true`, `access_token` absent). The\n  user must click the link before they can sign in.\n- Email not configured (dev/self-host without SMTP): confirmation cannot be delivered, so\n  the account is activated immediately and a session is issued exactly like\n  [`super::login::login`] (`verification_required = false`, `access_token` present)."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"The result of [`register`]. Registration has two outcomes depending on whether email\\ndelivery is configured:\\n\\n- Email enabled: the account is created **unconfirmed**, a confirmation link is emailed,\\n  and no session is issued (`verification_required = true`, `access_token` absent). The\\n  user must click the link before they can sign in.\\n- Email not configured (dev/self-host without SMTP): confirmation cannot be delivered, so\\n  the account is activated immediately and a session is issued exactly like [`login`]\\n  (`verification_required = false`, `access_token` present).\","]
+    #[doc = "  \"description\": \"The result of [`register`]. Registration has two outcomes depending on whether email\\ndelivery is configured:\\n\\n- Email enabled: the account is created **unconfirmed**, a confirmation link is emailed,\\n  and no session is issued (`verification_required = true`, `access_token` absent). The\\n  user must click the link before they can sign in.\\n- Email not configured (dev/self-host without SMTP): confirmation cannot be delivered, so\\n  the account is activated immediately and a session is issued exactly like\\n  [`super::login::login`] (`verification_required = false`, `access_token` present).\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"verification_required\""]

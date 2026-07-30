@@ -1,4 +1,4 @@
-﻿//! Provider sources: the per-provider rows attached to a canonical series, their scan
+//! Provider sources: the per-provider rows attached to a canonical series, their scan
 //! bookkeeping, and the stub registration a catalogue crawl performs before any deep scan.
 
 use super::series::{SeriesUpsert, resolve_canonical_series};
@@ -70,7 +70,7 @@ pub async fn upsert_source<'e, E: PgExecutor<'e>>(
 /// Ensure a series **source** row exists for a catalogue entry, creating a canonical
 /// series from the listing title when the source is new.
 ///
-/// This is the breadth-first "collect all series first" step of a full scan (design Â§12):
+/// This is the breadth-first "collect all series first" step of a full scan (design §12):
 /// the catalogue walk registers every series immediately from its listing title + path, so
 /// the complete series list materialises before any per-series chapter fetch runs. It is a
 /// **no-op when the source already exists**, so it never downgrades metadata that a later
@@ -89,7 +89,7 @@ pub async fn register_source_stub(
 ) -> DbResult<()> {
     let mut tx = pool.begin().await?;
 
-    // Already registered (this or an earlier scan) â€” leave the enriched row untouched.
+    // Already registered (this or an earlier scan) — leave the enriched row untouched.
     let existing = sqlx::query_scalar!(
         "SELECT id FROM series_sources WHERE provider_id = $1 AND source_path = $2",
         provider_id.as_uuid(),
@@ -111,7 +111,7 @@ pub async fn register_source_stub(
 /// Canonicalise a catalogue listing title into a series id, creating one if nothing matches.
 ///
 /// Shared by the single-entry and batched stub registration so both run *identical*
-/// canonicalisation â€” the listing title carries no description, cover, type, status or year, and
+/// canonicalisation — the listing title carries no description, cover, type, status or year, and
 /// deliberately so: a later `Series` task enriches the row from the fuller series page, and a
 /// stub must never overwrite that with blanks.
 async fn resolve_stub_series(
@@ -175,10 +175,10 @@ const STUB_CHUNK: usize = 500;
 
 /// Register one chunk of genuinely-new entries in a single transaction.
 ///
-/// Canonicalisation genuinely cannot be batched â€” each entry resolves against the series its
-/// predecessors created, and that is visible inside the transaction â€” but the `upsert_source`
+/// Canonicalisation genuinely cannot be batched — each entry resolves against the series its
+/// predecessors created, and that is visible inside the transaction — but the `upsert_source`
 /// tail can, so a chunk costs `begin + N canonicalisations + 1 insert + commit` instead of
-/// `N Ã— (begin + check + canonicalisation + insert + commit)`.
+/// `N × (begin + check + canonicalisation + insert + commit)`.
 async fn register_chunk(
     pool: &sqlx::PgPool,
     provider_id: ProviderId,
@@ -199,8 +199,8 @@ async fn register_chunk(
 /// Register a whole catalogue page's worth of entries, skipping those already known.
 ///
 /// Same semantics as calling [`register_source_stub`] per entry, but set-based where it can be:
-/// the "is this source already registered?" check â€” the *only* work needed for the overwhelming
-/// majority of entries on a re-scan â€” is answered for the entire batch in one query, and the
+/// the "is this source already registered?" check — the *only* work needed for the overwhelming
+/// majority of entries on a re-scan — is answered for the entire batch in one query, and the
 /// genuinely-new remainder is registered [`STUB_CHUNK`] entries per transaction.
 ///
 /// # Why the chunking matters (PERF-15)
@@ -208,18 +208,18 @@ async fn register_chunk(
 /// A re-scan was already cheap; a **first** scan is all-new, and one transaction per entry meant
 /// 20 000 fresh entries on a sitemap page cost 20 000 transactions of ~5 round trips each. That
 /// is what blows the `JetStream` ack deadline the worker's queue module warns about, causing
-/// redelivery and duplicated work â€” a self-amplifying slowdown on exactly the scans that matter
+/// redelivery and duplicated work — a self-amplifying slowdown on exactly the scans that matter
 /// most.
 ///
 /// The per-entry existence check inside the transaction is *not* repeated here: the caller-side
 /// batch check already filtered. A source registered by a concurrent scan in the window between
-/// the two is harmless â€” `upsert_sources` is `ON CONFLICT DO UPDATE` on `(provider_id,
+/// the two is harmless — `upsert_sources` is `ON CONFLICT DO UPDATE` on `(provider_id,
 /// source_path)`, and canonicalisation re-attaches to the series that already matches the title
 /// rather than creating a second one.
 ///
 /// Returns the number of sources newly registered. A chunk that fails is retried entry by entry
 /// so one bad entry costs only itself: losing one series must not lose the rest, and the
-/// enrichment task is enqueued regardless (design Â§12).
+/// enrichment task is enqueued regardless (design §12).
 pub async fn register_source_stubs(
     pool: &sqlx::PgPool,
     provider_id: ProviderId,
@@ -306,7 +306,7 @@ pub async fn source_content_hash<'e, E: PgExecutor<'e>>(
     Ok(hash.flatten())
 }
 
-/// List the sources of a canonical series (for the "Read on: A Â· B Â· C" strip).
+/// List the sources of a canonical series (for the "Read on: A · B · C" strip).
 pub async fn list_sources_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -322,7 +322,7 @@ pub async fn list_sources_for_series<'e, E: PgExecutor<'e>>(
     .await?;
     rows.into_iter().map(SeriesSource::try_from).collect()
 }
-/// The `(provider_id, base_url)` a source belongs to â€” the minimal input the API needs
+/// The `(provider_id, base_url)` a source belongs to — the minimal input the API needs
 /// to resolve a source's relative paths into absolute links at read time.
 pub async fn source_provider_base_url<'e, E: PgExecutor<'e>>(
     exec: E,

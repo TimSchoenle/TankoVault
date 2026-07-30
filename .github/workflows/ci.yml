@@ -360,6 +360,47 @@ jobs:
       - name: compare against the committed floor
         run: cargo run -p xtask -- coverage-ratchet
 
+  # The other half of TESTING F-10, and the half coverage cannot answer. Coverage says a line
+  # executed; it never says anything checked what the line did — and the audit's specific worry
+  # is tests that assert on constants rather than on behaviour. `cargo mutants` rewrites one
+  # function body at a time and re-runs the tests; a mutant the suite still passes is a change
+  # in behaviour nothing asserted on.
+  #
+  # Scoped to the four pure decision cores by `.cargo/mutants.toml`, which argues the choice.
+  # Everything else in the workspace is I/O-shaped, where a mutant is caught (if at all) by an
+  # integration test needing Docker and ~85 s of migrations — hours of wall time reporting
+  # mostly "timeout" rather than "survived".
+  #
+  # `continue-on-error`, for the reasons `fuzz/README.md` argues at length: an outcome that
+  # depends on how long the run got is not a property a blocking gate should have. The report is
+  # an artifact to read, and survivors are triaged as missing assertions. `--in-place` is
+  # deliberate on a throwaway runner — copying the tree per job costs more than it protects.
+  mutants:
+    name: mutation testing (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-mutants
+      - name: BoringSSL build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+      - name: cargo mutants
+        run: cargo mutants --in-place --no-shuffle
+      # Uploaded whether or not survivors were found: `outcomes.json` is the input to the next
+      # triage, and `missed.txt` is the list to read first.
+      - name: mutants report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-report
+          path: mutants.out/
+          retention-days: 14
+
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest

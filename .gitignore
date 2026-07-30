@@ -9,6 +9,12 @@ target/
 # Backup files emitted by `rustfmt`.
 **/*.rs.bk
 
+# `cargo mutants` writes its report here (`missed.txt`, `outcomes.json`, per-mutant logs). It is
+# machine output and a new one is produced by every run; CI uploads it as an artifact instead.
+# The *configuration* — `.cargo/mutants.toml` — is committed, because the scope is a decision.
+mutants.out/
+mutants.out.old/
+
 # MSVC debug symbols.
 *.pdb
 

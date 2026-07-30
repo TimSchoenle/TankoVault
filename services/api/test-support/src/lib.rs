@@ -11,6 +11,18 @@
 //! `crates/test-support` means the repository-layer suites (`cargo test -p tankovault-db`) no
 //! longer compile the API service and its transitive stack to run SQL tests, and the lowest
 //! layer of the workspace no longer has a dev-time dependency on the highest (ARCH-17).
+//!
+//! # On `# Panics`
+//!
+//! This crate is exempt from `clippy::missing_panics_doc`, declared as an `expect` at the crate
+//! root so the compiler withdraws the exemption if the last panicking helper ever goes away. A
+//! harness helper panics *by design*: a failure here is a failed test, which is the outcome the
+//! caller wants, and `Result` would only move the `unwrap` into every test in the workspace.
+//! Documenting each site would restate that contract once per function.
+#![expect(
+    clippy::missing_panics_doc,
+    reason = "a test-harness helper's failure mode is a panicking test, which is its contract"
+)]
 
 use std::sync::Arc;
 

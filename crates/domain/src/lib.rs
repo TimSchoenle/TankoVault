@@ -47,4 +47,4 @@ pub use pacing::{Pacer, PacingPolicy};
 pub use permissions::{
     ParsePermissionError, Permission, PermissionGroup, PermissionPreset, PermissionSet,
 };
-pub use politeness::{BrowserEmulation, Politeness};
+pub use politeness::{BrowserEmulation, MIN_RPS, Politeness};

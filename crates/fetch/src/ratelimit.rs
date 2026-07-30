@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tankovault_domain::Pacer;
+use tankovault_domain::{MIN_RPS, Pacer};
 use tokio::sync::Semaphore;
 
 /// Statuses that mean the configured budget is above what the provider will serve.
@@ -54,6 +54,13 @@ impl<F> RateLimitedFetcher<F> {
     /// with a `crawl_delay_ms` floor between requests, adapting to `throttle` when the
     /// provider pushes back. Inputs are assumed pre-clamped to policy ceilings by
     /// [`tankovault_domain::Politeness::clamped`].
+    ///
+    /// # Panics
+    /// Never, for any `f64` — including `0.0`, a negative and a `NaN`. The floor below is what
+    /// makes that true, and it deliberately repeats [`tankovault_domain::Politeness::clamped`]
+    /// rather than trusting it: the consequence of an out-of-range rate here is not a wrong
+    /// crawl rate but a **panic** inside `Duration::from_secs_f64`, and a guard one crate away
+    /// is the wrong distance from a panic.
     #[must_use]
     pub fn new(
         inner: F,
@@ -62,7 +69,8 @@ impl<F> RateLimitedFetcher<F> {
         crawl_delay_ms: u64,
         throttle: ThrottlePolicy,
     ) -> Self {
-        let period = Duration::from_secs_f64(1.0 / rps.max(f64::MIN_POSITIVE));
+        // `f64::max` returns the non-`NaN` operand, so this floors a `NaN` too.
+        let period = Duration::from_secs_f64(1.0 / rps.max(MIN_RPS));
         let quota = Quota::with_period(period).expect("rps > 0 yields a positive period");
         Self {
             inner,

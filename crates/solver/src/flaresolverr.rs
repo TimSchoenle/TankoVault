@@ -24,6 +24,12 @@ pub struct FlareSolverrSolver {
 impl FlareSolverrSolver {
     /// Construct a solver against `endpoint` with the given per-solve budget and the TTL
     /// solved sessions are cached for.
+    ///
+    /// # Panics
+    /// If the HTTP client cannot be built. That needs the bundled TLS backend to fail to
+    /// initialise, which is a broken binary rather than a runtime condition — so it is a panic
+    /// at construction, where the process has not started serving, rather than a `Result` every
+    /// caller would `unwrap`.
     #[must_use]
     pub fn new(endpoint: impl Into<String>, max_timeout_ms: u64, session_ttl_secs: u64) -> Self {
         // A generous client timeout above FlareSolverr's own budget, so its timeout wins

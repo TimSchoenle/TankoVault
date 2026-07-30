@@ -1,0 +1,67 @@
+# cargo-mutants — do the tests over the decision cores assert on behaviour, or on constants?
+#
+# `cargo mutants` (installed with `cargo install cargo-mutants --locked`) rewrites one function
+# body at a time and re-runs the tests. A mutant the suite still passes is a *survivor*: a change
+# in behaviour nothing asserted on. That is precisely the audit's F-10 worry — coverage says a
+# line executed, never that anything checked what it did.
+#
+# # Why only four files
+#
+# Mutation testing costs one test run per mutant, so it is worth its wall time exactly where the
+# code is a pure decision and the tests are fast:
+#
+#   * `crates/matcher`            — the similarity score and the attach/ambiguous/reject bands.
+#   * `crates/service/src/flags.rs` — feature-gate resolution: which rule matches a path.
+#   * `services/sync/src/mapping.rs`      — the three-way merge and the unit conversions.
+#   * `services/sync/src/engine/plan.rs`  — what one series' reconciliation decides.
+#
+# Everything else in the workspace is I/O-shaped: a mutant in a repository function is caught (if
+# at all) by an integration test that needs Docker and ~85 s of migrations, which turns one run
+# into hours and reports mostly "timeout", not "survived". Widening this list is a decision about
+# wall time, not about rigour — make it deliberately.
+#
+# # Why `test_workspace = false`
+#
+# The default re-runs the whole workspace suite per mutant. Each of these files is covered by its
+# own crate's tests, so testing only the mutated package is the same signal at a fraction of the
+# cost. If a mutant here were only caught by *another* crate's tests, that would itself be worth
+# knowing — the file's own tests would be the ones not asserting.
+#
+# # Not a gate
+#
+# The CI job is `continue-on-error: true` and time-boxed, for the reasons `fuzz/README.md` argues
+# at length: an outcome that depends on how long the run got is not a property a blocking gate
+# should have. Survivors are triaged as missing assertions, not as build failures.
+
+examine_globs = [
+    "crates/matcher/src/**/*.rs",
+    "crates/service/src/flags.rs",
+    "services/sync/src/mapping.rs",
+    "services/sync/src/engine/plan.rs",
+]
+
+test_workspace = false
+
+# Mutants no test in this repository can kill, each with the reason. Kept short on purpose: an
+# exclusion is a claim that the survivor carries no information, and a long list means the scope
+# above is wrong rather than that the code is untestable.
+exclude_re = [
+    # Reads `feature_flags` over a live pool. Killing these needs Postgres, which is what the
+    # scope above deliberately excludes; `crates/db`'s integration suite covers the query.
+    "PostgresFlagSource",
+    # `DefaultsOnly::overrides` returns `Ok(Vec::new())`, and this mutant *is* that —
+    # cargo-mutants does not notice when a generated replacement is the original body. The four
+    # other replacements of the same function are real, and `defaults_only_contributes_no_overrides`
+    # kills them.
+    "DefaultsOnly>::overrides -> .* with Ok\\(vec!\\[\\]\\)",
+    # `changed` decides only whether an `info!` line is emitted; either value leaves the snapshot
+    # and every subsequent request identical. Killing it means asserting on log output, which
+    # costs a subscriber in the test harness and buys no protection.
+    "replace != with == in FeatureGate::refresh",
+]
+
+# A mutant that loops forever has to be distinguishable from one that is merely slow. The
+# baseline run measures how long the real suite takes; this multiplies it. The floor matters more
+# than the multiplier on a cold cache, where a package's first build dominates its test time.
+timeout_multiplier = 5.0
+minimum_test_timeout = 60

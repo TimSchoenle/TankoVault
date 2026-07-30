@@ -19,6 +19,18 @@
 //! can use it without compiling a service (ARCH-17). The in-process router harness that does
 //! need the API lives in `services/api/test-support` as `tankovault-api-test-support`.
 //!
+//! # On `# Panics`
+//!
+//! This crate is exempt from `clippy::missing_panics_doc`, declared as an `expect` at the crate
+//! root so the compiler withdraws the exemption if the last panicking helper ever goes away. A
+//! harness helper panics *by design*: a failure here is a failed test, which is the outcome the
+//! caller wants, and `Result` would only move the `unwrap` into every test in the workspace.
+//! Documenting each site would restate that contract once per function.
+#![expect(
+    clippy::missing_panics_doc,
+    reason = "a test-harness helper's failure mode is a panicking test, which is its contract"
+)]
+//!
 //! # Not on the fast path
 //!
 //! This crate is a dev-dependency only; the DB-backed suites that use it are feature-gated

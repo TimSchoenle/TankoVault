@@ -80,16 +80,25 @@ allow_attributes_without_reason = "warn"
 # would report the same 30-odd duplicates with no way to record why any of them is acceptable,
 # so the two would immediately disagree. One owner per policy.
 multiple_crate_versions = "allow"
-# Both stay allowed, and the audit's suggestion to drop them (OPS-2.2 item 4) was measured
-# rather than taken on faith. Its premise — that the codebase already writes `# Errors` and
-# `# Panics` by hand, so the allow is weaker than the practice — holds for `crates/service`
-# and the services, and does not hold for `crates/db`: enabling `missing_errors_doc` produces
-# **166** warnings there alone, one per public `Result`-returning repository function. Removing
-# these is a real documentation backlog with a real payoff, not a config change; do it crate by
-# crate with a `#![warn(...)]` at each module root, and delete the corresponding line here only
-# when the last one is clean.
+# `missing_panics_doc` is **on** (OPS-2.2). The audit's premise — that the codebase already
+# writes these by hand, so the allow was weaker than the practice — held: the whole workspace
+# had three undocumented panicking functions, all `.expect(…)` at construction. Writing the
+# third section found a live panic (`Politeness::clamped` mapped `rps: 0` to `f64::MIN_POSITIVE`,
+# whose reciprocal `Duration::from_secs_f64` cannot represent), which is the argument for the
+# lint in one example. The two `*-test-support` crates carry a crate-level `#![expect(…)]` with
+# their reasoning: a harness helper panics by design, and `expect` means the compiler withdraws
+# the exemption if that ever stops being true.
+#
+# `missing_errors_doc` stays allowed, and the reason is now measured rather than assumed. It is
+# **172** warnings and every single one is in `crates/db` — every other member is already clean,
+# so this line exists for one crate. It is not a formatting backlog: `DbError` carries `NotFound`
+# and `Conflict` alongside the driver error, the API maps those to 404 and 409 (ARCH-4/ARCH-11),
+# and the only `# Errors` section worth writing says *which variants this function can produce*.
+# 172 copies of "returns an error if the query fails" would satisfy the lint while documenting
+# the wrong thing, permanently. Do it module by module against the function bodies, and delete
+# this line when `crates/db` is clean.
 missing_errors_doc = "allow"
-missing_panics_doc = "allow"
+missing_panics_doc = "warn"
 must_use_candidate = "allow"
 
 [workspace.dependencies]

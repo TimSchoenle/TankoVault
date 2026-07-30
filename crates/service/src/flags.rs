@@ -634,4 +634,133 @@ mod tests {
         gate.refresh().await;
         assert!(!gate.is_enabled(Feature::TrackingStats));
     }
+
+    // --- what this crate had left to another crate's tests (TESTING F-10) -----------------
+    //
+    // `cargo mutants` reported the middleware itself, both `RouteFeatures` accessors and
+    // `DefaultsOnly` as survivors: nothing in `tankovault-service` asserted on any of them.
+    // They *were* covered — by `services/api/tests/feature_gating.rs` — but that suite proves
+    // the layer is **mounted on the API's router**, which is a different claim from "the layer
+    // does what this module documents". The gap showed up the moment mutation testing ran the
+    // crate's own tests against the crate's own code.
+
+    /// The source used by every service without a database handle must contribute nothing, so
+    /// those deployments sit at the compiled defaults.
+    ///
+    /// Trivial, and the reason it is worth writing is what the alternative looks like: a
+    /// `DefaultsOnly` that returned one override would silently move the whole fleet off its
+    /// defaults, and no test anywhere would have noticed.
+    #[tokio::test]
+    async fn defaults_only_contributes_no_overrides() {
+        assert_eq!(DefaultsOnly.overrides().await, Ok(Vec::new()));
+    }
+
+    /// `spawn_refresh` **awaits** the first load before returning.
+    ///
+    /// The module docs give the reason — otherwise the first requests after a deploy are served
+    /// against the compiled defaults, briefly re-enabling whatever an operator had switched off
+    /// — and it is the kind of ordering that is invisible in review and in production until the
+    /// window happens to matter. The shutdown token is cancelled up front so only the initial
+    /// load can have run by the time the assertion executes.
+    #[tokio::test]
+    async fn spawn_refresh_loads_once_before_it_returns() {
+        let gate = FeatureGate::new(Arc::new(Fixed(vec![("tracking.stats".to_owned(), false)])));
+        let shutdown = CancellationToken::new();
+        shutdown.cancel();
+        gate.spawn_refresh(std::time::Duration::from_secs(3600), shutdown)
+            .await;
+        assert!(!gate.is_enabled(Feature::TrackingStats));
+    }
+
+    /// The two drift accessors answer opposite questions and both must report the real table.
+    ///
+    /// `declared_features` is "is this feature gating anything?"; `rules` is "does this rule
+    /// still match anything?". Each is consumed by a start-up assertion in another crate, so an
+    /// accessor that quietly returned nothing would make *those* assertions vacuous — the
+    /// failure mode F-01b already produced once, where a property passed because its generator
+    /// could not reach the case.
+    #[test]
+    fn the_drift_accessors_report_the_whole_table() {
+        let routes = RouteFeatures::new()
+            .gate("/v1/me/watchlist", Feature::TrackingWatchlist)
+            .gate_writes("/v1/admin/scans", Feature::ScanningManual)
+            .gate_path("/v1/me", Feature::PrivacySelfErasure);
+
+        assert_eq!(
+            routes.declared_features(),
+            HashSet::from([
+                Feature::TrackingWatchlist,
+                Feature::ScanningManual,
+                Feature::PrivacySelfErasure,
+            ])
+        );
+
+        let mut pairs: Vec<_> = routes.rules().collect();
+        pairs.sort_unstable();
+        assert_eq!(
+            pairs,
+            [
+                ("/v1/admin/scans", Feature::ScanningManual),
+                ("/v1/me", Feature::PrivacySelfErasure),
+                ("/v1/me/watchlist", Feature::TrackingWatchlist),
+            ]
+        );
+    }
+
+    /// The middleware's own contract, asserted in the crate that defines it: a gated route
+    /// whose feature is off answers `404` with the RFC 9457 body naming the feature, an enabled
+    /// one reaches the handler, and an ungated one is never consulted.
+    ///
+    /// The `404`-not-`403` choice is the load-bearing part and is argued at [`enforce`]: `403`
+    /// would tell the caller they lack permission, which is false, and sends a user to an
+    /// administrator who cannot help them. The `feature` member is what turns "why is this
+    /// 404ing" into an answer read off the response.
+    #[tokio::test]
+    async fn a_disabled_route_answers_404_naming_the_feature() {
+        use axum::Router;
+        use axum::body::Body;
+        use axum::routing::get;
+        use tower::ServiceExt as _;
+
+        async fn get_path(app: &Router, path: &str) -> Response {
+            app.clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(path)
+                        .body(Body::empty())
+                        .expect("a well-formed request"),
+                )
+                .await
+                .expect("the router is infallible")
+        }
+
+        let layer = FeatureLayer::new(
+            FeatureGate::with_disabled(&[Feature::TrackingStats]),
+            RouteFeatures::new()
+                .gate("/v1/me/stats", Feature::TrackingStats)
+                .gate("/v1/me/watchlist", Feature::TrackingWatchlist),
+        );
+        let app = Router::new()
+            .route("/v1/me/stats", get(|| async { "stats" }))
+            .route("/v1/me/watchlist", get(|| async { "watchlist" }))
+            .route("/v1/series", get(|| async { "series" }))
+            .layer(axum::middleware::from_fn_with_state(layer, enforce));
+
+        let refused = get_path(&app, "/v1/me/stats").await;
+        assert_eq!(refused.status(), StatusCode::NOT_FOUND);
+        let body = axum::body::to_bytes(refused.into_body(), 4096)
+            .await
+            .expect("a bounded body");
+        let problem: serde_json::Value =
+            serde_json::from_slice(&body).expect("an RFC 9457 problem document");
+        assert_eq!(problem["title"], "feature_disabled");
+        assert_eq!(problem["status"], 404);
+        assert_eq!(problem["feature"], Feature::TrackingStats.key());
+
+        // The inverse leg: a gate that answered 404 unconditionally would pass everything
+        // above. An enabled gated route and an ungated one both reach their handler.
+        for enabled in ["/v1/me/watchlist", "/v1/series"] {
+            assert_eq!(get_path(&app, enabled).await.status(), StatusCode::OK);
+        }
+    }
 }

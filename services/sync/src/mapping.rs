@@ -405,6 +405,74 @@ mod tests {
         assert_eq!(d.action, MergeAction::Conflict);
     }
 
+    /// **Half** a snapshot is not a common ancestor.
+    ///
+    /// The four snapshot fields are independent `Option`s, so a row can carry the local value
+    /// and not the remote one — a partially written snapshot, or one from before a field was
+    /// added. Treating that as an ancestor makes the missing side look *changed*, so the
+    /// absent half wins: with `last_remote` empty and both sides sitting on the same value,
+    /// this returns `Noop`, while reading `have_ancestor` as "either side has one" turns it
+    /// into a `PullRemote` that overwrites the user's progress with the value it already had —
+    /// invisible when the values agree, and a silent rollback the moment they do not.
+    ///
+    /// `cargo mutants` found this: flipping the `&&` in `have_ancestor` to `||` survived the
+    /// whole suite, because every earlier test supplied either both halves or neither.
+    #[test]
+    fn one_half_of_a_snapshot_is_not_an_ancestor() {
+        for (last_local, last_remote) in [(Some(5.0), None), (None, Some(5.0))] {
+            let agreed = three_way(
+                5.0,
+                5.0,
+                last_local,
+                last_remote,
+                ConflictPolicy::LocalWins,
+                newer_local(),
+            );
+            assert_eq!(
+                agreed.action,
+                MergeAction::Noop,
+                "{last_local:?}/{last_remote:?}"
+            );
+
+            // …and a disagreement is a real conflict decided by policy, not by which half of
+            // the snapshot happens to be present.
+            let disagreed = three_way(
+                5.0,
+                9.0,
+                last_local,
+                last_remote,
+                ConflictPolicy::AskMe,
+                newer_local(),
+            );
+            assert_eq!(
+                disagreed.action,
+                MergeAction::Conflict,
+                "{last_local:?}/{last_remote:?}"
+            );
+        }
+    }
+
+    /// Local progress is fractional (a part release is `152.5`); every remote tracker counts
+    /// whole chapters. The rounding rule is the whole of this function and nothing asserted on
+    /// it — `cargo mutants` replaced the body with `0`, `1` and `-1` in turn and the suite
+    /// stayed green, which for a *push* means writing the wrong chapter count to somebody's
+    /// public list.
+    ///
+    /// Three properties, each with a way to get it wrong: it **rounds** rather than truncating,
+    /// so a reader on `152.5` is pushed as having finished 153 rather than 152; it clamps at
+    /// zero, because a negative chapter count is a value no tracker accepts; and the cast
+    /// saturates rather than wrapping, so the `f64::INFINITY` that `parse_number` used to be
+    /// able to produce (F-01b) becomes `i64::MAX` instead of a negative count.
+    #[test]
+    fn progress_rounds_to_whole_chapters_and_never_goes_negative() {
+        assert_eq!(progress_to_int(0.0), 0);
+        assert_eq!(progress_to_int(152.0), 152);
+        assert_eq!(progress_to_int(152.4), 152);
+        assert_eq!(progress_to_int(152.5), 153);
+        assert_eq!(progress_to_int(-3.0), 0);
+        assert_eq!(progress_to_int(f64::INFINITY), i64::MAX);
+    }
+
     // The policy token round trip used to be pinned here, against this module's own copy of
     // the enum. Both moved: the vocabulary is `tankovault_contracts::sync::ConflictPolicy` and
     // its round trip is pinned there, while the tolerance for an unreadable *persisted* token

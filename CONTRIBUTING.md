@@ -90,6 +90,14 @@ worked examples.
 **Coverage.** The `coverage` job compares against `.github/coverage-floor.txt` and fails below
 it. The file explains when to raise it and the one legitimate reason to lower it.
 
+**Mutation testing.** `cargo install cargo-mutants --locked`, then `cargo mutants` — about nine
+minutes on a warm `target/`. Scoped by `.cargo/mutants.toml` to the four pure decision cores
+(the matcher, the feature gate, the sync merge and its plan), which is where the signal is clean
+and the run is cheap; the file argues the scope and lists the mutants excluded and why. Advisory:
+the CI job is `continue-on-error`, and a survivor is triaged as a missing assertion rather than as
+a build failure. Worth running after touching any of those four — the first run reported 43
+survivors, and every one sat under a passing test that compared an *ordering* rather than a value.
+
 **Dependencies.** `cargo deny` denies duplicate versions against an explicit skip list, and
 `-D unnecessary-skip` fails on a skip whose duplicate has since resolved — so a pull request that
 collapses one deletes its line. Adding a dependency to `services/api` needs a look at

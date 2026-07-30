@@ -21,6 +21,12 @@ pub struct HttpChallengeSolver {
 impl HttpChallengeSolver {
     /// Build a client for `endpoint` (e.g. `http://challenge-solver:8080`) with an
     /// overall solve timeout, presenting `token` to the solver.
+    ///
+    /// # Panics
+    /// If the HTTP client cannot be built. That needs the bundled TLS backend to fail to
+    /// initialise, which is a broken binary rather than a runtime condition — so it is a panic
+    /// at construction, where the process has not started serving, rather than a `Result` every
+    /// caller would `unwrap`.
     #[must_use]
     pub fn new(endpoint: impl Into<String>, timeout: Duration, token: Option<String>) -> Self {
         // Deliberately no emulation profile and no SSRF resolver: this talks to our own

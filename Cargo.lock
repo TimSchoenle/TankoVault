@@ -4759,6 +4759,7 @@ name = "tankovault-api"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "axum-extra",
  "fred",
@@ -4883,6 +4884,7 @@ version = "0.1.0"
 dependencies = [
  "figment",
  "serde",
+ "tankovault-domain",
  "tankovault-matcher",
  "thiserror",
 ]
@@ -4932,7 +4934,6 @@ dependencies = [
  "sqlx",
  "tankovault-config",
  "tankovault-domain",
- "tankovault-matcher",
  "tankovault-test-support",
  "thiserror",
  "time",
@@ -5142,6 +5143,7 @@ dependencies = [
  "tankovault-domain",
  "tankovault-email",
  "tankovault-service",
+ "testcontainers",
  "testcontainers-modules",
  "time",
  "tokio",

@@ -1,45 +1,22 @@
-//! Candidate lookup for series canonicalisation (design §10, step 2).
+//! Candidate lookup for series canonicalisation (design §10, step 2), plus the merge-candidate
+//! queue an ambiguous match feeds.
 //!
-//! This layer returns raw trigram candidates; the scoring/decision logic lives in the
-//! `matcher` crate (pure) so it is unit-testable without a database.
+//! This layer returns raw trigram candidates and performs whatever the caller's
+//! [`Canonicaliser`](tankovault_domain::matching::Canonicaliser) decides; the scoring and the
+//! thresholds live above it (`tankovault_matcher` and `tankovault_config::MatchingConfig`), so
+//! it is unit-testable without a database and this crate links no scorer.
+//!
+//! The candidate type is [`tankovault_domain::matching::Candidate`] itself rather than a row
+//! struct plus a `From` impl. That conversion used to be written out by hand, field for field,
+//! in **two** places — the worker's ingest canonicalisation and `services/sync`'s remote-entry
+//! resolution — so adding a field to it silently dropped that signal from one of the two paths
+//! that decide whether two series are the same. ARCH-16 step 1 deduplicated the conversion;
+//! step 3 removed the need for one at all.
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
-use tankovault_domain::{ContentType, SeriesId};
+use tankovault_domain::{ContentType, SeriesId, matching::Candidate};
 use uuid::Uuid;
-
-/// A trigram candidate for matching a new source's title to an existing series.
-pub struct MatchCandidate {
-    pub series_id: SeriesId,
-    pub normalized_title: String,
-    /// Best trigram similarity in `[0,1]` across the canonical + alternative titles.
-    pub similarity: f32,
-    pub content_type: ContentType,
-    pub release_year: Option<i32>,
-    pub tags: Vec<String>,
-    pub authors: Vec<String>,
-}
-
-/// The scorer's view of a candidate.
-///
-/// This conversion used to be written out by hand, field for field, in **two** places —
-/// `catalog::resolve_canonical_series` and `services/sync`'s `resolve_series` — which is the tell
-/// that the plumbing to `tankovault_matcher` was missing rather than the abstraction (ARCH-16).
-/// Adding a field to [`MatchCandidate`] and forgetting one copy silently dropped that signal from
-/// one of the two paths that decide whether two series are the same.
-impl From<MatchCandidate> for tankovault_matcher::Candidate {
-    fn from(c: MatchCandidate) -> Self {
-        Self {
-            series_id: c.series_id,
-            normalized_title: c.normalized_title,
-            similarity: c.similarity,
-            content_type: c.content_type,
-            release_year: c.release_year,
-            tags: c.tags,
-            authors: c.authors,
-        }
-    }
-}
 
 /// Find existing series whose canonical or alternative normalized titles are
 /// trigram-similar to `normalized`, ordered by best similarity.
@@ -47,7 +24,7 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
     exec: E,
     normalized: &str,
     limit: i64,
-) -> DbResult<Vec<MatchCandidate>> {
+) -> DbResult<Vec<Candidate>> {
     #[derive(FromRow)]
     struct Row {
         id: Uuid,
@@ -84,7 +61,7 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
 
     Ok(rows
         .into_iter()
-        .map(|r| MatchCandidate {
+        .map(|r| Candidate {
             series_id: SeriesId::from_uuid(r.id),
             normalized_title: r.normalized_title,
             similarity: r.sim,
@@ -114,7 +91,7 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
     exec: E,
     normalized: &[String],
     limit: i64,
-) -> DbResult<Vec<(String, Vec<MatchCandidate>)>> {
+) -> DbResult<Vec<(String, Vec<Candidate>)>> {
     #[derive(FromRow)]
     struct Row {
         query_title: String,
@@ -161,11 +138,11 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
 
     // Preserve the caller's title order, and keep a bucket for every requested title so a title
     // with no candidates is still reported (as an empty list) rather than silently dropped.
-    let mut buckets: Vec<(String, Vec<MatchCandidate>)> =
+    let mut buckets: Vec<(String, Vec<Candidate>)> =
         normalized.iter().map(|t| (t.clone(), Vec::new())).collect();
     for row in rows {
         if let Some((_, bucket)) = buckets.iter_mut().find(|(t, _)| *t == row.query_title) {
-            bucket.push(MatchCandidate {
+            bucket.push(Candidate {
                 series_id: SeriesId::from_uuid(row.id),
                 normalized_title: row.normalized_title,
                 similarity: row.sim,

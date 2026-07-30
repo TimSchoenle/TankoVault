@@ -4,7 +4,7 @@
 use super::series::{SeriesUpsert, resolve_canonical_series};
 use crate::error::{DbError, DbResult};
 use sqlx::{FromRow, PgExecutor};
-use tankovault_config::MatchingConfig;
+use tankovault_domain::matching::Canonicaliser;
 use tankovault_domain::{
     ContentType, ProviderId, ProviderState, SeriesId, SeriesSource, SeriesSourceId, SeriesStatus,
     normalize_title,
@@ -85,7 +85,7 @@ pub async fn register_source_stub(
     provider_id: ProviderId,
     source_path: &str,
     title: &str,
-    matching: &MatchingConfig,
+    canonicaliser: &dyn Canonicaliser,
 ) -> DbResult<()> {
     let mut tx = pool.begin().await?;
 
@@ -101,7 +101,7 @@ pub async fn register_source_stub(
         return Ok(());
     }
 
-    let series_id = resolve_stub_series(&mut tx, title, matching).await?;
+    let series_id = resolve_stub_series(&mut tx, title, canonicaliser).await?;
     upsert_source(&mut *tx, series_id, provider_id, source_path, Some(title)).await?;
 
     tx.commit().await?;
@@ -117,7 +117,7 @@ pub async fn register_source_stub(
 async fn resolve_stub_series(
     conn: &mut sqlx::PgConnection,
     title: &str,
-    matching: &MatchingConfig,
+    canonicaliser: &dyn Canonicaliser,
 ) -> DbResult<SeriesId> {
     let meta = SeriesUpsert {
         canonical_title: title.to_owned(),
@@ -128,7 +128,7 @@ async fn resolve_stub_series(
         status: SeriesStatus::Unknown,
         release_year: None,
     };
-    resolve_canonical_series(conn, &meta, matching).await
+    resolve_canonical_series(conn, &meta, canonicaliser).await
 }
 
 /// Upsert several `(provider, path)` sources in one statement. Idempotent on
@@ -183,12 +183,15 @@ async fn register_chunk(
     pool: &sqlx::PgPool,
     provider_id: ProviderId,
     chunk: &[(&str, &str)],
-    matching: &MatchingConfig,
+    canonicaliser: &dyn Canonicaliser,
 ) -> DbResult<usize> {
     let mut tx = pool.begin().await?;
     let mut sources = Vec::with_capacity(chunk.len());
     for (path, title) in chunk {
-        let series_id = resolve_stub_series(&mut tx, title, matching).await?;
+        // Per entry, inside the transaction, deliberately: the policy is a pure function over
+        // values, so the only reason it cannot be lifted out of this loop is the one that
+        // matters — entry N must be able to match the series entry N-1 just created (PERF-15).
+        let series_id = resolve_stub_series(&mut tx, title, canonicaliser).await?;
         sources.push((series_id, (*path).to_owned(), (*title).to_owned()));
     }
     upsert_sources(&mut tx, provider_id, &sources).await?;
@@ -224,7 +227,7 @@ pub async fn register_source_stubs(
     pool: &sqlx::PgPool,
     provider_id: ProviderId,
     entries: &[(&str, &str)],
-    matching: &MatchingConfig,
+    canonicaliser: &dyn Canonicaliser,
 ) -> DbResult<usize> {
     if entries.is_empty() {
         return Ok(0);
@@ -249,7 +252,7 @@ pub async fn register_source_stubs(
 
     let mut registered = 0usize;
     for chunk in fresh.chunks(STUB_CHUNK) {
-        match register_chunk(pool, provider_id, chunk, matching).await {
+        match register_chunk(pool, provider_id, chunk, canonicaliser).await {
             Ok(n) => registered += n,
             Err(e) => {
                 tracing::warn!(
@@ -258,7 +261,8 @@ pub async fn register_source_stubs(
                     "batched series registration failed; retrying entry by entry"
                 );
                 for (path, title) in chunk {
-                    match register_source_stub(pool, provider_id, path, title, matching).await {
+                    match register_source_stub(pool, provider_id, path, title, canonicaliser).await
+                    {
                         Ok(()) => registered += 1,
                         Err(e) => {
                             tracing::warn!(path = %path, error = %e, "series registration failed");

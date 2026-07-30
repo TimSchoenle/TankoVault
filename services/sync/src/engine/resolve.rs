@@ -8,7 +8,7 @@
 use tankovault_db::PgPool;
 use tankovault_db::repo::{catalog, matching, sync};
 use tankovault_domain::{SeriesId, normalize_title};
-use tankovault_matcher::{Candidate, Query, Thresholds, best_match};
+use tankovault_matcher::{Query, Thresholds, best_match};
 
 use crate::provider::{ExternalProvider, RemoteEntry};
 
@@ -64,11 +64,12 @@ impl SeriesResolver {
                 .await?;
 
         let mut best: Option<(SeriesId, f32)> = None;
-        for (normalized, found) in per_title {
-            // The conversion lives in `crates/db` and is shared with the worker's ingest
-            // canonicalisation, so a new candidate field cannot reach one path and not the
-            // other (ARCH-16).
-            let candidates: Vec<Candidate> = found.into_iter().map(Candidate::from).collect();
+        for (normalized, candidates) in per_title {
+            // No conversion: `find_candidates_multi` already yields the scorer's own
+            // [`Candidate`], the single type both this path and the worker's ingest
+            // canonicalisation score. It used to be a `crates/db` row struct converted field
+            // for field in each of the two places, so a new candidate field silently reached
+            // one path and not the other (ARCH-16).
             // AniList's own genres/staff, matched against each candidate's locally-scraped
             // tags/authors — the extra signal that makes ambiguous title matches confident.
             let query = Query {

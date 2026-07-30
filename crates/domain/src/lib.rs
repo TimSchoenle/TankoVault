@@ -19,6 +19,7 @@ pub mod enums;
 pub mod features;
 pub mod ids;
 pub mod link;
+pub mod matching;
 pub mod metadata_priority;
 pub mod normalize;
 pub mod pacing;

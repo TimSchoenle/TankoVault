@@ -1,9 +1,9 @@
-//! Canonical series: the row every provider source attaches to, and the matcher-backed
-//! decision about which existing series a newly-scanned one *is*.
+//! Canonical series: the row every provider source attaches to, and the lookup-and-write half
+//! of deciding which existing series a newly-scanned one *is*.
 
 use crate::error::{DbError, DbResult};
 use sqlx::{FromRow, PgExecutor};
-use tankovault_config::MatchingConfig;
+use tankovault_domain::matching::{Canonicaliser, Decision, Query};
 use tankovault_domain::{ContentType, Series, SeriesId, SeriesStatus};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -51,39 +51,42 @@ impl TryFrom<SeriesRow> for Series {
     }
 }
 
-/// Resolve the canonical series for a scanned source using the canonicalisation pipeline
-/// (design §10): trigram candidate lookup + [`tankovault_matcher`] scoring.
+/// Resolve the canonical series for a scanned source (design §10): trigram candidate lookup,
+/// then whatever the caller's [`Canonicaliser`] decides.
 ///
-/// - **High confidence** → attach the source to the existing series.
-/// - **Ambiguous band** → create a new series *and* record a `merge_candidate` for
-///   operator review (one-click merge/split in the console).
-/// - **Low/no confidence** → create a new canonical series.
+/// - **Attach** → return the existing series id; the source will hang off it.
+/// - **Ambiguous** → create a new series *and* record a `merge_candidate` for operator review
+///   (one-click merge/split in the console).
+/// - **Create** → a new canonical series.
 ///
-/// Runs inside the ingest transaction so lookup + create are atomic for a single worker.
-/// Concurrent first-creation of the same title across providers can still produce two
-/// series; that is the case the ambiguous/merge queue and re-scan Attach path converge.
-/// `matching` carries the confidence policy: the same policy external sync applies when it
-/// resolves a remote entry, so the two paths cannot disagree about whether two series are the
-/// same (ARCH-16). It used to be `Thresholds::default()` hardcoded here.
+/// This function reads and writes; it does **not** decide. Scoring, the confidence thresholds
+/// and how wide to look all live above this crate, behind the [`Canonicaliser`] port
+/// (`tankovault_config::MatchingConfig` over `tankovault_matcher`), so the worker's ingest and
+/// external sync cannot disagree about whether two series are the same and this crate links no
+/// scorer (ARCH-16). It used to call `matcher::decide` here with `Thresholds::default()`
+/// hardcoded.
+///
+/// Runs inside the ingest transaction so lookup + create are atomic for a single worker, and
+/// is called once **per entry** from inside the caller's loop — each entry must resolve against
+/// the series its predecessors created in that same transaction (PERF-15). Concurrent
+/// first-creation of the same title across providers can still produce two series; that is the
+/// case the ambiguous/merge queue and the re-scan Attach path converge.
 pub async fn resolve_canonical_series(
     conn: &mut sqlx::PgConnection,
     meta: &SeriesUpsert,
-    matching: &MatchingConfig,
+    canonicaliser: &dyn Canonicaliser,
 ) -> DbResult<SeriesId> {
     let candidates = crate::repo::matching::find_candidates(
         &mut *conn,
         &meta.normalized_title,
-        matching.candidate_limit,
+        canonicaliser.candidate_limit(),
     )
-    .await?
-    .into_iter()
-    .map(tankovault_matcher::Candidate::from)
-    .collect::<Vec<_>>();
+    .await?;
 
     // No tag/author signal on the query side here: a scanned source's own tags/authors
     // aren't threaded into `SeriesUpsert` (they're written separately in `ingest_series`).
     // The bonus simply never fires — unchanged behaviour from before this field existed.
-    let query = tankovault_matcher::Query {
+    let query = Query {
         normalized_title: meta.normalized_title.clone(),
         content_type: meta.content_type,
         release_year: meta.release_year,
@@ -91,9 +94,9 @@ pub async fn resolve_canonical_series(
         authors: Vec::new(),
     };
 
-    match tankovault_matcher::decide(&query, &candidates, matching.thresholds()) {
-        tankovault_matcher::Decision::Attach(id) => Ok(id),
-        tankovault_matcher::Decision::Ambiguous { candidate, score } => {
+    match canonicaliser.canonicalise(&query, &candidates) {
+        Decision::Attach(id) => Ok(id),
+        Decision::Ambiguous { candidate, score } => {
             let id = create_series(conn, meta).await?;
             crate::repo::matching::record_merge_candidate(
                 &mut *conn,
@@ -105,7 +108,7 @@ pub async fn resolve_canonical_series(
             .await?;
             Ok(id)
         }
-        tankovault_matcher::Decision::Create => create_series(conn, meta).await,
+        Decision::Create => create_series(conn, meta).await,
     }
 }
 

@@ -6,7 +6,7 @@ use super::enrichment::{add_series_authors, add_series_tags, add_series_titles};
 use super::series::{SeriesUpsert, resolve_canonical_series, update_series_meta};
 use super::sources::{update_source_scan, upsert_source};
 use crate::error::DbResult;
-use tankovault_config::MatchingConfig;
+use tankovault_domain::matching::Canonicaliser;
 use tankovault_domain::{ProviderId, SeriesId, SeriesSourceId};
 
 /// A fully-scanned series ready to persist: canonical metadata, alternative titles,
@@ -35,14 +35,17 @@ pub struct IngestOutcome {
 ///
 /// All writes are idempotent (`ON CONFLICT`), so replaying a task under at-least-once
 /// delivery converges to the same state and reports no false-new chapters.
+///
+/// `canonicaliser` is the caller's matching policy: this function owns the transaction and
+/// performs the writes, the policy decides which series the scan belongs to (ARCH-16).
 pub async fn ingest_series(
     pool: &sqlx::PgPool,
     scanned: ScannedSeries,
-    matching: &MatchingConfig,
+    canonicaliser: &dyn Canonicaliser,
 ) -> DbResult<IngestOutcome> {
     let mut tx = pool.begin().await?;
 
-    let series_id = resolve_canonical_series(&mut tx, &scanned.meta, matching).await?;
+    let series_id = resolve_canonical_series(&mut tx, &scanned.meta, canonicaliser).await?;
     update_series_meta(&mut *tx, series_id, &scanned.meta).await?;
     if !scanned.alt_titles.is_empty() {
         add_series_titles(&mut tx, series_id, &scanned.alt_titles).await?;

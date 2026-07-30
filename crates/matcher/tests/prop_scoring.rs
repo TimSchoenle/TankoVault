@@ -11,10 +11,11 @@
 //!
 //! # A note on the release-year range
 //!
-//! The generated years below are deliberately bounded rather than `any::<i32>()`. That is not
-//! caution about unrealistic data — it is a live defect: `score` computes `(a - b).abs()` on
-//! `i32`, which overflows and **panics** at the extremes. See
-//! [`score_panics_on_an_extreme_release_year_until_saturating_sub_lands`].
+//! The generated years below are deliberately bounded rather than `any::<i32>()`, so that the
+//! properties are asserted over years a provider could plausibly print. The extremes are not
+//! skipped, though — they used to *panic* (`(a - b).abs()` overflowing `i32`) and are now
+//! pinned by name in
+//! [`score_survives_the_extremes_of_the_release_year_range`].
 
 // Symmetry and reflexivity are claims of *bit-exact* equality — `token_set_ratio(a, b)` and
 // `token_set_ratio(b, a)` compute the same expression over the same set sizes, so an epsilon
@@ -186,29 +187,28 @@ proptest! {
     }
 }
 
-/// **Reproduction of an unfixed defect — ignored so it does not red the build.**
+/// **Regression: the release-year proximity bonus used to panic at the extremes.**
 ///
-/// `crates/matcher/src/lib.rs:92` computes `(a - b).abs()` on two `i32` release years. With
-/// `overflow-checks = true` in `[profile.release]` (added by the SEC-11 fix) this panics in
+/// `score` computed `(a - b).abs()` on two `i32` release years, which overflows. With
+/// `overflow-checks = true` in `[profile.release]` (added by the SEC-11 fix) that panicked in
 /// release builds as well as debug:
 ///
 /// ```text
 /// panicked at crates\matcher\src\lib.rs:92:15: attempt to subtract with overflow
 /// ```
 ///
-/// It is reachable by a caller holding only `sync.admin.read`:
+/// It was reachable by any caller holding `sync.admin.read`:
 /// `GET /v1/admin/sync/suggest?title=x&start_year=-2147483648` binds `SuggestQuery.start_year`
-/// (`services/api/src/admin/sync.rs:411`) — an unvalidated `i32` straight off the query string
-/// — into `matcher::Query.release_year`, and every candidate with a positive `release_year`
-/// then overflows the subtraction. The panic is contained by `CatchPanicLayer`, so the
-/// symptom is a `500` rather than a crash, but the endpoint is unusable.
+/// (`services\api\src\admin\sync.rs`) — an unvalidated `i32` straight off the query string —
+/// into `matcher::Query.release_year`, and every candidate with a positive `release_year` then
+/// overflowed the subtraction. `CatchPanicLayer` contained it, so the symptom was a `500`
+/// rather than a crash, but the endpoint was unusable.
 ///
-/// The fix is one line — `a.saturating_sub(b).saturating_abs()` — in production code this
-/// suite does not own. **Remove the `#[ignore]` in the same commit as that fix**; the test is
-/// green the moment the arithmetic saturates.
+/// Fixed by `a.saturating_sub(b).saturating_abs()`. Do **not** replace this with a bounded-year
+/// case: the whole point is the pair that overflows, and [`safe_year`] deliberately cannot
+/// generate it.
 #[test]
-#[ignore = "reproduces an unfixed i32 overflow in score(); un-ignore with the saturating_sub fix"]
-fn score_panics_on_an_extreme_release_year_until_saturating_sub_lands() {
+fn score_survives_the_extremes_of_the_release_year_range() {
     let query = Query {
         normalized_title: "x".to_owned(),
         content_type: ContentType::Unknown,

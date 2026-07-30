@@ -4,6 +4,11 @@
 //! layer supplies trigram [`Candidate`]s, this crate scores them and returns a
 //! [`Decision`]. Automation is aggressive where safe and human-reviewed where ambiguous.
 //!
+//! The nouns ([`Candidate`], [`Query`], [`Decision`]) and the [`Canonicaliser`] port they are
+//! exchanged over live in [`tankovault_domain::matching`] and are re-exported here; this crate
+//! owns the *scoring*. `crates/db` names the port, not this crate, so the repository layer can
+//! ask for a decision without linking a scorer (ARCH-16).
+//!
 //! Score = trigram similarity, boosted by content-type agreement and release-year
 //! proximity, capped at 1.0. Three bands:
 //! - `>= high` → [`Decision::Attach`] (attach the new source to the existing series),
@@ -12,31 +17,11 @@
 
 use tankovault_domain::{ContentType, SeriesId};
 
-/// A candidate existing series to match against (from `db::repo::matching::find_candidates`).
-#[derive(Debug, Clone)]
-pub struct Candidate {
-    pub series_id: SeriesId,
-    pub normalized_title: String,
-    /// Raw trigram similarity in `[0,1]`.
-    pub similarity: f32,
-    pub content_type: ContentType,
-    pub release_year: Option<i32>,
-    /// Genre/tag names attached to this series. Empty when unavailable to the caller —
-    /// the tag-overlap bonus in [`score`] simply never fires, no different from today.
-    pub tags: Vec<String>,
-    /// Author/artist credits attached to this series (same empty-means-no-signal contract).
-    pub authors: Vec<String>,
-}
-
-/// The incoming source's identifying attributes.
-#[derive(Debug, Clone)]
-pub struct Query {
-    pub normalized_title: String,
-    pub content_type: ContentType,
-    pub release_year: Option<i32>,
-    pub tags: Vec<String>,
-    pub authors: Vec<String>,
-}
+// The scorer's input and output vocabulary lives in `tankovault_domain::matching`, because it
+// is the seam `crates/db` has to name in order to *ask* for a decision rather than make one
+// (ARCH-16 step 3). Re-exported here so `tankovault_matcher::Candidate` and friends still
+// resolve — the scoring is what this crate owns, not the nouns.
+pub use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 
 /// Confidence thresholds for the decision bands.
 #[derive(Debug, Clone, Copy)]
@@ -52,17 +37,6 @@ impl Default for Thresholds {
             low: 0.6,
         }
     }
-}
-
-/// The matching outcome.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Decision {
-    /// High confidence: attach the new source to this existing series.
-    Attach(SeriesId),
-    /// Ambiguous: create the source but flag a merge candidate for operator review.
-    Ambiguous { candidate: SeriesId, score: f32 },
-    /// Low/no confidence: create a new canonical series.
-    Create,
 }
 
 /// Score a single candidate against the query, capped at 1.0.
@@ -87,9 +61,12 @@ pub fn score(query: &Query, candidate: &Candidate) -> f32 {
         }
     }
 
-    // Release-year proximity.
+    // Release-year proximity. Saturating, not `(a - b).abs()`: `release_year` is an unvalidated
+    // `i32` on `GET /v1/admin/sync/suggest`, and `i32::MIN - i32::MAX` overflowed — a panic in
+    // debug *and*, since SEC-11 turned on `overflow-checks` for release, in production too. See
+    // `tests/prop_scoring.rs::score_survives_the_extremes_of_the_release_year_range`.
     if let (Some(a), Some(b)) = (query.release_year, candidate.release_year) {
-        match (a - b).abs() {
+        match a.saturating_sub(b).saturating_abs() {
             0 => s += 0.06,
             1 => s += 0.03,
             d if d >= 3 => s -= 0.05,

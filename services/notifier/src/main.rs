@@ -5,8 +5,6 @@
 //! - skipping chapters at or below a user's read progress (no spam on rescans),
 //! - deduplicated per `(user, series, chapter)` so overlapping providers never double-fire.
 
-#![allow(unreachable_pub)]
-
 mod channels;
 
 use std::sync::Arc;
@@ -283,6 +281,12 @@ async fn push_live(
             }
         };
     let created_at = OffsetDateTime::now_utc();
+    // The per-watcher `payload.clone()` below is the one PERF-19 named that survives, and it
+    // survives on purpose. The expensive half — rebuilding the `json!` document per watcher —
+    // is gone (PERF-3 hoisted it); what is left is one shallow-ish clone of a five-field object
+    // per *network publish*, and the publish itself serialises that same document. Removing it
+    // means either an `Arc` inside a wire DTO or a borrowed field with a lifetime, both of
+    // which complicate a published contract type to save less than the send costs.
     for &(user_id, notification_id) in created {
         let live = UserNotification {
             user_id,

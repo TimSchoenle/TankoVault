@@ -10,7 +10,9 @@ description = "The provider fetch stack: SSRF guard, browser emulation, rate lim
 publish = false
 
 [dependencies]
-tankovault-domain = { workspace = true }
+# `dns` supplies the resolving half of the SSRF guard, which this crate re-exports from
+# `ssrf.rs` — the policy lives in `domain` so a service can apply it without linking wreq.
+tankovault-domain = { workspace = true, features = ["dns"] }
 tankovault-solver = { workspace = true }
 async-trait = { workspace = true }
 wreq = { workspace = true }

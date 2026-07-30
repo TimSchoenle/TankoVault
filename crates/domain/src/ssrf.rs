@@ -115,6 +115,69 @@ pub fn validate_str(raw: &str) -> Result<Url, SsrfError> {
     Ok(url)
 }
 
+/// The resolving half of the guard, behind the `dns` feature.
+///
+/// Everything above is I/O-free and available everywhere, including `wasm32` through
+/// `crates/api-client`. These two need a DNS lookup, so they are gated: enabling `dns` adds
+/// `tokio`'s networking, which the browser build must not see.
+///
+/// They live here rather than in `crates/fetch`, where they used to, for the same reason the
+/// address table does. `services/api` has to validate a `base_url` it is about to **store**,
+/// and depending on `crates/fetch` for that meant linking `wreq` and `BoringSSL` into the API
+/// binary alongside the `rustls` it already had — a whole second TLS stack, compiled from C
+/// and assembly, for one operator-facing check (PERF-18). `crates/fetch` re-exports both, so
+/// its own call sites are unchanged, and keeps the `wreq::dns::Resolve` adapter, which is
+/// genuinely that crate's: it re-checks at connect time and on every redirect hop, which is
+/// what closes DNS rebinding for an *outbound* fetch.
+#[cfg(feature = "dns")]
+mod resolving {
+    use super::{SsrfError, is_forbidden_ip, validate_str};
+    use std::net::SocketAddr;
+
+    /// Resolve `host` and return only the vetted (public) addresses, erroring if none remain.
+    ///
+    /// # Errors
+    /// [`SsrfError::Resolution`] on DNS failure, [`SsrfError::ForbiddenAddress`] if every
+    /// resolved address is internal.
+    pub async fn resolve_checked(host: &str) -> Result<Vec<SocketAddr>, SsrfError> {
+        let addrs = tokio::net::lookup_host((host, 0))
+            .await
+            .map_err(|_| SsrfError::Resolution(host.to_owned()))?;
+        let allowed: Vec<SocketAddr> = addrs.filter(|sa| !is_forbidden_ip(sa.ip())).collect();
+        if allowed.is_empty() {
+            return Err(SsrfError::ForbiddenAddress(host.to_owned()));
+        }
+        Ok(allowed)
+    }
+
+    /// Validate a URL the way an *inbound* handler must: scheme and address-range pre-flight,
+    /// then a real DNS resolution whose every answer is re-checked.
+    ///
+    /// Used where a URL is about to be **stored** or handed to something this process does not
+    /// control — `admin/providers.rs`'s `base_url`, which the scan workers then hit on a timer.
+    /// For an outbound fetch through `crates/fetch`'s own stack the pre-flight alone is enough,
+    /// because that crate's `SsrfResolver` repeats the address check at connect time and on
+    /// every redirect.
+    ///
+    /// # Errors
+    /// As [`super::validate_url`], plus [`SsrfError::Resolution`] /
+    /// [`SsrfError::ForbiddenAddress`].
+    pub async fn validate_and_resolve(raw: &str) -> Result<(), SsrfError> {
+        let url = validate_str(raw)?;
+        let Some(host) = url.host() else {
+            return Err(SsrfError::NoHost);
+        };
+        // An IP literal was already range-checked by `validate_str`; nothing to resolve.
+        let url::Host::Domain(domain) = host else {
+            return Ok(());
+        };
+        resolve_checked(domain).await.map(|_| ())
+    }
+}
+
+#[cfg(feature = "dns")]
+pub use resolving::{resolve_checked, validate_and_resolve};
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -7,35 +7,45 @@ use tankovault_domain::UserId;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-/// Append one privileged-action record.
+/// One privileged action, as the audit sink hands it to this repository.
 ///
-/// `actor_id` is `None` for system-originated actions (schedulers, sweeps). `outcome` is
-/// one of `success` / `failure` / `denied`, enforced by the `audit_log_outcome_check`
-/// constraint. `client_ip` and `user_agent` are personal data and are passed as `None`
-/// unless the operator enabled the corresponding privacy toggle — the decision is applied
-/// in `tankovault_service::PostgresAuditSink`, not here.
-#[allow(clippy::too_many_arguments)]
-pub async fn record<'e, E: PgExecutor<'e>>(
-    exec: E,
-    actor_id: Option<UserId>,
-    action: &str,
-    target: Option<&str>,
-    detail: &Json,
-    outcome: &str,
-    client_ip: Option<&str>,
-    user_agent: Option<&str>,
-) -> DbResult<()> {
+/// A struct rather than eight positional parameters, which is what this function used to
+/// take behind an `#[allow(clippy::too_many_arguments)]`. The suppression was the smell: five
+/// of those parameters were string-shaped and three of them `Option<&str>`, so transposing an
+/// adjacent pair compiled — and the pairs that transpose most easily are the two that decide
+/// what personal data is retained.
+pub struct AuditRecord<'a> {
+    /// `None` for system-originated actions (schedulers, sweeps).
+    pub actor_id: Option<UserId>,
+    /// The action key, e.g. `admin.user.update`.
+    pub action: &'a str,
+    /// What the action was performed on, when it names a single subject.
+    pub target: Option<&'a str>,
+    /// Action-specific detail; whatever the handler recorded.
+    pub detail: &'a Json,
+    /// One of `success` / `failure` / `denied`, enforced by the `audit_log_outcome_check`
+    /// constraint rather than by this type — a bad value is a write error, not a silent row.
+    pub outcome: &'a str,
+    /// Personal data. `None` unless the operator enabled the corresponding privacy toggle;
+    /// the decision is applied in `tankovault_service::PostgresAuditSink`, not here.
+    pub client_ip: Option<&'a str>,
+    /// Personal data, on the same terms as [`AuditRecord::client_ip`].
+    pub user_agent: Option<&'a str>,
+}
+
+/// Append one privileged-action record.
+pub async fn record<'e, E: PgExecutor<'e>>(exec: E, entry: &AuditRecord<'_>) -> DbResult<()> {
     sqlx::query!(
         "INSERT INTO audit_log (id, actor_id, action, target, detail, outcome, actor_ip, user_agent) \
          VALUES ($1,$2,$3,$4,$5,$6,$7::text::inet,$8)",
         Uuid::now_v7(),
-        actor_id.map(UserId::as_uuid),
-        action,
-        target,
-        detail,
-        outcome,
-        client_ip,
-        user_agent,
+        entry.actor_id.map(UserId::as_uuid),
+        entry.action,
+        entry.target,
+        entry.detail,
+        entry.outcome,
+        entry.client_ip,
+        entry.user_agent,
     )
     .execute(exec)
     .await?;

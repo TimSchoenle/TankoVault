@@ -38,9 +38,14 @@ pub struct IngestOutcome {
 ///
 /// `canonicaliser` is the caller's matching policy: this function owns the transaction and
 /// performs the writes, the policy decides which series the scan belongs to (ARCH-16).
+///
+/// Takes `scanned` by reference because it only ever reads it, and the caller has a use for it
+/// afterwards: the worker fans out `chapter.discovered` for the numbers in [`IngestOutcome`],
+/// and needs each one's title and path to do it. Consuming the value forced the worker to clone
+/// the entire parsed chapter list to keep a second copy alive across this call (PERF-19).
 pub async fn ingest_series(
     pool: &sqlx::PgPool,
-    scanned: ScannedSeries,
+    scanned: &ScannedSeries,
     canonicaliser: &dyn Canonicaliser,
 ) -> DbResult<IngestOutcome> {
     let mut tx = pool.begin().await?;

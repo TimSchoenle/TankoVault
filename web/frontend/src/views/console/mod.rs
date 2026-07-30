@@ -607,7 +607,7 @@ pub(super) fn config_editor_text(v: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ADAPTER_KINDS, adapter_label_key};
+    use super::{adapter_label_key, ADAPTER_KINDS};
     use crate::models::AdapterKind;
 
     /// The provider-registration picker must offer every adapter the API accepts.

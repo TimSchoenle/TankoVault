@@ -76,7 +76,11 @@ fn use_token_refresh() {
             let booted = *session.ready.peek();
             // The two `0.0` arms are not mergeable: the guarded `None if booted` arm has to
             // sit between them, and an or-pattern would swallow it.
-            #[allow(clippy::match_same_arms)]
+            #[expect(
+                clippy::match_same_arms,
+                reason = "the guarded `None if booted` arm sits between the two `0.0` arms, so an \
+                          or-pattern would swallow it"
+            )]
             let wait_ms = match session.expires_in_ms() {
                 Some(ms) if ms > REFRESH_BUFFER_MS => ms - REFRESH_BUFFER_MS,
                 // Already inside the buffer (or past expiry): refresh immediately.
@@ -93,7 +97,12 @@ fn use_token_refresh() {
             // The wait is bounded by the token's TTL (minutes), so it always fits `u32`;
             // a negative value only arises for an already-expired token, where clamping to
             // zero is exactly the wanted behaviour.
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "the wait is bounded by the token TTL (minutes) so it fits u32, and \
+                          `max(0.0)` clamps an already-expired token to an immediate refresh"
+            )]
             TimeoutFuture::new(wait_ms.max(0.0) as u32).await;
 
             // The refresh endpoint is cookie-authenticated, but it still needs a client with

@@ -280,7 +280,10 @@ fn ProviderInspector(
     let mut rps = use_signal(|| provider.politeness.rps.unwrap_or(1.0));
     let mut concurrency = use_signal(|| f64::from(provider.politeness.concurrency.unwrap_or(2)));
     // Crawl delays are milliseconds and always well inside `f64`'s exact integer range.
-    #[allow(clippy::cast_precision_loss)]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "crawl delays are milliseconds, well inside f64's exact integer range"
+    )]
     let mut crawl_delay = use_signal(|| provider.politeness.crawl_delay_ms.unwrap_or(0) as f64);
     let mut user_agent = use_signal(|| provider.politeness.user_agent.clone().unwrap_or_default());
     // Empty string is the "no emulation" sentinel, matching `politeness_json`. The generated

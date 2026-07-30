@@ -61,7 +61,7 @@ async fn a_series(db: &TestDb, title: &str, sources: usize, alt_titles: &[&str])
         .await;
         let outcome = ingest_series(
             &db.pool,
-            ScannedSeries {
+            &ScannedSeries {
                 provider_id: provider,
                 source_path: format!("/s/{n}"),
                 provider_title: Some(title.to_owned()),

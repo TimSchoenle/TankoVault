@@ -61,6 +61,20 @@ pedantic = { level = "warn", priority = -1 }
 # locally.
 cargo = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
+# A suppression must be `#[expect(…, reason = "…")]`, never a bare `#[allow(…)]`.
+#
+# The difference is what happens when the suppression stops being necessary: an `allow` goes on
+# silently forever, an `expect` warns. Every one of the ~45 suppressions in this workspace is a
+# claim about the code beneath it — "this cast cannot truncate because the value is bounded by
+# a LIMIT", "these arguments cannot be transposed because they are differently typed" — and a
+# claim nothing re-checks is exactly the shape of defect this codebase keeps finding. Making
+# the compiler re-check them costs one attribute keyword.
+#
+# `reason` is convention rather than enforcement: `allow_attributes_without_reason` covers
+# `allow`, and clippy has no counterpart for `expect`. Write one anyway — the lint name says
+# what is suppressed, and only the reason says why that is sound.
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
 # Duplicate transitive versions are tracked as a *budget* in `deny.toml`, which denies them
 # against an explicit, dated skip list naming each in-flight upstream transition. This lint
 # would report the same 30-odd duplicates with no way to record why any of them is acceptable,

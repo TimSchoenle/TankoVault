@@ -98,7 +98,10 @@ const fn gate(method: &'static str, template: &'static str, path: &'static str) 
 ///
 /// One long table by design, exactly as in the admin matrix: split per module and a whole
 /// module can fall out of the matrix without anything noticing.
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the matrix is one endpoint per line; splitting it would hide what it covers"
+)]
 fn me_gates() -> Vec<Gate> {
     vec![
         // --- account ---

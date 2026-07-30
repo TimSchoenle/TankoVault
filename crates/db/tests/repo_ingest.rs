@@ -90,7 +90,7 @@ async fn a_rescan_of_an_unchanged_listing_discovers_nothing() {
 
     let first = ingest_series(
         &db.pool,
-        scanned(provider, listing()),
+        &scanned(provider, listing()),
         &MatchingConfig::default(),
     )
     .await
@@ -103,7 +103,7 @@ async fn a_rescan_of_an_unchanged_listing_discovers_nothing() {
 
     let second = ingest_series(
         &db.pool,
-        scanned(provider, listing()),
+        &scanned(provider, listing()),
         &MatchingConfig::default(),
     )
     .await
@@ -126,7 +126,7 @@ async fn only_added_chapters_are_reported_and_edits_are_applied_quietly() {
 
     ingest_series(
         &db.pool,
-        scanned(provider, vec![chapter(1.0, Some("Old title"), "/c/1")]),
+        &scanned(provider, vec![chapter(1.0, Some("Old title"), "/c/1")]),
         &MatchingConfig::default(),
     )
     .await
@@ -134,7 +134,7 @@ async fn only_added_chapters_are_reported_and_edits_are_applied_quietly() {
 
     let grown = ingest_series(
         &db.pool,
-        scanned(
+        &scanned(
             provider,
             vec![
                 chapter(1.0, Some("Corrected title"), "/c/1-fixed"),
@@ -179,7 +179,7 @@ async fn a_listing_that_repeats_a_chapter_number_does_not_abort_the_batch() {
 
     let outcome = ingest_series(
         &db.pool,
-        scanned(
+        &scanned(
             provider,
             vec![
                 chapter(7.0, Some("First spelling"), "/c/7-a"),
@@ -223,7 +223,7 @@ async fn an_empty_chapter_list_is_a_no_op() {
 
     let outcome = ingest_series(
         &db.pool,
-        scanned(provider, Vec::new()),
+        &scanned(provider, Vec::new()),
         &MatchingConfig::default(),
     )
     .await

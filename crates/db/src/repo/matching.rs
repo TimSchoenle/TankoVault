@@ -289,7 +289,11 @@ pub async fn dismiss_merge_candidate<'e, E: PgExecutor<'e>>(
 /// the operator's queue while staying open in the table.
 // A straight-line sequence of per-table union inserts reads more clearly as one function
 // than split across arbitrary helpers just to dodge the line-count lint.
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one straight-line sequence of per-table union inserts; splitting it to satisfy \
+              a line count would hide the order the tables must be moved in"
+)]
 pub async fn merge_series(
     pool: &sqlx::PgPool,
     keep_id: SeriesId,

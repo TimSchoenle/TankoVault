@@ -14,7 +14,11 @@ use dioxus::prelude::*;
 ///
 /// A free function rather than a closure: it needs every handle the editor holds, and a closure
 /// that moves its captured signals into a spawned task can only be called once.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "every parameter is a distinct handle type, so none can be transposed; grouping \
+              them would only name the editor's whole state twice"
+)]
 pub(super) fn erase(
     api: api::Api,
     i18n: crate::i18n::Translator,

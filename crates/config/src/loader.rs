@@ -54,7 +54,10 @@ mod tests {
 
     #[test]
     // `figment::Jail::expect_with` fixes the closure's error type to the large `figment::Error`.
-    #[allow(clippy::result_large_err)]
+    #[expect(
+        clippy::result_large_err,
+        reason = "figment::Jail::expect_with fixes the closure's error type"
+    )]
     fn env_overrides_and_defaults_apply() {
         figment::Jail::expect_with(|jail| {
             jail.set_env(

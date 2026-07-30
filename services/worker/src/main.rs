@@ -6,6 +6,7 @@
 //! - `worker` (no args) — subscribe to the `JetStream` tasks stream (consumer group →
 //!   horizontal scale) and process tasks until shutdown.
 
+mod dryrun;
 mod engine;
 mod queue;
 
@@ -154,7 +155,16 @@ async fn main() -> anyhow::Result<()> {
             // Serve the metrics scrape on its own port when configured, keeping it off the
             // request-facing ops listener.
             tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
-            spawn_ops_listener(&cfg, &pool, bus.as_ref(), metrics, shutdown.clone());
+            let engine = Arc::new(engine);
+            spawn_ops_listener(
+                &cfg,
+                &pool,
+                bus.as_ref(),
+                metrics,
+                Arc::clone(&engine),
+                internal_token,
+                shutdown.clone(),
+            );
             run_consumer(&engine, &cfg.worker, shutdown).await
         }
         _ => {
@@ -174,6 +184,8 @@ fn spawn_ops_listener(
     pool: &tankovault_db::PgPool,
     bus: Option<&Bus>,
     metrics: MetricsRegistry,
+    engine: Arc<Engine>,
+    internal_token: Option<tankovault_service::InternalToken>,
     shutdown: tokio_util::sync::CancellationToken,
 ) {
     let ready_pool = pool.clone();
@@ -191,8 +203,11 @@ fn spawn_ops_listener(
         })
         .build();
 
+    // The dry-run route goes *inside* `apply`, so it is behind the internal-token gate;
+    // `ops_router` is merged outside it, so an orchestrator still probes without the secret.
     let app = HttpStack::new(&cfg.security, metrics.clone())
-        .apply(axum::Router::new())
+        .with_internal_auth(internal_token)
+        .apply(dryrun::router(engine))
         .merge(tankovault_service::ops_router(health, metrics));
 
     let bind = cfg.bind_addr.clone();

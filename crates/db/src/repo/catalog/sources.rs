@@ -149,8 +149,10 @@ async fn upsert_sources(
         .map(|_| SeriesSourceId::new().as_uuid())
         .collect();
     let series_ids: Vec<Uuid> = rows.iter().map(|(s, _, _)| s.as_uuid()).collect();
-    let paths: Vec<String> = rows.iter().map(|(_, p, _)| p.clone()).collect();
-    let titles: Vec<String> = rows.iter().map(|(_, _, t)| t.clone()).collect();
+    // Borrowed for the same reason as in `register_source_stubs`: the `UNNEST` arrays live
+    // only for this statement, so cloning each path and title is pure waste (PERF-19).
+    let paths: Vec<&str> = rows.iter().map(|(_, p, _)| p.as_str()).collect();
+    let titles: Vec<&str> = rows.iter().map(|(_, _, t)| t.as_str()).collect();
     sqlx::query!(
         "INSERT INTO series_sources (id, series_id, provider_id, source_path, provider_title) \
          SELECT DISTINCT ON (source_path) id, series_id, $2, source_path, provider_title \
@@ -161,8 +163,8 @@ async fn upsert_sources(
         &ids,
         provider_id.as_uuid(),
         &series_ids,
-        &paths,
-        &titles,
+        &paths as _,
+        &titles as _,
     )
     .execute(conn)
     .await?;
@@ -233,11 +235,14 @@ pub async fn register_source_stubs(
         return Ok(0);
     }
 
-    let paths: Vec<String> = entries.iter().map(|(path, _)| (*path).to_owned()).collect();
+    // Borrowed, not owned: `sqlx` encodes `&[&str]` as `text[]` just as it does `&[String]`,
+    // so copying every path onto the heap bought nothing. A catalogue page can be 20 000
+    // entries, which is 20 000 allocations made and discarded within one statement (PERF-19).
+    let paths: Vec<&str> = entries.iter().map(|(path, _)| *path).collect();
     let known: std::collections::HashSet<String> = sqlx::query_scalar!(
         "SELECT source_path FROM series_sources WHERE provider_id = $1 AND source_path = ANY($2)",
         provider_id.as_uuid(),
-        &paths,
+        &paths as _,
     )
     .fetch_all(pool)
     .await?

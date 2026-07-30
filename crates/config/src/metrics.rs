@@ -41,7 +41,7 @@ impl MetricsConfig {
     // The `Option` is not redundant: this is the `#[serde(default = ..)]` provider for an
     // `Option<String>` field, so its return type must match the field's. Unwrapping it as
     // clippy suggests would stop it compiling as a serde default.
-    #[allow(
+    #[expect(
         clippy::unnecessary_wraps,
         reason = "must match the Option<String> field it defaults"
     )]

@@ -62,9 +62,11 @@ pub(crate) fn save_text_file(
 /// releases keep their fraction (`#152.6`).
 pub(crate) fn chapter_number(n: f64) -> String {
     if n.fract() == 0.0 {
-        // Chapter numbers are small positive counts, so the truncating cast is exact for
-        // every value the API can produce; the guard above has already ruled out fractions.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the guard above has ruled out a fractional part, and chapter numbers are \
+                      small positive counts, so the cast is exact"
+        )]
         return format!("{}", n as i64);
     }
     format!("{n}")
@@ -153,8 +155,10 @@ impl Age {
         if diff_ms < 45_000.0 {
             return Self::JustNow;
         }
-        // A difference in minutes cannot overflow `i64` for any timestamp the API emits.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a difference in minutes cannot overflow i64 for any timestamp the API emits"
+        )]
         let mins = (diff_ms / 60_000.0) as i64;
         if mins < 60 {
             return Self::Minutes(mins);

@@ -173,7 +173,7 @@ async fn a_provider(db: &TestDb, slug: &str) -> ProviderId {
 async fn a_series(db: &TestDb, provider_id: ProviderId, title: &str, chapters: &[f64]) -> SeriesId {
     ingest_series(
         &db.pool,
-        ScannedSeries {
+        &ScannedSeries {
             provider_id,
             source_path: format!("/s/{}", normalize_title(title).replace(' ', "-")),
             provider_title: Some(title.to_owned()),

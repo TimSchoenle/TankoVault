@@ -21,7 +21,11 @@
 // `token_set_ratio(b, a)` compute the same expression over the same set sizes, so an epsilon
 // here would weaken the property into something that no longer catches an argument-order bug.
 // The same allowance is already made by the in-module tests for the same reason.
-#![allow(clippy::float_cmp)]
+#![expect(
+    clippy::float_cmp,
+    reason = "the properties under test are exact ones - symmetry and reflexivity of the \
+              score - which a tolerance would weaken into something else"
+)]
 
 use proptest::prelude::*;
 use tankovault_domain::{ContentType, SeriesId};

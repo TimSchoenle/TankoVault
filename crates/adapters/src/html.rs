@@ -179,7 +179,10 @@ pub fn parse_number(text: &str) -> Option<f64> {
 /// Parse a bare release year (e.g. `"2025"`) from extracted text, discarding anything
 /// outside a representable `i32` range rather than silently wrapping.
 #[must_use]
-#[allow(clippy::cast_possible_truncation)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the range check immediately below is what makes the cast sound"
+)]
 pub fn parse_year(text: &str) -> Option<i32> {
     let y = parse_number(text)?;
     // `is_finite` is kept although [`parse_number`] now guarantees it: this range check is

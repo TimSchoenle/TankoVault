@@ -25,8 +25,8 @@ struct Config {
     control_plane_url: String,
     #[serde(default = "default_sync")]
     sync_url: String,
-    #[serde(default = "default_challenge_solver")]
-    challenge_solver_url: String,
+    #[serde(default = "default_worker")]
+    worker_url: String,
     /// NATS connection for live SSE relay. Optional: when absent or unreachable the API
     /// still serves every other route; only `/v1/me/stream` degrades.
     #[serde(default)]
@@ -103,8 +103,12 @@ fn default_control_plane() -> String {
 fn default_sync() -> String {
     "http://sync:8083".to_owned()
 }
-fn default_challenge_solver() -> String {
-    "http://challenge-solver:8090".to_owned()
+/// The worker's ops listener, which also serves the internally-authenticated dry-run.
+///
+/// Port 8085 is the worker's own `bind_addr` default; compose runs two replicas behind the one
+/// service name, and a dry run is stateless, so either may answer.
+fn default_worker() -> String {
+    "http://worker:8085".to_owned()
 }
 fn default_access_minutes() -> i64 {
     15
@@ -271,6 +275,7 @@ async fn main() -> anyhow::Result<()> {
     // `reqwest::Client::new()` had neither, and fed an unbounded `tokio::spawn` in
     // `spawn_targeted_push` — a hung `sync` leaked a task and a socket per marked chapter.
     let internal_http = tankovault_api::Upstream::client()?;
+    let internal_http_worker = internal_http.clone();
     let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
 
     let state = AppState {
@@ -286,13 +291,17 @@ async fn main() -> anyhow::Result<()> {
             "control-plane",
         ),
         sync: tankovault_api::Upstream::new(
-            internal_http,
+            internal_http.clone(),
             cfg.sync_url,
             internal_token.clone(),
             "sync",
         ),
-        challenge_solver_url: cfg.challenge_solver_url,
-        internal_token,
+        worker: tankovault_api::Upstream::new(
+            internal_http_worker,
+            cfg.worker_url,
+            internal_token,
+            "worker",
+        ),
         bus,
         stream_tickets,
         audit,

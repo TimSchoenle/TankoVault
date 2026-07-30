@@ -34,7 +34,7 @@ use utoipa::ToSchema;
 /// questions the page asks side by side — is it on, is that the shipped value, did someone
 /// decide it, and can it be changed at all — and grouping any of them would only move the
 /// flattening into the client.
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "four independent facts the control plane displays together"
 )]

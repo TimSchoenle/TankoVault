@@ -229,13 +229,18 @@ async fn the_export_names_no_third_party_from_the_subjects_own_audit_trail() {
 
     tankovault_db::repo::audit::record(
         &db.pool,
-        Some(operator),
-        "admin.user.update",
-        Some(&bystander.as_uuid().to_string()),
-        &serde_json::json!({ "username": "bystander", "email": "bystander@example.test" }),
-        "success",
-        None,
-        None,
+        &tankovault_db::repo::audit::AuditRecord {
+            actor_id: Some(operator),
+            action: "admin.user.update",
+            target: Some(&bystander.as_uuid().to_string()),
+            detail: &serde_json::json!({
+                "username": "bystander",
+                "email": "bystander@example.test"
+            }),
+            outcome: "success",
+            client_ip: None,
+            user_agent: None,
+        },
     )
     .await
     .expect("record an administrative action taken on someone else");
@@ -302,13 +307,15 @@ async fn erasing_a_subject_leaves_no_row_referencing_them_anywhere() {
     .expect("seed a privacy request");
     tankovault_db::repo::audit::record(
         &db.pool,
-        Some(subject),
-        "auth.login",
-        None,
-        &serde_json::json!({}),
-        "success",
-        None,
-        None,
+        &tankovault_db::repo::audit::AuditRecord {
+            actor_id: Some(subject),
+            action: "auth.login",
+            target: None,
+            detail: &serde_json::json!({}),
+            outcome: "success",
+            client_ip: None,
+            user_agent: None,
+        },
     )
     .await
     .expect("seed an audit row");

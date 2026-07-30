@@ -88,7 +88,12 @@ pub(crate) fn content_type_from_country(country: Option<&str>) -> ContentType {
 /// Lives here rather than in the provider module because this file owns every other unit
 /// conversion across the boundary (ARCH-7), and the rounding rule is not `AniList`-specific:
 /// remote trackers count whole chapters, local progress does not.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the target is signed and `max(0.0)` rules out a negative, and Rust's \
+              float-to-int cast saturates rather than wrapping, so the value is the \
+              rounded progress or `i64::MAX`, never a wrapped one"
+)]
 #[must_use]
 pub(crate) fn progress_to_int(progress: f64) -> i64 {
     progress.max(0.0).round() as i64
@@ -223,10 +228,6 @@ fn resolve_conflict(policy: ConflictPolicy, newer: Side) -> MergeDecision {
 
 #[cfg(test)]
 mod tests {
-    // Reconciliation returns exactly one side's stored progress unchanged, so exact
-    // float comparison is correct here.
-    #![allow(clippy::float_cmp)]
-
     use super::*;
 
     fn newer_local() -> Side {

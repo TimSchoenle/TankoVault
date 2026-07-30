@@ -288,7 +288,11 @@ fn strip_html(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     // Tests assert exact equality of small, exactly-representable progress/id values.
-    #![allow(clippy::float_cmp)]
+    #![expect(
+        clippy::float_cmp,
+        reason = "parsed progress values are compared against the exact numbers the fixture \
+                  documents encode"
+    )]
 
     use super::{
         AniListStatus, ContentType, has_next_chunk, parse_media_list, parse_media_metadata,

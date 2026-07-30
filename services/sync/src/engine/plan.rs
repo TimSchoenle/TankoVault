@@ -189,10 +189,6 @@ pub(crate) fn plan_merge(
 
 #[cfg(test)]
 mod tests {
-    // Progress values under test are small, exactly-representable integers, so exact float
-    // comparison is correct here.
-    #![allow(clippy::float_cmp)]
-
     use super::{Ancestor, LocalSide, MergePlan, SeriesPlan, plan_merge, plan_series};
     use crate::mapping::{ConflictPolicy, MergeAction};
     use crate::provider::RemoteEntry;

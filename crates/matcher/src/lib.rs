@@ -106,7 +106,10 @@ pub fn score(query: &Query, candidate: &Candidate) -> f32 {
 /// side has nothing to compare (so the caller can skip the bonus entirely rather than
 /// treating "no data" as "no overlap").
 #[must_use]
-#[allow(clippy::cast_precision_loss)] // name-set sizes are tiny (tag/author counts)
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "name-set sizes are tag/author counts, orders of magnitude below f32's exact range"
+)]
 fn name_set_overlap(a: &[String], b: &[String]) -> Option<f32> {
     if a.is_empty() || b.is_empty() {
         return None;
@@ -133,7 +136,10 @@ fn shares_a_name(a: &[String], b: &[String]) -> bool {
 /// duplicate-insensitive, so "life starting in another world" and "another world starting
 /// life" score identically. Pure and DB-free.
 #[must_use]
-#[allow(clippy::cast_precision_loss)] // word-set sizes are tiny (title token counts)
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "word-set sizes are title token counts, orders of magnitude below f32's exact range"
+)]
 pub fn token_set_ratio(a: &str, b: &str) -> f32 {
     if a.is_empty() || b.is_empty() {
         return 0.0;
@@ -282,7 +288,11 @@ pub fn decide(query: &Query, candidates: &[Candidate], thresholds: Thresholds) -
 #[cfg(test)]
 mod tests {
     // Tests assert exact equality of small, exactly-representable score values.
-    #![allow(clippy::float_cmp)]
+    #![expect(
+        clippy::float_cmp,
+        reason = "scores are compared against the exact constants the scorer is defined to \
+                  produce; a tolerance here would stop the test detecting a changed weight"
+    )]
 
     use super::*;
 

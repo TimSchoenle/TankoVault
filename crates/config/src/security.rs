@@ -12,7 +12,10 @@ use crate::loader::is_production;
 /// map one-to-one onto `TANKOVAULT_SECURITY__*` environment variables. Collapsing them into
 /// an enum or a bitflag would make the config surface harder to write, not easier.
 #[derive(Debug, Clone, Deserialize)]
-#[allow(clippy::struct_excessive_bools)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent operator toggles, one per TANKOVAULT_SECURITY__* variable"
+)]
 pub struct SecurityConfig {
     /// Cross-origin policy. See [`CorsConfig`].
     #[serde(default)]

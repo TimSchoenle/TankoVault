@@ -201,13 +201,15 @@ mod postgres {
 
             let result = tankovault_db::repo::audit::record(
                 &self.pool,
-                event.actor,
-                &event.action,
-                event.target.as_deref(),
-                &event.detail,
-                event.outcome.as_str(),
-                ip,
-                user_agent,
+                &tankovault_db::repo::audit::AuditRecord {
+                    actor_id: event.actor,
+                    action: &event.action,
+                    target: event.target.as_deref(),
+                    detail: &event.detail,
+                    outcome: event.outcome.as_str(),
+                    client_ip: ip,
+                    user_agent,
+                },
             )
             .await;
 

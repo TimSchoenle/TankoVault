@@ -71,7 +71,10 @@ fn empty() -> Option<Value> {
 ///
 /// One long table by design: splitting it per module would make it possible for a whole module
 /// to fall out of the matrix without anything noticing.
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the matrix is one endpoint per line; splitting it would hide what it covers"
+)]
 fn admin_gates() -> Vec<Gate> {
     vec![
         // --- feature flags ---

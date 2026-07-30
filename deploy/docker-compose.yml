@@ -182,6 +182,10 @@ services:
       TANKOVAULT_AUTH__PASSWORD_PEPPER: "${TANKOVAULT_AUTH__PASSWORD_PEPPER:-}"
       TANKOVAULT_CONTROL_PLANE_URL: http://control-plane:8081
       TANKOVAULT_SYNC_URL: http://sync:8083
+      # The "Test adapter" dry-run is proxied to the worker, which is the tier that carries the
+      # adapter + crawl stack; the API no longer links it (PERF-18). Two replicas answer behind
+      # this one name, which is fine for a stateless dry run.
+      TANKOVAULT_WORKER_URL: http://worker:8085
       TANKOVAULT_NATS__URL: nats://nats:4222 # live per-user notification SSE relay (/v1/me/stream)
       # ---- Transactional email (welcome on sign-up, password reset) -------------------
       # Optional: when unset, the API uses a no-op mailer (logs + drops) and these flows

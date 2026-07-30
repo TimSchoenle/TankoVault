@@ -71,8 +71,13 @@ impl SourceAdapter for GenericConfigAdapter {
         parse_blocking(resp, move |root, resp| {
             let page_url = &resp.url;
             let item_sel = parse_selector(&cfg.item)?;
-            let mut items = Vec::new();
-            for el in root.select(&item_sel) {
+            // Sized from the match count rather than grown by doubling (PERF-19). The
+            // element handles are `Copy` two-word references, so materialising them costs a
+            // transient slice and saves the repeated reallocate-and-copy of the far larger
+            // result — and it is an *upper* bound, since the loop skips entries with no link.
+            let elements: Vec<_> = root.select(&item_sel).collect();
+            let mut items = Vec::with_capacity(elements.len());
+            for el in elements {
                 let Some(path) = extract_href(el, &cfg.link, page_url)? else {
                     continue;
                 };
@@ -102,8 +107,9 @@ impl SourceAdapter for GenericConfigAdapter {
             let page_url = &resp.url;
             let item_sel = parse_selector(&cfg.item)?;
             let link_spec = cfg.link.as_deref().unwrap_or("a");
-            let mut updates = Vec::new();
-            for el in root.select(&item_sel) {
+            let elements: Vec<_> = root.select(&item_sel).collect();
+            let mut updates = Vec::with_capacity(elements.len());
+            for el in elements {
                 let Some(path) = extract_href(el, link_spec, page_url)? else {
                     continue;
                 };
@@ -225,8 +231,11 @@ impl SourceAdapter for GenericConfigAdapter {
             let link_attr = link_attr.unwrap_or("href");
             let link_sel = parse_selector(link_sel_str)?;
 
-            let mut chapters = Vec::new();
-            for el in root.select(&container_sel) {
+            // The largest of the three: a long-running series lists thousands of chapters on
+            // one page, so this is where growth by doubling actually copies something.
+            let elements: Vec<_> = root.select(&container_sel).collect();
+            let mut chapters = Vec::with_capacity(elements.len());
+            for el in elements {
                 let Some(anchor) = el.select(&link_sel).next() else {
                     continue;
                 };

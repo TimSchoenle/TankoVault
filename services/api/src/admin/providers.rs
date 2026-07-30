@@ -9,18 +9,11 @@ use crate::views::IntoView;
 use axum::Json;
 use axum::extract::{Path, State};
 use serde::Deserialize;
-use std::sync::Arc;
-use std::time::Duration;
-use tankovault_adapters::{Ctx, SourceAdapter, build_adapter};
+use serde::Serialize;
 use tankovault_db::repo::providers::NewProvider;
 use tankovault_domain::{
     AdapterKind, Permission, Politeness, Provider, ProviderId, ProviderState, ScanMode,
 };
-use tankovault_fetch::{
-    HttpChallengeSolver, InMemorySessionStore, ProviderFetchConfig, SessionStore,
-    build_provider_fetcher,
-};
-use tankovault_solver::ChallengeSolver;
 use utoipa::ToSchema;
 
 /// List providers
@@ -73,7 +66,7 @@ fn empty_object() -> serde_json::Value {
 /// being *persisted*: refusing to store a host that resolves internally is cheaper than
 /// rediscovering it on every scan.
 async fn validate_base_url(base_url: &str) -> ApiResult<()> {
-    tankovault_fetch::ssrf::validate_and_resolve(base_url)
+    tankovault_domain::ssrf::validate_and_resolve(base_url)
         .await
         .map_err(|e| {
             tracing::warn!(url = %base_url, error = %e, "refused a provider base_url");
@@ -355,7 +348,7 @@ pub async fn provider_stats(
     Ok(Json(rows.into_view()))
 }
 
-#[derive(Debug, Deserialize, Default, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, Default, ToSchema)]
 pub struct TestAdapterRequest {
     /// Optional relative series path to also fetch metadata + chapters for.
     #[serde(default)]
@@ -395,56 +388,21 @@ pub async fn test_adapter(
 ) -> ApiResult<Json<serde_json::Value>> {
     user.require(Permission::ProvidersTest).await?;
     let req = body.map(|b| b.0).unwrap_or_default();
-    let provider = tankovault_db::repo::providers::get(&state.pool, id).await?;
-    let (adapter, ctx) = build_test_context(
-        &provider,
-        &state.challenge_solver_url,
-        state.internal_token.as_ref(),
-    )?;
 
-    let sample = tokio::time::timeout(Duration::from_secs(25), async {
-        let latest = match adapter.list_latest(&ctx).await {
-            Ok(items) => serde_json::json!({
-                "ok": true,
-                "items": items.iter().take(10).map(|u| serde_json::json!({
-                    "path": u.path, "title": u.title, "latest_chapter": u.latest_chapter,
-                })).collect::<Vec<_>>(),
-            }),
-            Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
-        };
-        let series = req.path.as_deref().map(|path| async move {
-            let meta = match adapter.fetch_series(&ctx, path).await {
-                Ok(m) => serde_json::json!({
-                    "ok": true, "title": m.title, "alt_titles": m.alt_titles,
-                    "description": m.description, "cover_url": m.cover_url, "tags": m.tags,
-                    "status": m.status.as_str(), "content_type": m.content_type.as_str(),
-                }),
-                Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
-            };
-            let chapters = match adapter.fetch_chapters(&ctx, path).await {
-                Ok(list) => serde_json::json!({
-                    "ok": true, "count": list.len(),
-                    "sample": list.iter().take(10).map(|c| serde_json::json!({
-                        "number": c.number, "title": c.title, "path": c.path,
-                    })).collect::<Vec<_>>(),
-                }),
-                Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
-            };
-            serde_json::json!({ "meta": meta, "chapters": chapters })
-        });
-        let series = match series {
-            Some(fut) => Some(fut.await),
-            None => None,
-        };
-        serde_json::json!({
-            "provider": provider.slug,
-            "base_url": provider.base_url,
-            "latest": latest,
-            "series": series,
-        })
-    })
-    .await
-    .map_err(|_| ApiError::BadRequest("adapter test timed out".to_owned()))?;
+    // Proxied to the worker rather than run here (PERF-18). The dry run needs
+    // `tankovault-adapters` and `tankovault-fetch`, and `tankovault-fetch` is built on
+    // `wreq`/BoringSSL — so hosting it in this binary meant compiling a whole second TLS
+    // stack, from C and assembly, into the API image for one operator-facing endpoint. The
+    // worker already carries the stack because it is the tier that crawls.
+    //
+    // The authorization decision and the audit record stay here, which is the point of the
+    // split: the worker's endpoint is gated only by the internal token, so "may this operator
+    // dry-run this provider?" is answered by the tier that knows about operators, and the
+    // trail is written where every other privileged action's is.
+    let Json(sample): Json<serde_json::Value> = state
+        .worker
+        .post(&format!("/internal/providers/{id}/test"), &req)
+        .await?;
 
     audit(
         &state,
@@ -455,43 +413,4 @@ pub async fn test_adapter(
     )
     .await;
     Ok(Json(sample))
-}
-
-/// Build the provider's adapter + an injected fetch stack for a one-off dry-run. Mirrors
-/// the worker's per-provider context; kept inline to avoid a shared crate for one endpoint.
-fn build_test_context(
-    provider: &Provider,
-    solver_url: &str,
-    token: Option<&tankovault_service::InternalToken>,
-) -> ApiResult<(Box<dyn SourceAdapter>, Ctx)> {
-    let adapter = build_adapter(provider.adapter, &provider.slug, &provider.config)
-        .map_err(|e| ApiError::BadRequest(format!("adapter build failed: {e}")))?;
-    let solver: Arc<dyn ChallengeSolver> = Arc::new(HttpChallengeSolver::new(
-        solver_url.to_owned(),
-        Duration::from_secs(90),
-        token.map(|t| t.expose().to_owned()),
-    ));
-    let session_store: Arc<dyn SessionStore> = Arc::new(InMemorySessionStore::default());
-    let mut cfg = ProviderFetchConfig::new(
-        provider.politeness.user_agent.clone(),
-        solver,
-        session_store,
-    );
-    cfg.emulation = provider.politeness.emulation;
-    cfg.rps = provider.politeness.rps;
-    cfg.concurrency = provider.politeness.concurrency;
-    cfg.connect_timeout = Duration::from_secs(10);
-    cfg.request_timeout = Duration::from_secs(20);
-    let fetcher = build_provider_fetcher(cfg).map_err(|e| {
-        tracing::error!(error = %e, "fetcher build failed");
-        ApiError::Internal
-    })?;
-    Ok((
-        adapter,
-        Ctx {
-            base_url: provider.base_url.clone(),
-            provider_slug: provider.slug.clone(),
-            fetcher,
-        },
-    ))
 }

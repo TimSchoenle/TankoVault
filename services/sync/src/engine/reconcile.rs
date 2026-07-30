@@ -638,7 +638,10 @@ impl Reconciler {
 mod tests {
     // Progress values under test are small, exactly-representable integers, so exact float
     // comparison is correct here.
-    #![allow(clippy::float_cmp)]
+    #![expect(
+        clippy::float_cmp,
+        reason = "reconciliation decides by exact equality of progress values"
+    )]
 
     use super::dedupe_latest_by_external_id;
     use crate::provider::RemoteEntry;

@@ -40,13 +40,14 @@ pub struct AppState {
     pub control_plane: crate::upstream::Upstream,
     /// The external-sync service, for proxying `/v1/me/sync/*` and the admin sync console.
     pub sync: crate::upstream::Upstream,
-    /// Endpoint of the challenge-solver service, used by the "Test adapter" dry-run. A bare
-    /// URL rather than an [`crate::upstream::Upstream`]: it is handed to the adapter fetch
-    /// stack, which builds its own client.
-    pub challenge_solver_url: String,
-    /// Presented to the challenge-solver by the adapter fetch stack, which cannot go through
-    /// [`crate::upstream::Upstream`].
-    pub internal_token: Option<tankovault_service::InternalToken>,
+    /// The scan worker, for proxying the "Test adapter" dry-run.
+    ///
+    /// This used to be a bare `challenge_solver_url` plus the internal token, because the
+    /// dry-run ran *here* and built its own fetch stack — which is what linked `wreq` and
+    /// `BoringSSL` into this binary alongside `rustls` (PERF-18). The worker already carries
+    /// that stack, so the dry-run moved there and this is an ordinary proxy like the two
+    /// above.
+    pub worker: crate::upstream::Upstream,
     /// Core-NATS bus for relaying live per-user notifications over SSE. `None` when NATS
     /// was unreachable at boot: the live-stream endpoint degrades to `503` while every
     /// other route (including the durable notifications list) keeps working.

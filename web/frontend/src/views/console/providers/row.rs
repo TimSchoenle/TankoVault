@@ -75,6 +75,9 @@ pub(super) fn healthy_percent(stat: &ProviderStat) -> Option<f64> {
     }
     let serving = (stat.source_count - stat.blocked_sources).max(0);
     // Both counts are row totals, far inside `f64`'s exact integer range.
-    #[allow(clippy::cast_precision_loss)]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "both counts are row totals, far inside f64's exact integer range"
+    )]
     Some((serving as f64 / stat.source_count as f64) * 100.0)
 }

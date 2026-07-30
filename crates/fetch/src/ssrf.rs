@@ -9,54 +9,23 @@
 //!   [`wreq::dns::Resolve`] so the client only ever connects to vetted public IPs —
 //!   closing the DNS-rebinding / redirect-to-internal hole.
 //!
-//! The address table and the pre-flight check are I/O-free and live in
-//! [`tankovault_domain::ssrf`], so `services/render` and `services/challenge-solver` — which
-//! also fetch caller-supplied URLs — can apply the same policy without depending on this
-//! crate's `wreq`/`BoringSSL` stack. They are re-exported here so existing call sites are
-//! unchanged.
+//! **The policy itself is not here.** The address table, the pre-flight check *and* the
+//! DNS-resolving `validate_and_resolve` all live in [`tankovault_domain::ssrf`], so a service
+//! that must apply the same policy does not have to link this crate's `wreq`/`BoringSSL` stack
+//! to do it — `services/render` and `services/challenge-solver` fetch caller-supplied URLs,
+//! and `services/api` validates a `base_url` before storing one (PERF-18). They are re-exported
+//! here, so this crate's own call sites are unchanged.
+//!
+//! What genuinely belongs to this crate is [`SsrfResolver`] below: it is a `wreq::dns::Resolve`,
+//! so it can only exist where `wreq` does, and it is what re-checks every address at connect
+//! time and on every redirect hop.
 
 use std::net::SocketAddr;
 use wreq::dns::{Addrs, Name, Resolve, Resolving};
 
-pub use tankovault_domain::ssrf::{SsrfError, is_forbidden_ip, validate_str, validate_url};
-
-/// Resolve `host` and return only the vetted (public) addresses, erroring if none remain.
-///
-/// # Errors
-/// [`SsrfError::Resolution`] on DNS failure, [`SsrfError::ForbiddenAddress`] if every
-/// resolved address is internal.
-pub async fn resolve_checked(host: &str) -> Result<Vec<SocketAddr>, SsrfError> {
-    let addrs = tokio::net::lookup_host((host, 0))
-        .await
-        .map_err(|_| SsrfError::Resolution(host.to_owned()))?;
-    let allowed: Vec<SocketAddr> = addrs.filter(|sa| !is_forbidden_ip(sa.ip())).collect();
-    if allowed.is_empty() {
-        return Err(SsrfError::ForbiddenAddress(host.to_owned()));
-    }
-    Ok(allowed)
-}
-
-/// Validate a URL the way an *inbound* handler must: scheme and address-range pre-flight,
-/// then a real DNS resolution whose every answer is re-checked.
-///
-/// Used where a URL is about to be **stored** or handed to something this process does not
-/// control — `admin/providers.rs`'s `base_url`, which the scan workers then hit on a timer.
-/// For an outbound fetch through this crate's own stack the pre-flight alone is enough,
-/// because [`SsrfResolver`] repeats the address check at connect time and on every redirect.
-///
-/// # Errors
-/// As [`validate_url`], plus [`SsrfError::Resolution`] / [`SsrfError::ForbiddenAddress`].
-pub async fn validate_and_resolve(raw: &str) -> Result<(), SsrfError> {
-    let url = validate_str(raw)?;
-    let Some(host) = url.host() else {
-        return Err(SsrfError::NoHost);
-    };
-    // An IP literal was already range-checked by `validate_str`; there is nothing to resolve.
-    let url::Host::Domain(domain) = host else {
-        return Ok(());
-    };
-    resolve_checked(domain).await.map(|_| ())
-}
+pub use tankovault_domain::ssrf::{
+    SsrfError, is_forbidden_ip, resolve_checked, validate_and_resolve, validate_str, validate_url,
+};
 
 /// A [`wreq::dns::Resolve`] that filters out forbidden addresses at connect time, for
 /// the initial request and every redirect hop. Injected into the base client so no code

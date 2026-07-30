@@ -5,7 +5,7 @@ use crate::components::OutcomeLine;
 use crate::hooks::{use_busy, use_outcome, Reload};
 use crate::i18n::use_i18n;
 use crate::models::*;
-use crate::views::console::{ADAPTER_KINDS, adapter_label_key};
+use crate::views::console::{adapter_label_key, ADAPTER_KINDS};
 use dioxus::prelude::*;
 
 /// Register a provider. Politeness is left at the polite server defaults and tuned afterwards

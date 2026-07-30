@@ -55,7 +55,11 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
     let can = candidate.read();
     // The score is a 0..=1 ratio, so the rounded percentage is always in range; clamping
     // makes that total rather than relying on the input being well-formed.
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the score is a 0..=1 ratio and the clamp makes the percentage total rather \
+                  than trusting the input to be well-formed"
+    )]
     let pct = (can.score * 100.0).round().clamp(0.0, 100.0) as i32;
     let id = can.id;
     let a = can.series_id;

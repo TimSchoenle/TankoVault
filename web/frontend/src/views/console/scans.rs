@@ -200,8 +200,10 @@ pub(super) fn RunHistoryRow(run: Signal<ScanRun>) -> Element {
     let r = run.read();
     let pill = run_state_pill(r.state);
     let label = i18n.t(r.state.label_key());
-    // `progress()` returns a 0..=1 ratio, so the rounded percentage is always in range.
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "`progress()` returns a 0..=1 ratio and the clamp makes the percentage total"
+    )]
     let pct = (r.progress() * 100.0).round().clamp(0.0, 100.0) as i32;
     let scope = match &r.provider_id {
         Some(ScanRunProviderId::Variant1(id)) => format!("#{}", &id.to_string()[..8]),
@@ -297,8 +299,10 @@ pub(super) fn FailuresPanel(failures: Signal<Vec<FailedTask>>) -> Element {
 pub(super) fn RunProgress(run: Signal<ScanRun>) -> Element {
     let i18n = use_i18n();
     let r = run.read();
-    // `progress()` returns a 0..=1 ratio, so the rounded percentage is always in range.
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "`progress()` returns a 0..=1 ratio and the clamp makes the percentage total"
+    )]
     let pct = (r.progress() * 100.0).round().clamp(0.0, 100.0) as i32;
     let width = format!("width:{pct}%;");
     rsx! {

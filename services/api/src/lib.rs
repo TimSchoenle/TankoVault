@@ -13,7 +13,11 @@
 // Handlers are `pub` so the router (and `openapi::ApiDoc`) can name them, but their
 // containing modules stay private — this crate's only real external surface is
 // `openapi` and the few items re-exported below, so the lint is noise everywhere else.
-#![allow(unreachable_pub)]
+#![expect(
+    unreachable_pub,
+    reason = "a service crate with a thin lib target for its tests; handlers are `pub` for \
+              utoipa's generated siblings, not for an external consumer"
+)]
 
 pub mod openapi;
 

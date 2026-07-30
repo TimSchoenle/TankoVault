@@ -76,6 +76,26 @@ fn politeness_fingerprint(provider: &Provider) -> u64 {
     hasher.finish()
 }
 
+/// The lookup key for a chapter number, used to pair a newly-inserted number reported by the
+/// database back to the parsed chapter it came from.
+///
+/// Keyed on the bit pattern rather than compared with a tolerance, so the pairing is a hash
+/// lookup instead of a scan of the whole chapter list per new chapter (PERF-19). That is the
+/// *same* predicate, not a looser one: the previous test was
+/// `(a - b).abs() < f64::EPSILON`, and `f64::EPSILON` is `2.2e-16` while two adjacent `f64`
+/// near a chapter number like `152.5` are `2.8e-14` apart — four orders of magnitude wider —
+/// so for every value a chapter number can actually take, that comparison already *was* exact
+/// equality.
+///
+/// The one input where the two disagree is `-0.0`, which the tolerance matched against `0.0`
+/// and a bit pattern does not. Chapter 0 is real (prologues), so it is normalised here rather
+/// than leaving a notification to depend on a sign bit. `NaN` cannot arrive: `parse_number`
+/// rejects any non-finite value (TESTING F-01b), which is what makes a bitwise key sound at
+/// all.
+fn chapter_key(number: f64) -> u64 {
+    if number == 0.0 { 0.0_f64 } else { number }.to_bits()
+}
+
 /// A built fetch stack plus the fingerprint of the settings that produced it.
 struct CachedFetcher {
     /// Politeness + base URL as the provider row had them when this stack was built. An
@@ -169,7 +189,7 @@ impl Engine {
     /// and stateless, while the fetch stack carries the rate limiter, the connection pool and
     /// the accumulated throttle penalty, all of which must be shared across a provider's
     /// tasks to mean anything.
-    fn provider_context(
+    pub(crate) fn provider_context(
         &self,
         provider: &Provider,
     ) -> anyhow::Result<(Box<dyn SourceAdapter>, Ctx)> {
@@ -195,33 +215,44 @@ impl Engine {
         let chapters = adapter.fetch_chapters(ctx, path).await?;
         let hash = content_hash(&meta, &chapters);
 
+        // `meta` and `chapters` are moved into `scanned` from here on, not copied into it.
+        // Both are owned locals whose only later use is the `chapter.discovered` fan-out
+        // below, which now reads them back out of `scanned` — so a series with two thousand
+        // chapters no longer allocates a second copy of every title and path (PERF-19).
+        // `content_hash` is computed above, while both are still borrowable.
+        let normalized_title = normalize_title(&meta.title);
         let scanned = ScannedSeries {
             provider_id: provider.id,
             source_path: path.to_owned(),
+            // The one surviving clone: the title is both the provider's label for this source
+            // and the canonical series title, and the two are independent thereafter.
             provider_title: Some(meta.title.clone()),
             meta: SeriesUpsert {
-                canonical_title: meta.title.clone(),
-                normalized_title: normalize_title(&meta.title),
-                description: meta.description.clone(),
-                cover_url: meta.cover_url.clone(),
+                canonical_title: meta.title,
+                normalized_title,
+                description: meta.description,
+                cover_url: meta.cover_url,
                 content_type: meta.content_type,
                 status: meta.status,
                 release_year: meta.release_year,
             },
             alt_titles: meta
                 .alt_titles
-                .iter()
-                .map(|t| (t.clone(), normalize_title(t)))
+                .into_iter()
+                .map(|t| {
+                    let normalized = normalize_title(&t);
+                    (t, normalized)
+                })
                 .collect(),
-            tags: meta.tags.clone(),
-            authors: meta.authors.clone(),
+            tags: meta.tags,
+            authors: meta.authors,
             chapters: chapters
-                .iter()
+                .into_iter()
                 .map(|c| ChapterUpsert {
                     number: c.number,
                     volume: None,
-                    title: c.title.clone(),
-                    path: c.path.clone(),
+                    title: c.title,
+                    path: c.path,
                     published_at: c.published_at,
                 })
                 .collect(),
@@ -229,15 +260,21 @@ impl Engine {
         };
 
         let outcome =
-            tankovault_db::repo::catalog::ingest_series(&self.pool, scanned, &self.matching)
+            tankovault_db::repo::catalog::ingest_series(&self.pool, &scanned, &self.matching)
                 .await?;
 
         if let Some(bus) = &self.bus {
+            // One pass to index, then a lookup per new chapter. The previous form scanned the
+            // whole chapter list for each new number, so a 2,000-chapter series with 50 new
+            // chapters did 100,000 comparisons on the notification path (PERF-19).
+            let by_number: HashMap<u64, &ChapterUpsert> = scanned
+                .chapters
+                .iter()
+                .map(|c| (chapter_key(c.number), c))
+                .collect();
+
             for number in &outcome.new_chapters {
-                if let Some(ch) = chapters
-                    .iter()
-                    .find(|c| (c.number - number).abs() < f64::EPSILON)
-                {
+                if let Some(ch) = by_number.get(&chapter_key(*number)) {
                     let event = ChapterDiscovered {
                         series_id: outcome.series_id,
                         series_source_id: outcome.source_id,
@@ -886,5 +923,37 @@ mod tests {
             content_hash(&series, &genuine),
             "a provider-supplied path must not be able to impersonate a second chapter"
         );
+    }
+
+    /// The fan-out pairing key must agree with the tolerance comparison it replaced, on every
+    /// number a chapter can carry.
+    ///
+    /// The pairing decides which chapters get a `chapter.discovered` message, so a key that
+    /// disagrees with the old predicate loses notifications silently — which is the failure
+    /// mode TRACK-1 was made of. Driven from the sub-chapter numbering the tracking code cares
+    /// about (152 and 152.5 are different chapters) and from the boundaries.
+    #[test]
+    fn the_pairing_key_agrees_with_the_tolerance_it_replaced() {
+        let numbers = [
+            0.0, 1.0, 1.5, 2.0, 3.5, 152.0, 152.1, 152.5, 152.6, 153.0, 9999.0, 0.001, 1e9,
+        ];
+        for &a in &numbers {
+            for &b in &numbers {
+                let by_key = chapter_key(a) == chapter_key(b);
+                let by_tolerance = (a - b).abs() < f64::EPSILON;
+                assert_eq!(
+                    by_key, by_tolerance,
+                    "`{a}` vs `{b}`: the hash key and the old comparison must decide the same                      way, or a chapter is announced twice or not at all"
+                );
+            }
+        }
+    }
+
+    /// Chapter 0 is real — a prologue — and it is the one value where a bit pattern and a
+    /// tolerance would disagree, because `-0.0` and `0.0` are equal numbers with different
+    /// bits. Normalising it is what keeps a notification from depending on a sign bit.
+    #[test]
+    fn negative_zero_is_the_same_chapter_as_zero() {
+        assert_eq!(chapter_key(-0.0), chapter_key(0.0));
     }
 }

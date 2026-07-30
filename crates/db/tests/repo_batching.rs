@@ -49,7 +49,7 @@ async fn a_provider(db: &TestDb, slug: &str) -> ProviderId {
 async fn a_series(db: &TestDb, provider_id: ProviderId, title: &str, path: &str) -> SeriesId {
     ingest_series(
         &db.pool,
-        ScannedSeries {
+        &ScannedSeries {
             provider_id,
             source_path: path.to_owned(),
             provider_title: Some(title.to_owned()),
@@ -280,10 +280,7 @@ async fn progress_and_status_prefetches_match_the_per_series_reads() {
         .await
         .expect("status prefetch");
 
-    #[allow(clippy::float_cmp)] // exact integers written by the fixture
-    {
-        assert_eq!(progress.get(&one).map(|(p, _)| *p), Some(17.0));
-    }
+    assert_eq!(progress.get(&one).map(|(p, _)| *p), Some(17.0));
     assert!(
         !progress.contains_key(&two),
         "a series with no read_progress row must be absent, not zero"

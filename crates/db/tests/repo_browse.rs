@@ -133,7 +133,7 @@ async fn a_provider(db: &TestDb, slug: &str) -> ProviderId {
 async fn ingest(db: &TestDb, provider_id: ProviderId, seed: &Seed, chapters: usize) -> SeriesId {
     ingest_series(
         &db.pool,
-        ScannedSeries {
+        &ScannedSeries {
             provider_id,
             source_path: format!("/s/{}", normalize_title(seed.title).replace(' ', "-")),
             provider_title: Some(seed.title.to_owned()),
@@ -155,7 +155,10 @@ async fn ingest(db: &TestDb, provider_id: ProviderId, seed: &Seed, chapters: usi
             authors: seed.authors.iter().map(|a| (*a).to_owned()).collect(),
             chapters: (1..=chapters)
                 .map(|n| ChapterUpsert {
-                    #[allow(clippy::cast_precision_loss)]
+                    #[expect(
+                        clippy::cast_precision_loss,
+                        reason = "a fixture index, far below f64's exact-integer range"
+                    )]
                     number: n as f64,
                     volume: None,
                     title: None,

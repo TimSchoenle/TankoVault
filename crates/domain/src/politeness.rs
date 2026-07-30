@@ -88,7 +88,10 @@ impl Politeness {
         DEFAULT_USER_AGENT.to_owned()
     }
     // Always `Some`, but the signature must match the field's type for `#[serde(default)]`.
-    #[allow(clippy::unnecessary_wraps)]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "must match the Option<BrowserEmulation> field it defaults"
+    )]
     fn default_emulation() -> Option<BrowserEmulation> {
         Some(BrowserEmulation::Chrome)
     }
@@ -122,7 +125,11 @@ impl Default for Politeness {
 #[cfg(test)]
 mod tests {
     // Clamping returns exactly the ceiling constants, so exact float comparison is correct.
-    #![allow(clippy::float_cmp)]
+    #![expect(
+        clippy::float_cmp,
+        reason = "these assertions compare clamped values against the exact bounds they were \
+                  clamped to, so equality is the property under test"
+    )]
 
     use super::*;
 

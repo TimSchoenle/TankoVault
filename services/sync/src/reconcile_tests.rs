@@ -166,7 +166,7 @@ impl Fixture {
 
         let series = ingest_series(
             &db.pool,
-            ScannedSeries {
+            &ScannedSeries {
                 provider_id,
                 source_path: "/manga/solo-leveling".to_owned(),
                 provider_title: Some(TITLE.to_owned()),
@@ -318,7 +318,10 @@ const STALE: i64 = 1_600_000_000; // 2020-09-13
 
 // Progress values here are small, exactly-representable integers, so exact float comparison is
 // correct.
-#[allow(clippy::float_cmp)]
+#[expect(
+    clippy::float_cmp,
+    reason = "asserts the reconciled progress is exactly the value that was pushed"
+)]
 mod reconcile {
     use super::*;
 

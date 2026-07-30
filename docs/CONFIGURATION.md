@@ -232,7 +232,7 @@ that can disagree.
 | `TANKOVAULT_BIND_ADDR` | `0.0.0.0:8080` | |
 | `TANKOVAULT_CONTROL_PLANE_URL` | `http://control-plane:8081` | |
 | `TANKOVAULT_SYNC_URL` | `http://sync:8083` | |
-| `TANKOVAULT_CHALLENGE_SOLVER_URL` | `http://challenge-solver:8090` | |
+| `TANKOVAULT_WORKER_URL` | `http://worker:8085` | The worker's ops listener, which also serves the internally-authenticated adapter dry-run behind `POST /v1/admin/providers/{id}/test`. Replaces `TANKOVAULT_CHALLENGE_SOLVER_URL`, which the API no longer needs: the dry-run ran in-process and reached the solver directly, which meant the API binary linked the whole `wreq`/BoringSSL crawl stack (PERF-18). Only the **worker** talks to the challenge solver now. |
 | `TANKOVAULT_AUTH__JWT_SECRET` | *(required, ≥32 chars)* | |
 | `TANKOVAULT_AUTH__PASSWORD_PEPPER` | `""` | Optional server-side secret mixed into every argon2id hash, so a database leak alone cannot be brute-forced offline. **Once set it must never change** or every existing password stops verifying, and it must be given to both `api` and the `seed` step with the same value. |
 | `TANKOVAULT_AUTH__ACCESS_TTL_MINUTES` | `15` | |
@@ -251,7 +251,7 @@ that can disagree.
 
 | Key | Default | Notes |
 |---|---|---|
-| `TANKOVAULT_BIND_ADDR` | `0.0.0.0:8085` | Ops listener only — the worker has no HTTP contract. It exists so a wedged worker is visible to a probe, and it is what the container healthcheck connects to. |
+| `TANKOVAULT_BIND_ADDR` | `0.0.0.0:8085` | Liveness, readiness **and** one internal route: `POST /internal/providers/{id}/test`, the adapter dry-run the API proxies here so that binary need not link the crawl stack (PERF-18). The dry-run sits inside `HttpStack::with_internal_auth`, so it needs `TANKOVAULT_INTERNAL__TOKEN`; `/health` and `/ready` are merged outside it and stay reachable to a probe without the secret. This port is also what the container healthcheck connects to. |
 | `TANKOVAULT_WORKER__CHALLENGE_SOLVER_ENDPOINT` | `http://challenge-solver:8090` | |
 | `TANKOVAULT_WORKER__MAX_CATALOG_PAGES` | `20000` | A runaway-paginator backstop, not a budget: real termination is the adapter's `has_next` marker. Some catalogues legitimately paginate into the thousands, so a value near a real catalogue size **silently truncates it**. |
 | `TANKOVAULT_WORKER__PROVIDER_REFRESH_SECS` | `60` | How often the round-robin queue re-reads the provider list. A newly created provider does not start scanning until its lane opens on the next refresh. |

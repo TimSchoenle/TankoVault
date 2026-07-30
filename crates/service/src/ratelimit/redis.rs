@@ -99,7 +99,10 @@ impl RateLimitStore for RedisStore {
         //
         // The cast is bounded by construction: `capacity / refill` is at most
         // `u32::MAX * 60`, which is nowhere near `i64::MAX` even after the ×1000.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "bounded by construction: capacity/refill is at most u32::MAX * 60"
+        )]
         let ttl_ms = ((capacity / refill) * 1000.0).ceil() as i64 + 1000;
 
         let outcome: Result<(i64, i64, i64), Error> = self

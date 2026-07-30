@@ -17,13 +17,17 @@ path = "src/main.rs"
 tankovault-config = { workspace = true }
 tankovault-service = { workspace = true, features = ["db", "redis"] }
 tankovault-db = { workspace = true }
-tankovault-domain = { workspace = true }
+# `dns` supplies `ssrf::validate_and_resolve`, which `admin/providers.rs` needs before it
+# stores an operator-supplied `base_url` (SEC-5). It used to come from `tankovault-fetch` —
+# and `tankovault-adapters`, `tankovault-fetch` and `tankovault-solver` are all *gone* from
+# this manifest as of PERF-18, because they pulled `wreq`/BoringSSL into a binary that already
+# links `rustls` through `reqwest` and `sqlx`. The one endpoint that needed them, the adapter
+# dry-run, is proxied to `services/worker` now. Do not re-add them: check
+# `cargo tree -p tankovault-api -i boring-sys2` before adding any dependency here.
+tankovault-domain = { workspace = true, features = ["dns"] }
 tankovault-auth = { workspace = true }
 tankovault-email = { workspace = true }
-tankovault-adapters = { workspace = true }
 tankovault-matcher = { workspace = true }
-tankovault-fetch = { workspace = true }
-tankovault-solver = { workspace = true }
 tankovault-bus = { workspace = true }
 tankovault-contracts = { workspace = true }
 axum = { workspace = true }

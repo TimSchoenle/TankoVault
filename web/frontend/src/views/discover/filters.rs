@@ -9,8 +9,10 @@ use crate::icons::{Ic, Icon};
 use crate::models::*;
 use dioxus::prelude::*;
 
+// No `too_many_arguments` suppression: `#[component]` turns these props into a struct, so the
+// lint never fires. The `#[allow]` that used to be here was dead, which converting it to an
+// `#[expect]` revealed (BUILD_AND_OPS §2.3).
 #[component]
-#[allow(clippy::too_many_arguments)]
 pub(super) fn FilterPanel(
     types: Signal<Vec<ContentType>>,
     statuses: Signal<Vec<SeriesStatus>>,

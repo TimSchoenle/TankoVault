@@ -113,8 +113,10 @@ pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
         .collect();
     let numbers: Vec<f64> = chapters.iter().map(|c| c.number).collect();
     let volumes: Vec<Option<i32>> = chapters.iter().map(|c| c.volume).collect();
-    let titles: Vec<Option<String>> = chapters.iter().map(|c| c.title.clone()).collect();
-    let paths: Vec<String> = chapters.iter().map(|c| c.path.clone()).collect();
+    // Borrowed: the arrays are bound for one statement and dropped, so cloning a title and a
+    // path per chapter allocates twice for every chapter of every scanned series (PERF-19).
+    let titles: Vec<Option<&str>> = chapters.iter().map(|c| c.title.as_deref()).collect();
+    let paths: Vec<&str> = chapters.iter().map(|c| c.path.as_str()).collect();
     let published: Vec<Option<OffsetDateTime>> = chapters.iter().map(|c| c.published_at).collect();
 
     let rows = sqlx::query!(
@@ -133,8 +135,8 @@ pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
         source_id.as_uuid(),
         &numbers,
         &volumes as &[Option<i32>],
-        &titles as &[Option<String>],
-        &paths,
+        &titles as _,
+        &paths as _,
         &published as &[Option<OffsetDateTime>],
     )
     .fetch_all(exec)

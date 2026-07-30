@@ -521,7 +521,10 @@ pub(super) fn CandidateMatchRow(
 
     let score_badge = score.map(|s| {
         // Clamped to 0..=1 first, so the rounded percentage is always in `i32` range.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "clamped to 0..=1 first, so the rounded percentage is always in i32 range"
+        )]
         let pct = (s.clamp(0.0, 1.0) * 100.0).round() as i32;
         let cls = if s >= 0.85 {
             "ik-pill jade"

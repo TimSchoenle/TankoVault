@@ -139,16 +139,22 @@ impl Fetcher for BaseHttpFetcher {
 
         let status = resp.status().as_u16();
         let final_url = resp.url().to_string();
-        let headers = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| {
-                (
-                    k.as_str().to_owned(),
-                    v.to_str().unwrap_or_default().to_owned(),
-                )
-            })
-            .collect();
+        // Every header is materialised, not just the four the workspace ever reads
+        // (`content-type`, `retry-after`, `cf-mitigated`, `server`). PERF-19 proposed narrowing
+        // this and it is **declined**, deliberately: `FetchResponse::headers` is a public field
+        // documented as "response headers", and an allowlist would make it a lie whose failure
+        // mode is silent — a future reader of some new header finds it absent and has no reason
+        // to suspect this function. That is the exact defect class the rest of this remediation
+        // exists to remove, and it would be worth trading for far more than ~40 small
+        // allocations against a fetch that also does a TLS handshake, a network round trip and
+        // up to 8 MiB of body. Pre-sizing the vector is the part that *is* free.
+        let mut headers = Vec::with_capacity(resp.headers().len());
+        headers.extend(resp.headers().iter().map(|(k, v)| {
+            (
+                k.as_str().to_owned(),
+                v.to_str().unwrap_or_default().to_owned(),
+            )
+        }));
 
         // Pre-size from `Content-Length` when the server declares one, clamped to the cap so a
         // hostile header cannot make us allocate 8 MiB for a 200-byte body. Growing from
@@ -188,7 +194,10 @@ impl Fetcher for BaseHttpFetcher {
     }
 }
 
-#[allow(clippy::needless_pass_by_value)] // owned-error mapper, used directly in `.map_err`
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "an owned-error mapper, passed directly to `.map_err`"
+)]
 fn map_wreq_err(e: wreq::Error) -> FetchError {
     if e.is_timeout() {
         FetchError::Timeout

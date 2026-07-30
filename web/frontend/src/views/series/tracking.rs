@@ -427,7 +427,10 @@ fn ProgressEditor(
     // The frontier is a whole-chapter count, so it is displayed and stepped as an integer.
     let shown = crate::util::chapter_number(value);
     let ceiling = {
-        #[allow(clippy::cast_precision_loss)]
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a whole-chapter count, far inside f64's exact integer range"
+        )]
         {
             total as f64
         }

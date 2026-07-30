@@ -64,8 +64,10 @@ pub(super) fn ChapterSection(
     let percent = if total == 0 {
         0.0
     } else {
-        // Both counts are list lengths, far inside `f64`'s exact integer range.
-        #[allow(clippy::cast_precision_loss)]
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "both counts are list lengths, far inside f64's exact integer range"
+        )]
         {
             (read as f64 / total as f64) * 100.0
         }

@@ -95,7 +95,11 @@ impl Session {
         let exp = jwt::expires_at(&token)?;
         // `exp` is a unix-second timestamp; the precision `f64` loses at that magnitude is
         // far below the minute-scale granularity this scheduling hint is used at.
-        #[allow(clippy::cast_precision_loss)]
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a unix-second timestamp; the precision f64 loses there is far below the \
+                      minute-scale granularity this scheduling hint is used at"
+        )]
         Some(exp as f64 * 1000.0 - js_sys::Date::now())
     }
 }

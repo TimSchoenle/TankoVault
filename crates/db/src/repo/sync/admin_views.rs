@@ -14,6 +14,13 @@ use uuid::Uuid;
 /// One row of the admin Sync console's "Linked accounts" table. The automatic-sync policy
 /// columns and pending-conflict count (design v2 §B.7) are read-only operator visibility —
 /// they are user settings, never operator-overridable.
+///
+/// `pending_conflicts` is scoped to *this* account, not to the user. The row is keyed by
+/// `(user, provider)` and the console renders the count inside it, so a user with two linked
+/// providers would otherwise see each provider claiming the other's conflicts. The
+/// user-wide count the account panel badge shows is
+/// [`count_pending_conflicts`](super::conflicts::count_pending_conflicts) and is a different
+/// question.
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct AdminAccountRow {
     pub user_id: Uuid,
@@ -41,7 +48,8 @@ pub async fn admin_list_accounts<'e, E: PgExecutor<'e>>(
         "SELECT ea.user_id, u.username, ea.provider, ea.external_username, \
                 ea.last_synced_at, ea.last_error, ea.auto_sync_enabled, ea.conflict_policy, \
                 (SELECT count(*) FROM sync_conflicts sc \
-                   WHERE sc.user_id = ea.user_id AND sc.resolved_at IS NULL) AS \"pending_conflicts!\", \
+                   WHERE sc.user_id = ea.user_id AND sc.provider = ea.provider \
+                     AND sc.resolved_at IS NULL) AS \"pending_conflicts!\", \
                 ea.created_at \
          FROM external_accounts ea JOIN users u ON u.id = ea.user_id \
          ORDER BY (ea.last_error IS NOT NULL) DESC, ea.last_synced_at DESC NULLS LAST \

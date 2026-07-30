@@ -1,0 +1,294 @@
+﻿//! Metadata enrichment: the sweep's work list, folding resolved upstream metadata into a
+//! series, and the alternative-title / tag / author link tables it writes.
+
+use crate::error::DbResult;
+use sqlx::{FromRow, PgExecutor};
+use tankovault_domain::SeriesId;
+use time::OffsetDateTime;
+use uuid::Uuid;
+
+/// A minimal series row for the tokenless metadata-enrichment worker: enough to look the
+/// work up upstream (by mapped external id or by title) and to feed the metadata-priority
+/// resolver the current locally-scraped values.
+pub struct SeriesEnrichmentRow {
+    pub id: SeriesId,
+    pub canonical_title: String,
+    pub description: Option<String>,
+    pub cover_url: Option<String>,
+    /// The row's sort key, carried back so the caller can page from it. Part of the cursor,
+    /// not of the enrichment payload.
+    pub updated_at: OffsetDateTime,
+}
+
+/// One page of series for the background metadata-enrichment sweep, as a **keyset** walk.
+///
+/// `after` is the `(updated_at, id)` of the last row of the previous page, and `started_at`
+/// is the timestamp the sweep began. Both are load-bearing:
+///
+/// - The previous shape was `ORDER BY updated_at ASC LIMIT $1 OFFSET $2`, and enrichment
+///   *writes* `updated_at = now()`. So the sort key moved under the cursor: every enriched row
+///   jumped to the end of the ordering, the rows behind it shifted forward by one, and the
+///   next `OFFSET` skipped exactly those. The sweep silently missed series â€” not a slowdown,
+///   a correctness bug.
+/// - `updated_at < started_at` excludes rows this sweep has already touched, so a row cannot
+///   be handed back to the same run.
+/// - Keyset paging also drops the cost from O(nÂ²/batch): `OFFSET` re-sorted the whole table
+///   per batch (5 000 sorts of 500 000 rows for a full catalogue), whereas this seeks straight
+///   into `series_enrichment_cursor_idx`.
+pub async fn list_series_for_enrichment<'e, E: PgExecutor<'e>>(
+    exec: E,
+    limit: i64,
+    after: Option<(OffsetDateTime, Uuid)>,
+    started_at: OffsetDateTime,
+) -> DbResult<Vec<SeriesEnrichmentRow>> {
+    #[derive(FromRow)]
+    struct Row {
+        id: Uuid,
+        canonical_title: String,
+        description: Option<String>,
+        cover_url: Option<String>,
+        updated_at: OffsetDateTime,
+    }
+    let (after_updated, after_id) = match after {
+        Some((updated, id)) => (Some(updated), Some(id)),
+        None => (None, None),
+    };
+    let rows = sqlx::query_as!(
+        Row,
+        "SELECT id, canonical_title, description, cover_url, updated_at FROM series \
+         WHERE updated_at < $4 \
+           AND ($2::timestamptz IS NULL OR (updated_at, id) > ($2, $3)) \
+         ORDER BY updated_at ASC, id ASC \
+         LIMIT $1",
+        limit,
+        after_updated,
+        after_id,
+        started_at,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| SeriesEnrichmentRow {
+            id: SeriesId::from_uuid(r.id),
+            canonical_title: r.canonical_title,
+            description: r.description,
+            cover_url: r.cover_url,
+            updated_at: r.updated_at,
+        })
+        .collect())
+}
+
+/// A batch of metadata to fold into an existing series (the tokenless enrichment worker's
+/// output). `description`/`cover_url` are already the values chosen by the metadata-priority
+/// resolver; a `None` leaves the current value untouched. Titles/tags/authors are additive.
+pub struct MetadataEnrichment<'a> {
+    pub description: Option<&'a str>,
+    pub cover_url: Option<&'a str>,
+    /// Content-type token (e.g. `manga`/`manhwa`); only fills a currently-`unknown` series.
+    pub content_type: Option<&'a str>,
+    /// Release year; only fills a series whose year is currently null.
+    pub release_year: Option<i32>,
+    pub alt_titles: &'a [(String, String)],
+    pub tags: &'a [String],
+    pub authors: &'a [String],
+}
+
+/// Apply an enrichment batch to a series in one transaction: overwrite description/cover
+/// (priority already applied by the caller) and additively record alternative titles, tags,
+/// and authors. Idempotent â€” re-running converges to the same rows.
+pub async fn apply_enrichment(
+    pool: &sqlx::PgPool,
+    series_id: SeriesId,
+    enrichment: &MetadataEnrichment<'_>,
+) -> DbResult<()> {
+    let mut tx = pool.begin().await?;
+    sqlx::query!(
+        "UPDATE series SET \
+            description = COALESCE($2, description), \
+            cover_url = COALESCE($3, cover_url), \
+            content_type = CASE WHEN content_type = 'unknown' \
+                                THEN COALESCE($4::text::content_type, content_type) \
+                                ELSE content_type END, \
+            release_year = COALESCE(release_year, $5), \
+            updated_at = now() \
+         WHERE id = $1",
+        series_id.as_uuid(),
+        enrichment.description,
+        enrichment.cover_url,
+        enrichment.content_type,
+        enrichment.release_year,
+    )
+    .execute(&mut *tx)
+    .await?;
+    if !enrichment.alt_titles.is_empty() {
+        add_series_titles(&mut tx, series_id, enrichment.alt_titles).await?;
+    }
+    if !enrichment.tags.is_empty() {
+        add_series_tags(&mut tx, series_id, enrichment.tags).await?;
+    }
+    if !enrichment.authors.is_empty() {
+        add_series_authors(&mut tx, series_id, enrichment.authors).await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Add alternative titles (idempotent on the natural key).
+pub async fn add_series_titles(
+    conn: &mut sqlx::PgConnection,
+    series_id: SeriesId,
+    titles: &[(String, String)],
+) -> DbResult<()> {
+    // One statement, not one per title. `ingest_series` calls this inside a transaction that
+    // also writes tags, authors and every chapter; each extra round trip was time the
+    // transaction spent holding locks (PERF-11).
+    //
+    // De-duplicated on `normalized` first, because `ON CONFLICT ... DO UPDATE` refuses to
+    // touch the same row twice within one command ("cannot affect row a second time"). The
+    // per-row loop tolerated a provider listing one work under two spellings that normalise
+    // identically; this keeps that tolerance instead of turning it into an error.
+    let mut seen = std::collections::HashSet::new();
+    let mut display = Vec::with_capacity(titles.len());
+    let mut normalized = Vec::with_capacity(titles.len());
+    for (title, norm) in titles {
+        if norm.is_empty() || !seen.insert(norm.as_str()) {
+            continue;
+        }
+        display.push(title.as_str());
+        normalized.push(norm.as_str());
+    }
+    if normalized.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query!(
+        "INSERT INTO series_titles (series_id, title, normalized) \
+         SELECT $1, u.title, u.normalized \
+         FROM UNNEST($2::text[], $3::text[]) AS u(title, normalized) \
+         ON CONFLICT (series_id, normalized) DO UPDATE SET title = EXCLUDED.title",
+        series_id.as_uuid(),
+        &display as &[&str],
+        &normalized as &[&str],
+    )
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
+/// A URL-safe, lowercase identity key for a display name (tag or author). Deliberately
+/// distinct from [`normalize_title`] â€” that function drops "noise" words like "scan" or
+/// "comic" which would wrongly mangle a genre or a person's name.
+fn slugify(name: &str) -> String {
+    let mut slug = String::with_capacity(name.len());
+    let mut last_was_dash = true; // suppresses a leading dash
+    for c in name.to_lowercase().chars() {
+        if c.is_alphanumeric() {
+            slug.push(c);
+            last_was_dash = false;
+        } else if !last_was_dash {
+            slug.push('-');
+            last_was_dash = true;
+        }
+    }
+    slug.trim_end_matches('-').to_owned()
+}
+
+/// Add genre/tag names to a series (idempotent, additive-only â€” never removes a tag a
+/// different source contributed). Empty/unslugifiable names are skipped.
+pub async fn add_series_tags(
+    conn: &mut sqlx::PgConnection,
+    series_id: SeriesId,
+    tags: &[String],
+) -> DbResult<()> {
+    let (slugs, names) = dedup_by_slug(tags);
+    if slugs.is_empty() {
+        return Ok(());
+    }
+
+    // Two set-based statements instead of two per tag.
+    //
+    // `ON CONFLICT (slug) DO NOTHING`, not `DO UPDATE SET name = tags.name`. That no-op
+    // update existed only to make `RETURNING id` fire on an existing row, and it cost a
+    // row-level *write* lock plus a dead tuple per tag per ingest. `tags` rows are globally
+    // shared, so two workers ingesting series that share a genre serialised on the same lock
+    // for as long as the ingest transaction ran (PERF-11). Resolving ids by slug in the
+    // second statement needs no lock at all.
+    sqlx::query!(
+        "INSERT INTO tags (slug, name) SELECT * FROM UNNEST($1::text[], $2::text[]) \
+         ON CONFLICT (slug) DO NOTHING",
+        &slugs as &[String],
+        &names as &[&str],
+    )
+    .execute(&mut *conn)
+    .await?;
+
+    sqlx::query!(
+        "INSERT INTO series_tags (series_id, tag_id) \
+         SELECT $1, t.id FROM tags t WHERE t.slug = ANY($2::text[]) \
+         ON CONFLICT DO NOTHING",
+        series_id.as_uuid(),
+        &slugs as &[String],
+    )
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
+/// Add author/artist credits to a series (idempotent, additive-only â€” mirrors
+/// [`add_series_tags`]).
+pub async fn add_series_authors(
+    conn: &mut sqlx::PgConnection,
+    series_id: SeriesId,
+    authors: &[String],
+) -> DbResult<()> {
+    let (slugs, names) = dedup_by_slug(authors);
+    if slugs.is_empty() {
+        return Ok(());
+    }
+
+    // Same shape, and the same reasoning, as [`add_series_tags`]: `authors` is globally
+    // shared, so the no-op `DO UPDATE` that used to make `RETURNING` fire took a write lock
+    // on a row every concurrent ingest of the same creator also wanted.
+    sqlx::query!(
+        "INSERT INTO authors (slug, name) SELECT * FROM UNNEST($1::text[], $2::text[]) \
+         ON CONFLICT (slug) DO NOTHING",
+        &slugs as &[String],
+        &names as &[&str],
+    )
+    .execute(&mut *conn)
+    .await?;
+
+    sqlx::query!(
+        "INSERT INTO series_authors (series_id, author_id) \
+         SELECT $1, a.id FROM authors a WHERE a.slug = ANY($2::text[]) \
+         ON CONFLICT DO NOTHING",
+        series_id.as_uuid(),
+        &slugs as &[String],
+    )
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
+/// Slugify a list of display names, dropping empties and keeping the first spelling of each
+/// slug.
+///
+/// The de-duplication is required, not tidiness: binding a slug twice in one `UNNEST` insert
+/// would be harmless under `DO NOTHING`, but the link statement would then try to attach the
+/// same `(series_id, tag_id)` pair twice. Returning the display names alongside keeps the two
+/// arrays index-aligned for the `UNNEST`.
+fn dedup_by_slug(names: &[String]) -> (Vec<String>, Vec<&str>) {
+    let mut seen = std::collections::HashSet::new();
+    let mut slugs = Vec::with_capacity(names.len());
+    let mut display = Vec::with_capacity(names.len());
+    for name in names {
+        let slug = slugify(name);
+        if slug.is_empty() || !seen.insert(slug.clone()) {
+            continue;
+        }
+        slugs.push(slug);
+        display.push(name.as_str());
+    }
+    (slugs, display)
+}

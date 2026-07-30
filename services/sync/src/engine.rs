@@ -120,6 +120,35 @@ fn dedupe_latest_by_external_id(entries: Vec<RemoteEntry>) -> Vec<RemoteEntry> {
     by_id.into_values().collect()
 }
 
+/// One user's local sync-relevant state for one provider, read once per reconciliation run.
+///
+/// `reconcile_series` used to open with three per-series lookups — the exclusion check, the read
+/// frontier and the watchlist status — every one of them against a table keyed on `user_id`, so a
+/// 500-entry library cost 1 500 sequential round trips before any merge decision was made
+/// (PERF-13).
+///
+/// Reading them once is sound because a run reconciles each series **at most once**
+/// (`handled_series`/`handled_ids` in [`SyncEngine::reconcile_account`] guarantee it), so no
+/// series is ever read here after that same run has written to it.
+struct LocalState {
+    /// Series excluded from syncing with this provider (design v2 §A.5).
+    excluded: std::collections::HashSet<SeriesId>,
+    /// Whole-chapter frontier and when it last changed.
+    progress: HashMap<SeriesId, (f64, OffsetDateTime)>,
+    /// Watchlist status, absent when the series is not on the watchlist.
+    status: HashMap<SeriesId, WatchStatus>,
+}
+
+impl LocalState {
+    async fn load(pool: &PgPool, user_id: UserId, slug: &str) -> anyhow::Result<Self> {
+        Ok(Self {
+            excluded: tracking::sync_excluded_series(pool, user_id, slug).await?,
+            progress: tracking::progress_states_for_user(pool, user_id).await?,
+            status: tracking::watchlist_statuses_for_user(pool, user_id).await?,
+        })
+    }
+}
+
 /// The stateful sync engine, shared behind an `Arc` in service state. Holds every registered
 /// provider (`AniList` today; a second provider is a drop-in registry entry).
 pub(crate) struct SyncEngine {
@@ -503,6 +532,11 @@ impl SyncEngine {
     /// Full three-way reconciliation of a linked account (design v2 §B.3/§B.4): every remote
     /// entry is matched + reconciled, then every mapped local watchlist entry not seen on the
     /// remote is created there. Excluded series are skipped; `AskMe` conflicts are queued.
+    ///
+    /// Runs in two phases so the bulk writes can be set-based (PERF-13): every entry is resolved
+    /// and its snapshot collected first, then the remote-entry rows and mappings go in one
+    /// statement each, then the merges run. The merge phase needs the mappings already in place,
+    /// because `record_snapshot` writes into the `sync_mappings` row.
     async fn reconcile_account(
         &self,
         slug: &str,
@@ -522,6 +556,39 @@ impl SyncEngine {
             fetched: entries.len(),
             ..Default::default()
         };
+        // The user's whole local state for this provider, read once. These tables are all keyed
+        // on `user_id`, and no series is reconciled twice in a run, so a per-series read inside
+        // the merge loop bought nothing but a round trip each (PERF-13).
+        let local = LocalState::load(&self.pool, user_id, slug).await?;
+
+        // Phase 1: resolve every entry to a canonical series (or to nothing).
+        let mut resolved: Vec<(&RemoteEntry, Option<SeriesId>)> = Vec::with_capacity(entries.len());
+        for entry in &entries {
+            let matched = self.resolve_series(slug, entry).await?;
+            resolved.push((entry, matched));
+        }
+
+        // Phase 2: persist the fetched snapshots and the mappings, two statements for the lot.
+        let snapshots: Vec<sync::FetchedRemoteEntry> = resolved
+            .iter()
+            .map(|(entry, matched)| sync::FetchedRemoteEntry {
+                external_id: entry.external_id.clone(),
+                title: entry.titles.first().cloned().unwrap_or_default(),
+                status: entry.status.as_str().to_owned(),
+                progress: entry.progress,
+                content_type: entry.content_type.as_str().to_owned(),
+                start_year: entry.start_year,
+                updated_at: entry.updated_at,
+                series_id: *matched,
+            })
+            .collect();
+        sync::upsert_remote_entries(&self.pool, user_id, slug, &snapshots).await?;
+        let mappings: Vec<(SeriesId, String)> = resolved
+            .iter()
+            .filter_map(|(entry, matched)| matched.map(|id| (id, entry.external_id.clone())))
+            .collect();
+        sync::upsert_mappings(&self.pool, slug, &mappings).await?;
+
         let mut handled_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
         // Series already reconciled this run. Two *distinct* remote ids can still resolve to one
         // local series (an ambiguous title match, or genuine duplicate remote works); reconciling
@@ -530,31 +597,13 @@ impl SyncEngine {
         let mut handled_series: std::collections::HashSet<SeriesId> =
             std::collections::HashSet::new();
 
-        // Remote-driven pass: reconcile every remote entry against its local match.
-        for entry in &entries {
-            let matched = self.resolve_series(slug, entry).await?;
-            let title = entry.titles.first().map_or("", String::as_str);
-            sync::upsert_remote_entry(
-                &self.pool,
-                user_id,
-                slug,
-                &entry.external_id,
-                title,
-                entry.status.as_str(),
-                entry.progress,
-                entry.content_type.as_str(),
-                entry.start_year,
-                entry.updated_at,
-                matched,
-            )
-            .await?;
-
-            let Some(series_id) = matched else {
+        // Phase 3, remote-driven: reconcile every matched entry against its local state.
+        for (entry, matched) in &resolved {
+            let Some(series_id) = *matched else {
                 counts.unmatched += 1;
                 continue;
             };
             counts.matched += 1;
-            sync::upsert_mapping(&self.pool, series_id, slug, &entry.external_id).await?;
             handled_ids.insert(entry.external_id.clone());
             if !handled_series.insert(series_id) {
                 continue; // this series was already reconciled against a duplicate remote row
@@ -568,6 +617,7 @@ impl SyncEngine {
                 &entry.external_id,
                 Some(entry),
                 policy,
+                &local,
                 &mut counts,
             )
             .await?;
@@ -597,6 +647,7 @@ impl SyncEngine {
                 &external_id,
                 None,
                 policy,
+                &local,
                 &mut counts,
             )
             .await?;
@@ -633,18 +684,18 @@ impl SyncEngine {
         external_id: &str,
         remote: Option<&RemoteEntry>,
         policy: ConflictPolicy,
+        local: &LocalState,
         counts: &mut ReconcileCounts,
     ) -> anyhow::Result<()> {
-        if tracking::is_sync_excluded(&self.pool, user_id, series_id, slug).await? {
+        if local.excluded.contains(&series_id) {
             counts.skipped += 1;
             return Ok(());
         }
 
-        let local_state = tracking::progress_state(&self.pool, user_id, series_id).await?;
+        let local_state = local.progress.get(&series_id).copied();
         let local_progress = local_state.map_or(0.0, |(p, _)| p);
         let local_updated = local_state.map_or(OffsetDateTime::UNIX_EPOCH, |(_, u)| u);
-        let local_status_opt =
-            tracking::watchlist_status_get(&self.pool, user_id, series_id).await?;
+        let local_status_opt = local.status.get(&series_id).copied();
 
         // No remote entry yet: create it outright (local is authoritative for a first push).
         let Some(remote) = remote else {
@@ -1000,22 +1051,27 @@ impl SyncEngine {
             .filter(|normalized| !normalized.is_empty() && seen.insert(normalized.clone()))
             .collect();
 
+        // One round trip for the whole title family rather than one per title (PERF-13): an
+        // `AniList` entry routinely carries 3-8 distinct normalized titles, each of which was a
+        // separate trigram scan.
+        let per_title =
+            matching::find_candidates_multi(&self.pool, &normalized_titles, self.candidate_limit)
+                .await?;
+
         let mut best: Option<(SeriesId, f32)> = None;
-        for normalized in normalized_titles {
-            let candidates: Vec<Candidate> =
-                matching::find_candidates(&self.pool, &normalized, self.candidate_limit)
-                    .await?
-                    .into_iter()
-                    .map(|c| Candidate {
-                        series_id: c.series_id,
-                        normalized_title: c.normalized_title,
-                        similarity: c.similarity,
-                        content_type: c.content_type,
-                        release_year: c.release_year,
-                        tags: c.tags,
-                        authors: c.authors,
-                    })
-                    .collect();
+        for (normalized, found) in per_title {
+            let candidates: Vec<Candidate> = found
+                .into_iter()
+                .map(|c| Candidate {
+                    series_id: c.series_id,
+                    normalized_title: c.normalized_title,
+                    similarity: c.similarity,
+                    content_type: c.content_type,
+                    release_year: c.release_year,
+                    tags: c.tags,
+                    authors: c.authors,
+                })
+                .collect();
             // AniList's own genres/staff, matched against each candidate's locally-scraped
             // tags/authors — the extra signal that makes ambiguous title matches confident.
             let query = Query {

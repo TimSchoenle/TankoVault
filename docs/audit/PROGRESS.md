@@ -22,12 +22,12 @@ that the audit did not.
 | --- | --- | --- | --- | --- |
 | SECURITY (16+2) | 14 | 2 | 2 | — |
 | ARCHITECTURE (21) | 10 | 1 | 9 | 1 no-finding |
-| PERFORMANCE (20) | 13 | 0 | 6 | 2 no-finding/wontfix |
+| PERFORMANCE (20) | 16 | 0 | 3 | 2 no-finding/wontfix |
 | TESTING (21) | 8 | 3 | 10 | — |
 | FRONTEND (18+1) | 17 | 0 | 1 | 1 wontfix |
 | BUILD_AND_OPS (31+1) | 26 | 4 | 2 | — |
 
-**85 DONE · 12 PARTIAL · 3 WONTFIX · 29 OPEN**, across 129 tracked rows.
+**88 DONE · 12 PARTIAL · 3 WONTFIX · 26 OPEN**, across 129 tracked rows.
 
 The rows below are authoritative; this summary is a convenience.
 
@@ -119,7 +119,7 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | --- | --- | --- | --- |
 | PERF-1 | Fetch stack rebuilt per scan task | **DONE** | `Engine` caches one `Arc<dyn Fetcher>` per provider id, keyed on a fingerprint of exactly the settings the stack is built from. This was a **correctness** fix as much as a speed one: the limiter and the adaptive 429 penalty live in the stack, so a per-task stack made `rps`/`concurrency` a per-task budget and N tasks offered N x rps. The false comment in `ratelimit.rs` now states the invariant and who must uphold it. |
 | PERF-2 | `count(*) OVER()` on the browse query | **DONE** | The unpartitioned `count(*) OVER()` is gone, the sort is index-backed, and the non-sargable `($n IS NULL OR ...)` guards and `content_type::text` casts are fixed. |
-| PERF-3 | Notifier: 3 sequential queries per watcher | **OPEN** | The notifier still issues 3 sequential queries per watcher (~15s at 10k watchers). The `UNNEST` + `ON CONFLICT` + `RETURNING` pattern to copy is at `scans.rs:253-264`, and `catalog.rs::upsert_chapters` is now a second worked example. |
+| PERF-3 | Notifier: 3 sequential queries per watcher | **DONE** | Three set-based statements for the whole fan-out instead of three per watcher: `dedup_claim_many` (`UNNEST` + `ON CONFLICT DO NOTHING … RETURNING` — the claimed subset in one round trip, still atomic against a concurrent notifier), `notifications_create_many`, and `notifications_unread_counts` (one grouped query). The payload is built once outside the loop, so the two heap JSON values per watcher are gone too. The single-row versions were deleted rather than left as dead code. |
 | PERF-4 | Missing `series(updated_at)`; OFFSET enrichment sweep | **DONE** | Keyset walk fenced by the sweep's start timestamp, cursor advanced *before* the work so a permanently-failing row cannot stall it. Index added in migration 0020. The correctness half — enriched rows jumping the cursor and silently skipping unenriched series — is what made this urgent rather than merely slow. |
 | PERF-5 | Selectors recompiled per element | **DONE** | Bounded memo returning `Arc<Selector>`, so every call site is fixed including the custom adapters. `LazyLock<Selector>` could not apply — selectors come from `providers.config`, not constants. |
 | PERF-6 | `test_before_acquire` left at its default | **DONE** | Off. The probe bought little — the pool already discards a connection whose query fails — and cost a round trip on every repository call. |
@@ -129,9 +129,9 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | PERF-10 | `GET /v1/series/{id}` N+1 | **DONE** | The two N+1 loops over provider groups collapsed and the tail reads overlapped. |
 | PERF-11 | Ingest holds one transaction across ~1,200 INSERTs | **DONE** | Alt-titles, tags, authors and chapters all batch now. The transaction held row locks on shared `tags`/`authors` rows across ~1,200 sequential round trips, so one slow series stalled every other provider. `DISTINCT ON` is load-bearing — `ON CONFLICT DO UPDATE` cannot touch a row twice in one statement, and providers do repeat chapter numbers. Four integration tests pin the semantics. |
 | PERF-12 | `floor(number)` predicates non-sargable | **DONE** | One lateral pass for continue-reading, and a `floor()` predicate shaped to match the expression index migration 0020 added. |
-| PERF-13 | Sync reconcile ~6 sequential queries per remote entry | **OPEN** | Sync reconcile still issues ~6 sequential queries per remote entry. |
+| PERF-13 | Sync reconcile ~6 sequential queries per remote entry | **DONE** | All three parts of the fix. (1) `LocalState::load` prefetches the exclusion set, read frontiers and watchlist statuses once per run — sound only because `handled_series`/`handled_ids` guarantee no series is reconciled twice, which the F-06 suite now pins. (2) `reconcile_account` runs in phases so `upsert_remote_entries` and `upsert_mappings` are one statement each; `upsert_mappings` needs `DISTINCT ON (series_id) … ORDER BY ord DESC` to reproduce the loop's last-id-wins and to avoid `ON CONFLICT DO UPDATE` touching one row twice. (3) `find_candidates_multi` scores a remote entry's whole title family in one lateral-joined query instead of K trigram scans. A 500-entry library goes from ~4 500–7 000 sequential round trips to roughly 500 + a handful. |
 | PERF-14 | `/scalar` re-serializes 253 KB per request | **DONE** | The route is unmounted in production (SEC-13). |
-| PERF-15 | `register_source_stubs` opens a transaction per entry | **OPEN** | The DB agent was cut off before this one. |
+| PERF-15 | `register_source_stubs` opens a transaction per entry | **DONE** | One transaction per 500 entries, the redundant per-entry existence check dropped (the caller-side batch check already filtered; the race window only reaches an `ON CONFLICT DO UPDATE`), and the `upsert_source` tail batched into one `UNNEST` insert. Canonicalisation stays per-entry inside the transaction because each entry genuinely resolves against the series its predecessors created — a test pins that two spellings of one title still collapse to one series. Per-entry error tolerance is preserved by retrying a failed *chunk* entry by entry rather than by a savepoint per entry, which would have cost the round trips the fix removes. |
 | PERF-16 | `FairQueue` polls lanes sequentially | **WONTFIX** | The audit's concurrent-fetch fix is unsafe here and the reasoning is now recorded in `queue.rs`: a concurrent round claims a message from every non-empty lane, a worker may hold only one, and handing the extras back increments their delivery count against `MAX_TASK_DELIVERIES = 3`. A task could exhaust its retry budget by being polled past without ever failing. The idle chatter is already bounded by the existing 200 ms -> 5 s backoff. |
 | PERF-17 | Dev profile untuned | **DONE** | Ready-to-paste `[profile.dev]` in the report. |
 | PERF-18 | The `api` binary links two TLS stacks | **OPEN** | |
@@ -253,9 +253,11 @@ What is genuinely left, in the order it is worth doing:
    that same god module, is now unblocked.
 2. **TEST F-05 — the rest of `crates/db`.** GDPR export/erase and ingest are covered now;
    `catalog.rs`, `sync.rs` and `users.rs` still hold most of the untested SQL.
-3. **PERF-3, PERF-13, PERF-15 — the remaining sequential-query loops.** The notifier's is the
-   worst (~15 s at 10k watchers). Two worked examples of the batching pattern now exist:
-   `scans.rs:253-264` and `catalog.rs::upsert_chapters`.
+3. ~~**PERF-3, PERF-13, PERF-15 — the remaining sequential-query loops.**~~ **Done** — all three
+   rows above. `crates/db/tests/repo_batching.rs` pins the semantics that only a real Postgres
+   shows: the `DISTINCT ON` tie-breaks, the nullable-column present-flag encoding, and that the
+   prefetched exclusion set agrees with `is_sync_excluded` across the whole §A.5 precedence
+   matrix.
 4. **ARCH-3/5/7/8/12/16/17/18/19/20 — the module splits and the remaining duplication.** All
    are hygiene rather than defects; ARCH-12 (four error shapes across eight services) is the
    one with a user-visible consequence, and `services/sync/src/error.rs` is now the pattern to

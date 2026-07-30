@@ -566,6 +566,20 @@ pub async fn register_source_stub(
         return Ok(());
     }
 
+    let series_id = resolve_stub_series(&mut tx, title).await?;
+    upsert_source(&mut *tx, series_id, provider_id, source_path, Some(title)).await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Canonicalise a catalogue listing title into a series id, creating one if nothing matches.
+///
+/// Shared by the single-entry and batched stub registration so both run *identical*
+/// canonicalisation — the listing title carries no description, cover, type, status or year, and
+/// deliberately so: a later `Series` task enriches the row from the fuller series page, and a
+/// stub must never overwrite that with blanks.
+async fn resolve_stub_series(conn: &mut sqlx::PgConnection, title: &str) -> DbResult<SeriesId> {
     let meta = SeriesUpsert {
         canonical_title: title.to_owned(),
         normalized_title: normalize_title(title),
@@ -575,25 +589,97 @@ pub async fn register_source_stub(
         status: SeriesStatus::Unknown,
         release_year: None,
     };
-    let series_id = resolve_canonical_series(&mut tx, &meta).await?;
-    upsert_source(&mut *tx, series_id, provider_id, source_path, Some(title)).await?;
+    resolve_canonical_series(conn, &meta).await
+}
 
-    tx.commit().await?;
+/// Upsert several `(provider, path)` sources in one statement. Idempotent on
+/// `(provider_id, source_path)`, like [`upsert_source`].
+///
+/// `DISTINCT ON (source_path)` is required rather than tidy: a catalogue page can list the same
+/// path twice, and `ON CONFLICT DO UPDATE` cannot touch one row twice in a single statement.
+async fn upsert_sources(
+    conn: &mut sqlx::PgConnection,
+    provider_id: ProviderId,
+    rows: &[(SeriesId, String, String)],
+) -> DbResult<()> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let ids: Vec<Uuid> = rows
+        .iter()
+        .map(|_| SeriesSourceId::new().as_uuid())
+        .collect();
+    let series_ids: Vec<Uuid> = rows.iter().map(|(s, _, _)| s.as_uuid()).collect();
+    let paths: Vec<String> = rows.iter().map(|(_, p, _)| p.clone()).collect();
+    let titles: Vec<String> = rows.iter().map(|(_, _, t)| t.clone()).collect();
+    sqlx::query!(
+        "INSERT INTO series_sources (id, series_id, provider_id, source_path, provider_title) \
+         SELECT DISTINCT ON (source_path) id, series_id, $2, source_path, provider_title \
+         FROM UNNEST($1::uuid[], $3::uuid[], $4::text[], $5::text[]) \
+              AS t(id, series_id, source_path, provider_title) \
+         ON CONFLICT (provider_id, source_path) DO UPDATE \
+            SET provider_title = EXCLUDED.provider_title",
+        &ids,
+        provider_id.as_uuid(),
+        &series_ids,
+        &paths,
+        &titles,
+    )
+    .execute(conn)
+    .await?;
     Ok(())
+}
+
+/// How many new stubs share one transaction. Sized so the begin/commit and the source insert
+/// amortise to near-nothing per entry while a chunk still holds its locks for a bounded time.
+const STUB_CHUNK: usize = 500;
+
+/// Register one chunk of genuinely-new entries in a single transaction.
+///
+/// Canonicalisation genuinely cannot be batched — each entry resolves against the series its
+/// predecessors created, and that is visible inside the transaction — but the `upsert_source`
+/// tail can, so a chunk costs `begin + N canonicalisations + 1 insert + commit` instead of
+/// `N × (begin + check + canonicalisation + insert + commit)`.
+async fn register_chunk(
+    pool: &sqlx::PgPool,
+    provider_id: ProviderId,
+    chunk: &[(&str, &str)],
+) -> DbResult<usize> {
+    let mut tx = pool.begin().await?;
+    let mut sources = Vec::with_capacity(chunk.len());
+    for (path, title) in chunk {
+        let series_id = resolve_stub_series(&mut tx, title).await?;
+        sources.push((series_id, (*path).to_owned(), (*title).to_owned()));
+    }
+    upsert_sources(&mut tx, provider_id, &sources).await?;
+    tx.commit().await?;
+    Ok(chunk.len())
 }
 
 /// Register a whole catalogue page's worth of entries, skipping those already known.
 ///
-/// Same semantics as calling [`register_source_stub`] per entry, but the "is this source
-/// already registered?" check — which is the *only* work needed for the overwhelming
-/// majority of entries on a re-scan — is answered for the entire batch in **one** query
-/// instead of one per entry. Genuinely new sources still go through the full per-series
-/// canonicalisation pipeline, which cannot be batched (each resolves against the series
-/// created by its predecessors).
+/// Same semantics as calling [`register_source_stub`] per entry, but set-based where it can be:
+/// the "is this source already registered?" check — the *only* work needed for the overwhelming
+/// majority of entries on a re-scan — is answered for the entire batch in one query, and the
+/// genuinely-new remainder is registered [`STUB_CHUNK`] entries per transaction.
 ///
-/// Returns the number of sources newly registered. A single entry failing to register is
-/// logged and skipped rather than aborting the page: losing one series must not lose the
-/// rest, and the enrichment task is enqueued regardless (design §12).
+/// # Why the chunking matters (PERF-15)
+///
+/// A re-scan was already cheap; a **first** scan is all-new, and one transaction per entry meant
+/// 20 000 fresh entries on a sitemap page cost 20 000 transactions of ~5 round trips each. That
+/// is what blows the `JetStream` ack deadline the worker's queue module warns about, causing
+/// redelivery and duplicated work — a self-amplifying slowdown on exactly the scans that matter
+/// most.
+///
+/// The per-entry existence check inside the transaction is *not* repeated here: the caller-side
+/// batch check already filtered. A source registered by a concurrent scan in the window between
+/// the two is harmless — `upsert_sources` is `ON CONFLICT DO UPDATE` on `(provider_id,
+/// source_path)`, and canonicalisation re-attaches to the series that already matches the title
+/// rather than creating a second one.
+///
+/// Returns the number of sources newly registered. A chunk that fails is retried entry by entry
+/// so one bad entry costs only itself: losing one series must not lose the rest, and the
+/// enrichment task is enqueued regardless (design §12).
 pub async fn register_source_stubs(
     pool: &sqlx::PgPool,
     provider_id: ProviderId,
@@ -614,14 +700,31 @@ pub async fn register_source_stubs(
     .into_iter()
     .collect();
 
+    let fresh: Vec<(&str, &str)> = entries
+        .iter()
+        .copied()
+        .filter(|(path, _)| !known.contains(*path))
+        .collect();
+
     let mut registered = 0usize;
-    for (path, title) in entries {
-        if known.contains(*path) {
-            continue;
-        }
-        match register_source_stub(pool, provider_id, path, title).await {
-            Ok(()) => registered += 1,
-            Err(e) => tracing::warn!(path = %path, error = %e, "series registration failed"),
+    for chunk in fresh.chunks(STUB_CHUNK) {
+        match register_chunk(pool, provider_id, chunk).await {
+            Ok(n) => registered += n,
+            Err(e) => {
+                tracing::warn!(
+                    entries = chunk.len(),
+                    error = %e,
+                    "batched series registration failed; retrying entry by entry"
+                );
+                for (path, title) in chunk {
+                    match register_source_stub(pool, provider_id, path, title).await {
+                        Ok(()) => registered += 1,
+                        Err(e) => {
+                            tracing::warn!(path = %path, error = %e, "series registration failed");
+                        }
+                    }
+                }
+            }
         }
     }
     Ok(registered)

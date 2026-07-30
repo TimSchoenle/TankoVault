@@ -788,6 +788,125 @@ pub async fn upsert_remote_entry<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
+/// One remote-entry snapshot to persist, as produced by the resolve pass of a reconciliation.
+#[derive(Debug, Clone)]
+pub struct FetchedRemoteEntry {
+    pub external_id: String,
+    pub title: String,
+    pub status: String,
+    pub progress: f64,
+    pub content_type: String,
+    pub start_year: Option<i32>,
+    pub updated_at: OffsetDateTime,
+    /// The canonical series this entry resolved to, or `None` for the unmatched queue.
+    pub series_id: Option<SeriesId>,
+}
+
+/// Upsert every fetched remote entry for one account in a single statement.
+///
+/// The batched form of [`upsert_remote_entry`]: a pull used to issue one round trip per entry,
+/// so a 500-entry library cost 500 sequential writes before any merge work began (PERF-13).
+///
+/// `DISTINCT ON` is load-bearing, exactly as in `catalog::upsert_chapters`: `ON CONFLICT DO
+/// UPDATE` cannot touch the same row twice in one statement, so a duplicate `external_id` in the
+/// input would abort the whole statement. Callers deduplicate before this point, but the guard
+/// stays because a provider list is untrusted input.
+pub async fn upsert_remote_entries<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    provider: &str,
+    entries: &[FetchedRemoteEntry],
+) -> DbResult<()> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+    let external_ids: Vec<String> = entries.iter().map(|e| e.external_id.clone()).collect();
+    let titles: Vec<String> = entries.iter().map(|e| e.title.clone()).collect();
+    let statuses: Vec<String> = entries.iter().map(|e| e.status.clone()).collect();
+    let progresses: Vec<f64> = entries.iter().map(|e| e.progress).collect();
+    let content_types: Vec<String> = entries.iter().map(|e| e.content_type.clone()).collect();
+    // `Vec<Option<i32>>` cannot be bound to `int4[]` by sqlx, so the nullable columns travel as
+    // parallel "present" flags plus a non-null value array.
+    let start_years: Vec<i32> = entries.iter().map(|e| e.start_year.unwrap_or(0)).collect();
+    let start_year_present: Vec<bool> = entries.iter().map(|e| e.start_year.is_some()).collect();
+    let updated_ats: Vec<OffsetDateTime> = entries.iter().map(|e| e.updated_at).collect();
+    let series_ids: Vec<Uuid> = entries
+        .iter()
+        .map(|e| e.series_id.map_or_else(Uuid::nil, SeriesId::as_uuid))
+        .collect();
+    let series_present: Vec<bool> = entries.iter().map(|e| e.series_id.is_some()).collect();
+
+    sqlx::query!(
+        "INSERT INTO sync_remote_entries \
+           (user_id, provider, external_id, title, status, progress, content_type, \
+            start_year, updated_at, series_id, fetched_at) \
+         SELECT DISTINCT ON (external_id) \
+                $1, $2, external_id, title, status, progress, content_type, \
+                CASE WHEN year_present THEN start_year END, \
+                updated_at, \
+                CASE WHEN series_present THEN series_id END, \
+                now() \
+         FROM UNNEST($3::text[], $4::text[], $5::text[], $6::float8[], $7::text[], \
+                     $8::int4[], $9::bool[], $10::timestamptz[], $11::uuid[], $12::bool[]) \
+              AS t(external_id, title, status, progress, content_type, \
+                   start_year, year_present, updated_at, series_id, series_present) \
+         ON CONFLICT (user_id, provider, external_id) DO UPDATE SET \
+            title = EXCLUDED.title, status = EXCLUDED.status, progress = EXCLUDED.progress, \
+            content_type = EXCLUDED.content_type, start_year = EXCLUDED.start_year, \
+            updated_at = EXCLUDED.updated_at, series_id = EXCLUDED.series_id, \
+            fetched_at = now()",
+        user_id.as_uuid(),
+        provider,
+        &external_ids,
+        &titles,
+        &statuses,
+        &progresses,
+        &content_types,
+        &start_years,
+        &start_year_present,
+        &updated_ats,
+        &series_ids,
+        &series_present,
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+/// Record (or refresh) the mapping for several series in one statement.
+///
+/// The batched form of [`upsert_mapping`] (PERF-13). `DISTINCT ON (series_id) … ORDER BY
+/// series_id, ord DESC` reproduces the sequential loop's semantics precisely: `sync_mappings` is
+/// keyed on `(series_id, provider)`, so when two remote ids resolve to one series the *last* one
+/// wins, just as repeated `upsert_mapping` calls would have left it — and without it Postgres
+/// would abort the statement for touching the same row twice.
+pub async fn upsert_mappings<'e, E: PgExecutor<'e>>(
+    exec: E,
+    provider: &str,
+    pairs: &[(SeriesId, String)],
+) -> DbResult<()> {
+    if pairs.is_empty() {
+        return Ok(());
+    }
+    let series_ids: Vec<Uuid> = pairs.iter().map(|(s, _)| s.as_uuid()).collect();
+    let external_ids: Vec<String> = pairs.iter().map(|(_, e)| e.clone()).collect();
+    sqlx::query!(
+        "INSERT INTO sync_mappings (series_id, provider, external_id) \
+         SELECT DISTINCT ON (series_id) series_id, $1, external_id \
+         FROM UNNEST($2::uuid[], $3::text[]) WITH ORDINALITY \
+              AS t(series_id, external_id, ord) \
+         ORDER BY series_id, ord DESC \
+         ON CONFLICT (series_id, provider) DO UPDATE \
+            SET external_id = EXCLUDED.external_id, updated_at = now()",
+        provider,
+        &series_ids,
+        &external_ids,
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
 /// One row of the admin console's "Unmatched remote entries" queue: a fetched provider entry
 /// the auto-matcher could not confidently link to a local series.
 #[derive(Debug, Clone, Serialize, FromRow)]

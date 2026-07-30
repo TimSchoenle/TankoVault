@@ -1,5 +1,7 @@
 //! User tracking: watchlist, read progress, and notifications (with fan-out helpers).
 
+use std::collections::{HashMap, HashSet};
+
 use crate::error::DbResult;
 use crate::repo::catalog::SeriesListItem;
 use serde_json::Value as Json;
@@ -452,28 +454,143 @@ pub async fn is_sync_excluded<'e, E: PgExecutor<'e>>(
     Ok(excluded)
 }
 
+/// Every series `user_id` has excluded from syncing with `provider`, in one query.
+///
+/// The whole-account reconciliation used to call [`is_sync_excluded`] per series (PERF-13); the
+/// tables are keyed on `user_id`, so one pass over both is enough for a run. The precedence is
+/// reproduced exactly: a per-provider override wins outright, otherwise the blanket
+/// `watchlist_entries.sync_excluded` flag, otherwise included.
+///
+/// A series absent from the returned set is included — which is also the answer for a series
+/// not on the watchlist at all, matching [`is_sync_excluded`]'s `COALESCE(..., false)` tail.
+pub async fn sync_excluded_series<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    provider: &str,
+) -> DbResult<HashSet<SeriesId>> {
+    let rows = sqlx::query_scalar!(
+        "SELECT series_id AS \"series_id!\" FROM ( \
+           SELECT w.series_id, \
+                  COALESCE(o.excluded, w.sync_excluded) AS excluded \
+           FROM watchlist_entries w \
+           LEFT JOIN series_sync_overrides o \
+             ON o.user_id = w.user_id AND o.series_id = w.series_id AND o.provider = $2 \
+           WHERE w.user_id = $1 \
+           UNION ALL \
+           SELECT o.series_id, o.excluded \
+           FROM series_sync_overrides o \
+           WHERE o.user_id = $1 AND o.provider = $2 \
+             AND NOT EXISTS (SELECT 1 FROM watchlist_entries w \
+                             WHERE w.user_id = o.user_id AND w.series_id = o.series_id) \
+         ) resolved \
+         WHERE excluded",
+        user_id.as_uuid(),
+        provider,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows.into_iter().map(SeriesId::from_uuid).collect())
+}
+
+/// Every whole-chapter frontier `user_id` holds, with when it last changed, keyed by series.
+///
+/// The batched form of [`progress_state`], prefetched once per reconciliation run rather than
+/// queried per remote entry (PERF-13).
+pub async fn progress_states_for_user<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+) -> DbResult<HashMap<SeriesId, (f64, OffsetDateTime)>> {
+    #[derive(FromRow)]
+    struct Row {
+        series_id: Uuid,
+        last: f64,
+        updated_at: OffsetDateTime,
+    }
+    let rows = sqlx::query_as!(
+        Row,
+        "SELECT series_id, last_read_whole_number::float8 AS \"last!\", updated_at \
+         FROM read_progress WHERE user_id = $1",
+        user_id.as_uuid(),
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (SeriesId::from_uuid(r.series_id), (r.last, r.updated_at)))
+        .collect())
+}
+
+/// Every watchlist status `user_id` holds, keyed by series.
+///
+/// The batched form of [`watchlist_status_get`], prefetched once per reconciliation run rather
+/// than queried per remote entry (PERF-13).
+pub async fn watchlist_statuses_for_user<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+) -> DbResult<HashMap<SeriesId, WatchStatus>> {
+    #[derive(FromRow)]
+    struct Row {
+        series_id: Uuid,
+        status: WatchStatus,
+    }
+    let rows = sqlx::query_as!(
+        Row,
+        "SELECT series_id, status AS \"status: WatchStatus\" \
+         FROM watchlist_entries WHERE user_id = $1",
+        user_id.as_uuid(),
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (SeriesId::from_uuid(r.series_id), r.status))
+        .collect())
+}
+
 // ---------------------------------------------------------------------------
 // Notifications
 // ---------------------------------------------------------------------------
 
-/// Insert a notification row.
-pub async fn notification_create<'e, E: PgExecutor<'e>>(
+/// Insert one identical notification for each user in `user_ids`, returning `(user, id)` pairs.
+///
+/// One statement rather than one per user (PERF-3): a fan-out writes the *same* document to
+/// every watcher — only `user_id` varies — so `kind` and `payload` are bound once and only the
+/// user list is unnested. Ids are generated client-side so `RETURNING` can be paired back to
+/// its user without a second lookup.
+pub async fn notifications_create_many<'e, E: PgExecutor<'e>>(
     exec: E,
-    user_id: UserId,
+    user_ids: &[UserId],
     kind: &str,
     payload: &Json,
-) -> DbResult<NotificationId> {
-    let id = NotificationId::new();
-    sqlx::query!(
-        "INSERT INTO notifications (id, user_id, kind, payload) VALUES ($1,$2,$3,$4)",
-        id.as_uuid(),
-        user_id.as_uuid(),
+) -> DbResult<Vec<(UserId, NotificationId)>> {
+    if user_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ids: Vec<Uuid> = user_ids
+        .iter()
+        .map(|_| NotificationId::new().as_uuid())
+        .collect();
+    let users: Vec<Uuid> = user_ids.iter().map(|u| u.as_uuid()).collect();
+    let rows = sqlx::query!(
+        "INSERT INTO notifications (id, user_id, kind, payload) \
+         SELECT i, u, $3, $4 FROM UNNEST($1::uuid[], $2::uuid[]) AS t(i, u) \
+         RETURNING id, user_id",
+        &ids,
+        &users,
         kind,
         payload,
     )
-    .execute(exec)
+    .fetch_all(exec)
     .await?;
-    Ok(id)
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            (
+                UserId::from_uuid(r.user_id),
+                NotificationId::from_uuid(r.id),
+            )
+        })
+        .collect())
 }
 
 /// List a user's notifications, newest first.
@@ -513,19 +630,31 @@ pub async fn notifications_list<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Count a user's unread notifications (used to set the live badge and reconcile on
-/// reconnect). Backed by the `notifications_user_unread` partial index.
-pub async fn notifications_unread_count<'e, E: PgExecutor<'e>>(
+/// Unread-notification counts for `user_ids`, as a map. Used to set the live badge without a
+/// client round-trip. Backed by the `notifications_user_unread` partial index.
+///
+/// Grouped rather than one query per user (PERF-3). Users with no unread rows are absent from
+/// the map — `GROUP BY` cannot invent a zero row — so callers must treat a miss as `0`.
+pub async fn notifications_unread_counts<'e, E: PgExecutor<'e>>(
     exec: E,
-    user_id: UserId,
-) -> DbResult<i64> {
-    let count = sqlx::query_scalar!(
-        "SELECT count(*) AS \"count!\" FROM notifications WHERE user_id = $1 AND read_at IS NULL",
-        user_id.as_uuid(),
+    user_ids: &[UserId],
+) -> DbResult<HashMap<UserId, i64>> {
+    if user_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let ids: Vec<Uuid> = user_ids.iter().map(|u| u.as_uuid()).collect();
+    let rows = sqlx::query!(
+        "SELECT user_id, count(*) AS \"count!\" FROM notifications \
+         WHERE user_id = ANY($1) AND read_at IS NULL \
+         GROUP BY user_id",
+        &ids,
     )
-    .fetch_one(exec)
+    .fetch_all(exec)
     .await?;
-    Ok(count)
+    Ok(rows
+        .into_iter()
+        .map(|r| (UserId::from_uuid(r.user_id), r.count))
+        .collect())
 }
 
 /// Mark the given notifications read (scoped to the owning user).
@@ -655,26 +784,42 @@ pub async fn feed<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Attempt to claim the (user, series, chapter) dedup slot. Returns `true` when this is
-/// the first time we are notifying this user for this chapter (row inserted), so the
-/// caller should proceed; `false` when already notified (skip).
-pub async fn dedup_claim<'e, E: PgExecutor<'e>>(
+/// Claim the `(user, series, chapter)` dedup slot for every user in `user_ids` at once,
+/// returning the subset that was actually claimed — i.e. the users this chapter is genuinely
+/// new to.
+///
+/// # Why this is set-based
+///
+/// The notifier used to call a single-row version of this once per watcher, so announcing one
+/// chapter on a series with ten thousand watchers cost ten thousand sequential round trips
+/// (PERF-3). `series_id` and `chapter_number` are constant across a fan-out, so only the user
+/// list needs unnesting.
+///
+/// `ON CONFLICT DO NOTHING ... RETURNING` is what makes the claim atomic *and* observable:
+/// `RETURNING` yields exactly the rows this statement inserted, so a concurrent notifier
+/// handling the same event cannot make both processes believe they claimed the same watcher.
+pub async fn dedup_claim_many<'e, E: PgExecutor<'e>>(
     exec: E,
-    user_id: UserId,
+    user_ids: &[UserId],
     series_id: SeriesId,
     chapter_number: f64,
-) -> DbResult<bool> {
-    let inserted = sqlx::query!(
+) -> DbResult<Vec<UserId>> {
+    if user_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ids: Vec<Uuid> = user_ids.iter().map(|u| u.as_uuid()).collect();
+    let rows = sqlx::query_scalar!(
         "INSERT INTO notification_dedup (user_id, series_id, chapter_number) \
-         VALUES ($1,$2,$3::float8::numeric(10,4)) ON CONFLICT DO NOTHING",
-        user_id.as_uuid(),
+         SELECT u, $2, $3::float8::numeric(10,4) FROM UNNEST($1::uuid[]) AS u \
+         ON CONFLICT DO NOTHING \
+         RETURNING user_id",
+        &ids,
         series_id.as_uuid(),
         chapter_number,
     )
-    .execute(exec)
-    .await?
-    .rows_affected();
-    Ok(inserted == 1)
+    .fetch_all(exec)
+    .await?;
+    Ok(rows.into_iter().map(UserId::from_uuid).collect())
 }
 
 // ---------------------------------------------------------------------------

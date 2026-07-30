@@ -189,34 +189,36 @@ async fn fan_out(
     // webhook into a duplicate every scan cycle for as long as the flag stayed off.
     let in_app = features.is_enabled(Feature::NotificationsInApp);
 
+    // Three set-based statements for the whole fan-out, not three per watcher (PERF-3). At ten
+    // thousand watchers the per-watcher version cost ~30 000 sequential round trips for one
+    // chapter, and the worker publishes one `chapter.discovered` per new chapter — so a series
+    // dropping six parts at once multiplied it.
     let watchers =
         tankovault_db::repo::tracking::watchers_for_series(pool, event.series_id).await?;
-    let mut notified_any = false;
-    for watcher in watchers {
-        // Don't notify for a chapter the user has already read past (rescan safety).
-        if let Some(last_read) = watcher.last_read_number {
-            if event.chapter_number <= last_read {
-                continue;
-            }
-        }
-        // Dedup across overlapping providers.
-        let claimed = tankovault_db::repo::tracking::dedup_claim(
-            pool,
-            watcher.user_id,
-            event.series_id,
-            event.chapter_number,
-        )
-        .await?;
-        if !claimed {
-            continue;
-        }
 
-        // Claimed, so this chapter is new to this watcher whatever happens next.
-        notified_any = true;
-        if !in_app {
-            continue;
-        }
+    // Don't notify for a chapter the user has already read past (rescan safety).
+    let unread_by: Vec<tankovault_domain::UserId> = watchers
+        .into_iter()
+        .filter(|w| {
+            w.last_read_number
+                .is_none_or(|last| event.chapter_number > last)
+        })
+        .map(|w| w.user_id)
+        .collect();
 
+    // Dedup across overlapping providers. The claimed subset is exactly the set of users this
+    // chapter is genuinely new to, whatever happens next.
+    let claimed = tankovault_db::repo::tracking::dedup_claim_many(
+        pool,
+        &unread_by,
+        event.series_id,
+        event.chapter_number,
+    )
+    .await?;
+    let notified_any = !claimed.is_empty();
+
+    if in_app && !claimed.is_empty() {
+        // One immutable document for the whole fan-out — only `user_id` varies.
         let payload = serde_json::json!({
             "series_id": event.series_id,
             "chapter_number": event.chapter_number,
@@ -224,9 +226,9 @@ async fn fan_out(
             "chapter_path": event.chapter_path,
             "provider_slug": event.provider_slug,
         });
-        let notification_id = tankovault_db::repo::tracking::notification_create(
+        let created = tankovault_db::repo::tracking::notifications_create_many(
             pool,
-            watcher.user_id,
+            &claimed,
             "new_chapter",
             &payload,
         )
@@ -235,7 +237,7 @@ async fn fan_out(
         // The live push is a separate feature from the durable row: a deployment can keep the
         // notification list while shedding the SSE fan-out under load.
         if features.is_enabled(Feature::NotificationsLive) {
-            push_live(pool, bus, watcher.user_id, notification_id, &payload).await;
+            push_live(pool, bus, &created, &payload).await;
         }
     }
 
@@ -254,34 +256,42 @@ async fn fan_out(
     Ok(())
 }
 
-/// Best-effort live push of a freshly-created in-app notification to the user's SSE stream
-/// (design §14, §17.4). Carries the user's current unread count so the client can set its
-/// badge without a round-trip. A failure here never affects the durable notification row.
+/// Best-effort live push of freshly-created in-app notifications to their users' SSE streams
+/// (design §14, §17.4). Each carries that user's current unread count so the client can set its
+/// badge without a round-trip. A failure here never affects the durable notification rows.
+///
+/// The counts come from one grouped query for the whole batch rather than one per user
+/// (PERF-3). A user missing from the result has no unread rows, which cannot happen right after
+/// inserting one — but treating a miss as `0` keeps the push best-effort rather than panicking
+/// on a race with a concurrent "mark all read".
 async fn push_live(
     pool: &PgPool,
     bus: &Bus,
-    user_id: tankovault_domain::UserId,
-    notification_id: tankovault_domain::NotificationId,
+    created: &[(tankovault_domain::UserId, tankovault_domain::NotificationId)],
     payload: &serde_json::Value,
 ) {
-    let unread_count =
-        match tankovault_db::repo::tracking::notifications_unread_count(pool, user_id).await {
-            Ok(n) => n,
+    let users: Vec<tankovault_domain::UserId> = created.iter().map(|(u, _)| *u).collect();
+    let counts =
+        match tankovault_db::repo::tracking::notifications_unread_counts(pool, &users).await {
+            Ok(c) => c,
             Err(e) => {
                 tracing::warn!(error = %e, "unread-count query failed; skipping live push");
                 return;
             }
         };
-    let live = UserNotification {
-        user_id,
-        notification_id: notification_id.as_uuid(),
-        kind: "new_chapter".to_owned(),
-        payload: payload.clone(),
-        created_at: OffsetDateTime::now_utc(),
-        unread_count,
-    };
-    if let Err(e) = bus.publish_user_notification(&live).await {
-        tracing::warn!(error = %e, "live notification push failed");
+    let created_at = OffsetDateTime::now_utc();
+    for &(user_id, notification_id) in created {
+        let live = UserNotification {
+            user_id,
+            notification_id: notification_id.as_uuid(),
+            kind: "new_chapter".to_owned(),
+            payload: payload.clone(),
+            created_at,
+            unread_count: counts.get(&user_id).copied().unwrap_or(0),
+        };
+        if let Err(e) = bus.publish_user_notification(&live).await {
+            tracing::warn!(error = %e, "live notification push failed");
+        }
     }
 }
 

@@ -75,6 +75,89 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
+/// As [`find_candidates`], but for several query titles in **one** round trip: returns each
+/// title paired with its own top-`limit` candidates.
+///
+/// # Why this exists
+///
+/// External-sync entries carry a whole family of titles (romaji, english, native, plus every
+/// synonym), and the engine has to score each of them to attach an entry when *any* title
+/// matches. Doing that one title at a time meant K sequential trigram scans per remote entry —
+/// 3–8 for a typical `AniList` row, so 1 500–4 000 scans for a 500-entry library (PERF-13).
+///
+/// The lateral join is load-bearing: `LIMIT` has to apply *per title*, exactly as K separate
+/// queries did, so a title with many weak candidates cannot crowd out another title's strong
+/// one. Similarity is still computed against the same expression, so scores are identical to
+/// the per-title path.
+pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
+    exec: E,
+    normalized: &[String],
+    limit: i64,
+) -> DbResult<Vec<(String, Vec<MatchCandidate>)>> {
+    #[derive(FromRow)]
+    struct Row {
+        query_title: String,
+        id: Uuid,
+        normalized_title: String,
+        content_type: ContentType,
+        release_year: Option<i32>,
+        sim: f32,
+        tags: Vec<String>,
+        authors: Vec<String>,
+    }
+    if normalized.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query_as!(
+        Row,
+        "SELECT q.norm AS \"query_title!\", c.id, c.normalized_title, \
+                c.content_type AS \"content_type: ContentType\", c.release_year, \
+                c.sim AS \"sim!\", c.tags AS \"tags!\", c.authors AS \"authors!\" \
+         FROM UNNEST($1::text[]) AS q(norm) \
+         CROSS JOIN LATERAL ( \
+           SELECT s.id, s.normalized_title, s.content_type, s.release_year, \
+                  GREATEST( \
+                    similarity(s.normalized_title, q.norm), \
+                    COALESCE((SELECT MAX(similarity(st.normalized, q.norm)) \
+                              FROM series_titles st WHERE st.series_id = s.id), 0) \
+                  ) AS sim, \
+                  COALESCE((SELECT array_agg(t.name) FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                   WHERE stg.series_id = s.id), '{}') AS tags, \
+                  COALESCE((SELECT array_agg(a.name) FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
+                   WHERE sa.series_id = s.id), '{}') AS authors \
+           FROM series s \
+           WHERE s.normalized_title % q.norm \
+              OR EXISTS (SELECT 1 FROM series_titles st \
+                         WHERE st.series_id = s.id AND st.normalized % q.norm) \
+           ORDER BY sim DESC \
+           LIMIT $2 \
+         ) c",
+        normalized,
+        limit,
+    )
+    .fetch_all(exec)
+    .await?;
+
+    // Preserve the caller's title order, and keep a bucket for every requested title so a title
+    // with no candidates is still reported (as an empty list) rather than silently dropped.
+    let mut buckets: Vec<(String, Vec<MatchCandidate>)> =
+        normalized.iter().map(|t| (t.clone(), Vec::new())).collect();
+    for row in rows {
+        if let Some((_, bucket)) = buckets.iter_mut().find(|(t, _)| *t == row.query_title) {
+            bucket.push(MatchCandidate {
+                series_id: SeriesId::from_uuid(row.id),
+                normalized_title: row.normalized_title,
+                similarity: row.sim,
+                content_type: row.content_type,
+                release_year: row.release_year,
+                tags: row.tags,
+                authors: row.authors,
+            });
+        }
+    }
+    Ok(buckets)
+}
+
 /// Record an operator-review merge candidate (ambiguous confidence band).
 pub async fn record_merge_candidate<'e, E: PgExecutor<'e>>(
     exec: E,

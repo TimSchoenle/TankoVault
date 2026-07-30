@@ -157,8 +157,22 @@ Build, test, and lint the host workspace (the frontend is excluded and built sep
 ```bash
 cargo build
 cargo test
+# `--all-targets` silently EXCLUDES doc tests, and the `///` examples are contracts here, so
+# they get their own run. CI does the same.
+cargo test --workspace --doc
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
+```
+
+Property tests (`proptest`) live in `tests/prop_*.rs` next to the code they cover and run in that
+ordinary `cargo test` — no extra toolchain. Coverage-guided fuzzing needs nightly and therefore
+lives outside the workspace, in [`fuzz/`](fuzz/README.md), which no CI gate runs:
+
+```bash
+cargo +nightly fuzz build                                     # all targets compile
+cargo +nightly fuzz run adapters_html_parsers \
+  fuzz/corpus/adapters_html_parsers fuzz/seeds/adapters_html_parsers \
+  -- -max_total_time=60 -timeout=2 -rss_limit_mb=512
 ```
 
 Dev/ops tasks live in `xtask` (`migrate` / `reset` / `seed` / `sqlx-prepare` read `DATABASE_URL`;

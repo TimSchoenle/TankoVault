@@ -151,6 +151,11 @@ pub fn extract_all(root: ElementRef<'_>, spec: &str) -> Result<Vec<String>, Adap
 }
 
 /// Parse the first numeric run in `text` (e.g. `"10.5"` from `"Chapter 10.5"`).
+///
+/// Only ever yields a **finite** value. A digit run too long for `f64` parses to `inf` rather
+/// than failing, and an infinite chapter number is not a large chapter number — it is a value
+/// that cannot be compared, ordered or serialised. See the regression test
+/// `an_unrepresentable_digit_run_is_no_number_at_all`.
 #[must_use]
 pub fn parse_number(text: &str) -> Option<f64> {
     let mut num = String::new();
@@ -167,7 +172,8 @@ pub fn parse_number(text: &str) -> Option<f64> {
             break;
         }
     }
-    num.trim_end_matches('.').parse::<f64>().ok()
+    let value = num.trim_end_matches('.').parse::<f64>().ok()?;
+    value.is_finite().then_some(value)
 }
 
 /// Parse a bare release year (e.g. `"2025"`) from extracted text, discarding anything
@@ -176,6 +182,10 @@ pub fn parse_number(text: &str) -> Option<f64> {
 #[allow(clippy::cast_possible_truncation)]
 pub fn parse_year(text: &str) -> Option<i32> {
     let y = parse_number(text)?;
+    // `is_finite` is kept although [`parse_number`] now guarantees it: this range check is
+    // what makes the cast below sound, and reading the guard next to the cast is the point.
+    // It was *also* the only finiteness check in this module for a while, which is how
+    // `parse_chapter_number` came to return `inf` — see that function's regression note.
     if y.is_finite() && y >= f64::from(i32::MIN) && y <= f64::from(i32::MAX) {
         Some(y as i32)
     } else {
@@ -191,6 +201,41 @@ pub fn parse_year(text: &str) -> Option<i32> {
 /// length-preserving (`"İ"` is 2 bytes and lowercases to 3), so the offset can land inside a
 /// multi-byte character. Only ASCII digits are read afterwards, so the case folding is
 /// immaterial to the result.
+///
+/// The return value becomes `chapters.number` and, through it, every reading-progress
+/// comparison and the `chapter.discovered` fan-out. Each case below is a label a real listing
+/// prints, and each is the reason a rule exists:
+///
+/// ```
+/// use tankovault_adapters::html::parse_chapter_number;
+///
+/// // The marker wins over an earlier number, which is what makes volume-prefixed listings
+/// // parse at all.
+/// assert_eq!(parse_chapter_number("Volume 2 Chapter 10.5"), Some(10.5));
+/// assert_eq!(parse_chapter_number("CHAPTER 8"), Some(8.0));
+/// assert_eq!(parse_chapter_number("Ch. 99"), Some(99.0));
+/// assert_eq!(parse_chapter_number("#7 - The End"), Some(7.0));
+///
+/// // With no marker there is nothing to prefer, so the first number wins. This is the
+/// // fallback, not a special case.
+/// assert_eq!(parse_chapter_number("1024.1 - The End"), Some(1024.1));
+///
+/// // The markers are searched in a fixed order, and `"chapter"` is found before `"ch "`.
+/// // So a label carrying both reads the *chapter* number, not the volume's.
+/// assert_eq!(parse_chapter_number("Ch 3 (Chapter 40)"), Some(40.0));
+///
+/// // A digit run too long for f64 is **no number at all**, not a very large one. This looks
+/// // like a lost chapter and is the only correct answer: `"9".repeat(320).parse::<f64>()` is
+/// // `Ok(inf)`, and an infinite chapter number freezes `latest_chapter` forever and
+/// // serialises to JSON `null`. See `an_unrepresentable_digit_run_is_no_number_at_all`.
+/// assert_eq!(parse_chapter_number(&format!("Chapter {}", "9".repeat(320))), None);
+///
+/// // Non-ASCII in the label is not an error — it is Tuesday. This is F-01's input.
+/// assert_eq!(parse_chapter_number("İİİ Chapter 12"), Some(12.0));
+///
+/// // Only the absence of any digit is `None`.
+/// assert_eq!(parse_chapter_number("Prologue"), None);
+/// ```
 #[must_use]
 pub fn parse_chapter_number(text: &str) -> Option<f64> {
     let lower = text.to_lowercase();
@@ -208,6 +253,42 @@ pub fn parse_chapter_number(text: &str) -> Option<f64> {
 /// Resolve `href` against the absolute `page_url` and reduce it to a **relative** path
 /// (`/path?query`) suitable for storage. Handles absolute, root-relative, and
 /// document-relative hrefs.
+///
+/// What comes back is what is stored in `chapters.path` / `sources.path` and later resolved
+/// against the provider's configured `base_url`, which is why the host is dropped: a provider
+/// that changes domain must not require a data migration.
+///
+/// ```
+/// use tankovault_adapters::html::relativize;
+///
+/// const PAGE: &str = "https://provider.test/manga/solo-leveling/";
+///
+/// // All three href shapes a listing uses reduce to the same stored value.
+/// assert_eq!(relativize(PAGE, "chapter-10/"), "/manga/solo-leveling/chapter-10/");
+/// assert_eq!(relativize(PAGE, "/manga/solo-leveling/chapter-10/"), "/manga/solo-leveling/chapter-10/");
+/// assert_eq!(
+///     relativize(PAGE, "https://provider.test/manga/solo-leveling/chapter-10/"),
+///     "/manga/solo-leveling/chapter-10/"
+/// );
+///
+/// // The query survives, because paginated listings carry their page there.
+/// assert_eq!(relativize(PAGE, "?page=2"), "/manga/solo-leveling/?page=2");
+///
+/// // The fragment does not. Two anchors into one document are one page.
+/// assert_eq!(relativize(PAGE, "chapter-10/#top"), "/manga/solo-leveling/chapter-10/");
+///
+/// // A *different* host is silently flattened to its path. This looks like a bug and is the
+/// // deliberate contract: the caller has already decided which provider it is talking to, and
+/// // a cross-host link on a scanlation listing is a mirror of the same work far more often
+/// // than it is a link somewhere else. Cover images take the opposite view and keep their host
+/// // — that is what `absolutize` is for.
+/// assert_eq!(relativize(PAGE, "https://mirror.other.test/x/1/"), "/x/1/");
+///
+/// // A foreign scheme is NOT rooted, because `Url::join` honours it and the path is all that
+/// // is left. Named here rather than papered over; see `relativize_yields_a_rooted_path` in
+/// // `tests/prop_html.rs`, whose strategy excludes `:` for exactly this reason.
+/// assert_eq!(relativize(PAGE, "mailto:staff@provider.test"), "staff@provider.test");
+/// ```
 #[must_use]
 pub fn relativize(page_url: &str, href: &str) -> String {
     if let Ok(base) = Url::parse(page_url) {
@@ -305,6 +386,53 @@ mod tests {
         // No marker: the fallback path must be boundary-safe too.
         assert_eq!(parse_chapter_number("İİİ 42"), Some(42.0));
         assert_eq!(parse_chapter_number("İİİ"), None);
+    }
+
+    /// **Regression: a long enough digit run used to become an *infinite* chapter number.**
+    ///
+    /// `parse_number` ended in `.parse::<f64>().ok()`, and Rust's float parser does not fail on
+    /// a decimal outside `f64`'s range — `"9".repeat(320).parse::<f64>()` is `Ok(inf)`. So a
+    /// listing whose anchor read `Chapter 999…9` yielded `Some(f64::INFINITY)`.
+    ///
+    /// `parse_year` had guarded against exactly this since it was written (`y.is_finite()`);
+    /// `parse_chapter_number` never did, and it is the one whose value is persisted. The
+    /// consequences are all silent:
+    ///
+    /// - `chapters.number` is `double precision`, which accepts `Infinity`, so it stores.
+    /// - `latest_chapter` then never advances again — nothing is greater than `inf` — so every
+    ///   genuinely new chapter of that series stops being reported as new.
+    /// - `floor(number)` is `inf`, so the read-progress predicates (PERF-12) match nothing.
+    /// - **`serde_json` serialises a non-finite float as `null`.** `chapter.discovered` carries
+    ///   `Vec<f64>`, so the message goes onto the bus with a `null` where a number belongs,
+    ///   fails to deserialise in the notifier, and is dropped as undecodable (ARCH-14) — taking
+    ///   the whole scan's notification fan-out with it.
+    ///
+    /// Found while writing the oracle for the `adapters_generic_series_page` fuzz target, which
+    /// needed an answer to "what may a `ChapterMeta.number` be?". Fixed in `parse_number` rather
+    /// than in `parse_chapter_number`, so every present and future caller inherits it; the
+    /// property `parse_number_is_always_finite` in `tests/prop_html.rs` is the standing guard.
+    ///
+    /// A rejected number is *skipped*, not clamped: `GenericConfigAdapter` drops a chapter whose
+    /// number will not parse, which is the right answer for a label no ordering can place.
+    #[test]
+    fn an_unrepresentable_digit_run_is_no_number_at_all() {
+        let overlong = "9".repeat(320);
+        assert_eq!(
+            overlong.parse::<f64>().map(f64::is_infinite),
+            Ok(true),
+            "premise: Rust's float parser returns inf, not an error, for this input"
+        );
+
+        assert_eq!(parse_number(&overlong), None);
+        assert_eq!(parse_chapter_number(&format!("Chapter {overlong}")), None);
+        assert_eq!(parse_year(&overlong), None);
+
+        // The boundary stays usable: a value f64 can represent is still a number, however
+        // absurd, because the guard is about representability and not about plausibility.
+        assert_eq!(
+            parse_number(&"9".repeat(308)).map(f64::is_finite),
+            Some(true)
+        );
     }
 
     #[test]

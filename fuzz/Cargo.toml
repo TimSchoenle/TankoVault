@@ -1,0 +1,55 @@
+# A workspace of its own, on purpose. `libfuzzer-sys` compiles the target with
+# `-Z sanitizer=address`, which is nightly-only, and the host workspace pins 1.94.0 in
+# `rust-toolchain.toml` with an MSRV job at 1.85. See the `exclude` comment in the root
+# `Cargo.toml` and `README.md` here.
+[workspace]
+
+[package]
+name = "tankovault-fuzz"
+version = "0.0.0"
+edition = "2024"
+authors = ["TankoVault contributors"]
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tankovault-adapters = { path = "../crates/adapters" }
+tankovault-fetch = { path = "../crates/fetch" }
+async-trait = "0.1"
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+# `-Z sanitizer=address` instruments the crate under test, so the fuzz binary must be built
+# with debug assertions on: the overflow checks that turned P-03's `(a - b).abs()` into a
+# detectable panic instead of a silent wrap are part of what these targets are looking for.
+[profile.release]
+debug = true
+debug-assertions = true
+overflow-checks = true
+
+# `test`/`doc`/`bench = false`: a `fuzz_target!` binary has no `main` a test harness can call,
+# and `cargo test` in here would fail to link.
+
+[[bin]]
+name = "adapters_html_parsers"
+path = "fuzz_targets/adapters_html_parsers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "adapters_json_body"
+path = "fuzz_targets/adapters_json_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "adapters_generic_series_page"
+path = "fuzz_targets/adapters_generic_series_page.rs"
+test = false
+doc = false
+bench = false

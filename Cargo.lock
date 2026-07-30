@@ -5068,6 +5068,7 @@ dependencies = [
  "governor",
  "metrics",
  "metrics-exporter-prometheus",
+ "proptest",
  "serde",
  "serde_json",
  "sqlx",

@@ -1,0 +1,15 @@
+<html><head><title>chapters</title></head><body><pre style="word-wrap: break-word; white-space: pre-wrap;">{
+  "success": true,
+  "data": {
+    "chapters": [
+      {"comic_id": 42, "chapter_id": 1, "chapter_num": 116, "chapter_name": "Chapter 116", "chapter_slug": "chapter-116", "updated_at": "2026-01-01T00:00:00.000000Z", "view": 10},
+      {"comic_id": 42, "chapter_id": 2, "chapter_num": 117, "chapter_name": "Chapter 117", "chapter_slug": "chapter-117", "updated_at": "2026-01-02T00:00:00.000000Z", "view": 10},
+      {"comic_id": 42, "chapter_id": 3, "chapter_num": 118, "chapter_name": "Chapter 118", "chapter_slug": "chapter-118", "updated_at": "2026-01-03T00:00:00.000000Z", "view": 10}
+    ],
+    "total": 3,
+    "current_page": 1,
+    "per_page": 100,
+    "last_page": 1
+  }
+}
+</pre></body></html>

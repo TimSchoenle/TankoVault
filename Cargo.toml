@@ -26,9 +26,18 @@ members = [
     "services/frontend",
     "xtask",
 ]
-# The Dioxus WASM frontend is built with the `dx` CLI against the `wasm32` target
-# and is intentionally excluded from the default host workspace build.
-exclude = ["web/frontend"]
+# Two members are deliberately outside the host workspace, each because it needs a
+# toolchain this one does not have:
+#
+# - `web/frontend` — the Dioxus SPA, built with the `dx` CLI against `wasm32`.
+# - `fuzz` — the `cargo-fuzz` targets. `libfuzzer-sys` needs `-Z sanitizer`, i.e. **nightly**,
+#   while `rust-toolchain.toml` pins 1.94.0 and the `msrv` CI job builds at 1.85. As a member
+#   it would drag nightly into `cargo fmt --all`, `cargo clippy --workspace --all-targets`,
+#   `cargo deny` (a `libfuzzer-sys`/`arbitrary` duplicate would land in the `bans` budget) and
+#   the `--locked` resolution the `msrv` and `supply-chain` jobs measure — for a crate no gate
+#   runs. It carries its own `rust-toolchain.toml` and its own lockfile instead. See
+#   `fuzz/README.md`.
+exclude = ["web/frontend", "fuzz"]
 
 [workspace.package]
 version = "0.1.0"

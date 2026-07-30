@@ -1,0 +1,74 @@
+# libFuzzer dictionary for `adapters_json_body`.
+#
+# Two vocabularies, because the target reads two languages at once: the JSON the provider's API
+# speaks, and the markup a challenge solver wraps it in. Use this dictionary *together with*
+# `html.dict` (`-dict=` takes one file, so pass both via two `cargo fuzz run` invocations or
+# concatenate them) — the wrapped shapes are the whole reason this parser exists.
+
+# Structure. `{` and `}` matter most: the candidate scan is a brace walk, and F-02 was a
+# quadratic blow-up on a body made of nothing else.
+"{"
+"}"
+"["
+"]"
+"{}"
+"[]"
+"{\"a\":1}"
+"\":\""
+","
+":"
+"\""
+"\\"
+"\\\""
+"\\u0000"
+
+# Literals.
+"null"
+"true"
+"false"
+"NaN"
+"Infinity"
+"-0"
+"1e309"
+
+# The kunmanga chapters-API envelope (crates/adapters/fixtures/kunmanga/chapters.json). Keys the
+# deserializer actually looks for, so a mutation can produce a *nearly* valid payload — the
+# interesting region, since a wholly invalid one exits on the first candidate.
+"\"success\""
+"\"data\""
+"\"chapters\""
+"\"chapter_num\""
+"\"chapter_name\""
+"\"chapter_slug\""
+"\"chapter_id\""
+"\"comic_id\""
+"\"updated_at\""
+"\"total\""
+"\"current_page\""
+"\"per_page\""
+"\"last_page\""
+"\"message\""
+"\"error\""
+
+# The wrappers. `<pre>` first because it is the first place the scan looks.
+"<pre>"
+"</pre>"
+"<pre style=\"word-wrap: break-word; white-space: pre-wrap;\">"
+"<div>"
+"</div>"
+"<span>"
+"</span>"
+"&quot;"
+"&amp;"
+"&lt;"
+"&gt;"
+"&#34;"
+
+# Interstitial markers: the body this parser must name as a challenge rather than as malformed
+# JSON.
+"Just a moment"
+"cf-turnstile"
+"cdn-cgi"
+"Attention Required"
+"Rate limited"
+"Too Many Requests"

@@ -27,6 +27,31 @@ fn scheme_less_href() -> impl Strategy<Value = String> {
     "[a-zA-Z0-9/._~%?&=#-]{0,32}"
 }
 
+/// Provider text carrying a digit run long enough to exhaust `f64`, optionally behind a chapter
+/// marker so both entry points are reached.
+///
+/// Generated structurally rather than hoped for. A regex strategy will not produce a 300-digit
+/// run at any realistic size, which is exactly how the infinity defect survived a file already
+/// full of properties over `".*"` — see [`parse_number_is_always_finite`]. Prop-b is the
+/// standing reminder that a strategy which cannot generate the case does not test it.
+fn unrepresentable_number_text() -> impl Strategy<Value = String> {
+    (
+        prop::sample::select(vec![
+            "",
+            "Chapter ",
+            "Episode ",
+            "Ch. ",
+            "#",
+            "Volume 2 Chapter ",
+        ]),
+        250usize..400usize,
+        prop::option::of("[a-z .-]{0,8}"),
+    )
+        .prop_map(|(marker, digits, tail)| {
+            format!("{marker}{}{}", "9".repeat(digits), tail.unwrap_or_default())
+        })
+}
+
 proptest! {
     /// The direct, stable-toolchain guard for F-01. `parse_chapter_number` lowercases its
     /// input and then indexes into a string; `str::to_lowercase` is not length-preserving
@@ -37,11 +62,42 @@ proptest! {
         let _ = parse_chapter_number(&text);
     }
 
+    /// Every number this module yields is **finite**.
+    ///
+    /// Regression, and the reason the strategy above exists. `parse_number` ended in
+    /// `.parse::<f64>().ok()`, and Rust's float parser answers `Ok(inf)` — not `Err` — for a
+    /// decimal outside `f64`'s range. So `"Chapter 999…9"` produced an *infinite* chapter
+    /// number, which stores fine in a `double precision` column, then freezes `latest_chapter`
+    /// forever (nothing exceeds `inf`) and serialises to `null` in the `chapter.discovered`
+    /// message, which the notifier drops as undecodable. `crates/adapters/src/html.rs` carries
+    /// the full note as `an_unrepresentable_digit_run_is_no_number_at_all`.
+    ///
+    /// Asserted over both the ordinary and the overlong generator, because the invariant is
+    /// about every input, not only the pathological one.
+    #[test]
+    fn parse_number_is_always_finite(
+        text in prop_oneof![3 => ".*", 1 => unrepresentable_number_text()],
+    ) {
+        for value in [parse_number(&text), parse_chapter_number(&text)]
+            .into_iter()
+            .flatten()
+        {
+            prop_assert!(value.is_finite(), "{value} parsed out of {text:?}");
+        }
+    }
+
     /// `parse_number` finds a number exactly when there is an ASCII digit to find. Stated as
     /// an equivalence because both directions matter: a `None` on text that does have a digit
     /// silently drops a chapter, and a `Some` on text that has none invents one.
+    ///
+    /// The bound on the strategy is load-bearing, not cosmetic: the equivalence is only true of
+    /// a *representable* number, and 64 characters cannot hold a digit run that exhausts `f64`
+    /// (~1e64 against a limit near 1e308). Widening it re-admits the case
+    /// [`parse_number_is_always_finite`] owns, and this property would then be the one that
+    /// fails. The bound lives here rather than in `proptest`'s default `".*"` expansion so a
+    /// version bump cannot move it.
     #[test]
-    fn parse_number_finds_a_number_exactly_when_one_is_present(text in ".*") {
+    fn parse_number_finds_a_number_exactly_when_one_is_present(text in ".{0,64}") {
         prop_assert_eq!(
             parse_number(&text).is_some(),
             text.chars().any(|c| c.is_ascii_digit()),

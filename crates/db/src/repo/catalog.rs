@@ -321,20 +321,39 @@ pub async fn add_series_titles(
     series_id: SeriesId,
     titles: &[(String, String)],
 ) -> DbResult<()> {
-    for (title, normalized) in titles {
-        if normalized.is_empty() {
+    // One statement, not one per title. `ingest_series` calls this inside a transaction that
+    // also writes tags, authors and every chapter; each extra round trip was time the
+    // transaction spent holding locks (PERF-11).
+    //
+    // De-duplicated on `normalized` first, because `ON CONFLICT ... DO UPDATE` refuses to
+    // touch the same row twice within one command ("cannot affect row a second time"). The
+    // per-row loop tolerated a provider listing one work under two spellings that normalise
+    // identically; this keeps that tolerance instead of turning it into an error.
+    let mut seen = std::collections::HashSet::new();
+    let mut display = Vec::with_capacity(titles.len());
+    let mut normalized = Vec::with_capacity(titles.len());
+    for (title, norm) in titles {
+        if norm.is_empty() || !seen.insert(norm.as_str()) {
             continue;
         }
-        sqlx::query!(
-            "INSERT INTO series_titles (series_id, title, normalized) VALUES ($1,$2,$3) \
-             ON CONFLICT (series_id, normalized) DO UPDATE SET title = EXCLUDED.title",
-            series_id.as_uuid(),
-            title,
-            normalized,
-        )
-        .execute(&mut *conn)
-        .await?;
+        display.push(title.as_str());
+        normalized.push(norm.as_str());
     }
+    if normalized.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query!(
+        "INSERT INTO series_titles (series_id, title, normalized) \
+         SELECT $1, u.title, u.normalized \
+         FROM UNNEST($2::text[], $3::text[]) AS u(title, normalized) \
+         ON CONFLICT (series_id, normalized) DO UPDATE SET title = EXCLUDED.title",
+        series_id.as_uuid(),
+        &display as &[&str],
+        &normalized as &[&str],
+    )
+    .execute(&mut *conn)
+    .await?;
     Ok(())
 }
 
@@ -363,28 +382,37 @@ pub async fn add_series_tags(
     series_id: SeriesId,
     tags: &[String],
 ) -> DbResult<()> {
-    for name in tags {
-        let slug = slugify(name);
-        if slug.is_empty() {
-            continue;
-        }
-        let tag_id = sqlx::query_scalar!(
-            "INSERT INTO tags (slug, name) VALUES ($1,$2) \
-             ON CONFLICT (slug) DO UPDATE SET name = tags.name RETURNING id",
-            &slug,
-            name,
-        )
-        .fetch_one(&mut *conn)
-        .await?;
-        sqlx::query!(
-            "INSERT INTO series_tags (series_id, tag_id) VALUES ($1,$2) \
-             ON CONFLICT DO NOTHING",
-            series_id.as_uuid(),
-            tag_id,
-        )
-        .execute(&mut *conn)
-        .await?;
+    let (slugs, names) = dedup_by_slug(tags);
+    if slugs.is_empty() {
+        return Ok(());
     }
+
+    // Two set-based statements instead of two per tag.
+    //
+    // `ON CONFLICT (slug) DO NOTHING`, not `DO UPDATE SET name = tags.name`. That no-op
+    // update existed only to make `RETURNING id` fire on an existing row, and it cost a
+    // row-level *write* lock plus a dead tuple per tag per ingest. `tags` rows are globally
+    // shared, so two workers ingesting series that share a genre serialised on the same lock
+    // for as long as the ingest transaction ran (PERF-11). Resolving ids by slug in the
+    // second statement needs no lock at all.
+    sqlx::query!(
+        "INSERT INTO tags (slug, name) SELECT * FROM UNNEST($1::text[], $2::text[]) \
+         ON CONFLICT (slug) DO NOTHING",
+        &slugs as &[String],
+        &names as &[&str],
+    )
+    .execute(&mut *conn)
+    .await?;
+
+    sqlx::query!(
+        "INSERT INTO series_tags (series_id, tag_id) \
+         SELECT $1, t.id FROM tags t WHERE t.slug = ANY($2::text[]) \
+         ON CONFLICT DO NOTHING",
+        series_id.as_uuid(),
+        &slugs as &[String],
+    )
+    .execute(&mut *conn)
+    .await?;
     Ok(())
 }
 
@@ -395,29 +423,55 @@ pub async fn add_series_authors(
     series_id: SeriesId,
     authors: &[String],
 ) -> DbResult<()> {
-    for name in authors {
+    let (slugs, names) = dedup_by_slug(authors);
+    if slugs.is_empty() {
+        return Ok(());
+    }
+
+    // Same shape, and the same reasoning, as [`add_series_tags`]: `authors` is globally
+    // shared, so the no-op `DO UPDATE` that used to make `RETURNING` fire took a write lock
+    // on a row every concurrent ingest of the same creator also wanted.
+    sqlx::query!(
+        "INSERT INTO authors (slug, name) SELECT * FROM UNNEST($1::text[], $2::text[]) \
+         ON CONFLICT (slug) DO NOTHING",
+        &slugs as &[String],
+        &names as &[&str],
+    )
+    .execute(&mut *conn)
+    .await?;
+
+    sqlx::query!(
+        "INSERT INTO series_authors (series_id, author_id) \
+         SELECT $1, a.id FROM authors a WHERE a.slug = ANY($2::text[]) \
+         ON CONFLICT DO NOTHING",
+        series_id.as_uuid(),
+        &slugs as &[String],
+    )
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
+/// Slugify a list of display names, dropping empties and keeping the first spelling of each
+/// slug.
+///
+/// The de-duplication is required, not tidiness: binding a slug twice in one `UNNEST` insert
+/// would be harmless under `DO NOTHING`, but the link statement would then try to attach the
+/// same `(series_id, tag_id)` pair twice. Returning the display names alongside keeps the two
+/// arrays index-aligned for the `UNNEST`.
+fn dedup_by_slug(names: &[String]) -> (Vec<String>, Vec<&str>) {
+    let mut seen = std::collections::HashSet::new();
+    let mut slugs = Vec::with_capacity(names.len());
+    let mut display = Vec::with_capacity(names.len());
+    for name in names {
         let slug = slugify(name);
-        if slug.is_empty() {
+        if slug.is_empty() || !seen.insert(slug.clone()) {
             continue;
         }
-        let author_id = sqlx::query_scalar!(
-            "INSERT INTO authors (slug, name) VALUES ($1,$2) \
-             ON CONFLICT (slug) DO UPDATE SET name = authors.name RETURNING id",
-            &slug,
-            name,
-        )
-        .fetch_one(&mut *conn)
-        .await?;
-        sqlx::query!(
-            "INSERT INTO series_authors (series_id, author_id) VALUES ($1,$2) \
-             ON CONFLICT DO NOTHING",
-            series_id.as_uuid(),
-            author_id,
-        )
-        .execute(&mut *conn)
-        .await?;
+        slugs.push(slug);
+        display.push(name.as_str());
     }
-    Ok(())
+    (slugs, display)
 }
 
 // ---------------------------------------------------------------------------

@@ -16,6 +16,15 @@ path = "src/main.rs"
 # This crate is intentionally excluded from the host workspace (see the root
 # Cargo.toml `exclude`) because it targets `wasm32-unknown-unknown` via the `dx`
 # CLI. Dependency versions are therefore pinned here rather than inherited.
+#
+# The empty `[workspace]` table below is load-bearing, not decoration. Without it, cargo walks
+# *up* looking for a workspace root and finds the host one — so `cargo fmt --all` run from this
+# directory silently formats the entire backend, and `cargo clippy --all-targets` reaches
+# crates this one has nothing to do with. Declaring this crate its own workspace root stops the
+# walk and keeps every command scoped to the frontend, which is what anyone running it here
+# intends.
+
+[workspace]
 
 [dependencies]
 dioxus = { version = "0.7", features = ["web", "router"] }

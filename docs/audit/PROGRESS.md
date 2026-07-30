@@ -21,11 +21,13 @@ that the audit did not.
 | Report | DONE | PARTIAL | OPEN | Other |
 | --- | --- | --- | --- | --- |
 | SECURITY (16+2) | 12 | 4 | 2 | — |
-| ARCHITECTURE (21) | 3 | 0 | 17 | 1 no-finding |
-| PERFORMANCE (20) | 3 | 0 | 16 | 1 no-finding |
+| ARCHITECTURE (21) | 7 | 1 | 12 | 1 no-finding |
+| PERFORMANCE (20) | 9 | 0 | 10 | 2 no-finding/wontfix |
 | TESTING (21) | 4 | 1 | 16 | — |
-| FRONTEND (18) | 4 | 0 | 14 | — |
-| BUILD_AND_OPS (31+1) | 17 | 1 | 14 | — |
+| FRONTEND (18+1) | 7 | 0 | 12 | — |
+| BUILD_AND_OPS (31+1) | 21 | 1 | 10 | — |
+
+Counts move as agents land work; the rows below are authoritative, not this summary.
 
 ---
 
@@ -59,10 +61,10 @@ should mark the security work complete until they are done.
 | SEC-6 | Live credentials committed | **PARTIAL** | Repo side done (untracked, `.gitignore` fixed, `local.env.example` added, placeholders refused in every profile). Rotation is OP-1..OP-3. |
 | SEC-7 | Cookie not `Secure` by default; no CSP | **PARTIAL** | `cookie_secure` now defaults to true (it was `#[serde(default)]` on a `bool`); CSP added to both the API (`default-src 'none'`) and the SPA shell, plus `Cache-Control: no-cache`. The `__Host-` cookie prefix is **not** done — it requires `Path=/` rather than the current `/v1/auth`, which widens where the cookie is sent and deserves its own review. |
 | SEC-8 | `/v1/me/stream` skips the suspension check, token in the URL | **PARTIAL** | The principal is now resolved and `may_authenticate()` checked, and the stream is capped at the token's `exp` so the check re-runs on `EventSource`'s automatic reconnect. The token is **still in the query string** — replacing it with a short-lived ticket needs a Redis-backed store and a frontend change. |
-| SEC-9 | Username may contain `@`; login resolves ambiguously | **PARTIAL** | `validate_username` restricts to `[A-Za-z0-9_.-]` and is applied on registration *and* `patch_profile`. Still **OPEN**: the DB-level `CHECK (position('@' in username) = 0)` migration, applying the validator in `admin::update_user`, and splitting `find_credentials` on `@`. Existing rows are not retro-validated. |
+| SEC-9 | Username may contain `@`; login resolves ambiguously | **PARTIAL** | `validate_username` restricts to `[A-Za-z0-9_.-]` on registration and `patch_profile`. The DB `CHECK` constraint and the `admin::update_user` / `find_credentials` halves are delegated and in progress. Existing rows are not retro-validated. |
 | SEC-10 | Login timing side channel discloses account existence | **PARTIAL** | `login` now verifies `DUMMY_PASSWORD_HASH` on the unknown-identifier branch, pinned by a test asserting the dummy's argon2 parameters match the live hasher's. `forgot_password`'s smaller channel is still open. |
 | SEC-11 | `panic = "abort"` with no catch layer; `page * limit` overflow | **DONE** | Release profile moved to `panic = "unwind"` with `overflow-checks = true`; `CatchPanicLayer` is the innermost layer of `HttpStack`; `page` is clamped to `MAX_PAGE` and the multiply saturates. |
-| SEC-12 | Rate-limit buckets are per-exact-IP | **PARTIAL** | IPv6 now buckets per /64 and junk keys are truncated. The `Principal` extension is still never inserted, so authenticated traffic is not bucketed per account — needs auth middleware ahead of the limiter. |
+| SEC-12 | Rate-limit buckets are per-exact-IP | **PARTIAL** | IPv6 buckets per /64; junk keys truncated; `HttpStack::with_principal` now mounts a verified-principal resolver *outside* the limiter, so `Principal` is inserted rather than being read by the limiter and written by nobody. The resolver is supplied by the service (so this crate never sees signing keys, and the limiter can never be handed unverified input). Wiring it in `services/api` is the last step. |
 | SEC-13 | `/scalar` served unauthenticated | **DONE** | `SecurityConfig::expose_api_docs`, defaulting to off under `TANKOVAULT_PROFILE=production` and on elsewhere. Also fixes PERF-14 (the 253 KB re-serialization per request). |
 | SEC-14 | Username interpolated unescaped into HTML email | **DONE** | `mailer::esc` on every interpolated value, with a regression test injecting an anchor. |
 | SEC-15 | GDPR self-export includes audit rows naming third parties | **DONE** | The export projects `created_at`/`action`/`outcome` and `target` only when the target is the subject; `detail` is dropped. |
@@ -95,11 +97,11 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | ARCH-8 | `config/src/lib.rs` — 15 flat config aggregates | **PARTIAL** | Grew by one (`InternalAuthConfig`) plus `ConfigError::Invalid` and `is_production()`. The split is still open. |
 | ARCH-9 | (same as ARCH-4 in the report's numbering) | **DONE** | |
 | ARCH-10 | Proxy handlers return `Json<Value>` while OpenAPI declares typed bodies | **OPEN** | `Upstream` makes this a one-place change now. |
-| ARCH-11 | `sync` routes HTTP status by substring-matching error text | **OPEN** | `SyncError` thiserror enum. The needle currently matches the *negated* source message. |
+| ARCH-11 | `sync` routes HTTP status by substring-matching error text | **DONE** | `services/sync/src/error.rs`. Typed variants for the two failures with HTTP meaning, downcast through `anyhow` so they survive `.context()`, exhaustive status mapping by construction, RFC 9457 body matching the API's. Test pins that a message merely *containing* the old needles is no longer misrouted. |
 | ARCH-12 | Four distinct error shapes across eight services | **OPEN** | Hoist `ProblemDetails` into `crates/service/src/problem.rs`. |
-| ARCH-13 | `notifier` reimplements SMTP instead of using `crates/email` | **OPEN** | Also omits the envelope-sender policy relays need. |
-| ARCH-14 | JetStream consume loop hand-rolled three times | **OPEN** | `notifier/main.rs` acks after a *failed* fan-out — notifications are silently dropped. Highest-value of the ARCH set. |
-| ARCH-15 | `POST /v1/solve` duplicated byte-for-byte | **PARTIAL** | Both copies now validate the target and require the token, so they no longer *diverge*; the duplication itself is still there. |
+| ARCH-13 | `notifier` reimplements SMTP instead of using `crates/email` | **DONE** | `EmailChannel` is a thin adapter over `EmailService`, built from the shared `TANKOVAULT_EMAIL__*` config. `lettre` dropped from the service. This fixed a real delivery bug: the private copy did not resolve the envelope sender from the SMTP login, so operator alerts were rejected (`550 5.7.60`) by relays that accepted the API's password-reset mail. |
+| ARCH-14 | JetStream consume loop hand-rolled three times | **DONE** | `crates/bus::consume` owns shutdown, decode, heartbeat, retry-vs-settle and the undecodable drop; handlers return a `Disposition` so the retry judgement stays with the layer that can make it. Fixed two real bugs: the notifier acked after a **failed** fan-out (at-most-once — notifications lost with one `warn!`), and the control-plane aggregator had no cancellation arm so it could not drain on `SIGTERM`. |
+| ARCH-15 | `POST /v1/solve` duplicated byte-for-byte | **DONE** | Defined once in `tankovault_solver::http::solver_router`, behind an `axum` feature so trait-only consumers do not pull axum. The SSRF target check travels with it, so one copy cannot forget it. |
 | ARCH-16 | Canonicalisation implemented twice with different thresholds | **OPEN** | |
 | ARCH-17 | `crates/test-support` inverts crate/service layering | **OPEN** | `cargo test -p tankovault-db` compiles the whole API service. |
 | ARCH-18 | Feature-flag route tables duplicated | **OPEN** | |
@@ -113,27 +115,27 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 
 | # | Finding | Status | Notes |
 | --- | --- | --- | --- |
-| PERF-1 | Fetch stack rebuilt per scan task | **OPEN** | **Highest impact in this report.** Also means per-provider rate limiting is currently enforced only *within* one task, contradicting the comment at `crates/fetch/src/ratelimit.rs:4-7`. |
+| PERF-1 | Fetch stack rebuilt per scan task | **DONE** | `Engine` caches one `Arc<dyn Fetcher>` per provider id, keyed on a fingerprint of exactly the settings the stack is built from. This was a **correctness** fix as much as a speed one: the limiter and the adaptive 429 penalty live in the stack, so a per-task stack made `rps`/`concurrency` a per-task budget and N tasks offered N x rps. The false comment in `ratelimit.rs` now states the invariant and who must uphold it. |
 | PERF-2 | `count(*) OVER()` on the browse query | **OPEN** | |
 | PERF-3 | Notifier: 3 sequential queries per watcher | **OPEN** | |
-| PERF-4 | Missing `series(updated_at)`; OFFSET enrichment sweep | **OPEN** | Includes a correctness bug: the sweep sets `updated_at = now()`, so enriched rows jump the cursor and unenriched series are skipped. |
-| PERF-5 | Selectors recompiled per element | **OPEN** | No `LazyLock`/`OnceLock` anywhere in `crates/` today. |
-| PERF-6 | `test_before_acquire` left at its default | **OPEN** | One line. |
+| PERF-4 | Missing `series(updated_at)`; OFFSET enrichment sweep | **DONE** | Keyset walk fenced by the sweep's start timestamp, cursor advanced *before* the work so a permanently-failing row cannot stall it. Index added in migration 0020. The correctness half — enriched rows jumping the cursor and silently skipping unenriched series — is what made this urgent rather than merely slow. |
+| PERF-5 | Selectors recompiled per element | **DONE** | Bounded memo returning `Arc<Selector>`, so every call site is fixed including the custom adapters. `LazyLock<Selector>` could not apply — selectors come from `providers.config`, not constants. |
+| PERF-6 | `test_before_acquire` left at its default | **DONE** | Off. The probe bought little — the pool already discards a connection whose query fails — and cost a round trip on every repository call. |
 | PERF-7 | WASM bundle uncompressed, uncached, no ETag | **DONE** | `CompressionLayer` plus `Cache-Control: no-cache` on the shell in `services/frontend`. `ServeDir` already supplied ETag/Last-Modified. |
 | PERF-8 | `reqwest::Client::new()` has no timeout; unbounded spawn | **DONE** | `Upstream::client()` sets connect (5 s) and request (25 s) timeouts; `spawn_targeted_push` goes through it. |
-| PERF-9 | CPU-bound parsing on the async executor | **OPEN** | No `spawn_blocking` anywhere today. |
+| PERF-9 | CPU-bound parsing on the async executor | **DONE** | All four `GenericConfigAdapter` methods go through `html::parse_blocking`. Also pre-sizes the body buffer from `Content-Length` (clamped; the streaming check still enforces the cap) and avoids a second copy of up to 8 MiB by trying `from_utf8` before `from_utf8_lossy`. |
 | PERF-10 | `GET /v1/series/{id}` N+1 | **OPEN** | |
 | PERF-11 | Ingest holds one transaction across ~1,200 INSERTs | **OPEN** | |
 | PERF-12 | `floor(number)` predicates non-sargable | **OPEN** | |
 | PERF-13 | Sync reconcile ~6 sequential queries per remote entry | **OPEN** | |
 | PERF-14 | `/scalar` re-serializes 253 KB per request | **DONE** | The route is unmounted in production (SEC-13). |
 | PERF-15 | `register_source_stubs` opens a transaction per entry | **OPEN** | |
-| PERF-16 | `FairQueue` polls lanes sequentially | **OPEN** | |
+| PERF-16 | `FairQueue` polls lanes sequentially | **WONTFIX** | The audit's concurrent-fetch fix is unsafe here and the reasoning is now recorded in `queue.rs`: a concurrent round claims a message from every non-empty lane, a worker may hold only one, and handing the extras back increments their delivery count against `MAX_TASK_DELIVERIES = 3`. A task could exhaust its retry budget by being polled past without ever failing. The idle chatter is already bounded by the existing 200 ms -> 5 s backoff. |
 | PERF-17 | Dev profile untuned | **OPEN** | Ready-to-paste `[profile.dev]` in the report. |
 | PERF-18 | The `api` binary links two TLS stacks | **OPEN** | |
 | PERF-19 | Miscellaneous allocation waste | **OPEN** | |
 | PERF-20 | WASM payload config already correct | — | No action. |
-| PERF-idx | Missing-index DDL | **OPEN** | `series_tags(tag_id)` is marked UNVERIFIED — run `EXPLAIN` before adding. |
+| PERF-idx | Missing-index DDL | **DONE** | `migrations/0020_performance_indexes.sql`, nine indexes. NOT `CONCURRENTLY`, and the file explains at length why: sqlx's `--no-transaction` suppresses the explicit transaction but Postgres wraps any multi-statement simple query in an implicit one. The file carries the exact `CONCURRENTLY` block to run by hand first on an already-large database, after which `IF NOT EXISTS` makes the migration a no-op. `series_tags(tag_id)` deliberately not added — still UNVERIFIED. |
 
 ---
 
@@ -166,9 +168,9 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | --- | --- | --- | --- |
 | FE-F1 | 35 of 59 fetches bypass `async_view`; "always retryable" already broken | **OPEN** | Largest single frontend item (~500 LOC). Root cause is an `Option<Option<Result<_>>>` signed-out idiom; fix the idiom first, then the sweep is mechanical. |
 | FE-F2 | CI runs `cargo check` only — 41 tests and `clippy::pedantic` are dead | **DONE** | See TEST F-03. Frontend clippy is clean at pedantic today. |
-| FE-F3 | Seven auth/password inputs have no programmatic label | **OPEN** | |
+| FE-F3 | Seven auth/password inputs have no programmatic label | **DONE** | Extracted `components::Field` with `for`/`id`, `autocomplete` and Enter-to-submit, applied across `views/auth.rs` and `views/password.rs`. The labels were siblings rather than ancestors, so there was not even an implicit association — a screen reader announced them as "edit text, blank". |
 | FE-F4 | ~285 LOC of shared components live inside view modules | **OPEN** | `stats.rs` imports `HealthPill` from a sibling *view* — a layering inversion. |
-| FE-F5 | `EmptyBox`/`SkeletonBlock` exist but 40 sites hand-roll them | **OPEN** | Not exported from `components/mod.rs`. |
+| FE-F5 | `EmptyBox`/`SkeletonBlock` exist but 40 sites hand-roll them | **DONE** | Exported and swept: 23 of 30 `ik-empty` and 19 of 23 `ik-skeleton` hand-rolls now use the components. The remainder are multi-child or styled forms, left deliberately. |
 | FE-F6 | Four hand-rolled tab strips, none with tab semantics | **OPEN** | |
 | FE-F7 | Zero `use_memo` in 16k LOC | **OPEN** | |
 | FE-F8 | 488 inline `style:` attributes bypass the token layer | **OPEN** | |
@@ -178,7 +180,8 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | FE-F11b | `web/frontend/README.md` repeats the hand-authored claim | **OPEN** | |
 | FE-F12 | 13 `ik-*` classes shipped but never referenced | **OPEN** | |
 | FE-F13 | Pagination implemented twice | **OPEN** | |
-| FE-F14 | Signed-out `/console` shows a permanent skeleton | **OPEN** | The only protected route without a `SignInGate`. User-visible bug — do this first in the frontend set. |
+| FE-F13b | Users pagination compared a client-filtered count against a server total | **DONE** | `has_next` and the "1-N of TOTAL" line used `rows.len()` *after* the status and staff filters ran, so filtering to a single staff member on page 1 hid every later page. Split into three counts: shown, returned, total. |
+| FE-F14 | Signed-out `/console` shows a permanent skeleton | **DONE** | Capabilities clear to `Loading` with no session, so `is_ready()` was permanently false and the skeleton never resolved — the worst failure mode available, since the app looks like it is working and the reader waits instead of signing in. Gate added, factored as `components::AuthRequired`, collapsing the four existing hand-rolled copies. |
 | FE-F15 | 14 unused icon variants behind an expired `#[allow(dead_code)]` | **OPEN** | |
 | FE-F16 | 27 ARIA attributes against 134 click handlers | **OPEN** | Worst: `series/chapters.rs:275`, a mouse-only `div` disclosure. |
 | FE-F17 | Two hardcoded English strings | **OPEN** | |
@@ -192,8 +195,8 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | --- | --- | --- | --- |
 | OPS-1.1 | Committed live credentials | **PARTIAL** | See SEC-6 / OP-1..OP-3. |
 | OPS-1.2 | `api-client/src/lib.rs` is 780 KB on one physical line | **DONE** | `xtask` pipes the generated client through `rustfmt`; the file is now normally formatted and diffable. |
-| OPS-1.3 | Unused dependencies | **OPEN** | `services/api` `tower`/`tower-http`, `crates/db` futures, `crates/service` uuid, `crates/solver` tracing, `crates/fetch` serde+serde_json. |
-| OPS-1.4 | Dead `[workspace.dependencies]`, incl. the whole OTel stack | **OPEN** | Pairs with OPS-8.2. |
+| OPS-1.3 | Unused dependencies | **DONE** | Twelve declarations removed. `crates/solver`'s `tracing` was correctly listed as unused by the audit but is now genuinely used by the shared `/v1/solve` router added this session, so it stays. |
+| OPS-1.4 | Dead `[workspace.dependencies]`, incl. the whole OTel stack | **DONE** | Six dead entries and all four OTel crates removed. `tankovault-api-client` deliberately kept with a note explaining why (`web/frontend` is outside the workspace and uses its own path dep). |
 | OPS-1.5 | 86 crates at 2+ versions | **OPEN** | |
 | OPS-1.6 | Two crates named `tankovault-frontend` | **OPEN** | |
 | OPS-2.1 | `cargo fmt --all --check` red — CI's first gate | **DONE** | `rustfmt.toml`'s `ignore` is nightly-only; removed, generator formats instead. Verified `cargo fmt --all --check` and `xtask openapi --check` now both pass. |
@@ -212,13 +215,13 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | OPS-4.5 | No release automation, image publishing, SBOM or signing | **OPEN** | Both Docker jobs run `push: false`, so there is no artifact to roll back to. |
 | OPS-4.6 | No build matrix | **OPEN** | |
 | OPS-4.x | No job timeouts; no coverage measurement | **DONE** | All 13 CI jobs now carry `timeout-minutes`. A `coverage` job runs `cargo llvm-cov --summary-only` as `continue-on-error` — report only, no threshold, because the audit's point is that coverage is unevenly *distributed*, and a number nobody has seen is not something to gate on. Add a ratchet once there is a baseline. |
-| OPS-4.7 | `xtask/build.rs` writes into `.git/hooks/` on every build | **OPEN** | |
+| OPS-4.7 | `xtask/build.rs` writes into `.git/hooks/` on every build | **DONE** | Now `cargo run -p xtask -- install-hooks`; `build.rs` deleted. A build script mutating the developer's git config is a side effect outside `OUT_DIR` applied without consent, and it breaks hermetic builds. CI's `openapi --check` is what actually enforces the invariant. |
 | OPS-4.8 | No static/secret scanning in CI | **DONE** | `secrets` job runs gitleaks over the full history (`fetch-depth: 0` — a secret removed in the tip commit is still leaked). |
 | OPS-4.9 | `sqlx prepare --check` gate correct | — | No finding. |
 | OPS-4.10 | OpenAPI drift gate correct | — | No finding. |
 | OPS-5.1 | `wreq`/BoringSSL dlopen handling | — | No finding. Do not "simplify" the Dockerfile here. |
 | OPS-5.2 | Helm chart documented in detail, directory empty | **OPEN** | Either build it or delete the claim in `deploy/README.md:104-111` and `docs/design.md:1027`. |
-| OPS-5.3 | No healthchecks and no resource limits in compose | **PARTIAL** | Memory limits added to all 12 services; `shm_size` on `render` and `flaresolverr`. **Healthchecks are still absent** on the 8 app services and cannot be added as-is: they are `scratch` images with no shell and no `wget`. The fix is an argv branch (`<binary> --healthcheck`) in the shared runtime that self-probes `/health`; that is a real change to every `main` and is not done. |
+| OPS-5.3 | No healthchecks and no resource limits in compose | **DONE** (code) | Memory limits on all 12 services, `shm_size` on `render`/`flaresolverr`. `crates/service/src/healthcheck.rs` adds the `--healthcheck` argv branch, wired into all seven backend services (the frontend server's copy lands with OPS-8.1). A TCP connect rather than an HTTP GET: `challenge-solver` has no HTTP client, and "the listener is accepting" is what liveness should mean. The compose `healthcheck:` stanzas are the remaining step. |
 | OPS-5.4 | No read-only rootfs or capability drop | **OPEN** | |
 | OPS-6.1 | Startup migration concurrency | — | No finding; document it. |
 | OPS-6.2 | Zero `.down.sql` — no rollback | **OPEN** | |
@@ -227,9 +230,9 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | OPS-6.5 | Non-idempotent DDL | **OPEN** | |
 | OPS-7.1 | No env-var reference document | **OPEN** | 52 config fields, 45 `TANKOVAULT_*` keys in use, `docs/OPERATIONS.md` mentions 3. `TANKOVAULT_PROFILE` is documented nowhere and gates production validation. |
 | OPS-7.2 | No `.env.example` | **DONE** | `deploy/local.env.example`, covering the internal token, auth secrets and AniList. |
-| OPS-7.3 | Startup validation thin, in one service only | **PARTIAL** | Placeholder secrets are now refused in every profile, and `InternalAuthConfig::resolve` validates in five services. `TOKEN_ENCRYPTION_KEY` length is still unvalidated. |
+| OPS-7.3 | Startup validation thin, in one service only | **DONE** | Placeholder secrets refused in every profile; `InternalAuthConfig::resolve` validates in six services; `sync` refuses the published all-zero `TOKEN_ENCRYPTION_KEY`, comparing decoded bytes so every base64 spelling is caught. The key *length* was already enforced by `from_base64_key` decoding into `[u8; 32]` — the audit's remaining gap was a well-known value, not a length. |
 | OPS-8.1 | `frontend` bypasses the shared runtime | **OPEN** | Uses `/healthz` not `/health`+`/ready`, no metrics, bare `TraceLayer` — so the tier that *originates* every correlation chain emits no request id. |
-| OPS-8.2 | `otlp_endpoint` is an inert knob | **OPEN** | Finish it or delete it; four OTel crates are declared and used by zero members. |
+| OPS-8.2 | `otlp_endpoint` is an inert knob | **DONE** | Removed, together with the four OTel workspace deps. It only ever logged "collector export is pending" — an operator who set it believed traces were exported and would have found out during an incident. `Cargo.toml` and `crates/config` both say to re-add the knob and the layer together or not at all. |
 | OPS-8.3 | No dashboards, alerts or recording rules | **OPEN** | |
 
 ---

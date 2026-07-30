@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc d5d804535162654ebfa0f7d05145c8d2460dd50b36b1821930ed2151d148c2ed # shrinks to document = Object {"type": Array [Null]}
+cc a54973876bcf8bed42714cb45c05892ae11e99dc3e8645b9e0f86d1b3e505b6c # shrinks to document = Object {"openapi": Object {"type": Array [Bool(false)]}}

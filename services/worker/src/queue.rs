@@ -234,6 +234,28 @@ impl FairQueue {
 impl Tier {
     /// Try every lane in this tier once, starting where the last round left off, and return
     /// the first task found.
+    ///
+    /// ## Why the lanes are still polled sequentially
+    ///
+    /// An idle round costs one `no_wait` round trip per lane, so pickup latency and broker
+    /// chatter both scale with provider count — at 25 providers and 1 ms RTT that is ~50 ms
+    /// per tier per poll. The obvious fix is to issue the fetches concurrently and take the
+    /// first answer.
+    ///
+    /// That fix is **wrong here**, and the reason is worth recording so it is not
+    /// re-attempted: a concurrent round claims a message from *every* non-empty lane, but a
+    /// worker may only hold one. The extras have to be handed back, and handing a `JetStream`
+    /// message back — whether by `nak` or by letting the ack deadline lapse — **increments
+    /// its delivery count**. `MAX_TASK_DELIVERIES` is 3. During a busy period a task could
+    /// therefore exhaust its entire retry budget by being polled past, never once having
+    /// actually failed, and be recorded as a permanent failure. Trading a correctness
+    /// property for tens of milliseconds of pickup latency is a bad trade, and the latency is
+    /// already irrelevant next to the seconds-to-minutes a scan task itself takes.
+    ///
+    /// The chatter itself is already bounded by the caller: [`FairQueue::next_task`] doubles
+    /// its wait from [`IDLE_POLL_MIN`] to [`IDLE_POLL_MAX`] while every tier comes back
+    /// empty, so an idle pool settles at one round per lane per five seconds, not a spin.
+    /// Deliberately left as is.
     async fn poll_round(&mut self) -> Option<BrokerMessage> {
         let lane_count = self.lanes.len();
         if lane_count == 0 {

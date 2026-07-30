@@ -23,5 +23,8 @@ serde_json = { workspace = true }
 progenitor-impl = "0.14.0"
 openapiv3 = "2.2.0"
 
+[dev-dependencies]
+proptest = { workspace = true }
+
 [lints]
 workspace = true

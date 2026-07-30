@@ -268,7 +268,20 @@ impl RateLimiter {
     /// `redis` is consulted only for [`RateLimitBackend::Redis`](tankovault_config::RateLimitBackend::Redis).
     /// When that backend is selected but no client could be built, this falls back to the
     /// in-memory store with a warning rather than starting with no limiting at all.
+    /// The `redis` parameter is unused when the `redis` feature is off — the signature stays
+    /// identical across feature sets on purpose, so a caller does not have to `cfg` its own
+    /// call site. Both lint allowances are therefore feature-conditional rather than blanket:
+    /// with the feature on, the argument genuinely is consumed and both lints should apply.
+    ///
+    /// Without this, `cargo clippy -p tankovault-service` (no default features) failed on
+    /// `needless_pass_by_value` while the unified workspace build — which always enables the
+    /// feature via some other member — passed. Exactly the class of breakage the CI feature
+    /// matrix exists to surface.
     #[must_use]
+    // On the function, not the parameter: a `cfg_attr` allow attached to an argument is
+    // accepted by the parser but does not reach the lint, so the parameter-level form
+    // silently does nothing for `needless_pass_by_value`.
+    #[cfg_attr(not(feature = "redis"), allow(clippy::needless_pass_by_value))]
     pub fn from_config(
         cfg: &RateLimitConfig,
         classifier: RouteClassifier,
@@ -545,6 +558,49 @@ mod tests {
             RouteClass::Expensive,
             "triggering a run is the expensive action the budget exists for"
         );
+    }
+
+    /// `Principal` used to be read here and inserted by nobody, so every request —
+    /// authenticated or not — was bucketed by IP. An IP bucket is the wrong unit for a
+    /// signed-in user: they share it with a household, an office NAT or a mobile carrier,
+    /// while an attacker with one account and many addresses evades it entirely.
+    ///
+    /// `HttpStack::with_principal` now inserts it. This pins that the limiter prefers it,
+    /// and that two callers behind one address get separate budgets once identified.
+    #[test]
+    fn an_identified_caller_is_bucketed_per_account_not_per_address() {
+        let cfg = RateLimitConfig::default();
+        let limiter = RateLimiter::new(
+            Arc::new(crate::ratelimit::memory::MemoryStore::new(&cfg)),
+            RouteClassifier::new(),
+            &cfg,
+        );
+        let peer = ConnectInfo("203.0.113.7:44444".parse::<SocketAddr>().unwrap());
+
+        let mut anonymous = Request::new(axum::body::Body::empty());
+        anonymous.extensions_mut().insert(peer);
+        let anonymous_key = limiter.key(&anonymous);
+
+        let mut alice = Request::new(axum::body::Body::empty());
+        alice.extensions_mut().insert(peer);
+        alice.extensions_mut().insert(Principal("alice".to_owned()));
+
+        let mut bob = Request::new(axum::body::Body::empty());
+        bob.extensions_mut().insert(peer);
+        bob.extensions_mut().insert(Principal("bob".to_owned()));
+
+        assert_eq!(limiter.key(&alice), "u:alice");
+        assert_ne!(
+            limiter.key(&alice),
+            limiter.key(&bob),
+            "two accounts behind one NAT must not share a budget"
+        );
+        assert_ne!(
+            limiter.key(&alice),
+            anonymous_key,
+            "an identified caller must not fall back to the address bucket"
+        );
+        assert_eq!(anonymous_key, "ip:203.0.113.7");
     }
 
     /// Regression: reading the left-most entry let any caller mint a fresh bucket per

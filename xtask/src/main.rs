@@ -487,3 +487,198 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+    use serde_json::json;
+
+    /// Run the rewriter over `value` and hand back the result, so a test reads as one
+    /// expression rather than three lines of `let mut`.
+    fn downgraded(value: serde_json::Value) -> serde_json::Value {
+        let mut value = value;
+        downgrade_to_3_0(&mut value);
+        value
+    }
+
+    /// JSON of bounded depth, biased towards the keys the rewriter actually reacts to.
+    ///
+    /// A uniform generator would essentially never produce a `type` or `examples` key, so the
+    /// properties below would only ever exercise the pass-through path.
+    fn any_document() -> impl Strategy<Value = serde_json::Value> {
+        // Leaves are strings only, and that is a statement about the *rewriter*, not a
+        // convenience. A `type` member that is not a string — `[null]`, `[false]`, `[7]` — is
+        // not something OpenAPI can express, and the converter is provably not idempotent on
+        // it. That behaviour is pinned by `a_non_string_type_member_is_not_idempotent`; the
+        // generator stays inside well-formed documents so the property below says something
+        // about real specs rather than re-deriving the same known edge on every run.
+        let leaf = prop::sample::select(vec![
+            "string", "integer", "boolean", "null", "object", "3.1.0", "3.0.3", "x", "",
+        ])
+        .prop_map(serde_json::Value::from);
+        let key = prop::sample::select(vec![
+            "type".to_owned(),
+            "examples".to_owned(),
+            "openapi".to_owned(),
+            "properties".to_owned(),
+            "items".to_owned(),
+            "description".to_owned(),
+        ]);
+        leaf.prop_recursive(4, 24, 4, move |inner| {
+            prop_oneof![
+                prop::collection::vec(inner.clone(), 0..4).prop_map(serde_json::Value::from),
+                prop::collection::hash_map(key.clone(), inner, 0..4).prop_map(|m| {
+                    serde_json::Value::from(m.into_iter().collect::<serde_json::Map<_, _>>())
+                }),
+            ]
+        })
+    }
+
+    #[test]
+    fn the_document_version_is_rewritten() {
+        assert_eq!(
+            downgraded(json!({ "openapi": "3.1.0" }))["openapi"],
+            "3.0.3"
+        );
+        // Anything that is not the version this converter was written for is left alone, so a
+        // future utoipa emitting 3.2 is a visible failure downstream rather than a silent
+        // mislabelling of a document that was never converted.
+        assert_eq!(
+            downgraded(json!({ "openapi": "3.0.3" }))["openapi"],
+            "3.0.3"
+        );
+    }
+
+    #[test]
+    fn a_nullable_union_becomes_a_type_plus_a_nullable_flag() {
+        // The conversion this function exists for. `progenitor` reads the 3.0 spelling; getting
+        // it wrong makes every optional field on the generated client either non-optional or
+        // untyped, and the only signal is `openapi --check` comparing two artifacts that were
+        // both produced by this same function.
+        let out = downgraded(json!({ "type": ["string", "null"] }));
+        assert_eq!(out["type"], "string");
+        assert_eq!(out["nullable"], true);
+    }
+
+    #[test]
+    fn a_plain_type_is_left_exactly_as_it_was() {
+        let out = downgraded(json!({ "type": "string", "description": "a title" }));
+        assert_eq!(out, json!({ "type": "string", "description": "a title" }));
+    }
+
+    #[test]
+    fn a_bare_null_type_becomes_a_nullable_flag_with_no_type_at_all() {
+        assert_eq!(
+            downgraded(json!({ "type": "null" })),
+            json!({ "nullable": true })
+        );
+    }
+
+    /// Pins a **lossy** conversion so that changing it is a deliberate act.
+    ///
+    /// A union of three or more types collapses to the first non-null one and the rest are
+    /// discarded — the generated client will simply not know about them. Our own document does
+    /// not currently emit such a union, which is exactly why this would go unnoticed if it
+    /// started to.
+    #[test]
+    fn a_wider_union_collapses_to_its_first_type_and_silently_loses_the_rest() {
+        let out = downgraded(json!({ "type": ["string", "integer", "boolean"] }));
+        assert_eq!(out["type"], "string");
+        assert!(
+            out.get("nullable").is_none(),
+            "a union with no null member must not be marked nullable"
+        );
+    }
+
+    /// A second lossy edge: a `type` that is neither a string nor an array is **dropped**,
+    /// because it is removed from the map before the match and no arm puts it back.
+    #[test]
+    fn a_type_that_is_neither_a_string_nor_an_array_is_dropped() {
+        assert_eq!(downgraded(json!({ "type": 42 })), json!({}));
+    }
+
+    /// **Found by the idempotence property below, and pinned rather than fixed.**
+    ///
+    /// The "pick the first non-null type" branch inserts whatever it found, without checking
+    /// that it is a string. A `type` array holding a non-string member therefore survives the
+    /// first pass as a non-string `type` and is *dropped entirely* by a second, because the
+    /// match at the top of the function has no arm for it. `downgrade(downgrade(v))` is not
+    /// `downgrade(v)`.
+    ///
+    /// Impact today is nil: `utoipa` writes the null type as the string `"null"`, the converter
+    /// runs exactly once per document, and a document like this is not valid `OpenAPI` in the
+    /// first place. It is recorded because the two passes *disagree about the same input*,
+    /// which is the shape of a real bug the moment anything runs the converter twice or feeds
+    /// it a hand-edited spec. The fix belongs in that branch: reject a non-string member rather
+    /// than inserting it.
+    #[test]
+    fn a_non_string_type_member_is_not_idempotent() {
+        for malformed in [json!({ "type": [null] }), json!({ "type": [false] })] {
+            let once = downgraded(malformed);
+            assert!(
+                !once["type"].is_string(),
+                "the first pass kept a non-string type: {once}"
+            );
+            assert_eq!(
+                downgraded(once),
+                json!({}),
+                "a second pass drops what the first kept"
+            );
+        }
+    }
+
+    #[test]
+    fn the_examples_array_collapses_to_its_first_entry() {
+        let out = downgraded(json!({ "examples": ["first", "second"] }));
+        assert_eq!(out["example"], "first");
+        assert!(out.get("examples").is_none());
+        // An empty array yields neither key rather than `example: null`.
+        assert_eq!(downgraded(json!({ "examples": [] })), json!({}));
+    }
+
+    #[test]
+    fn the_rewrite_reaches_schemas_nested_in_objects_and_arrays() {
+        let out = downgraded(json!({
+            "components": { "schemas": { "S": { "properties": {
+                "a": { "type": ["string", "null"] },
+            } } } },
+            "anyOf": [{ "type": ["integer", "null"] }],
+        }));
+        assert_eq!(
+            out["components"]["schemas"]["S"]["properties"]["a"]["nullable"],
+            true
+        );
+        assert_eq!(out["anyOf"][0]["type"], "integer");
+        assert_eq!(out["anyOf"][0]["nullable"], true);
+    }
+
+    proptest! {
+        /// Idempotence. `openapi --check` compares a freshly generated artifact against the
+        /// committed one, and both go through this function — so if it were not idempotent the
+        /// check would still pass while the committed client drifted from the spec it claims to
+        /// describe. Nothing else in the pipeline would notice.
+        #[test]
+        fn the_downgrade_is_idempotent(document in any_document()) {
+            let once = downgraded(document);
+            let twice = downgraded(once.clone());
+            prop_assert_eq!(once, twice);
+        }
+
+        /// The rewriter touches only `openapi`, `type` and `examples`. Everything else in the
+        /// document — descriptions, `$ref`s, `x-rust-type` hints, security schemes — must
+        /// arrive at `progenitor` byte-identical.
+        #[test]
+        fn keys_the_rewriter_does_not_own_pass_through_unchanged(
+            key in "[a-z$][a-zA-Z0-9_-]{0,10}",
+            value in prop::sample::select(vec![
+                json!("text"), json!(7), json!(true), json!(null),
+                json!(["a", "b"]), json!({ "nested": "value" }),
+            ]),
+        ) {
+            prop_assume!(!["type", "examples", "openapi"].contains(&key.as_str()));
+            let document = json!({ key.clone(): value.clone() });
+            prop_assert_eq!(downgraded(document.clone()), document);
+        }
+    }
+}

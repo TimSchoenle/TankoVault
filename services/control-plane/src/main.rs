@@ -98,6 +98,15 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Before config, telemetry or anything else: this process may have been invoked by
+    // Docker's HEALTHCHECK rather than as the service. `scratch` images have no shell and no
+    // wget, so the binary probing itself is the only probe available. See
+    // `tankovault_service::healthcheck`.
+    if tankovault_service::healthcheck::requested() {
+        let cfg: Config = tankovault_config::load()?;
+        tankovault_service::run_healthcheck_and_exit(&cfg.bind_addr);
+    }
+
     let cfg: Config = tankovault_config::load()?;
     tankovault_service::init_tracing(&cfg.telemetry)?;
     let metrics = MetricsRegistry::install(&cfg.metrics)?;

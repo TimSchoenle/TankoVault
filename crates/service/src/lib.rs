@@ -49,6 +49,7 @@
 pub mod audit;
 pub mod flags;
 pub mod health;
+pub mod healthcheck;
 pub mod http;
 pub mod internal_auth;
 pub mod metrics;
@@ -59,6 +60,7 @@ pub mod telemetry;
 pub use audit::{AuditEvent, AuditOutcome, AuditSink, NoopAuditSink};
 pub use flags::{FeatureGate, FeatureLayer, FlagSource, RouteFeatures};
 pub use health::{Health, HealthBuilder, HealthReport, HealthStatus};
+pub use healthcheck::{HEALTHCHECK_FLAG, run_and_exit as run_healthcheck_and_exit};
 pub use http::{HttpStack, metrics_router, ops_router, serve, spawn_metrics_server};
 pub use internal_auth::{INTERNAL_TOKEN_HEADER, InternalToken};
 pub use metrics::MetricsRegistry;

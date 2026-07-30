@@ -281,7 +281,7 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 
 **Every row a commit can close is closed.** Gates: `cargo fmt --all --check`, `cargo clippy
 --workspace --all-targets --all-features -- -D warnings`, `cargo deny check advisories licenses
-sources bans -D unnecessary-skip`, **527 offline tests across 69 targets**, the integration run
+sources bans -D unnecessary-skip`, **566 offline tests across 69 targets**, the integration run
 — **264 tests across 24 targets**, measured on this branch with the exact command CI uses
 (`cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features integration`),
 the F-06 sync suite included — **13 doc tests**,

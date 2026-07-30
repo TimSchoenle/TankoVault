@@ -22,6 +22,13 @@ Container build and local orchestration for TankoVault (design §19).
   (JetStream), FlareSolverr, a one-shot `migrate`+`seed`, every backend service, and the
   web frontend. **This is the only supported deployment shape** — see [Kubernetes](#kubernetes)
   below.
+- `docker-compose.observability.yml` — optional overlay adding Prometheus, Grafana and a blackbox
+  prober over the metrics every service already emits. Opt-in by design: a plain
+  `docker compose -f deploy/docker-compose.yml up` starts nothing extra. See
+  [Observability](#observability).
+- `observability/` — the collection config the overlay mounts: scrape config, recording and
+  alerting rules (with `promtool` unit tests), the blackbox prober module, and the provisioned
+  Grafana datasource and dashboard.
 
 ## Quick start
 ```bash
@@ -111,6 +118,26 @@ docker compose -f deploy/docker-compose.yml run --rm migrate
   the musl loader, `libgcc_s` and a CA bundle, so there is no writable path to depend on.
   `render` gets the capability drop but not `read_only` — it is a Debian base under a Chromium
   that writes a profile and a cache to paths not enumerable from here.
+
+## Observability
+
+Every service serves a Prometheus scrape on an isolated `9090`. To collect it:
+
+```bash
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.observability.yml \
+  --env-file deploy/local.env up -d
+```
+
+Grafana on <http://127.0.0.1:3001> (folder *TankoVault*), Prometheus on <http://127.0.0.1:9091>,
+both loopback-bound — Prometheus has no authentication of any kind, and Docker's port publishing
+bypasses the host firewall, so this binding must not be widened. `GRAFANA_ADMIN_PASSWORD` is
+required with no default.
+
+An **overlay** rather than a compose profile so the exposure invariant at the top of
+`docker-compose.yml` ("only `frontend` is published") stays literally true of that file, and so the
+two extra published ports arrive as an opt-in artefact carrying their own reasoning. The full
+argument, the metric inventory the rules are built on, and the runbook for every alert are in
+[`docs/OBSERVABILITY.md`](../docs/OBSERVABILITY.md).
 
 ## Kubernetes
 

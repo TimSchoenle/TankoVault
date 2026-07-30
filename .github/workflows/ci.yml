@@ -338,6 +338,49 @@ jobs:
         working-directory: web/frontend
         run: cargo metadata --locked --offline --format-version 1 > /dev/null
 
+  # The observability layer is config, so nothing in the Rust gates above can tell when it stops
+  # being valid — and a rule file that fails to parse takes its whole group with it, which means
+  # every alert built on it is silently disarmed. Prometheus reports that on a page nobody visits
+  # until an incident, i.e. exactly when the alerts were supposed to have already fired.
+  #
+  # `check rules` proves the PromQL parses. `test rules` proves it *means* what the comments claim,
+  # and is the gate that matters: both bugs found while writing these rules parsed fine (a `unless`
+  # between two series that differ only in the label being compared, and a missing minimum-traffic
+  # conjunct that made a single 500 on an idle instance read as 100% failure).
+  observability:
+    name: prometheus rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # Same pinned image the deploy overlay runs, so the promtool that validates the rules is the
+      # Prometheus that will evaluate them.
+      - name: promtool check config + rules
+        run: |
+          docker run --rm --entrypoint /bin/promtool \
+            -v "$PWD/deploy/observability/prometheus:/etc/prometheus:ro" \
+            prom/prometheus:v3.5.0 check config /etc/prometheus/prometheus.yml
+      - name: promtool unit tests
+        run: |
+          docker run --rm --entrypoint /bin/promtool \
+            -v "$PWD/deploy/observability/prometheus:/etc/prometheus:ro" \
+            prom/prometheus:v3.5.0 test rules /etc/prometheus/rules/tests/alerts.test.yml
+      # The dashboard references the datasource by a fixed uid and every panel by a recorded series
+      # name; a malformed file imports as an empty dashboard rather than failing, so parse it here.
+      - name: dashboard JSON is well-formed
+        run: python3 -m json.tool deploy/observability/grafana/dashboards/tankovault-overview.json > /dev/null
+      # Catches a mis-merged overlay: an anchor that no longer resolves, a duplicated key, a service
+      # name that collides with the base file.
+      - name: compose overlay merges
+        env:
+          GRAFANA_ADMIN_PASSWORD: ci-validation-only
+          TANKOVAULT_AUTH__JWT_SECRET: ci-validation-only
+          TANKOVAULT_SEED_ADMIN_PASSWORD: ci-validation-only
+          TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY: ci-validation-only
+        run: |
+          docker compose -f deploy/docker-compose.yml \
+            -f deploy/docker-compose.observability.yml config --quiet
+
   docker:
     name: docker build
     runs-on: ubuntu-latest

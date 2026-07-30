@@ -1,0 +1,188 @@
+# Prometheus scrape configuration for the TankoVault reference stack.
+#
+# Every service installs the shared recorder (`crates/service/src/metrics.rs`) and serves the
+# exposition on an **isolated** listener — `TANKOVAULT_METRICS__LISTEN`, default `0.0.0.0:9090`
+# — so a scrape never touches the request-facing port. That is why every target below is
+# `<service>:9090` regardless of which port the service's own HTTP contract is on. Prometheus
+# itself also listens on 9090; there is no conflict because each container has its own address
+# on the compose network.
+#
+# The metrics carry **no `service` label of their own**. `job` is the only thing that says which
+# process a series came from, so one job per service is not stylistic — it is the label. Do not
+# collapse these into a single job with a target list, or every rule below loses its subject.
+#
+# `TANKOVAULT_TELEMETRY__SERVICE_NAME` is a *log* field, not a metric label; it deliberately does
+# not appear here.
+
+global:
+  # 15s is the shortest interval that still leaves the `rate(...[5m])` windows in the rule files
+  # comfortably over-sampled (20 points), and this stack is a handful of low-cardinality targets
+  # on one host — the cost of a faster scrape would buy nothing an operator reads.
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  external_labels:
+    stack: tankovault
+
+rule_files:
+  - /etc/prometheus/rules/*.rules.yml
+
+# ---- Alertmanager -----------------------------------------------------------------------------
+# Deliberately absent. Rules are evaluated and fire regardless — they are visible on Prometheus'
+# own Alerts page and on the "Firing alerts" panel of the provisioned dashboard. An Alertmanager
+# shipped here would have no receiver this repository can ground (no operator address, no chat
+# webhook, no on-call rotation), and a notifier that silently delivers nowhere is precisely the
+# inert-knob defect OPS-8.2 removed. Wiring one is a deployment decision:
+#
+#   alerting:
+#     alertmanagers:
+#       - static_configs: [{ targets: ["alertmanager:9093"] }]
+
+scrape_configs:
+  # Prometheus' own metrics: `up`, rule-evaluation failures, TSDB health. Scraped first because
+  # a broken rule group is otherwise silent — see `TankoVaultPrometheusRuleEvaluationFailing`.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # ---- Single-replica services ----------------------------------------------------------------
+  # `static_configs` rather than DNS discovery, on purpose: a static target that stops answering
+  # keeps its series and reports `up == 0`, which is alertable. A DNS-discovered target
+  # *disappears* when the container dies, and an alert on a series that no longer exists never
+  # fires. The trade is reversed for `worker` below.
+  - job_name: api
+    static_configs:
+      - targets: ["api:9090"]
+
+  - job_name: control-plane
+    static_configs:
+      - targets: ["control-plane:9090"]
+
+  - job_name: notifier
+    static_configs:
+      - targets: ["notifier:9090"]
+
+  - job_name: sync
+    static_configs:
+      - targets: ["sync:9090"]
+
+  - job_name: challenge-solver
+    static_configs:
+      - targets: ["challenge-solver:9090"]
+
+  - job_name: render
+    static_configs:
+      - targets: ["render:9090"]
+
+  - job_name: frontend
+    static_configs:
+      - targets: ["frontend:9090"]
+
+  # ---- worker: DNS discovery, because it is the only multi-replica tier ------------------------
+  # `deploy.replicas: 2` in docker-compose.yml means the name `worker` resolves to two container
+  # addresses. A `static_configs` entry of `worker:9090` would resolve afresh on every scrape and
+  # land on whichever replica the embedded DNS returned, so one `instance` series would interleave
+  # counters from two independent processes — every scrape that switched replicas would look like
+  # a counter reset, and `rate()` would silently under-report. `dns_sd_configs` enumerates the A
+  # records instead and gives each replica its own `instance`, which is what makes
+  # `sum by (job) (rate(...))` correct across the fleet.
+  #
+  # The cost of this choice is that a dead worker vanishes rather than reporting `up == 0`, which
+  # is why `TankoVaultWorkerFleetIncomplete` alerts on the *count* of replicas and
+  # `TankoVaultWorkerTargetsAbsent` alerts on `absent()`.
+  - job_name: worker
+    dns_sd_configs:
+      - names: ["worker"]
+        type: A
+        port: 9090
+        refresh_interval: 30s
+
+  # ---- JetStream queue depth via prometheus-nats-exporter --------------------------------------
+  # The one signal the Rust services genuinely cannot provide: **how much work is waiting**.
+  # `scan_tasks_served_total` counts tasks handed *out*, so a wedged pipeline and an empty one look
+  # identical from the worker's side. NATS knows the answer and already exposes it on its monitoring
+  # port (`-m 8222`, which docker-compose.yml enables for the healthcheck); the exporter turns that
+  # JSON into series.
+  #
+  # The relabelling below is what makes it usable rather than merely present:
+  #
+  #  * The exporter attaches nine labels describing cluster topology — `server_id`, `server_name`,
+  #    `stream_leader`, `meta_leader`, three `is_*_leader` booleans — that are constant on a
+  #    single-node stack and would multiply every series by a churning `server_name` across
+  #    restarts. Dropped.
+  #  * Worker consumer names are `tankovault-workers-<mode>-<slug>`
+  #    (`tankovault_contracts::subjects::worker_consumer`), and the mode sits ahead of the slug
+  #    specifically so the name can be taken apart again even though a slug may contain `-`. That
+  #    is what lets queue depth be split into the same `provider` and `scan` dimensions
+  #    `scan_tasks_served_total` already uses, so throughput and backlog can be read on one graph.
+  #    The mode alternation is closed (`full|fast`), which is what removes the ambiguity.
+  #
+  # If the durable naming in `crates/contracts/src/subjects.rs` ever changes, these two rules go
+  # stale silently — the series keep appearing, just without `provider` or `scan`. The dashboard's
+  # queue-depth panels going blank is the symptom.
+  - job_name: nats
+    static_configs:
+      - targets: ["nats-exporter:7777"]
+    metric_relabel_configs:
+      - action: labeldrop
+        regex: (server_id|server_name|stream_leader|meta_leader|consumer_leader|stream_raft_group|cluster|domain|account_id|consumer_desc|is_meta_leader|is_stream_leader|is_consumer_leader)
+      - source_labels: [consumer_name]
+        regex: tankovault-workers-(full|fast)-(.+)
+        target_label: scan
+        replacement: ${1}
+      - source_labels: [consumer_name]
+        regex: tankovault-workers-(full|fast)-(.+)
+        target_label: provider
+        replacement: ${2}
+
+  # ---- Readiness probes via blackbox_exporter -------------------------------------------------
+  # `GET /ready` is the only place the stack reports on its *dependencies* (Postgres reachable,
+  # NATS reachable, the frontend's api upstream reachable). It answers `200`/`503` with a JSON
+  # body, which Prometheus cannot scrape directly — a JSON body fails exposition parsing, so a
+  # healthy service would report `up == 0` and the signal would be inverted-useless. Probing it
+  # through blackbox_exporter turns the HTTP status into `probe_success`, which is a real series.
+  #
+  # This is the *only* way DB-pool exhaustion, a Postgres outage or an unreachable NATS becomes
+  # alertable without adding a gauge to the Rust runtime — see docs/OBSERVABILITY.md, "What is
+  # not measured".
+  #
+  # `/ready` is mounted outside `HttpStack` (`crates/service/src/http.rs::ops_router`), so the
+  # internal-tier services need no `X-Internal-Token` here and the probe is never rate limited.
+  - job_name: readiness
+    metrics_path: /probe
+    params:
+      module: [tankovault_ready]
+    static_configs:
+      - targets: ["http://api:8080/ready"]
+        labels: { service: api }
+      - targets: ["http://control-plane:8081/ready"]
+        labels: { service: control-plane }
+      - targets: ["http://notifier:8082/ready"]
+        labels: { service: notifier }
+      - targets: ["http://sync:8083/ready"]
+        labels: { service: sync }
+      - targets: ["http://render:8084/ready"]
+        labels: { service: render }
+      # Round-robin DNS sends this probe to one of the two replicas, chosen per probe. Accepted
+      # rather than worked around: the dependencies it reports on (Postgres, NATS) are shared, so
+      # both replicas answer the same way in every case this alert exists to catch. A single
+      # wedged replica is caught by `TankoVaultWorkerFleetIncomplete` instead.
+      - targets: ["http://worker:8085/ready"]
+        labels: { service: worker }
+      - targets: ["http://challenge-solver:8090/ready"]
+        labels: { service: challenge-solver }
+      - targets: ["http://frontend:3000/ready"]
+        labels: { service: frontend }
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: probe_url
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # The prober's own health. Without this, `probe_success` going absent because the prober died
+  # is indistinguishable from every service being fine.
+  - job_name: blackbox-exporter
+    static_configs:
+      - targets: ["blackbox-exporter:9115"]

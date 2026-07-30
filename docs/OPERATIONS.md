@@ -19,7 +19,7 @@ healthy replica look unhealthy to its orchestrator.
 |---|---|
 | `GET /health` | **Liveness.** The process is up and its executor is scheduling. Checks nothing external — a failing dependency must not trigger a restart loop that deepens the outage. |
 | `GET /ready` | **Readiness.** Probes every registered dependency concurrently, each bounded at 2s. `200` when all answer; `503` with a per-dependency JSON body otherwise. |
-| `GET /metrics` | Prometheus exposition, or `404` when metrics are disabled. |
+| `GET /metrics` | Prometheus exposition, or `404` when metrics are disabled. Served on its own listener (`TANKOVAULT_METRICS__LISTEN`, default `0.0.0.0:9090`), not the request-facing port. |
 
 `/ready` body when something is down:
 
@@ -93,19 +93,43 @@ instead of drawing a silently flat graph.
 `http_requests` is separate because the request histogram is the expensive part: a service
 can keep cheap domain counters while dropping per-route cardinality.
 
-Emitted metrics:
+Emitted metrics — the complete set, across every service:
 
-| Metric | Type | Labels |
-|---|---|---|
-| `http_requests_total` | counter | `method`, `route`, `status` |
-| `http_request_duration_seconds` | histogram | `method`, `route` |
-| `http_requests_in_flight` | gauge | — |
-| `http_rate_limited_total` | counter | `class` |
-| `rate_limit_store_errors_total` | counter | `backend` |
+| Metric | Type | Labels | Emitted by |
+|---|---|---|---|
+| `http_requests_total` | counter | `method`, `route`, `status` | the shared middleware |
+| `http_request_duration_seconds` | histogram | `method`, `route` | the shared middleware |
+| `http_requests_in_flight` | gauge | — | the shared middleware |
+| `http_rate_limited_total` | counter | `class` | the rate limiter |
+| `rate_limit_store_errors_total` | counter | `backend` | the Redis limiter backend |
+| `http_feature_disabled_total` | counter | `feature` | the feature-flag middleware (§4) |
+| `scan_tasks_served_total` | counter | `provider`, `scan` | `worker`, per lane (§7) |
+| `solve_attempts_total` | counter | `result` | `challenge-solver` **and** `render` |
+| `render_requests_total` | counter | `result` | `render` |
+
+This table was four rows short of what the workspace emits until OPS-8.3 enumerated the call
+sites; the last four were being emitted and documented nowhere.
 
 `route` is axum's **matched path** (`/v1/series/{id}`), never the concrete URI — an
 unrouted path is attacker-controlled and would otherwise be an unbounded label source, so
-those are folded into a single `unmatched` label.
+those are folded into a single `unmatched` label. `status` is the **exact code**, not a class.
+
+No metric carries the emitting service's name; `TANKOVAULT_TELEMETRY__SERVICE_NAME` is a log
+field. Prometheus' `job` label is what identifies the service, which is why the scrape config
+declares one job per service.
+
+Probe traffic appears in none of these: `ops_router` is merged outside the middleware stack, so
+`/health` and `/ready` never reach the metrics layer.
+
+A request the client abandons is counted in `http_requests_in_flight` but **not** in
+`http_requests_total` or `http_request_duration_seconds`, which are recorded from the response
+that a dropped future never produces. This is why long-lived `/v1/me/stream` connections are
+largely invisible in the counter and the histogram while being fully visible in the gauge.
+
+**Collection, dashboards and alerts:** [`OBSERVABILITY.md`](./OBSERVABILITY.md). It carries the
+metric inventory above with its label values, the recording and alerting rules, the runbook entry
+for every alert, and — the part worth reading before writing a new rule — the list of documented
+failure modes this stack currently emits **nothing** for.
 
 ### `audit`
 
@@ -448,6 +472,12 @@ together; one provider climbing alone means either the others' lanes are empty o
 failed to open (`could not open provider task lane` in the worker log). A `scan="fast"`
 counter that stays flat while fast runs are being planned points at the lane, not the
 scheduler.
+
+Both of those diagnostics now exist as alerts — `TankoVaultFastScanLanesStarved` and
+`TankoVaultScanLaneUnfair` in [`OBSERVABILITY.md`](./OBSERVABILITY.md). One caveat that matters
+when reading the counter either way: it counts tasks **handed out**, and a JetStream redelivery
+increments it again (`MAX_TASK_DELIVERIES` is 3), so a lane that is failing and retrying looks
+busy rather than broken. Nothing currently distinguishes the two.
 
 **Adding a provider.** Its lanes open on the next refresh — `worker.provider_refresh_secs`,
 default 60 — not instantly. Until then its tasks sit queued, which is why a freshly created

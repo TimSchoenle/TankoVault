@@ -4883,6 +4883,7 @@ version = "0.1.0"
 dependencies = [
  "figment",
  "serde",
+ "tankovault-matcher",
  "thiserror",
 ]
 
@@ -4929,6 +4930,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "tankovault-config",
  "tankovault-domain",
  "tankovault-matcher",
  "tankovault-test-support",

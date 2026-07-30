@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tankovault_adapters::{ChapterMeta, Ctx, SeriesMeta, SourceAdapter, build_adapter};
 use tankovault_bus::Bus;
+use tankovault_config::MatchingConfig;
 use tankovault_contracts::{ChapterDiscovered, ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
 use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert};
@@ -35,6 +36,11 @@ pub(crate) struct Engine {
     pub(crate) worker_id: String,
     /// Safety cap on catalogue pages walked per full scan.
     pub(crate) max_catalog_pages: u32,
+    /// The confidence policy for canonicalising a scanned series onto an existing one.
+    ///
+    /// Held here rather than defaulted inside the repository so this path and external sync's
+    /// remote-entry resolution answer "is this the same series?" the same way (ARCH-16).
+    pub(crate) matching: MatchingConfig,
     /// One fetch stack per provider, keyed by the politeness settings it was built from.
     ///
     /// This cache is load-bearing for **correctness**, not only speed. `RateLimitedFetcher`
@@ -92,6 +98,7 @@ impl Engine {
         session_store: Arc<dyn SessionStore>,
         worker_id: String,
         max_catalog_pages: u32,
+        matching: MatchingConfig,
     ) -> Self {
         Self {
             pool,
@@ -100,6 +107,7 @@ impl Engine {
             session_store,
             worker_id,
             max_catalog_pages,
+            matching,
             fetchers: Arc::default(),
         }
     }
@@ -220,7 +228,9 @@ impl Engine {
             content_hash: hash,
         };
 
-        let outcome = tankovault_db::repo::catalog::ingest_series(&self.pool, scanned).await?;
+        let outcome =
+            tankovault_db::repo::catalog::ingest_series(&self.pool, scanned, &self.matching)
+                .await?;
 
         if let Some(bus) = &self.bus {
             for number in &outcome.new_chapters {
@@ -303,6 +313,7 @@ impl Engine {
                 &self.pool,
                 provider.id,
                 &fresh,
+                &self.matching,
             )
             .await
             {
@@ -444,6 +455,7 @@ impl Engine {
                     &self.pool,
                     provider.id,
                     &entries,
+                    &self.matching,
                 )
                 .await
                 {

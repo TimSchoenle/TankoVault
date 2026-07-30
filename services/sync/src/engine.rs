@@ -16,7 +16,7 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use tankovault_auth::SecretBox;
-use tankovault_config::{MetadataPriorityConfig, SOURCE_ADAPTER, SOURCE_ANILIST};
+use tankovault_config::{MatchingConfig, MetadataPriorityConfig, SOURCE_ADAPTER, SOURCE_ANILIST};
 use tankovault_db::PgPool;
 use tankovault_db::repo::catalog::{MetadataEnrichment, SeriesEnrichmentRow};
 use tankovault_db::repo::{catalog, matching, sync, tracking};
@@ -168,6 +168,7 @@ impl SyncEngine {
         secret: SecretBox,
         default_policy: ConflictPolicy,
         metadata_priority: MetadataPriorityConfig,
+        matching: &MatchingConfig,
         providers: HashMap<&'static str, Box<dyn ExternalProvider>>,
     ) -> Self {
         Self {
@@ -176,8 +177,12 @@ impl SyncEngine {
             secret,
             default_policy,
             metadata_priority,
-            thresholds: Thresholds::default(),
-            candidate_limit: 10,
+            // From configuration, and the *same* configuration the worker's ingest
+            // canonicalisation reads: the two used to take their thresholds from different
+            // places, so the worker could attach a source this service would refuse to map
+            // (ARCH-16).
+            thresholds: matching.thresholds(),
+            candidate_limit: matching.candidate_limit,
         }
     }
 
@@ -1060,18 +1065,10 @@ impl SyncEngine {
 
         let mut best: Option<(SeriesId, f32)> = None;
         for (normalized, found) in per_title {
-            let candidates: Vec<Candidate> = found
-                .into_iter()
-                .map(|c| Candidate {
-                    series_id: c.series_id,
-                    normalized_title: c.normalized_title,
-                    similarity: c.similarity,
-                    content_type: c.content_type,
-                    release_year: c.release_year,
-                    tags: c.tags,
-                    authors: c.authors,
-                })
-                .collect();
+            // The conversion lives in `crates/db` and is shared with the worker's ingest
+            // canonicalisation, so a new candidate field cannot reach one path and not the
+            // other (ARCH-16).
+            let candidates: Vec<Candidate> = found.into_iter().map(Candidate::from).collect();
             // AniList's own genres/staff, matched against each candidate's locally-scraped
             // tags/authors — the extra signal that makes ambiguous title matches confident.
             let query = Query {

@@ -16,6 +16,7 @@
 //! Opt-in: gated behind the `integration` feature because it requires Docker.
 #![cfg(feature = "integration")]
 
+use tankovault_config::MatchingConfig;
 use tankovault_db::repo::catalog::{
     ScannedSeries, SeriesUpsert, ingest_series, register_source_stubs,
 };
@@ -67,6 +68,7 @@ async fn a_series(db: &TestDb, provider_id: ProviderId, title: &str, path: &str)
             chapters: Vec::new(),
             content_hash: vec![1],
         },
+        &MatchingConfig::default(),
     )
     .await
     .expect("ingest series")
@@ -157,7 +159,7 @@ async fn notifications_create_many_writes_one_row_per_user_and_counts_group() {
     let counts = tracking::notifications_unread_counts(&db.pool, &[c])
         .await
         .expect("unread counts");
-    assert!(counts.get(&c).is_none());
+    assert!(!counts.contains_key(&c));
 }
 
 // ---------------------------------------------------------------------------
@@ -205,7 +207,9 @@ async fn sync_excluded_series_agrees_with_the_single_series_check() {
                     .await
                     .expect("blanket exclude");
             }
-            "override-excludes" => {
+            // Same action as "override-only"; the cases differ in whether the series is on the
+            // watchlist at all, which is set above.
+            "override-excludes" | "override-only" => {
                 tracking::set_sync_override(&db.pool, user, *series, "p1", true)
                     .await
                     .expect("override exclude");
@@ -217,11 +221,6 @@ async fn sync_excluded_series_agrees_with_the_single_series_check() {
                 tracking::set_sync_override(&db.pool, user, *series, "p1", false)
                     .await
                     .expect("override include");
-            }
-            "override-only" => {
-                tracking::set_sync_override(&db.pool, user, *series, "p1", true)
-                    .await
-                    .expect("override exclude");
             }
             _ => {}
         }
@@ -286,7 +285,7 @@ async fn progress_and_status_prefetches_match_the_per_series_reads() {
         assert_eq!(progress.get(&one).map(|(p, _)| *p), Some(17.0));
     }
     assert!(
-        progress.get(&two).is_none(),
+        !progress.contains_key(&two),
         "a series with no read_progress row must be absent, not zero"
     );
     assert_eq!(statuses.get(&one), Some(&WatchStatus::Reading));
@@ -395,14 +394,15 @@ async fn register_source_stubs_registers_once_and_is_idempotent() {
         // The same path twice on one page: the batch insert must not abort.
         ("/s/c", "Gamma"),
     ];
-    let registered = register_source_stubs(&db.pool, provider, &entries)
-        .await
-        .expect("first registration");
+    let registered =
+        register_source_stubs(&db.pool, provider, &entries, &MatchingConfig::default())
+            .await
+            .expect("first registration");
     assert_eq!(registered, 4, "every fresh entry is reported registered");
 
     // A re-scan must find everything known and register nothing — this is the path that used to
     // be the only cheap one, and it has to stay cheap *and* correct after the chunking change.
-    let again = register_source_stubs(&db.pool, provider, &entries)
+    let again = register_source_stubs(&db.pool, provider, &entries, &MatchingConfig::default())
         .await
         .expect("second registration");
     assert_eq!(again, 0);
@@ -419,6 +419,7 @@ async fn stubs_sharing_a_normalized_title_attach_to_one_canonical_series() {
         &db.pool,
         provider,
         &[("/s/one", "Solo Leveling"), ("/s/two", "solo leveling!")],
+        &MatchingConfig::default(),
     )
     .await
     .expect("registration");

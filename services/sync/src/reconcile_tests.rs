@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use time::OffsetDateTime;
 
 use tankovault_auth::SecretBox;
-use tankovault_config::MetadataPriorityConfig;
+use tankovault_config::{MatchingConfig, MetadataPriorityConfig};
 use tankovault_db::repo::catalog::{ScannedSeries, SeriesUpsert, ingest_series};
 use tankovault_db::repo::providers::{self, NewProvider};
 use tankovault_db::repo::{sync, tracking};
@@ -184,6 +184,7 @@ impl Fixture {
                 chapters: Vec::new(),
                 content_hash: vec![1],
             },
+            &MatchingConfig::default(),
         )
         .await
         .expect("ingest local series")
@@ -199,6 +200,7 @@ impl Fixture {
             ConflictPolicy::NewestWins,
             serde_json::from_value::<MetadataPriorityConfig>(serde_json::json!({}))
                 .expect("default metadata priority"),
+            &MatchingConfig::default(),
             providers_map,
         );
 

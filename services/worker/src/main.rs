@@ -43,6 +43,11 @@ struct Config {
     /// own, so this is outbound-only.
     #[serde(default)]
     internal: tankovault_config::InternalAuthConfig,
+    /// The confidence policy for canonicalising a scanned series onto an existing one. Shared
+    /// with external sync so the two paths cannot disagree about whether two series are the
+    /// same (ARCH-16).
+    #[serde(default)]
+    matching: tankovault_config::MatchingConfig,
 }
 
 fn default_bind() -> String {
@@ -137,6 +142,7 @@ async fn main() -> anyhow::Result<()> {
         session_store,
         format!("worker-{}", uuid::Uuid::now_v7()),
         cfg.worker.max_catalog_pages,
+        cfg.matching.clone(),
     );
 
     let args: Vec<String> = std::env::args().skip(1).collect();

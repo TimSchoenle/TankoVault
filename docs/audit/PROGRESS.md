@@ -21,13 +21,13 @@ that the audit did not.
 | Report | DONE | PARTIAL | OPEN | Other |
 | --- | --- | --- | --- | --- |
 | SECURITY (18) | 13 | 4 | 1 | — |
-| ARCHITECTURE (21) | 11 | 1 | 8 | 1 no-finding |
+| ARCHITECTURE (21) | 12 | 2 | 6 | 1 no-finding |
 | PERFORMANCE (21) | 17 | 0 | 2 | 1 wontfix, 1 no-finding |
 | TESTING (17) | 9 | 3 | 4 | 1 no-finding |
 | FRONTEND (20) | 17 | 0 | 1 | 1 wontfix, 1 no-finding |
 | BUILD_AND_OPS (41) | 27 | 4 | 4 | 1 wontfix, 5 no-finding |
 
-**94 DONE · 12 PARTIAL · 3 WONTFIX · 20 OPEN · 9 no-finding**, across 138 tracked rows.
+**95 DONE · 13 PARTIAL · 3 WONTFIX · 18 OPEN · 9 no-finding**, across 138 tracked rows.
 
 The rows below are authoritative; this summary is a convenience — and it is now a *count* of
 them rather than a hand-maintained tally, which the previous version had drifted from (it
@@ -107,11 +107,11 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | ARCH-13 | `notifier` reimplements SMTP instead of using `crates/email` | **DONE** | `EmailChannel` is a thin adapter over `EmailService`, built from the shared `TANKOVAULT_EMAIL__*` config. `lettre` dropped from the service. This fixed a real delivery bug: the private copy did not resolve the envelope sender from the SMTP login, so operator alerts were rejected (`550 5.7.60`) by relays that accepted the API's password-reset mail. |
 | ARCH-14 | JetStream consume loop hand-rolled three times | **DONE** | `crates/bus::consume` owns shutdown, decode, heartbeat, retry-vs-settle and the undecodable drop; handlers return a `Disposition` so the retry judgement stays with the layer that can make it. Fixed two real bugs: the notifier acked after a **failed** fan-out (at-most-once — notifications lost with one `warn!`), and the control-plane aggregator had no cancellation arm so it could not drain on `SIGTERM`. |
 | ARCH-15 | `POST /v1/solve` duplicated byte-for-byte | **DONE** | Defined once in `tankovault_solver::http::solver_router`, behind an `axum` feature so trait-only consumers do not pull axum. The SSRF target check travels with it, so one copy cannot forget it. |
-| ARCH-16 | Canonicalisation implemented twice with different thresholds | **OPEN** | |
+| ARCH-16 | Canonicalisation implemented twice with different thresholds | **PARTIAL** | Steps 1-2 done. The 8-field `MatchCandidate → matcher::Candidate` conversion is now one `From` impl in `crates/db/src/repo/matching.rs`, so a new candidate field cannot reach one path and not the other. Thresholds come from a new `tankovault_config::MatchingConfig` (`high`/`low`/`candidate_limit`, defaulting to the scorer's own values so a knob and the value it overrides cannot drift), threaded through `resolve_canonical_series` → `ingest_series`/`register_source_stubs` to the worker, and into `SyncEngine::new` — one configured policy for both paths instead of a hardcoded default in the persistence layer and another in sync. **Step 3 is not done**: `resolve_canonical_series` still lives in `crates/db` and still writes the `merge_candidate` row, so matching *policy* remains inside the repository layer. That is the "longer term" half the report itself scoped as M, and it is what would remove `tankovault-matcher` from `crates/db`'s dependencies. |
 | ARCH-17 | `crates/test-support` inverts crate/service layering | **DONE** | Split in two: `crates/test-support` keeps the ephemeral Postgres, seeding and token minting and now depends on **no** `services/*` crate; the in-process router harness moved to `services/api/test-support` (`tankovault-api-test-support`). `cargo tree -p tankovault-db -e normal,dev` no longer contains `tankovault-api`. The report also asked to move the crate out of `crates/` — not done, deliberately: the reason to move it was the inverted dependency, and with that gone it is an ordinary leaf crate that belongs where the other `crates/` live. The `api ↔ api-test-support` dev cycle stays, documented in the new manifest. |
 | ARCH-18 | Feature-flag route tables duplicated | **DONE** | `tankovault_contracts::sync::sync_route_features()` declares the suffix → `Feature` mapping once; both `services/api` (`/v1/me/sync`) and `services/sync` (`/v1/sync`) fold it into their own `RouteFeatures` with their own prefix, and each carries a test asserting every suffix in the shared list is gated under its prefix. The drift the audit found was real: the API gated `/conflicts` and `/history` but not `/push-series`. A tier now gates suffixes it does not serve — harmless, since a rule for an unrouted path never matches, and the alternative is the per-tier judgement that drifted in the first place. |
 | ARCH-19 | `auth.rs` (676) and `admin/users.rs` (643) approaching god size | **OPEN** | |
-| ARCH-20 | Outbound pacing implemented three times | **OPEN** | `sync`'s `Pacer` lacks the `Retry-After` handling `crates/fetch` has. |
+| ARCH-20 | Outbound pacing implemented three times | **DONE** | One implementation in `tankovault_domain::pacing` (`Pacer` + `PacingPolicy`); `crates/fetch`'s `Throttle` is gone and `ThrottlePolicy` is a re-export. Placed in `domain` rather than `crates/fetch` as the report suggested, deliberately and for the same reason `ssrf` lives there: `services/sync` talks to `AniList` over plain `reqwest`, and making it depend on the crawl stack to pace itself would link wreq/BoringSSL — GPL-3.0 `wreq-util` included (OP-6) — into the sync image. The report's diagnosis was half right: the `AniList` client *did* honour `Retry-After`, but only for a single retry, after which every later call went back to full rate with **no persistent penalty** — which is the behaviour a provider reads as ignoring them. `Retry-After` is now a floor on the penalty rather than a one-shot sleep, and clamped, so a hostile header cannot park a worker. The shared pacer also fixes a second defect in the old private one: it held its mutex across the sleep, so N concurrent callers serialised into a queue N gaps long instead of each reserving the next free slot. Eight tests in `domain`, plus two in `crates/fetch` pinning the composition decision that is genuinely that crate's (crawl delay vs. penalty, wider wins). |
 | ARCH-21 | Verified-clean non-findings | — | No action. |
 
 ---
@@ -256,12 +256,12 @@ What is genuinely left, in the order it is worth doing:
 1. **TEST F-05 — the rest of `crates/db`.** GDPR export/erase, ingest and the new batched
    fan-out/reconciliation paths are covered now; `catalog.rs`'s read models, `sync.rs` and
    `users.rs` still hold most of the untested SQL.
-2. **ARCH-3/5/7/8/16/19/20 — the module splits and the remaining duplication.** All are hygiene
-   rather than defects now that ARCH-12 and ARCH-18 have landed. ARCH-6 (splitting
-   `sync/engine.rs`) is the one worth doing first: it was blocked on F-06, which is now done, and
-   the reconciliation suite is the safety net that makes the split checkable. ARCH-20 (outbound
-   pacing implemented three times) is the one with a behavioural consequence — `sync`'s `Pacer`
-   lacks the `Retry-After` handling `crates/fetch` has.
+2. **ARCH-3/5/6/7/8/19 — the module splits, plus ARCH-16 step 3.** All hygiene now that ARCH-12,
+   ARCH-18 and ARCH-20 have landed. ARCH-6 (splitting `sync/engine.rs`) is worth doing first: it
+   was blocked on F-06, which is now done, and the reconciliation suite is the safety net that
+   makes the split checkable. ARCH-16's remaining half — hoisting `resolve_canonical_series` out
+   of `crates/db` so matching policy stops living in the repository layer — is the only one that
+   moves a decision rather than moving code.
 3. **TEST Access — the access-control integration matrix.** Still the single highest-value test
    investment in the codebase per the audit's own roadmap.
 4. **Fuzz targets (TEST).** `cargo-fuzz` on `parse_chapter_number`, `parse_json_body` under

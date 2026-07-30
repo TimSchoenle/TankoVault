@@ -13,6 +13,7 @@ publish = false
 # `sqlx` feature: derives `sqlx::Type` on the domain enums so the checked query
 # macros can bind/decode them as their native Postgres enum types.
 tankovault-domain = { workspace = true, features = ["sqlx"] }
+tankovault-config = { workspace = true }
 tankovault-matcher = { workspace = true }
 sqlx = { workspace = true }
 # For `try_join!` only, so the browse page and its match count overlap on the hottest public

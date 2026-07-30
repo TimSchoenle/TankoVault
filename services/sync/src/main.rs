@@ -91,6 +91,11 @@ struct Config {
     /// caller could read or rewrite any account's sync state.
     #[serde(default)]
     internal: tankovault_config::InternalAuthConfig,
+    /// The confidence policy for resolving a remote entry onto a local series. Shared with the
+    /// worker's ingest canonicalisation so the two paths cannot disagree about whether two
+    /// series are the same (ARCH-16).
+    #[serde(default)]
+    matching: tankovault_config::MatchingConfig,
 }
 
 /// Metadata-priority + tokenless enrichment-worker settings (design: worker queue syncing
@@ -376,6 +381,7 @@ async fn main() -> anyhow::Result<()> {
         secret,
         default_policy,
         metadata.priority.clone(),
+        &cfg.matching,
         providers,
     ));
 

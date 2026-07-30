@@ -20,6 +20,27 @@ pub struct MatchCandidate {
     pub authors: Vec<String>,
 }
 
+/// The scorer's view of a candidate.
+///
+/// This conversion used to be written out by hand, field for field, in **two** places —
+/// `catalog::resolve_canonical_series` and `services/sync`'s `resolve_series` — which is the tell
+/// that the plumbing to `tankovault_matcher` was missing rather than the abstraction (ARCH-16).
+/// Adding a field to [`MatchCandidate`] and forgetting one copy silently dropped that signal from
+/// one of the two paths that decide whether two series are the same.
+impl From<MatchCandidate> for tankovault_matcher::Candidate {
+    fn from(c: MatchCandidate) -> Self {
+        Self {
+            series_id: c.series_id,
+            normalized_title: c.normalized_title,
+            similarity: c.similarity,
+            content_type: c.content_type,
+            release_year: c.release_year,
+            tags: c.tags,
+            authors: c.authors,
+        }
+    }
+}
+
 /// Find existing series whose canonical or alternative normalized titles are
 /// trigram-similar to `normalized`, ordered by best similarity.
 pub async fn find_candidates<'e, E: PgExecutor<'e>>(

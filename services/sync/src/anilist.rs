@@ -12,10 +12,8 @@ use crate::provider::{ExternalProvider, OAuthTokens, RemoteEntry, RemoteMetadata
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use serde::Deserialize;
-use tankovault_domain::{ContentType, WatchStatus};
+use tankovault_domain::{ContentType, Pacer, PacingPolicy, WatchStatus};
 use time::OffsetDateTime;
-use tokio::sync::Mutex;
-use tokio::time::Instant;
 use tracing::info;
 
 /// Default `AniList` GraphQL endpoint.
@@ -129,7 +127,9 @@ impl AniListClient {
             client_id,
             client_secret,
             redirect_uri,
-            pacer: Pacer::new(min_interval),
+            // The default policy is the crawler's: +500ms on the first 429, doubling to a
+            // ceiling of 8s, halving after a quiet minute.
+            pacer: Pacer::new(min_interval, PacingPolicy::default()),
         })
     }
 
@@ -176,7 +176,7 @@ impl AniListClient {
             #[serde(default)]
             expires_in: Option<i64>,
         }
-        self.pacer.wait().await;
+        wait_for_slot(&self.pacer).await;
         let resp = self
             .http
             .post(format!("{}/token", self.oauth_base))
@@ -393,22 +393,30 @@ impl AniListClient {
     ) -> anyhow::Result<serde_json::Value> {
         let body = serde_json::json!({ "query": query, "variables": variables });
         for attempt in 0..2 {
-            self.pacer.wait().await;
+            wait_for_slot(&self.pacer).await;
             let mut req = self.http.post(&self.graphql_url).json(&body);
             if let Some(token) = access_token {
                 req = req.bearer_auth(token);
             }
             let resp = req.send().await.context("AniList GraphQL request failed")?;
 
-            if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS && attempt == 0 {
+            if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                // Record the signal on *every* 429, not only the retried one: the penalty is what
+                // makes the requests after this one back off too. Previously the retry slept once
+                // and every later call went straight back to the base interval, so a sync run
+                // against a throttling provider kept offering full rate (ARCH-20).
                 let retry_after = resp
                     .headers()
                     .get("retry-after")
                     .and_then(|v| v.to_str().ok())
                     .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or(2);
-                tokio::time::sleep(Duration::from_secs(retry_after)).await;
-                continue;
+                    .map(Duration::from_secs);
+                self.pacer.penalise(std::time::Instant::now(), retry_after);
+                if attempt == 0 {
+                    // The next `wait_for_slot` already carries the widened gap, so there is
+                    // nothing to sleep for here.
+                    continue;
+                }
             }
 
             let status = resp.status();
@@ -730,33 +738,17 @@ fn strip_html(input: &str) -> String {
     out.trim().to_owned()
 }
 
-/// Minimal per-client request pacer: enforces a minimum gap between outbound calls.
-struct Pacer {
-    min_interval: Duration,
-    last: Mutex<Option<Instant>>,
-}
-
-impl Pacer {
-    fn new(min_interval: Duration) -> Self {
-        Self {
-            min_interval,
-            last: Mutex::new(None),
-        }
-    }
-
-    async fn wait(&self) {
-        if self.min_interval.is_zero() {
-            return;
-        }
-        let mut guard = self.last.lock().await;
-        let now = Instant::now();
-        if let Some(prev) = *guard {
-            let elapsed = now.duration_since(prev);
-            if elapsed < self.min_interval {
-                tokio::time::sleep(self.min_interval.checked_sub(elapsed).unwrap()).await;
-            }
-        }
-        *guard = Some(Instant::now());
+/// Wait for this client's next paced slot.
+///
+/// The pacer itself is [`tankovault_domain::Pacer`], shared with the crawler's rate limiter
+/// (ARCH-20). This client used to carry a private minimum-gap mutex with **no persistent throttle
+/// penalty**: it retried a `429` once and then went straight back to full rate, which is the
+/// behaviour a provider reads as ignoring them. The shared pacer keeps the penalty, so a throttle
+/// signal widens every later gap until `AniList` has been quiet for a recovery window.
+async fn wait_for_slot(pacer: &Pacer) {
+    let delay = pacer.reserve(std::time::Instant::now());
+    if !delay.is_zero() {
+        tokio::time::sleep(delay).await;
     }
 }
 

@@ -10,6 +10,9 @@ description = "Layered typed configuration loading."
 publish = false
 
 [dependencies]
+# Only for `MatchingConfig`, whose defaults are the scorer's own — so a knob and the value it
+# overrides cannot drift apart (ARCH-16). `tankovault-matcher` is a leaf crate over `domain`.
+tankovault-matcher = { workspace = true }
 serde = { workspace = true }
 figment = { workspace = true }
 thiserror = { workspace = true }

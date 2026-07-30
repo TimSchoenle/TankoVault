@@ -10,6 +10,7 @@
 //! Opt-in: gated behind the `integration` feature because it requires Docker.
 #![cfg(feature = "integration")]
 
+use tankovault_config::MatchingConfig;
 use tankovault_db::repo::catalog::{
     ChapterUpsert, ScannedSeries, SeriesUpsert, ingest_series, upsert_chapters,
 };
@@ -87,18 +88,26 @@ async fn a_rescan_of_an_unchanged_listing_discovers_nothing() {
         ]
     };
 
-    let first = ingest_series(&db.pool, scanned(provider, listing()))
-        .await
-        .expect("first ingest");
+    let first = ingest_series(
+        &db.pool,
+        scanned(provider, listing()),
+        &MatchingConfig::default(),
+    )
+    .await
+    .expect("first ingest");
     assert_eq!(
         first.new_chapters,
         vec![1.0, 2.0, 3.5],
         "a first scan discovers every chapter, in ascending order"
     );
 
-    let second = ingest_series(&db.pool, scanned(provider, listing()))
-        .await
-        .expect("second ingest");
+    let second = ingest_series(
+        &db.pool,
+        scanned(provider, listing()),
+        &MatchingConfig::default(),
+    )
+    .await
+    .expect("second ingest");
     assert!(
         second.new_chapters.is_empty(),
         "a rescan of an unchanged listing must discover nothing, or every watcher is \
@@ -118,6 +127,7 @@ async fn only_added_chapters_are_reported_and_edits_are_applied_quietly() {
     ingest_series(
         &db.pool,
         scanned(provider, vec![chapter(1.0, Some("Old title"), "/c/1")]),
+        &MatchingConfig::default(),
     )
     .await
     .expect("first ingest");
@@ -131,6 +141,7 @@ async fn only_added_chapters_are_reported_and_edits_are_applied_quietly() {
                 chapter(2.0, None, "/c/2"),
             ],
         ),
+        &MatchingConfig::default(),
     )
     .await
     .expect("second ingest");
@@ -176,6 +187,7 @@ async fn a_listing_that_repeats_a_chapter_number_does_not_abort_the_batch() {
                 chapter(7.0, Some("Last spelling"), "/c/7-b"),
             ],
         ),
+        &MatchingConfig::default(),
     )
     .await
     .expect("a duplicated chapter number must not abort the ingest");
@@ -209,9 +221,13 @@ async fn an_empty_chapter_list_is_a_no_op() {
     let db = TestDb::spawn().await;
     let provider = a_provider(&db, "ingest-empty").await;
 
-    let outcome = ingest_series(&db.pool, scanned(provider, Vec::new()))
-        .await
-        .expect("an empty listing still ingests the series itself");
+    let outcome = ingest_series(
+        &db.pool,
+        scanned(provider, Vec::new()),
+        &MatchingConfig::default(),
+    )
+    .await
+    .expect("an empty listing still ingests the series itself");
     assert!(outcome.new_chapters.is_empty());
 
     let direct = upsert_chapters(&db.pool, outcome.source_id, &[])

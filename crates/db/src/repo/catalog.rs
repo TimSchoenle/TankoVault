@@ -7,6 +7,7 @@
 
 use crate::error::{DbError, DbResult};
 use sqlx::{FromRow, PgExecutor, PgPool};
+use tankovault_config::MatchingConfig;
 use tankovault_domain::{
     Chapter, ChapterId, ContentType, ProviderId, ProviderState, Series, SeriesId, SeriesSource,
     SeriesSourceId, SeriesStatus, normalize_title,
@@ -72,23 +73,23 @@ impl TryFrom<SeriesRow> for Series {
 /// Runs inside the ingest transaction so lookup + create are atomic for a single worker.
 /// Concurrent first-creation of the same title across providers can still produce two
 /// series; that is the case the ambiguous/merge queue and re-scan Attach path converge.
+/// `matching` carries the confidence policy: the same policy external sync applies when it
+/// resolves a remote entry, so the two paths cannot disagree about whether two series are the
+/// same (ARCH-16). It used to be `Thresholds::default()` hardcoded here.
 pub async fn resolve_canonical_series(
     conn: &mut sqlx::PgConnection,
     meta: &SeriesUpsert,
+    matching: &MatchingConfig,
 ) -> DbResult<SeriesId> {
-    let candidates = crate::repo::matching::find_candidates(&mut *conn, &meta.normalized_title, 10)
-        .await?
-        .into_iter()
-        .map(|c| tankovault_matcher::Candidate {
-            series_id: c.series_id,
-            normalized_title: c.normalized_title,
-            similarity: c.similarity,
-            content_type: c.content_type,
-            release_year: c.release_year,
-            tags: c.tags,
-            authors: c.authors,
-        })
-        .collect::<Vec<_>>();
+    let candidates = crate::repo::matching::find_candidates(
+        &mut *conn,
+        &meta.normalized_title,
+        matching.candidate_limit,
+    )
+    .await?
+    .into_iter()
+    .map(tankovault_matcher::Candidate::from)
+    .collect::<Vec<_>>();
 
     // No tag/author signal on the query side here: a scanned source's own tags/authors
     // aren't threaded into `SeriesUpsert` (they're written separately in `ingest_series`).
@@ -101,11 +102,7 @@ pub async fn resolve_canonical_series(
         authors: Vec::new(),
     };
 
-    match tankovault_matcher::decide(
-        &query,
-        &candidates,
-        tankovault_matcher::Thresholds::default(),
-    ) {
+    match tankovault_matcher::decide(&query, &candidates, matching.thresholds()) {
         tankovault_matcher::Decision::Attach(id) => Ok(id),
         tankovault_matcher::Decision::Ambiguous { candidate, score } => {
             let id = create_series(conn, meta).await?;
@@ -551,6 +548,7 @@ pub async fn register_source_stub(
     provider_id: ProviderId,
     source_path: &str,
     title: &str,
+    matching: &MatchingConfig,
 ) -> DbResult<()> {
     let mut tx = pool.begin().await?;
 
@@ -566,7 +564,7 @@ pub async fn register_source_stub(
         return Ok(());
     }
 
-    let series_id = resolve_stub_series(&mut tx, title).await?;
+    let series_id = resolve_stub_series(&mut tx, title, matching).await?;
     upsert_source(&mut *tx, series_id, provider_id, source_path, Some(title)).await?;
 
     tx.commit().await?;
@@ -579,7 +577,11 @@ pub async fn register_source_stub(
 /// canonicalisation — the listing title carries no description, cover, type, status or year, and
 /// deliberately so: a later `Series` task enriches the row from the fuller series page, and a
 /// stub must never overwrite that with blanks.
-async fn resolve_stub_series(conn: &mut sqlx::PgConnection, title: &str) -> DbResult<SeriesId> {
+async fn resolve_stub_series(
+    conn: &mut sqlx::PgConnection,
+    title: &str,
+    matching: &MatchingConfig,
+) -> DbResult<SeriesId> {
     let meta = SeriesUpsert {
         canonical_title: title.to_owned(),
         normalized_title: normalize_title(title),
@@ -589,7 +591,7 @@ async fn resolve_stub_series(conn: &mut sqlx::PgConnection, title: &str) -> DbRe
         status: SeriesStatus::Unknown,
         release_year: None,
     };
-    resolve_canonical_series(conn, &meta).await
+    resolve_canonical_series(conn, &meta, matching).await
 }
 
 /// Upsert several `(provider, path)` sources in one statement. Idempotent on
@@ -644,11 +646,12 @@ async fn register_chunk(
     pool: &sqlx::PgPool,
     provider_id: ProviderId,
     chunk: &[(&str, &str)],
+    matching: &MatchingConfig,
 ) -> DbResult<usize> {
     let mut tx = pool.begin().await?;
     let mut sources = Vec::with_capacity(chunk.len());
     for (path, title) in chunk {
-        let series_id = resolve_stub_series(&mut tx, title).await?;
+        let series_id = resolve_stub_series(&mut tx, title, matching).await?;
         sources.push((series_id, (*path).to_owned(), (*title).to_owned()));
     }
     upsert_sources(&mut tx, provider_id, &sources).await?;
@@ -684,6 +687,7 @@ pub async fn register_source_stubs(
     pool: &sqlx::PgPool,
     provider_id: ProviderId,
     entries: &[(&str, &str)],
+    matching: &MatchingConfig,
 ) -> DbResult<usize> {
     if entries.is_empty() {
         return Ok(0);
@@ -708,7 +712,7 @@ pub async fn register_source_stubs(
 
     let mut registered = 0usize;
     for chunk in fresh.chunks(STUB_CHUNK) {
-        match register_chunk(pool, provider_id, chunk).await {
+        match register_chunk(pool, provider_id, chunk, matching).await {
             Ok(n) => registered += n,
             Err(e) => {
                 tracing::warn!(
@@ -717,7 +721,7 @@ pub async fn register_source_stubs(
                     "batched series registration failed; retrying entry by entry"
                 );
                 for (path, title) in chunk {
-                    match register_source_stub(pool, provider_id, path, title).await {
+                    match register_source_stub(pool, provider_id, path, title, matching).await {
                         Ok(()) => registered += 1,
                         Err(e) => {
                             tracing::warn!(path = %path, error = %e, "series registration failed");
@@ -1674,10 +1678,14 @@ pub struct IngestOutcome {
 ///
 /// All writes are idempotent (`ON CONFLICT`), so replaying a task under at-least-once
 /// delivery converges to the same state and reports no false-new chapters.
-pub async fn ingest_series(pool: &sqlx::PgPool, scanned: ScannedSeries) -> DbResult<IngestOutcome> {
+pub async fn ingest_series(
+    pool: &sqlx::PgPool,
+    scanned: ScannedSeries,
+    matching: &MatchingConfig,
+) -> DbResult<IngestOutcome> {
     let mut tx = pool.begin().await?;
 
-    let series_id = resolve_canonical_series(&mut tx, &scanned.meta).await?;
+    let series_id = resolve_canonical_series(&mut tx, &scanned.meta, matching).await?;
     update_series_meta(&mut *tx, series_id, &scanned.meta).await?;
     if !scanned.alt_titles.is_empty() {
         add_series_titles(&mut tx, series_id, &scanned.alt_titles).await?;

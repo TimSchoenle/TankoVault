@@ -174,6 +174,23 @@ Read by `api` only — it is the sole service that performs privileged user-faci
 |---|---|---|---|
 | `TANKOVAULT_FEATURES__REFRESH_SECS` | `15` | api, control-plane, notifier, sync | How long a flag change takes to reach *other* replicas. **Which flags are on is not configured here** — that is a runtime decision stored in the database and made from the console, which is the whole point of flags existing alongside these boot-time toggles. |
 
+### `matching` — "is this the same series?"
+
+The confidence policy behind series canonicalisation. Read by **both** the worker's ingest path
+and external sync's remote-entry resolution, deliberately: they used to take their thresholds from
+different places, so the worker could attach a source that sync would refuse to map with no single
+place to reason about it.
+
+Scores are in `[0, 1]` and come from `tankovault_matcher::score` — trigram or token-set title
+similarity, adjusted by content-type agreement, release-year proximity, tag overlap and shared
+author credits.
+
+| Key | Default | Services | Notes |
+|---|---|---|---|
+| `TANKOVAULT_MATCHING__HIGH` | `0.85` | worker, sync | At or above this, attach to the existing series outright. **Raising it makes the matcher conservative**: fewer wrong merges, more duplicate series for an operator to reconcile. Lowering it does the reverse, and a wrong merge is the harder one to undo. |
+| `TANKOVAULT_MATCHING__LOW` | `0.6` | worker, sync | At or above this but below `HIGH`, the worker creates the series *and* files a merge candidate for review. Sync ignores this band — it declines to map rather than guessing. |
+| `TANKOVAULT_MATCHING__CANDIDATE_LIMIT` | `10` | worker, sync | Trigram candidates scored per query title. More costs a wider index scan and buys nothing once the true match is in the set. |
+
 ### `internal` — service-to-service authentication
 
 | Key | Default | Services | Notes |

@@ -238,12 +238,14 @@ impl Fixture {
     async fn snapshot(&self, progress: f64, status: WatchStatus) {
         sync::record_snapshot(
             &self.db.pool,
-            self.series,
-            SLUG,
-            progress,
-            progress,
-            status.as_str(),
-            status.as_str(),
+            &sync::AgreedSnapshot {
+                series_id: self.series,
+                provider: SLUG,
+                local_progress: progress,
+                remote_progress: progress,
+                local_status: status.as_str(),
+                remote_status: status.as_str(),
+            },
         )
         .await
         .expect("record snapshot");

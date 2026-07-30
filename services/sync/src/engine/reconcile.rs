@@ -520,12 +520,14 @@ impl Reconciler {
             MergeAction::Conflict => {
                 sync::insert_conflict(
                     &self.pool,
-                    run.user_id,
-                    series_id,
-                    run.slug,
-                    "progress",
-                    &plan.progress.local.to_string(),
-                    &plan.progress.remote.to_string(),
+                    &sync::NewConflict {
+                        user_id: run.user_id,
+                        series_id,
+                        provider: run.slug,
+                        field: "progress",
+                        local_value: &plan.progress.local.to_string(),
+                        remote_value: &plan.progress.remote.to_string(),
+                    },
                 )
                 .await?;
                 counts.conflicts += 1;
@@ -556,12 +558,14 @@ impl Reconciler {
             MergeAction::Conflict => {
                 sync::insert_conflict(
                     &self.pool,
-                    run.user_id,
-                    series_id,
-                    run.slug,
-                    "status",
-                    plan.status.local.as_str(),
-                    plan.status.remote.as_str(),
+                    &sync::NewConflict {
+                        user_id: run.user_id,
+                        series_id,
+                        provider: run.slug,
+                        field: "status",
+                        local_value: plan.status.local.as_str(),
+                        remote_value: plan.status.remote.as_str(),
+                    },
                 )
                 .await?;
                 counts.conflicts += 1;
@@ -602,12 +606,15 @@ impl Reconciler {
     ) -> anyhow::Result<()> {
         sync::record_snapshot(
             &self.pool,
-            series_id,
-            run.slug,
-            progress,
-            progress,
-            status.as_str(),
-            status.as_str(),
+            &sync::AgreedSnapshot {
+                series_id,
+                provider: run.slug,
+                // Both sides get the same value: that is what agreement means here.
+                local_progress: progress,
+                remote_progress: progress,
+                local_status: status.as_str(),
+                remote_status: status.as_str(),
+            },
         )
         .await?;
         Ok(())

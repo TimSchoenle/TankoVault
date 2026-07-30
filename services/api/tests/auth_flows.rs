@@ -11,7 +11,7 @@
 use axum::body::Body;
 use axum::http::{Request, Response, StatusCode, header};
 use serde_json::json;
-use tankovault_test_support::TestApp;
+use tankovault_api_test_support::TestApp;
 
 /// Build a POST request, optionally carrying a refresh cookie and/or a JSON body.
 fn post(

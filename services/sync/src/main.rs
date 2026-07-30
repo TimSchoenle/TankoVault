@@ -30,6 +30,9 @@ mod engine;
 mod error;
 mod mapping;
 mod provider;
+/// Merge-engine reconciliation tests (audit TEST F-06). Needs Docker, hence the feature gate.
+#[cfg(all(test, feature = "integration"))]
+mod reconcile_tests;
 
 use crate::error::AppError;
 

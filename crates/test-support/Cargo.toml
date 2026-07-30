@@ -4,29 +4,26 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Dev-only integration-test harness: ephemeral Postgres, seeding, token minting, and an in-process router."
+description = "Dev-only database test harness: ephemeral Postgres, migrations, seeding and token minting."
 publish = false
 
 # This crate exists only to support integration tests. It is a normal workspace member so it
 # builds under the same lints as the rest of the tree, but it is never depended on by a
-# shipping binary — only as a `dev-dependency` of the crates whose behaviour it exercises. The
-# resulting `api -> (dev) test-support -> api` cycle is permitted by Cargo precisely because the
-# edge back into `test-support` is a dev-dependency.
+# shipping binary — only as a `dev-dependency` of the crates whose behaviour it exercises.
+#
+# It deliberately depends on **no** `services/*` crate (ARCH-17): the previous version pulled in
+# `tankovault-api` for the router harness, which made `cargo test -p tankovault-db` compile the
+# entire API service and put a dev-time edge from the lowest layer of the workspace to the
+# highest. The router harness now lives in `services/api/test-support`.
 
 [dependencies]
-tankovault-api = { path = "../../services/api" }
-tankovault-config = { workspace = true }
-tankovault-service = { workspace = true }
 tankovault-db = { workspace = true }
 tankovault-domain = { workspace = true }
 tankovault-auth = { workspace = true }
 tankovault-email = { workspace = true }
-axum = { workspace = true }
-tower = { workspace = true }
+tankovault-service = { workspace = true }
 tokio = { workspace = true }
 sqlx = { workspace = true }
-reqwest = { workspace = true }
-serde_json = { workspace = true }
 async-trait = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }

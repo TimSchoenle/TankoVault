@@ -8,8 +8,8 @@
 #![cfg(feature = "integration")]
 
 use axum::http::StatusCode;
+use tankovault_api_test_support::TestApp;
 use tankovault_domain::AccountStatus;
-use tankovault_test_support::TestApp;
 
 #[tokio::test]
 async fn liveness_and_readiness_probes_answer() {

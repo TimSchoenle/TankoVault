@@ -21,13 +21,13 @@ that the audit did not.
 | Report | DONE | PARTIAL | OPEN | Other |
 | --- | --- | --- | --- | --- |
 | SECURITY (16+2) | 14 | 2 | 2 | — |
-| ARCHITECTURE (21) | 9 | 1 | 10 | 1 no-finding |
+| ARCHITECTURE (21) | 10 | 1 | 9 | 1 no-finding |
 | PERFORMANCE (20) | 13 | 0 | 6 | 2 no-finding/wontfix |
-| TESTING (21) | 7 | 3 | 11 | — |
+| TESTING (21) | 8 | 3 | 10 | — |
 | FRONTEND (18+1) | 17 | 0 | 1 | 1 wontfix |
 | BUILD_AND_OPS (31+1) | 26 | 4 | 2 | — |
 
-**83 DONE · 12 PARTIAL · 3 WONTFIX · 31 OPEN**, across 129 tracked rows.
+**85 DONE · 12 PARTIAL · 3 WONTFIX · 29 OPEN**, across 129 tracked rows.
 
 The rows below are authoritative; this summary is a convenience.
 
@@ -94,7 +94,7 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | ARCH-3 | `catalog.rs` is four aggregates in one file | **OPEN** | |
 | ARCH-4 | Internal-service proxy open-coded 9+ times, collapses failures to 500 | **DONE** | `services/api/src/upstream.rs`. Adds `ApiError::BadGateway` / `GatewayTimeout`; upstream 404/409 now survive, so the documented 409 is emittable. |
 | ARCH-5 | `db/repo/tracking.rs` — seven aggregates | **OPEN** | |
-| ARCH-6 | `sync/engine.rs` — one `impl`, 22 methods, six responsibilities | **OPEN** | Still blocked on TEST F-06. |
+| ARCH-6 | `sync/engine.rs` — one `impl`, 22 methods, six responsibilities | **OPEN** | No longer blocked: TEST F-06's reconciliation suite is the safety net the split needed. |
 | ARCH-7 | `sync/anilist.rs` — five concerns in one file | **OPEN** | |
 | ARCH-8 | `config/src/lib.rs` — 15 flat config aggregates | **PARTIAL** | Grew by one (`InternalAuthConfig`) plus `ConfigError::Invalid` and `is_production()`. The split is still open. |
 | ARCH-9 | (same as ARCH-4 in the report's numbering) | **DONE** | |
@@ -105,7 +105,7 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | ARCH-14 | JetStream consume loop hand-rolled three times | **DONE** | `crates/bus::consume` owns shutdown, decode, heartbeat, retry-vs-settle and the undecodable drop; handlers return a `Disposition` so the retry judgement stays with the layer that can make it. Fixed two real bugs: the notifier acked after a **failed** fan-out (at-most-once — notifications lost with one `warn!`), and the control-plane aggregator had no cancellation arm so it could not drain on `SIGTERM`. |
 | ARCH-15 | `POST /v1/solve` duplicated byte-for-byte | **DONE** | Defined once in `tankovault_solver::http::solver_router`, behind an `axum` feature so trait-only consumers do not pull axum. The SSRF target check travels with it, so one copy cannot forget it. |
 | ARCH-16 | Canonicalisation implemented twice with different thresholds | **OPEN** | |
-| ARCH-17 | `crates/test-support` inverts crate/service layering | **OPEN** | `cargo test -p tankovault-db` compiles the whole API service. |
+| ARCH-17 | `crates/test-support` inverts crate/service layering | **DONE** | Split in two: `crates/test-support` keeps the ephemeral Postgres, seeding and token minting and now depends on **no** `services/*` crate; the in-process router harness moved to `services/api/test-support` (`tankovault-api-test-support`). `cargo tree -p tankovault-db -e normal,dev` no longer contains `tankovault-api`. The report also asked to move the crate out of `crates/` — not done, deliberately: the reason to move it was the inverted dependency, and with that gone it is an ordinary leaf crate that belongs where the other `crates/` live. The `api ↔ api-test-support` dev cycle stays, documented in the new manifest. |
 | ARCH-18 | Feature-flag route tables duplicated | **OPEN** | |
 | ARCH-19 | `auth.rs` (676) and `admin/users.rs` (643) approaching god size | **OPEN** | |
 | ARCH-20 | Outbound pacing implemented three times | **OPEN** | `sync`'s `Pacer` lacks the `Retry-After` handling `crates/fetch` has. |
@@ -150,7 +150,7 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | F-03 | The frontend's 41 tests run in no CI job | **DONE** | The `frontend` CI job now runs `cargo test`, `cargo clippy --all-targets -- -D warnings` (the pedantic set the crate declares) and the wasm check. All 41 pass, including the i18n catalogue-parity test. Wiring it up immediately caught a real break: the SEC-4 contract change had left `ProfileUpdate` missing a field. |
 | F-04 | `services/api/src/auth.rs` (676 LOC) has no unit tests | **DONE** | The mailer is injectable in `crates/test-support` now, which unlocked the email-verification branch of `register` — a branch that had **never executed**, because `TestApp` hardcoded a disabled mailer. |
 | F-05 | `crates/db`: 6,893 LOC, 7 integration tests | **PARTIAL** | GDPR export/erase (F-08) and ingest are covered; `catalog.rs`, `sync.rs` and `users.rs` still hold most of the untested SQL. |
-| F-06 | `sync` merge engine: 1,267 LOC, 2 tests on a helper | **OPEN** | The sync merge engine is still 2 tests on a helper. Blocks ARCH-6. |
+| F-06 | `sync` merge engine: 1,267 LOC, 2 tests on a helper | **DONE** | 13 reconciliation tests in `services/sync/src/reconcile_tests.rs` drive the engine through its real `pull`/`push` entry points against an ephemeral Postgres and a recording fake provider — nothing below the engine is mocked. They pin what the merge *does*, not just what it decides: which side is written, that exactly one remote write covers both fields, that an excluded series touches neither side, and — the one that matters most — that an `AskMe` conflict does **not** advance the common-ancestor snapshot, so the conflict is re-detected until resolved instead of silently becoming unresolvable. Also covers first-sync import, the two-remote-ids-to-one-series guard, unmapped/unmatched accounting and the converged no-op. Wired into CI's `integration` job. ARCH-6 is now unblocked. |
 | F-07 | Worker retry/backoff untested | **DONE** | Worker retry policy, `content_hash` and challenge detection pinned. |
 | F-08 | GDPR export/erase has no test that fails as the schema grows | **DONE** | Driven from `information_schema` rather than a hardcoded table list, so a future migration that adds a user-referencing table turns the build red on the pull request that adds it. That is the failure mode that matters — silent incompleteness nobody notices until a regulator asks. |
 | F-09 | `test-support` covers one axis | **OPEN** | |
@@ -249,9 +249,8 @@ frontend's 50 tests and its wasm build.
 
 What is genuinely left, in the order it is worth doing:
 
-1. **TEST F-06 — the sync merge engine.** 1,267 LOC with two tests on a helper, and it is the
-   code that decides whose reading progress wins. It also **blocks ARCH-6**, the split of that
-   same god module, which should not be attempted without tests first.
+1. ~~**TEST F-06 — the sync merge engine.**~~ **Done** — see the row above. ARCH-6, the split of
+   that same god module, is now unblocked.
 2. **TEST F-05 — the rest of `crates/db`.** GDPR export/erase and ingest are covered now;
    `catalog.rs`, `sync.rs` and `users.rs` still hold most of the untested SQL.
 3. **PERF-3, PERF-13, PERF-15 — the remaining sequential-query loops.** The notifier's is the

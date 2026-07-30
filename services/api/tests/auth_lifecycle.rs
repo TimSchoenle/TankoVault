@@ -20,7 +20,8 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{Request, Response, StatusCode, header};
 use serde_json::{Value, json};
-use tankovault_test_support::{RecordingMailer, TestApp, TestConfig};
+use tankovault_api_test_support::{TestApp, TestConfig};
+use tankovault_test_support::RecordingMailer;
 
 /// Stand up a router whose mailer is configured, plus the recorder to read messages from.
 ///

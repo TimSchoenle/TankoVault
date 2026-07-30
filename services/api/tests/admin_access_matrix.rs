@@ -29,8 +29,8 @@ use std::collections::{BTreeSet, HashMap};
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use serde_json::{Value, json};
+use tankovault_api_test_support::{TestApp, TestConfig};
 use tankovault_domain::{AccountStatus, Permission};
-use tankovault_test_support::{TestApp, TestConfig};
 
 /// A syntactically valid UUID that names nothing. Every path parameter in the matrix uses one
 /// of these: authorization is decided before the row is looked up, so the leg-3 outcome is a

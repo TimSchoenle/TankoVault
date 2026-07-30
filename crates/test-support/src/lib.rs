@@ -1,51 +1,59 @@
-//! Integration-test harness for `TankoVault`.
+//! Database-layer test harness for `TankoVault`.
 //!
-//! Two layers of automated access-control testing share this crate:
+//! Provides an **ephemeral Postgres** started with testcontainers: a single container is shared
+//! per test binary, and each [`TestDb::spawn`] creates its own freshly-migrated database inside
+//! it, so tests are hermetic and parallel-safe without a shared, mutable fixture. The harness
+//! owns container lifecycle, migration, seeding and token minting, so there is no divergent
+//! `DATABASE_URL` wiring to keep in sync.
 //!
-//! - **Repo-layer** tests drive the guard-rail SQL in `tankovault_db::repo` against a real,
-//!   migrated schema via [`TestDb`].
-//! - **HTTP-layer** tests drive the real Axum router (extractor, middleware and authorization
-//!   wiring) in-process via [`TestApp`] and `tower`'s `oneshot`.
+//! Also holds the in-memory doubles that are not specific to any one service:
+//! [`RecordingAuditSink`] and [`RecordingMailer`].
 //!
-//! # One database setup, not two
+//! # Layering
 //!
-//! Both layers run against an **ephemeral Postgres** started with testcontainers. A single
-//! container is shared per test binary; each [`TestDb::spawn`] creates its own freshly-migrated
-//! database inside it, so tests are hermetic and parallel-safe without a shared, mutable
-//! fixture. This reconciles the plan's "`#[sqlx::test]`" and "testcontainers" strands into one
-//! consistent setup: the harness owns container lifecycle, migration, seeding and token
-//! minting, and there is no divergent `DATABASE_URL` wiring to keep in sync.
+//! This crate deliberately depends on **no** `services/*` crate, so the repository-layer suites
+//! can use it without compiling a service (ARCH-17). The in-process router harness that does
+//! need the API lives in `services/api/test-support` as `tankovault-api-test-support`.
 //!
 //! # Not on the fast path
 //!
 //! This crate is a dev-dependency only; the DB-backed suites that use it are feature-gated
 //! (`integration`) so the default `cargo test --workspace` unit path stays green without Docker.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::Duration as StdDuration;
 
-use axum::body::Body;
-use axum::http::{Request, Response, StatusCode};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Connection as _, PgConnection, PgPool};
-use tankovault_api::AppState;
-use tankovault_config::RateLimitConfig;
 use tankovault_domain::{AccountStatus, Permission, UserId};
 use tankovault_email::{EmailError, EmailMessage, EmailService};
-use tankovault_service::{
-    AuditEvent, AuditOutcome, AuditSink, FeatureGate, Health, MetricsRegistry,
-};
+use tankovault_service::{AuditEvent, AuditOutcome, AuditSink};
 use testcontainers_modules::postgres::Postgres;
 use testcontainers_modules::testcontainers::runners::AsyncRunner;
 use testcontainers_modules::testcontainers::{ContainerAsync, ImageExt as _};
 use time::Duration;
 use tokio::sync::OnceCell;
-use tower::ServiceExt as _;
 use uuid::Uuid;
 
-/// The JWT signing secret every [`TestApp`] uses. Fixed so a test can mint a token that the
+/// The JWT signing secret every harness signs with. Fixed so a test can mint a token that the
 /// router will accept, and long enough to satisfy the production strength check.
-const TEST_JWT_SECRET: &[u8] = b"integration-test-jwt-secret-please-rotate-0123456789";
+pub const TEST_JWT_SECRET: &[u8] = b"integration-test-jwt-secret-please-rotate-0123456789";
+
+/// A `Bearer …` header value carrying a freshly-minted, valid access token for `user`, signed
+/// with [`TEST_JWT_SECRET`].
+///
+/// Lives here rather than on the HTTP harness so a repository-layer test can mint the same token
+/// the router would accept.
+///
+/// # Panics
+/// If signing fails, which in a test always means the secret is wrong.
+#[must_use]
+pub fn bearer(user: UserId) -> String {
+    let token =
+        tankovault_auth::issue_access_token(TEST_JWT_SECRET, user, "seed", Duration::minutes(15))
+            .expect("mint access token");
+    format!("Bearer {token}")
+}
 
 /// The process-wide Postgres container, started once on first use and kept alive for the
 /// lifetime of the test binary.
@@ -132,7 +140,7 @@ impl TestDb {
     ///
     /// The email is derived from the username so callers need only supply a name unique within
     /// the test. The stored password hash is a placeholder: the harness authenticates by
-    /// minting access tokens directly (see [`TestApp::bearer`]), never by logging in.
+    /// minting access tokens directly (see [`bearer`]), never by logging in.
     pub async fn seed_user(
         &self,
         username: &str,
@@ -219,7 +227,7 @@ impl AuditSink for RecordingAuditSink {
 ///
 /// # Why this exists
 ///
-/// [`TestApp`] previously hard-wired the disabled default mailer, and `auth::register` forks on
+/// The HTTP harness previously hard-wired the disabled default mailer, and `auth::register` forks on
 /// `state.mailer.is_enabled()`. The consequence was that the **email-verification half of
 /// registration had never been executed by any test** — every registration took the
 /// "no mailer, activate immediately" branch. So did password reset, confirmation resend, and
@@ -316,182 +324,5 @@ impl EmailService for RecordingMailer {
         // A closed receiver means the test dropped its interest; recording still succeeded.
         let _ = self.tx.send(message);
         Ok(())
-    }
-}
-
-/// What a [`TestApp`] should be wired with, for the axes that change behaviour.
-///
-/// Defaults reproduce [`TestApp::spawn`] exactly, so an existing test is unaffected and a new
-/// one names only the axis it cares about.
-pub struct TestConfig {
-    mailer: Arc<dyn EmailService>,
-    rate_limit: RateLimitConfig,
-}
-
-impl Default for TestConfig {
-    fn default() -> Self {
-        Self {
-            mailer: tankovault_email::build(&tankovault_config::EmailConfig::default()),
-            rate_limit: RateLimitConfig::default(),
-        }
-    }
-}
-
-impl TestConfig {
-    /// The default wiring: no mailer, production rate limits.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Wire a specific mailer — see [`RecordingMailer`].
-    #[must_use]
-    pub fn with_mailer(mut self, mailer: Arc<dyn EmailService>) -> Self {
-        self.mailer = mailer;
-        self
-    }
-
-    /// Do not mount the rate limiter.
-    ///
-    /// For suites that issue more requests than a real client would in a minute — the
-    /// access-control matrix drives every admin route three times over. Without this the
-    /// limiter answers `429` part-way through and the suite reports an authorization failure
-    /// that is really a throttle.
-    #[must_use]
-    pub fn without_rate_limiting(mut self) -> Self {
-        self.rate_limit.enabled = false;
-        self
-    }
-}
-
-/// The real router wired to an isolated database, ready to answer `oneshot` requests.
-///
-/// Holds the same JWT secret it signed [`AppState`] with, so [`Self::bearer`] mints tokens the
-/// router accepts, and the [`RecordingAuditSink`] so tests can assert audit-on-deny.
-pub struct TestApp {
-    /// The isolated database, exposed so tests can seed and inspect rows directly.
-    pub db: TestDb,
-    /// The in-memory audit sink capturing every emitted event.
-    pub audit: Arc<RecordingAuditSink>,
-    router: axum::Router,
-}
-
-impl TestApp {
-    /// Stand up an ephemeral database and the fully-wired router against it.
-    pub async fn spawn() -> Self {
-        Self::spawn_with(TestConfig::new()).await
-    }
-
-    /// As [`Self::spawn`], with the wiring axes in `cfg` overridden.
-    pub async fn spawn_with(cfg: TestConfig) -> Self {
-        let db = TestDb::spawn().await;
-        let audit = Arc::new(RecordingAuditSink::default());
-
-        let state = AppState {
-            pool: db.pool.clone(),
-            jwt_secret: Arc::new(TEST_JWT_SECRET.to_vec()),
-            password_pepper: Arc::new(Vec::new()),
-            access_ttl: Duration::minutes(15),
-            refresh_ttl: Duration::days(30),
-            control_plane: tankovault_api::Upstream::new(
-                reqwest::Client::new(),
-                "http://control-plane.invalid",
-                None,
-                "control-plane",
-            ),
-            sync: tankovault_api::Upstream::new(
-                reqwest::Client::new(),
-                "http://sync.invalid",
-                None,
-                "sync",
-            ),
-            challenge_solver_url: "http://challenge-solver.invalid".to_owned(),
-            internal_token: None,
-            bus: None,
-            audit: audit.clone(),
-            features: FeatureGate::defaults(),
-            cookie_secure: false,
-            mailer: cfg.mailer,
-            email_base_url: "http://localhost".to_owned(),
-        };
-
-        let router = tankovault_api::build_router(
-            state,
-            &tankovault_config::SecurityConfig::default(),
-            &cfg.rate_limit,
-            MetricsRegistry::disabled(),
-            Health::builder().build(),
-            None,
-        );
-
-        Self { db, audit, router }
-    }
-
-    /// Seed a user with the given capabilities and status. See [`TestDb::seed_user`].
-    pub async fn seed_user(
-        &self,
-        username: &str,
-        perms: &[Permission],
-        status: AccountStatus,
-    ) -> UserId {
-        self.db.seed_user(username, perms, status).await
-    }
-
-    /// A `Bearer …` header value carrying a freshly-minted, valid access token for `user`.
-    #[must_use]
-    pub fn bearer(&self, user: UserId) -> String {
-        let token = tankovault_auth::issue_access_token(
-            TEST_JWT_SECRET,
-            user,
-            "seed",
-            Duration::minutes(15),
-        )
-        .expect("mint access token");
-        format!("Bearer {token}")
-    }
-
-    /// Drive a raw request through the real router.
-    pub async fn request(&self, req: Request<Body>) -> Response<Body> {
-        self.router
-            .clone()
-            .oneshot(req)
-            .await
-            .expect("router is infallible")
-    }
-
-    /// Issue a request and return the status and JSON body (or [`serde_json::Value::Null`] when
-    /// the body is empty), so a test reads as a single assertion.
-    pub async fn call(
-        &self,
-        method: &str,
-        path: &str,
-        bearer: Option<&str>,
-        body: Option<serde_json::Value>,
-    ) -> (StatusCode, serde_json::Value) {
-        let mut builder = Request::builder().method(method).uri(path);
-        if let Some(bearer) = bearer {
-            builder = builder.header(axum::http::header::AUTHORIZATION, bearer);
-        }
-        let request = match body {
-            Some(json) => builder
-                .header(axum::http::header::CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&json).expect("serialize body"),
-                ))
-                .expect("build request"),
-            None => builder.body(Body::empty()).expect("build request"),
-        };
-
-        let response = self.request(request).await;
-        let status = response.status();
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("read response body");
-        let json = if bytes.is_empty() {
-            serde_json::Value::Null
-        } else {
-            serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null)
-        };
-        (status, json)
     }
 }

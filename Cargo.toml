@@ -16,6 +16,7 @@ members = [
     "crates/api-client",
     "crates/test-support",
     "services/api",
+    "services/api/test-support",
     "services/control-plane",
     "services/worker",
     "services/notifier",

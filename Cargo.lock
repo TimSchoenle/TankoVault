@@ -4768,6 +4768,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tankovault-adapters",
+ "tankovault-api-test-support",
  "tankovault-auth",
  "tankovault-bus",
  "tankovault-config",
@@ -4806,6 +4807,23 @@ dependencies = [
  "thiserror",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "tankovault-api-test-support"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "reqwest",
+ "serde_json",
+ "tankovault-api",
+ "tankovault-config",
+ "tankovault-domain",
+ "tankovault-email",
+ "tankovault-service",
+ "tankovault-test-support",
+ "time",
+ "tower",
 ]
 
 [[package]]
@@ -5100,6 +5118,7 @@ dependencies = [
  "tankovault-domain",
  "tankovault-matcher",
  "tankovault-service",
+ "tankovault-test-support",
  "thiserror",
  "time",
  "tokio",
@@ -5113,13 +5132,8 @@ name = "tankovault-test-support"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "axum",
- "reqwest",
- "serde_json",
  "sqlx",
- "tankovault-api",
  "tankovault-auth",
- "tankovault-config",
  "tankovault-db",
  "tankovault-domain",
  "tankovault-email",
@@ -5127,7 +5141,6 @@ dependencies = [
  "testcontainers-modules",
  "time",
  "tokio",
- "tower",
  "uuid",
 ]
 

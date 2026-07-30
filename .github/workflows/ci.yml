@@ -172,8 +172,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
       # SQLX_OFFLINE (inherited) resolves the query macros from the committed cache at compile
       # time; the container supplies the live database the tests run against at runtime.
-      - name: repo + HTTP access-control integration suites
-        run: cargo test -p tankovault-db -p tankovault-api --features integration
+      - name: repo + HTTP access-control + sync-reconciliation integration suites
+        run: cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features integration
 
   # `web/frontend` is excluded from the host workspace (it targets wasm32), so none of the
   # jobs above touch it. This job ran `cargo check` alone, which meant its 41 tests and the

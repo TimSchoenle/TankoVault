@@ -87,6 +87,13 @@ pub async fn verify_email(
 /// Always responds `202 Accepted`, whether or not the address is registered or already
 /// confirmed, so the endpoint can't be used to probe which emails have accounts. A fresh
 /// link is only sent when the address exists, is still unconfirmed, and email is configured.
+///
+/// Spawned in full, for the reason `auth::password::forgot_password` explains at length
+/// (SEC-10). This endpoint's channel was in fact the wider of the two: the known-and-unconfirmed
+/// branch performed the token `INSERT`, while both "no such address" *and* "already confirmed"
+/// returned straight after the lookup — so the timing separated three states rather than two,
+/// and "this address exists and has not been confirmed" is the more useful answer of the pair.
+/// The audit named `forgot_password`; this is the same defect in the sibling handler.
 #[utoipa::path(
     post,
     path = "/v1/auth/verify-email/resend",
@@ -99,22 +106,69 @@ pub async fn verify_email(
 pub async fn resend_verification(
     State(state): State<AppState>,
     Json(req): Json<ResendVerificationRequest>,
-) -> ApiResult<StatusCode> {
-    let email = req.email.trim();
-    if let Some((user, verified)) =
-        tankovault_db::repo::users::find_by_email_with_verification(&state.pool, email).await?
-    {
-        if !verified && state.mailer.is_enabled() {
-            send_verification_email(&state, &user).await?;
-        }
-    }
-    // Uniform response regardless of whether the account exists or is already confirmed.
-    Ok(StatusCode::ACCEPTED)
+) -> StatusCode {
+    let email = req.email.trim().to_owned();
+    tokio::spawn(async move { deliver_verification_resend(state, email).await });
+    StatusCode::ACCEPTED
 }
 
-/// Issue and email a fresh single-use confirmation link for `user`. Reuses the high-entropy
-/// opaque-token generator; only the SHA-256 hash is stored, and delivery is fire-and-forget.
+/// Send a fresh confirmation link for `email`, if it belongs to an unconfirmed account.
+///
+/// Detached, so nothing here reaches the caller; a failure is logged and dropped.
+async fn deliver_verification_resend(state: AppState, email: String) {
+    if !state.mailer.is_enabled() {
+        return;
+    }
+    let found =
+        tankovault_db::repo::users::find_by_email_with_verification(&state.pool, &email).await;
+    let user = match found {
+        Ok(Some((user, false))) => user,
+        // No such address, or already confirmed — the two states the caller must not be able
+        // to tell apart from this one.
+        Ok(_) => return,
+        Err(e) => {
+            tracing::warn!(error = %e, "confirmation-resend lookup failed");
+            return;
+        }
+    };
+
+    let link = match issue_verification_link(&state, &user).await {
+        Ok(link) => link,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to store a confirmation token");
+            return;
+        }
+    };
+    if let Err(e) = state
+        .mailer
+        .send(mailer::verification(&user.email, &user.username, &link))
+        .await
+    {
+        tracing::warn!(error = %e, "failed to resend the confirmation email");
+    }
+}
+
+/// Issue and email a fresh single-use confirmation link for `user`, off the request path.
+///
+/// For the callers that answer a request the user is waiting on — [`super::register`] and the
+/// address change in `me::account` — where a slow relay must not be visible in the response.
 pub(crate) async fn send_verification_email(state: &AppState, user: &User) -> ApiResult<()> {
+    let link = issue_verification_link(state, user).await?;
+    mailer::send_in_background(
+        state,
+        mailer::verification(&user.email, &user.username, &link),
+    );
+    Ok(())
+}
+
+/// Mint a confirmation token for `user`, store its hash, and return the link to send.
+///
+/// Split out from [`send_verification_email`] so the delivery decision belongs to the caller:
+/// the resend path is *already* detached (SEC-10) and awaits the send itself, where a second
+/// spawn would only hide the work from the test that measures it.
+///
+/// Reuses the high-entropy opaque-token generator; only the SHA-256 hash is stored.
+async fn issue_verification_link(state: &AppState, user: &User) -> ApiResult<String> {
     let raw = generate_refresh_token();
     let token_hash = hash_refresh_token(&raw);
     let expires_at = OffsetDateTime::now_utc() + VERIFY_TOKEN_TTL;
@@ -125,13 +179,8 @@ pub(crate) async fn send_verification_email(state: &AppState, user: &User) -> Ap
         expires_at,
     )
     .await?;
-    let link = format!(
+    Ok(format!(
         "{}/verify-email?token={raw}",
         state.email_base_url.trim_end_matches('/'),
-    );
-    mailer::send_in_background(
-        state,
-        mailer::verification(&user.email, &user.username, &link),
-    );
-    Ok(())
+    ))
 }

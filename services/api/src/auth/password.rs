@@ -40,6 +40,18 @@ pub struct ResetPasswordRequest {
 /// Always responds `202 Accepted`, whether or not the address is registered, so the
 /// endpoint can't be used to probe which emails have accounts. When the address does exist
 /// and email is configured, a single-use, time-limited reset link is sent.
+///
+/// **Every** account-dependent step happens on a detached task (SEC-10). The uniform `202`
+/// was previously defeated by timing: the known-address branch generated a token, hashed it
+/// and performed an `INSERT` — a write, so a WAL flush — before answering, while the unknown
+/// branch returned straight after the lookup. That is a smaller gap than `login`'s two orders
+/// of magnitude but it is the same oracle, and it needs no credentials at all to read. With
+/// the whole body spawned, this handler's only statement is the spawn, so there is no branch
+/// left for a response time to disclose.
+///
+/// The return type is deliberately `StatusCode` rather than `ApiResult<StatusCode>`: the
+/// anti-enumeration property is "this endpoint has exactly one answer", and making that a
+/// type rather than a convention means a later edit cannot reintroduce a second one.
 #[utoipa::path(
     post,
     path = "/v1/auth/password/forgot",
@@ -52,29 +64,59 @@ pub struct ResetPasswordRequest {
 pub async fn forgot_password(
     State(state): State<AppState>,
     Json(req): Json<ForgotPasswordRequest>,
-) -> ApiResult<StatusCode> {
-    let email = req.email.trim();
-    if let Some(user) = tankovault_db::repo::users::find_by_email(&state.pool, email).await? {
-        // Reuse the high-entropy opaque-token generator; only the SHA-256 hash is stored.
-        let raw = generate_refresh_token();
-        let token_hash = hash_refresh_token(&raw);
-        let expires_at = OffsetDateTime::now_utc() + RESET_TOKEN_TTL;
-        tankovault_db::repo::users::insert_password_reset(
-            &state.pool,
-            user.id,
-            &token_hash,
-            expires_at,
-        )
-        .await?;
+) -> StatusCode {
+    let email = req.email.trim().to_owned();
+    tokio::spawn(async move { deliver_reset_link(state, email).await });
+    StatusCode::ACCEPTED
+}
 
-        let link = format!(
-            "{}/reset-password?token={raw}",
-            state.email_base_url.trim_end_matches('/'),
-        );
-        mailer::send_in_background(&state, mailer::password_reset(&user.email, &link));
+/// Mint, store and send a reset link for `email`, if it belongs to an account.
+///
+/// Runs detached, so nothing here may be reported to the caller — a failure is logged and
+/// dropped, which is the same thing the caller is told about a success. The send is `await`ed
+/// rather than handed to `mailer::send_in_background`: this task *is* the background, and a
+/// nested spawn would only hide how long the work takes from the test that measures it.
+async fn deliver_reset_link(state: AppState, email: String) {
+    let found = tankovault_db::repo::users::find_by_email(&state.pool, &email).await;
+    let user = match found {
+        Ok(Some(user)) => user,
+        Ok(None) => return,
+        Err(e) => {
+            tracing::warn!(error = %e, "password-reset lookup failed");
+            return;
+        }
+    };
+
+    // Reuse the high-entropy opaque-token generator; only the SHA-256 hash is stored.
+    let raw = generate_refresh_token();
+    let token_hash = hash_refresh_token(&raw);
+    let expires_at = OffsetDateTime::now_utc() + RESET_TOKEN_TTL;
+    if let Err(e) = tankovault_db::repo::users::insert_password_reset(
+        &state.pool,
+        user.id,
+        &token_hash,
+        expires_at,
+    )
+    .await
+    {
+        tracing::warn!(error = %e, "failed to store a password-reset token");
+        return;
     }
-    // Uniform response regardless of whether the account exists.
-    Ok(StatusCode::ACCEPTED)
+
+    if !state.mailer.is_enabled() {
+        return;
+    }
+    let link = format!(
+        "{}/reset-password?token={raw}",
+        state.email_base_url.trim_end_matches('/'),
+    );
+    if let Err(e) = state
+        .mailer
+        .send(mailer::password_reset(&user.email, &link))
+        .await
+    {
+        tracing::warn!(error = %e, "failed to send the password-reset email");
+    }
 }
 
 /// Reset a password with a token

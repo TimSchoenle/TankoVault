@@ -210,7 +210,12 @@ jobs:
           fetch-depth: 0
       - name: the base branch's spec
         run: git show "origin/${{ github.base_ref }}:openapi.json" > /tmp/base-openapi.json
-      - uses: oasdiff/oasdiff-action/breaking@main
+      # Pinned to a release tag, not `@main`. An action on a branch is an unreviewed code
+      # change on every run with repository write access — the same objection OPS-4.3 raised
+      # against `flaresolverr:latest`, and it applies more strongly here. `oasdiff-action` has
+      # no stable major tag (it is 0.x), so the pin is exact; Dependabot's `github-actions`
+      # ecosystem, configured in `.github/dependabot.yml`, is what moves it.
+      - uses: oasdiff/oasdiff-action/breaking@v0.1.10
         with:
           base: /tmp/base-openapi.json
           revision: openapi.json

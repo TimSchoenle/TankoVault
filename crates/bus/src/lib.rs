@@ -485,6 +485,36 @@ pub enum Disposition {
 }
 
 /// How [`consume`] treats a handler failure.
+///
+/// The delivery *count* is the budget, not the number of retries, and the two differ by one.
+/// [`consume`] hands a message back only while `delivery_count < max_deliveries`, so
+/// `max_deliveries: 1` — the [`Default`] — means the first failure is also the last, and a
+/// handler returning [`Disposition::Retry`] under it is settled immediately.
+///
+/// ```
+/// use std::time::Duration;
+/// use tankovault_bus::{ConsumePolicy, TASK_ACK_HEARTBEAT, TASK_ACK_WAIT};
+///
+/// // What the worker wants: three attempts with a widening gap.
+/// let worker = ConsumePolicy {
+///     max_deliveries: 3,
+///     backoff: |deliveries| Duration::from_secs(30 * deliveries),
+///     heartbeat: Some(TASK_ACK_HEARTBEAT),
+/// };
+/// assert_eq!((worker.backoff)(1), Duration::from_secs(30));
+/// assert_eq!((worker.backoff)(3), Duration::from_secs(90));
+///
+/// // The default retries *zero* times. This reads like a disabled policy and is the right
+/// // default: a handler whose failures are not time-fixable (a malformed payload, a deleted
+/// // row) gains nothing from redelivery except occupying the consumer.
+/// assert_eq!(ConsumePolicy::default().max_deliveries, 1);
+/// assert!(ConsumePolicy::default().heartbeat.is_none());
+///
+/// // The heartbeat has to be a fraction of the ack wait, not merely smaller than it: one lost
+/// // extension must not let the deadline lapse while the handler is still running, which is
+/// // what would turn a slow scan into a duplicate one.
+/// assert!(TASK_ACK_HEARTBEAT * 2 < TASK_ACK_WAIT);
+/// ```
 pub struct ConsumePolicy {
     /// Deliveries after which a retryable failure is settled anyway, so one poisoned message
     /// cannot occupy a consumer forever.

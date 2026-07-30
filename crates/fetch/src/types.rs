@@ -56,6 +56,42 @@ pub struct FetchResponse {
 
 impl FetchResponse {
     /// A header value by case-insensitive name.
+    ///
+    /// Case-insensitive because the name is compared against whatever casing the *provider*
+    /// sent, and HTTP/2 lowercases while HTTP/1.1 does not — so a stack that matched
+    /// case-sensitively would read `Retry-After` from one protocol version and miss it on the
+    /// other, silently disabling the backoff layer for half the fleet.
+    ///
+    /// ```
+    /// use tankovault_fetch::FetchResponse;
+    ///
+    /// let resp = FetchResponse {
+    ///     status: 429,
+    ///     url: "https://provider.test/manga/x/".to_owned(),
+    ///     headers: vec![
+    ///         ("Retry-After".to_owned(), "120".to_owned()),
+    ///         ("server".to_owned(), "cloudflare".to_owned()),
+    ///         // Providers do repeat headers. `header` answers with the first.
+    ///         ("retry-after".to_owned(), "5".to_owned()),
+    ///     ],
+    ///     body: String::new(),
+    ///     from_cache: false,
+    /// };
+    ///
+    /// assert_eq!(resp.header("retry-after"), Some("120"));
+    /// assert_eq!(resp.header("RETRY-AFTER"), Some("120"));
+    /// assert_eq!(resp.header("Server"), Some("cloudflare"));
+    /// assert_eq!(resp.header("x-absent"), None);
+    ///
+    /// // `is_success` is strictly 2xx, so a redirect is *not* success even though it carries no
+    /// // error. That looks harsh for a `304`, and is the point: `from_cache` is how a
+    /// // cache-validated response is recognised, and the stack normalises the status to the
+    /// // cached `200` before an adapter ever sees it. A `304` reaching an adapter means the
+    /// // validation path is broken, so it must not read as success.
+    /// assert!(resp.header("retry-after").is_some() && !resp.is_success());
+    /// assert!(!FetchResponse { status: 304, ..resp.clone() }.is_success());
+    /// assert!(FetchResponse { status: 204, ..resp }.is_success());
+    /// ```
     #[must_use]
     pub fn header(&self, name: &str) -> Option<&str> {
         self.headers

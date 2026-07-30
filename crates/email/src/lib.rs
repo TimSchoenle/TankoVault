@@ -71,6 +71,33 @@ impl EmailMessage {
     }
 
     /// Attach an HTML alternative body (a plain-text part is still required and sent).
+    ///
+    /// "Alternative", not "instead of". The message goes out as `multipart/alternative` with
+    /// both parts, because a text-only client — and every spam filter — reads the plain part,
+    /// and a password-reset mail that arrives blank is a support ticket.
+    ///
+    /// ```
+    /// use tankovault_email::EmailMessage;
+    ///
+    /// let msg = EmailMessage::text(
+    ///     "Reader <reader@example.com>",
+    ///     "Reset your password",
+    ///     "Open https://tankovault.test/reset?token=… to choose a new password.",
+    /// )
+    /// .with_html("<p>Open <a href=\"https://tankovault.test/reset?token=…\">this link</a>.</p>");
+    ///
+    /// // The plain part survives attaching the HTML one. Overwriting it here is the mistake
+    /// // this contract exists to prevent, and it would look correct in every HTML client.
+    /// assert!(msg.text.starts_with("Open https://"));
+    /// assert!(msg.html.is_some());
+    /// assert_eq!(msg.to, vec!["Reader <reader@example.com>".to_owned()]);
+    ///
+    /// // Interpolated values must be escaped by the caller before they get here — this type
+    /// // stores whatever it is handed. SEC-14 was a username reaching an HTML body unescaped;
+    /// // `crates/email`'s own template helpers escape, a raw `format!` does not.
+    /// let unescaped = EmailMessage::text("a@b.test", "s", "t").with_html("<p>Hi <b>bold</b></p>");
+    /// assert_eq!(unescaped.html.as_deref(), Some("<p>Hi <b>bold</b></p>"));
+    /// ```
     #[must_use]
     pub fn with_html(mut self, html: impl Into<String>) -> Self {
         self.html = Some(html.into());

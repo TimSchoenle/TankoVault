@@ -21,6 +21,60 @@ use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 /// The defaults are the scorer's own (`tankovault_matcher::Thresholds::default()`): 0.85 to
 /// attach, 0.6 to flag as a merge candidate. Raising `high` makes the matcher more conservative
 /// (more duplicate series, fewer wrong merges); lowering it does the reverse.
+///
+/// ```
+/// use tankovault_config::MatchingConfig;
+/// use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
+/// use tankovault_domain::{ContentType, SeriesId};
+///
+/// let existing = SeriesId::new();
+/// let query = Query {
+///     normalized_title: "solo leveling".to_owned(),
+///     content_type: ContentType::Unknown,
+///     release_year: None,
+///     tags: Vec::new(),
+///     authors: Vec::new(),
+/// };
+/// // An unrelated title with no corroborating signal, so the score *is* the trigram
+/// // similarity the database supplied and the bands are visible at their edges.
+/// let scoring = |similarity| Candidate {
+///     series_id: existing,
+///     normalized_title: "berserk".to_owned(),
+///     similarity,
+///     content_type: ContentType::Unknown,
+///     release_year: None,
+///     tags: Vec::new(),
+///     authors: Vec::new(),
+/// };
+///
+/// let policy = MatchingConfig::default();
+/// assert_eq!(policy.canonicalise(&query, &[scoring(0.9)]), Decision::Attach(existing));
+/// assert_eq!(policy.canonicalise(&query, &[scoring(0.3)]), Decision::Create);
+///
+/// // The middle band is the whole reason this is a policy and not a comparison: nothing is
+/// // decided automatically, the series is created *and* the pair is queued for an operator.
+/// assert!(matches!(
+///     policy.canonicalise(&query, &[scoring(0.7)]),
+///     Decision::Ambiguous { candidate, .. } if candidate == existing
+/// ));
+///
+/// // A deployment that raises `high` moves the band, which is what "configurable" has to mean
+/// // — and is exactly what ARCH-16 found was *not* true when one of the two call sites
+/// // hardcoded its thresholds. The same candidate now needs review instead of attaching.
+/// let cautious = MatchingConfig { high: 0.95, ..MatchingConfig::default() };
+/// assert!(matches!(
+///     cautious.canonicalise(&query, &[scoring(0.9)]),
+///     Decision::Ambiguous { .. }
+/// ));
+///
+/// // Boundaries are inclusive on the lower side of each band: `score == high` attaches.
+/// let exact = MatchingConfig { high: 0.9, low: 0.6, candidate_limit: 10 };
+/// assert_eq!(exact.canonicalise(&query, &[scoring(0.9)]), Decision::Attach(existing));
+///
+/// // No candidates is the same answer as no good candidate. The first source of a work has
+/// // nothing to match against, and that is not an error condition.
+/// assert_eq!(policy.canonicalise(&query, &[]), Decision::Create);
+/// ```
 #[derive(Debug, Clone, Deserialize)]
 pub struct MatchingConfig {
     /// At or above this score, attach to the existing series outright.

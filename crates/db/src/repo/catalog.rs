@@ -759,6 +759,70 @@ pub async fn upsert_chapter<'e, E: PgExecutor<'e>>(
     })
 }
 
+/// Upsert a whole chapter list in one statement, returning the numbers that were **new**.
+///
+/// The per-chapter [`upsert_chapter`] is kept for the single-chapter callers, but the ingest
+/// path must not use it: a series with two thousand chapters meant two thousand sequential
+/// round trips, each one holding open the transaction that also holds row locks on the shared
+/// `tags` and `authors` rows — so one slow series blocked every other provider's ingest.
+///
+/// Same `xmax = 0` trick as the single-row version: an inserted row has `xmax` 0, an updated
+/// one does not, so one statement gives both the idempotent upsert and the new-chapter
+/// detection that drives `chapter.discovered`.
+///
+/// `DISTINCT ON` is load-bearing. `ON CONFLICT DO UPDATE` cannot touch the same row twice in
+/// one statement (Postgres raises `21000`), and a provider listing the same chapter number
+/// twice on one page is a real and recurring occurrence — the last spelling wins, matching
+/// the row-at-a-time loop this replaces.
+pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
+    exec: E,
+    source_id: SeriesSourceId,
+    chapters: &[ChapterUpsert],
+) -> DbResult<Vec<f64>> {
+    if chapters.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let ids: Vec<Uuid> = chapters
+        .iter()
+        .map(|_| ChapterId::new().as_uuid())
+        .collect();
+    let numbers: Vec<f64> = chapters.iter().map(|c| c.number).collect();
+    let volumes: Vec<Option<i32>> = chapters.iter().map(|c| c.volume).collect();
+    let titles: Vec<Option<String>> = chapters.iter().map(|c| c.title.clone()).collect();
+    let paths: Vec<String> = chapters.iter().map(|c| c.path.clone()).collect();
+    let published: Vec<Option<OffsetDateTime>> = chapters.iter().map(|c| c.published_at).collect();
+
+    let rows = sqlx::query!(
+        "INSERT INTO chapters (id, series_source_id, number, volume, title, path, published_at) \
+         SELECT DISTINCT ON (u.number) \
+                u.id, $2, u.number::float8::numeric(10,4), u.volume, u.title, u.path, u.published_at \
+           FROM UNNEST($1::uuid[], $3::float8[], $4::int[], $5::text[], $6::text[], \
+                       $7::timestamptz[]) \
+                WITH ORDINALITY AS u(id, number, volume, title, path, published_at, ord) \
+          ORDER BY u.number, u.ord DESC \
+         ON CONFLICT (series_source_id, number) DO UPDATE \
+            SET title = EXCLUDED.title, path = EXCLUDED.path, \
+                published_at = COALESCE(EXCLUDED.published_at, chapters.published_at) \
+         RETURNING number::float8 AS \"number!\", (xmax = 0) AS \"inserted!\"",
+        &ids,
+        source_id.as_uuid(),
+        &numbers,
+        &volumes as &[Option<i32>],
+        &titles as &[Option<String>],
+        &paths,
+        &published as &[Option<OffsetDateTime>],
+    )
+    .fetch_all(exec)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .filter(|r| r.inserted)
+        .map(|r| r.number)
+        .collect())
+}
+
 /// The highest chapter number stored for a source (fast-scan comparison key).
 pub async fn max_chapter_number<'e, E: PgExecutor<'e>>(
     exec: E,
@@ -1531,13 +1595,15 @@ pub async fn ingest_series(pool: &sqlx::PgPool, scanned: ScannedSeries) -> DbRes
     )
     .await?;
 
-    let mut new_chapters = Vec::new();
-    for ch in &scanned.chapters {
-        let res = upsert_chapter(&mut *tx, source_id, ch).await?;
-        if res.inserted {
-            new_chapters.push(res.number);
-        }
-    }
+    // One statement, not one per chapter. A series with two thousand chapters used to mean
+    // two thousand sequential round trips inside this transaction — which also holds row
+    // locks on the shared `tags`/`authors` rows, so a single slow series stalled every other
+    // provider's ingest behind it.
+    let mut new_chapters = upsert_chapters(&mut *tx, source_id, &scanned.chapters).await?;
+    // The row-at-a-time loop emitted these in listing order; `RETURNING` does not promise
+    // any order. `chapter.discovered` consumers do not depend on it, but a stable order
+    // keeps the notification stream and the tests deterministic.
+    new_chapters.sort_by(f64::total_cmp);
 
     let count = i32::try_from(scanned.chapters.len()).unwrap_or(i32::MAX);
     update_source_scan(&mut *tx, source_id, &scanned.content_hash, count).await?;

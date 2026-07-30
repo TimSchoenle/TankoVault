@@ -21,13 +21,13 @@ that the audit did not.
 | Report | DONE | PARTIAL | OPEN | Other |
 | --- | --- | --- | --- | --- |
 | SECURITY (18) | 13 | 4 | 1 | — |
-| ARCHITECTURE (21) | 12 | 2 | 6 | 1 no-finding |
+| ARCHITECTURE (22) | 13 | 2 | 6 | 1 no-finding |
 | PERFORMANCE (21) | 17 | 0 | 2 | 1 wontfix, 1 no-finding |
 | TESTING (17) | 9 | 3 | 4 | 1 no-finding |
 | FRONTEND (20) | 17 | 0 | 1 | 1 wontfix, 1 no-finding |
 | BUILD_AND_OPS (41) | 27 | 4 | 4 | 1 wontfix, 5 no-finding |
 
-**95 DONE · 13 PARTIAL · 3 WONTFIX · 18 OPEN · 9 no-finding**, across 138 tracked rows.
+**96 DONE · 13 PARTIAL · 3 WONTFIX · 18 OPEN · 9 no-finding**, across 139 tracked rows.
 
 The rows below are authoritative; this summary is a convenience — and it is now a *count* of
 them rather than a hand-maintained tally, which the previous version had drifted from (it
@@ -97,7 +97,8 @@ now provides. If a future deployment gains a second internal caller, revisit thi
 | ARCH-3 | `catalog.rs` is four aggregates in one file | **OPEN** | |
 | ARCH-4 | Internal-service proxy open-coded 9+ times, collapses failures to 500 | **DONE** | `services/api/src/upstream.rs`. Adds `ApiError::BadGateway` / `GatewayTimeout`; upstream 404/409 now survive, so the documented 409 is emittable. |
 | ARCH-5 | `db/repo/tracking.rs` — seven aggregates | **OPEN** | |
-| ARCH-6 | `sync/engine.rs` — one `impl`, 22 methods, six responsibilities | **OPEN** | No longer blocked: TEST F-06's reconciliation suite is the safety net the split needed. |
+| ARCH-6 | `sync/engine.rs` — one `impl`, 22 methods, six responsibilities | **DONE** | 1,254 lines in one `impl` became `services/sync/src/engine/` — a facade with no logic over eight collaborators, each owning its slice of state: `registry` (the provider set and the one unknown-provider error), `tokens` (the `SecretBox`; nothing else in the service can now open a token), `accounts`, `conflicts`, `resolve`, `reconcile`, `push`, `enrich`. Largest module 646 lines, of which ~90 are tests. The load-bearing part is the seam the report asked for: **`engine/plan.rs` is the merge itself, pure** — `plan_series` (exclusion / first push) and `plan_merge` (the three-way merge over both fields) decide from values alone, and `reconcile.rs` only performs what they decided. Eight unit tests now exercise the merge rules with no pool and no provider behind them, including the two invariants an integration run makes hardest to see: a conflict must not advance the common ancestor, and one remote write must cover both fields. `plan_series`/`plan_merge` are deliberately two calls rather than one, so the snapshot read stays the merge path's alone and an excluded or first-push series does not pay for it (PERF-13 removed exactly such reads). `reconcile_series`'s 216 lines and its three `#[allow(...)]` are gone. Verified by the F-06 suite: all 13 reconciliation tests pass unchanged, which is what made the split checkable. Two behaviours the split forced into the open and pinned rather than changed: a first sync with no common ancestor cannot tell which side moved, so unequal values are decided by policy alone (`AskMe` queues, every other policy picks); and an imported watchlist row is not counted as a pull. |
+| ARCH-6b | Ephemeral test-Postgres containers are not reaped on Windows | **OPEN** | Not in the audit; noticed running the F-06 suite. Each `--features integration` run leaves its `postgres:17-alpine` container running (12 present after this session's run). Harmless in CI, where the runner is discarded, but a developer accumulates one per run. |
 | ARCH-7 | `sync/anilist.rs` — five concerns in one file | **OPEN** | |
 | ARCH-8 | `config/src/lib.rs` — 15 flat config aggregates | **PARTIAL** | Grew by one (`InternalAuthConfig`) plus `ConfigError::Invalid` and `is_production()`. The split is still open. |
 | ARCH-9 | (same as ARCH-4 in the report's numbering) | **DONE** | |
@@ -256,12 +257,10 @@ What is genuinely left, in the order it is worth doing:
 1. **TEST F-05 — the rest of `crates/db`.** GDPR export/erase, ingest and the new batched
    fan-out/reconciliation paths are covered now; `catalog.rs`'s read models, `sync.rs` and
    `users.rs` still hold most of the untested SQL.
-2. **ARCH-3/5/6/7/8/19 — the module splits, plus ARCH-16 step 3.** All hygiene now that ARCH-12,
-   ARCH-18 and ARCH-20 have landed. ARCH-6 (splitting `sync/engine.rs`) is worth doing first: it
-   was blocked on F-06, which is now done, and the reconciliation suite is the safety net that
-   makes the split checkable. ARCH-16's remaining half — hoisting `resolve_canonical_series` out
-   of `crates/db` so matching policy stops living in the repository layer — is the only one that
-   moves a decision rather than moving code.
+2. **ARCH-3/5/7/8/19 — the remaining module splits, plus ARCH-16 step 3.** All hygiene now that
+   ARCH-12, ARCH-18, ARCH-20 and ARCH-6 have landed. ARCH-16's remaining half — hoisting
+   `resolve_canonical_series` out of `crates/db` so matching policy stops living in the
+   repository layer — is the only one that moves a decision rather than moving code.
 3. **TEST Access — the access-control integration matrix.** Still the single highest-value test
    investment in the codebase per the audit's own roadmap.
 4. **Fuzz targets (TEST).** `cargo-fuzz` on `parse_chapter_number`, `parse_json_body` under

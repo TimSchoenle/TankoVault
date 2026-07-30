@@ -1,4 +1,4 @@
-[package]
+﻿[package]
 name = "tankovault-domain"
 version.workspace = true
 edition.workspace = true
@@ -31,7 +31,6 @@ sqlx = ["dep:sqlx"]
 
 [dev-dependencies]
 proptest = { workspace = true }
-serde_json = { workspace = true }
 
 [lints]
 workspace = true

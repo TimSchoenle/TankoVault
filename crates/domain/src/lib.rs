@@ -19,6 +19,7 @@ pub mod enums;
 pub mod features;
 pub mod ids;
 pub mod link;
+pub mod metadata_priority;
 pub mod normalize;
 pub mod pacing;
 pub mod permissions;
@@ -39,6 +40,7 @@ pub use ids::{
     SeriesSourceId, TagId, UserId,
 };
 pub use link::{ResolveError, resolve_link};
+pub use metadata_priority::{MetadataField, MetadataPriority, MetadataSource};
 pub use normalize::normalize_title;
 pub use pacing::{Pacer, PacingPolicy};
 pub use permissions::{

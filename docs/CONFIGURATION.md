@@ -284,7 +284,7 @@ that can disagree.
 | `TANKOVAULT_METADATA__ENRICH_INTERVAL_SECS` | `3600` | |
 | `TANKOVAULT_METADATA__ENRICH_BATCH` | `200` | Series per database page. |
 | `TANKOVAULT_METADATA__ENRICH_MAX_SERIES` | `500` | Upper bound per sweep. |
-| `TANKOVAULT_METADATA__PRIORITY__DESCRIPTION` | `["anilist","adapter"]` | Which source wins per field. Also `__TITLE`, `__COVER`, `__DEFAULT`. |
+| `TANKOVAULT_METADATA__PRIORITY__DESCRIPTION` | `["anilist","adapter"]` | Which source wins per field. Also `__TITLE`, `__COVER`, `__DEFAULT`. Only `anilist` and `adapter` are accepted; anything else is a startup error rather than a silently ignored entry. |
 
 ### `challenge-solver`
 

@@ -1,6 +1,6 @@
-//! # sync service (external trackers)
+﻿//! # sync service (external trackers)
 //!
-//! External-sync microservice (design Â§15, generalized to a provider registry). Owns each
+//! External-sync microservice (design Ã‚Â§15, generalized to a provider registry). Owns each
 //! provider's `OAuth2` flow, encrypts tokens at rest, and reconciles a user's remote list with
 //! the local watchlist/progress using the shared `matcher`. `AniList` is the only registered
 //! provider today; a second provider is a drop-in `ExternalProvider` implementation registered in
@@ -56,9 +56,9 @@ use mapping::ConflictPolicy;
 use provider::ExternalProvider;
 use providers::anilist::{AniListClient, DEFAULT_GRAPHQL_URL, DEFAULT_OAUTH_BASE};
 use tankovault_auth::SecretBox;
-use tankovault_config::{DatabaseConfig, MetadataPriorityConfig, TelemetryConfig};
+use tankovault_config::{DatabaseConfig, TelemetryConfig};
 use tankovault_contracts::sync::{AccountSettings, AccountStatus, AuthorizeUrl, ProviderInfo};
-use tankovault_domain::{Feature, SeriesId, UserId};
+use tankovault_domain::{Feature, MetadataPriority, SeriesId, UserId};
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -69,7 +69,7 @@ struct Config {
     metadata: MetadataConfig,
     #[serde(default = "default_bind")]
     bind_addr: String,
-    /// Interval (seconds) between scheduled reconciliation ticks (design v2 Â§B.4). `0`
+    /// Interval (seconds) between scheduled reconciliation ticks (design v2 Ã‚Â§B.4). `0`
     /// disables the loop (e.g. in tests or when a separate scheduler owns it).
     #[serde(default = "default_reconcile_interval")]
     reconcile_interval_secs: u64,
@@ -83,11 +83,11 @@ struct Config {
     /// Prometheus metrics. Togglable; disabling installs no recorder.
     #[serde(default)]
     metrics: tankovault_config::MetricsConfig,
-    /// Runtime feature flags â€” how often this replica re-reads the operator's decisions.
+    /// Runtime feature flags Ã¢â‚¬â€ how often this replica re-reads the operator's decisions.
     #[serde(default)]
     features: tankovault_config::FeaturesConfig,
     /// Shared secret every caller must present. This service's whole contract is
-    /// privileged â€” it names the subject user in the path or body â€” so an unauthenticated
+    /// privileged Ã¢â‚¬â€ it names the subject user in the path or body Ã¢â‚¬â€ so an unauthenticated
     /// caller could read or rewrite any account's sync state.
     #[serde(default)]
     internal: tankovault_config::InternalAuthConfig,
@@ -105,7 +105,7 @@ struct Config {
 struct MetadataConfig {
     /// Per-field source authority order (default: `AniList` before the adapters).
     #[serde(default)]
-    priority: MetadataPriorityConfig,
+    priority: MetadataPriority,
     /// Whether the background enrichment worker runs. On by default.
     #[serde(default = "default_enrich_enabled")]
     enrich_enabled: bool,
@@ -123,7 +123,7 @@ struct MetadataConfig {
 impl Default for MetadataConfig {
     fn default() -> Self {
         Self {
-            priority: MetadataPriorityConfig::default(),
+            priority: MetadataPriority::default(),
             enrich_enabled: default_enrich_enabled(),
             enrich_interval_secs: default_enrich_interval_secs(),
             enrich_batch: default_enrich_batch(),
@@ -202,7 +202,7 @@ where
 }
 
 /// Build the provider registry. `AniList` is the only entry today; register additional
-/// providers here as they land â€” no other wiring changes needed.
+/// providers here as they land Ã¢â‚¬â€ no other wiring changes needed.
 fn build_providers(
     cfg: AniListConfig,
 ) -> anyhow::Result<HashMap<&'static str, Box<dyn ExternalProvider>>> {
@@ -221,7 +221,7 @@ fn build_providers(
 
 /// Tokenless metadata-enrichment worker: a periodic background sweep that fills in
 /// description/cover/alternative-titles for every existing series straight from `AniList`'s
-/// public API â€” no stored user token required (design: worker queue syncing all entries).
+/// public API Ã¢â‚¬â€ no stored user token required (design: worker queue syncing all entries).
 ///
 /// Not feature-gated. It reads public metadata about the *catalogue*, not about any user, and
 /// belongs to the catalogue rather than to external sync; switching `sync.external` off should
@@ -255,7 +255,7 @@ fn spawn_enrichment_worker(
     );
 }
 
-/// Scheduled reconciliation loop (design v2 Â§B.4): pulls remote-side changes back
+/// Scheduled reconciliation loop (design v2 Ã‚Â§B.4): pulls remote-side changes back
 /// automatically, closing the reactive-push-only gap. Disabled when `interval_secs` is 0.
 fn spawn_reconciliation_loop(
     engine: &Arc<SyncEngine>,
@@ -276,8 +276,8 @@ fn spawn_reconciliation_loop(
             let features = features.clone();
             async move {
                 // Checked per tick, not at boot: this loop reaches out to third parties on
-                // every user's behalf, and an operator stopping that â€” because a provider is
-                // rate-limiting, or because a bad mapping is propagating â€” must take effect
+                // every user's behalf, and an operator stopping that Ã¢â‚¬â€ because a provider is
+                // rate-limiting, or because a bad mapping is propagating Ã¢â‚¬â€ must take effect
                 // now. The loop keeps ticking so it resumes on its own when the flag returns.
                 if !features.is_enabled(Feature::SyncExternal)
                     || !features.is_enabled(Feature::SyncScheduledPull)
@@ -359,7 +359,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Refused in *every* profile, like the API's JWT placeholder check. This key seals every
     // user's AniList access and refresh token at rest, and the published fallback was 32 zero
-    // bytes â€” a key anyone who has read `deploy/docker-compose.yml` already holds. The length
+    // bytes Ã¢â‚¬â€ a key anyone who has read `deploy/docker-compose.yml` already holds. The length
     // is enforced by `from_base64_key` itself (it decodes into a `[u8; 32]`), so the only
     // remaining hole was a well-known *value*.
     if is_placeholder_key(&cfg.anilist.token_encryption_key) {
@@ -461,7 +461,7 @@ async fn providers_list(State(state): State<AppState>) -> Json<Vec<ProviderInfo>
     Json(state.engine.registry())
 }
 
-/// `POST /v1/sync/enrich` â€” run one tokenless metadata-enrichment sweep on demand (no user
+/// `POST /v1/sync/enrich` Ã¢â‚¬â€ run one tokenless metadata-enrichment sweep on demand (no user
 /// token). Uses the configured batch/cap. Handy for ops and for kicking a fresh sweep after
 /// a bulk import rather than waiting for the periodic worker.
 async fn enrich(State(state): State<AppState>) -> Result<Json<engine::EnrichReport>, AppError> {
@@ -478,7 +478,7 @@ struct PushSeriesRequest {
     series_id: SeriesId,
 }
 
-/// Always `200`, even when every provider push failed â€” failures are reported per-provider in
+/// Always `200`, even when every provider push failed Ã¢â‚¬â€ failures are reported per-provider in
 /// the body (and recorded to `external_accounts.last_error`), never surfaced as an HTTP error,
 /// since this is called fire-and-forget from the API.
 async fn push_series(
@@ -517,7 +517,7 @@ struct UserRequest {
     user_id: UserId,
 }
 
-/// `GET /v1/sync/{provider}/status/{user_id}` â€” always `200`; `linked: false` when unlinked.
+/// `GET /v1/sync/{provider}/status/{user_id}` Ã¢â‚¬â€ always `200`; `linked: false` when unlinked.
 async fn status(
     State(state): State<AppState>,
     Path((provider, user_id)): Path<(String, UserId)>,
@@ -570,7 +570,7 @@ async fn push(
     Ok(Json(report))
 }
 
-/// `GET /v1/sync/{provider}/settings/{user_id}` â€” the account's automatic-sync settings.
+/// `GET /v1/sync/{provider}/settings/{user_id}` Ã¢â‚¬â€ the account's automatic-sync settings.
 async fn get_settings(
     State(state): State<AppState>,
     Path((provider, user_id)): Path<(String, UserId)>,
@@ -587,7 +587,7 @@ struct SettingsPatch {
     conflict_policy: Option<String>,
 }
 
-/// `PATCH /v1/sync/{provider}/settings/{user_id}` â€” update automatic-sync settings.
+/// `PATCH /v1/sync/{provider}/settings/{user_id}` Ã¢â‚¬â€ update automatic-sync settings.
 async fn patch_settings(
     State(state): State<AppState>,
     Path((provider, _user_id)): Path<(String, UserId)>,
@@ -605,7 +605,7 @@ async fn patch_settings(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// `GET /v1/sync/conflicts/{user_id}` â€” the user's pending conflicts across all providers.
+/// `GET /v1/sync/conflicts/{user_id}` Ã¢â‚¬â€ the user's pending conflicts across all providers.
 async fn list_conflicts(
     State(state): State<AppState>,
     Path(user_id): Path<UserId>,
@@ -624,7 +624,7 @@ struct Resolved {
     resolved: bool,
 }
 
-/// `POST /v1/sync/conflicts/{id}/resolve` â€” apply a user's chosen resolution.
+/// `POST /v1/sync/conflicts/{id}/resolve` Ã¢â‚¬â€ apply a user's chosen resolution.
 async fn resolve_conflict(
     State(state): State<AppState>,
     Path(id): Path<uuid::Uuid>,
@@ -647,7 +647,7 @@ struct HistoryQuery {
     page: Option<i64>,
 }
 
-/// `GET /v1/sync/history/{user_id}` â€” a page of the user's sync history.
+/// `GET /v1/sync/history/{user_id}` Ã¢â‚¬â€ a page of the user's sync history.
 async fn list_history(
     State(state): State<AppState>,
     Path(user_id): Path<UserId>,
@@ -673,8 +673,8 @@ mod route_feature_tests {
     /// Every suffix in the shared declaration is actually gated under this tier's prefix.
     ///
     /// The mirror of the same test in `services/api`. The two tiers used to keep independent
-    /// tables and had already drifted â€” the API gated `/conflicts` and `/history` but not
-    /// `/push-series` â€” with nothing asserting they agreed (ARCH-18).
+    /// tables and had already drifted Ã¢â‚¬â€ the API gated `/conflicts` and `/history` but not
+    /// `/push-series` Ã¢â‚¬â€ with nothing asserting they agreed (ARCH-18).
     #[test]
     fn the_shared_sync_declaration_is_applied_under_this_tier_s_prefix() {
         let features = route_features();

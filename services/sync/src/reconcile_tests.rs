@@ -7,7 +7,7 @@
 //! tested was the far larger half that wires those decisions to the database and the provider:
 //! which side actually gets written, how many writes are issued, whether the common-ancestor
 //! snapshot advances, and whether a queued conflict survives to the next run. Every one of
-//! those is a silent-data-loss surface — a wrong branch overwrites a reader's position with no
+//! those is a silent-data-loss surface â€” a wrong branch overwrites a reader's position with no
 //! error anywhere.
 //!
 //! The engine is driven through its real entry points ([`SyncEngine::pull`] /
@@ -24,10 +24,11 @@ use async_trait::async_trait;
 use time::OffsetDateTime;
 
 use tankovault_auth::SecretBox;
-use tankovault_config::{MatchingConfig, MetadataPriorityConfig};
+use tankovault_config::MatchingConfig;
 use tankovault_db::repo::catalog::{ScannedSeries, SeriesUpsert, ingest_series};
 use tankovault_db::repo::providers::{self, NewProvider};
 use tankovault_db::repo::{sync, tracking};
+use tankovault_domain::MetadataPriority;
 use tankovault_domain::{
     AccountStatus, AdapterKind, ContentType, Politeness, SeriesId, SeriesStatus, UserId,
     WatchStatus, normalize_title,
@@ -41,7 +42,7 @@ use crate::provider::{ExternalProvider, OAuthTokens, RemoteEntry, RemoteMetadata
 /// The provider slug every test in this module links.
 const SLUG: &str = "fake";
 
-/// One recorded `save_entry` call — the only remote side effect the engine has.
+/// One recorded `save_entry` call â€” the only remote side effect the engine has.
 #[derive(Debug, Clone, PartialEq)]
 struct RemoteWrite {
     external_id: String,
@@ -198,7 +199,7 @@ impl Fixture {
             db.pool.clone(),
             SecretBox::new(&[7u8; 32]),
             ConflictPolicy::NewestWins,
-            serde_json::from_value::<MetadataPriorityConfig>(serde_json::json!({}))
+            serde_json::from_value::<MetadataPriority>(serde_json::json!({}))
                 .expect("default metadata priority"),
             &MatchingConfig::default(),
             providers_map,
@@ -321,7 +322,7 @@ mod reconcile {
 
     #[tokio::test]
     async fn excluded_series_touches_neither_side() {
-        // §A.5: a series the user excluded from sync must not be read *or* written by either
+        // Â§A.5: a series the user excluded from sync must not be read *or* written by either
         // direction. The exclusion is checked before any merge, so a divergence that would
         // otherwise conflict has to stay divergent.
         let f = Fixture::spawn().await;
@@ -386,7 +387,7 @@ mod reconcile {
     #[tokio::test]
     async fn only_the_remote_moved_so_the_local_row_is_pulled() {
         // Ancestor says both sides last agreed at 5. Only the remote advanced, so this is not a
-        // conflict and the policy is irrelevant — `LocalWins` must still pull.
+        // conflict and the policy is irrelevant â€” `LocalWins` must still pull.
         let f = Fixture::spawn().await;
         f.local_state(WatchStatus::Reading, 5.0).await;
         f.map("m1").await;
@@ -445,7 +446,7 @@ mod reconcile {
     #[tokio::test]
     async fn ask_me_conflict_queues_and_leaves_the_ancestor_alone() {
         // The highest-value assertion in this module. Under `AskMe` a genuine conflict must
-        // write to *neither* side, and — critically — must not advance the common-ancestor
+        // write to *neither* side, and â€” critically â€” must not advance the common-ancestor
         // snapshot. If it did, the next run would see "nothing changed" and the queued conflict
         // would become unresolvable silently, with one side's progress lost.
         let f = Fixture::spawn().await;
@@ -523,7 +524,7 @@ mod reconcile {
     async fn a_first_sync_imports_the_remote_status_without_counting_a_pull_twice() {
         // No local watchlist row: the entry is imported at the remote's status so the status
         // merge has something meaningful to compare. The import must not then *also* be
-        // reported as a pulled status change — `imported` suppresses exactly that double count.
+        // reported as a pulled status change â€” `imported` suppresses exactly that double count.
         let f = Fixture::spawn().await;
         f.map("m1").await;
         f.set_list(vec![remote_entry("m1", WatchStatus::Completed, 0.0, STALE)]);
@@ -542,7 +543,7 @@ mod reconcile {
     async fn two_remote_ids_resolving_to_one_series_reconcile_it_once() {
         // Two distinct remote works whose titles both match one local series. Reconciling the
         // series twice in one run would replay the merge against a second, divergent remote
-        // value — the flip-flop the `handled_series` guard exists to prevent. Exactly one
+        // value â€” the flip-flop the `handled_series` guard exists to prevent. Exactly one
         // remote write may be issued, and it must carry the first entry's id.
         let f = Fixture::spawn().await;
         f.local_state(WatchStatus::Reading, 7.0).await;

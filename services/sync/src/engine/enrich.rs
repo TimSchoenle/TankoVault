@@ -11,11 +11,10 @@ use std::sync::Arc;
 use serde::Serialize;
 use time::OffsetDateTime;
 
-use tankovault_config::{MetadataPriorityConfig, SOURCE_ADAPTER, SOURCE_ANILIST};
 use tankovault_db::PgPool;
 use tankovault_db::repo::catalog::{MetadataEnrichment, SeriesEnrichmentRow};
 use tankovault_db::repo::{catalog, sync};
-use tankovault_domain::normalize_title;
+use tankovault_domain::{MetadataField, MetadataPriority, MetadataSource, normalize_title};
 
 use super::registry::ProviderRegistry;
 use crate::provider::RemoteMetadata;
@@ -36,14 +35,14 @@ pub(crate) struct Enricher {
     pool: PgPool,
     registry: Arc<ProviderRegistry>,
     /// Which source has the final say per metadata field (default: `AniList` over adapters).
-    metadata_priority: MetadataPriorityConfig,
+    metadata_priority: MetadataPriority,
 }
 
 impl Enricher {
     pub(crate) const fn new(
         pool: PgPool,
         registry: Arc<ProviderRegistry>,
-        metadata_priority: MetadataPriorityConfig,
+        metadata_priority: MetadataPriority,
     ) -> Self {
         Self {
             pool,
@@ -154,17 +153,17 @@ impl Enricher {
         // Description/cover follow the configured priority: the AniList value versus the
         // value the scraping adapters already stored on the row.
         let description = self.metadata_priority.resolve(
-            "description",
+            MetadataField::Description,
             &[
-                (SOURCE_ANILIST, meta.description.clone()),
-                (SOURCE_ADAPTER, row.description.clone()),
+                (MetadataSource::AniList, meta.description.clone()),
+                (MetadataSource::Adapter, row.description.clone()),
             ],
         );
         let cover = self.metadata_priority.resolve(
-            "cover",
+            MetadataField::Cover,
             &[
-                (SOURCE_ANILIST, meta.cover_url.clone()),
-                (SOURCE_ADAPTER, row.cover_url.clone()),
+                (MetadataSource::AniList, meta.cover_url.clone()),
+                (MetadataSource::Adapter, row.cover_url.clone()),
             ],
         );
 

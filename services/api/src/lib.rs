@@ -126,9 +126,18 @@ pub fn route_features() -> RouteFeatures {
         .gate("/v1/admin/privacy", Feature::PrivacyRequests)
         // --- tracking ---
         .gate("/v1/me/watchlist", Feature::TrackingWatchlist)
+        // One rule, covering the whole progress family — the per-chapter write
+        // (`PUT /v1/me/progress/{series_id}/chapters/{number}`) and the bulk mark-read
+        // (`POST /v1/me/progress/{series_id}/mark-read-to`) both sit under this prefix.
+        //
+        // **Two further rules used to sit here**, `/v1/me/chapter-progress` and
+        // `/v1/me/mark-read-to`, and neither has ever been a route: both are the *tails* of the
+        // paths above, written as if they were top-level. They are deleted rather than left,
+        // because a rule that gates nothing while looking like it gates something is how the
+        // next person concludes their endpoint is already covered. Nothing was ungated — this
+        // prefix already covered both — and nothing in the build could have said so, which is
+        // why `feature_gating.rs::every_gated_prefix_still_matches_a_published_route` exists.
         .gate("/v1/me/progress", Feature::TrackingProgress)
-        .gate("/v1/me/chapter-progress", Feature::TrackingProgress)
-        .gate("/v1/me/mark-read-to", Feature::TrackingProgress)
         .gate("/v1/me/feed", Feature::TrackingFeed)
         .gate("/v1/me/continue", Feature::TrackingFeed)
         .gate("/v1/me/stats", Feature::TrackingStats)

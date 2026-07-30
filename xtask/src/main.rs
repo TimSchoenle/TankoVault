@@ -7,12 +7,17 @@
 //! - `xtask openapi` — regenerate `openapi.json` (the canonical spec) and the typed Rust
 //!   API client (`crates/api-client/src/lib.rs`) from the api service's `utoipa` schemas via
 //!   `progenitor`. No database needed.
+//! - `xtask coverage-ratchet [report.json]` — fail if line coverage has dropped below the
+//!   floor committed in `.github/coverage-floor.txt`. Reads a `cargo llvm-cov report --json`
+//!   document (default `target/llvm-cov/coverage.json`); runs no tests itself. No database.
 //! - `xtask sqlx-prepare [--check]` — regenerate (or verify, with `--check`) the committed
 //!   sqlx offline query cache (`.sqlx/`) so the compile-time-checked query macros in
 //!   `tankovault-db` build without a live database. Wraps `cargo sqlx prepare` (sqlx-cli).
 //!
 //! `migrate`/`reset`/`seed`/`sqlx-prepare` read `DATABASE_URL` from the environment;
 //! `openapi` does not.
+
+mod coverage;
 
 use progenitor_impl::{GenerationSettings, Generator, InterfaceStyle, TypePatch};
 
@@ -22,6 +27,20 @@ async fn main() -> anyhow::Result<()> {
 
     if cmd == "install-hooks" {
         return install_hooks();
+    }
+
+    // The coverage ratchet. Reads the report `cargo llvm-cov` just wrote and compares it
+    // against the committed floor; needs no database and no network.
+    if cmd == "coverage-ratchet" {
+        let report = std::env::args()
+            .nth(2)
+            .unwrap_or_else(|| "target/llvm-cov/coverage.json".to_owned());
+        return coverage::run(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .expect("xtask sits directly under the workspace root"),
+            std::path::Path::new(&report),
+        );
     }
 
     if cmd == "openapi" {

@@ -390,6 +390,19 @@ impl RouteFeatures {
     pub fn declared_features(&self) -> HashSet<Feature> {
         self.rules.iter().map(|r| r.feature).collect()
     }
+
+    /// Every rule as a `(prefix, feature)` pair, longest prefix first.
+    ///
+    /// The companion to [`Self::declared_features`], and for the drift in the other direction:
+    /// that answers "is this feature gating anything?", this answers "does this rule still
+    /// match anything?". The table is keyed on path *strings*, so a route renamed in a handler
+    /// annotation leaves its rule behind — silently ungating the route while leaving a rule
+    /// that matches nothing, which is the worse of the two failures because the gate looks
+    /// present. `services/api/tests/feature_gating.rs` checks the pairs against the published
+    /// document; nothing inside this crate can, since the paths are the consumer's.
+    pub fn rules(&self) -> impl Iterator<Item = (&str, Feature)> {
+        self.rules.iter().map(|r| (r.prefix.as_str(), r.feature))
+    }
 }
 
 /// The mounted gate: the flag snapshot plus the route table.

@@ -282,14 +282,23 @@ jobs:
           RUSTUP_TOOLCHAIN: "1.85"
         run: cargo check --workspace --locked
 
-  # Measurement only, with no threshold yet: the audit's finding is that coverage is unevenly
-  # distributed (the 10 largest modules hold 11 tests across 9,600 LOC), and a number nobody
-  # has seen is not something to gate on. Add a ratchet once there is a baseline to ratchet.
+  # A **ratchet**, not a target. The audit's finding (TESTING F-10) is that coverage is
+  # unevenly distributed — the ten largest modules held eleven tests between them — and a
+  # target percentage answers the wrong question while inviting the wrong fix: tests written
+  # to move a number. A floor answers "did this change make it worse", which is the question
+  # that can be enforced honestly on a baseline that is what it is.
+  #
+  # The floor lives in `.github/coverage-floor.txt`, which explains itself to whoever has to
+  # change it, and the comparison is `xtask coverage-ratchet` rather than shell in this file so
+  # it has tests of its own. No `continue-on-error`: a gate that cannot fail is the OPS-8.2
+  # defect — a knob an operator believes in that does nothing.
+  #
+  # The measurement excludes `--features integration` on purpose, matching every other fast
+  # job. See the floor file for what that means and for the one legitimate reason to lower it.
   coverage:
-    name: coverage (report only)
+    name: coverage ratchet
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -301,7 +310,12 @@ jobs:
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
       - name: cargo llvm-cov
-        run: cargo llvm-cov --workspace --all-targets --summary-only
+        run: |
+          mkdir -p target/llvm-cov
+          cargo llvm-cov --workspace --all-targets --summary-only
+          cargo llvm-cov report --json --summary-only             --output-path target/llvm-cov/coverage.json
+      - name: compare against the committed floor
+        run: cargo run -p xtask -- coverage-ratchet
 
   deny:
     name: cargo-deny

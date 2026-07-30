@@ -1,0 +1,23 @@
+# Line-coverage floor for the `coverage` CI job, in per cent.
+#
+# Enforced by `cargo run -p xtask -- coverage-ratchet`. One number; `#` comments and blank
+# lines are ignored.
+#
+# WHAT IT MEASURES. The job runs `cargo llvm-cov --workspace --all-targets` **without**
+# `--features integration`, the same set every other fast job builds. So this is a floor on
+# what the *offline* suite reaches, and it deliberately excludes the 118 `crates/db`, 86
+# `services/api` and 55 `services/sync` integration tests, which need Docker and about fifteen
+# minutes of migrations.
+#
+# WHEN TO LOWER IT. There is one legitimate reason: code moved into a module the integration
+# suites cover, so this number fell while the code got no less tested. Lower it in the same
+# commit as the move and say so in the message.
+#
+# WHEN TO RAISE IT. Whenever the measured value has drifted a couple of points above it. The
+# job prints the headroom and suggests a new value once there is enough. A ratchet that only
+# ever holds its original line stops being a ratchet.
+#
+# Baseline measured 2026-07-30 at 24.85% (regions 29.26%, functions 24.08%), set one point
+# below to absorb `proptest`'s entropy-seeded runs — the one source of run-to-run variation in
+# an otherwise deterministic measurement.
+23.8

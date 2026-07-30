@@ -34,6 +34,7 @@ pub struct TestConfig {
     mailer: Arc<dyn EmailService>,
     rate_limit: RateLimitConfig,
     cookie_secure: bool,
+    features: FeatureGate,
 }
 
 impl Default for TestConfig {
@@ -46,6 +47,7 @@ impl Default for TestConfig {
             // previous `false` meant every cookie assertion in the suite was checking the
             // local-HTTP development spelling.
             cookie_secure: true,
+            features: FeatureGate::defaults(),
         }
     }
 }
@@ -82,6 +84,19 @@ impl TestConfig {
     #[must_use]
     pub fn with_insecure_cookies(mut self) -> Self {
         self.cookie_secure = false;
+        self
+    }
+
+    /// Switch `disabled` off, as an operator would on the feature-flag page.
+    ///
+    /// The harness pinned `FeatureGate::defaults()` before this existed, so **no test could
+    /// drive a route whose feature is off** (TESTING F-09). `flags.rs` has thirteen unit tests
+    /// on the resolution logic, and none of them proves the layer is actually *mounted* on the
+    /// API's router, or that a real request to a real path gets the documented `404` — which
+    /// is the half a unit test cannot reach.
+    #[must_use]
+    pub fn with_features_disabled(mut self, disabled: &[tankovault_domain::Feature]) -> Self {
+        self.features = FeatureGate::with_disabled(disabled);
         self
     }
 }
@@ -142,7 +157,7 @@ impl TestApp {
             bus: None,
             stream_tickets: stream_tickets.clone(),
             audit: audit.clone(),
-            features: FeatureGate::defaults(),
+            features: cfg.features.clone(),
             cookie_secure: cfg.cookie_secure,
             mailer: cfg.mailer,
             email_base_url: "http://localhost".to_owned(),

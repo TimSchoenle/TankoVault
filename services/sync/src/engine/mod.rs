@@ -169,7 +169,7 @@ impl SyncEngine {
         slug: &str,
         user_id: UserId,
         auto_sync_enabled: Option<bool>,
-        conflict_policy: Option<&str>,
+        conflict_policy: Option<ConflictPolicy>,
     ) -> anyhow::Result<()> {
         self.accounts
             .update_settings(slug, user_id, auto_sync_enabled, conflict_policy)

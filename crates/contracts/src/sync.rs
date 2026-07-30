@@ -39,6 +39,110 @@ pub struct AccountStatus {
     pub last_synced_at: Option<String>,
 }
 
+/// How to settle a local/remote disagreement when a series exists on both sides
+/// (design v2 §B.3).
+///
+/// # Why this is here rather than in `services/sync`
+///
+/// It was a `pub(crate)` enum in the sync service and a **bare string** on the wire, which put
+/// the vocabulary in three places that nothing connected: the service's enum, a prose list in
+/// this file's doc comment, and a closed enumeration the frontend maintained by hand
+/// (FRONTEND F10). A policy added to the service would have compiled everywhere and then
+/// silently failed to appear in the picker; a token misspelled in the frontend would have been
+/// rejected by the service at the far end of a round trip, if at all. Declaring it once here —
+/// where `utoipa` publishes it, `progenitor` generates it and the frontend consumes the
+/// generated form — makes the compiler the connection in both directions.
+///
+/// The JSON representation is unchanged: `snake_case`, the same four tokens the wire always
+/// carried. What changed is that the *schema* now says so, so an unknown token is a `422` at
+/// the edge instead of a value that reaches the merge and is quietly read as `newest_wins`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictPolicy {
+    /// Local progress/status is authoritative.
+    LocalWins,
+    /// The remote (`AniList`) value is authoritative.
+    RemoteWins,
+    /// Whichever side was updated most recently wins.
+    #[default]
+    NewestWins,
+    /// Genuine conflicts are queued for the user to resolve rather than auto-picked.
+    AskMe,
+}
+
+impl ConflictPolicy {
+    /// Every policy, in the order a picker should offer them.
+    ///
+    /// Hand-listed because Rust cannot enumerate an enum's variants without a derive macro.
+    /// [`ConflictPolicy::as_str`]'s exhaustive `match` is what forces a new variant to be
+    /// noticed here — it fails to compile until an arm is added — and
+    /// `every_policy_is_listed_once_and_round_trips` fails until the variant reaches this
+    /// array too. Everything else about the vocabulary is derived from these two, so there is
+    /// no third place to keep in step.
+    pub const ALL: [Self; 4] = [
+        Self::LocalWins,
+        Self::RemoteWins,
+        Self::NewestWins,
+        Self::AskMe,
+    ];
+
+    /// The wire and persistence token, identical to the `serde` representation.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::LocalWins => "local_wins",
+            Self::RemoteWins => "remote_wins",
+            Self::NewestWins => "newest_wins",
+            Self::AskMe => "ask_me",
+        }
+    }
+}
+
+impl std::fmt::Display for ConflictPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// A policy token that names nothing.
+///
+/// Carries the offending token: the value comes from a database column or a request body, so
+/// the operator reading the log needs to know *which* string was rejected.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownConflictPolicy(pub String);
+
+impl std::fmt::Display for UnknownConflictPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "unknown conflict policy `{}`; expected one of {}",
+            self.0,
+            ConflictPolicy::ALL
+                .iter()
+                .map(|p| p.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
+impl std::error::Error for UnknownConflictPolicy {}
+
+impl std::str::FromStr for ConflictPolicy {
+    type Err = UnknownConflictPolicy;
+
+    /// Derived from [`ConflictPolicy::ALL`] and [`ConflictPolicy::as_str`] rather than written
+    /// as a second `match`, so parsing is the exact inverse of rendering by construction. The
+    /// previous implementation was a hand-written `match` with a `_ => NewestWins` arm, which
+    /// is how a typo became a silent policy change rather than an error.
+    fn from_str(token: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|p| p.as_str() == token)
+            .ok_or_else(|| UnknownConflictPolicy(token.to_owned()))
+    }
+}
+
 /// An account's persisted automatic-sync settings (design v2 §B.6/§B.8).
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AccountSettings {
@@ -46,9 +150,8 @@ pub struct AccountSettings {
     pub linked: bool,
     /// Whether the background engine syncs this account without being asked.
     pub auto_sync_enabled: bool,
-    /// How to settle a local/remote disagreement — one of `local_wins`, `remote_wins`,
-    /// `newest_wins`, `ask_me`.
-    pub conflict_policy: String,
+    /// How to settle a local/remote disagreement.
+    pub conflict_policy: ConflictPolicy,
     /// Conflicts awaiting the user's decision, i.e. the badge count on the Sync panel.
     pub pending_conflicts: i64,
 }
@@ -135,4 +238,66 @@ pub const fn sync_route_features() -> &'static [(&'static str, Feature)] {
         ("/conflicts", Feature::SyncConflictReview),
         ("/history", Feature::SyncHistory),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ConflictPolicy, UnknownConflictPolicy};
+
+    /// `ALL` is the only hand-maintained part of the vocabulary, so this is what stops it
+    /// drifting from the `match` in `as_str`: every entry must be distinct, and every entry
+    /// must survive `as_str` → `from_str`. A variant added to `as_str` but forgotten here
+    /// leaves the picker short; one added here but not to `as_str` cannot compile.
+    #[test]
+    fn every_policy_is_listed_once_and_round_trips() {
+        for policy in ConflictPolicy::ALL {
+            assert_eq!(
+                policy.as_str().parse::<ConflictPolicy>(),
+                Ok(policy),
+                "`{policy}` does not survive its own token"
+            );
+            assert_eq!(
+                ConflictPolicy::ALL.iter().filter(|p| **p == policy).count(),
+                1,
+                "`{policy}` is listed more than once in ConflictPolicy::ALL"
+            );
+        }
+    }
+
+    /// The regression this type exists for. The sync service used to parse with a
+    /// `_ => NewestWins` arm and the frontend with a `_ => NewestWins` arm of its own, so a
+    /// misspelled policy was not an error anywhere — it silently became "newest wins", which
+    /// is the one policy that can overwrite a user's local progress without asking.
+    #[test]
+    fn an_unknown_token_is_an_error_rather_than_a_default() {
+        let err = "newest-wins".parse::<ConflictPolicy>().unwrap_err();
+        assert_eq!(err, UnknownConflictPolicy("newest-wins".to_owned()));
+        assert!(
+            err.to_string().contains("newest_wins"),
+            "the error must name the accepted set, or an operator reading a log cannot act \
+             on it: {err}"
+        );
+    }
+
+    /// The token is the `serde` representation, not a second spelling of it. If they diverge,
+    /// a value written by `as_str` into the database stops deserializing off the wire.
+    #[test]
+    fn the_token_is_the_serde_representation() {
+        for policy in ConflictPolicy::ALL {
+            let json = serde_json::to_string(&policy).expect("policies serialize");
+            assert_eq!(json, format!("\"{}\"", policy.as_str()));
+            assert_eq!(
+                serde_json::from_str::<ConflictPolicy>(&json).expect("policies deserialize"),
+                policy
+            );
+        }
+    }
+
+    /// The default is load-bearing: an account with no persisted policy and a service with no
+    /// configured seed both land here, and `AskMe` would queue every disagreement while
+    /// `LocalWins`/`RemoteWins` would silently pick a side.
+    #[test]
+    fn the_default_is_newest_wins() {
+        assert_eq!(ConflictPolicy::default(), ConflictPolicy::NewestWins);
+    }
 }

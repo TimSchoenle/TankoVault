@@ -310,6 +310,17 @@ pub struct AdminPrivacyRequestView {
     /// SQL against `now()` so the queue cannot disagree with itself about what is late
     /// depending on when a client's clock says it rendered.
     pub overdue: bool,
+    /// Whether fulfilling this request means disclosing the subject's data export, i.e.
+    /// whether the queue should offer the "release export" action on this row.
+    ///
+    /// Derived server-side from `RequestKind::needs_export` for the same reason `overdue` is
+    /// computed in SQL: the console used to re-derive it from `kind` in its own `match`
+    /// (FRONTEND F10), so the set of kinds that disclose an export lived in two places with
+    /// nothing connecting them — and the one the operator sees is the one that decides which
+    /// button appears. The server refuses the call either way, so the divergence would have
+    /// shown as a button that does nothing rather than as a disclosure; still a bug, and one
+    /// no test could reach.
+    pub needs_export: bool,
 }
 
 /// What the control plane answers when a scan is planned: the runs it created.

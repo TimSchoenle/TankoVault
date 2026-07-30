@@ -1,7 +1,6 @@
 //! The account lifecycle: OAuth linking, unlinking, the status card, and the per-account
 //! automatic-sync settings including the effective conflict policy (design v2 §B.1/§B.6).
 
-use anyhow::anyhow;
 use std::sync::Arc;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -111,13 +110,13 @@ impl AccountService {
             Some(a) => AccountSettings {
                 linked: true,
                 auto_sync_enabled: a.auto_sync_enabled,
-                conflict_policy: a.conflict_policy,
+                conflict_policy: Self::persisted_policy(&a.conflict_policy),
                 pending_conflicts: pending,
             },
             None => AccountSettings {
                 linked: false,
                 auto_sync_enabled: false,
-                conflict_policy: self.default_policy.as_str().to_owned(),
+                conflict_policy: self.default_policy,
                 pending_conflicts: pending,
             },
         })
@@ -139,34 +138,85 @@ impl AccountService {
             return p;
         }
         match sync::get_account(&self.pool, user_id, slug).await {
-            Ok(Some(a)) => ConflictPolicy::parse(&a.conflict_policy),
+            Ok(Some(a)) => Self::persisted_policy(&a.conflict_policy),
             _ => self.default_policy,
         }
     }
 
-    /// Update the account's automatic-sync settings (design v2 §B.6). An unknown policy token
-    /// is rejected so a bad value can never be persisted.
+    /// A policy token read back out of the database.
+    ///
+    /// The column is `text`, so this is the one place a value can arrive that the type system
+    /// did not vouch for — a row written before the vocabulary existed, or by hand. Falling
+    /// back to the service default is deliberate: refusing to sync an account because one
+    /// settings column is unreadable is worse than syncing it under the default policy. What
+    /// is *not* deliberate is doing it silently, which is what the old `_ => NewestWins` parse
+    /// arm did at every call site, so this logs.
+    pub(crate) fn persisted_policy(token: &str) -> ConflictPolicy {
+        token.parse().unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "unreadable persisted conflict policy; using the default");
+            ConflictPolicy::default()
+        })
+    }
+
+    /// Update the account's automatic-sync settings (design v2 §B.6).
+    ///
+    /// The policy arrives already parsed, so "an unknown token can never be persisted" is now
+    /// a property of the type rather than a check this function performs — the request is
+    /// rejected at the edge, by `serde`, before any handler runs.
     pub(crate) async fn update_settings(
         &self,
         slug: &str,
         user_id: UserId,
         auto_sync_enabled: Option<bool>,
-        conflict_policy: Option<&str>,
+        conflict_policy: Option<ConflictPolicy>,
     ) -> anyhow::Result<()> {
         self.registry.get(slug)?;
-        if let Some(p) = conflict_policy {
-            if ConflictPolicy::parse(p).as_str() != p {
-                return Err(anyhow!("unknown conflict policy: {p}"));
-            }
-        }
         sync::update_account_settings(
             &self.pool,
             user_id,
             slug,
             auto_sync_enabled,
-            conflict_policy,
+            conflict_policy.map(ConflictPolicy::as_str),
         )
         .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AccountService, ConflictPolicy};
+
+    /// A token written by this service always reads back as itself. The persistence column is
+    /// `text`, so nothing but this pairing keeps the write and the read in agreement.
+    #[test]
+    fn a_persisted_token_reads_back_as_the_policy_that_wrote_it() {
+        for policy in ConflictPolicy::ALL {
+            assert_eq!(
+                AccountService::persisted_policy(policy.as_str()),
+                policy,
+                "`{policy}` does not survive a round trip through the settings column"
+            );
+        }
+    }
+
+    /// The one place a bad token is *tolerated* rather than refused, and the reason is that the
+    /// alternative is worse: a row written before the vocabulary existed would otherwise make
+    /// the account unsyncable rather than merely unconfigured.
+    ///
+    /// Note what this does **not** cover: the request path. An unknown policy in a `PATCH`
+    /// body is now rejected by `serde` before `update_settings` is reached, so this fallback
+    /// can no longer be a route by which a bad value is stored — which is what made the old
+    /// `_ => NewestWins` parse arm a silent policy change rather than an error.
+    #[test]
+    fn an_unreadable_persisted_token_falls_back_to_the_default() {
+        assert_eq!(
+            AccountService::persisted_policy("newest-wins"),
+            ConflictPolicy::default()
+        );
+        assert_eq!(
+            AccountService::persisted_policy(""),
+            ConflictPolicy::default()
+        );
     }
 }

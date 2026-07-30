@@ -374,6 +374,9 @@ impl IntoView for repo::gdpr::AdminRequestRow {
 
     fn into_view(self) -> Self::View {
         admin::AdminPrivacyRequestView {
+            // Read before `request` is moved into the view: the kind is what decides this, and
+            // `RequestKind::needs_export` is the one definition of it (FRONTEND F10).
+            needs_export: self.request.kind.needs_export(),
             request: self.request.into_view(),
             user_id: self.user_id,
             username: self.username,

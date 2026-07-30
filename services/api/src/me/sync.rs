@@ -8,7 +8,8 @@ use axum::extract::{Path, Query, State};
 use serde::Deserialize;
 use std::fmt::Write as _;
 use tankovault_contracts::sync::{
-    AccountSettings, AccountStatus, AuthorizeUrl, ConflictView, HistoryView, ProviderInfo,
+    AccountSettings, AccountStatus, AuthorizeUrl, ConflictPolicy, ConflictView, HistoryView,
+    ProviderInfo,
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -161,9 +162,14 @@ pub async fn sync_callback(
 
 #[derive(Debug, Deserialize, Default, ToSchema)]
 pub struct SyncOpts {
-    /// `local_wins` | `remote_wins` | `newest_wins`; omitted uses the service default.
+    /// Overrides the account's own conflict policy for this run; omitted uses it.
+    ///
+    /// Typed rather than a bare string since FRONTEND F10: the sync service's request body
+    /// has always been a `ConflictPolicy`, so a token this proxy accepted and that one did not
+    /// used to fail one hop downstream, as a `502` with no useful detail. Now the two name the
+    /// same type and the rejection happens here, as a `422` that says which values are legal.
     #[serde(default)]
-    pub policy: Option<String>,
+    pub policy: Option<ConflictPolicy>,
 }
 
 /// Push local state to a provider
@@ -264,8 +270,11 @@ pub async fn sync_settings(
 pub struct SyncSettingsPatch {
     #[serde(default)]
     pub auto_sync_enabled: Option<bool>,
+    /// The account's new conflict policy; omitted leaves it unchanged.
+    ///
+    /// See [`SyncOpts::policy`] for why this is typed rather than a bare string.
     #[serde(default)]
-    pub conflict_policy: Option<String>,
+    pub conflict_policy: Option<ConflictPolicy>,
 }
 
 /// Update automatic-sync settings

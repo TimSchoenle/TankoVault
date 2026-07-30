@@ -215,12 +215,11 @@ proptest! {
     fn sync_account_settings_survive_the_wire(
         linked in any::<bool>(),
         auto_sync_enabled in any::<bool>(),
-        conflict_policy in prop::sample::select(vec![
-            "local_wins".to_owned(),
-            "remote_wins".to_owned(),
-            "newest_wins".to_owned(),
-            "ask_me".to_owned(),
-        ]),
+        // Drawn from `ConflictPolicy::ALL` rather than from a list of token literals. The
+        // literals were this test's own third copy of the vocabulary — the very drift the
+        // typed policy exists to remove — and a policy added to the enum would not have been
+        // exercised here at all.
+        conflict_policy in prop::sample::select(sync::ConflictPolicy::ALL.to_vec()),
         pending_conflicts in any::<i64>(),
     ) {
         survives_the_wire(&sync::AccountSettings {

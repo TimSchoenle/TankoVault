@@ -25,8 +25,6 @@ use progenitor_client::ResponseValue;
 const RESOLVE_LOCAL: &str = "local";
 /// The conflict resolution that adopts the remote value.
 const RESOLVE_REMOTE: &str = "remote";
-/// The standing policy "whichever side changed most recently wins".
-const POLICY_NEWEST: &str = "newest_wins";
 
 /// One registered tracker and this reader's link state on it.
 #[derive(Clone, PartialEq)]
@@ -337,7 +335,7 @@ fn ConflictCard(
             spawn(async move {
                 let body = SyncSettingsPatch {
                     auto_sync_enabled: None,
-                    conflict_policy: Some(POLICY_NEWEST.to_owned()),
+                    conflict_policy: Some(ConflictPolicy::NewestWins.into()),
                 };
                 match client
                     .sync_settings_patch()

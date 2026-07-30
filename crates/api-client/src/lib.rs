@@ -52,8 +52,7 @@ pub mod types {
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"conflict_policy\": {"]
-    #[doc = "      \"description\": \"How to settle a local/remote disagreement — one of `local_wins`, `remote_wins`,\\n`newest_wins`, `ask_me`.\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"$ref\": \"#/components/schemas/ConflictPolicy\""]
     #[doc = "    },"]
     #[doc = "    \"linked\": {"]
     #[doc = "      \"description\": \"Whether a linked external account exists; the other fields are inert without one.\","]
@@ -72,8 +71,7 @@ pub mod types {
     pub struct AccountSettings {
         #[doc = "Whether the background engine syncs this account without being asked."]
         pub auto_sync_enabled: bool,
-        #[doc = "How to settle a local/remote disagreement — one of `local_wins`, `remote_wins`,\n`newest_wins`, `ask_me`."]
-        pub conflict_policy: ::std::string::String,
+        pub conflict_policy: ConflictPolicy,
         #[doc = "Whether a linked external account exists; the other fields are inert without one."]
         pub linked: bool,
         #[doc = "Conflicts awaiting the user's decision, i.e. the badge count on the Sync panel."]
@@ -422,6 +420,7 @@ pub mod types {
     #[doc = "  \"description\": \"A queue entry as the operator sees it: the subject's identity (while they still exist) and\\nwho is handling it.\\n\\nThe subject-facing fields are a nested `request` rather than `#[serde(flatten)]`. Flattening\\nreads better on the wire, but `utoipa` cannot describe it: a flattened field contributes no\\nproperties to the generated schema, so the typed client ended up with a struct missing every\\nfield the queue actually renders. A nested object is honest about its shape and survives\\ncode generation.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
+    #[doc = "    \"needs_export\","]
     #[doc = "    \"overdue\","]
     #[doc = "    \"request\""]
     #[doc = "  ],"]
@@ -438,6 +437,10 @@ pub mod types {
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"needs_export\": {"]
+    #[doc = "      \"description\": \"Whether fulfilling this request means disclosing the subject's data export, i.e.\\nwhether the queue should offer the \\\"release export\\\" action on this row.\\n\\nDerived server-side from `RequestKind::needs_export` for the same reason `overdue` is\\ncomputed in SQL: the console used to re-derive it from `kind` in its own `match`\\n(FRONTEND F10), so the set of kinds that disclose an export lived in two places with\\nnothing connecting them — and the one the operator sees is the one that decides which\\nbutton appears. The server refuses the call either way, so the divergence would have\\nshown as a button that does nothing rather than as a disclosure; still a bug, and one\\nno test could reach.\","]
+    #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"overdue\": {"]
     #[doc = "      \"description\": \"Whether the Art. 12(3) deadline has passed with the request still open. Computed in\\nSQL against `now()` so the queue cannot disagree with itself about what is late\\ndepending on when a client's clock says it rendered.\","]
@@ -478,6 +481,8 @@ pub mod types {
         pub claimed_by: ::std::option::Option<::std::string::String>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub email: ::std::option::Option<::std::string::String>,
+        #[doc = "Whether fulfilling this request means disclosing the subject's data export, i.e.\nwhether the queue should offer the \"release export\" action on this row.\n\nDerived server-side from `RequestKind::needs_export` for the same reason `overdue` is\ncomputed in SQL: the console used to re-derive it from `kind` in its own `match`\n(FRONTEND F10), so the set of kinds that disclose an export lived in two places with\nnothing connecting them — and the one the operator sees is the one that decides which\nbutton appears. The server refuses the call either way, so the divergence would have\nshown as a button that does nothing rather than as a disclosure; still a bug, and one\nno test could reach."]
+        pub needs_export: bool,
         #[doc = "Whether the Art. 12(3) deadline has passed with the request still open. Computed in\nSQL against `now()` so the queue cannot disagree with itself about what is late\ndepending on when a client's clock says it rendered."]
         pub overdue: bool,
         pub request: RequestRow,
@@ -997,6 +1002,89 @@ pub mod types {
     impl ChapterRead {
         pub fn builder() -> builder::ChapterRead {
             Default::default()
+        }
+    }
+    #[doc = "How to settle a local/remote disagreement when a series exists on both sides\n(design v2 §B.3).\n\n# Why this is here rather than in `services/sync`\n\nIt was a `pub(crate)` enum in the sync service and a **bare string** on the wire, which put\nthe vocabulary in three places that nothing connected: the service's enum, a prose list in\nthis file's doc comment, and a closed enumeration the frontend maintained by hand\n(FRONTEND F10). A policy added to the service would have compiled everywhere and then\nsilently failed to appear in the picker; a token misspelled in the frontend would have been\nrejected by the service at the far end of a round trip, if at all. Declaring it once here —\nwhere `utoipa` publishes it, `progenitor` generates it and the frontend consumes the\ngenerated form — makes the compiler the connection in both directions.\n\nThe JSON representation is unchanged: `snake_case`, the same four tokens the wire always\ncarried. What changed is that the *schema* now says so, so an unknown token is a `422` at\nthe edge instead of a value that reaches the merge and is quietly read as `newest_wins`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"How to settle a local/remote disagreement when a series exists on both sides\\n(design v2 §B.3).\\n\\n# Why this is here rather than in `services/sync`\\n\\nIt was a `pub(crate)` enum in the sync service and a **bare string** on the wire, which put\\nthe vocabulary in three places that nothing connected: the service's enum, a prose list in\\nthis file's doc comment, and a closed enumeration the frontend maintained by hand\\n(FRONTEND F10). A policy added to the service would have compiled everywhere and then\\nsilently failed to appear in the picker; a token misspelled in the frontend would have been\\nrejected by the service at the far end of a round trip, if at all. Declaring it once here —\\nwhere `utoipa` publishes it, `progenitor` generates it and the frontend consumes the\\ngenerated form — makes the compiler the connection in both directions.\\n\\nThe JSON representation is unchanged: `snake_case`, the same four tokens the wire always\\ncarried. What changed is that the *schema* now says so, so an unknown token is a `422` at\\nthe edge instead of a value that reaches the merge and is quietly read as `newest_wins`.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"local_wins\","]
+    #[doc = "    \"remote_wins\","]
+    #[doc = "    \"newest_wins\","]
+    #[doc = "    \"ask_me\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum ConflictPolicy {
+        #[serde(rename = "local_wins")]
+        LocalWins,
+        #[serde(rename = "remote_wins")]
+        RemoteWins,
+        #[serde(rename = "newest_wins")]
+        NewestWins,
+        #[serde(rename = "ask_me")]
+        AskMe,
+    }
+    impl ::std::fmt::Display for ConflictPolicy {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::LocalWins => f.write_str("local_wins"),
+                Self::RemoteWins => f.write_str("remote_wins"),
+                Self::NewestWins => f.write_str("newest_wins"),
+                Self::AskMe => f.write_str("ask_me"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for ConflictPolicy {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "local_wins" => Ok(Self::LocalWins),
+                "remote_wins" => Ok(Self::RemoteWins),
+                "newest_wins" => Ok(Self::NewestWins),
+                "ask_me" => Ok(Self::AskMe),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for ConflictPolicy {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for ConflictPolicy {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for ConflictPolicy {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
     #[doc = "One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).\n\nProduced by `services/sync` from a repository row and re-published verbatim by\n`services/api`. It lives here rather than on the row struct for the reason given in\n[`crate::admin`]: a `SELECT` column rename must not be able to rewrite the public API\nwithout a compile error. The published component name is pinned to `ConflictRow` — the\nmove is an internal layering fix and must not rename anything on the wire."]
@@ -5759,10 +5847,11 @@ pub mod types {
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"policy\": {"]
-    #[doc = "      \"description\": \"`local_wins` | `remote_wins` | `newest_wins`; omitted uses the service default.\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {},"]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/ConflictPolicy\""]
+    #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -5771,9 +5860,8 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct SyncOpts {
-        #[doc = "`local_wins` | `remote_wins` | `newest_wins`; omitted uses the service default."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub policy: ::std::option::Option<::std::string::String>,
+        pub policy: ::std::option::Option<SyncOptsPolicy>,
     }
     impl ::std::default::Default for SyncOpts {
         fn default() -> Self {
@@ -5785,6 +5873,37 @@ pub mod types {
     impl SyncOpts {
         pub fn builder() -> builder::SyncOpts {
             Default::default()
+        }
+    }
+    #[doc = "`SyncOptsPolicy`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ConflictPolicy\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum SyncOptsPolicy {
+        Variant0(::serde_json::Value),
+        Variant1(ConflictPolicy),
+    }
+    impl ::std::convert::From<::serde_json::Value> for SyncOptsPolicy {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<ConflictPolicy> for SyncOptsPolicy {
+        fn from(value: ConflictPolicy) -> Self {
+            Self::Variant1(value)
         }
     }
     #[doc = "`SyncPullBody`"]
@@ -5864,9 +5983,11 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"conflict_policy\": {"]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {},"]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/ConflictPolicy\""]
+    #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -5878,7 +5999,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub auto_sync_enabled: ::std::option::Option<bool>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub conflict_policy: ::std::option::Option<::std::string::String>,
+        pub conflict_policy: ::std::option::Option<SyncSettingsPatchConflictPolicy>,
     }
     impl ::std::default::Default for SyncSettingsPatch {
         fn default() -> Self {
@@ -5891,6 +6012,37 @@ pub mod types {
     impl SyncSettingsPatch {
         pub fn builder() -> builder::SyncSettingsPatch {
             Default::default()
+        }
+    }
+    #[doc = "`SyncSettingsPatchConflictPolicy`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ConflictPolicy\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum SyncSettingsPatchConflictPolicy {
+        Variant0(::serde_json::Value),
+        Variant1(ConflictPolicy),
+    }
+    impl ::std::convert::From<::serde_json::Value> for SyncSettingsPatchConflictPolicy {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<ConflictPolicy> for SyncSettingsPatchConflictPolicy {
+        fn from(value: ConflictPolicy) -> Self {
+            Self::Variant1(value)
         }
     }
     #[doc = "System-wide rollup for the console header."]
@@ -6976,7 +7128,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct AccountSettings {
             auto_sync_enabled: ::std::result::Result<bool, ::std::string::String>,
-            conflict_policy: ::std::result::Result<::std::string::String, ::std::string::String>,
+            conflict_policy: ::std::result::Result<super::ConflictPolicy, ::std::string::String>,
             linked: ::std::result::Result<bool, ::std::string::String>,
             pending_conflicts: ::std::result::Result<i64, ::std::string::String>,
         }
@@ -7003,7 +7155,7 @@ pub mod types {
             }
             pub fn conflict_policy<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<super::ConflictPolicy>,
                 T::Error: ::std::fmt::Display,
             {
                 self.conflict_policy = value.try_into().map_err(|e| {
@@ -7396,6 +7548,7 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            needs_export: ::std::result::Result<bool, ::std::string::String>,
             overdue: ::std::result::Result<bool, ::std::string::String>,
             request: ::std::result::Result<super::RequestRow, ::std::string::String>,
             resolved_by: ::std::result::Result<
@@ -7416,6 +7569,7 @@ pub mod types {
                 Self {
                     claimed_by: Ok(Default::default()),
                     email: Ok(Default::default()),
+                    needs_export: Err("no value supplied for needs_export".to_string()),
                     overdue: Err("no value supplied for overdue".to_string()),
                     request: Err("no value supplied for request".to_string()),
                     resolved_by: Ok(Default::default()),
@@ -7443,6 +7597,16 @@ pub mod types {
                 self.email = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for email: {e}"));
+                self
+            }
+            pub fn needs_export<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.needs_export = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for needs_export: {e}"));
                 self
             }
             pub fn overdue<T>(mut self, value: T) -> Self
@@ -7504,6 +7668,7 @@ pub mod types {
                 Ok(Self {
                     claimed_by: value.claimed_by?,
                     email: value.email?,
+                    needs_export: value.needs_export?,
                     overdue: value.overdue?,
                     request: value.request?,
                     resolved_by: value.resolved_by?,
@@ -7517,6 +7682,7 @@ pub mod types {
                 Self {
                     claimed_by: Ok(value.claimed_by),
                     email: Ok(value.email),
+                    needs_export: Ok(value.needs_export),
                     overdue: Ok(value.overdue),
                     request: Ok(value.request),
                     resolved_by: Ok(value.resolved_by),
@@ -13241,7 +13407,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct SyncOpts {
             policy: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<super::SyncOptsPolicy>,
                 ::std::string::String,
             >,
         }
@@ -13255,7 +13421,7 @@ pub mod types {
         impl SyncOpts {
             pub fn policy<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::SyncOptsPolicy>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.policy = value
@@ -13286,7 +13452,7 @@ pub mod types {
             auto_sync_enabled:
                 ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             conflict_policy: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<super::SyncSettingsPatchConflictPolicy>,
                 ::std::string::String,
             >,
         }
@@ -13311,7 +13477,9 @@ pub mod types {
             }
             pub fn conflict_policy<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<super::SyncSettingsPatchConflictPolicy>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.conflict_policy = value.try_into().map_err(|e| {

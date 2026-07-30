@@ -251,20 +251,30 @@ enum CountTone {
     Live,
 }
 
-/// Selectable adapter implementations: the wire token and the catalogue key wording it.
-/// Mirrors `AdapterKind`.
-pub(super) const ADAPTER_KINDS: &[(&str, &str)] = &[
-    ("generic_config", "console.adapterKind.genericConfig"),
-    ("madara", "console.adapterKind.madara"),
-    ("custom", "console.adapterKind.custom"),
+/// Selectable adapter implementations, in the order the create form offers them.
+///
+/// This was a `&[(&str, &str)]` table of hand-written wire tokens beside the real enum
+/// (FRONTEND F10), and `create.rs` parsed the token back with a `_ => AdapterKind::Custom`
+/// arm — so a typo in the table registered every provider as `Custom`, silently and with a
+/// perfectly plausible-looking picker. The tokens are now the generated `Display`, the parse
+/// is the generated `FromStr`, and this array carries only the *order*.
+///
+/// Still hand-listed, because the generated client offers no way to enumerate a schema enum's
+/// variants. What stops it drifting is [`adapter_label_key`]: its `match` is exhaustive, so a
+/// variant added to `AdapterKind` fails to compile until it is worded, and
+/// `the_picker_offers_every_adapter_kind` fails until it reaches this array too.
+pub(super) const ADAPTER_KINDS: &[AdapterKind] = &[
+    AdapterKind::GenericConfig,
+    AdapterKind::Madara,
+    AdapterKind::Custom,
 ];
 
-/// The wire token for a loaded provider's adapter kind (matches the SQL enum / `ADAPTER_KINDS`).
-pub(super) fn adapter_token(a: AdapterKind) -> &'static str {
+/// The catalogue key wording this adapter kind for the reader (see [`crate::i18n`]).
+pub(super) fn adapter_label_key(a: AdapterKind) -> &'static str {
     match a {
-        AdapterKind::GenericConfig => "generic_config",
-        AdapterKind::Madara => "madara",
-        AdapterKind::Custom => "custom",
+        AdapterKind::GenericConfig => "console.adapterKind.genericConfig",
+        AdapterKind::Madara => "console.adapterKind.madara",
+        AdapterKind::Custom => "console.adapterKind.custom",
     }
 }
 
@@ -592,5 +602,73 @@ pub(super) fn config_editor_text(v: &serde_json::Value) -> String {
         "{}".to_owned()
     } else {
         serde_json::to_string_pretty(v).unwrap_or_else(|_| "{}".to_owned())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ADAPTER_KINDS, adapter_label_key};
+    use crate::models::AdapterKind;
+
+    /// The provider-registration picker must offer every adapter the API accepts.
+    ///
+    /// `ADAPTER_KINDS` is the last hand-maintained part of this vocabulary — the tokens and the
+    /// parse are generated now — so this is what keeps it in step. Read out of the committed
+    /// `openapi.json`, the artefact `crates/api-client` is generated from and the only thing
+    /// that connects these two workspaces (`web/frontend` is outside the host workspace, so no
+    /// compiler relates a table here to an enum there).
+    ///
+    /// The defect this closes: the picker used to carry hand-written token strings, and
+    /// `create.rs` parsed them back with a `_ => AdapterKind::Custom` arm, so one wrong
+    /// character registered every new provider as `Custom` — a working-looking form producing
+    /// a provider that scans nothing.
+    #[test]
+    fn the_picker_offers_every_adapter_kind() {
+        const SPEC: &str = include_str!("../../../../../openapi.json");
+        let spec: serde_json::Value = serde_json::from_str(SPEC).expect("openapi.json parses");
+
+        let mut published: Vec<String> = spec["components"]["schemas"]["AdapterKind"]["enum"]
+            .as_array()
+            .expect("the document declares the AdapterKind vocabulary")
+            .iter()
+            .map(|v| v.as_str().expect("adapter tokens are strings").to_owned())
+            .collect();
+        let mut offered: Vec<String> = ADAPTER_KINDS.iter().map(ToString::to_string).collect();
+
+        published.sort();
+        offered.sort();
+        assert_eq!(
+            offered, published,
+            "the provider-registration picker offers a different set of adapters than the API \
+             publishes; add the missing variant to `ADAPTER_KINDS` and word it in \
+             `adapter_label_key`"
+        );
+    }
+
+    /// Every offered kind survives the round trip the create form actually performs: rendered
+    /// into the `<option value>` by `Display`, read back out by `FromStr`.
+    #[test]
+    fn every_offered_adapter_kind_round_trips_through_its_option_value() {
+        for kind in ADAPTER_KINDS.iter().copied() {
+            assert_eq!(
+                kind.to_string().parse::<AdapterKind>().ok(),
+                Some(kind),
+                "`{kind}` does not survive the picker's own value round trip"
+            );
+        }
+    }
+
+    /// Wording is a separate axis from membership, and a missing catalogue key renders as the
+    /// key itself rather than as an error — so a kind added to the picker without a label ships
+    /// an option reading `console.adapterKind.…` to the operator.
+    #[test]
+    fn every_offered_adapter_kind_is_worded() {
+        for kind in ADAPTER_KINDS.iter().copied() {
+            let key = adapter_label_key(kind);
+            assert!(
+                crate::i18n::has_key(key),
+                "`{kind}` is offered in the picker but `{key}` is not in the catalogue"
+            );
+        }
     }
 }

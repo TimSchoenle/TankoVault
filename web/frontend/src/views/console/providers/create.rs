@@ -5,7 +5,7 @@ use crate::components::OutcomeLine;
 use crate::hooks::{use_busy, use_outcome, Reload};
 use crate::i18n::use_i18n;
 use crate::models::*;
-use crate::views::console::ADAPTER_KINDS;
+use crate::views::console::{ADAPTER_KINDS, adapter_label_key};
 use dioxus::prelude::*;
 
 /// Register a provider. Politeness is left at the polite server defaults and tuned afterwards
@@ -48,10 +48,14 @@ pub(super) fn CreateProviderForm(reload: Reload, on_done: EventHandler<()>) -> E
             busy.release();
             return;
         }
-        let kind = match adapter.peek().as_str() {
-            "madara" => AdapterKind::Madara,
-            "generic_config" => AdapterKind::GenericConfig,
-            _ => AdapterKind::Custom,
+        // The generated `FromStr`, not a local `match` with a `_ => Custom` arm: the token can
+        // only have come from the picker below, so an unparseable one is a bug in this file
+        // rather than a user's mistake — and defaulting to `Custom` is how that bug used to
+        // reach the database as a silently mis-registered provider (FRONTEND F10).
+        let Ok(kind) = adapter.peek().parse::<AdapterKind>() else {
+            outcome.set(Some(Err(i18n.t("console.providers.missingFields"))));
+            busy.release();
+            return;
         };
         let client = api.client();
         spawn(async move {
@@ -124,8 +128,8 @@ pub(super) fn CreateProviderForm(reload: Reload, on_done: EventHandler<()>) -> E
                         class: "ik-select",
                         value: "{adapter}",
                         onchange: move |e| adapter.set(e.value()),
-                        for (token , label_key) in ADAPTER_KINDS.iter().copied() {
-                            option { key: "{token}", value: "{token}", {i18n.t(label_key)} }
+                        for kind in ADAPTER_KINDS.iter().copied() {
+                            option { key: "{kind}", value: "{kind}", {i18n.t(adapter_label_key(kind))} }
                         }
                     }
                 }

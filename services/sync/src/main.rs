@@ -584,7 +584,7 @@ struct SettingsPatch {
     #[serde(default)]
     auto_sync_enabled: Option<bool>,
     #[serde(default)]
-    conflict_policy: Option<String>,
+    conflict_policy: Option<ConflictPolicy>,
 }
 
 /// `PATCH /v1/sync/{provider}/settings/{user_id}` — update automatic-sync settings.
@@ -599,7 +599,7 @@ async fn patch_settings(
             &provider,
             req.user_id,
             req.auto_sync_enabled,
-            req.conflict_policy.as_deref(),
+            req.conflict_policy,
         )
         .await?;
     Ok(StatusCode::NO_CONTENT)

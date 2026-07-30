@@ -132,9 +132,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
         .read_unchecked()
         .as_ref()
         .and_then(|s| s.as_ref())
-        .map_or(ConflictPolicy::NewestWins, |s| {
-            ConflictPolicy::parse(&s.conflict_policy)
-        });
+        .map_or(ConflictPolicy::NewestWins, |s| s.conflict_policy);
     let auto_sync = settings
         .read_unchecked()
         .as_ref()
@@ -232,7 +230,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
             let client = api.client();
             spawn(async move {
                 let opts = SyncOpts {
-                    policy: Some(policy.token().to_owned()),
+                    policy: Some(policy.into()),
                 };
                 match client
                     .sync_pull()
@@ -263,7 +261,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
             let client = api.client();
             spawn(async move {
                 let opts = SyncOpts {
-                    policy: Some(policy.token().to_owned()),
+                    policy: Some(policy.into()),
                 };
                 match client
                     .sync_push()
@@ -367,17 +365,17 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                     {i18n.args("account.sync.policyHeading", &[("provider", &card_name)])}
                 }
                 div { class: "ik-chips",
-                    for option in ConflictPolicy::ALL {
+                    for option in ConflictPolicy::all().iter().copied() {
                         {
                             let patch_settings = patch_settings.clone();
                             rsx! {
                                 button {
-                                    key: "{option.token()}",
+                                    key: "{option}",
                                     class: if policy == option { "ik-chip active" } else { "ik-chip" },
                                     "aria-pressed": policy == option,
                                     onclick: move |_| patch_settings(SyncSettingsPatch {
                                         auto_sync_enabled: None,
-                                        conflict_policy: Some(option.token().to_owned()),
+                                        conflict_policy: Some(option.into()),
                                     }),
                                     {i18n.t(option.label_key())}
                                 }

@@ -63,7 +63,7 @@ pub(crate) fn Watchlist() -> Element {
         let client = api.client();
         spawn(async move {
             let opts = SyncOpts {
-                policy: Some(ConflictPolicy::NewestWins.token().to_owned()),
+                policy: Some(ConflictPolicy::NewestWins.into()),
             };
             // Pull first, then push: importing the remote list before reflecting local state
             // means a title added on the other side is not immediately overwritten.

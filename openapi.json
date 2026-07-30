@@ -9,8 +9,8 @@
             "type": "boolean"
           },
           "conflict_policy": {
-            "description": "How to settle a local/remote disagreement — one of `local_wins`, `remote_wins`,\n`newest_wins`, `ask_me`.",
-            "type": "string"
+            "$ref": "#/components/schemas/ConflictPolicy",
+            "description": "How to settle a local/remote disagreement."
           },
           "linked": {
             "description": "Whether a linked external account exists; the other fields are inert without one.",
@@ -165,6 +165,10 @@
               "null"
             ]
           },
+          "needs_export": {
+            "description": "Whether fulfilling this request means disclosing the subject's data export, i.e.\nwhether the queue should offer the \"release export\" action on this row.\n\nDerived server-side from `RequestKind::needs_export` for the same reason `overdue` is\ncomputed in SQL: the console used to re-derive it from `kind` in its own `match`\n(FRONTEND F10), so the set of kinds that disclose an export lived in two places with\nnothing connecting them — and the one the operator sees is the one that decides which\nbutton appears. The server refuses the call either way, so the divergence would have\nshown as a button that does nothing rather than as a disclosure; still a bug, and one\nno test could reach.",
+            "type": "boolean"
+          },
           "overdue": {
             "description": "Whether the Art. 12(3) deadline has passed with the request still open. Computed in\nSQL against `now()` so the queue cannot disagree with itself about what is late\ndepending on when a client's clock says it rendered.",
             "type": "boolean"
@@ -196,7 +200,8 @@
         },
         "required": [
           "request",
-          "overdue"
+          "overdue",
+          "needs_export"
         ],
         "type": "object"
       },
@@ -384,6 +389,16 @@
           "read"
         ],
         "type": "object"
+      },
+      "ConflictPolicy": {
+        "description": "How to settle a local/remote disagreement when a series exists on both sides\n(design v2 §B.3).\n\n# Why this is here rather than in `services/sync`\n\nIt was a `pub(crate)` enum in the sync service and a **bare string** on the wire, which put\nthe vocabulary in three places that nothing connected: the service's enum, a prose list in\nthis file's doc comment, and a closed enumeration the frontend maintained by hand\n(FRONTEND F10). A policy added to the service would have compiled everywhere and then\nsilently failed to appear in the picker; a token misspelled in the frontend would have been\nrejected by the service at the far end of a round trip, if at all. Declaring it once here —\nwhere `utoipa` publishes it, `progenitor` generates it and the frontend consumes the\ngenerated form — makes the compiler the connection in both directions.\n\nThe JSON representation is unchanged: `snake_case`, the same four tokens the wire always\ncarried. What changed is that the *schema* now says so, so an unknown token is a `422` at\nthe edge instead of a value that reaches the merge and is quietly read as `newest_wins`.",
+        "enum": [
+          "local_wins",
+          "remote_wins",
+          "newest_wins",
+          "ask_me"
+        ],
+        "type": "string"
       },
       "ConflictRow": {
         "description": "One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).\n\nProduced by `services/sync` from a repository row and re-published verbatim by\n`services/api`. It lives here rather than on the row struct for the reason given in\n[`crate::admin`]: a `SELECT` column rename must not be able to rewrite the public API\nwithout a compile error. The published component name is pinned to `ConflictRow` — the\nmove is an internal layering fix and must not rename anything on the wire.",
@@ -2319,10 +2334,14 @@
       "SyncOpts": {
         "properties": {
           "policy": {
-            "description": "`local_wins` | `remote_wins` | `newest_wins`; omitted uses the service default.",
-            "type": [
-              "string",
-              "null"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ConflictPolicy",
+                "description": "Overrides the account's own conflict policy for this run; omitted uses it.\n\nTyped rather than a bare string since FRONTEND F10: the sync service's request body\nhas always been a `ConflictPolicy`, so a token this proxy accepted and that one did not\nused to fail one hop downstream, as a `502` with no useful detail. Now the two name the\nsame type and the rejection happens here, as a `422` that says which values are legal."
+              }
             ]
           }
         },
@@ -2337,9 +2356,14 @@
             ]
           },
           "conflict_policy": {
-            "type": [
-              "string",
-              "null"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ConflictPolicy",
+                "description": "The account's new conflict policy; omitted leaves it unchanged.\n\nSee [`SyncOpts::policy`] for why this is typed rather than a bare string."
+              }
             ]
           }
         },

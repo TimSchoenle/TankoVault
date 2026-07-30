@@ -4,7 +4,6 @@
 //! conflict policy — are exhaustively unit-tested. The engine layer wires these to the
 //! database and the `AniList` GraphQL client.
 
-use serde::{Deserialize, Serialize};
 use tankovault_domain::{ContentType, WatchStatus};
 
 /// `AniList` `MediaListStatus` enum values.
@@ -96,46 +95,14 @@ pub(crate) fn progress_to_int(progress: f64) -> i64 {
 }
 
 /// The user-selectable reconciliation policy when a series exists on both sides (§15).
-/// The shared `Wins` suffix is intentional, user-facing vocabulary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-#[allow(clippy::enum_variant_names)]
-pub(crate) enum ConflictPolicy {
-    /// Local progress/status is authoritative.
-    LocalWins,
-    /// The remote (`AniList`) value is authoritative.
-    RemoteWins,
-    /// Whichever side was updated most recently wins.
-    #[default]
-    NewestWins,
-    /// Genuine conflicts are queued for the user to resolve rather than auto-picked
-    /// (design v2 §B.3).
-    AskMe,
-}
-
-impl ConflictPolicy {
-    /// The persisted token for this policy (matches `serde` `snake_case`).
-    #[must_use]
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::LocalWins => "local_wins",
-            Self::RemoteWins => "remote_wins",
-            Self::NewestWins => "newest_wins",
-            Self::AskMe => "ask_me",
-        }
-    }
-
-    /// Parse a persisted policy token, falling back to `NewestWins` for anything unknown.
-    #[must_use]
-    pub(crate) fn parse(token: &str) -> Self {
-        match token {
-            "local_wins" => Self::LocalWins,
-            "remote_wins" => Self::RemoteWins,
-            "ask_me" => Self::AskMe,
-            _ => Self::NewestWins,
-        }
-    }
-}
+///
+/// Re-exported rather than defined here. This was a private enum plus a bare `String` on the
+/// wire, so the vocabulary lived in three unconnected places — this service, the `OpenAPI` prose
+/// and a closed enumeration the frontend maintained by hand — and both parsers had a
+/// `_ => NewestWins` arm, which turned a misspelled token into a silent policy change rather
+/// than an error. It is now declared once in [`tankovault_contracts::sync::ConflictPolicy`],
+/// which is what the schema publishes and the generated client carries.
+pub(crate) use tankovault_contracts::sync::ConflictPolicy;
 
 /// Which side a reconciliation deemed authoritative.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -437,19 +404,9 @@ mod tests {
         assert_eq!(d.action, MergeAction::Conflict);
     }
 
-    #[test]
-    fn policy_tokens_round_trip() {
-        for p in [
-            ConflictPolicy::LocalWins,
-            ConflictPolicy::RemoteWins,
-            ConflictPolicy::NewestWins,
-            ConflictPolicy::AskMe,
-        ] {
-            assert_eq!(ConflictPolicy::parse(p.as_str()), p);
-        }
-        assert_eq!(
-            ConflictPolicy::parse("nonsense"),
-            ConflictPolicy::NewestWins
-        );
-    }
+    // The policy token round trip used to be pinned here, against this module's own copy of
+    // the enum. Both moved: the vocabulary is `tankovault_contracts::sync::ConflictPolicy` and
+    // its round trip is pinned there, while the tolerance for an unreadable *persisted* token
+    // — the part that was this service's own judgement, not the wire's — is pinned by
+    // `engine::accounts::tests`.
 }

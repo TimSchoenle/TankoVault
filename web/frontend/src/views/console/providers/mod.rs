@@ -40,7 +40,7 @@ use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::capabilities::use_capabilities;
 use crate::util::{monogram, rel_time, thousands};
-use crate::views::console::{adapter_token, config_editor_text, politeness_json};
+use crate::views::console::{config_editor_text, politeness_json};
 use crate::wire::types::Permission;
 use config::DryRunResult;
 use coverage::CoverageTab;
@@ -440,7 +440,7 @@ fn ProviderInspector(
                             HealthPill { state: Some(provider.state) }
                         }
                         div { class: "ik-meta-line",
-                            span { "{adapter_token(provider.adapter)}" }
+                            span { "{provider.adapter}" }
                             if let Some(stat) = stat.clone() {
                                 span {
                                     {
@@ -568,7 +568,7 @@ fn ProviderInspector(
                                         span { class: "k", {i18n.t("console.providers.field.adapter")} }
                                         span {
                                             span { class: "ik-mono", style: "font-size:12.5px;",
-                                                "{adapter_token(provider.adapter)}"
+                                                "{provider.adapter}"
                                             }
                                             span { class: "ik-muted", style: "font-size:11.5px;display:block;margin-top:2px;",
                                                 {i18n.t("console.providers.adapterFixed")}

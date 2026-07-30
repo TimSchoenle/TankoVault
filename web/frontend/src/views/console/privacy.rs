@@ -206,7 +206,7 @@ fn QueueRow(
                         outcome,
                     }
                 }
-                if can_export && row.request.kind.needs_export() && subject_present {
+                if can_export && row.needs_export && subject_present {
                     ExportButton { id, busy, outcome }
                 }
                 if can_erase && open && row.request.kind == RequestKind::Erasure && subject_present

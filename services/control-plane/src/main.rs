@@ -15,9 +15,10 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::post;
 use axum::{Json, Router};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::time::Duration;
 use tankovault_bus::Bus;
+use tankovault_contracts::admin::ScanTriggeredView;
 use tankovault_contracts::{ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
 use tankovault_domain::{Feature, Provider, ProviderId, ScanMode, ScanRunId};
@@ -207,15 +208,15 @@ struct TriggerRequest {
     mode: ScanMode,
 }
 
-#[derive(Debug, Serialize)]
-struct TriggerResponse {
-    run_ids: Vec<ScanRunId>,
-}
+// The response shape is `tankovault_contracts::admin::ScanTriggeredView`, not a private struct
+// here: `services/api` republishes this body verbatim on `/v1/admin/scans`, and while the
+// definition lived in this binary the republisher could declare nothing more specific than
+// `serde_json::Value` (ARCH-10). Both ends name the same type now.
 
 async fn trigger_scan(
     State(state): State<AppState>,
     Json(req): Json<TriggerRequest>,
-) -> Result<Json<TriggerResponse>, Problem> {
+) -> Result<Json<ScanTriggeredView>, Problem> {
     // The API refuses a full scan on the same flag before it ever reaches here. Repeating the
     // check is not redundant: this endpoint is reachable by anything on the internal network,
     // and a switch an operator has thrown should hold at the component that does the work, not
@@ -249,7 +250,7 @@ async fn trigger_scan(
             .map_err(internal)?;
         run_ids.push(run_id);
     }
-    Ok(Json(TriggerResponse { run_ids }))
+    Ok(Json(ScanTriggeredView { run_ids }))
 }
 
 /// Expand a run into its initial task(s) and dispatch them.

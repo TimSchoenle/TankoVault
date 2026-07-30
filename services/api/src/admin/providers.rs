@@ -300,7 +300,7 @@ pub async fn set_provider_state(
     params(("id" = ProviderId, Path, description = "Provider id")),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Scan queued, forwarded from the control-plane"),
+        (status = 200, description = "Scan queued, forwarded from the control-plane", body = tankovault_contracts::admin::ScanTriggeredView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
@@ -310,7 +310,7 @@ pub async fn resolve_provider(
     State(state): State<AppState>,
     user: AuthUser,
     Path(id): Path<ProviderId>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<tankovault_contracts::admin::ScanTriggeredView>> {
     user.require(Permission::ProvidersTest).await?;
     // Confirm the provider exists (and surface a clean 404 otherwise) before queuing work.
     let provider = tankovault_db::repo::providers::get(&state.pool, id).await?;

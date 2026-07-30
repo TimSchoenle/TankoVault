@@ -80,7 +80,7 @@ pub struct SyncAccountTarget {
     request_body = SyncAccountTarget,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Pulled, forwarded from the sync service"),
+        (status = 200, description = "Pulled, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
@@ -120,7 +120,7 @@ pub async fn admin_sync_pull(
     request_body = SyncAccountTarget,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Pushed, forwarded from the sync service"),
+        (status = 200, description = "Pushed, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
@@ -160,7 +160,7 @@ pub async fn admin_sync_push(
     request_body = SyncAccountTarget,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Unlinked, forwarded from the sync service"),
+        (status = 200, description = "Unlinked, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )

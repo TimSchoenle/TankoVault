@@ -6,17 +6,36 @@
 //! regenerating the typed Rust API client (`crates/api-client`, `src/lib.rs`) that the
 //! Dioxus frontend consumes directly (re-exported via `web/frontend/src/wire.rs`).
 //!
-//! Endpoints that proxy another service's JSON still transport it as `Json<serde_json::Value>`,
-//! but the *read* ones on `/v1/me/sync/*` now declare a real `body`: their shapes live in
-//! `tankovault_contracts::sync` (and `tankovault_db::repo::sync` for the conflict/history
-//! rows), so the producing service and this document reference one definition and the
-//! generated client covers the whole sync surface. Without that, the frontend had to
-//! hand-mirror those structs, and they drifted.
+//! Endpoints that proxy another service's JSON now *return* what they declare (ARCH-10). The
+//! six read proxies on `/v1/me/sync/*` are typed as `tankovault_contracts::sync::{ProviderInfo,
+//! AuthorizeUrl, AccountStatus, AccountSettings, ConflictView, HistoryView}`, the same
+//! definitions `services/sync` produces, so the producing service, this document and the
+//! generated client cannot disagree — and [`crate::upstream::Upstream`]'s decode step enforces
+//! it at the edge rather than forwarding whatever arrived. They previously returned
+//! `Json<serde_json::Value>` while declaring a concrete `body`, which is the drift class
+//! `tankovault_contracts::sync` was created to end, reintroduced one layer up. Without the
+//! shared definitions the frontend had to hand-mirror those structs, and they drifted.
 //!
-//! The remaining untyped proxies are the *command* responses — link/unlink, pull, push,
-//! resolve, and `/v1/admin/sync/{pull,push,unlink}` — whose bodies are progress blobs no
-//! caller destructures. `/v1/me/notification-prefs` stays untyped for the reason it's untyped
-//! in the handler: it's product-defined free-form JSON, not a fixed schema.
+//! What is still `serde_json::Value` is *declared* as `serde_json::Value`, so the document is
+//! honest rather than aspirational. Two groups, neither of which has a fixed schema to publish:
+//!
+//! - **Command proxies**, whose body is a progress or outcome blob no caller destructures:
+//!   `/v1/me/sync/{provider}/{callback,push,pull}`, `DELETE /v1/me/sync/{provider}`,
+//!   `/v1/me/sync/conflicts/{id}/resolve` and `/v1/admin/sync/{pull,push,unlink}`.
+//! - **Ad-hoc acknowledgements and free-form JSON** produced by this service itself:
+//!   `{"ok": true}` / `{"revoked": n}` / `{"removed": b}` on the local admin and
+//!   `/v1/me/progress/*` writes, the provider dry-run sample (which is deliberately shaped by
+//!   whichever adapter ran), and `/v1/me/notification-prefs`, which is product-defined
+//!   free-form JSON, not a fixed schema.
+//!
+//! The **control-plane scan triggers** — `POST /v1/admin/scans` and
+//! `POST /v1/admin/providers/{id}/resolve` — used to be a third such group, and were the one
+//! case ARCH-10 could not close from this crate alone: the planner's `{ "run_ids": [...] }` was
+//! a private struct in `services/control-plane`'s `main.rs`, so the republisher had nothing
+//! more specific to name. That type moved to `tankovault_contracts::admin::ScanTriggeredView`
+//! (published as `ScanTriggered`) and both ends name it now, which is why the console's
+//! "N scans queued" is finally reading a field a compiler connects to the field the planner
+//! writes.
 //!
 //! Typed ids (`SeriesId`, `UserId`, ...) are listed explicitly below and left with their
 //! native `utoipa` "uuid" schema (`{"type":"string","format":"uuid"}`); `xtask openapi` tags

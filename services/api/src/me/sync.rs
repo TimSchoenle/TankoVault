@@ -7,6 +7,9 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use serde::Deserialize;
 use std::fmt::Write as _;
+use tankovault_contracts::sync::{
+    AccountSettings, AccountStatus, AuthorizeUrl, ConflictView, HistoryView, ProviderInfo,
+};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -29,7 +32,7 @@ use uuid::Uuid;
 pub async fn sync_providers(
     State(state): State<AppState>,
     _user: AuthUser,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<Vec<ProviderInfo>>> {
     state.sync.get("/v1/sync/providers").await
 }
 
@@ -52,7 +55,7 @@ pub async fn sync_authorize_url(
     State(state): State<AppState>,
     _user: AuthUser,
     Path(provider): Path<String>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<AuthorizeUrl>> {
     state
         .sync
         .get(&format!("/v1/sync/{provider}/authorize-url"))
@@ -80,7 +83,7 @@ pub async fn sync_status(
     State(state): State<AppState>,
     user: AuthUser,
     Path(provider): Path<String>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<AccountStatus>> {
     state
         .sync
         .get(&format!(
@@ -101,7 +104,7 @@ pub async fn sync_status(
     params(("provider" = String, Path, description = "Provider slug")),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Unlinked, forwarded from the sync service"),
+        (status = 200, description = "Unlinked, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
@@ -136,7 +139,7 @@ pub struct AniListCallback {
     params(("provider" = String, Path, description = "Provider slug"), AniListCallback),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Linked, forwarded from the sync service"),
+        (status = 200, description = "Linked, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 404, description = "Unknown provider", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
@@ -177,7 +180,7 @@ pub struct SyncOpts {
     request_body(content = Option<SyncOpts>, description = "Optional sync options; omitted body uses the service default"),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Pushed, forwarded from the sync service"),
+        (status = 200, description = "Pushed, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
     )
@@ -209,7 +212,7 @@ pub async fn sync_push(
     request_body(content = Option<SyncOpts>, description = "Optional sync options; omitted body uses the service default"),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Pulled, forwarded from the sync service"),
+        (status = 200, description = "Pulled, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
     )
@@ -249,7 +252,7 @@ pub async fn sync_settings(
     State(state): State<AppState>,
     user: AuthUser,
     Path(provider): Path<String>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<AccountSettings>> {
     sync_get(
         &state,
         &format!("/v1/sync/{provider}/settings/{}", user.user_id.as_uuid()),
@@ -292,8 +295,9 @@ pub async fn sync_settings_patch(
         "conflict_policy": body.conflict_policy,
     });
     // The upstream body is an implementation detail here; the documented response is a
-    // fixed acknowledgement, so the forwarded value is deliberately discarded.
-    let _ = state
+    // fixed acknowledgement, so the forwarded value is deliberately discarded. Named
+    // explicitly because nothing else in this call pins the decode type any more (ARCH-10).
+    let _: Json<serde_json::Value> = state
         .sync
         .patch(
             &format!("/v1/sync/{provider}/settings/{}", user.user_id.as_uuid()),
@@ -320,7 +324,7 @@ pub async fn sync_settings_patch(
 pub async fn sync_conflicts(
     State(state): State<AppState>,
     user: AuthUser,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<Vec<ConflictView>>> {
     sync_get(
         &state,
         &format!("/v1/sync/conflicts/{}", user.user_id.as_uuid()),
@@ -345,7 +349,7 @@ pub struct ResolveConflict {
     request_body = ResolveConflict,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Resolved, forwarded from the sync service"),
+        (status = 200, description = "Resolved, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 404, description = "No such conflict", body = crate::error::ProblemDetails),
     )
@@ -394,7 +398,7 @@ pub async fn sync_history(
     State(state): State<AppState>,
     user: AuthUser,
     Query(q): Query<HistoryParams>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<Vec<HistoryView>>> {
     let mut path = format!("/v1/sync/history/{}?", user.user_id.as_uuid());
     if let Some(s) = q.series_id {
         let _ = write!(path, "series_id={s}&");
@@ -411,7 +415,10 @@ pub async fn sync_history(
 /// A thin alias over [`crate::upstream::Upstream`], kept so `admin/sync.rs` reads the same
 /// way as this module. Error mapping, the internal token and the timeouts all live in the
 /// client rather than being restated per call site.
-pub(crate) async fn sync_get(state: &AppState, path: &str) -> ApiResult<Json<serde_json::Value>> {
+pub(crate) async fn sync_get<T: serde::de::DeserializeOwned>(
+    state: &AppState,
+    path: &str,
+) -> ApiResult<Json<T>> {
     state.sync.get(path).await
 }
 

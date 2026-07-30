@@ -17,7 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use tankovault_domain::{AccountStatus, SeriesId};
+use tankovault_domain::{AccountStatus, ScanRunId, SeriesId};
 use time::OffsetDateTime;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -310,4 +310,21 @@ pub struct AdminPrivacyRequestView {
     /// SQL against `now()` so the queue cannot disagree with itself about what is late
     /// depending on when a client's clock says it rendered.
     pub overdue: bool,
+}
+
+/// What the control plane answers when a scan is planned: the runs it created.
+///
+/// Published by `services/control-plane` on its internal `POST /internal/scans`, and
+/// republished verbatim by `services/api` on `POST /v1/admin/scans` and
+/// `POST /v1/admin/providers/{id}/resolve`. It lives here, rather than staying a private
+/// struct in the control plane's `main.rs`, for the reason ARCH-10 exists: while the producer
+/// owned the only definition, the API could declare nothing more specific than
+/// `serde_json::Value`, so the console's "N scans queued" was reading a field no compiler had
+/// ever connected to the field the planner writes. Both ends now name this type, so removing
+/// `run_ids` fails to build at the producer *and* the republisher.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = ScanTriggered)]
+pub struct ScanTriggeredView {
+    /// One id per run planned — one per provider when the request names none.
+    pub run_ids: Vec<ScanRunId>,
 }

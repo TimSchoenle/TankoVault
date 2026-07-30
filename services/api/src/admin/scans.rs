@@ -11,6 +11,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::time::Duration;
+use tankovault_contracts::admin::ScanTriggeredView;
 use tankovault_domain::{Feature, Permission, ProviderId, ScanMode, ScanRun, ScanRunId};
 use tokio_stream::StreamExt as _;
 use tokio_stream::wrappers::IntervalStream;
@@ -33,7 +34,7 @@ pub struct TriggerScan {
     request_body = TriggerScan,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Scan queued, forwarded from the control-plane"),
+        (status = 200, description = "Scan queued, forwarded from the control-plane", body = tankovault_contracts::admin::ScanTriggeredView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "manual scanning, or full scans specifically, are switched off", body = crate::error::ProblemDetails),
@@ -43,7 +44,7 @@ pub async fn trigger_scan(
     State(state): State<AppState>,
     user: AuthUser,
     Json(req): Json<TriggerScan>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<ScanTriggeredView>> {
     user.require(Permission::ScansRun).await?;
 
     // `scanning.manual` gates this route in the feature table; `scanning.full` gates a *mode*

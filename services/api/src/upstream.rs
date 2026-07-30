@@ -14,10 +14,24 @@
 //! - **No timeouts.** The client was a bare `reqwest::Client::new()`, which has none, feeding
 //!   an unbounded `tokio::spawn` in `spawn_targeted_push` — a hung `sync` leaked a task and a
 //!   socket per marked chapter.
+//!
+//! # Typed bodies (ARCH-10)
+//!
+//! Every verb is generic in the response body, so a proxy handler declaring
+//! `body = tankovault_contracts::sync::AccountStatus` in its `#[utoipa::path]` can *return*
+//! that type and have the deserialize step enforce the declaration at the edge. Before that,
+//! the handlers all returned `Json<serde_json::Value>` and nothing — not the compiler, not a
+//! test — connected the declaration to what was forwarded, while the generated
+//! `crates/api-client` and the frontend trusted it. Being one place is what made this a
+//! four-line change rather than twenty.
+//!
+//! `T = serde_json::Value` is still the right answer for a genuinely schema-less command
+//! response and costs nothing: [`serde_json::from_value`] into a `Value` is the identity.
 
 use crate::error::{ApiError, ApiResult};
 use axum::Json;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::time::Duration;
 use tankovault_service::{INTERNAL_TOKEN_HEADER, InternalToken};
 
@@ -76,50 +90,50 @@ impl Upstream {
             .build()
     }
 
-    /// `GET path`, decoding a JSON body.
+    /// `GET path`, decoding the body as `T`.
     ///
     /// # Errors
     /// See [`Self::send`].
-    pub async fn get(&self, path: &str) -> ApiResult<Json<serde_json::Value>> {
+    pub async fn get<T: DeserializeOwned>(&self, path: &str) -> ApiResult<Json<T>> {
         let url = self.url(path);
         self.send(self.http.get(url)).await
     }
 
-    /// `POST path` with a JSON body.
+    /// `POST path` with a JSON body, decoding the response as `T`.
     ///
     /// # Errors
     /// See [`Self::send`].
-    pub async fn post<B: Serialize>(
+    pub async fn post<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
         body: &B,
-    ) -> ApiResult<Json<serde_json::Value>> {
+    ) -> ApiResult<Json<T>> {
         let url = self.url(path);
         self.send(self.http.post(url).json(body)).await
     }
 
-    /// `PATCH path` with a JSON body.
+    /// `PATCH path` with a JSON body, decoding the response as `T`.
     ///
     /// # Errors
     /// See [`Self::send`].
-    pub async fn patch<B: Serialize>(
+    pub async fn patch<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
         body: &B,
-    ) -> ApiResult<Json<serde_json::Value>> {
+    ) -> ApiResult<Json<T>> {
         let url = self.url(path);
         self.send(self.http.patch(url).json(body)).await
     }
 
-    /// `DELETE path` with a JSON body.
+    /// `DELETE path` with a JSON body, decoding the response as `T`.
     ///
     /// # Errors
     /// See [`Self::send`].
-    pub async fn delete<B: Serialize>(
+    pub async fn delete<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
         body: &B,
-    ) -> ApiResult<Json<serde_json::Value>> {
+    ) -> ApiResult<Json<T>> {
         let url = self.url(path);
         self.send(self.http.delete(url).json(body)).await
     }
@@ -153,10 +167,11 @@ impl Upstream {
     /// Send, then translate the outcome into this service's error vocabulary.
     ///
     /// # Errors
-    /// [`ApiError::BadGateway`] when the peer is unreachable or answers with a status this
-    /// service cannot represent, [`ApiError::GatewayTimeout`] on a timeout,
-    /// [`ApiError::NotFound`] and [`ApiError::Conflict`] when the peer said so deliberately.
-    async fn send(&self, req: reqwest::RequestBuilder) -> ApiResult<Json<serde_json::Value>> {
+    /// [`ApiError::BadGateway`] when the peer is unreachable, answers with a status this
+    /// service cannot represent, or sends a body that is not a `T`; [`ApiError::GatewayTimeout`]
+    /// on a timeout; [`ApiError::NotFound`] and [`ApiError::Conflict`] when the peer said so
+    /// deliberately.
+    async fn send<T: DeserializeOwned>(&self, req: reqwest::RequestBuilder) -> ApiResult<Json<T>> {
         let resp = self.authenticate(req).send().await.map_err(|e| {
             tracing::error!(upstream = self.name, error = %e, "internal service unreachable");
             if e.is_timeout() {
@@ -172,14 +187,37 @@ impl Upstream {
             return Err(self.map_status(status, &text));
         }
 
+        self.decode(&text)
+    }
+
+    /// Turn a successful response body into the `T` the calling endpoint publishes.
+    ///
+    /// Separate from [`Self::send`] so the two rules it encodes are testable without a peer.
+    ///
+    /// # Errors
+    /// [`ApiError::BadGateway`] when the body is not a `T`.
+    fn decode<T: DeserializeOwned>(&self, text: &str) -> ApiResult<Json<T>> {
         // A `204`, or a body the peer chose not to give us, is a success with nothing to
         // forward. Callers expect an object, so give them the canonical empty one.
-        let value = if text.trim().is_empty() {
+        let value: serde_json::Value = if text.trim().is_empty() {
             serde_json::json!({ "ok": true })
         } else {
-            serde_json::from_str(&text).unwrap_or_else(|_| serde_json::json!({ "ok": true }))
+            serde_json::from_str(text).unwrap_or_else(|_| serde_json::json!({ "ok": true }))
         };
-        Ok(Json(value))
+
+        // Where the caller named a concrete `T`, this is the step that makes the endpoint's
+        // `#[utoipa::path]` declaration true rather than aspirational: a peer that changed its
+        // shape fails here, at the boundary, instead of silently reaching a generated client
+        // that was compiled against the old one. A `T` of `serde_json::Value` passes through.
+        serde_json::from_value(value).map(Json).map_err(|e| {
+            tracing::error!(
+                upstream = self.name,
+                error = %e,
+                expected = std::any::type_name::<T>(),
+                "internal service answered with a body this endpoint does not publish"
+            );
+            ApiError::BadGateway
+        })
     }
 
     /// Map an upstream status onto this service's error vocabulary.
@@ -253,6 +291,41 @@ mod tests {
             up.map_status(reqwest::StatusCode::INTERNAL_SERVER_ERROR, ""),
             ApiError::BadGateway
         ));
+    }
+
+    /// The endpoint's declared body is now *enforced* rather than merely documented (ARCH-10).
+    ///
+    /// Twenty proxy handlers used to return `Json<serde_json::Value>` while their
+    /// `#[utoipa::path]` named a concrete `body =`. Nothing connected the two, and the
+    /// generated `crates/api-client` and the frontend believed the declaration. A peer whose
+    /// shape has drifted must now fail at this boundary instead of reaching a client compiled
+    /// against the old one.
+    #[test]
+    fn a_body_that_is_not_the_declared_shape_is_a_bad_gateway() {
+        let up = upstream(None);
+        assert!(
+            up.decode::<tankovault_contracts::sync::ProviderInfo>(r#"{"slug":"anilist"}"#)
+                .is_err(),
+            "a ProviderInfo missing `name` must not be forwarded as one"
+        );
+        let Json(ok) = up
+            .decode::<tankovault_contracts::sync::ProviderInfo>(
+                r#"{"slug":"anilist","name":"AniList"}"#,
+            )
+            .expect("the declared shape decodes");
+        assert_eq!(ok.slug, "anilist");
+    }
+
+    /// The command proxies stay `serde_json::Value`, and for them the empty-body case must
+    /// still produce the canonical acknowledgement rather than `null` — a `204` from the peer
+    /// is a success with nothing to forward, not an absent body the client should see.
+    #[test]
+    fn an_empty_body_is_still_the_canonical_acknowledgement() {
+        let up = upstream(None);
+        let Json(value) = up
+            .decode::<serde_json::Value>("")
+            .expect("an empty body is not an error");
+        assert_eq!(value, serde_json::json!({ "ok": true }));
     }
 
     /// A misconfigured internal token must not surface to the client as *their* 401.

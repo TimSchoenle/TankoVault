@@ -65,7 +65,10 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
                     .map(ResponseValue::into_inner)
                     .map_err(|e| api::friendly_error(i18n, e))
                 {
-                    Ok(()) => {
+                    // The body is the planner's `{ "run_ids": [...] }`, which this view does
+                    // not render; it was `()` only because the endpoint used to declare no
+                    // response body at all (ARCH-10).
+                    Ok(_) => {
                         message.set(Some(i18n.t("console.scans.queued")));
                         tick.bump();
                     }

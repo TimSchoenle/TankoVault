@@ -49,7 +49,7 @@ use uuid::Uuid;
     get,
     path = "/v1/me/export",
     tag = ME_ACCOUNT_TAG,
-    security(("bearer" = [])),
+    security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "Complete personal-data export", body = serde_json::Value),
         (status = 401, description = "Unauthenticated"),
@@ -108,7 +108,7 @@ pub struct DeleteAccount {
     delete,
     path = "/v1/me",
     tag = ME_ACCOUNT_TAG,
-    security(("bearer" = [])),
+    security(("bearer_auth" = [])),
     request_body = DeleteAccount,
     responses(
         (status = 204, description = "Account and all owned data erased"),

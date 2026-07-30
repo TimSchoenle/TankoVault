@@ -26,6 +26,8 @@ axum = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }
+# Percent-encodes the OAuth consent URL's query, replacing a hand-rolled encoder (ARCH-7).
+url = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true }

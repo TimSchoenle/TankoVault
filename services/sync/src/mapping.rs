@@ -84,6 +84,17 @@ pub(crate) fn content_type_from_country(country: Option<&str>) -> ContentType {
     }
 }
 
+/// Round a fractional local progress to the whole-chapter count a provider expects.
+///
+/// Lives here rather than in the provider module because this file owns every other unit
+/// conversion across the boundary (ARCH-7), and the rounding rule is not `AniList`-specific:
+/// remote trackers count whole chapters, local progress does not.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[must_use]
+pub(crate) fn progress_to_int(progress: f64) -> i64 {
+    progress.max(0.0).round() as i64
+}
+
 /// The user-selectable reconciliation policy when a series exists on both sides (§15).
 /// The shared `Wins` suffix is intentional, user-facing vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

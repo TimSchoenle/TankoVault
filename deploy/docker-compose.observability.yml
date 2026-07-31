@@ -146,7 +146,7 @@ services:
 
   grafana:
     #   digest: sha256:6128afd8174f01e39a78341cb457588f723bbb9c3b25c4d43c4b775881767069
-    image: grafana/grafana:11.6.3@sha256:6128afd8174f01e39a78341cb457588f723bbb9c3b25c4d43c4b775881767069
+    image: grafana/grafana:11.6.16@sha256:d67af92050b8d93b393dc741864752a69c9da1ffa39c1bb9af49ad5d9e47d2c3
     <<: *obs-hardening
     # `read_only` is deliberately NOT set, for the same reason it is not set on `render`: this is a
     # full Alpine base whose writable paths (plugin staging, rendered PNGs, its own SQLite journal

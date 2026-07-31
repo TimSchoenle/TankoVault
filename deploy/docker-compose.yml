@@ -128,7 +128,7 @@ services:
   flaresolverr:
     # Pinned: `latest` silently changes the bot-management behaviour the adapters are tuned
     # against, and an unpinned image is an unreviewed code change on every `docker compose pull`.
-    image: ghcr.io/flaresolverr/flaresolverr:v3.3.21
+    image: ghcr.io/flaresolverr/flaresolverr:v3.5.0
     environment:
       LOG_LEVEL: info
     shm_size: 1gb

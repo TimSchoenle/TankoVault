@@ -34,15 +34,15 @@ path = "src/main.rs"
 dioxus = { version = "0.7", features = ["web", "router"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-gloo-net = { version = "0.6", features = ["http", "json", "eventsource"] }
+gloo-net = { version = "0.7", features = ["http", "json", "eventsource"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 progenitor-client = "0.14"
 tankovault-api-client = { path = "../../crates/api-client" }
 tankovault-domain = { path = "../../crates/domain" }
 # Console dashboard auto-refresh loop (wasm-friendly async sleep).
-gloo-timers = { version = "0.3", features = ["futures"] }
+gloo-timers = { version = "0.4", features = ["futures"] }
 futures-util = "0.3"
-base64 = "0.22"
+base64 = "0.23"
 # Live notification stream: read `MessageEvent.data()` from the SSE subscription.
 # `Window`/`Location` let the API client resolve the served page's absolute origin — reqwest
 # (unlike the browser's own fetch) rejects the relative `/v1/...` paths with a "builder error".

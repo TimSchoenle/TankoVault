@@ -237,7 +237,7 @@ figment = { version = "0.10", features = ["toml", "env"] }
 argon2 = "0.5"          # 0.6 is only a pre-release (rc); 0.5 is the current stable.
 jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto"] }
 aes-gcm = "0.11"
-rand = "0.8"
+rand = "0.10"
 sha2 = "0.10"
 base64 = "0.22"
 # Constant-time comparison for the internal service-to-service token. Already in the tree

@@ -436,20 +436,20 @@ as `chrome_crashpad_handler: --database is required` plus a SIGTRAP.
 
 ### What is genuinely left
 
-1. **F-09's last axis: `wiremock`.** Everything else on the report's list is closed — the
-   `Clock` (which was one type parameter, not a `Clock`), the entity builders, and the seeded
-   RNG, each of which turned out to be smaller and differently shaped than the report predicted;
-   snapshot assertions are declined with the reasoning in the row. What is left is a scriptable
-   HTTP upstream for the `AniList` client, the notifier webhook and the render path. This one is
-   *not* smaller than it looks: F-06 fakes `AniList` at the `ExternalProvider` trait boundary, so
-   `providers/anilist/client.rs` — the `OAuth` token exchange, the pacing, the `429` retry — has
-   no test at all, and that is the layer most exposed to a provider changing its behaviour.
-2. **`LICENSE`** (OPS-10.4) is a human decision, not an omission — it is entangled with OP-6,
+**Nothing a commit can close.** This list led with F-09's `wiremock` axis until `9c48588`
+landed it — the `AniList` client, the notifier's two webhook channels and both solve clients
+on the render path all have a scriptable upstream now, and the two defects that suite found
+are rows of their own (F-09b, F-09c). It is deleted here rather than marked done, because a
+"left" list that keeps finished work is how the next reader stops trusting the list. What
+follows is two decisions and one deployment change, plus the credential rotation named
+under the list.
+
+1. **`LICENSE`** (OPS-10.4) is a human decision, not an omission — it is entangled with OP-6,
    since `wreq-util` being GPL-3.0 means the licence chosen determines whether the images can be
    distributed at all.
-3. **FE-F8 — the inline-style layer.** WONTFIX with reasoning: it needs a decision about whether
+2. **FE-F8 — the inline-style layer.** WONTFIX with reasoning: it needs a decision about whether
    `ik-*` gets a real utility tier, not a mechanical sweep.
-4. **SEC-2b — renderer DNS rebinding.** The one OPEN row, and no commit closes it: Chrome and
+3. **SEC-2b — renderer DNS rebinding.** The one OPEN row, and no commit closes it: Chrome and
    `FlareSolverr` resolve independently of our SSRF guard, so it needs `--host-resolver-rules` or
    an egress-restricted network namespace. An operator decision about the deployment, recorded in
    `SECURITY.md` as a known issue.

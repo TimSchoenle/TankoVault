@@ -39,7 +39,7 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 # oracle compares what was validated against what the header says rather than against a
 # hand-rolled base64 decoder. `default-features = false` + `rust_crypto` matches the root
 # manifest; the default feature set pulls a second crypto backend.
-jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto"] }
+jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
 # `test` adds `figment::Jail`, which `config_env_load` needs to set and restore `TANKOVAULT_*`
 # around each iteration. `crates/config` already carries the same feature as a dev-dependency.
 figment = { version = "0.10", features = ["toml", "env", "test"] }

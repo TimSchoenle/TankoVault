@@ -20,4 +20,9 @@
 # Baseline measured 2026-07-30 at 24.85% (regions 29.26%, functions 24.08%), set one point
 # below to absorb `proptest`'s entropy-seeded runs — the one source of run-to-run variation in
 # an otherwise deterministic measurement.
-23.8
+#
+# Raised 2026-07-31 to 28.1, on the ratchet's own suggestion at 5.35 points of headroom.
+# Re-measured at 29.15% (regions 33.78%, functions 27.67%) after TEST F-09's last axis landed:
+# 31 `wiremock` tests over four HTTP clients that had no test below the trait boundary at all.
+# Same one-point margin as the baseline, and the same reason for it.
+28.1

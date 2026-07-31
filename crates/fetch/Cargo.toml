@@ -28,6 +28,10 @@ futures = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
+# A scriptable upstream for `HttpChallengeSolver`, which had no test below the `ChallengeSolver`
+# trait at all (TEST F-09).
+wiremock = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

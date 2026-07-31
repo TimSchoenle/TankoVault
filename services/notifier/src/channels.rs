@@ -316,6 +316,28 @@ pub(crate) fn build(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    /// A server that accepts one `POST /hook` and records it.
+    async fn accepting_server() -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/hook"))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+        server
+    }
+
+    /// The JSON body of the one request the server received.
+    async fn sole_request_body(server: &MockServer) -> serde_json::Value {
+        let requests = server.received_requests().await.expect("request recording");
+        assert_eq!(requests.len(), 1, "expected exactly one request");
+        serde_json::from_slice(&requests[0].body).expect("a JSON request body")
+    }
 
     fn sample() -> Alert {
         Alert {
@@ -472,5 +494,118 @@ mod tests {
             "New chapter 12: The Duel (kunmanga)"
         );
         assert!(email_body(&sample()).contains("kunmanga"));
+    }
+
+    /// The payload builders above are pure and were already covered; what was not was the step
+    /// that puts one on the wire. Nothing connected [`webhook_payload`] to the body an operator's
+    /// endpoint actually receives, so the delivered document is asserted to *be* the builder's
+    /// output rather than re-spelled here — the failure this catches is `deliver` sending
+    /// something else, not the builder changing shape, which its own test owns (F-09).
+    #[tokio::test]
+    async fn the_generic_webhook_posts_the_payload_builder_output_as_json() {
+        let server = accepting_server().await;
+        let alert = sample();
+
+        WebhookChannel::new(reqwest::Client::new(), format!("{}/hook", server.uri()))
+            .deliver(&alert)
+            .await
+            .expect("a 204 is a successful delivery");
+
+        assert_eq!(sole_request_body(&server).await, webhook_payload(&alert));
+        let requests = server.received_requests().await.expect("request recording");
+        assert_eq!(
+            requests[0]
+                .headers
+                .get("content-type")
+                .map(|v| v.to_str().expect("ASCII header")),
+            Some("application/json"),
+            "a receiver that dispatches on Content-Type would drop this"
+        );
+    }
+
+    /// The same for Discord, which is a *different* document to the same transport — the two
+    /// channels share `deliver`'s shape and nothing but a test would notice one being handed the
+    /// other's builder.
+    #[tokio::test]
+    async fn the_discord_webhook_posts_the_discord_document() {
+        let server = accepting_server().await;
+        let alert = sample();
+
+        DiscordChannel::new(reqwest::Client::new(), format!("{}/hook", server.uri()))
+            .deliver(&alert)
+            .await
+            .expect("a 204 is a successful delivery");
+
+        assert_eq!(sole_request_body(&server).await, discord_payload(&alert));
+    }
+
+    /// A rejected delivery has to *be* an error, and name the status: the caller logs whatever
+    /// comes back per channel and never aborts fan-out, so this string is the entire diagnostic
+    /// an operator gets for a webhook that has been quietly `401`ing for a week.
+    #[tokio::test]
+    async fn a_rejected_delivery_is_an_error_naming_the_channel_and_the_status() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/hook"))
+            .respond_with(ResponseTemplate::new(401))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let url = format!("{}/hook", server.uri());
+
+        let webhook = WebhookChannel::new(reqwest::Client::new(), url.clone())
+            .deliver(&sample())
+            .await
+            .expect_err("a 401 is a failed delivery")
+            .to_string();
+        assert!(webhook.contains("401"), "no status in: {webhook}");
+        assert!(webhook.contains("webhook"), "no channel in: {webhook}");
+
+        let discord = DiscordChannel::new(reqwest::Client::new(), url)
+            .deliver(&sample())
+            .await
+            .expect_err("a 401 is a failed delivery")
+            .to_string();
+        assert!(discord.contains("401"), "no status in: {discord}");
+        assert!(discord.contains("discord"), "no channel in: {discord}");
+    }
+
+    /// `timeout_secs` is the only knob on [`ChannelsConfig`] whose effect is invisible in the
+    /// constructed value, and a configuration knob that silently does nothing is worse than an
+    /// absent one — the operator who sets it believes deliveries are bounded. Driven through
+    /// [`build`] rather than by constructing a client here, because the wiring being asserted is
+    /// exactly the line in `build` that could drop it.
+    #[tokio::test]
+    async fn the_configured_timeout_reaches_the_client_that_delivers() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/hook"))
+            .respond_with(ResponseTemplate::new(204).set_delay(Duration::from_secs(30)))
+            .mount(&server)
+            .await;
+
+        let cfg = ChannelsConfig {
+            webhook_url: Some(format!("{}/hook", server.uri())),
+            timeout_secs: 1,
+            ..ChannelsConfig::default()
+        };
+        let channels = build(&cfg, &tankovault_config::EmailConfig::default());
+        assert_eq!(channels.len(), 1);
+
+        let started = Instant::now();
+        let err = channels[0]
+            .deliver(&sample())
+            .await
+            .expect_err("the delivery outlives the timeout");
+        assert!(
+            err.downcast_ref::<reqwest::Error>()
+                .is_some_and(reqwest::Error::is_timeout),
+            "not a timeout: {err}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the 1s timeout was not applied: {:?}",
+            started.elapsed()
+        );
     }
 }

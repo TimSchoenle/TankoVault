@@ -185,6 +185,15 @@ tower-http = { version = "0.7", features = ["trace", "cors", "compression-full",
 # a minimal counterexample far more than they need coverage-guided input generation, and
 # because it runs in the ordinary `cargo test` job with no extra toolchain.
 proptest = { version = "1", default-features = false, features = ["std", "bit-set"] }
+# A scriptable HTTP upstream, for the clients that had no test below the trait boundary at all
+# (TEST F-09): the `AniList` transport, the notifier's webhook channels, and the two solve
+# clients on the render path. Those are `reqwest`/`wreq` round trips whose contract is what goes
+# on the wire and what a non-2xx or a `429` is turned into, and a trait fake cannot see either.
+# Chosen over hand-rolling an `axum` stub -- which would cost no new dependency -- because the
+# assertions that matter here are *on the request*: `received_requests` and `expect(n)` are the
+# feature, and reimplementing request capture and call-count verification is how a harness grows
+# bugs that make a test pass. Dev-only, so it reaches no shipping binary.
+wiremock = "0.6"
 
 # --- data / storage ---
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "json", "macros", "migrate"] }

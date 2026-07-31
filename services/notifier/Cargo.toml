@@ -35,5 +35,11 @@ futures = { workspace = true }
 reqwest = { workspace = true }
 async-trait = { workspace = true }
 
+[dev-dependencies]
+# A scriptable upstream for `WebhookChannel`/`DiscordChannel`. Their payload builders were
+# already unit-tested as pure functions; what was untested was `deliver` — that the payload
+# reaches the wire at all, and what a non-2xx becomes (TEST F-09).
+wiremock = { workspace = true }
+
 [lints]
 workspace = true

@@ -46,6 +46,10 @@ integration = []
 
 [dev-dependencies]
 tankovault-test-support = { path = "../../crates/test-support" }
+# A scriptable `AniList`. F-06 fakes the provider at the *trait* boundary, so until this
+# everything below it — the `OAuth` token exchange, the pacer, the `429` retry — was untested
+# (TEST F-09).
+wiremock = { workspace = true }
 
 [lints]
 workspace = true

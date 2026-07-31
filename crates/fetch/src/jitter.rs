@@ -10,18 +10,21 @@
 //!
 //! # Why the RNG is a parameter (TEST F-09)
 //!
-//! The delay was drawn from `rand::thread_rng()` inline, so no test could assert anything about
-//! it beyond "it did not panic". That matters more than it sounds: the whole point of full jitter
-//! is the *spread*, and a mutant replacing the draw with the constant `0` — or with the ceiling —
-//! survives every bound-only assertion while destroying the property. That is precisely the class
-//! of surviving mutant F-10 spent a session eliminating.
+//! The delay was drawn from the thread-local generator (`rand::rng()`) inline, so no test could
+//! assert anything about it beyond "it did not panic". That matters more than it sounds: the
+//! whole point of full jitter is the *spread*, and a mutant replacing the draw with the constant
+//! `0` — or with the ceiling — survives every bound-only assertion while destroying the property.
+//! That is precisely the class of surviving mutant F-10 spent a session eliminating.
 //!
 //! So [`ceiling`] is pure and exactly assertable, and [`full_jitter`] takes the generator. The
 //! shape follows the convention this remediation settled on for the rate limiter's clock: pass
 //! the source of non-determinism as an argument rather than building a service abstraction over
 //! it, and give production a wrapper so no call site has to know.
 
-use rand::Rng;
+// `rand` 0.10 split the old `Rng` in two: `Rng` is the core generator trait (what a caller can
+// hand us), `RngExt` is the blanket-implemented sampling surface `random_range` lives on. The
+// bound stays on `Rng` so callers only have to satisfy the core trait.
+use rand::{Rng, RngExt as _};
 use std::time::Duration;
 
 /// The upper bound of the delay for `attempt` (1-based): `base * 2^(attempt - 1)`, capped at
@@ -48,12 +51,12 @@ pub(crate) fn full_jitter<R: Rng>(
     attempt: u32,
 ) -> Duration {
     let millis = u64::try_from(ceiling(base, max, attempt).as_millis()).unwrap_or(u64::MAX);
-    Duration::from_millis(rng.gen_range(0..=millis))
+    Duration::from_millis(rng.random_range(0..=millis))
 }
 
 /// [`full_jitter`] against the thread-local generator — the production entry point.
 pub(crate) fn full_jitter_now(base: Duration, max: Duration, attempt: u32) -> Duration {
-    full_jitter(&mut rand::thread_rng(), base, max, attempt)
+    full_jitter(&mut rand::rng(), base, max, attempt)
 }
 
 #[cfg(test)]
@@ -112,7 +115,7 @@ mod tests {
 
     /// **The claim the bound alone cannot make**: the draw spans the whole interval.
     ///
-    /// Without this, `gen_range(0..=millis)` could be replaced by the constant `0`, by the
+    /// Without this, `random_range(0..=millis)` could be replaced by the constant `0`, by the
     /// constant `millis`, or by a draw over a tenth of the range, and every other test here would
     /// still pass — while full jitter, whose entire purpose is the spread, would be gone. Stated
     /// as "both halves of the interval are reached" rather than as a distribution test, because

@@ -3,7 +3,7 @@
 use crate::error::AuthError;
 use base64::Engine;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use rand::RngCore;
+use rand::Rng as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
@@ -141,7 +141,7 @@ pub fn verify_access_token(secret: &[u8], token: &str) -> Result<AccessClaims, A
 #[must_use]
 pub fn generate_refresh_token() -> String {
     let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 

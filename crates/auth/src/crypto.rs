@@ -10,7 +10,7 @@
 use aes_gcm::aead::{Aead, KeyInit, Nonce};
 use aes_gcm::{Aes256Gcm, Key};
 use base64::Engine;
-use rand::RngCore;
+use rand::Rng as _;
 
 use crate::AuthError;
 
@@ -59,7 +59,7 @@ impl SecretBox {
     /// [`AuthError::Crypto`] if the AEAD provider fails (e.g. allocation).
     pub fn seal(&self, plaintext: &[u8]) -> Result<Vec<u8>, AuthError> {
         let mut nonce_bytes = [0u8; NONCE_LEN];
-        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        rand::rng().fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::<Aes256Gcm>::from(nonce_bytes);
         let ciphertext = self
             .cipher

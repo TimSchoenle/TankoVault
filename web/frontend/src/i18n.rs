@@ -121,10 +121,10 @@ fn browser_language() -> Option<String> {
 fn HtmlLang() -> Element {
     let i18n = use_i18n();
     use_effect(move || {
-        // Serialised rather than interpolated so a language code can never break out of the
-        // string literal, matching how the appearance knobs write their attributes.
-        let language = serde_json::to_string(&i18n.language()).unwrap_or_else(|_| "\"en\"".into());
-        let _ = document::eval(&format!("document.documentElement.lang={language};"));
+        // Written through the typed DOM binding (`crate::browser`), so the tag is a value
+        // rather than a fragment of a script — there is no string literal to break out of,
+        // and nothing for the served CSP to have to permit.
+        crate::browser::set_document_language(&i18n.language());
     });
     rsx! {}
 }

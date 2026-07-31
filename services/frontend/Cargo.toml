@@ -28,6 +28,12 @@ tower = { workspace = true }
 # `compression-full`: the WASM bundle is the largest thing this tier serves and was
 # shipped uncompressed. `set-header`/`trace` come from the workspace default set.
 tower-http = { workspace = true, features = ["fs", "compression-full"] }
+# The app shell's inline boot scripts are admitted to the CSP by hash, computed from the
+# served `index.html` at startup (see `content_security_policy`) rather than hardcoded — a
+# constant would drift the moment the shell is edited, and silently, since the only symptom
+# is a browser refusing to run it.
+sha2 = { workspace = true }
+base64 = { workspace = true }
 
 [lints]
 workspace = true

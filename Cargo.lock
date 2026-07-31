@@ -5038,8 +5038,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64",
  "reqwest",
  "serde",
+ "sha2 0.10.9",
  "tankovault-config",
  "tankovault-service",
  "tokio",

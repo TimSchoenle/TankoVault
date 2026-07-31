@@ -182,9 +182,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                     Ok(response) => {
                         // A full-page navigation, not a router push: the consent screen lives
                         // on the provider's origin.
-                        let url = serde_json::to_string(&response.into_inner().url)
-                            .unwrap_or_else(|_| "\"\"".to_owned());
-                        let _ = document::eval(&format!("window.location.href = {url};"));
+                        crate::browser::navigate_to(&response.into_inner().url);
                     }
                     Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
                 }

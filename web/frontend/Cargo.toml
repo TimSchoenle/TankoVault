@@ -49,9 +49,13 @@ base64 = "0.22"
 # `Blob`/`Url`/`HtmlAnchorElement` back the personal-data export download: the endpoint is
 # bearer-authenticated, so a plain anchor navigation cannot reach it and the document has to be
 # handed to the browser from memory (see `util::save_text_file`).
+# `Storage`/`HtmlInputElement` back `src/browser.rs`, which replaced every `document::eval`
+# call in the app: Dioxus implements web `eval` as `new Function(...)`, and the served CSP
+# does not (and must not) carry `'unsafe-eval'`.
 web-sys = { version = "0.3", features = [
     "MessageEvent", "Window", "Location", "Navigator",
     "Blob", "BlobPropertyBag", "Url", "Document", "Element", "HtmlAnchorElement",
+    "Storage", "HtmlElement", "HtmlInputElement",
 ] }
 wasm-bindgen = "0.2"
 # Relative-time formatting on the console uses the browser's own ISO-8601 date parser.

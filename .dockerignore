@@ -18,6 +18,21 @@ node_modules/
 **/node_modules/
 
 # ---------------------------------------------------------------------------
+# Test-tooling output and inputs. None of this is built by any image, and all
+# of it is expensive to *transfer*: `fuzz/` carries ~11.5k corpus and seed
+# files that the context has to walk and hash on each of the ten builds, and
+# any touch of one invalidates the `COPY . .` layer for every service image.
+#
+# `fuzz/` is safe to drop wholesale: it is excluded from the workspace
+# (Cargo.toml → `exclude`), pins its own nightly toolchain and carries its own
+# lockfile, so nothing `cargo chef prepare` or `cargo build` does in these
+# images reads it. `mutants.out*` are cargo-mutants run artefacts.
+# ---------------------------------------------------------------------------
+fuzz/
+mutants.out/
+mutants.out.old/
+
+# ---------------------------------------------------------------------------
 # VCS / CI / editor / tooling metadata (not needed to build)
 # ---------------------------------------------------------------------------
 .git/

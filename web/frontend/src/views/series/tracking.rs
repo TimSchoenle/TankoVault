@@ -566,9 +566,7 @@ fn TrackerRow(tracker: Tracker, reload_sync: Reload) -> Element {
                 {
                     // A full-page navigation, not a router push: the consent screen lives on
                     // the provider's origin.
-                    let url = serde_json::to_string(&response.into_inner().url)
-                        .unwrap_or_else(|_| "\"\"".to_owned());
-                    let _ = document::eval(&format!("window.location.href = {url};"));
+                    crate::browser::navigate_to(&response.into_inner().url);
                 }
                 busy.release();
             });

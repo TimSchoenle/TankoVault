@@ -13,6 +13,8 @@
 //! - [`components`] — the shell, rail, command bar and the shared feedback primitives.
 //! - [`views`] — the screens.
 //! - [`hooks`] / [`util`] — refetch/busy handles and dependency-free formatting.
+//! - [`browser`] — the app's whole direct browser-API surface (storage, `<html>` attributes,
+//!   navigation), typed through `web-sys` rather than `document::eval`.
 
 // The crate-level `#![allow(non_snake_case)]` that used to sit here is **gone**, and the
 // comment justifying it was wrong: it claimed the route table names components too, so the
@@ -22,6 +24,7 @@
 
 mod api;
 mod app;
+mod browser;
 mod components;
 mod hooks;
 mod i18n;

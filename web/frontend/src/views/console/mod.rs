@@ -536,9 +536,7 @@ fn JumpField() -> Element {
         button {
             class: "ik-cons-jump",
             onclick: move |_| {
-                let _ = document::eval(
-                    "const el = document.getElementById('tv-search'); if (el) { el.focus(); el.select(); }",
-                );
+                crate::browser::focus_and_select("tv-search");
             },
             span { style: "display:flex;flex:none;",
                 Ic { icon: Icon::Search, size: 15 }

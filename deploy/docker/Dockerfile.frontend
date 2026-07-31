@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
 #
 # Frontend image for the local E2E stack. Two build steps, one scratch runtime:
 #   1. build the Dioxus (WASM SPA) bundle with the `dx` CLI;

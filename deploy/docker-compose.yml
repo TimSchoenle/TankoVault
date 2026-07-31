@@ -93,7 +93,7 @@ services:
     # Pinned to a stable major. This was `19beta2-alpine`: the 187-entry `.sqlx` offline
     # cache and every migration are validated against whatever runs here, so a beta catalog
     # meant CI was type-checking queries against a moving target.
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
     deploy: { resources: { limits: { memory: 1g } } }
     environment:
       POSTGRES_USER: tankovault
@@ -107,7 +107,7 @@ services:
       retries: 12
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
     deploy: { resources: { limits: { memory: 256m } } }
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -116,7 +116,7 @@ services:
       retries: 12
 
   nats:
-    image: nats:2-alpine
+    image: nats:2-alpine@sha256:f2123f533c2b0cada0a5c5ec434fb2b8cfe1cf220215ef9d7517e1372917ad66
     deploy: { resources: { limits: { memory: 512m } } }
     command: ["-js", "-m", "8222"] # JetStream + HTTP monitoring (for the healthcheck)
     healthcheck:
@@ -128,7 +128,7 @@ services:
   flaresolverr:
     # Pinned: `latest` silently changes the bot-management behaviour the adapters are tuned
     # against, and an unpinned image is an unreviewed code change on every `docker compose pull`.
-    image: ghcr.io/flaresolverr/flaresolverr:v3.5.0
+    image: ghcr.io/flaresolverr/flaresolverr:v3.5.0@sha256:139dfee1c6f89249c8d665d1333a42e8ec74ec0a86bc6bb1c8461e10d3a66a47
     environment:
       LOG_LEVEL: info
     shm_size: 1gb

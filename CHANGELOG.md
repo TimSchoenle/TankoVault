@@ -39,6 +39,10 @@ images is *conveying*. The first entry below this line will be whatever tag reso
 - Reading progress has two frontiers (whole and part). Five implementations of "has this user
   read this chapter?" disagreed, so part releases counted as unread in three places, a dashboard
   card could not be cleared, and the notifier announced chapters the reader had finished.
+- Marking a part release read left the whole-chapter frontier behind, so reading `46.1` reported
+  everything up to `45` as unread and kept pushing the stale number to AniList — which has no
+  concept of parts and can only be told a whole chapter. Marking a part now also advances the
+  whole frontier to the last chapter before the one the part belongs to.
 - `parse_number` returned `f64::INFINITY` for an overlong digit run, which stores, freezes
   `latest_chapter` forever, and serialises to `null` on the bus.
 - The notifier acked after a *failed* fan-out — at-most-once delivery, losing notifications with

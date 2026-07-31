@@ -169,6 +169,11 @@ pub async fn progress_state<'e, E: PgExecutor<'e>>(
 /// Apply the §A.3 "mark chapter read" rule for a single chapter `number`, advancing whichever
 /// frontier is appropriate and never letting a part release corrupt whole-chapter progress.
 ///
+/// A part release ahead of the whole frontier moves *both*: the part frontier to `number`, and
+/// the whole frontier up to the last chapter before the one `number` belongs to. Only the first
+/// half is "the part cannot corrupt whole-chapter progress"; the second half is what keeps the
+/// frontier self-consistent, and it is what external sync sees (§B.5 pushes the whole frontier).
+///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable, from either the read or the
 /// write. Marking a chapter already covered by the frontier is a deliberate no-op that still
@@ -195,8 +200,28 @@ pub async fn progress_mark_read(
             }
         }
     } else if number.floor() > whole {
-        // Ahead of the whole frontier: advance the part frontier only.
+        // Ahead of the whole frontier: the part release itself can only ever be recorded by the
+        // part frontier — `number` is fractional and the whole frontier is integer-valued.
         part = Some(part.map_or(number, |p| p.max(number)));
+        // But "mark read" is a *frontier* operation (§A.1: marking a chapter read always means
+        // "read through here"), so marking `46.1` also asserts every chapter below chapter 46.
+        // Leaving the whole frontier behind produced a frontier that contradicts itself: with
+        // the frontier at `40`, marking `46.1` reported `41`..`45` unread while `46.1` read, and
+        // the AniList push — which reads the whole frontier, the only thing a provider without
+        // parts can be told — kept sending `40`.
+        //
+        // The catch-up target comes from the catalogue, exactly as un-reading's does: the
+        // highest chapter number below `floor(number)`, so gaps and chapters that exist only as
+        // parts are honoured (with `5` missing and `4.5`/`4.75` present, marking `6.1` lands the
+        // whole frontier on `4`, not `5`). `floor(number)` itself is excluded — `46.1` is a
+        // fragment shipped *ahead of* chapter 46, so it says nothing about the rest of 46.
+        //
+        // Skipped when `floor(number) <= whole + 1`: every chapter below `floor(number)` then
+        // floors to at most `whole`, so the query cannot move the frontier. That keeps the
+        // sequential case (frontier `45`, marking `46.1`) at the one round-trip it had before.
+        if number.floor() > whole + 1.0 {
+            whole = whole.max(prev_whole_below(pool, series_id, number.floor()).await?);
+        }
     }
     // else: already covered by whole-chapter progress; no-op.
 
@@ -258,7 +283,14 @@ pub async fn progress_mark_unread(
 }
 
 /// The highest whole chapter that exists for this series strictly below `number`, or `0.0`
-/// when there is none — the retreat target for un-reading a whole chapter (§A.3).
+/// when there is none (§A.3). Two callers, both of which must land on a chapter the catalogue
+/// actually holds rather than on `number - 1`: the retreat target for un-reading a whole
+/// chapter, and the catch-up target for the whole frontier when a part release ahead of it is
+/// marked read.
+///
+/// "Whole chapter" here means `floor(c.number)`, so a chapter that only ever shipped as parts
+/// counts: reading past `46.1` credits chapter `45` even when the catalogue holds only
+/// `45.1`..`45.6`, which is right — every part of `45` that exists has been read.
 async fn prev_whole_below(pool: &sqlx::PgPool, series_id: SeriesId, number: f64) -> DbResult<f64> {
     // The bound is cast to `numeric` rather than the column's `floor()` being cast to
     // `float8`. Written the other way round, Postgres compares `(floor(number))::float8`,

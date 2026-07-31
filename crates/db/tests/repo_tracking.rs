@@ -471,6 +471,10 @@ async fn progress_mark_read_is_monotonic_in_the_whole_frontier() {
 /// records whole-chapter progress, and it must not survive as a stale value once the whole
 /// frontier has passed it. A surviving stale part violates §A.1 and makes `covers` answer from a
 /// frontier that no longer means anything.
+///
+/// The parts here belong to chapter `4` and the frontier sits on `3`, i.e. the part is one
+/// chapter ahead — so the whole frontier has nothing below `4` left to catch up to and genuinely
+/// does not move. Marking a part *further* ahead does move it; that is the test below.
 #[tokio::test]
 async fn a_part_ahead_advances_only_the_part_frontier_and_is_cleared_when_overtaken() {
     let db = TestDb::spawn().await;
@@ -499,6 +503,82 @@ async fn a_part_ahead_advances_only_the_part_frontier_and_is_cleared_when_overta
     assert_eq!(frontiers(&db, user, series).await, (6.0, None));
 }
 
+/// Marking a part release far ahead of the whole frontier drags the whole frontier up with it.
+///
+/// The bug: `progress_mark_read` treated a part purely as part-frontier business, so marking
+/// `6.1` from a frontier of `1` wrote `(1, 6.1)`. Two things were then wrong at once. Locally the
+/// frontier contradicted itself — chapters `2`..`4` reported unread while `6.1` reported read,
+/// which the §A.1 "marking a chapter read means read through here" contract forbids. And
+/// externally, the `AniList` push sends `last_read_whole_number` and nothing else (§B.5), because a
+/// provider with no concept of parts can be told nothing else — so it kept receiving `1` no
+/// matter how many part releases were read on top. Deriving the number at the push site would
+/// have fixed the second and left the first.
+///
+/// The catch-up target is the catalogue's, not `floor(number) - 1`: chapter `5` does not exist
+/// here, and chapter `4` exists only as the parts `4.5`/`4.75`, so the answer is `4` — every part
+/// of chapter 4 that was ever published has been read.
+#[tokio::test]
+async fn marking_a_part_far_ahead_catches_the_whole_frontier_up() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+    let series = a_series(&db, provider, "Berserk", CHAPTERS).await;
+
+    progress_set(&db.pool, user, series, 1.0)
+        .await
+        .expect("set progress");
+    progress_mark_read(&db.pool, user, series, 6.1)
+        .await
+        .expect("mark read");
+    assert_eq!(
+        frontiers(&db, user, series).await,
+        (4.0, Some(6.1)),
+        "reading 6.1 asserts everything below chapter 6, and 4 is the highest the catalogue holds"
+    );
+
+    // Chapter 6 itself stays unread: `6.1` is a fragment shipped *ahead of* it, so it says
+    // nothing about the rest of chapter 6. Catching up to `6` here would mark a chapter read
+    // that nobody read.
+    let p = progress_get_full(&db.pool, user, series)
+        .await
+        .expect("read progress")
+        .expect("a progress row");
+    assert!(p.covers(4.75), "every part of chapter 4 is covered");
+    assert!(!p.covers(6.0), "chapter 6 is not read");
+    assert!(p.covers(6.1), "the part that was marked is read");
+}
+
+/// The whole frontier's catch-up never *retreats* it, and never overshoots a part already read.
+///
+/// The catch-up target comes from the catalogue rather than from the current frontier, so
+/// applying it unconditionally is how marking a chapter read walks progress backwards — the same
+/// shape as TRACK-2 on the un-read side, in the other direction. Marking `4.5` read while the
+/// frontier sits at `6` must leave `6` alone, not reset it to `4`.
+#[tokio::test]
+async fn the_whole_frontier_catch_up_is_monotonic() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+    let series = a_series(&db, provider, "Berserk", CHAPTERS).await;
+
+    progress_set(&db.pool, user, series, 6.0)
+        .await
+        .expect("set progress");
+    // Below the frontier: covered already, so the whole branch is not even reached.
+    progress_mark_read(&db.pool, user, series, 4.5)
+        .await
+        .expect("mark read");
+    assert_eq!(frontiers(&db, user, series).await, (6.0, None));
+
+    // Far ahead of the frontier, but nothing exists between them: chapters `7`..`9` are absent
+    // and chapter `10` is excluded (it is the chapter `10.5` is a part of), so the catch-up
+    // target is `6` — the frontier itself — and the whole frontier stays put.
+    progress_mark_read(&db.pool, user, series, 10.5)
+        .await
+        .expect("mark read");
+    assert_eq!(frontiers(&db, user, series).await, (6.0, Some(10.5)));
+}
+
 /// `progress_set` clears a part frontier its new whole frontier covers and keeps one still ahead.
 ///
 /// This is the path external sync takes when it adopts a remote integer progress, and the `CASE`
@@ -518,7 +598,11 @@ async fn progress_set_clears_only_a_part_frontier_it_covers() {
     progress_mark_read(&db.pool, user, series, 6.1)
         .await
         .expect("mark read");
-    assert_eq!(frontiers(&db, user, series).await, (3.0, Some(6.1)));
+    // The whole frontier catches up to `4` on the way (the highest chapter below 6 that the
+    // catalogue holds — `5` is missing and `4.5`/`4.75` floor to `4`); see
+    // `marking_a_part_far_ahead_catches_the_whole_frontier_up`. What this test is about starts
+    // below.
+    assert_eq!(frontiers(&db, user, series).await, (4.0, Some(6.1)));
 
     // Still behind the part: it survives.
     progress_set(&db.pool, user, series, 4.0)

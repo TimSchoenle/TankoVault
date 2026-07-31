@@ -182,8 +182,21 @@ else:
     if floor(number) <= last_read_whole_number:
         -- already covered by whole-chapter progress; no-op
     else:
-        last_read_part_number = max(last_read_part_number, number)
+        last_read_part_number  = max(last_read_part_number, number)
+        -- and the whole frontier catches up to everything below the chapter `number` is a
+        -- part of: "mark read" means "read through here" (§A.1), so `46.1` asserts all of
+        -- chapter 45 as well. Same catalogue-derived target as un-reading uses, so gaps and
+        -- chapters that exist only as parts are honoured.
+        last_read_whole_number = max(last_read_whole_number,
+                                     the highest chapter number that exists for this series
+                                      strictly below `floor(number)`)
 ```
+
+The second assignment is not optional bookkeeping. Without it the two scalars can describe a
+frontier that contradicts itself — with `last_read_whole_number = 40`, marking `46.1` read
+reports `41`..`45` unread while `46.1` reads as read — and since §B.5 pushes
+`last_read_whole_number` and nothing else, the external provider keeps receiving `40`. The part
+frontier is for reading *ahead*; it is not a place to park whole chapters that were read.
 
 **Mark chapter `number` unread** (only sensible at or behind the current frontier):
 ```
@@ -471,7 +484,10 @@ and the same `is_sync_excluded` check (§A.5):
 - **Push**: `last_read_whole_number` (§A.4) is sent directly as the external provider's
   integer progress — no derivation step. Replaces `round(last_read_number)` outright, and is
   never inflated by part progress (`last_read_part_number` is a separate field the push never
-  reads).
+  reads). It does not *lose* part progress either: reading `46.1` has already advanced the
+  whole frontier to `45` per §A.3, so the push sends `45` — the most the provider can be told
+  truthfully. Deriving that at the push site instead would leave the local read models
+  disagreeing with it.
 - **Pull**: an external integer progress `N` is applied locally via the same "mark read" rule
   as §A.3 (`last_read_whole_number = max(last_read_whole_number, N)`, or set outright to `N`
   when the merge resolves in the remote's favour), clearing `last_read_part_number` if it is

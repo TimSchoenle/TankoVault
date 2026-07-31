@@ -27,3 +27,18 @@ Cargo.lock                   linguist-generated=true
 Dockerfile*   text eol=lf
 *.yml         text eol=lf
 *.yaml        text eol=lf
+
+# …but a fuzzing seed is an **input**, not a text file, and `text=auto` was quietly rewriting
+# some of them. `git ls-files --eol fuzz/seeds/` reported two entries as `i/lf w/crlf`
+# (`adapters_json_body/wrapped-in-pre` and its entity-escaped sibling), so the bytes libFuzzer
+# read on Windows were not the bytes it read on Linux. For a corpus that is the one property
+# that has to hold: a crash reproducer is a byte string, and a platform that silently inserts a
+# `\r` into it produces a file that does not reproduce — while the *seed* directory quietly
+# feeds two different inputs to two different developers running what they believe is the same
+# command. `-text` disables both directions of conversion, so what is committed is what is read.
+#
+# `corpus/` is git-ignored apart from its `.gitkeep` files, and is listed anyway: the ignore
+# rule is what keeps machine output out of the tree, not a statement about how bytes should be
+# handled, and the two are free to change independently.
+fuzz/seeds/**   -text
+fuzz/corpus/**  -text

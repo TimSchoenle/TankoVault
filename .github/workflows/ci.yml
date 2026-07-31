@@ -508,11 +508,49 @@ jobs:
           docker compose -f deploy/docker-compose.yml \
             -f deploy/docker-compose.observability.yml config --quiet
 
+  # Dependency warm-up for the image matrix below.
+  #
+  # Every one of those eight builds derives from the same `cook` stage — one `cargo chef cook`
+  # over ~600 lockfile entries at `codegen-units = 1`, which dominates each build's wall clock.
+  # Run inside the matrix, that work happened eight times over: the jobs start together, all
+  # miss a cold cache, and all eight cook the identical graph. They also all exported into the
+  # *same* unscoped GHA cache concurrently (`cache-to: type=gha,mode=max` with no `scope`), so
+  # the eight writes raced and whichever finished last decided what the next run imported —
+  # which is why the matrix kept missing a cache it had just populated.
+  #
+  # This job builds `--target cook` alone and publishes it under a scope of its own. The matrix
+  # imports that scope read-only and keeps a per-`bin` scope for the layers above it, so the
+  # eight exports no longer collide. The cost is one serialised step ahead of the matrix in
+  # exchange for cooking the graph once; `cacheonly` because no image is wanted here, only the
+  # exported layers.
+  docker-deps:
+    name: docker build (deps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: derive SOURCE_DATE_EPOCH
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+      - name: cook dependency graph
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          build-args: SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+          target: cook
+          push: false
+          outputs: type=cacheonly
+          provenance: false
+          cache-from: type=gha,scope=backend-deps
+          cache-to: type=gha,scope=backend-deps,mode=max
+
   docker:
     name: docker build
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: [lint, test]
+    needs: [lint, test, docker-deps]
     strategy:
       fail-fast: false
       matrix:
@@ -551,8 +589,14 @@ jobs:
           tags: tankovault-${{ matrix.bin }}:ci
           # Reproducible output: no attestation/provenance layer, and mtimes rewritten.
           provenance: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Two imports, one export. `backend-deps` is the shared `cook` stage published by the
+          # `docker-deps` job above and is never written back to from here; `backend-<bin>` holds
+          # the per-binary layers on top of it, scoped so the eight jobs stop overwriting each
+          # other's export (see `docker-deps`).
+          cache-from: |
+            type=gha,scope=backend-deps
+            type=gha,scope=backend-${{ matrix.bin }}
+          cache-to: type=gha,scope=backend-${{ matrix.bin }},mode=max
       # Enforce the image contract (design §21): non-root UID:GID 1001:1001, the expected
       # entrypoint, the required baked-in files (service binary, CA trust store), and — for the
       # render tier's Debian base — the absence of root and the presence of Chromium. The render

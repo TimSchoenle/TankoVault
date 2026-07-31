@@ -126,7 +126,7 @@ services:
     # `..._num_redelivered`); without it only server-level totals appear and every backlog rule here
     # loses its subject. `-varz` adds `gnatsd_varz_slow_consumers`.
     #   digest: sha256:26c826662ac8424597cc9bdf89ea5b606eb66e3c11db9b1215c27d2076bbb01b
-    image: natsio/prometheus-nats-exporter:0.17.3@sha256:26c826662ac8424597cc9bdf89ea5b606eb66e3c11db9b1215c27d2076bbb01b
+    image: natsio/prometheus-nats-exporter:0.20.1@sha256:4fbf6dacb84780a45a1c3af9b1080c69451a288d20902deae671b80717bb8f61
     <<: *obs-hardening
     read_only: true
     command: ["-port", "7777", "-varz", "-jsz=all", "http://nats:8222"]

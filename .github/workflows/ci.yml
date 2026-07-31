@@ -79,7 +79,7 @@ env:
   # The promtool that validates the alert rules must be the Prometheus that will evaluate them,
   # so this and `deploy/docker-compose.observability.yml` are grouped into one Renovate PR.
   # renovate: datasource=docker depName=prom/prometheus
-  PROMETHEUS_VERSION: v3.5.5
+  PROMETHEUS_VERSION: v3.13.1
   # Must match the `sqlx` version resolved in `Cargo.lock`: `cargo sqlx prepare --check`
   # re-derives the query metadata with the CLI's own macro implementation, and a CLI from a
   # different minor writes a cache the workspace then rejects. Unpinned, this step also meant a

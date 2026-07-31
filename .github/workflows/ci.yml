@@ -413,7 +413,7 @@ jobs:
         # cache's byte-identical verification (OPS-4.2) is only meaningful against a known one.
         # Renovate moves the digest; `renovate.json` holds major bumps for a human, because a new
         # major has to be re-verified the same way before this job's result means anything.
-        image: postgres:17@sha256:a426e44bac0b759c95894d68e1a0ac03ecc20b619f498a91aae373bf06d8508d
+        image: postgres:18@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

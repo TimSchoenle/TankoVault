@@ -1,0 +1,4 @@
+EMAIL__SECURITY=tls
+EMAIL__FROM=TankoVault <no-reply@example.test>
+EMAIL__ENVELOPE_FROM=
+EMAIL__TIMEOUT_SECS=0

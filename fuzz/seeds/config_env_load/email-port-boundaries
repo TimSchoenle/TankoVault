@@ -1,0 +1,3 @@
+EMAIL__PORT=65536
+EMAIL__SECURITY=starttls
+EMAIL__HOST=smtp.example.test

@@ -1,0 +1,42 @@
+# Tokens the challenge classifier branches on, so the mutator does not have to assemble
+# `/cdn-cgi/challenge-platform` a byte at a time. Every entry is a literal that appears in
+# `crates/solver/src/detection.rs`; a marker removed there should be removed here too, but a
+# stale entry costs only wasted mutations, never a wrong result.
+#
+# Concatenate with `html.dict` when fuzzing rendered interstitials hard — `-dict=` takes one
+# file, so `cat` them into a temporary first.
+
+# Turnstile — checked before the JS interstitial, because a managed challenge serves both and
+# the widget is the more specific fact.
+turnstile_class="cf-turnstile"
+turnstile_host="challenges.cloudflare.com/turnstile"
+
+# Classic JS challenge.
+chl_platform="/cdn-cgi/challenge-platform"
+chl_opt="cf_chl_opt"
+chl_title="<title>Just a moment"
+
+# The bare phrase, which the *narrow* classifier deliberately rejects and the envelope-aware
+# one accepts. The gap between these two is what the differential oracle is watching.
+moment_bare="Just a moment"
+
+# Rate-limit notices. Matched on the document title only, within the first 4096 bytes.
+rl_bare="<title>Too Many Requests"
+rl_429="<title>429 Too Many Requests"
+rl_exceeded="<title>Rate limit exceeded"
+
+# Generic (non-Cloudflare) interstitial, admitted only under a challenge status and a body
+# below 8192 bytes.
+js_enable="enable JavaScript"
+js_turn_on="Please turn JavaScript on"
+
+# Envelope markers. Not reachable through this target's fixed header set, but a body that
+# echoes them is how a real interstitial is shaped.
+hdr_mitigated="cf-mitigated"
+hdr_server="cloudflare"
+
+# Markup scaffolding the title matches need.
+tag_title_open="<title>"
+tag_title_close="</title>"
+tag_head="<head>"
+tag_noscript="<noscript>"

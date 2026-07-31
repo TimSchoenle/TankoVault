@@ -18,9 +18,32 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 tankovault-adapters = { path = "../crates/adapters" }
 tankovault-fetch = { path = "../crates/fetch" }
+# F-T4. Default features only: the `axum` feature exists for the shared `/v1/solve` router
+# (ARCH-15) and would link a web framework into a classifier fuzz target.
+tankovault-solver = { path = "../crates/solver" }
+# F-T5.
+tankovault-auth = { path = "../crates/auth" }
+# F-T6.
+tankovault-config = { path = "../crates/config" }
+tankovault-domain = { path = "../crates/domain" }
 async-trait = "0.1"
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread"] }
+
+# Versions here are the host workspace's, restated rather than inherited: this is a workspace of
+# its own (see the comment at the top), so `workspace = true` has nothing to resolve against.
+# They must not drift *downwards* from the root `Cargo.toml` — a target that verifies a token
+# with an older `jsonwebtoken` than the service does is measuring the wrong parser.
+#
+# `auth_jwt_verify` reads a token's own header with the same library the verifier uses, so the
+# oracle compares what was validated against what the header says rather than against a
+# hand-rolled base64 decoder. `default-features = false` + `rust_crypto` matches the root
+# manifest; the default feature set pulls a second crypto backend.
+jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto"] }
+# `test` adds `figment::Jail`, which `config_env_load` needs to set and restore `TANKOVAULT_*`
+# around each iteration. `crates/config` already carries the same feature as a dev-dependency.
+figment = { version = "0.10", features = ["toml", "env", "test"] }
+serde = { version = "1", features = ["derive"] }
 
 # `-Z sanitizer=address` instruments the crate under test, so the fuzz binary must be built
 # with debug assertions on: the overflow checks that turned P-03's `(a - b).abs()` into a
@@ -50,6 +73,27 @@ bench = false
 [[bin]]
 name = "adapters_generic_series_page"
 path = "fuzz_targets/adapters_generic_series_page.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "solver_challenge_detection"
+path = "fuzz_targets/solver_challenge_detection.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "auth_jwt_verify"
+path = "fuzz_targets/auth_jwt_verify.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config_env_load"
+path = "fuzz_targets/config_env_load.rs"
 test = false
 doc = false
 bench = false

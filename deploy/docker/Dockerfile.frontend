@@ -35,6 +35,13 @@ ARG BUILD_TARGET
 # (`musl-tools` → `musl-gcc`, needed by the `ring` build script) and a CA bundle we later bake
 # into the certificate-less `scratch` image. The `dx` CLI version must match the `dioxus`
 # library version (web/frontend/Cargo.toml → 0.7.9) so asset hashing/codegen line up.
+# `rust-toolchain.toml` first, on its own, and *before* any `rustup target add`. The base image
+# tag floats within the 1.94 series (it currently ships 1.94.1) while the toolchain file pins
+# 1.94.0, so without this rustup would add the targets to the image's toolchain and then switch
+# to a freshly downloaded pinned one that has only the targets the file itself names — leaving
+# `${BUILD_TARGET}` missing at build time. Copied alone so this layer is invalidated by a
+# toolchain bump, not by every source edit.
+COPY rust-toolchain.toml ./
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     rustup target add wasm32-unknown-unknown "${BUILD_TARGET}" \
@@ -42,6 +49,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
  && apt-get install -y --no-install-recommends musl-tools ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && cargo install dioxus-cli@0.7.9 --locked
+
+# `cargo auditable build` (used below) embeds the resolved dependency list into the binary — see
+# deploy/docker/Dockerfile for why a `scratch` image needs that and why the version is pinned.
+# Kept in its own layer so the toolchain layer above stays cached. Pin both files together.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo install cargo-auditable --locked --version 0.7.5
 
 # The frontend crate is excluded from the host workspace but takes path dependencies on
 # workspace crates, and the `frontend` server *is* a workspace member — so both builds need the

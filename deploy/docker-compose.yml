@@ -107,7 +107,7 @@ services:
       retries: 12
 
   redis:
-    image: redis:7-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+    image: redis:8-alpine@sha256:e8eb6f2980c06c6a25c08f62cb2e00dc7d2fead9aa492cfdd8b54a42109ae0f2
     deploy: { resources: { limits: { memory: 256m } } }
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]

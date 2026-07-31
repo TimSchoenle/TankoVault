@@ -13,7 +13,7 @@ reports.
 > the same commit as your fix. It also lists the actions only a human can take (credential
 > rotation, history purge), which no code change can close.
 
-| Report | Findings | Focus |
+| Report | Numbered findings | Focus |
 | --- | --- | --- |
 | [SECURITY.md](./SECURITY.md) | 16 | AuthN/AuthZ, SSRF, secrets, transport, rate limiting, GDPR |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | 21 | Layering, abstraction, modularization, error model, god modules |
@@ -21,6 +21,15 @@ reports.
 | [TESTING_AND_FUZZING.md](./TESTING_AND_FUZZING.md) | 21 | Coverage distribution, harness, fuzz/proptest targets, CI gates |
 | [FRONTEND.md](./FRONTEND.md) | 16 | Dioxus component abstraction, async state, a11y, styling |
 | [BUILD_AND_OPS.md](./BUILD_AND_OPS.md) | 31 | Workspace, deps, CI/CD, Docker, migrations, config, observability |
+
+**These are the findings each report numbers, not the number of things to fix.**
+[`PROGRESS.md`](./PROGRESS.md) tracks more rows than this table totals, for three reasons: some
+numbered findings hold two independent defects and were split into `-b` rows rather than being
+closed half-done; ten sections that carry a finding without numbering it had no row at all until
+OPS-10.5 added them (BUILD_AND_OPS accounts for most of that, since its findings live under
+`###` subsections); and a few rows record work the audit did not raise. The tracker's own
+"Status at a glance" is the count that matters, and it is recomputed rather than incremented —
+the hand-maintained version drifted twice.
 
 Related existing documents — this audit **supersedes neither**:
 [`docs/PRODUCTION_READINESS.md`](../PRODUCTION_READINESS.md) (test-pyramid roadmap; its central

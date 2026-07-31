@@ -1,5 +1,13 @@
 # TankoVault / Kanpai — Backend Architecture, Abstraction & Modularization Audit
 
+> **Frozen snapshot — not a current description of the code.** Audited at `2c9a22e`
+> (2026-07-29). Every finding below is written in the present tense as it was true at that
+> commit, and none has been edited since. Most are now fixed.
+> **[`PROGRESS.md`](./PROGRESS.md) is the authoritative status of every finding in this
+> report** — check a finding there before acting on it. Note that this report's section
+> numbering and the tracker's `ARCH-*` keys diverge; each tracker row names the section it
+> answers.
+
 Scope: `crates/*`, `services/*`, workspace dependency graph. Read-only.
 Excluded by assignment: security, performance, testing, frontend.
 

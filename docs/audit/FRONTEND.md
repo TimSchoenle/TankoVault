@@ -1,5 +1,13 @@
 # TankoVault frontend audit — `web/frontend/` (Dioxus 0.7 / WASM)
 
+> **Frozen snapshot — not a current description of the code.** Audited at `2c9a22e`
+> (2026-07-29). Every finding below is written in the present tense as it was true at that
+> commit, and none has been edited since. Most are now fixed.
+> **[`PROGRESS.md`](./PROGRESS.md) is the authoritative status of every finding in this
+> report** — check a finding there before acting on it. Beware the name collision: the bare
+> `PROGRESS.md` cited in the scope note and findings below is `docs/frontend/PROGRESS.md`, the
+> redesign's build log, not this audit's tracker.
+
 Scope: `web/frontend/**` (56 files, 16,121 LOC) plus `services/frontend/src/main.rs` for asset
 delivery only. Read-only analysis. Judged against `docs/frontend/DESIGN_SPEC.md`,
 `IMPLEMENTATION_PLAN.md`, `PROGRESS.md`, and

@@ -1,5 +1,14 @@
 # TankoVault — Build / Dependency / Ops Hygiene Audit
 
+> **Frozen snapshot — not a current description of the code.** Audited at `2c9a22e`
+> (2026-07-29). Every finding below is written in the present tense as it was true at that
+> commit, and none has been edited since. Most are now fixed.
+> **[`PROGRESS.md`](./PROGRESS.md) is the authoritative status of every finding in this
+> report** — check a finding there before acting on it. This report is the one whose findings
+> live under `###` subsections rather than `##`, so the tracker carries far more `OPS-*` rows
+> than this file has numbered sections; the ready-to-apply config patches near the end were
+> superseded by the fixes and should not be applied as written.
+
 Repo: `E:\Rust\manga-tracker-v3` · branch `main` @ `2c9a22e` · audited 2026-07-29
 Scope: build system, dependencies, config, migrations, CI/CD, Docker/deploy, docs, observability.
 Application-code security/architecture/frontend concerns are explicitly out of scope.

@@ -1,5 +1,15 @@
 # TankoVault / Kanpai — Security Audit
 
+> **Frozen snapshot — not a current description of the code.** Audited at `2c9a22e`
+> (2026-07-29). Every finding below is written in the present tense as it was true at that
+> commit, and none has been edited since. Most are now fixed.
+> **[`PROGRESS.md`](./PROGRESS.md) is the authoritative status of every finding in this
+> report** — check a finding there before acting on it.
+>
+> Two items there no commit can close — **SEC-2b** (renderer DNS rebinding, which needs
+> container-level egress restriction) and the **OP-1..OP-3** credential rotation — are why this
+> report must not be read as fully remediated.
+
 Scope: security only (AuthN, AuthZ, SQL, SSRF/crawler, input validation, secrets/config,
 transport/headers, rate limiting, GDPR paths, dependency posture, logging).
 Read-only analysis of `E:\Rust\manga-tracker-v3` @ `2c9a22e`.

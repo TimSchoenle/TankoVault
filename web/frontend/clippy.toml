@@ -1,0 +1,58 @@
+# Frontend clippy configuration — the WASM-side bans.
+#
+# This crate is its own workspace root (the host `Cargo.toml` excludes it), so it inherits
+# neither the root `clippy.toml` nor `[workspace.lints]`. Both are mirrored here deliberately;
+# see the note above `[lints]` in `Cargo.toml`.
+#
+# Enforced by `cargo clippy --all-targets -- -D warnings` in `web/frontend`, which runs in CI
+# (the `frontend` job) and in `xtask ci`.
+#
+# **A path clippy cannot resolve is silently ignored** — there is no "unknown path"
+# diagnostic. Every entry below was proved to fire by temporarily writing the call it forbids;
+# do the same for anything you add. `docs/ENGINEERING_GUIDE.md` §6 has the procedure.
+
+disallowed-macros = [
+    { path = "std::dbg", reason = "writes to the browser console outside any structure. Use `tracing`" },
+    { path = "std::todo", reason = "a `todo!()` in WASM is an `unreachable` trap that takes the whole app down — there is no unwinding and no recovery (`panic = \"abort\"`)" },
+    { path = "std::unimplemented", reason = "see `todo!`" },
+]
+
+disallowed-methods = [
+    # ------------------------------------------------------------------------------------
+    # The Content-Security-Policy contract. Read `src/browser.rs` before relaxing any of it.
+    # ------------------------------------------------------------------------------------
+    # `services/frontend` serves this app under a CSP with **no `'unsafe-eval'`**, because the
+    # access token lives in memory and that directive is the one primitive an injected script
+    # would need to make use of it. Everything below compiles to `eval` or `new Function(…)`
+    # and is therefore refused by the browser at runtime.
+    #
+    # The refusal is not graceful. `dioxus-web` implements `Document::eval` as
+    # `Function::new_with_args`, and its `wasm-bindgen` import is not marked `catch`: the
+    # thrown `EvalError` is not returned to Rust, it aborts the WASM instance. The app read its
+    # appearance preferences on boot, so the first eval killed it — a white page and
+    # `RuntimeError: unreachable executed`, with nothing in the server logs. That is the whole
+    # reason these are bans rather than review notes: the failure is invisible to every gate
+    # this repository runs, and only a human loading the page in a browser sees it.
+    #
+    # Whatever you were reaching for, `src/browser.rs` either has it or is where to add it.
+    { path = "dioxus::document::eval", reason = "compiles to `new Function(...)`, which the served CSP blocks — and the failure aborts the WASM instance rather than returning an error. Add a typed `web-sys` wrapper to `src/browser.rs` instead" },
+    { path = "js_sys::Function::new_with_args", reason = "`new Function(...)`; see `dioxus::document::eval` above" },
+    { path = "js_sys::Function::new_no_args", reason = "`new Function(...)`; see `dioxus::document::eval` above" },
+    { path = "js_sys::eval", reason = "`eval(...)`; see `dioxus::document::eval` above" },
+
+    # ------------------------------------------------------------------------------------
+    # XSS
+    # ------------------------------------------------------------------------------------
+    # Every string this app renders came from a provider site or another user. `set_inner_html`
+    # parses it as markup, which is the one operation that turns such a string into script.
+    # The CSP is a second line of defence here, not the first, and it does not cover event-handler
+    # attributes injected this way.
+    { path = "web_sys::Element::set_inner_html", reason = "parses attacker-controlled text as markup. Render through `rsx!`, which escapes; if you genuinely need markup, sanitise it first and say why in an `#[expect]`" },
+
+    # ------------------------------------------------------------------------------------
+    # The single-threaded runtime
+    # ------------------------------------------------------------------------------------
+    # WASM in the main thread has no second thread to yield to: a blocking sleep freezes the
+    # whole page, including the scroll.
+    { path = "std::thread::sleep", reason = "freezes the browser's main thread. Use `gloo_timers::future::TimeoutFuture`" },
+]

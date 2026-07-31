@@ -134,6 +134,12 @@ impl TestApp {
     }
 
     /// As [`Self::spawn`], with the wiring axes in `cfg` overridden.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the three upstreams point at `.invalid` hosts that resolve nowhere: this \
+                  harness never issues a request through them, so the timeouts the ban exists \
+                  to require have nothing to bound"
+    )]
     pub async fn spawn_with(cfg: TestConfig) -> Self {
         let db = TestDb::spawn().await;
         let audit = Arc::new(RecordingAuditSink::default());

@@ -109,6 +109,13 @@ const GATES: &[Gate] = &[
         name: "openapi drift",
         step: Step::InProcess(|| crate::openapi(true)),
     },
+    // The invariants no compiler sees. In-process for the same reason the OpenAPI check is:
+    // cargo cannot rebuild the running `xtask.exe` on Windows. Cheap — it reads text files —
+    // so its position here is about grouping with the other artefact-agreement checks, not cost.
+    Gate {
+        name: "repo invariants",
+        step: Step::InProcess(|| crate::repo_lint::run(crate::workspace_root())),
+    },
     // `web/frontend` is outside the host workspace, so none of the above touches it.
     Gate {
         name: "frontend test",

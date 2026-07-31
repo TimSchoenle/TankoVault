@@ -252,6 +252,11 @@ impl Upstream {
 mod tests {
     use super::*;
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "these tests assert header and URL construction; nothing is ever sent, so the \
+                  client's (absent) timeouts are not reachable"
+    )]
     fn upstream(token: Option<&str>) -> Upstream {
         Upstream::new(
             reqwest::Client::new(),

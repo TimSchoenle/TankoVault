@@ -36,11 +36,17 @@ x-telemetry: &telemetry
   TANKOVAULT_TELEMETRY__JSON_LOGS: "true"
   TANKOVAULT_TELEMETRY__LOG_FILTER: "info,tankovault=debug"
 
-# Shared secret for service-to-service calls, identical on every service in the internal
-# tier. The dev fallback is a visible placeholder; production refuses to boot without a real
-# one. Generate with `openssl rand -hex 32`.
+# Shared secret for service-to-service calls, identical on every service in the internal tier.
+#
+# Required, with no fallback, for the same reason `TANKOVAULT_AUTH__JWT_SECRET` below is. The
+# previous default `dev-internal-token-not-for-production-use` is published in this repository,
+# and the comment here used to claim production refused it — production refused a *missing*
+# token, not a well-known one, so a deployment that inherited this file's default authorized
+# every privileged inter-tier call with a string anyone can read. `internal_auth::resolve` now
+# refuses it in every profile, and `xtask repo-lint` fails if a published default like it is
+# reintroduced without a matching refusal.
 x-internal: &internal
-  TANKOVAULT_INTERNAL__TOKEN: "${TANKOVAULT_INTERNAL__TOKEN:-dev-internal-token-not-for-production-use}"
+  TANKOVAULT_INTERNAL__TOKEN: "${TANKOVAULT_INTERNAL__TOKEN:?set it in deploy/local.env — see deploy/local.env.example; generate with `openssl rand -hex 32`}"
 
 x-db-url: &db-url "postgres://tankovault:tankovault@postgres:5432/tankovault"
 

@@ -9,6 +9,9 @@
 //!   `progenitor`. No database needed.
 //! - `xtask ci` — run every offline gate CI runs, in CI's order, stopping at the first
 //!   failure. No database, no Docker, no network; see `ci.rs` for what it deliberately omits.
+//! - `xtask repo-lint` — the repository invariants no compiler or linter can see (a CSP and
+//!   the HTML it governs, a published secret and the code that refuses it). Runs as part of
+//!   `xtask ci`; see `repo_lint.rs` for the rules and why each one exists.
 //! - `xtask config-docs [--check]` — print the `TANKOVAULT_*` surface derived from the config
 //!   structs, or (with `--check`) fail if `docs/CONFIGURATION.md` no longer matches it. No
 //!   database.
@@ -25,6 +28,7 @@
 mod ci;
 mod config_docs;
 mod coverage;
+mod repo_lint;
 
 use progenitor_impl::{GenerationSettings, Generator, InterfaceStyle, TypePatch};
 
@@ -39,6 +43,12 @@ async fn main() -> anyhow::Result<()> {
     // Every offline gate CI runs, in CI's order. No database, no Docker, no network.
     if cmd == "ci" {
         return ci::run(workspace_root());
+    }
+
+    // The invariants no compiler sees: two artefacts that must agree, with nothing else
+    // connecting them. Reads source and deployment files; no database, no network.
+    if cmd == "repo-lint" {
+        return repo_lint::run(workspace_root());
     }
 
     // The coverage ratchet. Reads the report `cargo llvm-cov` just wrote and compares it

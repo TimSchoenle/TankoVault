@@ -1,5 +1,9 @@
 # Contributing
 
+**[`docs/ENGINEERING_GUIDE.md`](docs/ENGINEERING_GUIDE.md) is the canonical guide to structure,
+style and security** — every rule, and what enforces it. This file covers workflow: what to run,
+how to set up, and what a change needs. The two do not overlap by design.
+
 ## Before you push
 
 ```
@@ -105,6 +109,8 @@ collapses one deletes its line. Adding a dependency to `services/api` needs a lo
 
 ## Conventions worth knowing
 
+These are summarised, with their enforcement, in
+[`docs/ENGINEERING_GUIDE.md`](docs/ENGINEERING_GUIDE.md);
 `docs/audit/PROGRESS.md` ends with the conventions this codebase settled on and the reasoning
 behind each — module splits and their glob re-exports, `citext` comparisons, the single RFC 9457
 error shape, where shared policy lives, and why a predicate that must exist in several places

@@ -315,6 +315,15 @@ pub(crate) fn build(
 
 #[cfg(test)]
 mod tests {
+    // Every client below targets the `wiremock` server this module starts on localhost, which
+    // answers immediately or is deliberately made to hang under a test's own timeout. A
+    // production client must carry its own timeouts (`WebhookChannel` builds one that does);
+    // a harness client that cannot outlive the test process does not.
+    #![expect(
+        clippy::disallowed_methods,
+        reason = "clients scoped to the in-process wiremock server, not the network"
+    )]
+
     use super::*;
     use std::time::Instant;
     use wiremock::matchers::{method, path};

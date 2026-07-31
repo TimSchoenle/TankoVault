@@ -46,6 +46,11 @@ jobs:
         run: cargo fmt --all --check
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # The invariants no compiler sees: a CSP and the HTML it governs, a secret published in
+      # the compose file and the code that refuses it. Text-only and seconds long, so it runs
+      # beside clippy rather than in a job of its own. See xtask/src/repo_lint.rs.
+      - name: repository invariants
+        run: cargo run -p xtask -- repo-lint
 
   test:
     name: test (workspace)

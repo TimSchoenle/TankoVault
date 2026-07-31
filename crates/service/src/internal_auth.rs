@@ -72,20 +72,62 @@ impl std::fmt::Debug for InternalToken {
 /// In the production profile, and for any token that is present but too short,
 /// [`tankovault_config::InternalAuthConfig::resolve`] refuses and the service does not boot.
 ///
+/// A **published placeholder is refused in every profile**, not only production. That is the
+/// reasoning `services/api/src/main.rs::validate_auth_secrets` already records for the JWT
+/// secret: a check a deployment can skip by forgetting one environment variable is not a
+/// check. The placeholder this rejects was the compose file's silent default, so it is exactly
+/// what an operator who never created `deploy/local.env` was running with — on the credential
+/// that authorizes "read or rewrite any user's sync state" between tiers. The comment above
+/// that default claimed production already refused it; production refused a *missing* token,
+/// not a well-known one, and nothing connected the two files until `xtask repo-lint`.
+///
 /// # Errors
-/// [`tankovault_config::ConfigError::Invalid`] when the token is missing in production or
-/// fails the length floor.
+/// [`tankovault_config::ConfigError::Invalid`] when the token is missing in production, fails
+/// the length floor, or is one of [`KNOWN_PLACEHOLDERS`].
 pub fn resolve(
     cfg: &tankovault_config::InternalAuthConfig,
 ) -> Result<Option<InternalToken>, tankovault_config::ConfigError> {
     let resolved = cfg.resolve(tankovault_config::is_production())?;
-    if resolved.is_none() {
+
+    if let Some(token) = &resolved {
+        if let Some(name) = known_placeholder(token) {
+            return Err(tankovault_config::ConfigError::Invalid(format!(
+                "refusing to start: internal.token is the well-known {name}, which is published \
+                 in this repository. Anything that has read deploy/docker-compose.yml can call \
+                 this service's privileged routes with it. Set TANKOVAULT_INTERNAL__TOKEN."
+            )));
+        }
+    } else {
         tracing::warn!(
             "no internal.token configured: this service's privileged routes are reachable by \
              anything that can open a socket to it. Set TANKOVAULT_INTERNAL__TOKEN."
         );
     }
+
     Ok(resolved.map(InternalToken::new))
+}
+
+/// Placeholder tokens published in this repository, refused wherever they appear.
+///
+/// The counterpart of `services/api/src/main.rs::KNOWN_PLACEHOLDERS`, which does the same job
+/// for the auth secrets. Kept next to the resolver every internal service calls, so all five
+/// tiers get the refusal from one place rather than each remembering to check.
+///
+/// `xtask repo-lint` derives the required contents of this list from the defaults in
+/// `deploy/docker-compose.yml` and fails if a published secret is missing from it — the entry
+/// below was, for exactly as long as nothing connected the two files.
+const KNOWN_PLACEHOLDERS: [(&str, &str); 1] = [(
+    "dev-internal-token-not-for-production-use",
+    "development internal-tier token",
+)];
+
+/// The name of the published placeholder `value` is, if it is one.
+fn known_placeholder(value: &str) -> Option<&'static str> {
+    let trimmed = value.trim();
+    KNOWN_PLACEHOLDERS
+        .iter()
+        .find(|(placeholder, _)| *placeholder == trimmed)
+        .map(|(_, name)| *name)
 }
 
 /// Reject any request that does not present the internal token.
@@ -117,6 +159,27 @@ pub async fn enforce(State(token): State<InternalToken>, req: Request, next: Nex
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The internal token authorizes "read or rewrite any user's sync state" between tiers.
+    /// `deploy/docker-compose.yml` published a default for it, and the comment above that
+    /// default claimed production refused it — production refused a *missing* token, so a
+    /// deployment inheriting the file booted with a credential printed in this repository.
+    ///
+    /// Refused in **every** profile, not only production, for the reason
+    /// `services/api/src/main.rs::validate_auth_secrets` records for the JWT secret: a check a
+    /// deployment can skip by forgetting one environment variable is not a check.
+    #[test]
+    fn the_published_placeholder_is_refused_in_every_profile() {
+        for (placeholder, _) in KNOWN_PLACEHOLDERS {
+            assert!(
+                known_placeholder(placeholder).is_some(),
+                "{placeholder} must be recognised"
+            );
+            // Surrounding whitespace is how a placeholder survives a copy-paste through YAML.
+            assert!(known_placeholder(&format!("  {placeholder}  ")).is_some());
+        }
+        assert!(known_placeholder("a-real-token-from-openssl-rand-hex-32").is_none());
+    }
 
     #[test]
     fn matches_only_the_exact_token() {

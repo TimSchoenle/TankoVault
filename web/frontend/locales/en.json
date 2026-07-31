@@ -134,6 +134,7 @@
     }
   },
   "auth": {
+    "badCredentials": "That email/username and password don't match an account. Check them and try again.",
     "confirmFirst": "Please confirm your email address before signing in. Check your inbox for the confirmation link.",
     "field": {
       "email": "Email",

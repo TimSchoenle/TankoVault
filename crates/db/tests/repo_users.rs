@@ -29,7 +29,7 @@
 use tankovault_db::DbError;
 use tankovault_db::repo::{user_admin, users};
 use tankovault_domain::{AccountStatus, UserId};
-use tankovault_test_support::TestDb;
+use tankovault_test_support::{TestDb, seed};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
@@ -41,13 +41,6 @@ use uuid::Uuid;
 /// argon2 string here would only make the fixture slow.
 fn a_hash(name: &str) -> String {
     format!("$argon2id$placeholder${name}")
-}
-
-async fn a_user(db: &TestDb, email: &str, username: &str) -> UserId {
-    users::create(&db.pool, email, username, &a_hash(username))
-        .await
-        .expect("create user")
-        .id
 }
 
 /// Issue a refresh token and return the row id, which `insert_refresh` does not hand back.
@@ -121,8 +114,14 @@ async fn stored_email(db: &TestDb, user: UserId) -> String {
 #[tokio::test]
 async fn an_identifier_containing_an_at_sign_only_ever_resolves_as_an_email() {
     let db = TestDb::spawn().await;
-    let victim = a_user(&db, "victim@example.test", "victim").await;
-    a_user(&db, "squatter@example.test", "squatter").await;
+    let victim = seed::user(&db, "victim")
+        .email("victim@example.test")
+        .create()
+        .await;
+    seed::user(&db, "squatter")
+        .email("squatter@example.test")
+        .create()
+        .await;
 
     db.execute("ALTER TABLE users DROP CONSTRAINT username_not_an_email")
         .await;
@@ -150,7 +149,7 @@ async fn an_identifier_containing_an_at_sign_only_ever_resolves_as_an_email() {
 #[tokio::test]
 async fn a_bare_identifier_only_ever_resolves_as_a_username() {
     let db = TestDb::spawn().await;
-    a_user(&db, "bare", "other").await;
+    seed::user(&db, "other").email("bare").create().await;
 
     assert!(
         users::find_credentials(&db.pool, "bare")
@@ -187,7 +186,10 @@ async fn a_bare_identifier_only_ever_resolves_as_a_username() {
 #[tokio::test]
 async fn the_credential_lookup_is_case_insensitive_on_both_columns() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "mixed.case@example.test", "MixedCase").await;
+    let user = seed::user(&db, "MixedCase")
+        .email("mixed.case@example.test")
+        .create()
+        .await;
 
     for identifier in ["MIXED.CASE@EXAMPLE.TEST", "mixedcase", "MiXeDcAsE"] {
         let found = users::find_credentials(&db.pool, identifier)
@@ -202,7 +204,10 @@ async fn the_credential_lookup_is_case_insensitive_on_both_columns() {
 #[tokio::test]
 async fn the_credential_lookup_reports_verification_and_status() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "gate@example.test", "gate").await;
+    let user = seed::user(&db, "gate")
+        .email("gate@example.test")
+        .create()
+        .await;
 
     let before = users::find_credentials(&db.pool, "gate")
         .await
@@ -248,7 +253,10 @@ async fn the_credential_lookup_reports_verification_and_status() {
 #[tokio::test]
 async fn a_duplicate_email_or_username_is_refused_case_insensitively() {
     let db = TestDb::spawn().await;
-    a_user(&db, "taken@example.test", "taken").await;
+    seed::user(&db, "taken")
+        .email("taken@example.test")
+        .create()
+        .await;
 
     let cases = [
         ("taken@example.test", "fresh-a"),
@@ -305,7 +313,10 @@ async fn the_schema_refuses_a_username_containing_an_at_sign() {
 #[tokio::test]
 async fn revoking_one_token_leaves_its_siblings_and_other_families_alone() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "rotate@example.test", "rotate").await;
+    let user = seed::user(&db, "rotate")
+        .email("rotate@example.test")
+        .create()
+        .await;
     let laptop = Uuid::now_v7();
     let phone = Uuid::now_v7();
 
@@ -339,7 +350,10 @@ async fn revoking_one_token_leaves_its_siblings_and_other_families_alone() {
 #[tokio::test]
 async fn revoking_a_family_kills_that_family_once_and_no_other() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "reuse@example.test", "reuse").await;
+    let user = seed::user(&db, "reuse")
+        .email("reuse@example.test")
+        .create()
+        .await;
     let compromised = Uuid::now_v7();
     let untouched = Uuid::now_v7();
 
@@ -378,7 +392,10 @@ async fn revoking_a_family_kills_that_family_once_and_no_other() {
 #[tokio::test]
 async fn find_refresh_returns_revoked_and_expired_tokens_for_reuse_detection() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "detect@example.test", "detect").await;
+    let user = seed::user(&db, "detect")
+        .email("detect@example.test")
+        .create()
+        .await;
     let family = Uuid::now_v7();
 
     let live = a_refresh(&db, user, family, "live").await;
@@ -442,7 +459,10 @@ async fn find_refresh_returns_revoked_and_expired_tokens_for_reuse_detection() {
 #[tokio::test]
 async fn a_password_reset_token_can_be_consumed_exactly_once() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "reset@example.test", "reset").await;
+    let user = seed::user(&db, "reset")
+        .email("reset@example.test")
+        .create()
+        .await;
     users::insert_password_reset(
         &db.pool,
         user,
@@ -493,7 +513,10 @@ async fn a_password_reset_token_can_be_consumed_exactly_once() {
 #[tokio::test]
 async fn an_expired_reset_token_is_reported_expired_but_the_repository_still_consumes_it() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "stale-reset@example.test", "stale-reset").await;
+    let user = seed::user(&db, "stale-reset")
+        .email("stale-reset@example.test")
+        .create()
+        .await;
     users::insert_password_reset(
         &db.pool,
         user,
@@ -530,8 +553,14 @@ async fn an_expired_reset_token_is_reported_expired_but_the_repository_still_con
 #[tokio::test]
 async fn a_password_reset_invalidates_only_the_resetting_users_sessions() {
     let db = TestDb::spawn().await;
-    let subject = a_user(&db, "subject@example.test", "subject").await;
-    let bystander = a_user(&db, "bystander@example.test", "bystander").await;
+    let subject = seed::user(&db, "subject")
+        .email("subject@example.test")
+        .create()
+        .await;
+    let bystander = seed::user(&db, "bystander")
+        .email("bystander@example.test")
+        .create()
+        .await;
     a_refresh(&db, subject, Uuid::now_v7(), "subject-token").await;
     a_refresh(&db, bystander, Uuid::now_v7(), "bystander-token").await;
 
@@ -577,7 +606,10 @@ async fn a_password_reset_invalidates_only_the_resetting_users_sessions() {
 #[tokio::test]
 async fn email_verification_is_single_use_and_confirming_twice_keeps_the_first_instant() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "confirm@example.test", "confirm").await;
+    let user = seed::user(&db, "confirm")
+        .email("confirm@example.test")
+        .create()
+        .await;
     users::insert_email_verification(
         &db.pool,
         user,
@@ -632,7 +664,10 @@ async fn email_verification_is_single_use_and_confirming_twice_keeps_the_first_i
 #[tokio::test]
 async fn the_resend_lookup_reports_verification_without_disclosing_registration() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "resend@example.test", "resend").await;
+    let user = seed::user(&db, "resend")
+        .email("resend@example.test")
+        .create()
+        .await;
 
     let (found, verified) = users::find_by_email_with_verification(&db.pool, "RESEND@EXAMPLE.TEST")
         .await
@@ -691,7 +726,10 @@ async fn the_resend_lookup_reports_verification_without_disclosing_registration(
 #[tokio::test]
 async fn changing_the_email_clears_verification_and_changing_the_username_does_not() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "owner@example.test", "owner").await;
+    let user = seed::user(&db, "owner")
+        .email("owner@example.test")
+        .create()
+        .await;
     users::mark_email_verified(&db.pool, user)
         .await
         .expect("mark verified");
@@ -739,7 +777,10 @@ async fn changing_the_email_clears_verification_and_changing_the_username_does_n
 #[tokio::test]
 async fn a_case_only_email_edit_is_stored_but_is_not_a_change_of_address() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "casing@example.test", "casing").await;
+    let user = seed::user(&db, "casing")
+        .email("casing@example.test")
+        .create()
+        .await;
     users::mark_email_verified(&db.pool, user)
         .await
         .expect("mark verified");
@@ -764,8 +805,14 @@ async fn a_case_only_email_edit_is_stored_but_is_not_a_change_of_address() {
 #[tokio::test]
 async fn a_profile_update_onto_a_taken_identifier_is_a_conflict() {
     let db = TestDb::spawn().await;
-    a_user(&db, "first@example.test", "first").await;
-    let second = a_user(&db, "second@example.test", "second").await;
+    seed::user(&db, "first")
+        .email("first@example.test")
+        .create()
+        .await;
+    let second = seed::user(&db, "second")
+        .email("second@example.test")
+        .create()
+        .await;
 
     for (username, email) in [(None, Some("FIRST@example.test")), (Some("First"), None)] {
         let err = users::update_profile(&db.pool, second, username, email)
@@ -792,8 +839,14 @@ async fn a_profile_update_onto_a_taken_identifier_is_a_conflict() {
 #[tokio::test]
 async fn a_session_belonging_to_another_user_cannot_be_revoked() {
     let db = TestDb::spawn().await;
-    let owner = a_user(&db, "owner2@example.test", "owner2").await;
-    let stranger = a_user(&db, "stranger@example.test", "stranger").await;
+    let owner = seed::user(&db, "owner2")
+        .email("owner2@example.test")
+        .create()
+        .await;
+    let stranger = seed::user(&db, "stranger")
+        .email("stranger@example.test")
+        .create()
+        .await;
     a_refresh(&db, owner, Uuid::now_v7(), "owner-token").await;
 
     let owner_session = users::list_sessions(&db.pool, owner)
@@ -830,7 +883,10 @@ async fn a_session_belonging_to_another_user_cannot_be_revoked() {
 #[tokio::test]
 async fn revoking_a_session_revokes_its_family_and_it_drops_out_of_the_listing() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "multi@example.test", "multi").await;
+    let user = seed::user(&db, "multi")
+        .email("multi@example.test")
+        .create()
+        .await;
     let laptop = Uuid::now_v7();
     let phone = Uuid::now_v7();
 
@@ -867,8 +923,14 @@ async fn revoking_a_session_revokes_its_family_and_it_drops_out_of_the_listing()
 #[tokio::test]
 async fn the_session_listing_is_scoped_ordered_and_live_only() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "listing@example.test", "listing").await;
-    let other = a_user(&db, "other-listing@example.test", "other-listing").await;
+    let user = seed::user(&db, "listing")
+        .email("listing@example.test")
+        .create()
+        .await;
+    let other = seed::user(&db, "other-listing")
+        .email("other-listing@example.test")
+        .create()
+        .await;
 
     let oldest = a_refresh(&db, user, Uuid::now_v7(), "oldest").await;
     a_refresh(&db, user, Uuid::now_v7(), "middle").await;
@@ -931,8 +993,14 @@ async fn the_session_listing_is_scoped_ordered_and_live_only() {
 #[tokio::test]
 async fn revoking_all_sessions_reports_the_count_and_is_scoped_to_one_user() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "sweep@example.test", "sweep").await;
-    let bystander = a_user(&db, "sweep-other@example.test", "sweep-other").await;
+    let user = seed::user(&db, "sweep")
+        .email("sweep@example.test")
+        .create()
+        .await;
+    let bystander = seed::user(&db, "sweep-other")
+        .email("sweep-other@example.test")
+        .create()
+        .await;
     a_refresh(&db, user, Uuid::now_v7(), "sweep-1").await;
     a_refresh(&db, user, Uuid::now_v7(), "sweep-2").await;
     a_refresh(&db, bystander, Uuid::now_v7(), "sweep-other-1").await;
@@ -970,7 +1038,10 @@ async fn revoking_all_sessions_reports_the_count_and_is_scoped_to_one_user() {
 #[tokio::test]
 async fn notification_prefs_default_to_an_empty_object_and_round_trip() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "prefs@example.test", "prefs").await;
+    let user = seed::user(&db, "prefs")
+        .email("prefs@example.test")
+        .create()
+        .await;
 
     assert_eq!(
         users::get_notification_prefs(&db.pool, user)
@@ -1016,7 +1087,10 @@ async fn notification_prefs_default_to_an_empty_object_and_round_trip() {
 #[tokio::test]
 async fn account_state_reflects_suspension_and_is_absent_for_an_unknown_id() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "state@example.test", "state").await;
+    let user = seed::user(&db, "state")
+        .email("state@example.test")
+        .create()
+        .await;
 
     assert_eq!(
         users::account_state(&db.pool, user)
@@ -1070,7 +1144,10 @@ async fn account_state_reflects_suspension_and_is_absent_for_an_unknown_id() {
 #[tokio::test]
 async fn only_a_completed_sign_in_advances_last_login() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "login@example.test", "login").await;
+    let user = seed::user(&db, "login")
+        .email("login@example.test")
+        .create()
+        .await;
 
     assert!(
         last_login_at(&db, user).await.is_none(),

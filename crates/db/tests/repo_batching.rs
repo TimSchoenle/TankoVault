@@ -17,62 +17,23 @@
 #![cfg(feature = "integration")]
 
 use tankovault_config::MatchingConfig;
-use tankovault_db::repo::catalog::{
-    ScannedSeries, SeriesUpsert, ingest_series, register_source_stubs,
-};
-use tankovault_db::repo::providers::{self, NewProvider};
+use tankovault_db::repo::catalog::register_source_stubs;
 use tankovault_db::repo::{sync, tracking};
 use tankovault_domain::{
-    AccountStatus, AdapterKind, ContentType, Politeness, ProviderId, SeriesId, SeriesStatus,
-    WatchStatus, normalize_title,
+    AccountStatus, ContentType, ProviderId, SeriesId, SeriesStatus, WatchStatus,
 };
-use tankovault_test_support::TestDb;
+use tankovault_test_support::{TestDb, seed};
 use time::OffsetDateTime;
 
-async fn a_provider(db: &TestDb, slug: &str) -> ProviderId {
-    providers::create(
-        &db.pool,
-        NewProvider {
-            slug: slug.to_owned(),
-            name: slug.to_owned(),
-            base_url: format!("https://{slug}.invalid"),
-            adapter: AdapterKind::GenericConfig,
-            config: serde_json::json!({}),
-            politeness: Politeness::default(),
-        },
-    )
-    .await
-    .expect("create provider")
-    .id
-}
-
 async fn a_series(db: &TestDb, provider_id: ProviderId, title: &str, path: &str) -> SeriesId {
-    ingest_series(
-        &db.pool,
-        &ScannedSeries {
-            provider_id,
-            source_path: path.to_owned(),
-            provider_title: Some(title.to_owned()),
-            meta: SeriesUpsert {
-                canonical_title: title.to_owned(),
-                normalized_title: normalize_title(title),
-                description: None,
-                cover_url: None,
-                content_type: ContentType::Unknown,
-                status: SeriesStatus::Unknown,
-                release_year: None,
-            },
-            alt_titles: Vec::new(),
-            tags: Vec::new(),
-            authors: Vec::new(),
-            chapters: Vec::new(),
-            content_hash: vec![1],
-        },
-        &MatchingConfig::default(),
-    )
-    .await
-    .expect("ingest series")
-    .series_id
+    // Type and status stay `Unknown`: these tests are about batched writes, not about metadata,
+    // and the builder's `Manga`/`Ongoing` defaults would be a claim this file does not make.
+    seed::series(db, provider_id, title)
+        .source_path(path)
+        .content_type(ContentType::Unknown)
+        .status(SeriesStatus::Unknown)
+        .create()
+        .await
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +43,7 @@ async fn a_series(db: &TestDb, provider_id: ProviderId, title: &str, path: &str)
 #[tokio::test]
 async fn dedup_claim_many_returns_only_the_users_that_actually_claimed() {
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "p1").await;
+    let provider = seed::provider(&db, "p1").create().await;
     let series = a_series(&db, provider, "Solo Leveling", "/s/solo").await;
     let a = db.seed_user("a", &[], AccountStatus::Active).await;
     let b = db.seed_user("b", &[], AccountStatus::Active).await;
@@ -116,7 +77,7 @@ async fn dedup_claim_many_on_an_empty_list_is_a_no_op() {
     // The fan-out reaches this whenever every watcher has already read past the chapter. It must
     // not send an `UNNEST` over an empty array (or, worse, a bare statement).
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "p1").await;
+    let provider = seed::provider(&db, "p1").create().await;
     let series = a_series(&db, provider, "Solo Leveling", "/s/solo").await;
     let claimed = tracking::dedup_claim_many(&db.pool, &[], series, 1.0)
         .await
@@ -172,7 +133,7 @@ async fn notifications_create_many_writes_one_row_per_user_and_counts_group() {
 #[tokio::test]
 async fn sync_excluded_series_agrees_with_the_single_series_check() {
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "p1").await;
+    let provider = seed::provider(&db, "p1").create().await;
     let user = db.seed_user("reader", &[], AccountStatus::Active).await;
 
     // Six series covering the precedence matrix.
@@ -258,7 +219,7 @@ async fn sync_excluded_series_agrees_with_the_single_series_check() {
 #[tokio::test]
 async fn progress_and_status_prefetches_match_the_per_series_reads() {
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "p1").await;
+    let provider = seed::provider(&db, "p1").create().await;
     let user = db.seed_user("reader", &[], AccountStatus::Active).await;
     let one = a_series(&db, provider, "One", "/s/one").await;
     let two = a_series(&db, provider, "Two", "/s/two").await;
@@ -296,7 +257,7 @@ async fn upsert_mappings_lets_the_last_external_id_win() {
     // without `DISTINCT ON … ORDER BY ord DESC` the statement would either abort or persist an
     // arbitrary one.
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "p1").await;
+    let provider = seed::provider(&db, "p1").create().await;
     let series = a_series(&db, provider, "Solo Leveling", "/s/solo").await;
 
     sync::upsert_mappings(
@@ -325,7 +286,7 @@ async fn upsert_remote_entries_persists_nullable_columns_and_survives_a_duplicat
     // `Vec<Option<_>>` to a Postgres array. Getting that wrong would store 0 / the nil UUID
     // instead of NULL, which the admin console reads as a real year and a real series.
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "p1").await;
+    let provider = seed::provider(&db, "p1").create().await;
     let series = a_series(&db, provider, "Solo Leveling", "/s/solo").await;
     let user = db.seed_user("reader", &[], AccountStatus::Active).await;
     let updated = OffsetDateTime::from_unix_timestamp(1_600_000_000).expect("timestamp");
@@ -382,7 +343,7 @@ async fn upsert_remote_entries_persists_nullable_columns_and_survives_a_duplicat
 #[tokio::test]
 async fn register_source_stubs_registers_once_and_is_idempotent() {
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "p1").await;
+    let provider = seed::provider(&db, "p1").create().await;
 
     let entries = [
         ("/s/a", "Alpha"),
@@ -410,7 +371,7 @@ async fn stubs_sharing_a_normalized_title_attach_to_one_canonical_series() {
     // Canonicalisation inside a chunk must still see the series its predecessors created — that
     // is why the loop stays per-entry inside one transaction rather than being batched away.
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "p1").await;
+    let provider = seed::provider(&db, "p1").create().await;
 
     register_source_stubs(
         &db.pool,

@@ -11,7 +11,9 @@
 //! (ARCH-6b). To start clean: `docker rm -f tankovault-test-postgres`.
 //!
 //! Also holds the in-memory doubles that are not specific to any one service:
-//! [`RecordingAuditSink`] and [`RecordingMailer`].
+//! [`RecordingAuditSink`] and [`RecordingMailer`], and the entity builders in [`seed`] — which
+//! exist because seven of the ten `crates/db` suites had written their own `a_provider` and six
+//! were byte-identical (TEST F-09).
 //!
 //! # Layering
 //!
@@ -35,6 +37,8 @@
 //!
 //! This crate is a dev-dependency only; the DB-backed suites that use it are feature-gated
 //! (`integration`) so the default `cargo test --workspace` unit path stays green without Docker.
+
+pub mod seed;
 
 use std::sync::Mutex;
 use std::time::Duration as StdDuration;
@@ -123,8 +127,24 @@ struct PgContainer {
 ///
 /// Removing the container by hand is still always safe — the next run recreates it:
 /// `docker rm -f tankovault-test-postgres`.
+///
+/// # Why it starts the container before asking for it (ARCH-6c)
+///
+/// Reuse attaches to a **running** container. A named container that exists and is *stopped* —
+/// which is what every host reboot and every Docker restart leaves behind — matches neither
+/// path: reuse does not find it, creation collides with the name, and `testcontainers` surfaces
+/// a `409 Conflict` that this call used to report as "is Docker running?" while Docker was
+/// plainly running. So the container is started first, unconditionally.
+///
+/// `docker start` rather than removing and recreating, deliberately. Starting an already-running
+/// container is a documented no-op success, so this is safe to issue from every test binary
+/// concurrently, whereas removing one on a name conflict would race a *sibling binary* that had
+/// just created it. It also preserves the published port, since the mapping is fixed at creation
+/// and restored on start. Every failure is ignored: no container yet, no `docker` on `PATH`, or
+/// a daemon that is genuinely down all fall through to `start()` below, which reports them.
 async fn shared_container() -> &'static PgContainer {
     PG.get_or_init(|| async {
+        start_if_stopped();
         let container = Postgres::default()
             .with_tag(POSTGRES_TAG)
             .with_container_name(CONTAINER_NAME)
@@ -145,6 +165,20 @@ async fn shared_container() -> &'static PgContainer {
         }
     })
     .await
+}
+
+/// Best-effort `docker start` of the shared container; see [`shared_container`] for why.
+///
+/// Deliberately returns nothing. There is no outcome a caller could act on: success means the
+/// container was stopped and now is not, and *every* failure — no such container, no `docker`
+/// binary, a daemon that is down — is either the normal first-run case or something the
+/// `start()` that follows reports with a better message than this could.
+fn start_if_stopped() {
+    let _ = std::process::Command::new("docker")
+        .args(["start", CONTAINER_NAME])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
 }
 
 /// Drop every `tv_test_*` database older than [`STALE_DB_AFTER`], once per test binary.

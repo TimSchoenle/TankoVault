@@ -19,11 +19,15 @@ publish = false
 [dependencies]
 tankovault-db = { workspace = true }
 tankovault-domain = { workspace = true }
+# For `MatchingConfig`, which is the workspace's only `Canonicaliser` implementation and so what
+# `seed::series` has to hand `ingest_series` (ARCH-16 moved the policy out of `crates/db`).
+tankovault-config = { workspace = true }
 tankovault-auth = { workspace = true }
 tankovault-email = { workspace = true }
 tankovault-service = { workspace = true }
 tokio = { workspace = true }
 sqlx = { workspace = true }
+serde_json = { workspace = true }
 async-trait = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }

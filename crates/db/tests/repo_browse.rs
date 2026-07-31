@@ -15,17 +15,12 @@
 //! Opt-in: gated behind the `integration` feature because it requires Docker.
 #![cfg(feature = "integration")]
 
-use tankovault_config::MatchingConfig;
 use tankovault_db::repo::catalog::{
-    ChapterUpsert, ScannedSeries, SeriesFilter, SeriesSort, SeriesUpsert, ingest_series,
-    list_series, list_series_authors, list_series_filtered, list_series_tags, list_series_titles,
-    list_tags,
+    SeriesFilter, SeriesSort, list_series, list_series_authors, list_series_filtered,
+    list_series_tags, list_series_titles, list_tags,
 };
-use tankovault_db::repo::providers::{self, NewProvider};
-use tankovault_domain::{
-    AdapterKind, ContentType, Politeness, ProviderId, SeriesId, SeriesStatus, normalize_title,
-};
-use tankovault_test_support::TestDb;
+use tankovault_domain::{ContentType, ProviderId, SeriesId, SeriesStatus};
+use tankovault_test_support::{TestDb, seed};
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -113,74 +108,38 @@ const PIN_UPDATED_AT: &str = "UPDATE series SET updated_at = timestamptz '2024-0
          WHEN 'Frieren' THEN interval '4 days' \
          ELSE interval '5 days' END";
 
-async fn a_provider(db: &TestDb, slug: &str) -> ProviderId {
-    providers::create(
-        &db.pool,
-        NewProvider {
-            slug: slug.to_owned(),
-            name: slug.to_owned(),
-            base_url: format!("https://{slug}.invalid"),
-            adapter: AdapterKind::GenericConfig,
-            config: serde_json::json!({}),
-            politeness: Politeness::default(),
-        },
-    )
-    .await
-    .expect("create provider")
-    .id
-}
-
-async fn ingest(db: &TestDb, provider_id: ProviderId, seed: &Seed, chapters: usize) -> SeriesId {
-    ingest_series(
-        &db.pool,
-        &ScannedSeries {
-            provider_id,
-            source_path: format!("/s/{}", normalize_title(seed.title).replace(' ', "-")),
-            provider_title: Some(seed.title.to_owned()),
-            meta: SeriesUpsert {
-                canonical_title: seed.title.to_owned(),
-                normalized_title: normalize_title(seed.title),
-                description: None,
-                cover_url: None,
-                content_type: seed.content_type,
-                status: seed.status,
-                release_year: seed.release_year,
-            },
-            alt_titles: seed
-                .alt_titles
-                .iter()
-                .map(|t| ((*t).to_owned(), normalize_title(t)))
-                .collect(),
-            tags: seed.tags.iter().map(|t| (*t).to_owned()).collect(),
-            authors: seed.authors.iter().map(|a| (*a).to_owned()).collect(),
-            chapters: (1..=chapters)
-                .map(|n| ChapterUpsert {
-                    #[expect(
-                        clippy::cast_precision_loss,
-                        reason = "a fixture index, far below f64's exact-integer range"
-                    )]
-                    number: n as f64,
-                    volume: None,
-                    title: None,
-                    path: format!("/c/{n}"),
-                    published_at: None,
-                })
-                .collect(),
-            content_hash: vec![1],
-        },
-        &MatchingConfig::default(),
-    )
-    .await
-    .expect("ingest series")
-    .series_id
+/// The parameter is `fixture`, not `seed`: a binding called `seed` would shadow the
+/// `tankovault_test_support::seed` module inside this function, and the next person to reach for
+/// a builder here would get a baffling resolution error.
+async fn ingest(db: &TestDb, provider_id: ProviderId, fixture: &Seed, chapters: usize) -> SeriesId {
+    let numbers: Vec<f64> = (1..=chapters)
+        .map(|n| {
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "a fixture index, far below f64's exact-integer range"
+            )]
+            let number = n as f64;
+            number
+        })
+        .collect();
+    seed::series(db, provider_id, fixture.title)
+        .chapters(&numbers)
+        .alt_titles(fixture.alt_titles)
+        .tags(fixture.tags)
+        .authors(fixture.authors)
+        .content_type(fixture.content_type)
+        .status(fixture.status)
+        .release_year_opt(fixture.release_year)
+        .create()
+        .await
 }
 
 /// Seed the whole corpus on provider `alpha`, plus a second source for `Solo Leveling` on
 /// `beta` so `source_count`, the `sources` order and the `provider_slug` filter all have
 /// something to distinguish.
 async fn seed_corpus(db: &TestDb) {
-    let alpha = a_provider(db, "alpha").await;
-    let beta = a_provider(db, "beta").await;
+    let alpha = seed::provider(db, "alpha").create().await;
+    let beta = seed::provider(db, "beta").create().await;
     for seed in CORPUS {
         ingest(db, alpha, seed, seed.chapters).await;
     }

@@ -36,33 +36,14 @@
 
 use serde_json::{Value as Json, json};
 use tankovault_db::DbError;
-use tankovault_db::repo::providers::{self, NewProvider};
+use tankovault_db::repo::providers::{self};
 use tankovault_db::repo::scans;
-use tankovault_domain::{
-    AdapterKind, Politeness, ProviderId, RunState, ScanMode, ScanRunId, ScanTaskId, TaskState,
-};
-use tankovault_test_support::TestDb;
+use tankovault_domain::{RunState, ScanMode, ScanRunId, ScanTaskId, TaskState};
+use tankovault_test_support::{TestDb, seed};
 
 // ---------------------------------------------------------------------------
 // Fixture
 // ---------------------------------------------------------------------------
-
-async fn a_provider(db: &TestDb, slug: &str) -> ProviderId {
-    providers::create(
-        &db.pool,
-        NewProvider {
-            slug: slug.to_owned(),
-            name: slug.to_owned(),
-            base_url: format!("https://{slug}.invalid"),
-            adapter: AdapterKind::GenericConfig,
-            config: json!({}),
-            politeness: Politeness::default(),
-        },
-    )
-    .await
-    .expect("create provider")
-    .id
-}
 
 /// A run with `planned` tasks declared, in the `running` state — the state every task settles
 /// into and the only state [`scans::finalize_if_complete`] acts on.
@@ -258,7 +239,7 @@ async fn a_settled_task_cannot_move_to_another_terminal_state() {
 #[tokio::test]
 async fn a_new_run_is_queued_with_nothing_planned() {
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "alpha").await;
+    let provider = seed::provider(&db, "alpha").create().await;
     let id = scans::create_run(&db.pool, Some(provider), ScanMode::Fast)
         .await
         .expect("create run");
@@ -694,7 +675,7 @@ async fn the_fallback_claim_takes_one_queued_task_per_call_within_its_run() {
 #[tokio::test]
 async fn the_failed_task_feed_reports_failures_with_their_run_context() {
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "alpha").await;
+    let provider = seed::provider(&db, "alpha").create().await;
     let run = scans::create_run(&db.pool, Some(provider), ScanMode::Full)
         .await
         .expect("create run");

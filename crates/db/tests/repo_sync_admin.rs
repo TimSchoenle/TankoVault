@@ -12,19 +12,13 @@
 //! Opt-in: gated behind the `integration` feature because it requires Docker.
 #![cfg(feature = "integration")]
 
-use tankovault_config::MatchingConfig;
-use tankovault_db::repo::catalog::{ScannedSeries, SeriesUpsert, ingest_series};
-use tankovault_db::repo::providers::{self, NewProvider};
 use tankovault_db::repo::sync::{
     self, FetchedRemoteEntry, NewConflict, admin_list_accounts, admin_list_mappings,
     admin_list_mappings_for_series, admin_list_unmapped, admin_list_unmatched_remote,
     get_remote_entry, mark_remote_entry_matched, suggest_series_candidates,
 };
-use tankovault_domain::{
-    AccountStatus, AdapterKind, ContentType, Politeness, ProviderId, SeriesId, SeriesStatus,
-    UserId, normalize_title,
-};
-use tankovault_test_support::TestDb;
+use tankovault_domain::{AccountStatus, SeriesId, UserId, normalize_title};
+use tankovault_test_support::{TestDb, seed};
 use time::OffsetDateTime;
 use time::ext::NumericalDuration as _;
 
@@ -32,62 +26,27 @@ use time::ext::NumericalDuration as _;
 // Fixture
 // ---------------------------------------------------------------------------
 
-async fn a_provider(db: &TestDb, slug: &str) -> ProviderId {
-    providers::create(
-        &db.pool,
-        NewProvider {
-            slug: slug.to_owned(),
-            name: slug.to_owned(),
-            base_url: format!("https://{slug}.invalid"),
-            adapter: AdapterKind::GenericConfig,
-            config: serde_json::json!({}),
-            politeness: Politeness::default(),
-        },
-    )
-    .await
-    .expect("create provider")
-    .id
-}
-
 /// Ingest one canonical series with `sources` distinct local providers behind it, so the
 /// assign queue's `source_count` ordering has something to order by.
 async fn a_series(db: &TestDb, title: &str, sources: usize, alt_titles: &[&str]) -> SeriesId {
     let mut series_id = None;
     for n in 0..sources {
-        let provider = a_provider(
+        let provider = seed::provider(
             db,
             &format!("{}-{n}", normalize_title(title).replace(' ', "")),
         )
+        .create()
         .await;
-        let outcome = ingest_series(
-            &db.pool,
-            &ScannedSeries {
-                provider_id: provider,
-                source_path: format!("/s/{n}"),
-                provider_title: Some(title.to_owned()),
-                meta: SeriesUpsert {
-                    canonical_title: title.to_owned(),
-                    normalized_title: normalize_title(title),
-                    description: None,
-                    cover_url: None,
-                    content_type: ContentType::Manga,
-                    status: SeriesStatus::Ongoing,
-                    release_year: Some(2000),
-                },
-                alt_titles: alt_titles
-                    .iter()
-                    .map(|t| ((*t).to_owned(), normalize_title(t)))
-                    .collect(),
-                tags: Vec::new(),
-                authors: Vec::new(),
-                chapters: Vec::new(),
-                content_hash: vec![1],
-            },
-            &MatchingConfig::default(),
-        )
-        .await
-        .expect("ingest series");
-        series_id = Some(outcome.series_id);
+        // Every source carries the same title, so canonicalisation attaches them all to one
+        // series — which is the point: `source_count` is what the assign queue orders by.
+        series_id = Some(
+            seed::series(db, provider, title)
+                .source_path(format!("/s/{n}"))
+                .alt_titles(alt_titles)
+                .release_year(2000)
+                .create()
+                .await,
+        );
     }
     series_id.expect("at least one source")
 }

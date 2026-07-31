@@ -42,17 +42,15 @@ use tankovault_db::repo::matching::{
     MergeCandidateView, dismiss_merge_candidate, find_candidates, find_candidates_multi,
     list_open_merge_candidates, merge_series,
 };
-use tankovault_db::repo::providers::{self, NewProvider};
+use tankovault_db::repo::sync;
 use tankovault_db::repo::tracking::{
     ReadProgress, progress_get_full, progress_mark_read, progress_set, watchlist_list,
     watchlist_upsert,
 };
-use tankovault_db::repo::{sync, users};
 use tankovault_domain::{
-    AdapterKind, ContentType, Politeness, ProviderId, SeriesId, SeriesStatus, UserId, WatchStatus,
-    normalize_title,
+    ContentType, ProviderId, SeriesId, SeriesStatus, UserId, WatchStatus, normalize_title,
 };
-use tankovault_test_support::TestDb;
+use tankovault_test_support::{TestDb, seed};
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -67,35 +65,6 @@ struct Seed {
     tags: &'static [&'static str],
     authors: &'static [&'static str],
     alt_titles: &'static [&'static str],
-}
-
-async fn a_user(db: &TestDb, name: &str) -> UserId {
-    users::create(
-        &db.pool,
-        &format!("{name}@example.test"),
-        name,
-        "$argon2id$placeholder",
-    )
-    .await
-    .expect("create user")
-    .id
-}
-
-async fn a_provider(db: &TestDb, slug: &str) -> ProviderId {
-    providers::create(
-        &db.pool,
-        NewProvider {
-            slug: slug.to_owned(),
-            name: slug.to_owned(),
-            base_url: format!("https://{slug}.invalid"),
-            adapter: AdapterKind::GenericConfig,
-            config: serde_json::json!({}),
-            politeness: Politeness::default(),
-        },
-    )
-    .await
-    .expect("create provider")
-    .id
 }
 
 async fn ingest(db: &TestDb, provider_id: ProviderId, seed: &Seed, chapters: &[f64]) -> SeriesId {
@@ -174,7 +143,7 @@ async fn a_reader(
     keep: (SeriesId, f64),
     drop: (SeriesId, f64, Option<f64>),
 ) -> UserId {
-    let user = a_user(db, name).await;
+    let user = seed::user(db, name).create().await;
     progress_set(&db.pool, user, keep.0, keep.1)
         .await
         .expect("progress on the survivor");
@@ -212,7 +181,7 @@ async fn merge_candidate_count(db: &TestDb) -> i64 {
 #[tokio::test]
 async fn a_candidate_is_found_through_its_alternative_titles() {
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "alpha").await;
+    let provider = seed::provider(&db, "alpha").create().await;
     let solo = ingest(
         &db,
         provider,
@@ -260,7 +229,7 @@ async fn a_candidate_is_found_through_its_alternative_titles() {
 #[tokio::test]
 async fn a_candidate_carries_every_signal_the_scorer_reads() {
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "alpha").await;
+    let provider = seed::provider(&db, "alpha").create().await;
     let berserk = ingest(
         &db,
         provider,
@@ -331,7 +300,7 @@ async fn a_candidate_carries_every_signal_the_scorer_reads() {
 #[tokio::test]
 async fn candidates_are_ordered_best_first_and_the_limit_keeps_the_best() {
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "alpha").await;
+    let provider = seed::provider(&db, "alpha").create().await;
     // Deliberately descending in similarity to "solo leveling" and *ascending* in release year, so
     // an ordering that fell through to the year would produce the exact reverse.
     for (title, year) in [
@@ -396,7 +365,7 @@ async fn candidates_are_ordered_best_first_and_the_limit_keeps_the_best() {
 #[tokio::test]
 async fn the_batched_candidate_lookup_agrees_with_the_single_title_form() {
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "alpha").await;
+    let provider = seed::provider(&db, "alpha").create().await;
     for title in [
         "Solo Leveling",
         "Solo Leveling Side Story",
@@ -480,7 +449,7 @@ async fn the_batched_candidate_lookup_agrees_with_the_single_title_form() {
 #[tokio::test]
 async fn a_repeated_query_title_collapses_into_one_bucket() {
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "alpha").await;
+    let provider = seed::provider(&db, "alpha").create().await;
     ingest(
         &db,
         provider,
@@ -525,8 +494,8 @@ async fn a_repeated_query_title_collapses_into_one_bucket() {
 #[tokio::test]
 async fn a_confident_match_attaches_and_queues_nothing() {
     let db = TestDb::spawn().await;
-    let alpha = a_provider(&db, "alpha").await;
-    let beta = a_provider(&db, "beta").await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
     let existing = ingest(
         &db,
         alpha,
@@ -581,8 +550,8 @@ async fn a_confident_match_attaches_and_queues_nothing() {
 #[tokio::test]
 async fn the_ambiguous_band_creates_a_series_and_queues_the_pair() {
     let db = TestDb::spawn().await;
-    let alpha = a_provider(&db, "alpha").await;
-    let beta = a_provider(&db, "beta").await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
     let existing = ingest(
         &db,
         alpha,
@@ -641,7 +610,7 @@ async fn the_ambiguous_band_creates_a_series_and_queues_the_pair() {
 #[tokio::test]
 async fn an_unmatched_title_creates_a_series_and_queues_nothing() {
     let db = TestDb::spawn().await;
-    let alpha = a_provider(&db, "alpha").await;
+    let alpha = seed::provider(&db, "alpha").create().await;
     ingest(
         &db,
         alpha,
@@ -689,9 +658,9 @@ async fn an_unmatched_title_creates_a_series_and_queues_nothing() {
 #[tokio::test]
 async fn the_merge_queue_lists_only_unresolved_candidates_newest_first() {
     let db = TestDb::spawn().await;
-    let alpha = a_provider(&db, "alpha").await;
-    let beta = a_provider(&db, "beta").await;
-    let gamma = a_provider(&db, "gamma").await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let gamma = seed::provider(&db, "gamma").create().await;
     ingest(
         &db,
         alpha,
@@ -736,7 +705,7 @@ async fn the_merge_queue_lists_only_unresolved_candidates_newest_first() {
     assert_eq!(limited[0].id, queued[0].id);
 
     // Resolving one takes it out of the queue and leaves the other.
-    let actor = a_user(&db, "operator").await;
+    let actor = seed::user(&db, "operator").create().await;
     assert!(
         dismiss_merge_candidate(&db.pool, queued[0].id, Some(actor))
             .await
@@ -766,8 +735,8 @@ async fn the_merge_queue_lists_only_unresolved_candidates_newest_first() {
 #[tokio::test]
 async fn dismissing_a_merge_candidate_is_single_use() {
     let db = TestDb::spawn().await;
-    let alpha = a_provider(&db, "alpha").await;
-    let beta = a_provider(&db, "beta").await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
     ingest(
         &db,
         alpha,
@@ -790,8 +759,8 @@ async fn dismissing_a_merge_candidate_is_single_use() {
         .expect("list")[0]
         .id;
 
-    let first = a_user(&db, "first").await;
-    let second = a_user(&db, "second").await;
+    let first = seed::user(&db, "first").create().await;
+    let second = seed::user(&db, "second").create().await;
     assert!(
         dismiss_merge_candidate(&db.pool, candidate, Some(first))
             .await
@@ -843,8 +812,8 @@ async fn dismissing_a_merge_candidate_is_single_use() {
 #[tokio::test]
 async fn merging_moves_every_table_and_deletes_the_absorbed_series() {
     let db = TestDb::spawn().await;
-    let alpha = a_provider(&db, "alpha").await;
-    let beta = a_provider(&db, "beta").await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
     let keep = ingest(
         &db,
         alpha,
@@ -875,7 +844,7 @@ async fn merging_moves_every_table_and_deletes_the_absorbed_series() {
     .await;
     assert_ne!(keep, drop);
 
-    let user = a_user(&db, "reader").await;
+    let user = seed::user(&db, "reader").create().await;
     watchlist_upsert(&db.pool, user, drop, WatchStatus::Reading, true)
         .await
         .expect("watchlist");
@@ -974,8 +943,8 @@ async fn merging_moves_every_table_and_deletes_the_absorbed_series() {
 #[tokio::test]
 async fn merging_keeps_the_furthest_read_position() {
     let db = TestDb::spawn().await;
-    let alpha = a_provider(&db, "alpha").await;
-    let beta = a_provider(&db, "beta").await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
     let keep = ingest(
         &db,
         alpha,
@@ -1010,7 +979,7 @@ async fn merging_keeps_the_furthest_read_position() {
     // Ahead on the survivor, behind on the absorbed one — the other direction.
     let ahead = a_reader(&db, "ahead", (keep, 3.0), (drop, 1.0, None)).await;
     // Progress only on the absorbed series: the plain insert path.
-    let only_absorbed = a_user(&db, "onlyabsorbed").await;
+    let only_absorbed = seed::user(&db, "onlyabsorbed").create().await;
     progress_set(&db.pool, only_absorbed, drop, 2.0)
         .await
         .expect("progress");
@@ -1101,8 +1070,8 @@ async fn merging_keeps_the_furthest_read_position() {
 #[tokio::test]
 async fn merging_resolves_the_related_candidates_and_refuses_impossible_inputs() {
     let db = TestDb::spawn().await;
-    let alpha = a_provider(&db, "alpha").await;
-    let beta = a_provider(&db, "beta").await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
     let keep = ingest(
         &db,
         alpha,
@@ -1151,7 +1120,7 @@ async fn merging_resolves_the_related_candidates_and_refuses_impossible_inputs()
     .await
     .expect("seed an unrelated candidate");
 
-    let actor = a_user(&db, "operator").await;
+    let actor = seed::user(&db, "operator").create().await;
     merge_series(&db.pool, keep, drop, Some(actor))
         .await
         .expect("merge");

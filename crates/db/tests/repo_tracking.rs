@@ -48,19 +48,13 @@
 //! Opt-in: gated behind the `integration` feature because it requires Docker.
 #![cfg(feature = "integration")]
 
-use tankovault_config::MatchingConfig;
-use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert, ingest_series};
-use tankovault_db::repo::providers::{self, NewProvider};
 use tankovault_db::repo::tracking::{
-    ReadProgress, continue_reading, feed, me_stats, progress_get_full, progress_mark_read,
-    progress_mark_unread, progress_set, watchers_for_series, watchlist_detailed, watchlist_upsert,
+    ReadProgress, continue_reading, feed, is_sync_excluded, me_stats, progress_get_full,
+    progress_mark_read, progress_mark_unread, progress_set, set_sync_excluded, watchers_for_series,
+    watchlist_detailed, watchlist_upsert,
 };
-use tankovault_db::repo::users;
-use tankovault_domain::{
-    AdapterKind, ContentType, Politeness, ProviderId, SeriesId, SeriesStatus, UserId, WatchStatus,
-    normalize_title,
-};
-use tankovault_test_support::TestDb;
+use tankovault_domain::{ProviderId, SeriesId, UserId, WatchStatus};
+use tankovault_test_support::{TestDb, seed};
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -140,72 +134,12 @@ const MATRIX: &[Frontier] = &[
     },
 ];
 
-async fn a_user(db: &TestDb, name: &str) -> UserId {
-    users::create(
-        &db.pool,
-        &format!("{name}@example.test"),
-        name,
-        "$argon2id$placeholder",
-    )
-    .await
-    .expect("create user")
-    .id
-}
-
-async fn a_provider(db: &TestDb, slug: &str) -> ProviderId {
-    providers::create(
-        &db.pool,
-        NewProvider {
-            slug: slug.to_owned(),
-            name: slug.to_owned(),
-            base_url: format!("https://{slug}.invalid"),
-            adapter: AdapterKind::GenericConfig,
-            config: serde_json::json!({}),
-            politeness: Politeness::default(),
-        },
-    )
-    .await
-    .expect("create provider")
-    .id
-}
-
 /// Ingest one series carrying `chapters` on `provider_id`.
 async fn a_series(db: &TestDb, provider_id: ProviderId, title: &str, chapters: &[f64]) -> SeriesId {
-    ingest_series(
-        &db.pool,
-        &ScannedSeries {
-            provider_id,
-            source_path: format!("/s/{}", normalize_title(title).replace(' ', "-")),
-            provider_title: Some(title.to_owned()),
-            meta: SeriesUpsert {
-                canonical_title: title.to_owned(),
-                normalized_title: normalize_title(title),
-                description: None,
-                cover_url: None,
-                content_type: ContentType::Manga,
-                status: SeriesStatus::Ongoing,
-                release_year: None,
-            },
-            alt_titles: Vec::new(),
-            tags: Vec::new(),
-            authors: Vec::new(),
-            chapters: chapters
-                .iter()
-                .map(|n| ChapterUpsert {
-                    number: *n,
-                    volume: None,
-                    title: None,
-                    path: format!("/c/{n}"),
-                    published_at: None,
-                })
-                .collect(),
-            content_hash: vec![1],
-        },
-        &MatchingConfig::default(),
-    )
-    .await
-    .expect("ingest series")
-    .series_id
+    seed::series(db, provider_id, title)
+        .chapters(chapters)
+        .create()
+        .await
 }
 
 /// Plant a progress state directly.
@@ -289,8 +223,8 @@ fn rust_unread_whole_count(progress: ReadProgress) -> i64 {
 #[tokio::test]
 async fn the_sql_and_the_rust_predicate_agree_on_every_chapter() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "reader").await;
-    let provider = a_provider(&db, "alpha").await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
     let series = a_series(&db, provider, "Berserk", CHAPTERS).await;
     watchlist_upsert(&db.pool, user, series, WatchStatus::Reading, true)
         .await
@@ -376,9 +310,9 @@ async fn the_sql_and_the_rust_predicate_agree_on_every_chapter() {
 #[tokio::test]
 async fn the_notifier_sees_both_frontiers_and_they_decide_as_covers_does() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "watcher").await;
-    let quiet = a_user(&db, "quiet").await;
-    let provider = a_provider(&db, "alpha").await;
+    let user = seed::user(&db, "watcher").create().await;
+    let quiet = seed::user(&db, "quiet").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
     let series = a_series(&db, provider, "Berserk", CHAPTERS).await;
     watchlist_upsert(&db.pool, user, series, WatchStatus::Reading, true)
         .await
@@ -433,8 +367,8 @@ async fn the_notifier_sees_both_frontiers_and_they_decide_as_covers_does() {
 #[tokio::test]
 async fn me_stats_counts_unread_chapters_per_series_not_globally() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "reader").await;
-    let provider = a_provider(&db, "alpha").await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
     // Identical numbering on purpose: the two series' floors overlap completely.
     let first = a_series(&db, provider, "Berserk", &[1.0, 2.0, 3.0]).await;
     let second = a_series(&db, provider, "Vinland Saga", &[1.0, 2.0, 3.0]).await;
@@ -489,8 +423,8 @@ async fn frontiers(db: &TestDb, user: UserId, series: SeriesId) -> (f64, Option<
 #[tokio::test]
 async fn marking_a_part_of_a_read_whole_chapter_is_a_noop() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "reader").await;
-    let provider = a_provider(&db, "alpha").await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
     let series = a_series(&db, provider, "Berserk", CHAPTERS).await;
 
     progress_set(&db.pool, user, series, 3.0)
@@ -510,8 +444,8 @@ async fn marking_a_part_of_a_read_whole_chapter_is_a_noop() {
 #[tokio::test]
 async fn progress_mark_read_is_monotonic_in_the_whole_frontier() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "reader").await;
-    let provider = a_provider(&db, "alpha").await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
     let series = a_series(&db, provider, "Berserk", CHAPTERS).await;
 
     progress_mark_read(&db.pool, user, series, 6.0)
@@ -540,8 +474,8 @@ async fn progress_mark_read_is_monotonic_in_the_whole_frontier() {
 #[tokio::test]
 async fn a_part_ahead_advances_only_the_part_frontier_and_is_cleared_when_overtaken() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "reader").await;
-    let provider = a_provider(&db, "alpha").await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
     let series = a_series(&db, provider, "Berserk", CHAPTERS).await;
 
     progress_set(&db.pool, user, series, 3.0)
@@ -574,8 +508,8 @@ async fn a_part_ahead_advances_only_the_part_frontier_and_is_cleared_when_overta
 #[tokio::test]
 async fn progress_set_clears_only_a_part_frontier_it_covers() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "reader").await;
-    let provider = a_provider(&db, "alpha").await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
     let series = a_series(&db, provider, "Berserk", CHAPTERS).await;
 
     progress_set(&db.pool, user, series, 3.0)
@@ -611,8 +545,8 @@ async fn progress_set_clears_only_a_part_frontier_it_covers() {
 #[tokio::test]
 async fn un_reading_a_part_below_the_frontier_retreats_both_frontiers() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "reader").await;
-    let provider = a_provider(&db, "alpha").await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
     let series = a_series(&db, provider, "Berserk", CHAPTERS).await;
 
     progress_set(&db.pool, user, series, 6.0)
@@ -653,8 +587,8 @@ async fn un_reading_a_part_below_the_frontier_retreats_both_frontiers() {
 #[tokio::test]
 async fn un_reading_the_part_frontier_falls_back_to_the_previous_part_ahead() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "reader").await;
-    let provider = a_provider(&db, "alpha").await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
     let series = a_series(&db, provider, "Berserk", CHAPTERS).await;
 
     progress_set(&db.pool, user, series, 3.0)
@@ -696,8 +630,8 @@ async fn un_reading_the_part_frontier_falls_back_to_the_previous_part_ahead() {
 #[tokio::test]
 async fn un_reading_a_part_that_was_never_read_does_not_advance_the_frontier() {
     let db = TestDb::spawn().await;
-    let user = a_user(&db, "reader").await;
-    let provider = a_provider(&db, "alpha").await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
     let series = a_series(&db, provider, "Berserk", CHAPTERS).await;
 
     // Nothing ahead of the whole frontier is read.
@@ -721,4 +655,66 @@ async fn un_reading_a_part_that_was_never_read_does_not_advance_the_frontier() {
         .await
         .expect("mark unread");
     assert_eq!(frontiers(&db, user, series).await, (3.0, Some(4.5)));
+}
+
+/// **OPS-2.2d.** Excluding a series the user does not track must report that nothing was written.
+///
+/// `sync_excluded` is a column on `watchlist_entries`, so the `UPDATE` has nowhere to land until
+/// the series is tracked. The function used to discard `rows_affected` and answer `Ok(())`, and
+/// `PUT /v1/me/watchlist/{series_id}/sync` answered `{"ok": true}` on top of it — so a user who
+/// opted a series out of external sync *before* adding it to their watchlist was told the opt-out
+/// had been saved, nothing had been, and the next sync pushed their progress to the provider.
+///
+/// The second half is what makes this a regression test rather than a tautology: the same call
+/// against a tracked series must return `true` **and** be visible to
+/// [`is_sync_excluded`], which is the choke point every sync path actually consults. Asserting
+/// only the boolean would pass against a function that returned `true` without writing.
+#[tokio::test]
+async fn excluding_an_untracked_series_reports_that_nothing_was_written() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+    let series = a_series(&db, provider, "Berserk", CHAPTERS).await;
+
+    assert!(
+        !set_sync_excluded(&db.pool, user, series, true)
+            .await
+            .expect("exclude an untracked series"),
+        "an untracked series has no row to carry the flag; this must not report success"
+    );
+    assert!(
+        !is_sync_excluded(&db.pool, user, series, "anilist")
+            .await
+            .expect("read the exclusion"),
+        "nothing was written, so the choke point must still say `included`"
+    );
+
+    watchlist_upsert(&db.pool, user, series, WatchStatus::Reading, true)
+        .await
+        .expect("track the series");
+
+    assert!(
+        set_sync_excluded(&db.pool, user, series, true)
+            .await
+            .expect("exclude a tracked series"),
+        "the entry exists now, so the flag lands"
+    );
+    assert!(
+        is_sync_excluded(&db.pool, user, series, "anilist")
+            .await
+            .expect("read the exclusion"),
+        "and the sync choke point honours it"
+    );
+
+    assert!(
+        set_sync_excluded(&db.pool, user, series, false)
+            .await
+            .expect("clear the exclusion"),
+        "clearing is a write like any other and reports the same way"
+    );
+    assert!(
+        !is_sync_excluded(&db.pool, user, series, "anilist")
+            .await
+            .expect("read the exclusion")
+    );
 }

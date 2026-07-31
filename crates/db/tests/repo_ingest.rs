@@ -14,9 +14,8 @@ use tankovault_config::MatchingConfig;
 use tankovault_db::repo::catalog::{
     ChapterUpsert, ScannedSeries, SeriesUpsert, ingest_series, upsert_chapters,
 };
-use tankovault_db::repo::providers::{self, NewProvider};
-use tankovault_domain::{AdapterKind, ContentType, Politeness, SeriesStatus, normalize_title};
-use tankovault_test_support::TestDb;
+use tankovault_domain::{ContentType, SeriesStatus, normalize_title};
+use tankovault_test_support::{TestDb, seed};
 
 fn chapter(number: f64, title: Option<&str>, path: &str) -> ChapterUpsert {
     ChapterUpsert {
@@ -53,30 +52,13 @@ fn scanned(
     }
 }
 
-async fn a_provider(db: &TestDb, slug: &str) -> tankovault_domain::ProviderId {
-    providers::create(
-        &db.pool,
-        NewProvider {
-            slug: slug.to_owned(),
-            name: slug.to_owned(),
-            base_url: "https://example.test".to_owned(),
-            adapter: AdapterKind::Madara,
-            config: serde_json::json!({}),
-            politeness: Politeness::default(),
-        },
-    )
-    .await
-    .expect("provider inserts")
-    .id
-}
-
 /// The contract `chapter.discovered` rests on: a first ingest reports every chapter as new,
 /// and re-ingesting the identical listing reports none. Getting the second half wrong would
 /// re-notify every watcher on every scan cycle.
 #[tokio::test]
 async fn a_rescan_of_an_unchanged_listing_discovers_nothing() {
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "ingest-rescan").await;
+    let provider = seed::provider(&db, "ingest-rescan").create().await;
 
     // `ChapterUpsert` is deliberately not `Clone` — it is a one-shot ingest payload — so the
     // identical listing is rebuilt rather than cloned.
@@ -122,7 +104,7 @@ async fn a_rescan_of_an_unchanged_listing_discovers_nothing() {
 #[tokio::test]
 async fn only_added_chapters_are_reported_and_edits_are_applied_quietly() {
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "ingest-growth").await;
+    let provider = seed::provider(&db, "ingest-growth").create().await;
 
     ingest_series(
         &db.pool,
@@ -175,7 +157,7 @@ async fn only_added_chapters_are_reported_and_edits_are_applied_quietly() {
 #[tokio::test]
 async fn a_listing_that_repeats_a_chapter_number_does_not_abort_the_batch() {
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "ingest-dupes").await;
+    let provider = seed::provider(&db, "ingest-dupes").create().await;
 
     let outcome = ingest_series(
         &db.pool,
@@ -219,7 +201,7 @@ async fn a_listing_that_repeats_a_chapter_number_does_not_abort_the_batch() {
 #[tokio::test]
 async fn an_empty_chapter_list_is_a_no_op() {
     let db = TestDb::spawn().await;
-    let provider = a_provider(&db, "ingest-empty").await;
+    let provider = seed::provider(&db, "ingest-empty").create().await;
 
     let outcome = ingest_series(
         &db.pool,

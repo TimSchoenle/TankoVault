@@ -42,7 +42,7 @@ tankovault-domain = { path = "../../crates/domain" }
 # Console dashboard auto-refresh loop (wasm-friendly async sleep).
 gloo-timers = { version = "0.3", features = ["futures"] }
 futures-util = "0.3"
-base64 = "0.22"
+base64 = "0.23"
 # Live notification stream: read `MessageEvent.data()` from the SSE subscription.
 # `Window`/`Location` let the API client resolve the served page's absolute origin — reqwest
 # (unlike the browser's own fetch) rejects the relative `/v1/...` paths with a "builder error".

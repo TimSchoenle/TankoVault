@@ -1,0 +1,26 @@
+name: Renovate Auto Approve
+
+# Renovate's `automerge` cannot merge into a branch whose protection requires a review, and it
+# will not approve its own pull request. This supplies the approval for the bot's pull requests
+# only, identified by *account id* rather than by name — a name is claimable, an id is not.
+#
+# It approves; it does not merge. The required status check (`ci`, defined in ci.yml) is still
+# what decides whether the merge happens, so an auto-approved dependency bump that breaks a gate
+# stays open exactly like anyone else's.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+jobs:
+  auto-approve-renovate:
+    name: Auto Approve Renovate
+    uses: TimSchoenle/actions/.github/workflows/maintenance-auto-approve-renovate.yaml@cf943de5f57977a39da87445cc9110f31cb8032d # tag=workflows-maintenance-auto-approve-renovate-v1.4.16
+    permissions:
+      pull-requests: write # to approve the bot's PRs
+    with:
+      user_ids: "29139614,253958393" # Renovate, actions-maintenance-bot
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}

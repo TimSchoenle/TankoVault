@@ -1,17 +1,63 @@
 name: CI
 
-# Design §19 (CI) / §21 (Definition of Done): fmt + clippy(-D warnings) +
-# cargo-deny + cargo-audit + workspace tests + the wasm frontend check + a
-# docker build of every service image.
+# Design §19 (CI) / §21 (Definition of Done): fmt + clippy(-D warnings) + cargo-deny +
+# cargo-audit + workspace tests + the wasm frontend check + a docker build of every service
+# image.
+#
+# ---------------------------------------------------------------------------------------------
+# WHAT RUNS WHEN — read this before adding an `if:` of your own
+# ---------------------------------------------------------------------------------------------
+# No gate in this file was weakened to save minutes. What is scoped is *when* each one runs. The
+# `changes` job diffs the pull request against its base once and publishes a set of booleans; a
+# job whose inputs provably did not change is skipped rather than run to a foregone conclusion.
+# Four rules are what keep that from decaying into "the gate does not run any more":
+#
+#   1. `.github/workflows/ci.yml` is an input to **every** filter. Editing this file re-runs
+#      everything — which is also what makes a Renovate action bump exercise the jobs it touches
+#      rather than merging green because it changed no Rust.
+#   2. The weekly `schedule` run ignores the filters entirely. A gate cannot rot unnoticed
+#      because nothing happened to touch its paths, and the two time-dependent gates
+#      (`cargo-audit`, `cargo-deny`'s advisory check) get the periodic run they actually need —
+#      a new advisory is published against code that did not change.
+#   3. Filters name directories, never `**/*.rs`. `web/frontend` is a separate workspace that
+#      the host jobs do not build, and a glob would have quietly coupled the two.
+#   4. `ci` at the bottom is the single required status check. It fails if any job failed and
+#      passes when jobs were skipped, so branch protection needs exactly one entry and cannot be
+#      satisfied by a job that silently stopped existing.
+#
+# `workflow_dispatch` takes a `full` input for forcing the schedule's behaviour on demand.
+#
+# ---------------------------------------------------------------------------------------------
+# The two version numbers this file does NOT contain
+# ---------------------------------------------------------------------------------------------
+# Every job used to name `1.94.0` inline, directly under a comment saying it deliberately did
+# not — seven copies of the number `rust-toolchain.toml` exists to be the only home of, and the
+# exact OPS-4.1 drift that file closed, re-opened one `with:` block at a time. The `changes` job
+# now reads the channel out of `rust-toolchain.toml` and the MSRV out of `Cargo.toml`'s
+# `rust-version`, and publishes both as outputs. The manifest's claim and the job that checks it
+# can no longer disagree, and a toolchain bump is one edit again.
 
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Weekly full run: every job, every filter ignored. 03:00 Monday UTC, ahead of the working
+    # week rather than into it.
+    - cron: "0 3 * * 1"
   workflow_dispatch:
+    inputs:
+      full:
+        description: "Run every job, ignoring the path filters"
+        type: boolean
+        default: false
+
+# Nothing is granted here. Each job requests the scopes it needs and no others, so a compromised
+# action in (say) the css job cannot reach the code-scanning API.
+permissions: {}
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -23,32 +69,204 @@ env:
   # cache is in sync with the real schema.
   SQLX_OFFLINE: "true"
 
+  # Tool versions that live in a `run:` block rather than in a manifest, and so are invisible to
+  # every dependency manager unless they are declared here. The `renovate:` comments are what the
+  # `customManagers:githubActionsVersions` preset reads (see renovate.json); without them these
+  # are pins that only ever get updated by someone noticing.
+  #
+  # renovate: datasource=github-releases depName=GoogleContainerTools/container-structure-test
+  CONTAINER_STRUCTURE_TEST_VERSION: 1.22.1
+  # The promtool that validates the alert rules must be the Prometheus that will evaluate them,
+  # so this and `deploy/docker-compose.observability.yml` are grouped into one Renovate PR.
+  # renovate: datasource=docker depName=prom/prometheus
+  PROMETHEUS_VERSION: v3.5.0
+  # Must match the `sqlx` version resolved in `Cargo.lock`: `cargo sqlx prepare --check`
+  # re-derives the query metadata with the CLI's own macro implementation, and a CLI from a
+  # different minor writes a cache the workspace then rejects. Unpinned, this step also meant a
+  # different `sqlx-cli` was compiled from source on every run.
+  SQLX_CLI_VERSION: 0.9.0
+
 jobs:
+  # ---------------------------------------------------------------------------------------------
+  # Which of the gates below this diff can actually affect, plus the two version numbers that
+  # belong to a file rather than to this workflow.
+  # ---------------------------------------------------------------------------------------------
+  changes:
+    name: what changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read # to check out the tree and diff it against the base
+    outputs:
+      full: ${{ steps.decide.outputs.full }}
+      images: ${{ steps.decide.outputs.images }}
+      toolchain: ${{ steps.versions.outputs.toolchain }}
+      msrv: ${{ steps.versions.outputs.msrv }}
+      # Each of these is `true` whenever the run is a full one, so a downstream job only ever has
+      # to test its own filter. A skipped filter step yields `''`, which is not `'true'`.
+      rust: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.rust == 'true' }}
+      frontend: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.frontend == 'true' }}
+      docker: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.docker == 'true' }}
+      observability: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.observability == 'true' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      # `fetch-depth: 0` because `persist-credentials: false` leaves no token in `.git/config`
+      # for `dorny/paths-filter` to fetch the base with. A full clone means it never needs to.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: decide scope
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          FORCE: ${{ inputs.full }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "schedule" ] || [ "$FORCE" = "true" ]; then
+            full=true
+          else
+            full=false
+          fi
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+          echo "::notice::full run: $full (event: $EVENT)"
+
+          # The image matrix, narrowed on pull requests.
+          #
+          # Seven of the eight images are the identical Dockerfile path with a different `BIN`
+          # onto the same `scratch` runtime; `render` is the only one with a different runtime
+          # stage (Debian + Chromium). Building all eight on every pull request re-proves the
+          # same Dockerfile seven times. This is the same argument, and the same pair, that the
+          # `docker-arm64` job below already makes for the architecture axis. The full eight
+          # build on `main` and on the weekly run, so nothing ships unbuilt.
+          if [ "$EVENT" = "pull_request" ] && [ "$full" != "true" ]; then
+            echo 'images=["api","render"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'images=["api","worker","control-plane","notifier","sync","challenge-solver","render","xtask"]' >> "$GITHUB_OUTPUT"
+          fi
+
+      # `rust-toolchain.toml` and `Cargo.toml` are the sources of truth; this step is the only
+      # place that reads them, and it fails loudly rather than defaulting, because a silent
+      # fallback here would install "whatever stable is today" — the precise failure OPS-4.1 was
+      # about.
+      - name: resolve the toolchain and the MSRV from their manifests
+        id: versions
+        run: |
+          set -euo pipefail
+          # No `| head -n1`: under `set -o pipefail`, `head` exiting early SIGPIPEs the writer and
+          # the pipeline's status becomes that signal, which turns a successful read into a failed
+          # step. Neither key appears twice at column 0, and the emptiness checks below are what
+          # catch a rename.
+          toolchain=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          msrv=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)
+          if [ -z "$toolchain" ]; then
+            echo '::error::no channel = "…" line in rust-toolchain.toml'
+            exit 1
+          fi
+          if [ -z "$msrv" ]; then
+            echo '::error::no rust-version = "…" line in Cargo.toml'
+            exit 1
+          fi
+          echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
+          echo "msrv=$msrv" >> "$GITHUB_OUTPUT"
+          echo "::notice::toolchain $toolchain, MSRV $msrv"
+
+      # Skipped on `schedule` and `workflow_dispatch`, which have no diff to compute — those runs
+      # are already `full`, so every consumer reads `true` regardless.
+      - name: path filters
+        id: filter
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        with:
+          # Anchors, not repetition: `workflows` is an input to everything (rule 1 at the top of
+          # this file) and `rust` is an input to `docker`, so they are declared once and aliased.
+          filters: |
+            workflows: &workflows
+              - '.github/workflows/ci.yml'
+            rust: &rust
+              - *workflows
+              - 'crates/**'
+              - 'services/**'
+              - 'xtask/**'
+              - 'fuzz/**'
+              - 'migrations/**'
+              - '.sqlx/**'
+              - '.cargo/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'rustfmt.toml'
+              - 'clippy.toml'
+              - 'deny.toml'
+              - 'openapi.json'
+              - '.github/coverage-floor.txt'
+            frontend:
+              - *workflows
+              - 'web/frontend/**'
+              - 'crates/api-client/**'
+              - 'openapi.json'
+            docker:
+              - *rust
+              - 'deploy/docker/**'
+              - 'web/frontend/**'
+            observability:
+              - *workflows
+              - 'deploy/observability/**'
+              - 'deploy/docker-compose.yml'
+              - 'deploy/docker-compose.observability.yml'
+
   lint:
     name: fmt + clippy
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: [changes]
+    permissions:
+      contents: read # to check out the code
     steps:
-      - uses: actions/checkout@v4
-      # No version here on purpose: `rust-toolchain.toml` pins it, and naming a version in
-      # both places is how they drift apart. The action honours the file.
-      - uses: dtolnay/rust-toolchain@master
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
-          toolchain: "1.94.0"
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The version comes from `rust-toolchain.toml` by way of the `changes` job — see the header
+      # comment. Naming it here again is how the two drift apart.
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+        with:
+          toolchain: ${{ needs.changes.outputs.toolchain }}
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
       # The provider fetch stack links BoringSSL (`wreq`), which its build script compiles
       # from C/C++ source. Installed explicitly rather than relying on whatever the hosted
       # runner image happens to ship.
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+
+      # Unconditional: seconds long, and a formatting slip can arrive in any commit.
       - name: rustfmt
         run: cargo fmt --all --check
+
       - name: clippy
+        if: needs.changes.outputs.rust == 'true'
         run: cargo clippy --workspace --all-targets -- -D warnings
+
       # The invariants no compiler sees: a CSP and the HTML it governs, a secret published in
       # the compose file and the code that refuses it. Text-only and seconds long, so it runs
       # beside clippy rather than in a job of its own. See xtask/src/repo_lint.rs.
+      #
+      # Unconditional, unlike clippy: what it reads is HTML, YAML and compose files, so scoping it
+      # to the Rust filter would skip it on exactly the diffs it exists to catch.
       - name: repository invariants
         run: cargo run -p xtask -- repo-lint
 
@@ -56,20 +274,37 @@ jobs:
     name: test (workspace)
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    permissions:
+      contents: read # to check out the code
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
-          toolchain: "1.94.0"
-      - uses: Swatinem/rust-cache@v2
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+        with:
+          toolchain: ${{ needs.changes.outputs.toolchain }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+
       - name: cargo test
         run: cargo test --workspace --all-targets
+
       # `--all-targets` silently EXCLUDES doc tests, so every `///` example in the workspace
       # was unverified. This is the run that compiles them.
       - name: doc tests
         run: cargo test --workspace --doc
+
       # And this is the run that resolves the *links* in them. `cargo test --doc` executes the
       # examples and never looks at a `[`Foo`]`, so a broken intra-doc link renders as literal
       # bracket text and nothing notices — six had accumulated before the `[workspace.lints.rustdoc]`
@@ -77,12 +312,12 @@ jobs:
       # its own `[lints]` table (OPS-2.4) and so inherits nothing from the workspace one.
       - name: rustdoc (intra-doc links)
         run: cargo doc --workspace --no-deps --all-features
+
       # Fails if a backend DTO changed without regenerating the OpenAPI artifacts
       # (services/api/src/openapi.rs -> xtask openapi -> openapi.json + the progenitor
       # crates/api-client client, consumed by the frontend via web/frontend/src/wire.rs). A
-      # local pre-commit hook (installed automatically by xtask/build.rs, see
-      # xtask/hooks/pre-commit) normally keeps this from ever drifting; this is the backstop
-      # for commits made without it.
+      # local pre-commit hook (installed by `cargo run -p xtask -- install-hooks`) normally keeps
+      # this from ever drifting; this is the backstop for commits made without it.
       - name: OpenAPI artifacts are up to date
         run: cargo run -p xtask -- openapi --check
       # `docs/CONFIGURATION.md` is gated too, but by a *test* rather than a step here
@@ -118,14 +353,29 @@ jobs:
     name: feature combinations
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    permissions:
+      contents: read # to check out the code
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
-          toolchain: "1.94.0"
-      - uses: Swatinem/rust-cache@v2
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+        with:
+          toolchain: ${{ needs.changes.outputs.toolchain }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+
       # Libraries only. The services are binaries that require their features, so
       # `--no-default-features` across the workspace would fail for reasons that are not bugs;
       # the crates are where an unbuildable combination actually hides.
@@ -135,6 +385,7 @@ jobs:
             -p tankovault-domain -p tankovault-service -p tankovault-config \
             -p tankovault-contracts -p tankovault-fetch -p tankovault-solver \
             -p tankovault-matcher -p tankovault-auth -p tankovault-email
+
       - name: workspace with all features
         run: cargo check --workspace --all-targets --all-features
 
@@ -143,13 +394,26 @@ jobs:
   # against the live schema and fails if the cache is stale (a query or migration changed
   # without running `cargo run -p xtask -- sqlx-prepare`). This is what keeps the SQL
   # compile-time-verified; every other job only consumes the cache offline.
+  #
+  # Gated on the whole `rust` filter rather than on `migrations/` and `crates/db/`: the query
+  # macros are used from five crates (`db`, `domain`, `service`, `test-support`, `xtask`), so a
+  # narrower filter would be a claim about where SQL lives that is not true.
   sqlx:
     name: sqlx offline cache
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    permissions:
+      contents: read # to check out the code
     services:
       postgres:
-        image: postgres:17
+        # Digest-pinned like every other image this repository pulls: a floating `postgres:17`
+        # is an unreviewed change to the database the `.sqlx` cache is verified against, and the
+        # cache's byte-identical verification (OPS-4.2) is only meaningful against a known one.
+        # Renovate moves the digest; `renovate.json` holds major bumps for a human, because a new
+        # major has to be re-verified the same way before this job's result means anything.
+        image: postgres:17@sha256:a426e44bac0b759c95894d68e1a0ac03ecc20b619f498a91aae373bf06d8508d
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -167,17 +431,32 @@ jobs:
       SQLX_OFFLINE: "false"
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/tankovault
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
-          toolchain: "1.94.0"
-      - uses: Swatinem/rust-cache@v2
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+        with:
+          toolchain: ${{ needs.changes.outputs.toolchain }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+
+      # Version-pinned (see `SQLX_CLI_VERSION` at the top of this file): the CLI writes the cache
+      # this workspace has to be able to read back.
       - name: install sqlx-cli
-        run: cargo install sqlx-cli --no-default-features --features rustls,postgres --locked
+        run: cargo install sqlx-cli --no-default-features --features rustls,postgres --locked --version "$SQLX_CLI_VERSION"
+
       - name: apply migrations
         run: sqlx migrate run --source migrations
+
       - name: offline query cache is up to date
         run: cargo sqlx prepare --workspace --check
 
@@ -190,15 +469,32 @@ jobs:
     name: integration (testcontainers)
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: [lint, test]
+    needs: [changes, lint, test]
+    # `!cancelled() && !failure()` rather than the default: it still refuses to run when `lint`
+    # or `test` failed, but does not inherit their *skip*. Written this way everywhere a job has
+    # more than one `needs`.
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' }}
+    permissions:
+      contents: read # to check out the code
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
-          toolchain: "1.94.0"
-      - uses: Swatinem/rust-cache@v2
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+        with:
+          toolchain: ${{ needs.changes.outputs.toolchain }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+
       # SQLX_OFFLINE (inherited) resolves the query macros from the committed cache at compile
       # time; the container supplies the live database the tests run against at runtime.
       - name: repo + HTTP access-control + sync-reconciliation integration suites
@@ -219,21 +515,38 @@ jobs:
     name: openapi breaking changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: github.event_name == 'pull_request'
+    needs: [changes]
+    if: github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'
+    permissions:
+      contents: read # to check out both revisions of the spec
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The base branch's `openapi.json` has to be reachable, which a shallow clone's single
           # commit is not.
           fetch-depth: 0
+          persist-credentials: false
+
+      # `github.base_ref` goes through the environment, not through `${{ }}` inside the script.
+      # A branch name is attacker-controlled text on a fork pull request, and interpolating it
+      # into a shell command is how it becomes a shell command.
       - name: the base branch's spec
-        run: git show "origin/${{ github.base_ref }}:openapi.json" > /tmp/base-openapi.json
-      # Pinned to a release tag, not `@main`. An action on a branch is an unreviewed code
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git show "origin/${BASE_REF}:openapi.json" > /tmp/base-openapi.json
+
+      # Pinned by digest, not by tag. An action resolved by a mutable ref is an unreviewed code
       # change on every run with repository write access — the same objection OPS-4.3 raised
-      # against `flaresolverr:latest`, and it applies more strongly here. `oasdiff-action` has
-      # no stable major tag (it is 0.x), so the pin is exact; Dependabot's `github-actions`
-      # ecosystem, configured in `.github/dependabot.yml`, is what moves it.
-      - uses: oasdiff/oasdiff-action/breaking@v0.1.10
+      # against `flaresolverr:latest`, and it applies more strongly here. Renovate's
+      # `github-actions` manager is what moves the pin; `renovate.json` keeps oasdiff explicitly
+      # enabled because its 0.x versioning would otherwise park every minor on the dashboard.
+      - uses: oasdiff/oasdiff-action/breaking@b7c3adeb54330db1903d27c61db520e5661ad55b # v0.1.11
         with:
           base: /tmp/base-openapi.json
           revision: openapi.json
@@ -249,25 +562,41 @@ jobs:
     name: frontend (test + clippy + wasm32)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: [changes]
+    if: needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read # to check out the code
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
-          toolchain: "1.94.0"
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+        with:
+          toolchain: ${{ needs.changes.outputs.toolchain }}
           targets: wasm32-unknown-unknown
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: web/frontend
+
       # Host target, not wasm32: these are pure logic tests (chapter part-grouping, the
       # notification classifier, the i18n catalogue-parity check) with no DOM dependency, so
       # they run without a browser. Anything needing a DOM would need wasm-bindgen-test.
       - name: cargo test (host)
         working-directory: web/frontend
         run: cargo test
+
       - name: clippy (pedantic, as declared by the crate)
         working-directory: web/frontend
         run: cargo clippy --all-targets -- -D warnings
+
       - name: cargo check (wasm)
         working-directory: web/frontend
         run: cargo check --target wasm32-unknown-unknown
@@ -279,14 +608,29 @@ jobs:
     name: tailwind output is current
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: [changes]
+    if: needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read # to check out the code
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
+
       - name: install the Tailwind CLI
         working-directory: web/frontend
         run: npm ci
+
       - name: rebuild and compare
         working-directory: web/frontend
         run: |
@@ -300,41 +644,70 @@ jobs:
   # A credential committed by accident is caught here, at the pull request, which is the only
   # point at which the fix is cheap. `.gitignore` is the other half: it matches `*.env` by
   # suffix so that a file not literally named `.env` cannot be added without noticing.
+  #
+  # Unconditional, and deliberately so: a secret arrives in whatever file it arrives in, and a
+  # path filter would be a list of the places nobody leaks credentials.
   secrets:
     name: secret scan (gitleaks)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read # to check out the full history
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history: a secret removed in the tip commit is still a leaked secret.
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
+          persist-credentials: false
+
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # `rust-version = "1.85"` in the workspace manifest was a claim nothing verified. This job
-  # makes it true or makes it fail. It deliberately builds with the *minimum* rather than the
-  # pinned toolchain, so `rust-toolchain.toml` is overridden here on purpose.
+  # `rust-version` in the workspace manifest was a claim nothing verified. This job makes it true
+  # or makes it fail. It deliberately builds with the *minimum* rather than the pinned toolchain,
+  # so `rust-toolchain.toml` is overridden here on purpose — and the number comes from
+  # `Cargo.toml` itself (via the `changes` job), so the claim and its check cannot disagree.
   msrv:
-    name: MSRV (1.85)
+    name: MSRV (${{ needs.changes.outputs.msrv }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    permissions:
+      contents: read # to check out the code
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
-          toolchain: "1.85"
-      - uses: Swatinem/rust-cache@v2
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+        with:
+          toolchain: ${{ needs.changes.outputs.msrv }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+
       # `--locked` so the check measures this lockfile's dependency set rather than whatever
       # a resolver picks today. `RUSTFLAGS` is cleared: `-D warnings` would fail the job on
       # lints an older compiler happens to emit, which is not what MSRV means.
       - name: cargo check
         env:
           RUSTFLAGS: ""
-          RUSTUP_TOOLCHAIN: "1.85"
+          RUSTUP_TOOLCHAIN: ${{ needs.changes.outputs.msrv }}
         run: cargo check --workspace --locked
 
   # A **ratchet**, not a target. The audit's finding (TESTING F-10) is that coverage is
@@ -346,7 +719,8 @@ jobs:
   # The floor lives in `.github/coverage-floor.txt`, which explains itself to whoever has to
   # change it, and the comparison is `xtask coverage-ratchet` rather than shell in this file so
   # it has tests of its own. No `continue-on-error`: a gate that cannot fail is the OPS-8.2
-  # defect — a knob an operator believes in that does nothing.
+  # defect — a knob an operator believes in that does nothing. That is also why the floor file is
+  # in the `rust` filter: editing the floor re-runs the measurement it claims to describe.
   #
   # The measurement excludes `--features integration` on purpose, matching every other fast
   # job. See the floor file for what that means and for the one legitimate reason to lower it.
@@ -354,21 +728,39 @@ jobs:
     name: coverage ratchet
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    permissions:
+      contents: read # to check out the code
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
-          toolchain: "1.94.0"
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+        with:
+          toolchain: ${{ needs.changes.outputs.toolchain }}
           components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: taiki-e/install-action@6a1bd70eaac3c8bdf093356838d7ee09fda951cf # v2.85.5
+        with:
+          tool: cargo-llvm-cov
+
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+
       - name: cargo llvm-cov
         run: |
           mkdir -p target/llvm-cov
           cargo llvm-cov --workspace --all-targets --summary-only
-          cargo llvm-cov report --json --summary-only             --output-path target/llvm-cov/coverage.json
+          cargo llvm-cov report --json --summary-only --output-path target/llvm-cov/coverage.json
+
       - name: compare against the committed floor
         run: cargo run -p xtask -- coverage-ratchet
 
@@ -387,27 +779,51 @@ jobs:
   # depends on how long the run got is not a property a blocking gate should have. The report is
   # an artifact to read, and survivors are triaged as missing assertions. `--in-place` is
   # deliberate on a throwaway runner — copying the tree per job costs more than it protects.
+  #
+  # **Scheduled runs only.** This job never gated anything — `continue-on-error: true` means its
+  # result is `success` however the run went — so per-pull-request it was 45 minutes of runner
+  # time producing an artifact nobody opened on that timescale. A survivor is a missing
+  # assertion, which is triage work, not merge-blocking work, and triage happens on a report you
+  # go and read. Force one from a branch with `workflow_dispatch` + `full`.
   mutants:
     name: mutation testing (advisory)
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    needs: [changes]
+    if: needs.changes.outputs.full == 'true'
     continue-on-error: true
+    permissions:
+      contents: read # to check out the code
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
-          toolchain: "1.94.0"
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@cargo-mutants
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+        with:
+          toolchain: ${{ needs.changes.outputs.toolchain }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: taiki-e/install-action@6a1bd70eaac3c8bdf093356838d7ee09fda951cf # v2.85.5
+        with:
+          tool: cargo-mutants
+
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+
       - name: cargo mutants
         run: cargo mutants --in-place --no-shuffle
+
       # Uploaded whether or not survivors were found: `outcomes.json` is the input to the next
       # triage, and `missed.txt` is the list to read first.
       - name: mutants report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mutants-report
           path: mutants.out/
@@ -417,9 +833,25 @@ jobs:
     name: cargo-deny
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: [changes]
+    # `rust` covers `deny.toml` and both lockfiles. The advisory half of this check is also
+    # time-dependent — a new RustSec advisory lands against code that did not change — which is
+    # what the weekly `schedule` run is for; `rust` is `true` on those runs by construction.
+    if: needs.changes.outputs.rust == 'true'
+    permissions:
+      contents: read # to check out the code
     steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           # `-D unnecessary-skip` makes the duplicate-version budget shrink *visibly*.
           # `[bans].skip` is `deny.toml`'s record of the duplicates that exist today, and
@@ -438,9 +870,24 @@ jobs:
     name: cargo-audit
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    permissions:
+      contents: read # to check out the code
+      checks: write # the action reports advisories as a check run
+      issues: write # and opens an issue instead, on the scheduled run
     steps:
-      - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -454,18 +901,34 @@ jobs:
     name: lockfile integrity
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read # to check out the code
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
-          toolchain: "1.94.0"
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+        with:
+          toolchain: ${{ needs.changes.outputs.toolchain }}
+
       # `--locked` makes cargo refuse to touch `Cargo.lock`; resolving metadata is what forces
       # it to notice that the lockfile does not satisfy the manifests. `--offline` so a
       # registry hiccup cannot turn this into a flake — the lockfile pins everything it needs.
       - name: Cargo.lock satisfies every manifest
         run: cargo metadata --locked --offline --format-version 1 > /dev/null
+
       # Same guarantee for the workspace-excluded WASM frontend, which has its own lockfile and
-      # is therefore covered by none of the jobs above.
+      # is therefore covered by none of the jobs above — and is why this job also answers to the
+      # `frontend` filter.
       - name: web/frontend Cargo.lock satisfies its manifest
         working-directory: web/frontend
         run: cargo metadata --locked --offline --format-version 1 > /dev/null
@@ -483,24 +946,41 @@ jobs:
     name: prometheus rules
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: [changes]
+    if: needs.changes.outputs.observability == 'true'
+    permissions:
+      contents: read # to check out the config
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       # Same pinned image the deploy overlay runs, so the promtool that validates the rules is the
-      # Prometheus that will evaluate them.
+      # Prometheus that will evaluate them. `PROMETHEUS_VERSION` and the overlay's tag are one
+      # Renovate group for exactly that reason.
       - name: promtool check config + rules
         run: |
           docker run --rm --entrypoint /bin/promtool \
             -v "$PWD/deploy/observability/prometheus:/etc/prometheus:ro" \
-            prom/prometheus:v3.5.0 check config /etc/prometheus/prometheus.yml
+            "prom/prometheus:${PROMETHEUS_VERSION}" check config /etc/prometheus/prometheus.yml
+
       - name: promtool unit tests
         run: |
           docker run --rm --entrypoint /bin/promtool \
             -v "$PWD/deploy/observability/prometheus:/etc/prometheus:ro" \
-            prom/prometheus:v3.5.0 test rules /etc/prometheus/rules/tests/alerts.test.yml
+            "prom/prometheus:${PROMETHEUS_VERSION}" test rules /etc/prometheus/rules/tests/alerts.test.yml
+
       # The dashboard references the datasource by a fixed uid and every panel by a recorded series
       # name; a malformed file imports as an empty dashboard rather than failing, so parse it here.
       - name: dashboard JSON is well-formed
         run: python3 -m json.tool deploy/observability/grafana/dashboards/tankovault-overview.json > /dev/null
+
       # Catches a mis-merged overlay: an anchor that no longer resolves, a duplicated key, a service
       # name that collides with the base file.
       - name: compose overlay merges
@@ -515,35 +995,50 @@ jobs:
 
   # Dependency warm-up for the image matrix below.
   #
-  # Every one of those eight builds derives from the same `cook` stage — one `cargo chef cook`
+  # Every one of those builds derives from the same `cook` stage — one `cargo chef cook`
   # over ~600 lockfile entries at `codegen-units = 1`, which dominates each build's wall clock.
-  # Run inside the matrix, that work happened eight times over: the jobs start together, all
-  # miss a cold cache, and all eight cook the identical graph. They also all exported into the
+  # Run inside the matrix, that work happened once per leg: the jobs start together, all
+  # miss a cold cache, and all cook the identical graph. They also all exported into the
   # *same* unscoped GHA cache concurrently (`cache-to: type=gha,mode=max` with no `scope`), so
-  # the eight writes raced and whichever finished last decided what the next run imported —
+  # the writes raced and whichever finished last decided what the next run imported —
   # which is why the matrix kept missing a cache it had just populated.
   #
   # This job builds `--target cook` alone and publishes it under a scope of its own. The matrix
   # imports that scope read-only and keeps a per-`bin` scope for the layers above it, so the
-  # eight exports no longer collide. The cost is one serialised step ahead of the matrix in
+  # exports no longer collide. The cost is one serialised step ahead of the matrix in
   # exchange for cooking the graph once; `cacheonly` because no image is wanted here, only the
   # exported layers.
   docker-deps:
     name: docker build (deps)
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: [lint, test]
+    needs: [changes, lint]
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
+    permissions:
+      contents: read # to check out the build context
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
       - name: derive SOURCE_DATE_EPOCH
-        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+        id: epoch
+        run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
+
       - name: cook dependency graph
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: deploy/docker/Dockerfile
-          build-args: SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+          build-args: SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           target: cook
           push: false
           outputs: type=cacheonly
@@ -552,37 +1047,46 @@ jobs:
           cache-to: type=gha,scope=backend-deps,mode=max
 
   docker:
-    name: docker build
+    name: docker build (${{ matrix.bin }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: [lint, test, docker-deps]
+    needs: [changes, lint, docker-deps]
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
+    permissions:
+      contents: read # to check out the build context
     strategy:
       fail-fast: false
       matrix:
-        bin:
-          - api
-          - worker
-          - control-plane
-          - notifier
-          - sync
-          - challenge-solver
-          - render
-          - xtask
+        # Two images on a pull request, all eight on `main` and on the weekly run. The `changes`
+        # job decides and says why.
+        bin: ${{ fromJSON(needs.changes.outputs.images) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
       # Clamp image layer mtimes to the commit timestamp so repeated builds of the same
       # commit are byte-identical (see deploy/docker/Dockerfile → SOURCE_DATE_EPOCH).
       - name: derive SOURCE_DATE_EPOCH
-        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+        id: epoch
+        run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
+
       - name: build ${{ matrix.bin }} image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: deploy/docker/Dockerfile
           build-args: |
             BIN=${{ matrix.bin }}
-            SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+            SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           # The render tier needs a real browser at runtime (Chromium), so it selects the
           # dedicated runtime-browser stage; every other binary is a musl build that ships on
           # the default `scratch` runtime.
@@ -596,12 +1100,13 @@ jobs:
           provenance: false
           # Two imports, one export. `backend-deps` is the shared `cook` stage published by the
           # `docker-deps` job above and is never written back to from here; `backend-<bin>` holds
-          # the per-binary layers on top of it, scoped so the eight jobs stop overwriting each
+          # the per-binary layers on top of it, scoped so the legs stop overwriting each
           # other's export (see `docker-deps`).
           cache-from: |
             type=gha,scope=backend-deps
             type=gha,scope=backend-${{ matrix.bin }}
           cache-to: type=gha,scope=backend-${{ matrix.bin }},mode=max
+
       # Enforce the image contract (design §21): non-root UID:GID 1001:1001, the expected
       # entrypoint, the required baked-in files (service binary, CA trust store), and — for the
       # render tier's Debian base — the absence of root and the presence of Chromium. The render
@@ -609,17 +1114,20 @@ jobs:
       - name: install container-structure-test
         run: |
           curl -fsSL -o container-structure-test \
-            https://storage.googleapis.com/container-structure-test/v1.22.1/container-structure-test-linux-amd64
+            "https://storage.googleapis.com/container-structure-test/v${CONTAINER_STRUCTURE_TEST_VERSION}/container-structure-test-linux-amd64"
           chmod +x container-structure-test
           sudo mv container-structure-test /usr/local/bin/container-structure-test
+
       - name: structure-test ${{ matrix.bin }} image
+        env:
+          BIN: ${{ matrix.bin }}
         run: |
           config="deploy/docker/cst/service.yaml"
-          if [ "${{ matrix.bin }}" = "render" ]; then
+          if [ "$BIN" = "render" ]; then
             config="deploy/docker/cst/render.yaml"
           fi
           container-structure-test test \
-            --image "tankovault-${{ matrix.bin }}:ci" \
+            --image "tankovault-${BIN}:ci" \
             --config "$config"
 
   # Cross-architecture image build, opt-in.
@@ -641,29 +1149,43 @@ jobs:
   # Debian base with a distro Chromium, the one image whose base packages are arch-specific).
   # Building all eight would triple the wall clock to re-prove the same Dockerfile.
   docker-arm64:
-    name: docker build (arm64)
-    if: vars.ENABLE_ARM64_CI != ''
+    name: docker build (arm64, ${{ matrix.bin }})
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
-    needs: [lint, test]
+    needs: [changes, lint]
+    if: ${{ !cancelled() && !failure() && vars.ENABLE_ARM64_CI != '' && needs.changes.outputs.docker == 'true' }}
+    permissions:
+      contents: read # to check out the build context
     strategy:
       fail-fast: false
       matrix:
         bin: [api, render]
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
       - name: derive SOURCE_DATE_EPOCH
-        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+        id: epoch
+        run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
+
       - name: build ${{ matrix.bin }} image (linux/arm64)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: deploy/docker/Dockerfile
           platforms: linux/arm64
           build-args: |
             BIN=${{ matrix.bin }}
-            SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+            SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           target: ${{ matrix.bin == 'render' && 'runtime-browser' || 'runtime' }}
           push: false
           load: true
@@ -671,41 +1193,60 @@ jobs:
           provenance: false
           cache-from: type=gha,scope=arm64-${{ matrix.bin }}
           cache-to: type=gha,scope=arm64-${{ matrix.bin }},mode=max
+
       # The same image contract as the amd64 leg. `container-structure-test` ships a separate
       # arm64 binary; the config files are architecture-independent.
       - name: install container-structure-test
         run: |
           curl -fsSL -o container-structure-test \
-            https://storage.googleapis.com/container-structure-test/v1.22.1/container-structure-test-linux-arm64
+            "https://storage.googleapis.com/container-structure-test/v${CONTAINER_STRUCTURE_TEST_VERSION}/container-structure-test-linux-arm64"
           chmod +x container-structure-test
           sudo mv container-structure-test /usr/local/bin/container-structure-test
+
       - name: structure-test ${{ matrix.bin }} image
+        env:
+          BIN: ${{ matrix.bin }}
         run: |
           config="deploy/docker/cst/service.yaml"
-          if [ "${{ matrix.bin }}" = "render" ]; then
+          if [ "$BIN" = "render" ]; then
             config="deploy/docker/cst/render.yaml"
           fi
           container-structure-test test \
-            --image "tankovault-${{ matrix.bin }}:ci-arm64" \
+            --image "tankovault-${BIN}:ci-arm64" \
             --config "$config"
 
   docker-frontend:
     name: docker build (frontend)
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: [lint, test]
+    needs: [changes, lint]
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
+    permissions:
+      contents: read # to check out the build context
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
       - name: derive SOURCE_DATE_EPOCH
-        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+        id: epoch
+        run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
+
       - name: build frontend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: deploy/docker/Dockerfile.frontend
           build-args: |
-            SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+            SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           push: false
           # Load the built image into the local Docker daemon so the container-structure-test
           # step below can inspect it by tag.
@@ -714,17 +1255,75 @@ jobs:
           provenance: false
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,scope=frontend,mode=max
+
       # Enforce the frontend image contract (design §21): non-root UID:GID 1001:1001, the
       # unprivileged 3000 exposed port, the entrypoint, the static-dir env var, and the presence
       # of the server binary + built SPA bundle (deploy/docker/cst/frontend.yaml).
       - name: install container-structure-test
         run: |
           curl -fsSL -o container-structure-test \
-            https://storage.googleapis.com/container-structure-test/v1.22.1/container-structure-test-linux-amd64
+            "https://storage.googleapis.com/container-structure-test/v${CONTAINER_STRUCTURE_TEST_VERSION}/container-structure-test-linux-amd64"
           chmod +x container-structure-test
           sudo mv container-structure-test /usr/local/bin/container-structure-test
+
       - name: structure-test frontend image
         run: |
           container-structure-test test \
             --image "tankovault-frontend:ci" \
             --config deploy/docker/cst/frontend.yaml
+
+  # ---------------------------------------------------------------------------------------------
+  # The one required status check.
+  # ---------------------------------------------------------------------------------------------
+  # Point branch protection at this job and nothing else. Naming the individual jobs there does
+  # not survive path filtering: GitHub treats a required check that never reports as *pending
+  # forever*, so every skipped job would block its own pull request.
+  #
+  # It is not `if: success()` either, because that would inherit the skips. It runs always, and
+  # fails only on a real `failure` or `cancelled` among its dependencies — a skipped job is a job
+  # whose inputs did not change, which is a pass. `mutants` is listed for visibility only:
+  # `continue-on-error: true` means its result is `success` however the run went, by design.
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs:
+      - changes
+      - lint
+      - test
+      - features
+      - sqlx
+      - integration
+      - openapi-breaking
+      - frontend
+      - css
+      - secrets
+      - msrv
+      - coverage
+      - mutants
+      - deny
+      - audit
+      - supply-chain
+      - observability
+      - docker-deps
+      - docker
+      - docker-arm64
+      - docker-frontend
+    permissions: {}
+    steps:
+      - name: verdict
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          set -euo pipefail
+          echo "job results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in
+              failure|cancelled)
+                echo "::error::a required job reported '$r'"
+                exit 1
+                ;;
+            esac
+          done
+          echo "All required jobs passed or were skipped as unaffected."

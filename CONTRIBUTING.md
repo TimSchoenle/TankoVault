@@ -13,7 +13,7 @@ cargo run -p xtask -- ci
 That runs every gate CI runs that needs no Docker, no network and no database — `fmt`, pedantic
 `clippy` with all features, the offline tests, the doc tests, the OpenAPI drift check, and the
 three `web/frontend` gates — in CI's order, stopping at the first failure. It exists because the
-alternative is reading `ci.yml` and replicating eighteen jobs by hand, which is how
+alternative is reading `ci.yml` and replicating twenty-one jobs by hand, which is how
 `cargo fmt --all --check` came to be red on `main` and stay red.
 
 What it does **not** cover, and CI still does: the integration suites (Docker), the `sqlx`
@@ -28,6 +28,32 @@ changes:
 ```
 cargo run -p xtask -- install-hooks
 ```
+
+## What CI runs on your pull request
+
+Not all of it, and that is deliberate. A `changes` job diffs your branch against its base and
+publishes a set of booleans; a job whose inputs provably did not change is **skipped**, not run to
+a foregone conclusion. A documentation-only change does not build eight container images.
+
+Three things about that are worth knowing before you read a run:
+
+- **A skipped job is a pass, not a gap.** `.github/workflows/ci.yml` is an input to every filter,
+  so touching the workflow re-runs everything — and a weekly scheduled run ignores the filters
+  entirely, which is what keeps a gate from rotting because nothing happened to touch its paths.
+- **`CI` is the only required status check.** It is the aggregate job at the bottom of `ci.yml`;
+  it fails if anything failed and passes when things were skipped. Do not add the individual jobs
+  to branch protection — a required check that never reports is pending forever, so every skipped
+  job would block its own pull request.
+- **Pull requests build two images, not eight.** Seven of the eight are the same Dockerfile path
+  with a different `BIN`; `render` is the one with a different runtime stage. The full matrix
+  builds on `main` and on the weekly run.
+
+To force the whole suite from a branch, run the workflow manually with the `full` input set
+(**Actions → CI → Run workflow**). `cargo mutants` runs only that way — it is advisory
+(`continue-on-error`), so per-pull-request it was 45 minutes producing a report to triage later.
+
+Dependency updates come from Renovate (`renovate.json`), which opens grouped pull requests that
+go through the same gates as everyone else's.
 
 ## Local setup
 

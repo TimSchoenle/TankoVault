@@ -4,12 +4,14 @@ use crate::audit::audit;
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::ADMIN_SCANS_TAG;
 use crate::state::{AppState, AuthUser};
+use crate::views::IntoView;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::time::Duration;
+use tankovault_contracts::admin::ScanTriggeredView;
 use tankovault_domain::{Feature, Permission, ProviderId, ScanMode, ScanRun, ScanRunId};
 use tokio_stream::StreamExt as _;
 use tokio_stream::wrappers::IntervalStream;
@@ -32,7 +34,7 @@ pub struct TriggerScan {
     request_body = TriggerScan,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Scan queued, forwarded from the control-plane"),
+        (status = 200, description = "Scan queued, forwarded from the control-plane", body = tankovault_contracts::admin::ScanTriggeredView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "manual scanning, or full scans specifically, are switched off", body = crate::error::ProblemDetails),
@@ -42,7 +44,7 @@ pub async fn trigger_scan(
     State(state): State<AppState>,
     user: AuthUser,
     Json(req): Json<TriggerScan>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<ScanTriggeredView>> {
     user.require(Permission::ScansRun).await?;
 
     // `scanning.manual` gates this route in the feature table; `scanning.full` gates a *mode*
@@ -53,19 +55,7 @@ pub async fn trigger_scan(
         return Err(ApiError::FeatureDisabled(Feature::ScanningFull));
     }
 
-    let url = format!(
-        "{}/internal/scans",
-        state.control_plane_url.trim_end_matches('/')
-    );
-    let resp = state.http.post(url).json(&req).send().await.map_err(|e| {
-        tracing::error!(error = %e, "control-plane unreachable");
-        ApiError::Internal
-    })?;
-
-    if !resp.status().is_success() {
-        return Err(ApiError::Internal);
-    }
-    let body: serde_json::Value = resp.json().await.map_err(|_| ApiError::Internal)?;
+    let Json(body) = state.control_plane.post("/internal/scans", &req).await?;
 
     audit(
         &state,
@@ -139,7 +129,7 @@ pub async fn list_scans(
     tag = ADMIN_SCANS_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Up to 25 most recent failed tasks", body = Vec<tankovault_db::repo::scans::FailedTaskView>),
+        (status = 200, description = "Up to 25 most recent failed tasks", body = Vec<tankovault_contracts::admin::FailedTaskView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
@@ -147,11 +137,10 @@ pub async fn list_scans(
 pub async fn scan_failures(
     State(state): State<AppState>,
     user: AuthUser,
-) -> ApiResult<Json<Vec<tankovault_db::repo::scans::FailedTaskView>>> {
+) -> ApiResult<Json<Vec<tankovault_contracts::admin::FailedTaskView>>> {
     user.require(Permission::ScansRead).await?;
-    Ok(Json(
-        tankovault_db::repo::scans::recent_failed_tasks(&state.pool, 25).await?,
-    ))
+    let rows = tankovault_db::repo::scans::recent_failed_tasks(&state.pool, 25).await?;
+    Ok(Json(rows.into_view()))
 }
 
 /// Live scan-progress stream

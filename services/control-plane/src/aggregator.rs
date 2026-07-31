@@ -13,40 +13,51 @@
 //! ([`tankovault_db::repo::scans::finalize_if_complete`]) that fires exactly once, so the
 //! republished terminal event — re-consumed here — is a no-op and cannot loop.
 
-use futures::StreamExt as _;
+use std::time::Duration;
 use tankovault_bus::Bus;
 use tankovault_contracts::{ProgressEvent, subjects};
 use tankovault_db::PgPool;
 use time::OffsetDateTime;
 
-/// Consume `scan.progress` forever, finalising runs as their tasks settle.
-pub(crate) async fn run(pool: PgPool, bus: Bus) -> anyhow::Result<()> {
+/// Consume `scan.progress` until `shutdown`, finalising runs as their tasks settle.
+///
+/// Previously a bare `while let` with **no cancellation arm**, so this consumer could not be
+/// drained on `SIGTERM` — the control-plane's graceful shutdown hung on it or killed it
+/// mid-message. The shared loop supplies the shutdown arm along with the delivery semantics.
+pub(crate) async fn run(
+    pool: PgPool,
+    bus: Bus,
+    shutdown: tokio_util::sync::CancellationToken,
+) -> anyhow::Result<()> {
     let consumer = bus
         .event_consumer(subjects::PROGRESS_CONSUMER, subjects::PROGRESS_SUBJECT)
         .await?;
-    let mut messages = consumer.messages().await?;
-    tracing::info!("progress aggregator consuming scan.progress");
 
-    while let Some(next) = messages.next().await {
-        let msg = match next {
-            Ok(m) => m,
-            Err(e) => {
-                tracing::warn!(error = %e, "progress: error pulling message");
-                continue;
+    // Retries a couple of times, then settles. Finalisation is a single idempotent UPDATE
+    // (`finalize_if_complete`), so a redelivery is a no-op — but it is also self-healing:
+    // the *next* task to settle on the same run republishes progress and finalises it then.
+    // That is why giving up here is safe in a way it is not for the notifier.
+    let policy = tankovault_bus::ConsumePolicy {
+        max_deliveries: 3,
+        backoff: |_| Duration::from_secs(15),
+        heartbeat: None,
+    };
+
+    tankovault_bus::consume(
+        consumer,
+        shutdown,
+        policy,
+        subjects::PROGRESS_SUBJECT,
+        move |event: ProgressEvent, _msg| {
+            let pool = pool.clone();
+            let bus = bus.clone();
+            async move {
+                handle_progress(&pool, &bus, &event).await?;
+                Ok(tankovault_bus::Disposition::Ack)
             }
-        };
-        match serde_json::from_slice::<ProgressEvent>(&msg.payload) {
-            Ok(event) => {
-                if let Err(e) = handle_progress(&pool, &bus, &event).await {
-                    tracing::warn!(run_id = %event.run_id, error = %e, "progress aggregation failed");
-                }
-            }
-            Err(e) => tracing::warn!(error = %e, "undecodable progress event; dropping"),
-        }
-        if let Err(e) = msg.ack().await {
-            tracing::warn!(error = %e, "failed to ack progress event");
-        }
-    }
+        },
+    )
+    .await?;
     Ok(())
 }
 

@@ -3,15 +3,18 @@
 //! [`tankovault_db::repo::catalog::ingest_series`], so replays are safe.
 
 use sha2::{Digest, Sha256};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::hash::{Hash as _, Hasher as _};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tankovault_adapters::{ChapterMeta, Ctx, SeriesMeta, SourceAdapter, build_adapter};
 use tankovault_bus::Bus;
+use tankovault_config::MatchingConfig;
 use tankovault_contracts::{ChapterDiscovered, ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
 use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert};
-use tankovault_domain::{Provider, normalize_title};
-use tankovault_fetch::{ProviderFetchConfig, SessionStore, build_provider_fetcher};
+use tankovault_domain::{Provider, ProviderId, normalize_title};
+use tankovault_fetch::{Fetcher, ProviderFetchConfig, SessionStore, build_provider_fetcher};
 use tankovault_solver::ChallengeSolver;
 use time::OffsetDateTime;
 
@@ -33,15 +36,118 @@ pub(crate) struct Engine {
     pub(crate) worker_id: String,
     /// Safety cap on catalogue pages walked per full scan.
     pub(crate) max_catalog_pages: u32,
+    /// The confidence policy for canonicalising a scanned series onto an existing one.
+    ///
+    /// Held here rather than defaulted inside the repository so this path and external sync's
+    /// remote-entry resolution answer "is this the same series?" the same way (ARCH-16).
+    pub(crate) matching: MatchingConfig,
+    /// One fetch stack per provider, keyed by the politeness settings it was built from.
+    ///
+    /// This cache is load-bearing for **correctness**, not only speed. `RateLimitedFetcher`
+    /// owns the governor cell and the semaphore, and `Throttle` owns the adaptive 429
+    /// penalty — so a fetcher built per task made the configured `rps` and `concurrency` a
+    /// *per-task* budget. N concurrent tasks therefore offered N × rps to the provider, which
+    /// is what produced the 429 storms the backoff layer then spent wall-clock absorbing, and
+    /// the accumulated penalty was thrown away every task. The comment at
+    /// `crates/fetch/src/ratelimit.rs` claiming a per-provider limiter was simply false.
+    ///
+    /// The speed half: each rebuild also meant a fresh `wreq::Client` with its own connection
+    /// pool, so every task paid a TCP + TLS 1.3 handshake before its first byte — roughly
+    /// 500k handshakes on a full scan that should have needed about `concurrency` of them.
+    fetchers: Arc<Mutex<HashMap<ProviderId, CachedFetcher>>>,
+}
+
+/// Hash the provider settings a fetch stack is built from.
+///
+/// Only the inputs to `build_provider_fetcher`, so a change to an unrelated column (a display
+/// name, an adapter config key) does not throw away a warm connection pool and a rate limiter
+/// mid-run — while an operator lowering `rps` or switching emulation profile does take effect
+/// on the next task rather than at the next restart.
+fn politeness_fingerprint(provider: &Provider) -> u64 {
+    let p = &provider.politeness;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    // `f64` is not `Hash`; its bit pattern is, and equality of bit patterns is exactly the
+    // "unchanged" test wanted here.
+    p.rps.to_bits().hash(&mut hasher);
+    p.concurrency.hash(&mut hasher);
+    p.crawl_delay_ms.hash(&mut hasher);
+    p.user_agent.hash(&mut hasher);
+    format!("{:?}", p.emulation).hash(&mut hasher);
+    hasher.finish()
+}
+
+/// The lookup key for a chapter number, used to pair a newly-inserted number reported by the
+/// database back to the parsed chapter it came from.
+///
+/// Keyed on the bit pattern rather than compared with a tolerance, so the pairing is a hash
+/// lookup instead of a scan of the whole chapter list per new chapter (PERF-19). That is the
+/// *same* predicate, not a looser one: the previous test was
+/// `(a - b).abs() < f64::EPSILON`, and `f64::EPSILON` is `2.2e-16` while two adjacent `f64`
+/// near a chapter number like `152.5` are `2.8e-14` apart — four orders of magnitude wider —
+/// so for every value a chapter number can actually take, that comparison already *was* exact
+/// equality.
+///
+/// The one input where the two disagree is `-0.0`, which the tolerance matched against `0.0`
+/// and a bit pattern does not. Chapter 0 is real (prologues), so it is normalised here rather
+/// than leaving a notification to depend on a sign bit. `NaN` cannot arrive: `parse_number`
+/// rejects any non-finite value (TESTING F-01b), which is what makes a bitwise key sound at
+/// all.
+fn chapter_key(number: f64) -> u64 {
+    if number == 0.0 { 0.0_f64 } else { number }.to_bits()
+}
+
+/// A built fetch stack plus the fingerprint of the settings that produced it.
+struct CachedFetcher {
+    /// Politeness + base URL as the provider row had them when this stack was built. An
+    /// operator lowering `rps` mid-run must take effect, so the entry is rebuilt on change
+    /// rather than pinned for the process lifetime.
+    fingerprint: u64,
+    fetcher: Arc<dyn Fetcher>,
 }
 
 impl Engine {
-    /// Build the per-provider adapter + injected fetch stack + context.
-    fn provider_context(
-        &self,
-        provider: &Provider,
-    ) -> anyhow::Result<(Box<dyn SourceAdapter>, Ctx)> {
-        let adapter = build_adapter(provider.adapter, &provider.slug, &provider.config)?;
+    /// Assemble the engine with an empty fetcher cache.
+    ///
+    /// A constructor rather than a struct literal so [`Engine::fetchers`] stays an
+    /// implementation detail — callers have no reason to know the cache exists, and one that
+    /// could be constructed pre-populated would be a way to get the sharing wrong.
+    pub(crate) fn new(
+        pool: PgPool,
+        bus: Option<Bus>,
+        solver: Arc<dyn ChallengeSolver>,
+        session_store: Arc<dyn SessionStore>,
+        worker_id: String,
+        max_catalog_pages: u32,
+        matching: MatchingConfig,
+    ) -> Self {
+        Self {
+            pool,
+            bus,
+            solver,
+            session_store,
+            worker_id,
+            max_catalog_pages,
+            matching,
+            fetchers: Arc::default(),
+        }
+    }
+
+    /// Build the fetch stack for `provider`, reusing the cached one when its settings are
+    /// unchanged.
+    fn fetcher_for(&self, provider: &Provider) -> anyhow::Result<Arc<dyn Fetcher>> {
+        let fingerprint = politeness_fingerprint(provider);
+
+        // A short critical section around a `HashMap`, held across no await point: a `std`
+        // mutex is the right primitive, and using `tokio::sync::RwLock` here would make
+        // `provider_context` async for no benefit.
+        {
+            let cache = self.fetchers.lock().expect("fetcher cache mutex poisoned");
+            if let Some(entry) = cache.get(&provider.id) {
+                if entry.fingerprint == fingerprint {
+                    return Ok(Arc::clone(&entry.fetcher));
+                }
+            }
+        }
 
         let mut fetch_cfg = ProviderFetchConfig::new(
             provider.politeness.user_agent.clone(),
@@ -54,12 +160,44 @@ impl Engine {
         fetch_cfg.crawl_delay_ms = provider.politeness.crawl_delay_ms;
         fetch_cfg.connect_timeout = Duration::from_secs(10);
         fetch_cfg.request_timeout = Duration::from_secs(30);
-
         let fetcher = build_provider_fetcher(fetch_cfg)?;
+
+        let mut cache = self.fetchers.lock().expect("fetcher cache mutex poisoned");
+        // Another task may have built one while this one was constructing. Either is
+        // correct, but keeping the stored entry means both callers share one limiter, which
+        // is the entire point — so only insert if it is still absent or stale.
+        let entry = cache
+            .entry(provider.id)
+            .and_modify(|existing| {
+                if existing.fingerprint != fingerprint {
+                    *existing = CachedFetcher {
+                        fingerprint,
+                        fetcher: Arc::clone(&fetcher),
+                    };
+                }
+            })
+            .or_insert_with(|| CachedFetcher {
+                fingerprint,
+                fetcher: Arc::clone(&fetcher),
+            });
+        Ok(Arc::clone(&entry.fetcher))
+    }
+
+    /// Build the per-provider adapter + injected fetch stack + context.
+    ///
+    /// The adapter is rebuilt per call and the fetch stack is not: `build_adapter` is cheap
+    /// and stateless, while the fetch stack carries the rate limiter, the connection pool and
+    /// the accumulated throttle penalty, all of which must be shared across a provider's
+    /// tasks to mean anything.
+    pub(crate) fn provider_context(
+        &self,
+        provider: &Provider,
+    ) -> anyhow::Result<(Box<dyn SourceAdapter>, Ctx)> {
+        let adapter = build_adapter(provider.adapter, &provider.slug, &provider.config)?;
         let ctx = Ctx {
             base_url: provider.base_url.clone(),
             provider_slug: provider.slug.clone(),
-            fetcher,
+            fetcher: self.fetcher_for(provider)?,
         };
         Ok((adapter, ctx))
     }
@@ -77,47 +215,66 @@ impl Engine {
         let chapters = adapter.fetch_chapters(ctx, path).await?;
         let hash = content_hash(&meta, &chapters);
 
+        // `meta` and `chapters` are moved into `scanned` from here on, not copied into it.
+        // Both are owned locals whose only later use is the `chapter.discovered` fan-out
+        // below, which now reads them back out of `scanned` — so a series with two thousand
+        // chapters no longer allocates a second copy of every title and path (PERF-19).
+        // `content_hash` is computed above, while both are still borrowable.
+        let normalized_title = normalize_title(&meta.title);
         let scanned = ScannedSeries {
             provider_id: provider.id,
             source_path: path.to_owned(),
+            // The one surviving clone: the title is both the provider's label for this source
+            // and the canonical series title, and the two are independent thereafter.
             provider_title: Some(meta.title.clone()),
             meta: SeriesUpsert {
-                canonical_title: meta.title.clone(),
-                normalized_title: normalize_title(&meta.title),
-                description: meta.description.clone(),
-                cover_url: meta.cover_url.clone(),
+                canonical_title: meta.title,
+                normalized_title,
+                description: meta.description,
+                cover_url: meta.cover_url,
                 content_type: meta.content_type,
                 status: meta.status,
                 release_year: meta.release_year,
             },
             alt_titles: meta
                 .alt_titles
-                .iter()
-                .map(|t| (t.clone(), normalize_title(t)))
+                .into_iter()
+                .map(|t| {
+                    let normalized = normalize_title(&t);
+                    (t, normalized)
+                })
                 .collect(),
-            tags: meta.tags.clone(),
-            authors: meta.authors.clone(),
+            tags: meta.tags,
+            authors: meta.authors,
             chapters: chapters
-                .iter()
+                .into_iter()
                 .map(|c| ChapterUpsert {
                     number: c.number,
                     volume: None,
-                    title: c.title.clone(),
-                    path: c.path.clone(),
+                    title: c.title,
+                    path: c.path,
                     published_at: c.published_at,
                 })
                 .collect(),
             content_hash: hash,
         };
 
-        let outcome = tankovault_db::repo::catalog::ingest_series(&self.pool, scanned).await?;
+        let outcome =
+            tankovault_db::repo::catalog::ingest_series(&self.pool, &scanned, &self.matching)
+                .await?;
 
         if let Some(bus) = &self.bus {
+            // One pass to index, then a lookup per new chapter. The previous form scanned the
+            // whole chapter list for each new number, so a 2,000-chapter series with 50 new
+            // chapters did 100,000 comparisons on the notification path (PERF-19).
+            let by_number: HashMap<u64, &ChapterUpsert> = scanned
+                .chapters
+                .iter()
+                .map(|c| (chapter_key(c.number), c))
+                .collect();
+
             for number in &outcome.new_chapters {
-                if let Some(ch) = chapters
-                    .iter()
-                    .find(|c| (c.number - number).abs() < f64::EPSILON)
-                {
+                if let Some(ch) = by_number.get(&chapter_key(*number)) {
                     let event = ChapterDiscovered {
                         series_id: outcome.series_id,
                         series_source_id: outcome.source_id,
@@ -193,6 +350,7 @@ impl Engine {
                 &self.pool,
                 provider.id,
                 &fresh,
+                &self.matching,
             )
             .await
             {
@@ -334,6 +492,7 @@ impl Engine {
                     &self.pool,
                     provider.id,
                     &entries,
+                    &self.matching,
                 )
                 .await
                 {
@@ -556,4 +715,245 @@ fn content_hash(meta: &SeriesMeta, chapters: &[ChapterMeta]) -> Vec<u8> {
         h.update(b"\n");
     }
     h.finalize().to_vec()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tankovault_domain::{AdapterKind, Politeness, ProviderState};
+
+    fn provider(rps: f64, ua: &str) -> Provider {
+        Provider {
+            id: ProviderId::from_uuid(uuid::Uuid::nil()),
+            slug: "demo".to_owned(),
+            name: "Demo".to_owned(),
+            base_url: "https://demo.test".to_owned(),
+            adapter: AdapterKind::Madara,
+            config: serde_json::json!({}),
+            state: ProviderState::Active,
+            politeness: Politeness {
+                rps,
+                concurrency: 2,
+                crawl_delay_ms: 0,
+                user_agent: ua.to_owned(),
+                emulation: None,
+            },
+            last_full_scan_at: None,
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            updated_at: OffsetDateTime::UNIX_EPOCH,
+        }
+    }
+
+    /// The cache key must change when — and only when — a setting the fetch stack is built
+    /// from changes. Too eager and every task rebuilds again (the bug this replaced); too
+    /// lazy and an operator lowering `rps` mid-run is ignored until the process restarts.
+    #[test]
+    fn the_fingerprint_tracks_exactly_the_settings_the_stack_is_built_from() {
+        let base = provider(1.0, "tankovault/1.0");
+        assert_eq!(
+            politeness_fingerprint(&base),
+            politeness_fingerprint(&provider(1.0, "tankovault/1.0")),
+            "identical politeness must reuse the stack, or the limiter is per-task again"
+        );
+
+        assert_ne!(
+            politeness_fingerprint(&base),
+            politeness_fingerprint(&provider(0.5, "tankovault/1.0")),
+            "lowering rps must take effect without a restart"
+        );
+        assert_ne!(
+            politeness_fingerprint(&base),
+            politeness_fingerprint(&provider(1.0, "other/1.0"))
+        );
+
+        // Fields the fetch stack does not read must NOT invalidate a warm connection pool,
+        // a rate limiter and an accumulated throttle penalty.
+        let mut renamed = provider(1.0, "tankovault/1.0");
+        renamed.name = "Renamed".to_owned();
+        renamed.config = serde_json::json!({ "unrelated": true });
+        renamed.state = ProviderState::Degraded;
+        assert_eq!(
+            politeness_fingerprint(&base),
+            politeness_fingerprint(&renamed),
+            "an unrelated column change must not throw away the fetch stack"
+        );
+    }
+
+    /// `rps` is an `f64`; hashing it at all requires going through the bit pattern.
+    #[test]
+    fn fractional_rates_are_distinguished() {
+        assert_ne!(
+            politeness_fingerprint(&provider(0.5, "ua")),
+            politeness_fingerprint(&provider(0.25, "ua"))
+        );
+    }
+
+    fn meta(title: &str, description: Option<&str>) -> SeriesMeta {
+        SeriesMeta {
+            title: title.to_owned(),
+            alt_titles: Vec::new(),
+            description: description.map(str::to_owned),
+            cover_url: None,
+            tags: Vec::new(),
+            authors: Vec::new(),
+            status: tankovault_domain::SeriesStatus::Ongoing,
+            content_type: tankovault_domain::ContentType::Manga,
+            release_year: Some(2020),
+        }
+    }
+
+    fn chapter(number: f64, title: Option<&str>, path: &str) -> ChapterMeta {
+        ChapterMeta {
+            number,
+            title: title.map(str::to_owned),
+            path: path.to_owned(),
+            published_at: None,
+        }
+    }
+
+    /// Determinism is the entire contract. `content_hash` gates whether a scan reports "no
+    /// change"; a hash that varied for identical input would make every scan look like a
+    /// change (harmless but wasteful), and one that is *stable* across a real change stops all
+    /// updates for that series silently, which is the failure nobody notices.
+    #[test]
+    fn the_content_hash_is_deterministic_for_identical_input() {
+        let chapters = vec![
+            chapter(1.0, Some("Awakening"), "/manga/x/1/"),
+            chapter(2.0, None, "/manga/x/2/"),
+        ];
+        assert_eq!(
+            content_hash(&meta("Solo Leveling", Some("blurb")), &chapters),
+            content_hash(&meta("Solo Leveling", Some("blurb")), &chapters),
+        );
+    }
+
+    /// Every field the hash is documented to cover must actually change it.
+    #[test]
+    fn the_content_hash_changes_when_a_covered_field_changes() {
+        let base_meta = meta("Solo Leveling", Some("blurb"));
+        let base = vec![chapter(1.0, None, "/manga/x/1/")];
+        let baseline = content_hash(&base_meta, &base);
+
+        assert_ne!(
+            baseline,
+            content_hash(&meta("Solo Levelling", Some("blurb")), &base),
+            "a retitled series must be seen as changed"
+        );
+        assert_ne!(
+            baseline,
+            content_hash(&meta("Solo Leveling", Some("rewritten")), &base),
+            "a rewritten description must be seen as changed"
+        );
+        assert_ne!(
+            baseline,
+            content_hash(&base_meta, &[chapter(1.5, None, "/manga/x/1/")]),
+            "a renumbered chapter must be seen as changed"
+        );
+        assert_ne!(
+            baseline,
+            content_hash(&base_meta, &[chapter(1.0, None, "/manga/x/1-v2/")]),
+            "a relinked chapter must be seen as changed"
+        );
+        assert_ne!(
+            baseline,
+            content_hash(
+                &base_meta,
+                &[
+                    chapter(1.0, None, "/manga/x/1/"),
+                    chapter(2.0, None, "/manga/x/2/"),
+                ]
+            ),
+            "a new chapter must be seen as changed — this is the case the whole scan exists for"
+        );
+    }
+
+    /// Two things the hash deliberately does *not* cover, pinned so a future reader does not
+    /// assume either.
+    ///
+    /// 1. **Chapter titles are not hashed.** The doc comment says "title + chapter (number,
+    ///    path) pairs" and means the *series* title. A chapter retitled in place therefore
+    ///    reports "no change". That is a deliberate trade — scanlation sites edit chapter
+    ///    labels constantly and the link is what the reader follows — but it is invisible from
+    ///    the call site, so it is asserted here rather than left to be rediscovered.
+    /// 2. **Order is significant.** Permuting the chapter list changes the hash, so a provider
+    ///    that reorders its listing reports a change and the scan re-ingests. That costs work
+    ///    but is never *wrong*; the opposite (an order-insensitive hash) would be cheaper and
+    ///    is what a future refactor is likely to reach for, so the current behaviour is pinned
+    ///    rather than left ambiguous.
+    #[test]
+    fn the_content_hash_ignores_chapter_titles_and_respects_chapter_order() {
+        let series = meta("Solo Leveling", None);
+        let untitled = vec![chapter(1.0, None, "/manga/x/1/")];
+        let titled = vec![chapter(1.0, Some("Awakening"), "/manga/x/1/")];
+        assert_eq!(
+            content_hash(&series, &untitled),
+            content_hash(&series, &titled),
+            "chapter titles are outside the hash; if that changes, change this test on purpose"
+        );
+
+        let ascending = vec![
+            chapter(1.0, None, "/manga/x/1/"),
+            chapter(2.0, None, "/manga/x/2/"),
+        ];
+        let descending = vec![
+            chapter(2.0, None, "/manga/x/2/"),
+            chapter(1.0, None, "/manga/x/1/"),
+        ];
+        assert_ne!(
+            content_hash(&series, &ascending),
+            content_hash(&series, &descending),
+            "the hash is order-sensitive today; making it order-insensitive is a behaviour \
+             change, not a cleanup"
+        );
+    }
+
+    /// A chapter path cannot be made to look like a different chapter list by embedding the
+    /// framing bytes the hash uses to separate entries.
+    ///
+    /// The hash writes `number | path \n` per chapter with no length prefix, so a path
+    /// containing those bytes is the classic way two distinct inputs collide. Providers
+    /// control this string.
+    #[test]
+    fn a_chapter_path_carrying_the_separator_bytes_does_not_forge_another_chapter() {
+        let series = meta("X", None);
+        let smuggled = vec![chapter(1.0, None, "/a/\n\u{0}|/b/")];
+        let genuine = vec![chapter(1.0, None, "/a/"), chapter(1.0, None, "/b/")];
+        assert_ne!(
+            content_hash(&series, &smuggled),
+            content_hash(&series, &genuine),
+            "a provider-supplied path must not be able to impersonate a second chapter"
+        );
+    }
+
+    /// The fan-out pairing key must agree with the tolerance comparison it replaced, on every
+    /// number a chapter can carry.
+    ///
+    /// The pairing decides which chapters get a `chapter.discovered` message, so a key that
+    /// disagrees with the old predicate loses notifications silently — which is the failure
+    /// mode TRACK-1 was made of. Driven from the sub-chapter numbering the tracking code cares
+    /// about (152 and 152.5 are different chapters) and from the boundaries.
+    #[test]
+    fn the_pairing_key_agrees_with_the_tolerance_it_replaced() {
+        let numbers = [
+            0.0, 1.0, 1.5, 2.0, 3.5, 152.0, 152.1, 152.5, 152.6, 153.0, 9999.0, 0.001, 1e9,
+        ];
+        for &a in &numbers {
+            for &b in &numbers {
+                let by_key = chapter_key(a) == chapter_key(b);
+                let by_tolerance = (a - b).abs() < f64::EPSILON;
+                assert_eq!(
+                    by_key, by_tolerance,
+                    "`{a}` vs `{b}`: the hash key and the old comparison must decide the same                      way, or a chapter is announced twice or not at all"
+                );
+            }
+        }
+    }
+
+    /// Chapter 0 is real — a prologue — and it is the one value where a bit pattern and a
+    /// tolerance would disagree, because `-0.0` and `0.0` are equal numbers with different
+    /// bits. Normalising it is what keeps a notification from depending on a sign bit.
+    #[test]
+    fn negative_zero_is_the_same_chapter_as_zero() {
+        assert_eq!(chapter_key(-0.0), chapter_key(0.0));
+    }
 }

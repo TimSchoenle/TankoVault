@@ -8,16 +8,18 @@ mod discover;
 mod home;
 mod notifications;
 mod password;
+mod search;
 mod series;
 mod watchlist;
 
 pub(crate) use account::{Account, AnilistCallback};
 pub(crate) use auth::{Login, VerifyEmail};
 pub(crate) use console::Console;
-pub(crate) use discover::{Discover, Search};
+pub(crate) use discover::Discover;
 pub(crate) use home::Home;
 pub(crate) use notifications::Notifications;
 pub(crate) use password::{ForgotPassword, ResetPassword};
+pub(crate) use search::Search;
 pub(crate) use series::Series;
 pub(crate) use watchlist::Watchlist;
 

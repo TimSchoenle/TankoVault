@@ -4,10 +4,14 @@
 
 use dioxus::prelude::*;
 
-/// Every glyph the `TankoVault` design uses (`DESIGN_SPEC` §6–7). The full inventory is
-/// vendored up front; not every glyph is referenced yet (later screens use the rest), so
-/// the unused variants are allowed until F2–F5 land.
-#[allow(dead_code)]
+/// Every glyph the `TankoVault` design uses (`DESIGN_SPEC` §6–7).
+///
+/// This used to carry a blanket `#[allow(dead_code)]` for the glyphs "later screens use". The
+/// later screens shipped, and the allow outlived its reason: 14 variants (26%) were unreferenced
+/// behind it, including several intended for the console entity rail — which was rendering a
+/// bare `span` per entity, a visible gap against `DESIGN_SPEC` §6-7. The rail now draws them and
+/// the rest are gone, so the next glyph that stops being drawn is a warning rather than a
+/// silent passenger in the bundle.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Icon {
     // nav
@@ -25,7 +29,6 @@ pub(crate) enum Icon {
     Bolt,
     AutoAwesome,
     Layers,
-    Star,
     Tune,
     Bookmark,
     Notify,
@@ -56,12 +59,7 @@ pub(crate) enum Icon {
     Add,
     Remove,
     Refresh,
-    Public,
-    Block,
     Person,
-    Palette,
-    Mail,
-    Devices,
     Back,
     Download,
     Delete,
@@ -90,6 +88,9 @@ pub(crate) fn Ic(
             stroke_linecap: "round",
             stroke_linejoin: "round",
             "aria-hidden": "true",
+            // Safe by construction, despite the attribute's name: `path_for` returns
+            // `&'static str` from a closed `match` over an enum. No caller-supplied value
+            // reaches it, so there is nothing here to escape.
             dangerous_inner_html: "{d}",
         }
     }
@@ -132,9 +133,6 @@ fn path_for(icon: Icon) -> &'static str {
         }
         Icon::Layers => {
             r#"<path d="m12 2 9 5-9 5-9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/>"#
-        }
-        Icon::Star => {
-            r#"<path d="m12 3 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18l-5.8 3 1.1-6.5L2.6 9.8l6.5-.9z"/>"#
         }
         Icon::Tune => {
             r#"<path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h8M16 18h4"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/>"#
@@ -184,20 +182,6 @@ fn path_for(icon: Icon) -> &'static str {
         Icon::Add => r#"<path d="M12 5v14M5 12h14"/>"#,
         Icon::Remove => r#"<path d="M5 12h14"/>"#,
         Icon::Refresh => r#"<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v5h-5"/>"#,
-        Icon::Public => {
-            r#"<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>"#
-        }
-        Icon::Block => r#"<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>"#,
-
-        Icon::Palette => {
-            r#"<path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2 0-1.5 1-2 2-2h1a3 3 0 0 0 3-3 8 8 0 0 0-8-9z"/><circle cx="7.5" cy="10.5" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16.5" cy="10.5" r="1"/>"#
-        }
-        Icon::Mail => {
-            r#"<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>"#
-        }
-        Icon::Devices => {
-            r#"<rect x="3" y="5" width="13" height="10" rx="1"/><path d="M2 19h13"/><rect x="17" y="9" width="5" height="10" rx="1"/>"#
-        }
         Icon::Back => r#"<path d="M19 12H5M11 6l-6 6 6 6"/>"#,
         Icon::Download => r#"<path d="M12 4v11"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/>"#,
         Icon::Delete => {

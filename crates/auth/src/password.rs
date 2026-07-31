@@ -25,7 +25,7 @@ fn hasher(pepper: &[u8]) -> Result<Argon2<'_>, AuthError> {
 
 /// Hash a plaintext password into an argon2id PHC string (salt embedded).
 ///
-/// Uses argon2's default (tuned) parameters, keyed by `pepper` (see [`hasher`]). The
+/// Uses argon2's default (tuned) parameters, keyed by `pepper` (see the private `hasher`). The
 /// returned string is what the DB stores; the pepper is **not** embedded and must be
 /// supplied again to [`verify_password`]. Pass an empty slice to hash without a pepper.
 ///

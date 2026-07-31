@@ -15,17 +15,18 @@
 use serde::{Deserialize, Serialize};
 
 pub(crate) use crate::wire::types::{
-    AccountStatus, AdapterKind, AssignRemoteEntry, ChapterDto, ChapterRead, ConflictRow,
-    ContentType, ContinueItem, CreateProvider, DismissRequest, FeedEntry, ForgotPasswordRequest,
-    LoginRequest, MarkRead, MarkReadTo, MergeRequest, PermissionPreset, Politeness,
-    PolitenessEmulation, ProfileUpdate, ProgressDto, ProgressUpdate, Provider, ProviderId,
-    ProviderInfo, ProviderStat, ProviderState, PublicProvider, RegisterRequest, RequestKind,
-    RequestStatus, ResendVerificationRequest, ResetPasswordRequest, ResolveConflict, RunState,
-    ScanMode, ScanRun, ScanRunProviderId, SeriesDetail, SeriesId, SeriesSourceId, SeriesStatus,
-    SeriesSummary, SetProviderState as SetProviderStateBody, SourceDto, SuggestedMatch,
-    SyncExcluded, SyncOpts, SyncPullBody, SyncPushBody, SyncSettingsPatch, SystemStats, Tag,
-    TestAdapterBody, TestAdapterRequest, TriggerScan, TriggerScanProviderId, UpdateProvider,
-    UpsertMapping, UserId, VerifyEmailRequest, WatchStatus, WatchlistItem, WatchlistUpsert,
+    AccountStatus, AdapterKind, AssignRemoteEntry, ChapterDto, ChapterRead, ConflictPolicy,
+    ConflictRow, ContentType, ContinueItem, CreateProvider, DismissRequest, FeedEntry,
+    ForgotPasswordRequest, LoginRequest, MarkRead, MarkReadTo, MergeRequest, PermissionPreset,
+    Politeness, PolitenessEmulation, ProfileUpdate, ProgressDto, ProgressUpdate, Provider,
+    ProviderId, ProviderInfo, ProviderStat, ProviderState, PublicProvider, RegisterRequest,
+    RequestKind, RequestStatus, ResendVerificationRequest, ResetPasswordRequest, ResolveConflict,
+    RunState, ScanMode, ScanRun, ScanRunProviderId, SeriesDetail, SeriesId, SeriesSourceId,
+    SeriesStatus, SeriesSummary, SetProviderState as SetProviderStateBody, SourceDto,
+    SuggestedMatch, SyncExcluded, SyncOpts, SyncPullBody, SyncPushBody, SyncSettingsPatch,
+    SystemStats, Tag, TestAdapterBody, TestAdapterRequest, TriggerScan, TriggerScanProviderId,
+    UpdateProvider, UpsertMapping, UserId, VerifyEmailRequest, WatchStatus, WatchlistItem,
+    WatchlistUpsert,
 };
 
 // Generated names that read poorly at the call site keep a local alias.
@@ -210,12 +211,6 @@ pub(crate) trait RequestKindExt {
     fn label_key(self) -> &'static str;
     /// The wire token, used as a `<select>` option value.
     fn token(self) -> &'static str;
-    /// Whether fulfilling this kind means disclosing the subject's export.
-    ///
-    /// Mirrors `RequestKind::needs_export` on the server. Duplicated rather than shared because
-    /// the generated client carries no methods; the server refuses the call regardless, so this
-    /// only decides whether the button is worth offering.
-    fn needs_export(self) -> bool;
     /// Every kind, in the order the request form offers them.
     fn all() -> &'static [RequestKind];
 }
@@ -241,9 +236,9 @@ impl RequestKindExt for RequestKind {
             Self::Objection => "objection",
         }
     }
-    fn needs_export(self) -> bool {
-        matches!(self, Self::Access | Self::Portability)
-    }
+    // `needs_export` used to live here, mirroring `RequestKind::needs_export` on the server.
+    // The admin queue row now carries the answer as a field (`AdminRequestRow.needs_export`),
+    // computed where the definition is, so the console reads it rather than re-deriving it.
     fn all() -> &'static [RequestKind] {
         &[
             RequestKind::Access,
@@ -349,51 +344,44 @@ impl ScanRunExt for ScanRun {
     }
 }
 
-/// How to settle a local/remote disagreement. The wire carries a bare string (the sync
-/// service validates it), so this is the frontend's closed enumeration of the tokens it
-/// offers, each pointing at the catalogue entry that words it for the reader.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum ConflictPolicy {
-    LocalWins,
-    RemoteWins,
-    NewestWins,
-    AskMe,
+/// Presentation for the generated [`ConflictPolicy`].
+///
+/// The policy used to be a **local** enum here, because the wire carried a bare string and the
+/// sync service validated it at the far end. That made this the frontend's own closed
+/// enumeration of a vocabulary it did not own (FRONTEND F10): a policy added on the server
+/// would simply not have appeared in the picker, and the `_ => NewestWins` parse arm meant a
+/// token this crate did not recognise silently became the one policy that can overwrite local
+/// progress. `tankovault_contracts::sync::ConflictPolicy` is now a published schema, so the
+/// type below is generated from the same document as every other DTO and only the *wording*
+/// is this crate's business.
+pub(crate) trait ConflictPolicyExt: Sized {
+    /// Every policy, in the order the picker offers them.
+    ///
+    /// Still hand-listed, because the generated client carries no `ALL` — but no longer
+    /// unverifiable: `the_policy_picker_offers_every_published_policy` reads the accepted set
+    /// out of the committed `openapi.json`, which is the artefact the client is generated
+    /// from, so a policy added on the server turns this crate red rather than going unoffered.
+    fn all() -> &'static [Self];
+    /// The catalogue key of this policy's display name (see [`crate::i18n`]).
+    fn label_key(self) -> &'static str;
 }
 
-impl ConflictPolicy {
-    pub(crate) const ALL: [ConflictPolicy; 4] = [
-        Self::LocalWins,
-        Self::RemoteWins,
-        Self::NewestWins,
-        Self::AskMe,
-    ];
+impl ConflictPolicyExt for ConflictPolicy {
+    fn all() -> &'static [Self] {
+        &[
+            Self::LocalWins,
+            Self::RemoteWins,
+            Self::NewestWins,
+            Self::AskMe,
+        ]
+    }
 
-    /// The catalogue key of this policy's display name (see [`crate::i18n`]).
-    pub(crate) fn label_key(self) -> &'static str {
+    fn label_key(self) -> &'static str {
         match self {
             Self::LocalWins => "enum.conflictPolicy.localWins",
             Self::RemoteWins => "enum.conflictPolicy.remoteWins",
             Self::NewestWins => "enum.conflictPolicy.newestWins",
             Self::AskMe => "enum.conflictPolicy.askMe",
-        }
-    }
-
-    pub(crate) fn token(self) -> &'static str {
-        match self {
-            Self::LocalWins => "local_wins",
-            Self::RemoteWins => "remote_wins",
-            Self::NewestWins => "newest_wins",
-            Self::AskMe => "ask_me",
-        }
-    }
-
-    pub(crate) fn parse(token: &str) -> Self {
-        match token {
-            "local_wins" => Self::LocalWins,
-            "remote_wins" => Self::RemoteWins,
-            "ask_me" => Self::AskMe,
-            _ => Self::NewestWins,
         }
     }
 }
@@ -409,18 +397,47 @@ mod tests {
         }
     }
 
+    /// The policy picker must offer every policy the server accepts.
+    ///
+    /// `ConflictPolicy::all()` is the last hand-maintained list in this file, and this is what
+    /// keeps it honest. Read out of the committed `openapi.json` — the artefact
+    /// `crates/api-client` is generated from and the only thing that connects these two
+    /// workspaces — so a policy added to `tankovault_contracts::sync::ConflictPolicy` fails
+    /// here rather than quietly never appearing in the UI.
+    ///
+    /// This replaces two tests that pinned a local enum against its own hand-written tokens:
+    /// they could only ever confirm that this crate agreed with itself, which is precisely the
+    /// gap FRONTEND F10 named. One of them asserted the old `_ => NewestWins` fallback as
+    /// *intended* behaviour; the fallback is gone, because "the token names nothing" and "the
+    /// user wants newest-wins" are not the same answer.
     #[test]
-    fn conflict_policy_tokens_round_trip() {
-        for policy in ConflictPolicy::ALL {
-            assert_eq!(ConflictPolicy::parse(policy.token()), policy);
-        }
-    }
+    fn the_policy_picker_offers_every_published_policy() {
+        const SPEC: &str = include_str!("../../../openapi.json");
+        let spec: serde_json::Value = serde_json::from_str(SPEC).expect("openapi.json parses");
 
-    #[test]
-    fn an_unknown_conflict_policy_falls_back_to_newest_wins() {
+        let mut published: Vec<String> = spec["components"]["schemas"]["ConflictPolicy"]["enum"]
+            .as_array()
+            .expect("the document declares the ConflictPolicy vocabulary")
+            .iter()
+            .map(|v| v.as_str().expect("policy tokens are strings").to_owned())
+            .collect();
+        let mut offered: Vec<String> = ConflictPolicy::all()
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+
         assert_eq!(
-            ConflictPolicy::parse("whatever"),
-            ConflictPolicy::NewestWins
+            offered.len(),
+            ConflictPolicy::all().len(),
+            "a policy is listed twice in ConflictPolicy::all()"
+        );
+        published.sort();
+        offered.sort();
+        assert_eq!(
+            offered, published,
+            "the account Sync panel offers a different set of conflict policies than the API \
+             publishes; add the missing variant to `ConflictPolicy::all()` and word it in \
+             `label_key`"
         );
     }
 }

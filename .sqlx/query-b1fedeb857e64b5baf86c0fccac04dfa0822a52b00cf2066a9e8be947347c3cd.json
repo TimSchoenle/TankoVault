@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series_authors (series_id, author_id) SELECT $1, a.id FROM authors a WHERE a.slug = ANY($2::text[]) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b1fedeb857e64b5baf86c0fccac04dfa0822a52b00cf2066a9e8be947347c3cd"
+}

@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Pure domain types for TankoVault. No I/O."
+# Not published: this is a workspace-internal crate. Also what lets `cargo deny`
+# skip license-checking our own code.
+publish = false
 
 [dependencies]
 serde = { workspace = true }
@@ -20,14 +23,23 @@ utoipa = { workspace = true }
 # the domain types stay usable in the browser while the `db` crate gets native
 # `sqlx::Type` mappings for the enum newtypes.
 sqlx = { workspace = true, optional = true, default-features = false, features = ["derive", "postgres"] }
+# Optional and feature-gated for the same reason as `sqlx`: `ssrf`'s resolving half needs a DNS
+# lookup, and `tokio`'s networking cannot build for `wasm32`. Only the native crates that
+# validate a URL they are about to store enable `dns`; `crates/api-client` — and through it the
+# browser bundle — depends on this crate with both features off.
+tokio = { workspace = true, optional = true }
 
 [features]
 # Derives `sqlx::Type` on the domain enums so repositories can bind/decode them as
 # their native Postgres enum types without `::text` casts. Enabled by `tankovault-db`.
 sqlx = ["dep:sqlx"]
+# `ssrf::validate_and_resolve` / `ssrf::resolve_checked`: the DNS-resolving guard an inbound
+# handler needs before *persisting* an operator-supplied URL. Enabled by `tankovault-fetch`
+# (which re-exports them) and by `services/api`, which needs them without the crawl stack.
+dns = ["dep:tokio"]
 
 [dev-dependencies]
-serde_json = { workspace = true }
+proptest = { workspace = true }
 
 [lints]
 workspace = true

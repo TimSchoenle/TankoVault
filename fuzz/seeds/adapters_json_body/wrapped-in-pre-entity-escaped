@@ -1,0 +1,15 @@
+<html><body><pre>{
+  &quot;success&quot;: true,
+  &quot;data&quot;: {
+    &quot;chapters&quot;: [
+      {&quot;comic_id&quot;: 42, &quot;chapter_id&quot;: 1, &quot;chapter_num&quot;: 116, &quot;chapter_name&quot;: &quot;Chapter 116&quot;, &quot;chapter_slug&quot;: &quot;chapter-116&quot;, &quot;updated_at&quot;: &quot;2026-01-01T00:00:00.000000Z&quot;, &quot;view&quot;: 10},
+      {&quot;comic_id&quot;: 42, &quot;chapter_id&quot;: 2, &quot;chapter_num&quot;: 117, &quot;chapter_name&quot;: &quot;Chapter 117&quot;, &quot;chapter_slug&quot;: &quot;chapter-117&quot;, &quot;updated_at&quot;: &quot;2026-01-02T00:00:00.000000Z&quot;, &quot;view&quot;: 10},
+      {&quot;comic_id&quot;: 42, &quot;chapter_id&quot;: 3, &quot;chapter_num&quot;: 118, &quot;chapter_name&quot;: &quot;Chapter 118&quot;, &quot;chapter_slug&quot;: &quot;chapter-118&quot;, &quot;updated_at&quot;: &quot;2026-01-03T00:00:00.000000Z&quot;, &quot;view&quot;: 10}
+    ],
+    &quot;total&quot;: 3,
+    &quot;current_page&quot;: 1,
+    &quot;per_page&quot;: 100,
+    &quot;last_page&quot;: 1
+  }
+}
+</pre></body></html>

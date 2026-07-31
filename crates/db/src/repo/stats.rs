@@ -10,7 +10,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// System-wide rollup for the console header (single-row query).
-#[derive(Debug, Clone, Serialize, FromRow, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, FromRow)]
 pub struct SystemStats {
     pub providers_total: i64,
     pub providers_active: i64,
@@ -35,7 +35,7 @@ pub struct SystemStats {
 
 /// One row of the per-provider statistics table. Enum columns are text-cast; the provider's
 /// identity fields are joined in so the console renders the table from one fetch.
-#[derive(Debug, Clone, Serialize, FromRow, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, FromRow)]
 pub struct ProviderStat {
     pub provider_id: Uuid,
     pub slug: String,
@@ -54,22 +54,23 @@ pub struct ProviderStat {
     pub chapters_24h: i64,
     pub chapters_7d: i64,
     #[serde(with = "time::serde::rfc3339::option")]
-    #[schema(value_type = Option<String>)]
     pub last_chapter_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339::option")]
-    #[schema(value_type = Option<String>)]
     pub last_scanned_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339::option")]
-    #[schema(value_type = Option<String>)]
     pub last_full_scan_at: Option<OffsetDateTime>,
     /// State of the provider's most recent scan run, if any.
     pub last_run_state: Option<String>,
     #[serde(with = "time::serde::rfc3339::option")]
-    #[schema(value_type = Option<String>)]
     pub last_run_at: Option<OffsetDateTime>,
 }
 
 /// Compute the system-wide rollup for the console header.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Every column is a
+/// `count(*)` scalar subquery, so the row always exists and an empty database yields zeros
+/// rather than [`crate::DbError::NotFound`].
 pub async fn system_overview<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<SystemStats> {
     let stats = sqlx::query_as!(
         SystemStats,
@@ -101,6 +102,9 @@ pub async fn system_overview<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<SystemS
 
 /// Per-provider crawl statistics, richest (most chapters) first. Providers with no sources
 /// yet still appear with zeroed counts so newly-added ones are visible in the table.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable.
 pub async fn provider_stats<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<ProviderStat>> {
     let rows = sqlx::query_as!(
         ProviderStat,

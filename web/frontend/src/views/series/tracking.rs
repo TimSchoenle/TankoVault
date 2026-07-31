@@ -25,8 +25,6 @@ use progenitor_client::ResponseValue;
 const RESOLVE_LOCAL: &str = "local";
 /// The conflict resolution that adopts the remote value.
 const RESOLVE_REMOTE: &str = "remote";
-/// The standing policy "whichever side changed most recently wins".
-const POLICY_NEWEST: &str = "newest_wins";
 
 /// One registered tracker and this reader's link state on it.
 #[derive(Clone, PartialEq)]
@@ -337,7 +335,7 @@ fn ConflictCard(
             spawn(async move {
                 let body = SyncSettingsPatch {
                     auto_sync_enabled: None,
-                    conflict_policy: Some(POLICY_NEWEST.to_owned()),
+                    conflict_policy: Some(ConflictPolicy::NewestWins.into()),
                 };
                 match client
                     .sync_settings_patch()
@@ -429,7 +427,10 @@ fn ProgressEditor(
     // The frontier is a whole-chapter count, so it is displayed and stepped as an integer.
     let shown = crate::util::chapter_number(value);
     let ceiling = {
-        #[allow(clippy::cast_precision_loss)]
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a whole-chapter count, far inside f64's exact integer range"
+        )]
         {
             total as f64
         }
@@ -565,9 +566,7 @@ fn TrackerRow(tracker: Tracker, reload_sync: Reload) -> Element {
                 {
                     // A full-page navigation, not a router push: the consent screen lives on
                     // the provider's origin.
-                    let url = serde_json::to_string(&response.into_inner().url)
-                        .unwrap_or_else(|_| "\"\"".to_owned());
-                    let _ = document::eval(&format!("window.location.href = {url};"));
+                    crate::browser::navigate_to(&response.into_inner().url);
                 }
                 busy.release();
             });

@@ -25,10 +25,16 @@
 //! the browser's raw OAuth redirect. The frontend's callback route reads `?code=` from the
 //! URL and then calls that API endpoint itself, attaching the token like any other request.
 
-mod anilist;
 mod engine;
+mod error;
 mod mapping;
 mod provider;
+mod providers;
+/// Merge-engine reconciliation tests (audit TEST F-06). Needs Docker, hence the feature gate.
+#[cfg(all(test, feature = "integration"))]
+mod reconcile_tests;
+
+use crate::error::AppError;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -36,7 +42,6 @@ use std::time::Duration;
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
@@ -46,14 +51,14 @@ use tankovault_service::{
     RouteClassifier, RouteFeatures,
 };
 
-use anilist::{AniListClient, DEFAULT_GRAPHQL_URL, DEFAULT_OAUTH_BASE};
 use engine::SyncEngine;
 use mapping::ConflictPolicy;
 use provider::ExternalProvider;
+use providers::anilist::{AniListClient, DEFAULT_GRAPHQL_URL, DEFAULT_OAUTH_BASE};
 use tankovault_auth::SecretBox;
-use tankovault_config::{DatabaseConfig, MetadataPriorityConfig, TelemetryConfig};
+use tankovault_config::{DatabaseConfig, TelemetryConfig};
 use tankovault_contracts::sync::{AccountSettings, AccountStatus, AuthorizeUrl, ProviderInfo};
-use tankovault_domain::{Feature, SeriesId, UserId};
+use tankovault_domain::{Feature, MetadataPriority, SeriesId, UserId};
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -81,6 +86,16 @@ struct Config {
     /// Runtime feature flags — how often this replica re-reads the operator's decisions.
     #[serde(default)]
     features: tankovault_config::FeaturesConfig,
+    /// Shared secret every caller must present. This service's whole contract is
+    /// privileged — it names the subject user in the path or body — so an unauthenticated
+    /// caller could read or rewrite any account's sync state.
+    #[serde(default)]
+    internal: tankovault_config::InternalAuthConfig,
+    /// The confidence policy for resolving a remote entry onto a local series. Shared with the
+    /// worker's ingest canonicalisation so the two paths cannot disagree about whether two
+    /// series are the same (ARCH-16).
+    #[serde(default)]
+    matching: tankovault_config::MatchingConfig,
 }
 
 /// Metadata-priority + tokenless enrichment-worker settings (design: worker queue syncing
@@ -90,7 +105,7 @@ struct Config {
 struct MetadataConfig {
     /// Per-field source authority order (default: `AniList` before the adapters).
     #[serde(default)]
-    priority: MetadataPriorityConfig,
+    priority: MetadataPriority,
     /// Whether the background enrichment worker runs. On by default.
     #[serde(default = "default_enrich_enabled")]
     enrich_enabled: bool,
@@ -108,7 +123,7 @@ struct MetadataConfig {
 impl Default for MetadataConfig {
     fn default() -> Self {
         Self {
-            priority: MetadataPriorityConfig::default(),
+            priority: MetadataPriority::default(),
             enrich_enabled: default_enrich_enabled(),
             enrich_interval_secs: default_enrich_interval_secs(),
             enrich_batch: default_enrich_batch(),
@@ -200,7 +215,7 @@ fn build_providers(
         cfg.redirect_uri,
         Duration::from_millis(cfg.min_request_interval_ms),
     )?;
-    providers.insert(anilist::PROVIDER, Box::new(anilist));
+    providers.insert(crate::providers::anilist::PROVIDER, Box::new(anilist));
     Ok(providers)
 }
 
@@ -286,11 +301,50 @@ struct AppState {
     enrich_max: usize,
 }
 
+/// This service's feature-gate table, built from the single suffix-keyed declaration in
+/// `tankovault_contracts::sync` (ARCH-18).
+///
+/// The API gates the same surface under `/v1/me/sync` from the same list. Maintaining the two
+/// tables independently had already let them drift: the API gated `/conflicts` and `/history` but
+/// not `/push-series`, and nothing asserted they agreed.
+fn route_features() -> RouteFeatures {
+    tankovault_contracts::sync::sync_route_features()
+        .iter()
+        .fold(RouteFeatures::new(), |table, (suffix, feature)| {
+            table.gate(format!("/v1/sync{suffix}"), *feature)
+        })
+}
+
+/// Whether `encoded` is a key made entirely of zero bytes.
+///
+/// Compares the *decoded* bytes rather than the string, so the several base64 spellings of 32
+/// zero bytes (with and without padding, with whitespace) are all caught rather than only the
+/// exact literal that happened to ship in the compose file.
+fn is_placeholder_key(encoded: &str) -> bool {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD
+        .decode(encoded.trim())
+        .is_ok_and(|bytes| !bytes.is_empty() && bytes.iter().all(|b| *b == 0))
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Before config, telemetry or anything else: this process may have been invoked by
+    // Docker's HEALTHCHECK rather than as the service. `scratch` images have no shell and no
+    // wget, so the binary probing itself is the only probe available. See
+    // `tankovault_service::healthcheck`.
+    if tankovault_service::healthcheck::requested() {
+        let cfg: Config = tankovault_config::load()?;
+        tankovault_service::run_healthcheck_and_exit(&cfg.bind_addr);
+    }
+
     let cfg: Config = tankovault_config::load()?;
     tankovault_service::init_tracing(&cfg.telemetry)?;
     let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    // Resolved before anything binds: a service in this tier that starts without a token
+    // silently downgrades to the unauthenticated behaviour the token exists to remove, so
+    // the production profile refuses to boot rather than serving privileged routes openly.
+    let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
     let shutdown = tankovault_service::install_shutdown();
 
     let pool = tankovault_db::connect(
@@ -303,6 +357,19 @@ async fn main() -> anyhow::Result<()> {
     let health_pool = pool.clone();
     let flags_pool = pool.clone();
 
+    // Refused in *every* profile, like the API's JWT placeholder check. This key seals every
+    // user's AniList access and refresh token at rest, and the published fallback was 32 zero
+    // bytes — a key anyone who has read `deploy/docker-compose.yml` already holds. The length
+    // is enforced by `from_base64_key` itself (it decodes into a `[u8; 32]`), so the only
+    // remaining hole was a well-known *value*.
+    if is_placeholder_key(&cfg.anilist.token_encryption_key) {
+        anyhow::bail!(
+            "refusing to start: anilist.token_encryption_key is the all-zero placeholder \
+             published in this repository. Every stored OAuth token sealed with it is \
+             readable by anyone with a copy of the database. Generate one with \
+             `openssl rand -base64 32` and set TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY."
+        );
+    }
     let secret = SecretBox::from_base64_key(&cfg.anilist.token_encryption_key)
         .map_err(|e| anyhow::anyhow!("invalid anilist.token_encryption_key: {e}"))?;
     let default_policy = cfg.anilist.default_conflict_policy;
@@ -314,6 +381,7 @@ async fn main() -> anyhow::Result<()> {
         secret,
         default_policy,
         metadata.priority.clone(),
+        &cfg.matching,
         providers,
     ));
 
@@ -360,14 +428,7 @@ async fn main() -> anyhow::Result<()> {
         // service is reachable from anywhere on the internal network and a switch an operator
         // has thrown should hold where the work happens, not only at the edge in front of it.
         .layer(axum::middleware::from_fn_with_state(
-            FeatureLayer::new(
-                features.clone(),
-                RouteFeatures::new()
-                    .gate("/v1/sync", Feature::SyncExternal)
-                    .gate("/v1/sync/push-series", Feature::SyncAutoPush)
-                    .gate("/v1/sync/conflicts", Feature::SyncConflictReview)
-                    .gate("/v1/sync/history", Feature::SyncHistory),
-            ),
+            FeatureLayer::new(features.clone(), route_features()),
             tankovault_service::flags::enforce,
         ));
 
@@ -388,6 +449,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = HttpStack::new(&cfg.security, metrics.clone())
         .with_rate_limit(limiter)
+        .with_internal_auth(internal_token)
         .apply(routes)
         .merge(tankovault_service::ops_router(health, metrics));
 
@@ -522,7 +584,7 @@ struct SettingsPatch {
     #[serde(default)]
     auto_sync_enabled: Option<bool>,
     #[serde(default)]
-    conflict_policy: Option<String>,
+    conflict_policy: Option<ConflictPolicy>,
 }
 
 /// `PATCH /v1/sync/{provider}/settings/{user_id}` — update automatic-sync settings.
@@ -537,7 +599,7 @@ async fn patch_settings(
             &provider,
             req.user_id,
             req.auto_sync_enabled,
-            req.conflict_policy.as_deref(),
+            req.conflict_policy,
         )
         .await?;
     Ok(StatusCode::NO_CONTENT)
@@ -603,28 +665,26 @@ async fn list_history(
     Ok(Json(rows))
 }
 
-/// Thin error wrapper: surfaces the message to the caller (the API) and a `502` since most
-/// failures originate upstream at the provider; an unknown provider slug is `404`, a missing
-/// link is `409`.
-struct AppError(anyhow::Error);
+#[cfg(test)]
+mod route_feature_tests {
+    use super::route_features;
+    use axum::http::Method;
 
-impl From<anyhow::Error> for AppError {
-    fn from(err: anyhow::Error) -> Self {
-        Self(err)
-    }
-}
-
-impl IntoResponse for AppError {
-    fn into_response(self) -> axum::response::Response {
-        let message = self.0.to_string();
-        let status = if message.contains("unknown sync provider") {
-            StatusCode::NOT_FOUND
-        } else if message.contains("account linked") {
-            StatusCode::CONFLICT
-        } else {
-            StatusCode::BAD_GATEWAY
-        };
-        tracing::warn!(error = %message, "sync request failed");
-        (status, message).into_response()
+    /// Every suffix in the shared declaration is actually gated under this tier's prefix.
+    ///
+    /// The mirror of the same test in `services/api`. The two tiers used to keep independent
+    /// tables and had already drifted — the API gated `/conflicts` and `/history` but not
+    /// `/push-series` — with nothing asserting they agreed (ARCH-18).
+    #[test]
+    fn the_shared_sync_declaration_is_applied_under_this_tier_s_prefix() {
+        let features = route_features();
+        for (suffix, expected) in tankovault_contracts::sync::sync_route_features() {
+            let path = format!("/v1/sync{suffix}");
+            assert_eq!(
+                features.required(&Method::GET, &path),
+                Some(*expected),
+                "{path} is not gated by the feature the shared declaration names"
+            );
+        }
     }
 }

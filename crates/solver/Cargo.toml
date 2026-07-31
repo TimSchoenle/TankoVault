@@ -5,6 +5,20 @@ edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "ChallengeSolver trait, fast challenge detection, and FlareSolverr back-end."
+# Not published: this is a workspace-internal crate. Also what lets `cargo deny`
+# skip license-checking our own code.
+publish = false
+
+[features]
+default = []
+# The shared `POST /v1/solve` router, merged by both `challenge-solver` and `render`. Behind a
+# feature so consumers that only want the trait and the detection helpers do not pull axum.
+axum = [
+    "dep:axum",
+    "dep:metrics",
+    "dep:tankovault-domain",
+    "dep:tankovault-service",
+]
 
 [dependencies]
 async-trait = { workspace = true }
@@ -12,11 +26,25 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 wreq = { workspace = true }
 thiserror = { workspace = true }
+# Used by the shared `/v1/solve` router (`http.rs`), which this crate gained after the audit
+# listed `tracing` as unused here.
 tracing = { workspace = true }
 time = { workspace = true }
 
+axum = { workspace = true, optional = true }
+metrics = { workspace = true, optional = true }
+# The SSRF address policy for the solve target. Pure and I/O-free — see the module docs there.
+tankovault-domain = { workspace = true, optional = true }
+# Only for the shared RFC 9457 error shape the `/v1/solve` route emits (ARCH-12); pulled in with
+# the `axum` feature so trait-only consumers stay free of the whole service runtime.
+tankovault-service = { workspace = true, optional = true }
+
 [dev-dependencies]
 tokio = { workspace = true }
+proptest = { workspace = true }
+# A scriptable `FlareSolverr` for `flaresolverr.rs`, whose request payload and status/`message`
+# mapping were asserted by nothing (TEST F-09).
+wiremock = { workspace = true }
 
 [lints]
 workspace = true

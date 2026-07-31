@@ -22,9 +22,8 @@ use uuid::Uuid;
 /// user's actual capabilities are what the detail view is for. The count is enough to answer
 /// "which of these accounts are privileged at all", which is the question the list is scanned
 /// for.
-#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct DirectoryRow {
-    #[schema(value_type = String)]
     pub id: Uuid,
     pub email: String,
     pub username: String,
@@ -37,16 +36,14 @@ pub struct DirectoryRow {
     /// How many series the user tracks — the cheapest signal of a real, in-use account.
     pub tracked_count: i64,
     #[serde(with = "time::serde::rfc3339::option")]
-    #[schema(value_type = Option<String>)]
     pub last_login_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
 }
 
 /// A page of the directory plus the unfiltered-by-page total, so the UI can render
 /// "showing 1–25 of 312" without a second request.
-#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct DirectoryPage {
     pub users: Vec<DirectoryRow>,
     /// Total matching the current search, ignoring `limit`/`offset`.
@@ -62,6 +59,11 @@ pub struct DirectoryPage {
 /// The counts come from lateral subqueries rather than `GROUP BY` joins: with two independent
 /// one-to-many relations (permissions and watchlist entries), a join would multiply rows and
 /// need `count(DISTINCT …)` on both.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable. A search matching nobody is an
+/// empty page with `total: 0`, not [`DbError::NotFound`]; note that `total` is read off the
+/// first row, so it is only meaningful because every returned row carries the same value.
 pub async fn directory<'e, E: PgExecutor<'e>>(
     exec: E,
     search: &str,
@@ -83,13 +85,22 @@ pub async fn directory<'e, E: PgExecutor<'e>>(
     }
     // `$1 = ''` short-circuits the pattern match so an unfiltered listing does not pay for a
     // `LIKE '%%'` scan predicate on every row.
+    //
+    // `ILIKE`, not `LIKE`, and that is a fix rather than a preference. `username`/`email` are
+    // `citext`, but `'%' || $1 || '%'` concatenates down to `text`, so `citext ~~ text`
+    // resolved to a plain case-sensitive `text ~~ text` — an operator searching for `alice`
+    // found nothing for a user who registered as `Alice`. Same root cause as
+    // `repo::users::CiText`, which fixes the equality lookups; a wrapper cannot fix this one
+    // because the concatenation, not the parameter, is what carries the type. Read that
+    // type's doc comment for why the schema's intent silently stops holding at the operator.
+    // A leading wildcard forecloses an index either way, so `ILIKE` costs nothing here.
     let rows = sqlx::query_as!(
         Row,
         "WITH matched AS ( \
              SELECT u.* FROM users u \
              WHERE $1 = '' \
-                OR u.username LIKE '%' || $1 || '%' \
-                OR u.email LIKE '%' || $1 || '%' \
+                OR u.username ILIKE '%' || $1 || '%' \
+                OR u.email ILIKE '%' || $1 || '%' \
          ) \
          SELECT m.id, m.email::text AS \"email!\", m.username::text AS \"username!\", \
                 m.status AS \"status: AccountStatus\", \
@@ -135,9 +146,8 @@ pub async fn directory<'e, E: PgExecutor<'e>>(
 /// Everything the user-detail panel shows, minus the grant list (fetched separately by
 /// [`crate::repo::permissions::list_for_user`] so the panel can refresh just that part after
 /// an edit).
-#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct UserDetail {
-    #[schema(value_type = String)]
     pub id: Uuid,
     pub email: String,
     pub username: String,
@@ -145,13 +155,10 @@ pub struct UserDetail {
     pub email_verified: bool,
     pub suspension_reason: Option<String>,
     #[serde(with = "time::serde::rfc3339::option")]
-    #[schema(value_type = Option<String>)]
     pub suspended_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339::option")]
-    #[schema(value_type = Option<String>)]
     pub last_login_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
     /// Live login sessions. Tells an operator whether a suspension will actually take effect
     /// without also revoking sessions.
@@ -166,6 +173,9 @@ pub struct UserDetail {
 }
 
 /// Fetch one user's administrative detail.
+///
+/// # Errors
+/// [`DbError::NotFound`] — a 404 — when no such user exists; otherwise [`DbError::Sqlx`].
 pub async fn detail<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<UserDetail> {
     let row = sqlx::query_as!(
         UserDetail,
@@ -241,6 +251,11 @@ pub async fn update_identity<'e, E: PgExecutor<'e>>(
 ///
 /// Reinstating clears `suspended_at` and the reason, so a re-suspension records its own fresh
 /// timestamp rather than showing the first one.
+///
+/// # Errors
+/// [`DbError::NotFound`] — a 404 — when `id` matches no row. Otherwise [`DbError::Sqlx`].
+/// Setting the status an account already has is not [`DbError::Conflict`]: it succeeds and
+/// refreshes `suspended_at`, which is deliberate for a re-suspension.
 pub async fn set_status<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,
@@ -272,6 +287,12 @@ pub async fn set_status<'e, E: PgExecutor<'e>>(
 /// received the link: without it, an unverified account is permanently unable to sign in and
 /// has no self-service path back. Idempotent, matching
 /// [`crate::repo::users::mark_email_verified`].
+///
+/// # Errors
+/// [`DbError::NotFound`] — a 404 — when `id` matches no row; otherwise [`DbError::Sqlx`].
+/// Unlike [`crate::repo::users::mark_email_verified`], which returns `Ok(())` for a missing
+/// user, this one reports it: an operator invoking the escape hatch needs to be told it did
+/// nothing.
 pub async fn force_verify_email<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<()> {
     let result = sqlx::query!(
         "UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1",

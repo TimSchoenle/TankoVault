@@ -114,6 +114,43 @@ pub fn is_rate_limit_page(body: &str) -> bool {
 /// Deliberately narrower than [`detect_challenge`]: only markup that no ordinary page emits
 /// counts here, so a page that merely *mentions* Cloudflare (a scanlation site's FAQ, a
 /// chapter titled "Just a moment") is not misread as a challenge.
+///
+/// The narrowness is the contract, so it is what the examples pin:
+///
+/// ```
+/// use tankovault_solver::{ChallengeKind, detect_challenge_body, is_rate_limit_page};
+///
+/// // Markup no content page emits. Turnstile is checked before the JS interstitial because a
+/// // managed challenge serves both, and the widget is the more specific fact.
+/// assert_eq!(
+///     detect_challenge_body(r#"<div class="cf-turnstile" data-sitekey="x"></div>"#),
+///     Some(ChallengeKind::Turnstile),
+/// );
+/// assert_eq!(
+///     detect_challenge_body(r#"<script src="/cdn-cgi/challenge-platform/h/b/orchestrate/"></script>"#),
+///     Some(ChallengeKind::CloudflareJs),
+/// );
+///
+/// // `"Just a moment"` counts only as a <title>. As body text it is a chapter name, and this
+/// // is the case that looks like a missed detection: the broader classifier accepts the bare
+/// // phrase, but only because a 403/503 or a `server: cloudflare` header has already
+/// // corroborated it. Here there is no envelope to corroborate anything.
+/// assert_eq!(
+///     detect_challenge_body("<title>Just a moment...</title>"),
+///     Some(ChallengeKind::CloudflareJs),
+/// );
+/// assert_eq!(detect_challenge_body("<h1>Chapter 12: Just a moment</h1>"), None);
+///
+/// // A site's own FAQ explaining that it sits behind Cloudflare is a page, not a challenge.
+/// assert_eq!(detect_challenge_body("<p>We use Cloudflare to stay online.</p>"), None);
+///
+/// // And a throttle notice is the origin answering, not an interstitial in front of it. Two of
+/// // the three challenge statuses are also the rate-limit statuses, so conflating these buys
+/// // an expensive solve whose only possible result is fetching the same notice again.
+/// let throttled = "<html><head><title>429 Too Many Requests</title></head></html>";
+/// assert_eq!(detect_challenge_body(throttled), None);
+/// assert!(is_rate_limit_page(throttled));
+/// ```
 #[must_use]
 pub fn detect_challenge_body(body: &str) -> Option<ChallengeKind> {
     if body.contains("challenges.cloudflare.com/turnstile") || body.contains("cf-turnstile") {

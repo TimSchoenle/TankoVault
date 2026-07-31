@@ -27,10 +27,14 @@ jobs:
   lint:
     name: fmt + clippy
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # No version here on purpose: `rust-toolchain.toml` pins it, and naming a version in
+      # both places is how they drift apart. The action honours the file.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.94.0"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       # The provider fetch stack links BoringSSL (`wreq`), which its build script compiles
@@ -42,18 +46,37 @@ jobs:
         run: cargo fmt --all --check
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # The invariants no compiler sees: a CSP and the HTML it governs, a secret published in
+      # the compose file and the code that refuses it. Text-only and seconds long, so it runs
+      # beside clippy rather than in a job of its own. See xtask/src/repo_lint.rs.
+      - name: repository invariants
+        run: cargo run -p xtask -- repo-lint
 
   test:
     name: test (workspace)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
       - uses: Swatinem/rust-cache@v2
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
       - name: cargo test
         run: cargo test --workspace --all-targets
+      # `--all-targets` silently EXCLUDES doc tests, so every `///` example in the workspace
+      # was unverified. This is the run that compiles them.
+      - name: doc tests
+        run: cargo test --workspace --doc
+      # And this is the run that resolves the *links* in them. `cargo test --doc` executes the
+      # examples and never looks at a `[`Foo`]`, so a broken intra-doc link renders as literal
+      # bracket text and nothing notices — six had accumulated before the `[workspace.lints.rustdoc]`
+      # table made rustdoc fail on them. `crates/api-client` is exempt by construction: it declares
+      # its own `[lints]` table (OPS-2.4) and so inherits nothing from the workspace one.
+      - name: rustdoc (intra-doc links)
+        run: cargo doc --workspace --no-deps --all-features
       # Fails if a backend DTO changed without regenerating the OpenAPI artifacts
       # (services/api/src/openapi.rs -> xtask openapi -> openapi.json + the progenitor
       # crates/api-client client, consumed by the frontend via web/frontend/src/wire.rs). A
@@ -62,6 +85,58 @@ jobs:
       # for commits made without it.
       - name: OpenAPI artifacts are up to date
         run: cargo run -p xtask -- openapi --check
+      # `docs/CONFIGURATION.md` is gated too, but by a *test* rather than a step here
+      # (`xtask::config_docs`, run by `cargo test` above). Unlike the OpenAPI artifacts there is
+      # nothing to regenerate — the document is prose — so the check has no write half that has
+      # to live in a command, and it follows the same shape as the other artefact-agreement
+      # checks in this repository. `cargo run -p xtask -- config-docs` prints the derived
+      # surface when one of them fails.
+
+  # Feature-combination legs. Every other job compiles the *one* feature set the services
+  # happen to select, so `crates/service`'s `db` and `redis` features and `crates/domain`'s
+  # `sqlx` feature had exactly one combination that was ever built — a `#[cfg(feature = ...)]`
+  # that stopped compiling with a feature off, or a crate that only builds because a sibling
+  # unified a feature onto it, would not have been caught anywhere.
+  #
+  # This is the feature axis of the audit's OPS-4.6. The other two axes are settled below and
+  # here, rather than left open:
+  #
+  #   * **arch** — the `docker-arm64` job at the bottom of this file builds every image for
+  #     `linux/arm64` on a *native* arm runner. It is opt-in behind a repository variable
+  #     because those runners are free only on public repositories; the reasoning is written
+  #     out there. QEMU emulation is not the fallback: the fetch stack compiles BoringSSL from
+  #     C/C++/asm, which under emulation costs upwards of an hour per image.
+  #   * **OS** — no Windows or macOS leg, deliberately and permanently. Nothing ships on
+  #     either: every artifact is a musl binary in a `scratch` or Debian image. A Windows leg
+  #     would cover the *development* platform, where a break is discovered by the developer
+  #     within seconds of making it, at the cost of a BoringSSL toolchain (nasm + cmake) on
+  #     every run. The Windows-specific hazards this project has actually hit are tooling
+  #     hazards — PowerShell's cp1252 decoding of UTF-8 source, `Select-String` clearing `$?`
+  #     after a native command — and no CI leg detects either. They are documented in
+  #     `docs/audit/PROGRESS.md` instead.
+  features:
+    name: feature combinations
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
+      - uses: Swatinem/rust-cache@v2
+      - name: BoringSSL build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+      # Libraries only. The services are binaries that require their features, so
+      # `--no-default-features` across the workspace would fail for reasons that are not bugs;
+      # the crates are where an unbuildable combination actually hides.
+      - name: crates with no default features
+        run: |
+          cargo check --no-default-features \
+            -p tankovault-domain -p tankovault-service -p tankovault-config \
+            -p tankovault-contracts -p tankovault-fetch -p tankovault-solver \
+            -p tankovault-matcher -p tankovault-auth -p tankovault-email
+      - name: workspace with all features
+        run: cargo check --workspace --all-targets --all-features
 
   # Verifies the committed sqlx offline query cache (`.sqlx/`) against a real, migrated
   # Postgres: `cargo sqlx prepare --check` recompiles every `query!`/`query_as!` macro
@@ -71,9 +146,10 @@ jobs:
   sqlx:
     name: sqlx offline cache
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
-        image: postgres:19beta2
+        image: postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -92,7 +168,9 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/tankovault
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
       - uses: Swatinem/rust-cache@v2
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
@@ -111,55 +189,373 @@ jobs:
   integration:
     name: integration (testcontainers)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
       - uses: Swatinem/rust-cache@v2
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
       # SQLX_OFFLINE (inherited) resolves the query macros from the committed cache at compile
       # time; the container supplies the live database the tests run against at runtime.
-      - name: repo + HTTP access-control integration suites
-        run: cargo test -p tankovault-db -p tankovault-api --features integration
+      - name: repo + HTTP access-control + sync-reconciliation integration suites
+        run: cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features integration
 
-  frontend:
-    name: frontend (wasm32)
+  # `openapi --check` proves the committed artifacts match the code. It says nothing about
+  # whether the *contract* still holds: removing an endpoint, narrowing a type, or making an
+  # optional field required all pass it cleanly, as long as the artifacts were regenerated
+  # (BUILD_AND_OPS §9.2).
+  #
+  # That matters here specifically because the SPA is deployed as its own image and its own
+  # compose service, so a version skew window always exists. A breaking change ships silently
+  # and lands as a deserialization failure in somebody's browser.
+  #
+  # Pull requests only: the comparison is against the base branch's spec, and there is nothing
+  # to compare a push to `main` with.
+  openapi-breaking:
+    name: openapi breaking changes
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
         with:
+          # The base branch's `openapi.json` has to be reachable, which a shallow clone's single
+          # commit is not.
+          fetch-depth: 0
+      - name: the base branch's spec
+        run: git show "origin/${{ github.base_ref }}:openapi.json" > /tmp/base-openapi.json
+      # Pinned to a release tag, not `@main`. An action on a branch is an unreviewed code
+      # change on every run with repository write access — the same objection OPS-4.3 raised
+      # against `flaresolverr:latest`, and it applies more strongly here. `oasdiff-action` has
+      # no stable major tag (it is 0.x), so the pin is exact; Dependabot's `github-actions`
+      # ecosystem, configured in `.github/dependabot.yml`, is what moves it.
+      - uses: oasdiff/oasdiff-action/breaking@v0.1.10
+        with:
+          base: /tmp/base-openapi.json
+          revision: openapi.json
+          # `ERR` only: `oasdiff` also reports non-breaking and warning-level differences, and
+          # gating on those would fail every pull request that adds a field.
+          fail-on: ERR
+
+  # `web/frontend` is excluded from the host workspace (it targets wasm32), so none of the
+  # jobs above touch it. This job ran `cargo check` alone, which meant its 41 tests and the
+  # full `clippy::pedantic` set it declares in its own Cargo.toml executed nowhere at all —
+  # quality machinery that was configured but never load-bearing.
+  frontend:
+    name: frontend (test + clippy + wasm32)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
           targets: wasm32-unknown-unknown
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: web/frontend
+      # Host target, not wasm32: these are pure logic tests (chapter part-grouping, the
+      # notification classifier, the i18n catalogue-parity check) with no DOM dependency, so
+      # they run without a browser. Anything needing a DOM would need wasm-bindgen-test.
+      - name: cargo test (host)
+        working-directory: web/frontend
+        run: cargo test
+      - name: clippy (pedantic, as declared by the crate)
+        working-directory: web/frontend
+        run: cargo clippy --all-targets -- -D warnings
       - name: cargo check (wasm)
         working-directory: web/frontend
         run: cargo check --target wasm32-unknown-unknown
 
+  # `assets/main.css` is Tailwind CLI output committed so a build without Node still works.
+  # Nothing checked that the committed file matched what `input.css` currently produces, so a
+  # class added to a component and used in `rsx!` could silently have no style behind it.
+  css:
+    name: tailwind output is current
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: install the Tailwind CLI
+        working-directory: web/frontend
+        run: npm ci
+      - name: rebuild and compare
+        working-directory: web/frontend
+        run: |
+          npm run css:build
+          if ! git diff --quiet -- assets/main.css; then
+            echo "::error::assets/main.css is stale. Run 'npm run css:build' in web/frontend and commit the result."
+            git diff --stat -- assets/main.css
+            exit 1
+          fi
+
+  # The audit that produced docs/audit found a live AniList client secret and a live AES-256
+  # data-encryption key committed in `deploy/local.env`. This job is what would have caught
+  # them at the pull request, which is the only point at which the fix is cheap.
+  secrets:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: a secret removed in the tip commit is still a leaked secret.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # `rust-version = "1.85"` in the workspace manifest was a claim nothing verified. This job
+  # makes it true or makes it fail. It deliberately builds with the *minimum* rather than the
+  # pinned toolchain, so `rust-toolchain.toml` is overridden here on purpose.
+  msrv:
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.85"
+      - uses: Swatinem/rust-cache@v2
+      - name: BoringSSL build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+      # `--locked` so the check measures this lockfile's dependency set rather than whatever
+      # a resolver picks today. `RUSTFLAGS` is cleared: `-D warnings` would fail the job on
+      # lints an older compiler happens to emit, which is not what MSRV means.
+      - name: cargo check
+        env:
+          RUSTFLAGS: ""
+          RUSTUP_TOOLCHAIN: "1.85"
+        run: cargo check --workspace --locked
+
+  # A **ratchet**, not a target. The audit's finding (TESTING F-10) is that coverage is
+  # unevenly distributed — the ten largest modules held eleven tests between them — and a
+  # target percentage answers the wrong question while inviting the wrong fix: tests written
+  # to move a number. A floor answers "did this change make it worse", which is the question
+  # that can be enforced honestly on a baseline that is what it is.
+  #
+  # The floor lives in `.github/coverage-floor.txt`, which explains itself to whoever has to
+  # change it, and the comparison is `xtask coverage-ratchet` rather than shell in this file so
+  # it has tests of its own. No `continue-on-error`: a gate that cannot fail is the OPS-8.2
+  # defect — a knob an operator believes in that does nothing.
+  #
+  # The measurement excludes `--features integration` on purpose, matching every other fast
+  # job. See the floor file for what that means and for the one legitimate reason to lower it.
+  coverage:
+    name: coverage ratchet
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: BoringSSL build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+      - name: cargo llvm-cov
+        run: |
+          mkdir -p target/llvm-cov
+          cargo llvm-cov --workspace --all-targets --summary-only
+          cargo llvm-cov report --json --summary-only             --output-path target/llvm-cov/coverage.json
+      - name: compare against the committed floor
+        run: cargo run -p xtask -- coverage-ratchet
+
+  # The other half of TESTING F-10, and the half coverage cannot answer. Coverage says a line
+  # executed; it never says anything checked what the line did — and the audit's specific worry
+  # is tests that assert on constants rather than on behaviour. `cargo mutants` rewrites one
+  # function body at a time and re-runs the tests; a mutant the suite still passes is a change
+  # in behaviour nothing asserted on.
+  #
+  # Scoped to the four pure decision cores by `.cargo/mutants.toml`, which argues the choice.
+  # Everything else in the workspace is I/O-shaped, where a mutant is caught (if at all) by an
+  # integration test needing Docker and ~85 s of migrations — hours of wall time reporting
+  # mostly "timeout" rather than "survived".
+  #
+  # `continue-on-error`, for the reasons `fuzz/README.md` argues at length: an outcome that
+  # depends on how long the run got is not a property a blocking gate should have. The report is
+  # an artifact to read, and survivors are triaged as missing assertions. `--in-place` is
+  # deliberate on a throwaway runner — copying the tree per job costs more than it protects.
+  mutants:
+    name: mutation testing (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-mutants
+      - name: BoringSSL build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+      - name: cargo mutants
+        run: cargo mutants --in-place --no-shuffle
+      # Uploaded whether or not survivors were found: `outcomes.json` is the input to the next
+      # triage, and `missed.txt` is the list to read first.
+      - name: mutants report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-report
+          path: mutants.out/
+          retention-days: 14
+
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
+          # `-D unnecessary-skip` makes the duplicate-version budget shrink *visibly*.
+          # `[bans].skip` is `deny.toml`'s record of the duplicates that exist today, and
+          # `multiple-versions = "deny"` already fails on a new one — but nothing noticed an
+          # entry whose duplicate had since resolved upstream, so the list could only ever grow
+          # and its dated comment could only ever drift (BUILD_AND_OPS §1.5). This turns
+          # cargo-deny's `unnecessary-skip` warning into an error, so the pull request that
+          # happens to collapse a duplicate is the one that deletes its skip line.
           command: check advisories licenses sources bans
+          # `command-arguments`, not `arguments`: the action composes
+          # `[arguments] [command] [command-arguments]`, and cargo-deny only accepts `-D`
+          # after the subcommand.
+          command-arguments: -D unnecessary-skip
 
   audit:
     name: cargo-audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+  # `cargo-deny` and `cargo-audit` detect *vulnerable* dependencies. Neither notices a
+  # dependency set that quietly changed: `Cargo.lock` is committed and the Docker builds pass
+  # `--locked`, but nothing verified that a pull request's manifest edit came with the
+  # corresponding lockfile update. A PR that bumps a version range without regenerating the
+  # lockfile passes every other gate and then makes the image build a different resolution
+  # from the one that was reviewed.
+  supply-chain:
+    name: lockfile integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
+      # `--locked` makes cargo refuse to touch `Cargo.lock`; resolving metadata is what forces
+      # it to notice that the lockfile does not satisfy the manifests. `--offline` so a
+      # registry hiccup cannot turn this into a flake — the lockfile pins everything it needs.
+      - name: Cargo.lock satisfies every manifest
+        run: cargo metadata --locked --offline --format-version 1 > /dev/null
+      # Same guarantee for the workspace-excluded WASM frontend, which has its own lockfile and
+      # is therefore covered by none of the jobs above.
+      - name: web/frontend Cargo.lock satisfies its manifest
+        working-directory: web/frontend
+        run: cargo metadata --locked --offline --format-version 1 > /dev/null
+
+  # The observability layer is config, so nothing in the Rust gates above can tell when it stops
+  # being valid — and a rule file that fails to parse takes its whole group with it, which means
+  # every alert built on it is silently disarmed. Prometheus reports that on a page nobody visits
+  # until an incident, i.e. exactly when the alerts were supposed to have already fired.
+  #
+  # `check rules` proves the PromQL parses. `test rules` proves it *means* what the comments claim,
+  # and is the gate that matters: both bugs found while writing these rules parsed fine (a `unless`
+  # between two series that differ only in the label being compared, and a missing minimum-traffic
+  # conjunct that made a single 500 on an idle instance read as 100% failure).
+  observability:
+    name: prometheus rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # Same pinned image the deploy overlay runs, so the promtool that validates the rules is the
+      # Prometheus that will evaluate them.
+      - name: promtool check config + rules
+        run: |
+          docker run --rm --entrypoint /bin/promtool \
+            -v "$PWD/deploy/observability/prometheus:/etc/prometheus:ro" \
+            prom/prometheus:v3.5.0 check config /etc/prometheus/prometheus.yml
+      - name: promtool unit tests
+        run: |
+          docker run --rm --entrypoint /bin/promtool \
+            -v "$PWD/deploy/observability/prometheus:/etc/prometheus:ro" \
+            prom/prometheus:v3.5.0 test rules /etc/prometheus/rules/tests/alerts.test.yml
+      # The dashboard references the datasource by a fixed uid and every panel by a recorded series
+      # name; a malformed file imports as an empty dashboard rather than failing, so parse it here.
+      - name: dashboard JSON is well-formed
+        run: python3 -m json.tool deploy/observability/grafana/dashboards/tankovault-overview.json > /dev/null
+      # Catches a mis-merged overlay: an anchor that no longer resolves, a duplicated key, a service
+      # name that collides with the base file.
+      - name: compose overlay merges
+        env:
+          GRAFANA_ADMIN_PASSWORD: ci-validation-only
+          TANKOVAULT_AUTH__JWT_SECRET: ci-validation-only
+          TANKOVAULT_SEED_ADMIN_PASSWORD: ci-validation-only
+          TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY: ci-validation-only
+        run: |
+          docker compose -f deploy/docker-compose.yml \
+            -f deploy/docker-compose.observability.yml config --quiet
+
+  # Dependency warm-up for the image matrix below.
+  #
+  # Every one of those eight builds derives from the same `cook` stage — one `cargo chef cook`
+  # over ~600 lockfile entries at `codegen-units = 1`, which dominates each build's wall clock.
+  # Run inside the matrix, that work happened eight times over: the jobs start together, all
+  # miss a cold cache, and all eight cook the identical graph. They also all exported into the
+  # *same* unscoped GHA cache concurrently (`cache-to: type=gha,mode=max` with no `scope`), so
+  # the eight writes raced and whichever finished last decided what the next run imported —
+  # which is why the matrix kept missing a cache it had just populated.
+  #
+  # This job builds `--target cook` alone and publishes it under a scope of its own. The matrix
+  # imports that scope read-only and keeps a per-`bin` scope for the layers above it, so the
+  # eight exports no longer collide. The cost is one serialised step ahead of the matrix in
+  # exchange for cooking the graph once; `cacheonly` because no image is wanted here, only the
+  # exported layers.
+  docker-deps:
+    name: docker build (deps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: derive SOURCE_DATE_EPOCH
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+      - name: cook dependency graph
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          build-args: SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+          target: cook
+          push: false
+          outputs: type=cacheonly
+          provenance: false
+          cache-from: type=gha,scope=backend-deps
+          cache-to: type=gha,scope=backend-deps,mode=max
+
   docker:
     name: docker build
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    timeout-minutes: 45
+    needs: [lint, test, docker-deps]
     strategy:
       fail-fast: false
       matrix:
@@ -198,8 +594,14 @@ jobs:
           tags: tankovault-${{ matrix.bin }}:ci
           # Reproducible output: no attestation/provenance layer, and mtimes rewritten.
           provenance: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Two imports, one export. `backend-deps` is the shared `cook` stage published by the
+          # `docker-deps` job above and is never written back to from here; `backend-<bin>` holds
+          # the per-binary layers on top of it, scoped so the eight jobs stop overwriting each
+          # other's export (see `docker-deps`).
+          cache-from: |
+            type=gha,scope=backend-deps
+            type=gha,scope=backend-${{ matrix.bin }}
+          cache-to: type=gha,scope=backend-${{ matrix.bin }},mode=max
       # Enforce the image contract (design §21): non-root UID:GID 1001:1001, the expected
       # entrypoint, the required baked-in files (service binary, CA trust store), and — for the
       # render tier's Debian base — the absence of root and the presence of Chromium. The render
@@ -220,9 +622,77 @@ jobs:
             --image "tankovault-${{ matrix.bin }}:ci" \
             --config "$config"
 
+  # Cross-architecture image build, opt-in.
+  #
+  # Every service image is `FROM scratch` over a musl binary and `Dockerfile.frontend` already
+  # parameterises `BUILD_TARGET`, so nothing in the build is x86-specific — but "nothing looks
+  # x86-specific" is not evidence, which is what this job supplies. It runs on a **native** arm
+  # runner: QEMU is not a substitute here, because `wreq` compiles BoringSSL from C/C++/assembly
+  # and an emulated build of it costs upwards of an hour per image.
+  #
+  # Gated on the `ENABLE_ARM64_CI` repository variable, and gated rather than simply added
+  # because `ubuntu-24.04-arm` runners are free only on **public** repositories; on a private
+  # one they bill. The same shape as `ALLOW_IMAGE_PUBLISH` in `release.yml`: the leg exists and
+  # is correct, and turning it on is a deployment decision rather than a code change. Set the
+  # variable to any non-empty value to enable it.
+  #
+  # Scoped to the two images whose *content* differs by architecture — a `scratch` service
+  # (the musl binary plus the loader and `libgcc_s` it resolves) and the `render` tier (a
+  # Debian base with a distro Chromium, the one image whose base packages are arch-specific).
+  # Building all eight would triple the wall clock to re-prove the same Dockerfile.
+  docker-arm64:
+    name: docker build (arm64)
+    if: vars.ENABLE_ARM64_CI != ''
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    needs: [lint, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        bin: [api, render]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: derive SOURCE_DATE_EPOCH
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+      - name: build ${{ matrix.bin }} image (linux/arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/arm64
+          build-args: |
+            BIN=${{ matrix.bin }}
+            SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+          target: ${{ matrix.bin == 'render' && 'runtime-browser' || 'runtime' }}
+          push: false
+          load: true
+          tags: tankovault-${{ matrix.bin }}:ci-arm64
+          provenance: false
+          cache-from: type=gha,scope=arm64-${{ matrix.bin }}
+          cache-to: type=gha,scope=arm64-${{ matrix.bin }},mode=max
+      # The same image contract as the amd64 leg. `container-structure-test` ships a separate
+      # arm64 binary; the config files are architecture-independent.
+      - name: install container-structure-test
+        run: |
+          curl -fsSL -o container-structure-test \
+            https://storage.googleapis.com/container-structure-test/v1.22.1/container-structure-test-linux-arm64
+          chmod +x container-structure-test
+          sudo mv container-structure-test /usr/local/bin/container-structure-test
+      - name: structure-test ${{ matrix.bin }} image
+        run: |
+          config="deploy/docker/cst/service.yaml"
+          if [ "${{ matrix.bin }}" = "render" ]; then
+            config="deploy/docker/cst/render.yaml"
+          fi
+          container-structure-test test \
+            --image "tankovault-${{ matrix.bin }}:ci-arm64" \
+            --config "$config"
+
   docker-frontend:
     name: docker build (frontend)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v4

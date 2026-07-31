@@ -27,7 +27,7 @@ pub(crate) fn Rail() -> Element {
     let show_console = caps.is_staff();
 
     rsx! {
-        nav { class: "ik-rail",
+        nav { class: "ik-rail", "aria-label": i18n.t("nav.railLabel"),
             div { class: "ik-brand",
                 div { class: "ik-brand-tile", Ic { icon: Icon::MenuBook, size: 22 } }
                 div {
@@ -99,13 +99,17 @@ fn NavLink(
     current: Route,
     #[props(default = 0)] badge: i64,
 ) -> Element {
-    let class = if same_screen(&to, &current) {
+    let active = same_screen(&to, &current);
+    let class = if active {
         "ik-nav-link active"
     } else {
         "ik-nav-link"
     };
     rsx! {
-        Link { to: to.clone(), class: "{class}",
+        Link {
+            to: to.clone(),
+            class: "{class}",
+            "aria-current": if active { "page" } else { "false" },
             Ic { icon, size: 18 }
             span { class: "label", "{label}" }
             if badge > 0 {

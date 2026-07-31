@@ -1,16 +1,21 @@
 //! Typed API error → RFC 9457 problem+json. Internal errors never leak details.
+//!
+//! The wire encoding itself lives in `tankovault_service::problem` so that every service emits
+//! the same shape (ARCH-12); this module owns only the mapping from [`ApiError`]'s variants onto
+//! it. That split is what makes `crate::upstream` able to have one error mapper instead of four.
 
-use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use tankovault_auth::AuthError;
 use tankovault_db::DbError;
+use tankovault_service::problem::{IntoProblem, Problem};
 use utoipa::ToSchema;
 
 /// RFC 9457 `application/problem+json` error body shape produced by [`ApiError`]. Declared
-/// purely for `OpenAPI` documentation — [`ApiError::into_response`] builds the JSON by hand so
-/// runtime callers never construct this type.
+/// purely for `OpenAPI` documentation — `tankovault_service::problem` builds the JSON, so runtime
+/// callers never construct this type. It mirrors `problem::ProblemBody`; a test asserts the two
+/// agree field for field, since only this copy is published to clients.
 #[derive(Serialize, ToSchema)]
 #[schema(example = json!({
     "type": "about:blank#not_found",
@@ -18,6 +23,7 @@ use utoipa::ToSchema;
     "status": 404,
     "detail": "resource not found",
 }))]
+#[derive(serde::Deserialize)]
 pub struct ProblemDetails {
     pub r#type: String,
     pub title: String,
@@ -58,6 +64,15 @@ pub enum ApiError {
     BadRequest(String),
     #[error("service unavailable")]
     Unavailable,
+    /// An internal service this request depends on is unreachable or answered with something
+    /// this service cannot represent. Distinct from [`Self::Internal`]: a `sync` outage is an
+    /// upstream fault, and reporting it as `500` made an operator problem look like a bug
+    /// here. See `crate::upstream`.
+    #[error("upstream unavailable")]
+    BadGateway,
+    /// An internal service did not answer within its budget.
+    #[error("upstream timed out")]
+    GatewayTimeout,
     #[error("internal error")]
     Internal,
 }
@@ -105,6 +120,16 @@ impl ApiError {
                 "unavailable",
                 "the live notification stream is temporarily unavailable".into(),
             ),
+            Self::BadGateway => (
+                StatusCode::BAD_GATEWAY,
+                "upstream_unavailable",
+                "a service this request depends on is unavailable; please try again".into(),
+            ),
+            Self::GatewayTimeout => (
+                StatusCode::GATEWAY_TIMEOUT,
+                "upstream_timeout",
+                "a service this request depends on did not respond in time".into(),
+            ),
             Self::Internal => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal",
@@ -114,16 +139,16 @@ impl ApiError {
     }
 }
 
+impl IntoProblem for ApiError {
+    fn into_problem(self) -> Problem {
+        let (status, kind, detail) = self.parts();
+        Problem::new(status, kind, detail)
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let (status, kind, detail) = self.parts();
-        let body = Json(ProblemDetails {
-            r#type: format!("about:blank#{kind}"),
-            title: kind.to_string(),
-            status: status.as_u16(),
-            detail,
-        });
-        (status, body).into_response()
+        self.into_problem().into_response()
     }
 }
 
@@ -154,3 +179,75 @@ impl From<AuthError> for ApiError {
 
 /// Handler result alias.
 pub type ApiResult<T> = Result<T, ApiError>;
+
+#[cfg(test)]
+mod tests {
+    use super::{ApiError, ProblemDetails};
+    use axum::body::to_bytes;
+    use axum::http::StatusCode;
+    use axum::http::header::CONTENT_TYPE;
+    use axum::response::IntoResponse as _;
+    use tankovault_service::problem::{IntoProblem as _, PROBLEM_JSON};
+
+    /// `ProblemDetails` is documentation only — `tankovault_service::problem` builds the runtime
+    /// body. Two declarations of one wire shape is exactly the drift that made hand-mirrored DTOs
+    /// a problem elsewhere in this codebase, so the published schema is asserted against a real
+    /// response rather than trusted.
+    #[tokio::test]
+    async fn the_documented_schema_matches_the_body_actually_sent() {
+        let response = ApiError::NotFound.into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some(PROBLEM_JSON)
+        );
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read body");
+
+        // Deserializing into the *documented* type is the assertion: a member renamed or dropped
+        // on either side fails here.
+        let documented: ProblemDetails =
+            serde_json::from_slice(&bytes).expect("body matches schema");
+        assert_eq!(documented.r#type, "about:blank#not_found");
+        assert_eq!(documented.title, "not_found");
+        assert_eq!(documented.status, 404);
+        assert_eq!(documented.detail, "resource not found");
+    }
+
+    /// Every variant's status must agree with the `status` member in its own body, or a client
+    /// that reads one and not the other sees a different error than the one that happened.
+    #[test]
+    fn every_variant_echoes_its_own_status() {
+        for error in [
+            ApiError::NotFound,
+            ApiError::Conflict("dup".to_owned()),
+            ApiError::Unauthorized,
+            ApiError::Forbidden,
+            ApiError::EmailNotVerified,
+            ApiError::Suspended,
+            ApiError::BadRequest("bad".to_owned()),
+            ApiError::Unavailable,
+            ApiError::BadGateway,
+            ApiError::GatewayTimeout,
+            ApiError::Internal,
+        ] {
+            let problem = error.into_problem();
+            assert!(
+                !problem.kind.is_empty(),
+                "every variant needs a machine-readable kind"
+            );
+            assert!(problem.status.is_client_error() || problem.status.is_server_error());
+        }
+    }
+
+    /// The internal variant must not put its cause on the wire.
+    #[test]
+    fn the_internal_variant_says_nothing() {
+        let problem = ApiError::Internal.into_problem();
+        assert_eq!(problem.detail, "internal server error");
+    }
+}

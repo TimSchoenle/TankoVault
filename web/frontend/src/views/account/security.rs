@@ -2,9 +2,8 @@
 //! (its whole rotation family). Password change and 2FA have no endpoint yet, and the panel
 //! says so rather than showing controls that would do nothing.
 
-use super::PanelCard;
 use crate::api;
-use crate::components::async_list;
+use crate::components::{async_list, PanelCard};
 use crate::hooks::{use_busy, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::Icon;

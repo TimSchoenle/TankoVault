@@ -30,12 +30,17 @@ pub(crate) fn Shell() -> Element {
     use_capability_sync();
     use_live_notifications();
 
+    let i18n = crate::i18n::use_i18n();
     rsx! {
         div { class: "ik-app",
+            // First focusable element on every route. The rail is ~10 stops deep and sits
+            // ahead of the content in the DOM, so without this a keyboard reader tabs the
+            // whole navigation again on every single page.
+            a { class: "ik-skip", href: "#ik-content", {i18n.t("nav.skipToContent")} }
             Rail {}
             main { class: "ik-main",
                 TopBar {}
-                section { class: "ik-content", Outlet::<Route> {} }
+                section { id: "ik-content", class: "ik-content", Outlet::<Route> {} }
             }
         }
     }
@@ -48,11 +53,11 @@ pub(crate) fn Shell() -> Element {
 ///
 /// The recurring half is not optional. Without it the in-memory token goes stale ~15 minutes
 /// after boot and every authenticated call starts 401ing until the user manually reloads.
-/// The SSE stream suffers worst: `EventSource` bakes the token into its URL and, per spec,
-/// stops reconnecting for good the first time a reconnect attempt draws a non-200 — so one
-/// stale-token 401 kills live notifications permanently. Refreshing ahead of expiry keeps the
-/// session token current, and because the stream below is keyed on it, the connection is
-/// transparently re-opened with a valid token before that can happen.
+/// The SSE stream used to suffer worst: `EventSource` baked the access token into its URL and, per
+/// spec, stops reconnecting for good the first time a reconnect attempt draws a non-200 — so one
+/// stale-token 401 killed live notifications permanently. Since SEC-8 the stream authenticates with
+/// a ticket it mints per attempt and drives its own reconnect (`crate::live`), so it no longer
+/// depends on the token staying fresh — but every other authenticated call still does.
 ///
 /// Crucially, a *failed* refresh is not a sign-out. Only a genuine `401` — the refresh
 /// session really is gone: expired past its 30-day window, rotated away, or reuse-revoked —
@@ -71,7 +76,11 @@ fn use_token_refresh() {
             let booted = *session.ready.peek();
             // The two `0.0` arms are not mergeable: the guarded `None if booted` arm has to
             // sit between them, and an or-pattern would swallow it.
-            #[allow(clippy::match_same_arms)]
+            #[expect(
+                clippy::match_same_arms,
+                reason = "the guarded `None if booted` arm sits between the two `0.0` arms, so an \
+                          or-pattern would swallow it"
+            )]
             let wait_ms = match session.expires_in_ms() {
                 Some(ms) if ms > REFRESH_BUFFER_MS => ms - REFRESH_BUFFER_MS,
                 // Already inside the buffer (or past expiry): refresh immediately.
@@ -88,7 +97,12 @@ fn use_token_refresh() {
             // The wait is bounded by the token's TTL (minutes), so it always fits `u32`;
             // a negative value only arises for an already-expired token, where clamping to
             // zero is exactly the wanted behaviour.
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "the wait is bounded by the token TTL (minutes) so it fits u32, and \
+                          `max(0.0)` clamps an already-expired token to an immediate refresh"
+            )]
             TimeoutFuture::new(wait_ms.max(0.0) as u32).await;
 
             // The refresh endpoint is cookie-authenticated, but it still needs a client with
@@ -155,17 +169,19 @@ fn use_capability_sync() {
 ///
 /// `use_resource` restarts when the token changes — dropping the previous `EventSource` and
 /// closing its connection — so a sign-out or a silent refresh transparently tears the stream
-/// down or re-establishes it.
+/// down or re-establishes it. The token is read only to decide *whether* to run and to key the
+/// resource; the stream authenticates with a single-use ticket [`crate::live::run`] mints for
+/// itself, so it is never in the URL (SEC-8).
 fn use_live_notifications() {
     let session = use_session();
     let api = api::use_api();
     let badge = use_context::<UnreadBadge>();
 
     use_resource(move || {
-        let token = session.token_value();
+        let signed_in = session.is_authenticated();
         async move {
-            if let Some(token) = token {
-                crate::live::run(api, token, badge).await;
+            if signed_in {
+                crate::live::run(api, badge).await;
             }
         }
     });

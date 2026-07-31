@@ -16,7 +16,7 @@ use tankovault_domain::UserId;
 use time::OffsetDateTime;
 
 /// A stored override, with the provenance the control plane displays.
-#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct OverrideRow {
     /// The feature key. A string rather than the enum so an override left behind by another
     /// build stays *visible* to an operator instead of vanishing from the page that is the
@@ -26,7 +26,6 @@ pub struct OverrideRow {
     /// Why the switch was flipped, if the operator said.
     pub note: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub updated_at: OffsetDateTime,
     /// Username of the operator who last changed it; `None` once that account is erased.
     pub updated_by: Option<String>,
@@ -36,6 +35,10 @@ pub struct OverrideRow {
 ///
 /// Returns raw rows rather than a resolved map: the caller pairs them with the compiled
 /// registry, and doing so here would mean this layer had to know which features exist.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An empty table is an empty
+/// `Vec` and a fully working deployment, not an error.
 pub async fn list_overrides<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<OverrideRow>> {
     #[derive(FromRow)]
     struct Row {
@@ -72,6 +75,11 @@ pub async fn list_overrides<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<Over
 ///
 /// A separate, narrower query from [`list_overrides`] because the gate refreshes this on a
 /// timer in every service and has no use for provenance or the `users` join.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Callers refresh this on a
+/// timer and must treat a failure as "keep the previous snapshot", since an empty `Vec` here
+/// means "no overrides", which would silently reset every flag to its compiled default.
 pub async fn effective_overrides<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<(String, bool)>> {
     #[derive(FromRow)]
     struct Row {
@@ -95,6 +103,11 @@ pub async fn effective_overrides<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec
 /// Always writes, even when the value already matches: setting a flag to the value it already
 /// has is a deliberate act that pins it against a future change of the compiled default, and
 /// it refreshes `updated_at`/`updated_by` so the page shows who last confirmed it.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. `ON CONFLICT DO UPDATE`
+/// means a repeat write is not [`crate::DbError::Conflict`]; an `updated_by` naming a
+/// since-erased account is a foreign-key violation and so a 500, not a 409.
 pub async fn set_override<'e, E: PgExecutor<'e>>(
     exec: E,
     feature_key: &str,
@@ -124,6 +137,11 @@ pub async fn set_override<'e, E: PgExecutor<'e>>(
 ///
 /// Returns `false` when there was nothing to clear, so the caller can answer "reset" honestly
 /// rather than reporting a change that did not happen.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. "Nothing to clear" is
+/// `Ok(false)`, not [`crate::DbError::NotFound`]; an unknown `feature_key` is indistinguishable
+/// from a key that simply had no override, and deliberately so.
 pub async fn clear_override<'e, E: PgExecutor<'e>>(exec: E, feature_key: &str) -> DbResult<bool> {
     let result = sqlx::query!(
         "DELETE FROM feature_flag_overrides WHERE feature_key = $1",

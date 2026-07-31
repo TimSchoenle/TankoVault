@@ -536,8 +536,8 @@ wasm32-unknown-unknown` clean. The only honest stubs left are features with no e
 ### Infra
 | Item | Status | Notes |
 |---|---|---|
-| Migrations (`migrations/`) | ✅ | 18 files (`0001_extensions` … `0018_permissions_flags_privacy`), verified to apply cleanly from scratch on Postgres 19. `0018` is the authorization/administration model: `user_permissions` (backfilled from the roles it replaces, then `users.role` and the `user_role` type are **dropped**), `users.status`/`suspended_at`/`suspension_reason`/`last_login_at`, `feature_flag_overrides`, and `gdpr_requests`. |
-| Dockerfiles / `docker-compose.yml` | ✅ | `deploy/docker/Dockerfile` (parameterised cargo-chef; static **musl → `scratch`** runtime; digest-pinned bases, `--locked` + `SOURCE_DATE_EPOCH` for reproducibility) builds any backend via `--build-arg BIN`; the optional `render` tier uses the extra `runtime-browser` target (Debian slim + Chromium). **`deploy/docker/Dockerfile.frontend`** builds the Dioxus WASM SPA + serves it via nginx (`frontend.nginx.conf`), reverse-proxying `/v1/*`→`api`. `deploy/docker-compose.yml` runs the **full E2E stack**: Postgres/Redis/NATS/FlareSolverr + migrate/seed + every backend service + the frontend (front door on `:3000`). Redis is wired to `control-plane` (leader election); NATS is healthchecked. **Frontend image build + serve + `/v1` proxy verified this session; backend images not rebuilt.** k8s/Helm still pending. |
+| Migrations (`migrations/`) | ✅ | 18 files (`0001_extensions` … `0018_permissions_flags_privacy`), verified to apply cleanly from scratch on Postgres 17 (was 19beta2 until OPS-4.2). `0018` is the authorization/administration model: `user_permissions` (backfilled from the roles it replaces, then `users.role` and the `user_role` type are **dropped**), `users.status`/`suspended_at`/`suspension_reason`/`last_login_at`, `feature_flag_overrides`, and `gdpr_requests`. |
+| Dockerfiles / `docker-compose.yml` | ✅ | `deploy/docker/Dockerfile` (parameterised cargo-chef; static **musl → `scratch`** runtime; digest-pinned bases, `--locked` + `SOURCE_DATE_EPOCH` for reproducibility) builds any backend via `--build-arg BIN`; the optional `render` tier uses the extra `runtime-browser` target (Debian slim + Chromium). **`deploy/docker/Dockerfile.frontend`** builds the Dioxus WASM SPA and ships it with the axum `frontend` server on `scratch` (nginx was retired in Session 18), reverse-proxying `/v1/*`→`api`. `deploy/docker-compose.yml` runs the **full E2E stack**: Postgres/Redis/NATS/FlareSolverr + migrate/seed + every backend service + the frontend (front door on `:3000`). Redis is wired to `control-plane` (leader election); NATS is healthchecked. **Frontend image build + serve + `/v1` proxy verified this session; backend images not rebuilt.** Every service now carries a container healthcheck (an argv self-probe — the `scratch` images have no shell) and the scratch tiers run read-only with all capabilities dropped. k8s/Helm still pending, and the claim that it existed has been removed from `deploy/README.md` and `docs/design.md` §19. |
 | CI | ✅ | `.github/workflows/ci.yml`: parallel `fmt --check`, `clippy -D warnings`, `cargo test --workspace`, `wasm32` frontend check, `cargo-deny` (`deny.toml`), `cargo-audit`, and a `docker build` matrix over every service `BIN`. |
 | Config | ✅ (env) | Services are configured via `TANKOVAULT_*` env in compose; no standalone sample TOMLs. |
 
@@ -734,8 +734,10 @@ PG19.
   DWARF)` warning: the `dx`-bundled `wasm-opt` can't parse the release build's debug info, so
   it is skipped and the **unoptimised** wasm is shipped (~1.4 MB, functional). Harmless for
   local E2E; to shrink for prod, strip DWARF / disable debug in the wasm build.
-- The frontend crate's package name is `tankovault-frontend`, so `dx` emits the bundle under
-  `target/dx/tankovault-frontend/release/web/public` (not `.../tankovault/...`). The Dockerfile finds
-  it by `-path '*/web/public'` rather than hardcoding the app name.
+- The SPA crate's package name is `tankovault-web` (renamed from `tankovault-frontend`, which
+  `services/frontend` already owns — see OPS-1.6), so `dx` emits the bundle under
+  `target/dx/tankovault-web/release/web/public` (not `.../tankovault/...`). The Dockerfile finds
+  it by `-path '*/web/public'` rather than hardcoding the app name, which is why the rename needed
+  no build change.
 - nginx `/v1/*` proxy relies on the compose network's embedded DNS (`127.0.0.11`); it only
   resolves `api` **inside** the compose network, not via a bare `docker run`.

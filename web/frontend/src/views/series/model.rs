@@ -27,7 +27,10 @@ pub(super) fn chapter_key(number: f64) -> ChapterKey {
     // from a chapter, so it collapses to zero rather than wrapping the cast.
     let scaled = (number * 1000.0).round();
     if (0.0..=KEY_CEILING).contains(&scaled) {
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the range check on the line above is what makes this cast exact"
+        )]
         return scaled as ChapterKey;
     }
     0
@@ -195,8 +198,10 @@ impl ChapterGroup {
 pub(super) fn group_chapters(list: &[MergedChapter]) -> Vec<ChapterGroup> {
     let mut groups: Vec<(i64, ChapterGroup)> = Vec::new();
     for chapter in list.iter().cloned() {
-        // Chapter numbers are small positive counts; the floor of one always fits `i64`.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "chapter numbers are small positive counts; the floor of one always fits i64"
+        )]
         let key = chapter.number.floor() as i64;
         let is_full = !chapter.is_part();
         let slot = match groups.last_mut() {

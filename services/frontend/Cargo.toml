@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Static web server for the Dioxus SPA with a streaming /v1/* reverse proxy to the api."
+# Not published: this is a workspace-internal crate. Also what lets `cargo deny`
+# skip license-checking our own code.
+publish = false
 
 [[bin]]
 name = "frontend"
@@ -22,7 +25,15 @@ reqwest = { workspace = true }
 tower = { workspace = true }
 # `fs` adds ServeDir/ServeFile (static bundle + SPA fallback); `set-header` and `trace`
 # already ride on the workspace feature set, merged here.
-tower-http = { workspace = true, features = ["fs"] }
+# `compression-full`: the WASM bundle is the largest thing this tier serves and was
+# shipped uncompressed. `set-header`/`trace` come from the workspace default set.
+tower-http = { workspace = true, features = ["fs", "compression-full"] }
+# The app shell's inline boot scripts are admitted to the CSP by hash, computed from the
+# served `index.html` at startup (see `content_security_policy`) rather than hardcoded — a
+# constant would drift the moment the shell is edited, and silently, since the only symptom
+# is a browser refusing to run it.
+sha2 = { workspace = true }
+base64 = { workspace = true }
 
 [lints]
 workspace = true

@@ -50,13 +50,14 @@ mod overview;
 mod privacy;
 mod providers;
 mod scans;
-mod shell;
 mod solver;
 mod stats;
 mod sync;
 mod users;
 
 use crate::api;
+use crate::components::EmptyBox;
+use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
@@ -73,18 +74,30 @@ const REFRESH_MS: u32 = 4000;
 ///
 /// One tick drives them all, so the whole dashboard is consistent at each cadence instead of
 /// each panel drifting on its own timer — and pausing is a single switch rather than nine.
+///
+/// A newtype over [`Reload`], not a second `Signal<u32>`. The two were structurally identical
+/// but not interchangeable, so a tick-driven panel had nothing to hand [`ErrorBox`] as its
+/// retry action — which is why five of them open-coded their error state as muted grey body
+/// text with no retry at all, quietly breaking the "a failed fetch is always visible and always
+/// retryable" invariant the helpers exist to hold. The distinct type is still worth keeping:
+/// in prop position it says "the shared console cadence", not "this panel's own reload".
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct RefreshTick(Signal<u32>);
+pub(super) struct RefreshTick(Reload);
 
 impl RefreshTick {
     /// Subscribe the calling reactive scope, so it refetches on the next tick.
     pub(super) fn track(self) {
-        let _ = self.0.read();
+        self.0.track();
     }
 
     /// Advance the tick, refetching every panel that tracks it.
-    pub(super) fn bump(mut self) {
-        self.0 += 1;
+    pub(super) fn bump(self) {
+        self.0.bump();
+    }
+
+    /// The underlying handle, for passing to `async_view` and friends as the retry action.
+    pub(super) fn reload(self) -> Reload {
+        self.0
     }
 }
 
@@ -149,6 +162,25 @@ impl Entity {
             Self::Flags => "console.tab.flags",
             Self::Privacy => "console.tab.privacy",
             Self::Audit => "console.tab.audit",
+        }
+    }
+
+    /// This entity's rail glyph (`DESIGN_SPEC` §6-7). The rail shipped without any, which is
+    /// why a quarter of the icon inventory was unreferenced.
+    fn icon(self) -> Icon {
+        match self {
+            Self::Overview => Icon::Dashboard,
+            Self::Merge => Icon::Merge,
+            Self::Providers => Icon::Layers,
+            Self::Scans => Icon::Radar,
+            Self::Solver => Icon::ShieldLock,
+            Self::AdapterTest => Icon::Code,
+            Self::Users => Icon::Group,
+            Self::Sync => Icon::CloudSync,
+            Self::Flags => Icon::Flag,
+            // Data-subject requests are one person's records, not a policy surface.
+            Self::Privacy => Icon::Person,
+            Self::Audit => Icon::History,
         }
     }
 
@@ -219,20 +251,30 @@ enum CountTone {
     Live,
 }
 
-/// Selectable adapter implementations: the wire token and the catalogue key wording it.
-/// Mirrors `AdapterKind`.
-pub(super) const ADAPTER_KINDS: &[(&str, &str)] = &[
-    ("generic_config", "console.adapterKind.genericConfig"),
-    ("madara", "console.adapterKind.madara"),
-    ("custom", "console.adapterKind.custom"),
+/// Selectable adapter implementations, in the order the create form offers them.
+///
+/// This was a `&[(&str, &str)]` table of hand-written wire tokens beside the real enum
+/// (FRONTEND F10), and `create.rs` parsed the token back with a `_ => AdapterKind::Custom`
+/// arm — so a typo in the table registered every provider as `Custom`, silently and with a
+/// perfectly plausible-looking picker. The tokens are now the generated `Display`, the parse
+/// is the generated `FromStr`, and this array carries only the *order*.
+///
+/// Still hand-listed, because the generated client offers no way to enumerate a schema enum's
+/// variants. What stops it drifting is [`adapter_label_key`]: its `match` is exhaustive, so a
+/// variant added to `AdapterKind` fails to compile until it is worded, and
+/// `the_picker_offers_every_adapter_kind` fails until it reaches this array too.
+pub(super) const ADAPTER_KINDS: &[AdapterKind] = &[
+    AdapterKind::GenericConfig,
+    AdapterKind::Madara,
+    AdapterKind::Custom,
 ];
 
-/// The wire token for a loaded provider's adapter kind (matches the SQL enum / `ADAPTER_KINDS`).
-pub(super) fn adapter_token(a: AdapterKind) -> &'static str {
+/// The catalogue key wording this adapter kind for the reader (see [`crate::i18n`]).
+pub(super) fn adapter_label_key(a: AdapterKind) -> &'static str {
     match a {
-        AdapterKind::GenericConfig => "generic_config",
-        AdapterKind::Madara => "madara",
-        AdapterKind::Custom => "custom",
+        AdapterKind::GenericConfig => "console.adapterKind.genericConfig",
+        AdapterKind::Madara => "console.adapterKind.madara",
+        AdapterKind::Custom => "console.adapterKind.custom",
     }
 }
 
@@ -241,9 +283,20 @@ pub(crate) fn Console() -> Element {
     let i18n = use_i18n();
     let api = api::use_api();
     let caps = use_capabilities();
+    let session = crate::state::use_session();
+
+    // The gate every other protected route has, and this one did not. `/console` is a public
+    // route (the rail link is merely hidden while signed out), so a bookmark, a shared link,
+    // a session expiry with the page open, or signing out from here all land on it — and
+    // capabilities are cleared to `Loading` whenever there is no session, so `is_ready()`
+    // below was permanently false and the skeleton was permanent with it.
+    if !session.is_authenticated() {
+        return rsx! { crate::components::AuthRequired { title: i18n.t("nav.console") } };
+    }
 
     // Held back until the capability fetch lands: rendering "operators only" first and the
-    // console a moment later reads as a permission error to anyone who blinks.
+    // console a moment later reads as a permission error to anyone who blinks. Reachable only
+    // for a signed-in reader now, so it is a genuine in-flight fetch rather than a dead end.
     if !caps.is_ready() {
         return rsx! {
             h1 { class: "ik-page-title", {i18n.t("nav.console")} }
@@ -259,13 +312,13 @@ pub(crate) fn Console() -> Element {
     let Some(&first) = visible.first() else {
         return rsx! {
             h1 { class: "ik-page-title", {i18n.t("nav.console")} }
-            div { class: "ik-empty", {i18n.t("console.operatorsOnly")} }
+            EmptyBox { message: i18n.t("console.operatorsOnly") }
         };
     };
 
     // One tick drives every read-only panel's refetch: the background loop bumps it on a
     // cadence while `auto` is on, and the Refresh control bumps it on demand.
-    let tick = RefreshTick(use_signal(|| 0u32));
+    let tick = RefreshTick(use_reload());
     let auto = use_signal(|| true);
     let mut selected = use_signal(|| first);
     use_future(move || async move {
@@ -312,18 +365,22 @@ pub(crate) fn Console() -> Element {
 
     // Groups with nothing visible in them are dropped whole: a kicker over an empty stretch of
     // rail reads as a broken list.
-    let groups: Vec<(&str, Vec<Entity>)> = RAIL
-        .iter()
-        .map(|(key, entities)| {
-            let shown = entities
-                .iter()
-                .copied()
-                .filter(|entity| entity.is_visible(&caps))
-                .collect::<Vec<_>>();
-            (*key, shown)
-        })
-        .filter(|(_, shown)| !shown.is_empty())
-        .collect();
+    //
+    // Memoised because this component re-renders on the shared 4s tick, and the rail's shape
+    // depends on nothing that changes between ticks — only on the capability set.
+    let groups = use_memo(move || {
+        RAIL.iter()
+            .map(|(key, entities)| {
+                let shown = entities
+                    .iter()
+                    .copied()
+                    .filter(|entity| entity.is_visible(&caps))
+                    .collect::<Vec<_>>();
+                (*key, shown)
+            })
+            .filter(|(_, shown)| !shown.is_empty())
+            .collect::<Vec<(&str, Vec<Entity>)>>()
+    });
 
     let counts = stats.read_unchecked().clone().flatten();
     let body_class = if current.is_master_detail() {
@@ -406,7 +463,7 @@ pub(crate) fn Console() -> Element {
             }
             div { class: "{body_class}",
                 nav { class: "ik-cons-rail", "aria-label": i18n.t("console.title"),
-                    for (group_key , entities) in groups {
+                    for (group_key , entities) in groups.read().clone() {
                         div { key: "{group_key}", class: "grp", {i18n.t(group_key)} }
                         for entity in entities {
                             button {
@@ -414,6 +471,7 @@ pub(crate) fn Console() -> Element {
                                 class: if entity == current { "ik-cons-entry active" } else { "ik-cons-entry" },
                                 "aria-current": if entity == current { "page" } else { "false" },
                                 onclick: move |_| selected.set(entity),
+                                Ic { icon: entity.icon(), size: 15 }
                                 span { {i18n.t(entity.label_key())} }
                                 RailCount { entity, counts: counts.clone() }
                             }
@@ -478,9 +536,7 @@ fn JumpField() -> Element {
         button {
             class: "ik-cons-jump",
             onclick: move |_| {
-                let _ = document::eval(
-                    "const el = document.getElementById('tv-search'); if (el) { el.focus(); el.select(); }",
-                );
+                crate::browser::focus_and_select("tv-search");
             },
             span { style: "display:flex;flex:none;",
                 Ic { icon: Icon::Search, size: 15 }
@@ -544,5 +600,73 @@ pub(super) fn config_editor_text(v: &serde_json::Value) -> String {
         "{}".to_owned()
     } else {
         serde_json::to_string_pretty(v).unwrap_or_else(|_| "{}".to_owned())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{adapter_label_key, ADAPTER_KINDS};
+    use crate::models::AdapterKind;
+
+    /// The provider-registration picker must offer every adapter the API accepts.
+    ///
+    /// `ADAPTER_KINDS` is the last hand-maintained part of this vocabulary — the tokens and the
+    /// parse are generated now — so this is what keeps it in step. Read out of the committed
+    /// `openapi.json`, the artefact `crates/api-client` is generated from and the only thing
+    /// that connects these two workspaces (`web/frontend` is outside the host workspace, so no
+    /// compiler relates a table here to an enum there).
+    ///
+    /// The defect this closes: the picker used to carry hand-written token strings, and
+    /// `create.rs` parsed them back with a `_ => AdapterKind::Custom` arm, so one wrong
+    /// character registered every new provider as `Custom` — a working-looking form producing
+    /// a provider that scans nothing.
+    #[test]
+    fn the_picker_offers_every_adapter_kind() {
+        const SPEC: &str = include_str!("../../../../../openapi.json");
+        let spec: serde_json::Value = serde_json::from_str(SPEC).expect("openapi.json parses");
+
+        let mut published: Vec<String> = spec["components"]["schemas"]["AdapterKind"]["enum"]
+            .as_array()
+            .expect("the document declares the AdapterKind vocabulary")
+            .iter()
+            .map(|v| v.as_str().expect("adapter tokens are strings").to_owned())
+            .collect();
+        let mut offered: Vec<String> = ADAPTER_KINDS.iter().map(ToString::to_string).collect();
+
+        published.sort();
+        offered.sort();
+        assert_eq!(
+            offered, published,
+            "the provider-registration picker offers a different set of adapters than the API \
+             publishes; add the missing variant to `ADAPTER_KINDS` and word it in \
+             `adapter_label_key`"
+        );
+    }
+
+    /// Every offered kind survives the round trip the create form actually performs: rendered
+    /// into the `<option value>` by `Display`, read back out by `FromStr`.
+    #[test]
+    fn every_offered_adapter_kind_round_trips_through_its_option_value() {
+        for kind in ADAPTER_KINDS.iter().copied() {
+            assert_eq!(
+                kind.to_string().parse::<AdapterKind>().ok(),
+                Some(kind),
+                "`{kind}` does not survive the picker's own value round trip"
+            );
+        }
+    }
+
+    /// Wording is a separate axis from membership, and a missing catalogue key renders as the
+    /// key itself rather than as an error — so a kind added to the picker without a label ships
+    /// an option reading `console.adapterKind.…` to the operator.
+    #[test]
+    fn every_offered_adapter_kind_is_worded() {
+        for kind in ADAPTER_KINDS.iter().copied() {
+            let key = adapter_label_key(kind);
+            assert!(
+                crate::i18n::has_key(key),
+                "`{kind}` is offered in the picker but `{key}` is not in the catalogue"
+            );
+        }
     }
 }

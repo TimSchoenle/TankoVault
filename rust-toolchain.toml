@@ -1,0 +1,21 @@
+# The one place the toolchain is named.
+#
+# Before this file existed, three things disagreed about which Rust was in use: the workspace
+# claimed `rust-version = "1.85"` (verified by nothing), CI resolved
+# `dtolnay/rust-toolchain@stable` to whatever stable was that morning, and each developer used
+# whatever `rustup` had last installed. That drift is how `rustfmt.toml`'s nightly-only
+# `ignore` key survived for so long — it worked for whoever added it and failed silently in CI.
+#
+# Pinning here means `cargo`, `rustfmt` and `clippy` agree everywhere, and a toolchain bump
+# becomes a reviewed commit rather than a Tuesday.
+#
+# `rust-version = "1.85"` in the workspace manifest is the *minimum supported* version and is
+# what the `msrv` CI job checks; this is the version everything is actually built with. The
+# two are deliberately different numbers with different jobs behind them.
+[toolchain]
+channel = "1.94.0"
+components = ["rustfmt", "clippy"]
+# `wasm32-unknown-unknown` for `web/frontend`, which is excluded from the host workspace but
+# built by this same toolchain.
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

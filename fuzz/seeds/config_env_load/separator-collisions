@@ -1,0 +1,4 @@
+DATABASE____URL=three-underscores
+DATABASE__=empty-leaf
+__DATABASE__URL=leading-separator
+DATABASE__URL__EXTRA=deeper-than-the-struct

@@ -1,0 +1,192 @@
+# Observability overlay: Prometheus, Grafana and a blackbox prober for the readiness endpoints.
+#
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.observability.yml \
+#     --env-file deploy/local.env up -d
+#
+# Then: Grafana on http://127.0.0.1:3001 (folder "TankoVault"), Prometheus on
+# http://127.0.0.1:9091. Both are loopback-bound — see the exposure note below.
+#
+# ---- Why an overlay file rather than a compose profile -----------------------------------------
+# Both would keep a plain `docker compose up` unchanged, which is the requirement. The overlay wins
+# on two counts specific to this repository:
+#
+#  1. `docker-compose.yml` opens with an invariant — "**Only `frontend` (3000) is published on the
+#     host.**" — and explains at length why publishing any other port is a security decision rather
+#     than a convenience. This stack has to publish two more. In a profile that exception would sit
+#     inside the file whose header forbids it, three screens below the sentence it contradicts.
+#     Here it is a separate opt-in artefact that carries its own reasoning, and the invariant in
+#     the main file stays literally true of the main file.
+#  2. An overlay can also *amend* existing services (a scrape-interval override, an extra label) if
+#     this ever needs to. A profile can only add new ones.
+#
+# The cost is that both `-f` flags must be repeated on every subsequent compose command for these
+# containers; `COMPOSE_FILE=deploy/docker-compose.yml:deploy/docker-compose.observability.yml` in
+# your shell is the usual way around that.
+#
+# ---- Exposure ---------------------------------------------------------------------------------
+# Grafana and Prometheus each publish a port, which every other service in this stack deliberately
+# does not, so the reasoning is recorded rather than assumed:
+#
+#  * Both are bound to `127.0.0.1` explicitly, which is the escape hatch the main compose file
+#    documents for debugging a service ("bind loopback explicitly and temporarily"). Docker's port
+#    publishing bypasses the host firewall via DOCKER-USER/iptables, so `9091:9090` (no host) would
+#    put an unauthenticated PromQL endpoint on every interface the host has.
+#  * A dashboard nobody can open is not observability, and the alternative — no published port plus
+#    `docker compose exec` port-forwarding gymnastics — would make this stack something an operator
+#    stops using during the incident it exists for.
+#  * Prometheus has **no authentication of any kind**. It is loopback-only for that reason and must
+#    stay that way. If it needs to be reachable off-host, put it behind something that
+#    authenticates; do not widen this binding.
+#  * Grafana requires an admin password with no default (below), for the same reason the api
+#    refuses a placeholder JWT secret.
+#
+# ---- Retention --------------------------------------------------------------------------------
+# 15 days. The question this stack answers most often is "did this start with the last deploy or
+# has it always been like that", and a fortnight covers that with room for a slow week. Longer
+# retention on a single host with local disk buys accuracy for capacity planning that a
+# single-host deployment is not doing.
+
+name: tankovault
+
+# Same shape as the main file's `x-hardening`, minus `read_only` — which is decided per service
+# here because, unlike the `scratch` images, these are third-party images whose writable paths are
+# not enumerable from this file.
+x-obs-hardening: &obs-hardening
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  prometheus:
+    # Pinned to the v3.5 LTS line. Never `:latest` (OPS-4.3): a Prometheus minor can change
+    # PromQL evaluation or staleness handling, which would silently re-tune every alert in
+    # deploy/observability/prometheus/rules/.
+    #   digest at time of writing:
+    #   sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+    image: prom/prometheus:v3.5.0
+    <<: *obs-hardening
+    # Safe here, unlike Grafana: the only path Prometheus writes is its TSDB, which is the named
+    # volume below, and the config is mounted read-only.
+    read_only: true
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      # Lets an operator apply an edited rule file without losing the TSDB to a restart:
+      #   curl -X POST http://127.0.0.1:9091/-/reload
+      # This is a write endpoint with no authentication, which is another reason the published
+      # port is loopback-only.
+      - --web.enable-lifecycle
+    volumes:
+      - ./observability/prometheus:/etc/prometheus:ro
+      - promdata:/prometheus
+    ports: ["127.0.0.1:9091:9090"]
+    deploy: { resources: { limits: { memory: 1g } } }
+    healthcheck:
+      # The image is busybox-based, so `wget` exists — unlike the `scratch` services, which is why
+      # those need the binary to probe itself.
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      blackbox-exporter: { condition: service_healthy }
+
+  blackbox-exporter:
+    # Probes each service's `GET /ready` over HTTP and exposes the result as `probe_success`.
+    # Required rather than optional: `/ready` answers with a JSON body, which Prometheus cannot
+    # parse as exposition, so without a prober the one signal that reports on *dependencies*
+    # (Postgres reachable, NATS reachable, pool not exhausted) is invisible to alerting.
+    #   digest: sha256:a50c4c0eda297baa1678cd4dc4712a67fdea713b832d43ce7fcc5f9bea05094d
+    image: prom/blackbox-exporter:v0.27.0
+    <<: *obs-hardening
+    read_only: true
+    command:
+      - --config.file=/etc/blackbox_exporter/blackbox.yml
+    volumes:
+      - ./observability/blackbox/blackbox.yml:/etc/blackbox_exporter/blackbox.yml:ro
+    # No `ports:` — nothing outside the compose network has any reason to reach a prober that will
+    # fetch a URL it is handed.
+    deploy: { resources: { limits: { memory: 128m } } }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9115/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  nats-exporter:
+    # Turns the NATS monitoring endpoint into Prometheus series. This is the only source of **queue
+    # depth** anywhere in the stack: `scan_tasks_served_total` counts tasks handed out, so from the
+    # worker's side a wedged pipeline and an empty one are indistinguishable. NATS knows how much is
+    # waiting, and `docker-compose.yml` already runs it with `-m 8222` for the healthcheck, so this
+    # needs no change to any existing service.
+    #
+    # `-jsz=all` is what produces the per-consumer series (`jetstream_consumer_num_pending`,
+    # `..._num_redelivered`); without it only server-level totals appear and every backlog rule here
+    # loses its subject. `-varz` adds `gnatsd_varz_slow_consumers`.
+    #   digest: sha256:26c826662ac8424597cc9bdf89ea5b606eb66e3c11db9b1215c27d2076bbb01b
+    image: natsio/prometheus-nats-exporter:0.17.3
+    <<: *obs-hardening
+    read_only: true
+    command: ["-port", "7777", "-varz", "-jsz=all", "http://nats:8222"]
+    # No `ports:` — the same reasoning as every backend service.
+    deploy: { resources: { limits: { memory: 128m } } }
+    healthcheck:
+      # Liveness only. `/metrics` answers `200` with zeroed series even when NATS is unreachable, so
+      # this says "the exporter is serving", not "the data is good" — `TankoVaultNatsExporterDown`
+      # plus the NATS healthcheck cover the other half.
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:7777/metrics"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      nats: { condition: service_healthy }
+
+  grafana:
+    #   digest: sha256:6128afd8174f01e39a78341cb457588f723bbb9c3b25c4d43c4b775881767069
+    image: grafana/grafana:11.6.3
+    <<: *obs-hardening
+    # `read_only` is deliberately NOT set, for the same reason it is not set on `render`: this is a
+    # full Alpine base whose writable paths (plugin staging, rendered PNGs, its own SQLite journal
+    # outside the data dir) are not enumerable from here, and guessing the tmpfs set wrong produces
+    # a crash loop. Turn it on only after an empirical pass, and record the required mounts here.
+    environment:
+      # No default. The image's `admin`/`admin` is published in Grafana's own documentation, so it
+      # is not a password — the same reasoning `deploy/docker-compose.yml` applies to the JWT
+      # secret and the AniList encryption key.
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?set it in deploy/local.env — see deploy/local.env.example; generate with `openssl rand -hex 24`}"
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      # Read-only dashboards for anyone not signed in would be reasonable on loopback, but
+      # anonymous access is off because Grafana's anonymous role also reaches the Explore tab,
+      # which is arbitrary PromQL against the whole TSDB.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # No outbound calls. This stack retains IP and User-Agent only on an explicit opt-in
+      # (`TANKOVAULT_AUDIT__RECORD_IP`); shipping usage telemetry to a third party from the
+      # operator's console would be inconsistent with that.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      # Land on the provisioned dashboard rather than an empty home page.
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/tankovault-overview.json
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    ports: ["127.0.0.1:3001:3000"]
+    deploy: { resources: { limits: { memory: 512m } } }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:3000/api/health | grep -q '\"database\": *\"ok\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      prometheus: { condition: service_healthy }
+
+volumes:
+  promdata:
+  grafanadata:

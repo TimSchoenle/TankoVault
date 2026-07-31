@@ -2,7 +2,7 @@
 //! read-only series card the compare view is built from.
 
 use crate::api;
-use crate::components::{Cover, ErrorBox};
+use crate::components::{async_block, async_block_list, Cover};
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::models::*;
@@ -29,26 +29,15 @@ pub(super) fn MergeQueue() -> Element {
         }
     });
 
-    let body = match &*resource.read_unchecked() {
-        None => rsx! { div { class: "ik-skeleton", style: "height:60px;" } },
-        Some(Err(e)) => {
-            let msg = e.clone();
-            rsx! {
-                ErrorBox { message: msg, on_retry: move |()| reload.bump() }
+    let empty = i18n.t("console.merge.empty");
+    let body = async_block_list(&resource, reload, 60, &empty, |list| {
+        let list = list.to_vec();
+        rsx! {
+            for c in list {
+                MergeRow { key: "{c.id}", candidate: Signal::new(c), reload }
             }
         }
-        Some(Ok(list)) if list.is_empty() => rsx! {
-            div { class: "ik-empty", {i18n.t("console.merge.empty")} }
-        },
-        Some(Ok(list)) => {
-            let list = list.clone();
-            rsx! {
-                for c in list {
-                    MergeRow { key: "{c.id}", candidate: Signal::new(c), reload }
-                }
-            }
-        }
-    };
+    });
 
     rsx! {
         section {
@@ -66,7 +55,11 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
     let can = candidate.read();
     // The score is a 0..=1 ratio, so the rounded percentage is always in range; clamping
     // makes that total rather than relying on the input being well-formed.
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the score is a 0..=1 ratio and the clamp makes the percentage total rather \
+                  than trusting the input to be well-formed"
+    )]
     let pct = (can.score * 100.0).round().clamp(0.0, 100.0) as i32;
     let id = can.id;
     let a = can.series_id;
@@ -196,7 +189,9 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
 pub(super) fn SeriesMiniCard(series_id: SeriesId) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
+    let reload = use_reload();
     let res = use_resource(move || {
+        reload.track();
         let client = api.client();
         async move {
             client
@@ -209,70 +204,62 @@ pub(super) fn SeriesMiniCard(series_id: SeriesId) -> Element {
         }
     });
 
-    match &*res.read_unchecked() {
-        None => rsx! { div { class: "ik-skeleton", style: "height:120px;" } },
-        Some(Err(e)) => rsx! {
-            div { class: "ik-empty", style: "font-size:12px;",
-                {i18n.args("console.merge.seriesUnavailable", &[("message", e)])}
-            }
-        },
-        Some(Ok(d)) => {
-            let d = d.clone();
-            let year = d.release_year.map(|y| y.to_string()).unwrap_or_default();
-            let tags: Vec<String> = d.tags.iter().take(6).map(|t| t.name.clone()).collect();
-            rsx! {
-                div { class: "ik-card", style: "padding:10px;",
-                    div { class: "ik-flex", style: "gap:10px;align-items:flex-start;",
-                        div { style: "width:56px;flex:0 0 auto;",
-                            Cover { url: d.cover_url.clone(), title: d.title.clone() }
+    async_block(&res, reload, 120, |d| {
+        let d = d.clone();
+        let year = d.release_year.map(|y| y.to_string()).unwrap_or_default();
+        let tags: Vec<String> = d.tags.iter().take(6).map(|t| t.name.clone()).collect();
+        rsx! {
+            div { class: "ik-card", style: "padding:10px;",
+                div { class: "ik-flex", style: "gap:10px;align-items:flex-start;",
+                    div { style: "width:56px;flex:0 0 auto;",
+                        Cover { url: d.cover_url.clone(), title: d.title.clone() }
+                    }
+                    div { class: "grow",
+                        div { style: "font-weight:600;", "{d.title}" }
+                        div { class: "ik-flex", style: "gap:6px;margin-top:4px;flex-wrap:wrap;",
+                            span { class: "ik-pill", {i18n.t(d.content_type.label_key())} }
+                            span { class: "ik-pill", {i18n.t(d.status.label_key())} }
+                            if !year.is_empty() {
+                                span { class: "ik-pill", "{year}" }
+                            }
+                            span { class: "ik-pill",
+                                {
+                                    i18n.plural(
+                                        "series.sources",
+                                        i64::try_from(d.sources.len()).unwrap_or(0),
+                                        &[],
+                                    )
+                                }
+                            }
                         }
-                        div { class: "grow",
-                            div { style: "font-weight:600;", "{d.title}" }
-                            div { class: "ik-flex", style: "gap:6px;margin-top:4px;flex-wrap:wrap;",
-                                span { class: "ik-pill", {i18n.t(d.content_type.label_key())} }
-                                span { class: "ik-pill", {i18n.t(d.status.label_key())} }
-                                if !year.is_empty() {
-                                    span { class: "ik-pill", "{year}" }
-                                }
-                                span { class: "ik-pill",
-                                    {
-                                        i18n.plural(
-                                            "series.sources",
-                                            i64::try_from(d.sources.len()).unwrap_or(0),
-                                            &[],
-                                        )
-                                    }
-                                }
-                            }
-                            div { class: "ik-mono ik-muted", style: "font-size:11px;margin-top:4px;word-break:break-all;",
-                                "{d.id}"
-                            }
+                        div { class: "ik-mono ik-muted", style: "font-size:11px;margin-top:4px;word-break:break-all;",
+                            "{d.id}"
                         }
                     }
-                    if !d.sources.is_empty() {
-                        div { style: "margin-top:8px;",
-                            for s in d.sources.iter().take(5) {
-                                div { class: "ik-muted", style: "font-size:12px;",
-                                    {
-                                        let count = i18n.args(
-                                            "series.chapterCount",
-                                            &[("count", &s.chapter_count.to_string())],
-                                        );
-                                        format!("· {} — {count}", s.provider_name)
-                                    }
+                }
+                if !d.sources.is_empty() {
+                    div { style: "margin-top:8px;",
+                        for s in d.sources.iter().take(5) {
+                            div { class: "ik-muted", style: "font-size:12px;",
+                                {
+                                    let count = i18n.args(
+                                        "series.chapterCount",
+                                        &[("count", &s.chapter_count.to_string())],
+                                    );
+                                    format!("· {} — {count}", s.provider_name)
                                 }
                             }
                         }
                     }
-                    if !tags.is_empty() {
-                        div { class: "ik-flex", style: "gap:4px;margin-top:8px;flex-wrap:wrap;",
-                            for t in tags {
-                                span { class: "ik-pill", style: "font-size:11px;", "{t}" }
-                            }
+                }
+                if !tags.is_empty() {
+                    div { class: "ik-flex", style: "gap:4px;margin-top:8px;flex-wrap:wrap;",
+                        for t in tags {
+                            span { class: "ik-pill", style: "font-size:11px;", "{t}" }
                         }
                     }
                 }
             }
         }
-    }
+    })
 }

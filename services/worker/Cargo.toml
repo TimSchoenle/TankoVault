@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Scan worker: executes tasks via adapters + fetch stack, upserts deltas idempotently."
+# Not published: this is a workspace-internal crate. Also what lets `cargo deny`
+# skip license-checking our own code.
+publish = false
 
 [[bin]]
 name = "worker"
@@ -28,6 +31,7 @@ metrics = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }
 time = { workspace = true }
 sha2 = { workspace = true }

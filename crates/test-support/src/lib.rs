@@ -1,48 +1,79 @@
-//! Integration-test harness for `TankoVault`.
+//! Database-layer test harness for `TankoVault`.
 //!
-//! Two layers of automated access-control testing share this crate:
+//! Provides a **Postgres started with testcontainers**: one named container shared by every test
+//! binary and every run, and each [`TestDb::spawn`] creates its own freshly-migrated database
+//! inside it, so tests are hermetic and parallel-safe without a shared, mutable fixture. The
+//! harness owns container lifecycle, migration, seeding and token minting, so there is no
+//! divergent `DATABASE_URL` wiring to keep in sync.
 //!
-//! - **Repo-layer** tests drive the guard-rail SQL in `tankovault_db::repo` against a real,
-//!   migrated schema via [`TestDb`].
-//! - **HTTP-layer** tests drive the real Axum router (extractor, middleware and authorization
-//!   wiring) in-process via [`TestApp`] and `tower`'s `oneshot`.
+//! The container is **reused, not ephemeral** — [`shared_container`] explains why, and why the
+//! stale-database sweep beside it is a required half of that choice rather than a nicety
+//! (ARCH-6b). To start clean: `docker rm -f tankovault-test-postgres`.
 //!
-//! # One database setup, not two
+//! Also holds the in-memory doubles that are not specific to any one service:
+//! [`RecordingAuditSink`] and [`RecordingMailer`], and the entity builders in [`seed`] — which
+//! exist because seven of the ten `crates/db` suites had written their own `a_provider` and six
+//! were byte-identical (TEST F-09).
 //!
-//! Both layers run against an **ephemeral Postgres** started with testcontainers. A single
-//! container is shared per test binary; each [`TestDb::spawn`] creates its own freshly-migrated
-//! database inside it, so tests are hermetic and parallel-safe without a shared, mutable
-//! fixture. This reconciles the plan's "`#[sqlx::test]`" and "testcontainers" strands into one
-//! consistent setup: the harness owns container lifecycle, migration, seeding and token
-//! minting, and there is no divergent `DATABASE_URL` wiring to keep in sync.
+//! # Layering
+//!
+//! This crate deliberately depends on **no** `services/*` crate, so the repository-layer suites
+//! can use it without compiling a service (ARCH-17). The in-process router harness that does
+//! need the API lives in `services/api/test-support` as `tankovault-api-test-support`.
+//!
+//! # On `# Panics`
+//!
+//! This crate is exempt from `clippy::missing_panics_doc`, declared as an `expect` at the crate
+//! root so the compiler withdraws the exemption if the last panicking helper ever goes away. A
+//! harness helper panics *by design*: a failure here is a failed test, which is the outcome the
+//! caller wants, and `Result` would only move the `unwrap` into every test in the workspace.
+//! Documenting each site would restate that contract once per function.
+#![expect(
+    clippy::missing_panics_doc,
+    reason = "a test-harness helper's failure mode is a panicking test, which is its contract"
+)]
 //!
 //! # Not on the fast path
 //!
 //! This crate is a dev-dependency only; the DB-backed suites that use it are feature-gated
 //! (`integration`) so the default `cargo test --workspace` unit path stays green without Docker.
 
-use std::sync::{Arc, Mutex};
+pub mod seed;
 
-use axum::body::Body;
-use axum::http::{Request, Response, StatusCode};
+use std::sync::Mutex;
+use std::time::Duration as StdDuration;
+
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Connection as _, PgConnection, PgPool};
-use tankovault_api::AppState;
 use tankovault_domain::{AccountStatus, Permission, UserId};
-use tankovault_service::{
-    AuditEvent, AuditOutcome, AuditSink, FeatureGate, Health, MetricsRegistry,
-};
+use tankovault_email::{EmailError, EmailMessage, EmailService};
+use tankovault_service::{AuditEvent, AuditOutcome, AuditSink};
+use testcontainers::runners::AsyncRunner;
+use testcontainers::{ContainerAsync, ImageExt as _, ReuseDirective};
 use testcontainers_modules::postgres::Postgres;
-use testcontainers_modules::testcontainers::runners::AsyncRunner;
-use testcontainers_modules::testcontainers::{ContainerAsync, ImageExt as _};
 use time::Duration;
 use tokio::sync::OnceCell;
-use tower::ServiceExt as _;
 use uuid::Uuid;
 
-/// The JWT signing secret every [`TestApp`] uses. Fixed so a test can mint a token that the
+/// The JWT signing secret every harness signs with. Fixed so a test can mint a token that the
 /// router will accept, and long enough to satisfy the production strength check.
-const TEST_JWT_SECRET: &[u8] = b"integration-test-jwt-secret-please-rotate-0123456789";
+pub const TEST_JWT_SECRET: &[u8] = b"integration-test-jwt-secret-please-rotate-0123456789";
+
+/// A `Bearer …` header value carrying a freshly-minted, valid access token for `user`, signed
+/// with [`TEST_JWT_SECRET`].
+///
+/// Lives here rather than on the HTTP harness so a repository-layer test can mint the same token
+/// the router would accept.
+///
+/// # Panics
+/// If signing fails, which in a test always means the secret is wrong.
+#[must_use]
+pub fn bearer(user: UserId) -> String {
+    let token =
+        tankovault_auth::issue_access_token(TEST_JWT_SECRET, user, "seed", Duration::minutes(15))
+            .expect("mint access token");
+    format!("Bearer {token}")
+}
 
 /// The process-wide Postgres container, started once on first use and kept alive for the
 /// lifetime of the test binary.
@@ -53,19 +84,71 @@ static PG: OnceCell<PgContainer> = OnceCell::const_new();
 /// testcontainers default is far too old for them.
 const POSTGRES_TAG: &str = "17-alpine";
 
+/// The fixed name of the shared container. A *name* is what makes reuse possible: it is how
+/// `testcontainers` finds the already-running container instead of creating a second one, so
+/// every test binary and every run converge on the same instance. See [`shared_container`].
+const CONTAINER_NAME: &str = "tankovault-test-postgres";
+
+/// How old a `tv_test_*` database must be before the sweep drops it.
+///
+/// Sized to be far longer than any conceivable test run and far shorter than "until the disk
+/// fills". The whole integration suite is minutes, so an hour cannot catch a live database, and
+/// a leftover survives at most one further hour of idleness.
+const STALE_DB_AFTER: StdDuration = StdDuration::from_secs(60 * 60);
+
 /// A running Postgres container plus the base URL of its maintenance connection.
 struct PgContainer {
-    /// Held only to keep the container running; dropping it stops Postgres.
+    /// Held so the handle outlives the pools built from it. Dropping it does **not** stop
+    /// Postgres: the container is started with [`ReuseDirective::Always`], and `ContainerAsync`'s
+    /// remove-on-drop is skipped for a reused container. That is deliberate — see
+    /// [`shared_container`].
     _container: ContainerAsync<Postgres>,
     /// `postgres://postgres:postgres@host:port` — without a trailing database name.
     base_url: String,
 }
 
-/// Start (or return the already-started) shared Postgres container.
+/// Start (or attach to) the one shared Postgres container, then sweep stale test databases.
+///
+/// # Why this reuses a container instead of starting a fresh one (ARCH-6b)
+///
+/// [`PG`] is a `static`, and Rust never drops statics — so `ContainerAsync`'s remove-on-drop
+/// never ran, and `testcontainers` 0.25 ships **no** Ryuk-style reaper (its `watchdog` feature
+/// fires on `SIGTERM`/`SIGINT`/`SIGQUIT`, not on a test binary exiting normally). The result was
+/// one leaked container *per test binary*, on every platform, every `--features integration`
+/// run. Upgrading does not fix it: 0.27 has the same feature set in this respect.
+///
+/// So the container is named and started with [`ReuseDirective::Always`]: the first binary to
+/// need it creates it, every later binary and every later run attaches to the same one, and it
+/// is never removed. That bounds the count at exactly one forever rather than leaking one per
+/// binary — but it moves the cost, because a container that is never removed accumulates the
+/// `tv_test_*` databases every [`TestDb::spawn`] creates inside it. Hence [`sweep_stale_dbs`],
+/// which is not optional garnish: reuse *without* the sweep trades a container leak for
+/// unbounded disk growth, which is why ARCH-6b was left open until both halves existed.
+///
+/// Removing the container by hand is still always safe — the next run recreates it:
+/// `docker rm -f tankovault-test-postgres`.
+///
+/// # Why it starts the container before asking for it (ARCH-6c)
+///
+/// Reuse attaches to a **running** container. A named container that exists and is *stopped* —
+/// which is what every host reboot and every Docker restart leaves behind — matches neither
+/// path: reuse does not find it, creation collides with the name, and `testcontainers` surfaces
+/// a `409 Conflict` that this call used to report as "is Docker running?" while Docker was
+/// plainly running. So the container is started first, unconditionally.
+///
+/// `docker start` rather than removing and recreating, deliberately. Starting an already-running
+/// container is a documented no-op success, so this is safe to issue from every test binary
+/// concurrently, whereas removing one on a name conflict would race a *sibling binary* that had
+/// just created it. It also preserves the published port, since the mapping is fixed at creation
+/// and restored on start. Every failure is ignored: no container yet, no `docker` on `PATH`, or
+/// a daemon that is genuinely down all fall through to `start()` below, which reports them.
 async fn shared_container() -> &'static PgContainer {
     PG.get_or_init(|| async {
+        start_if_stopped();
         let container = Postgres::default()
             .with_tag(POSTGRES_TAG)
+            .with_container_name(CONTAINER_NAME)
+            .with_reuse(ReuseDirective::Always)
             .start()
             .await
             .expect("start ephemeral postgres container (is Docker running?)");
@@ -74,12 +157,114 @@ async fn shared_container() -> &'static PgContainer {
             .get_host_port_ipv4(5432)
             .await
             .expect("container mapped port");
+        let base_url = format!("postgres://postgres:postgres@{host}:{port}");
+        sweep_stale_dbs(&base_url).await;
         PgContainer {
             _container: container,
-            base_url: format!("postgres://postgres:postgres@{host}:{port}"),
+            base_url,
         }
     })
     .await
+}
+
+/// Best-effort `docker start` of the shared container; see [`shared_container`] for why.
+///
+/// Deliberately returns nothing. There is no outcome a caller could act on: success means the
+/// container was stopped and now is not, and *every* failure — no such container, no `docker`
+/// binary, a daemon that is down — is either the normal first-run case or something the
+/// `start()` that follows reports with a better message than this could.
+fn start_if_stopped() {
+    let _ = std::process::Command::new("docker")
+        .args(["start", CONTAINER_NAME])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
+/// Drop every `tv_test_*` database older than [`STALE_DB_AFTER`], once per test binary.
+///
+/// # Why an age threshold rather than "drop them all"
+///
+/// The container is shared, so a sweep cannot assume it is alone: another test binary — or
+/// another developer's `cargo test` against the same reused container — may be mid-run, and
+/// dropping its database would fail that run with an error pointing nowhere near the cause.
+/// Age is the only signal available, which is why [`TestDb::spawn`] puts a creation timestamp in
+/// the database *name*: `pg_database` records no creation time, so without the name carrying it
+/// there is nothing to threshold on. A test still running after [`STALE_DB_AFTER`] does not
+/// exist; a database still present after it belongs to a binary that has exited.
+///
+/// A name that does not parse as `tv_test_<unix-seconds>_<hex>` is treated as stale
+/// unconditionally: the only source of one is a run from before this scheme existed, so those
+/// are exactly the leaked databases the sweep is for.
+///
+/// Failures here are logged to stderr and ignored rather than panicking. The sweep is
+/// housekeeping; a test run must not fail because a *previous* run's leftovers could not be
+/// cleaned up.
+async fn sweep_stale_dbs(base_url: &str) {
+    let Ok(mut admin) = PgConnection::connect(&format!("{base_url}/postgres")).await else {
+        eprintln!("test-support: could not connect to sweep stale test databases");
+        return;
+    };
+
+    let rows: Vec<(String,)> =
+        match sqlx::query_as("SELECT datname FROM pg_database WHERE datname LIKE 'tv_test_%'")
+            .fetch_all(&mut admin)
+            .await
+        {
+            Ok(rows) => rows,
+            Err(err) => {
+                eprintln!("test-support: could not list test databases to sweep: {err}");
+                return;
+            }
+        };
+
+    let now = unix_secs();
+    for (name,) in rows {
+        if !is_stale(&name, now) {
+            continue;
+        }
+        // The name came out of `pg_database` and matched `tv_test_%`, so it is our own generated
+        // identifier round-tripping, not user input; `DROP DATABASE` cannot bind parameters.
+        // `WITH (FORCE)` terminates any connection still attached, which a crashed run leaves
+        // behind and which would otherwise make the drop fail forever.
+        let sql = format!("DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)");
+        if let Err(err) = sqlx::query(sqlx::AssertSqlSafe(sql))
+            .execute(&mut admin)
+            .await
+        {
+            eprintln!("test-support: could not drop stale test database {name}: {err}");
+        }
+    }
+
+    admin.close().await.ok();
+}
+
+/// Whether `name` is a `tv_test_*` database old enough to drop, given the current unix time.
+///
+/// Split out from [`sweep_stale_dbs`] so the parsing rules are testable without Docker — the
+/// interesting cases are all name-shaped, and the two that matter are the boundary (a database
+/// exactly at the threshold is *not* stale, so a run cannot delete its own database one second
+/// early) and the unparseable legacy name.
+fn is_stale(name: &str, now: u64) -> bool {
+    let Some(rest) = name.strip_prefix("tv_test_") else {
+        return false;
+    };
+    let Some((created, _uuid)) = rest.split_once('_') else {
+        // Pre-timestamp name (`tv_test_<uuid>`): only a run from before this scheme could have
+        // created it, so it is leaked by definition.
+        return true;
+    };
+    match created.parse::<u64>() {
+        Ok(created) => now.saturating_sub(created) > STALE_DB_AFTER.as_secs(),
+        Err(_) => true,
+    }
+}
+
+/// Seconds since the unix epoch, saturating at 0 if the system clock is before it.
+fn unix_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 /// An isolated, freshly-migrated database inside the shared container.
@@ -95,7 +280,10 @@ impl TestDb {
     /// Create a new isolated database, run every migration against it, and return a pool.
     pub async fn spawn() -> Self {
         let container = shared_container().await;
-        let db_name = format!("tv_test_{}", Uuid::new_v4().simple());
+        // The unix timestamp is load-bearing, not decoration: `pg_database` records no creation
+        // time, so the name is the only place an age can live, and the sweep in
+        // [`sweep_stale_dbs`] needs an age to distinguish a leftover from a live run's database.
+        let db_name = format!("tv_test_{}_{}", unix_secs(), Uuid::new_v4().simple());
 
         // `CREATE DATABASE` cannot run inside a transaction, so it goes over a plain
         // connection to the maintenance database rather than through the pool.
@@ -129,7 +317,7 @@ impl TestDb {
     ///
     /// The email is derived from the username so callers need only supply a name unique within
     /// the test. The stored password hash is a placeholder: the harness authenticates by
-    /// minting access tokens directly (see [`TestApp::bearer`]), never by logging in.
+    /// minting access tokens directly (see [`bearer`]), never by logging in.
     pub async fn seed_user(
         &self,
         username: &str,
@@ -156,6 +344,25 @@ impl TestDb {
         }
 
         user_id
+    }
+
+    /// Run a statement against this test's database.
+    ///
+    /// Exists for one job: **aging rows so a time-dependent branch can be reached**. Token
+    /// expiry (`RESET_TOKEN_TTL`, `VERIFY_TOKEN_TTL`, refresh lifetime) is compared against
+    /// `now()`, and there is no clock seam in `AppState` to move, so the only way to test the
+    /// expired branch is to backdate the row. That drives the same `expires_at <= now()`
+    /// comparison the handler makes, so dropping or inverting it still fails the test.
+    ///
+    /// `&'static str` deliberately: a test may not build SQL from a runtime value.
+    ///
+    /// # Panics
+    /// If the statement fails, which in a test always means the fixture is wrong.
+    pub async fn execute(&self, sql: &'static str) {
+        sqlx::query(sql)
+            .execute(&self.pool)
+            .await
+            .expect("test fixture statement");
     }
 }
 
@@ -193,119 +400,173 @@ impl AuditSink for RecordingAuditSink {
     }
 }
 
-/// The real router wired to an isolated database, ready to answer `oneshot` requests.
+/// An [`EmailService`] that captures every message instead of sending it.
 ///
-/// Holds the same JWT secret it signed [`AppState`] with, so [`Self::bearer`] mints tokens the
-/// router accepts, and the [`RecordingAuditSink`] so tests can assert audit-on-deny.
-pub struct TestApp {
-    /// The isolated database, exposed so tests can seed and inspect rows directly.
-    pub db: TestDb,
-    /// The in-memory audit sink capturing every emitted event.
-    pub audit: Arc<RecordingAuditSink>,
-    router: axum::Router,
+/// # Why this exists
+///
+/// The HTTP harness previously hard-wired the disabled default mailer, and `auth::register` forks on
+/// `state.mailer.is_enabled()`. The consequence was that the **email-verification half of
+/// registration had never been executed by any test** — every registration took the
+/// "no mailer, activate immediately" branch. So did password reset, confirmation resend, and
+/// the address-change notices. This double flips that fork on.
+///
+/// # Awaiting a fire-and-forget send
+///
+/// `api::mailer::send_in_background` spawns the send, so the message is not in the recorder
+/// when the HTTP response returns. [`Self::next_message`] awaits the spawned task through a
+/// channel rather than sleeping, so a test stays deterministic; the timeout is a failure
+/// deadline, not a delay.
+pub struct RecordingMailer {
+    enabled: bool,
+    /// How long `send` pretends the relay takes. Zero unless `with_send_delay` set it.
+    send_delay: StdDuration,
+    sent: Mutex<Vec<EmailMessage>>,
+    tx: tokio::sync::mpsc::UnboundedSender<EmailMessage>,
+    rx: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<EmailMessage>>,
 }
 
-impl TestApp {
-    /// Stand up an ephemeral database and the fully-wired router against it.
-    pub async fn spawn() -> Self {
-        let db = TestDb::spawn().await;
-        let audit = Arc::new(RecordingAuditSink::default());
-
-        let state = AppState {
-            pool: db.pool.clone(),
-            jwt_secret: Arc::new(TEST_JWT_SECRET.to_vec()),
-            password_pepper: Arc::new(Vec::new()),
-            access_ttl: Duration::minutes(15),
-            refresh_ttl: Duration::days(30),
-            control_plane_url: "http://control-plane.invalid".to_owned(),
-            sync_url: "http://sync.invalid".to_owned(),
-            challenge_solver_url: "http://challenge-solver.invalid".to_owned(),
-            bus: None,
-            http: reqwest::Client::new(),
-            audit: audit.clone(),
-            features: FeatureGate::defaults(),
-            cookie_secure: false,
-            mailer: tankovault_email::build(&tankovault_config::EmailConfig::default()),
-            email_base_url: "http://localhost".to_owned(),
-        };
-
-        let router = tankovault_api::build_router(
-            state,
-            &tankovault_config::SecurityConfig::default(),
-            &tankovault_config::RateLimitConfig::default(),
-            MetricsRegistry::disabled(),
-            Health::builder().build(),
-            None,
-        );
-
-        Self { db, audit, router }
+impl Default for RecordingMailer {
+    fn default() -> Self {
+        Self::enabled()
     }
+}
 
-    /// Seed a user with the given capabilities and status. See [`TestDb::seed_user`].
-    pub async fn seed_user(
-        &self,
-        username: &str,
-        perms: &[Permission],
-        status: AccountStatus,
-    ) -> UserId {
-        self.db.seed_user(username, perms, status).await
-    }
-
-    /// A `Bearer …` header value carrying a freshly-minted, valid access token for `user`.
+impl RecordingMailer {
+    /// A mailer that reports itself as configured, so the flows that branch on
+    /// `is_enabled()` take their email-bearing path.
     #[must_use]
-    pub fn bearer(&self, user: UserId) -> String {
-        let token = tankovault_auth::issue_access_token(
-            TEST_JWT_SECRET,
-            user,
-            "seed",
-            Duration::minutes(15),
-        )
-        .expect("mint access token");
-        format!("Bearer {token}")
+    pub fn enabled() -> Self {
+        Self::with_enabled(true)
     }
 
-    /// Drive a raw request through the real router.
-    pub async fn request(&self, req: Request<Body>) -> Response<Body> {
-        self.router
-            .clone()
-            .oneshot(req)
-            .await
-            .expect("router is infallible")
+    /// A mailer that records but reports itself as *not* configured — the shape of a
+    /// deployment without SMTP, which is the branch the rest of the suite exercises.
+    #[must_use]
+    pub fn disabled() -> Self {
+        Self::with_enabled(false)
     }
 
-    /// Issue a request and return the status and JSON body (or [`serde_json::Value::Null`] when
-    /// the body is empty), so a test reads as a single assertion.
-    pub async fn call(
-        &self,
-        method: &str,
-        path: &str,
-        bearer: Option<&str>,
-        body: Option<serde_json::Value>,
-    ) -> (StatusCode, serde_json::Value) {
-        let mut builder = Request::builder().method(method).uri(path);
-        if let Some(bearer) = bearer {
-            builder = builder.header(axum::http::header::AUTHORIZATION, bearer);
+    fn with_enabled(enabled: bool) -> Self {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        Self {
+            enabled,
+            send_delay: StdDuration::ZERO,
+            sent: Mutex::new(Vec::new()),
+            tx,
+            rx: tokio::sync::Mutex::new(rx),
         }
-        let request = match body {
-            Some(json) => builder
-                .header(axum::http::header::CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&json).expect("serialize body"),
-                ))
-                .expect("build request"),
-            None => builder.body(Body::empty()).expect("build request"),
-        };
+    }
 
-        let response = self.request(request).await;
-        let status = response.status();
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+    /// A mailer whose every send takes `delay` before it records anything — a stand-in for a
+    /// slow SMTP relay.
+    ///
+    /// For the SEC-10 timing tests: the anti-enumeration property of
+    /// `/v1/auth/password/forgot` and `/v1/auth/verify-email/resend` is that the handler does
+    /// *no* account-dependent work before answering, and the only step in that work a test can
+    /// make arbitrarily slow is the send. With a delay far larger than any plausible handler
+    /// cost, "the response came back fast" is a reliable proof that the work was detached
+    /// rather than a flaky measurement of one `INSERT`.
+    #[must_use]
+    pub fn with_send_delay(mut self, delay: StdDuration) -> Self {
+        self.send_delay = delay;
+        self
+    }
+
+    /// Every message captured so far, in send order.
+    #[must_use]
+    pub fn sent(&self) -> Vec<EmailMessage> {
+        self.sent.lock().expect("mailer mutex").clone()
+    }
+
+    /// Await the next message, failing the test if none arrives.
+    ///
+    /// # Panics
+    /// If no message is delivered within ten seconds, which means the flow under test did not
+    /// send one.
+    pub async fn next_message(&self) -> EmailMessage {
+        let mut rx = self.rx.lock().await;
+        tokio::time::timeout(StdDuration::from_secs(10), rx.recv())
             .await
-            .expect("read response body");
-        let json = if bytes.is_empty() {
-            serde_json::Value::Null
-        } else {
-            serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null)
-        };
-        (status, json)
+            .expect("a message should have been sent within the deadline")
+            .expect("the mailer's channel is kept open by the sender half")
+    }
+
+    /// The first `https?://…` run in `text`, with trailing punctuation trimmed.
+    ///
+    /// Reset and confirmation links are only ever reachable through the email body, so a test
+    /// that completes either flow has to read the link back out of the message the way a user
+    /// would.
+    #[must_use]
+    pub fn first_link(text: &str) -> Option<String> {
+        let start = text.find("http")?;
+        let rest = &text[start..];
+        let end = rest.find(|c: char| c.is_whitespace()).unwrap_or(rest.len());
+        Some(rest[..end].trim_end_matches(['.', ',', ')']).to_owned())
+    }
+}
+
+#[async_trait::async_trait]
+impl EmailService for RecordingMailer {
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    async fn send(&self, message: EmailMessage) -> Result<(), EmailError> {
+        if !self.send_delay.is_zero() {
+            tokio::time::sleep(self.send_delay).await;
+        }
+        self.sent
+            .lock()
+            .expect("mailer mutex")
+            .push(message.clone());
+        // A closed receiver means the test dropped its interest; recording still succeeded.
+        let _ = self.tx.send(message);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{STALE_DB_AFTER, is_stale};
+
+    const NOW: u64 = 1_800_000_000;
+
+    /// The sweep must not delete a database belonging to a run that is still going.
+    ///
+    /// The container is shared across test binaries and across developers' runs (ARCH-6b), so a
+    /// sweep is never alone. A fresh database — and, at the boundary, one exactly
+    /// [`STALE_DB_AFTER`] old — has to survive; only strictly older names may be dropped. If this
+    /// ever flips to `>=`, a run whose clock lands on the boundary drops its own database and
+    /// fails with an error pointing nowhere near the cause.
+    #[test]
+    fn a_live_databases_name_is_never_stale() {
+        let ttl = STALE_DB_AFTER.as_secs();
+        assert!(!is_stale(&format!("tv_test_{NOW}_abc123"), NOW));
+        assert!(!is_stale(&format!("tv_test_{}_abc123", NOW - ttl), NOW));
+        assert!(is_stale(&format!("tv_test_{}_abc123", NOW - ttl - 1), NOW));
+    }
+
+    /// A name from before the timestamp scheme is stale unconditionally.
+    ///
+    /// `tv_test_<uuid>` is what the harness generated before ARCH-6b, so the only thing that can
+    /// have created one is a run that has already exited — which makes these precisely the
+    /// leaked databases the sweep exists to remove. Treating them as *fresh* instead (the easy
+    /// mistake, since they carry no age) would leave the pre-existing leak permanently.
+    #[test]
+    fn a_pre_timestamp_name_is_stale() {
+        assert!(is_stale("tv_test_9f2b4c8e1a", NOW));
+        assert!(is_stale("tv_test_notanumber_abc123", NOW));
+    }
+
+    /// Anything that is not one of ours is left alone.
+    ///
+    /// The sweep runs `DROP DATABASE` inside a container that a developer may also be using for
+    /// something else. The `LIKE 'tv_test_%'` filter is the first guard and this is the second,
+    /// so a widened query cannot turn into a data-loss bug on its own.
+    #[test]
+    fn a_foreign_database_is_never_stale() {
+        assert!(!is_stale("postgres", NOW));
+        assert!(!is_stale("tankovault", NOW));
+        assert!(!is_stale("tv_prod_1700000000_abc123", NOW));
     }
 }

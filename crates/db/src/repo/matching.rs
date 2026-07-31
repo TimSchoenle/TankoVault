@@ -1,32 +1,36 @@
-//! Candidate lookup for series canonicalisation (design §10, step 2).
+//! Candidate lookup for series canonicalisation (design §10, step 2), plus the merge-candidate
+//! queue an ambiguous match feeds.
 //!
-//! This layer returns raw trigram candidates; the scoring/decision logic lives in the
-//! `matcher` crate (pure) so it is unit-testable without a database.
+//! This layer returns raw trigram candidates and performs whatever the caller's
+//! [`Canonicaliser`](tankovault_domain::matching::Canonicaliser) decides; the scoring and the
+//! thresholds live above it (`tankovault_matcher` and `tankovault_config::MatchingConfig`), so
+//! it is unit-testable without a database and this crate links no scorer.
+//!
+//! The candidate type is [`tankovault_domain::matching::Candidate`] itself rather than a row
+//! struct plus a `From` impl. That conversion used to be written out by hand, field for field,
+//! in **two** places — the worker's ingest canonicalisation and `services/sync`'s remote-entry
+//! resolution — so adding a field to it silently dropped that signal from one of the two paths
+//! that decide whether two series are the same. ARCH-16 step 1 deduplicated the conversion;
+//! step 3 removed the need for one at all.
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
-use tankovault_domain::{ContentType, SeriesId};
+use tankovault_domain::{ContentType, SeriesId, matching::Candidate};
 use uuid::Uuid;
-
-/// A trigram candidate for matching a new source's title to an existing series.
-pub struct MatchCandidate {
-    pub series_id: SeriesId,
-    pub normalized_title: String,
-    /// Best trigram similarity in `[0,1]` across the canonical + alternative titles.
-    pub similarity: f32,
-    pub content_type: ContentType,
-    pub release_year: Option<i32>,
-    pub tags: Vec<String>,
-    pub authors: Vec<String>,
-}
 
 /// Find existing series whose canonical or alternative normalized titles are
 /// trigram-similar to `normalized`, ordered by best similarity.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. "No candidate cleared the
+/// trigram threshold" is an empty `Vec`, which the canonicaliser reads as "this is a new
+/// series", so a caller must not fold an `Err` into the same path: a failed lookup that looks
+/// like no match creates a duplicate series instead of attaching a source.
 pub async fn find_candidates<'e, E: PgExecutor<'e>>(
     exec: E,
     normalized: &str,
     limit: i64,
-) -> DbResult<Vec<MatchCandidate>> {
+) -> DbResult<Vec<Candidate>> {
     #[derive(FromRow)]
     struct Row {
         id: Uuid,
@@ -63,7 +67,7 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
 
     Ok(rows
         .into_iter()
-        .map(|r| MatchCandidate {
+        .map(|r| Candidate {
             series_id: SeriesId::from_uuid(r.id),
             normalized_title: r.normalized_title,
             similarity: r.sim,
@@ -75,7 +79,101 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
+/// As [`find_candidates`], but for several query titles in **one** round trip: returns each
+/// title paired with its own top-`limit` candidates.
+///
+/// # Why this exists
+///
+/// External-sync entries carry a whole family of titles (romaji, english, native, plus every
+/// synonym), and the engine has to score each of them to attach an entry when *any* title
+/// matches. Doing that one title at a time meant K sequential trigram scans per remote entry —
+/// 3–8 for a typical `AniList` row, so 1 500–4 000 scans for a 500-entry library (PERF-13).
+///
+/// The lateral join is load-bearing: `LIMIT` has to apply *per title*, exactly as K separate
+/// queries did, so a title with many weak candidates cannot crowd out another title's strong
+/// one. Similarity is still computed against the same expression, so scores are identical to
+/// the per-title path.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable, and the caution on
+/// [`find_candidates`] about treating `Err` as "no match" applies here too. An empty
+/// `normalized` returns `Ok(empty)` with no round trip, and a title with no candidates is
+/// **absent** from the result rather than present with an empty bucket.
+pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
+    exec: E,
+    normalized: &[String],
+    limit: i64,
+) -> DbResult<Vec<(String, Vec<Candidate>)>> {
+    #[derive(FromRow)]
+    struct Row {
+        query_title: String,
+        id: Uuid,
+        normalized_title: String,
+        content_type: ContentType,
+        release_year: Option<i32>,
+        sim: f32,
+        tags: Vec<String>,
+        authors: Vec<String>,
+    }
+    if normalized.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query_as!(
+        Row,
+        "SELECT q.norm AS \"query_title!\", c.id, c.normalized_title, \
+                c.content_type AS \"content_type: ContentType\", c.release_year, \
+                c.sim AS \"sim!\", c.tags AS \"tags!\", c.authors AS \"authors!\" \
+         FROM UNNEST($1::text[]) AS q(norm) \
+         CROSS JOIN LATERAL ( \
+           SELECT s.id, s.normalized_title, s.content_type, s.release_year, \
+                  GREATEST( \
+                    similarity(s.normalized_title, q.norm), \
+                    COALESCE((SELECT MAX(similarity(st.normalized, q.norm)) \
+                              FROM series_titles st WHERE st.series_id = s.id), 0) \
+                  ) AS sim, \
+                  COALESCE((SELECT array_agg(t.name) FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                   WHERE stg.series_id = s.id), '{}') AS tags, \
+                  COALESCE((SELECT array_agg(a.name) FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
+                   WHERE sa.series_id = s.id), '{}') AS authors \
+           FROM series s \
+           WHERE s.normalized_title % q.norm \
+              OR EXISTS (SELECT 1 FROM series_titles st \
+                         WHERE st.series_id = s.id AND st.normalized % q.norm) \
+           ORDER BY sim DESC \
+           LIMIT $2 \
+         ) c",
+        normalized,
+        limit,
+    )
+    .fetch_all(exec)
+    .await?;
+
+    // Preserve the caller's title order, and keep a bucket for every requested title so a title
+    // with no candidates is still reported (as an empty list) rather than silently dropped.
+    let mut buckets: Vec<(String, Vec<Candidate>)> =
+        normalized.iter().map(|t| (t.clone(), Vec::new())).collect();
+    for row in rows {
+        if let Some((_, bucket)) = buckets.iter_mut().find(|(t, _)| *t == row.query_title) {
+            bucket.push(Candidate {
+                series_id: SeriesId::from_uuid(row.id),
+                normalized_title: row.normalized_title,
+                similarity: row.sim,
+                content_type: row.content_type,
+                release_year: row.release_year,
+                tags: row.tags,
+                authors: row.authors,
+            });
+        }
+    }
+    Ok(buckets)
+}
+
 /// Record an operator-review merge candidate (ambiguous confidence band).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Nothing deduplicates: the
+/// same pair scanned twice inserts two rows rather than raising
+/// [`crate::DbError::Conflict`], so the operator queue can hold duplicates of one ambiguity.
 pub async fn record_merge_candidate<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -99,7 +197,7 @@ pub async fn record_merge_candidate<'e, E: PgExecutor<'e>>(
 
 /// A pending merge candidate enriched with both series' display titles, for the operator
 /// review queue (design §11 `GET /v1/admin/merge-candidates`).
-#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct MergeCandidateView {
     pub id: Uuid,
     pub series_id: SeriesId,
@@ -109,11 +207,15 @@ pub struct MergeCandidateView {
     pub score: f32,
     pub reason: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub created_at: time::OffsetDateTime,
 }
 
 /// List the open (unresolved) merge candidates, newest first.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An empty queue is an empty
+/// `Vec`. Note that both series are inner-joined, so a candidate naming a deleted series
+/// disappears from this list without being resolved — see the note on [`merge_series`].
 pub async fn list_open_merge_candidates<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
@@ -160,6 +262,12 @@ pub async fn list_open_merge_candidates<'e, E: PgExecutor<'e>>(
 }
 
 /// Dismiss a merge candidate (operator judged the two works distinct) without merging.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown id and an
+/// already-resolved one are both `Ok(false)`, not [`crate::DbError::NotFound`]: the
+/// `NOT resolved` predicate makes dismissal idempotent, so a double-click cannot report a
+/// failure for work that was already done.
 pub async fn dismiss_merge_candidate<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
@@ -182,9 +290,46 @@ pub async fn dismiss_merge_candidate<'e, E: PgExecutor<'e>>(
 /// and external mappings, resolve any related merge candidates, then delete it. All
 /// child-table moves are idempotent (`ON CONFLICT`), and read-progress keeps the furthest
 /// point.
+///
+/// # The read-progress merge
+///
+/// Both frontiers take the furthest of the two rows, and the part frontier is then dropped if the
+/// merged **whole** frontier covers it — the same staleness rule
+/// [`progress_set`](crate::repo::tracking::progress_set) and
+/// [`progress_mark_read`](crate::repo::tracking::progress_mark_read) apply (`floor(part) <=
+/// whole`), so all three write paths uphold §A.1 identically.
+///
+/// The condition used to be `whole >= floor(part) **AND** part = 0`, which only ever cleared the
+/// frontier when there was no part frontier at all — and the `>= floor(part)` half, the actual
+/// staleness test, could therefore never fire. Merging a user who was at whole `6` on the survivor
+/// with their own row at part `4.5` on the absorbed series produced `(6, 4.5)`, which §A.1 forbids.
+/// It changed no answer (`covers` and every read model already treat `4.5` as read at `floor(4.5)
+/// <= 6`) and the next `progress_set` cleared it, which is why it was invisible; the invariant is
+/// documented, so a read model is entitled to trust it.
+///
+/// # Merge candidates
+///
+/// The `UPDATE merge_candidates` below is belt-and-braces: both of that table's series columns are
+/// `ON DELETE CASCADE`, so every row naming `drop_id` is removed by the `DELETE FROM series` that
+/// follows regardless. What matters — and what `repo_matching.rs` asserts — is that no *unresolved*
+/// candidate is left naming a series that no longer exists, because
+/// [`list_open_merge_candidates`] inner-joins both sides and such a row would silently vanish from
+/// the operator's queue while staying open in the table.
+///
+/// # Errors
+/// [`crate::DbError::Conflict`] — a 409 — when `keep_id == drop_id`, checked before the
+/// transaction opens. [`crate::DbError::NotFound`] — a 404 — when either series is missing,
+/// which is one `count(*) = 2` check rather than two lookups so a series deleted between them
+/// cannot slip through. Otherwise [`crate::DbError::Sqlx`] from any statement in the
+/// transaction, which rolls back whole: a partial merge would leave sources re-parented to a
+/// series whose titles and progress had not moved, so there is no partial-success return.
 // A straight-line sequence of per-table union inserts reads more clearly as one function
 // than split across arbitrary helpers just to dodge the line-count lint.
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one straight-line sequence of per-table union inserts; splitting it to satisfy \
+              a line count would hide the order the tables must be moved in"
+)]
 pub async fn merge_series(
     pool: &sqlx::PgPool,
     keep_id: SeriesId,
@@ -280,14 +425,13 @@ pub async fn merge_series(
             SET last_read_whole_number = \
                     GREATEST(read_progress.last_read_whole_number, EXCLUDED.last_read_whole_number), \
                 last_read_part_number = CASE \
-                    WHEN GREATEST(read_progress.last_read_whole_number, EXCLUDED.last_read_whole_number) \
-                         >= floor(GREATEST(COALESCE(read_progress.last_read_part_number, 0), \
-                                           COALESCE(EXCLUDED.last_read_part_number, 0))) \
-                     AND GREATEST(COALESCE(read_progress.last_read_part_number, 0), \
-                                  COALESCE(EXCLUDED.last_read_part_number, 0)) = 0 \
+                    WHEN floor(GREATEST(COALESCE(read_progress.last_read_part_number, 0), \
+                                        COALESCE(EXCLUDED.last_read_part_number, 0))) \
+                         <= GREATEST(read_progress.last_read_whole_number, \
+                                     EXCLUDED.last_read_whole_number) \
                     THEN NULL \
-                    ELSE NULLIF(GREATEST(COALESCE(read_progress.last_read_part_number, 0), \
-                                         COALESCE(EXCLUDED.last_read_part_number, 0)), 0) END, \
+                    ELSE GREATEST(COALESCE(read_progress.last_read_part_number, 0), \
+                                  COALESCE(EXCLUDED.last_read_part_number, 0)) END, \
                 updated_at = now()",
         keep,
         drop,

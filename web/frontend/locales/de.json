@@ -76,7 +76,11 @@
       }
     },
     "profile": {
+      "currentPassword": "Aktuelles Passwort",
+      "currentPasswordHint": "Erforderlich, um deine E-Mail-Adresse zu ändern. Alle Sitzungen werden beendet, und die neue Adresse muss bestätigt werden, bevor du dich damit anmelden oder dein Passwort zurücksetzen kannst.",
+      "currentPasswordMissing": "Gib dein aktuelles Passwort ein, um die E-Mail-Adresse zu ändern.",
       "displayName": "Anzeigename",
+      "emailChanged": "E-Mail aktualisiert. Prüfe die neue Adresse auf den Bestätigungslink — du wurdest überall abgemeldet.",
       "emailPlaceholder": "neue E-Mail-Adresse",
       "nothingToSave": "Gib zuerst einen neuen Anzeigenamen oder eine neue E-Mail-Adresse ein.",
       "save": "Profil speichern",
@@ -130,6 +134,7 @@
     }
   },
   "auth": {
+    "badCredentials": "E-Mail/Benutzername und Passwort passen zu keinem Konto. Bitte prüfe deine Eingaben und versuch es erneut.",
     "confirmFirst": "Bitte bestätige deine E-Mail-Adresse, bevor du dich anmeldest. Sieh in deinem Posteingang nach dem Bestätigungslink.",
     "field": {
       "email": "E-Mail",
@@ -158,6 +163,7 @@
     "backToSignIn": "Zurück zur Anmeldung",
     "cancel": "Abbrechen",
     "close": "Schließen",
+    "downloadRefused": "Dein Browser hat den Download abgelehnt.",
     "markRead": "Als gelesen markieren",
     "markUnread": "Als ungelesen markieren",
     "next": "Weiter",
@@ -385,6 +391,7 @@
       "metaToday": "{count} neue Kap. heute",
       "migrateWarning": "Domainwechsel — {count} Serien werden beim nächsten Scan neu verlinkt",
       "missingFields": "Slug, Name und Basis-URL sind alle erforderlich.",
+      "namePlaceholder": "Beispiel-Scans",
       "new": "Neuer Anbieter",
       "noRuns": "Noch keine Scan-Läufe für diesen Anbieter.",
       "noStats": "Noch keine Statistiken für diesen Anbieter.",
@@ -625,6 +632,7 @@
     "page": {
       "go": "Los",
       "goTo": "Gehe zu",
+      "label": "Seitennavigation",
       "next": "Weiter",
       "ofTotal": "von {pages}",
       "prev": "Zurück"
@@ -633,6 +641,8 @@
     "presetsSoon": "Das Speichern von Filtervorlagen kommt bald.",
     "provider": "Anbieter",
     "releaseYear": "Erscheinungsjahr",
+    "releaseYearFrom": "Frühestes Erscheinungsjahr",
+    "releaseYearTo": "Spätestes Erscheinungsjahr",
     "resetFilters": "Filter zurücksetzen",
     "sort": {
       "chapters": "Meiste Kapitel",
@@ -768,7 +778,9 @@
     },
     "home": "Start",
     "notifications": "Benachrichtigungen",
+    "railLabel": "Hauptnavigation",
     "search": "Suche",
+    "skipToContent": "Zum Inhalt springen",
     "tagline": "FINDEN · VERFOLGEN · SYNCHRONISIEREN",
     "watchlist": "Merkliste"
   },
@@ -914,7 +926,11 @@
   "topbar": {
     "anilistConnect": "AniList verbinden",
     "anilistSynced": "Mit AniList synchronisiert",
-    "searchPlaceholder": "Serien, Tags, Autoren suchen…"
+    "searchPlaceholder": "Serien, Tags, Autoren suchen…",
+    "unreadCount": {
+      "one": "{count} ungelesene Benachrichtigung",
+      "other": "{count} ungelesene Benachrichtigungen"
+    }
   },
   "verifyEmail": {
     "confirmed": "E-Mail bestätigt. Wir bringen dich zu deiner Bibliothek…",

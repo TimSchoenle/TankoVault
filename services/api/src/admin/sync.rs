@@ -4,6 +4,7 @@ use crate::audit::audit;
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::ADMIN_SYNC_TAG;
 use crate::state::{AppState, AuthUser};
+use crate::views::IntoView;
 use axum::Json;
 use axum::extract::{Path, State};
 use serde::{Deserialize, Serialize};
@@ -25,7 +26,7 @@ use uuid::Uuid;
     tag = ADMIN_SYNC_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Up to 200 linked accounts", body = Vec<tankovault_db::repo::sync::AdminAccountRow>),
+        (status = 200, description = "Up to 200 linked accounts", body = Vec<tankovault_contracts::admin::SyncAccountView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
@@ -33,11 +34,10 @@ use uuid::Uuid;
 pub async fn list_sync_accounts(
     State(state): State<AppState>,
     user: AuthUser,
-) -> ApiResult<Json<Vec<tankovault_db::repo::sync::AdminAccountRow>>> {
+) -> ApiResult<Json<Vec<tankovault_contracts::admin::SyncAccountView>>> {
     user.require(Permission::SyncAdminRead).await?;
-    Ok(Json(
-        tankovault_db::repo::sync::admin_list_accounts(&state.pool, 200).await?,
-    ))
+    let rows = tankovault_db::repo::sync::admin_list_accounts(&state.pool, 200).await?;
+    Ok(Json(rows.into_view()))
 }
 
 /// List series↔external mappings
@@ -49,7 +49,7 @@ pub async fn list_sync_accounts(
     tag = ADMIN_SYNC_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Up to 200 mappings", body = Vec<tankovault_db::repo::sync::AdminMappingRow>),
+        (status = 200, description = "Up to 200 mappings", body = Vec<tankovault_contracts::admin::SyncMappingView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
@@ -57,11 +57,10 @@ pub async fn list_sync_accounts(
 pub async fn list_sync_mappings(
     State(state): State<AppState>,
     user: AuthUser,
-) -> ApiResult<Json<Vec<tankovault_db::repo::sync::AdminMappingRow>>> {
+) -> ApiResult<Json<Vec<tankovault_contracts::admin::SyncMappingView>>> {
     user.require(Permission::SyncAdminRead).await?;
-    Ok(Json(
-        tankovault_db::repo::sync::admin_list_mappings(&state.pool, 200).await?,
-    ))
+    let rows = tankovault_db::repo::sync::admin_list_mappings(&state.pool, 200).await?;
+    Ok(Json(rows.into_view()))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -81,7 +80,7 @@ pub struct SyncAccountTarget {
     request_body = SyncAccountTarget,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Pulled, forwarded from the sync service"),
+        (status = 200, description = "Pulled, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
@@ -121,7 +120,7 @@ pub async fn admin_sync_pull(
     request_body = SyncAccountTarget,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Pushed, forwarded from the sync service"),
+        (status = 200, description = "Pushed, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
@@ -161,7 +160,7 @@ pub async fn admin_sync_push(
     request_body = SyncAccountTarget,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Unlinked, forwarded from the sync service"),
+        (status = 200, description = "Unlinked, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
@@ -172,25 +171,13 @@ pub async fn admin_sync_unlink(
     Json(req): Json<SyncAccountTarget>,
 ) -> ApiResult<Json<serde_json::Value>> {
     user.require(Permission::SyncAdminWrite).await?;
-    let url = format!(
-        "{}/v1/sync/{}/link",
-        state.sync_url.trim_end_matches('/'),
-        req.provider
-    );
-    let resp = state
-        .http
-        .delete(url)
-        .json(&serde_json::json!({ "user_id": req.user_id }))
-        .send()
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "sync service unreachable");
-            ApiError::Internal
-        })?;
-    if !resp.status().is_success() {
-        return Err(ApiError::Internal);
-    }
-    let value: serde_json::Value = resp.json().await.map_err(|_| ApiError::Internal)?;
+    let Json(value) = state
+        .sync
+        .delete(
+            &format!("/v1/sync/{}/link", req.provider),
+            &serde_json::json!({ "user_id": req.user_id }),
+        )
+        .await?;
     audit(
         &state,
         &user,
@@ -306,7 +293,7 @@ pub async fn upsert_sync_mapping(
     params(("id" = SeriesId, Path, description = "Series id")),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Mappings for this series", body = Vec<tankovault_db::repo::sync::AdminMappingRow>),
+        (status = 200, description = "Mappings for this series", body = Vec<tankovault_contracts::admin::SyncMappingView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
@@ -315,11 +302,11 @@ pub async fn list_sync_mappings_for_series(
     State(state): State<AppState>,
     user: AuthUser,
     Path(series_id): Path<SeriesId>,
-) -> ApiResult<Json<Vec<tankovault_db::repo::sync::AdminMappingRow>>> {
+) -> ApiResult<Json<Vec<tankovault_contracts::admin::SyncMappingView>>> {
     user.require(Permission::SyncAdminRead).await?;
-    Ok(Json(
-        tankovault_db::repo::sync::admin_list_mappings_for_series(&state.pool, series_id).await?,
-    ))
+    let rows =
+        tankovault_db::repo::sync::admin_list_mappings_for_series(&state.pool, series_id).await?;
+    Ok(Json(rows.into_view()))
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -344,7 +331,7 @@ pub struct UnmappedQuery {
     params(UnmappedQuery),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Up to 100 unmapped series", body = Vec<tankovault_db::repo::sync::UnmappedSeriesRow>),
+        (status = 200, description = "Up to 100 unmapped series", body = Vec<tankovault_contracts::admin::UnmappedSeriesView>),
         (status = 400, description = "provider is empty", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
@@ -354,21 +341,20 @@ pub async fn list_unmapped_series(
     State(state): State<AppState>,
     user: AuthUser,
     axum::extract::Query(q): axum::extract::Query<UnmappedQuery>,
-) -> ApiResult<Json<Vec<tankovault_db::repo::sync::UnmappedSeriesRow>>> {
+) -> ApiResult<Json<Vec<tankovault_contracts::admin::UnmappedSeriesView>>> {
     user.require(Permission::SyncAdminRead).await?;
     let provider = q.provider.trim();
     if provider.is_empty() {
         return Err(ApiError::BadRequest("provider is required".to_owned()));
     }
-    Ok(Json(
-        tankovault_db::repo::sync::admin_list_unmapped(
-            &state.pool,
-            provider,
-            q.query.as_deref(),
-            100,
-        )
-        .await?,
-    ))
+    let rows = tankovault_db::repo::sync::admin_list_unmapped(
+        &state.pool,
+        provider,
+        q.query.as_deref(),
+        100,
+    )
+    .await?;
+    Ok(Json(rows.into_view()))
 }
 
 /// List unmatched remote entries
@@ -383,7 +369,7 @@ pub async fn list_unmapped_series(
     params(UnmappedQuery),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Up to 200 unmatched remote entries", body = Vec<tankovault_db::repo::sync::RemoteEntryRow>),
+        (status = 200, description = "Up to 200 unmatched remote entries", body = Vec<tankovault_contracts::admin::RemoteEntryView>),
         (status = 400, description = "provider is empty", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
@@ -393,21 +379,20 @@ pub async fn list_unmatched_remote(
     State(state): State<AppState>,
     user: AuthUser,
     axum::extract::Query(q): axum::extract::Query<UnmappedQuery>,
-) -> ApiResult<Json<Vec<tankovault_db::repo::sync::RemoteEntryRow>>> {
+) -> ApiResult<Json<Vec<tankovault_contracts::admin::RemoteEntryView>>> {
     user.require(Permission::SyncAdminRead).await?;
     let provider = q.provider.trim();
     if provider.is_empty() {
         return Err(ApiError::BadRequest("provider is required".to_owned()));
     }
-    Ok(Json(
-        tankovault_db::repo::sync::admin_list_unmatched_remote(
-            &state.pool,
-            provider,
-            q.query.as_deref(),
-            200,
-        )
-        .await?,
-    ))
+    let rows = tankovault_db::repo::sync::admin_list_unmatched_remote(
+        &state.pool,
+        provider,
+        q.query.as_deref(),
+        200,
+    )
+    .await?;
+    Ok(Json(rows.into_view()))
 }
 
 #[derive(Debug, Deserialize, IntoParams)]

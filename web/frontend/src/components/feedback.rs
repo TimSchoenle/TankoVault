@@ -84,6 +84,24 @@ pub(crate) fn SignInGate() -> Element {
     }
 }
 
+/// The whole "you must be signed in" screen: the page title plus [`SignInGate`].
+///
+/// Five protected views hand-rolled this same two-element body, and the fifth — `/console` —
+/// forgot it entirely and rendered a **permanent loading skeleton** to signed-out visitors
+/// instead. That is the worst failure mode available: it looks like the app is working, so
+/// the reader waits rather than signing in.
+///
+/// Deliberately a guard that callers early-return, not a wrapper taking `children`: every one
+/// of these views computes derived state after the check (a display name, a filtered list),
+/// and a wrapper would have to build that state before deciding not to show it.
+#[component]
+pub(crate) fn AuthRequired(title: String) -> Element {
+    rsx! {
+        h1 { class: "ik-page-title", "{title}" }
+        SignInGate {}
+    }
+}
+
 /// A thin brush-stroke section divider (the one signature device, §17.1).
 #[component]
 pub(crate) fn Brush() -> Element {
@@ -132,6 +150,51 @@ pub(crate) fn async_view<T: 'static>(
         }
         Some(Ok(value)) => content(value),
     }
+}
+
+/// [`async_view`] with a fixed-height [`SkeletonBlock`] as its loading state — the shape every
+/// console panel and sidebar card wants.
+///
+/// The console panels used to open-code this because they could not name their loading state in
+/// one expression, and open-coding it is how they ended up rendering a failed fetch as muted
+/// grey body text with no retry button. Naming the common case removes the excuse.
+pub(crate) fn async_block<T: 'static>(
+    resource: &Resource<Result<T, String>>,
+    reload: Reload,
+    height: u32,
+    content: impl FnOnce(&T) -> Element,
+) -> Element {
+    async_view(
+        resource,
+        reload,
+        || {
+            rsx! {
+                SkeletonBlock { height }
+            }
+        },
+        content,
+    )
+}
+
+/// [`async_list`] with a fixed-height [`SkeletonBlock`] as its loading state.
+pub(crate) fn async_block_list<T: 'static>(
+    resource: &Resource<Result<Vec<T>, String>>,
+    reload: Reload,
+    height: u32,
+    empty: &str,
+    content: impl FnOnce(&[T]) -> Element,
+) -> Element {
+    async_list(
+        resource,
+        reload,
+        || {
+            rsx! {
+                SkeletonBlock { height }
+            }
+        },
+        empty,
+        content,
+    )
 }
 
 /// [`async_view`] for a list: adds the "loaded, but there is nothing here" state, which is a

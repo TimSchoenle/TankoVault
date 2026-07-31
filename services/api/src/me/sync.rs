@@ -1,12 +1,16 @@
 //! External-sync proxy endpoints, keyed by provider.
 
-use crate::error::{ApiError, ApiResult};
+use crate::error::ApiResult;
 use crate::openapi::ME_SYNC_TAG;
 use crate::state::{AppState, AuthUser};
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use serde::Deserialize;
 use std::fmt::Write as _;
+use tankovault_contracts::sync::{
+    AccountSettings, AccountStatus, AuthorizeUrl, ConflictPolicy, ConflictView, HistoryView,
+    ProviderInfo,
+};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -29,16 +33,8 @@ use uuid::Uuid;
 pub async fn sync_providers(
     State(state): State<AppState>,
     _user: AuthUser,
-) -> ApiResult<Json<serde_json::Value>> {
-    let url = format!("{}/v1/sync/providers", state.sync_url.trim_end_matches('/'));
-    let resp = state.http.get(url).send().await.map_err(|e| {
-        tracing::error!(error = %e, "sync service unreachable");
-        ApiError::Internal
-    })?;
-    if !resp.status().is_success() {
-        return Err(ApiError::Internal);
-    }
-    Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
+) -> ApiResult<Json<Vec<ProviderInfo>>> {
+    state.sync.get("/v1/sync/providers").await
 }
 
 /// Get a provider's OAuth consent URL
@@ -60,19 +56,11 @@ pub async fn sync_authorize_url(
     State(state): State<AppState>,
     _user: AuthUser,
     Path(provider): Path<String>,
-) -> ApiResult<Json<serde_json::Value>> {
-    let url = format!(
-        "{}/v1/sync/{provider}/authorize-url",
-        state.sync_url.trim_end_matches('/')
-    );
-    let resp = state.http.get(url).send().await.map_err(|e| {
-        tracing::error!(error = %e, "sync service unreachable");
-        ApiError::Internal
-    })?;
-    if !resp.status().is_success() {
-        return Err(ApiError::Internal);
-    }
-    Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
+) -> ApiResult<Json<AuthorizeUrl>> {
+    state
+        .sync
+        .get(&format!("/v1/sync/{provider}/authorize-url"))
+        .await
 }
 
 /// Get link status for a provider
@@ -96,20 +84,14 @@ pub async fn sync_status(
     State(state): State<AppState>,
     user: AuthUser,
     Path(provider): Path<String>,
-) -> ApiResult<Json<serde_json::Value>> {
-    let url = format!(
-        "{}/v1/sync/{provider}/status/{}",
-        state.sync_url.trim_end_matches('/'),
-        user.user_id.as_uuid()
-    );
-    let resp = state.http.get(url).send().await.map_err(|e| {
-        tracing::error!(error = %e, "sync service unreachable");
-        ApiError::Internal
-    })?;
-    if !resp.status().is_success() {
-        return Err(ApiError::Internal);
-    }
-    Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
+) -> ApiResult<Json<AccountStatus>> {
+    state
+        .sync
+        .get(&format!(
+            "/v1/sync/{provider}/status/{}",
+            user.user_id.as_uuid()
+        ))
+        .await
 }
 
 /// Unlink a provider
@@ -123,7 +105,7 @@ pub async fn sync_status(
     params(("provider" = String, Path, description = "Provider slug")),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Unlinked, forwarded from the sync service"),
+        (status = 200, description = "Unlinked, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
@@ -132,24 +114,13 @@ pub async fn sync_disconnect(
     user: AuthUser,
     Path(provider): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let url = format!(
-        "{}/v1/sync/{provider}/link",
-        state.sync_url.trim_end_matches('/')
-    );
-    let resp = state
-        .http
-        .delete(url)
-        .json(&serde_json::json!({ "user_id": user.user_id }))
-        .send()
+    state
+        .sync
+        .delete(
+            &format!("/v1/sync/{provider}/link"),
+            &serde_json::json!({ "user_id": user.user_id }),
+        )
         .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "sync service unreachable");
-            ApiError::Internal
-        })?;
-    if !resp.status().is_success() {
-        return Err(ApiError::Internal);
-    }
-    Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -169,7 +140,7 @@ pub struct AniListCallback {
     params(("provider" = String, Path, description = "Provider slug"), AniListCallback),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Linked, forwarded from the sync service"),
+        (status = 200, description = "Linked, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 404, description = "Unknown provider", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
@@ -191,9 +162,14 @@ pub async fn sync_callback(
 
 #[derive(Debug, Deserialize, Default, ToSchema)]
 pub struct SyncOpts {
-    /// `local_wins` | `remote_wins` | `newest_wins`; omitted uses the service default.
+    /// Overrides the account's own conflict policy for this run; omitted uses it.
+    ///
+    /// Typed rather than a bare string since FRONTEND F10: the sync service's request body
+    /// has always been a `ConflictPolicy`, so a token this proxy accepted and that one did not
+    /// used to fail one hop downstream, as a `502` with no useful detail. Now the two name the
+    /// same type and the rejection happens here, as a `422` that says which values are legal.
     #[serde(default)]
-    pub policy: Option<String>,
+    pub policy: Option<ConflictPolicy>,
 }
 
 /// Push local state to a provider
@@ -210,7 +186,7 @@ pub struct SyncOpts {
     request_body(content = Option<SyncOpts>, description = "Optional sync options; omitted body uses the service default"),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Pushed, forwarded from the sync service"),
+        (status = 200, description = "Pushed, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
     )
@@ -242,7 +218,7 @@ pub async fn sync_push(
     request_body(content = Option<SyncOpts>, description = "Optional sync options; omitted body uses the service default"),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Pulled, forwarded from the sync service"),
+        (status = 200, description = "Pulled, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
     )
@@ -282,7 +258,7 @@ pub async fn sync_settings(
     State(state): State<AppState>,
     user: AuthUser,
     Path(provider): Path<String>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<AccountSettings>> {
     sync_get(
         &state,
         &format!("/v1/sync/{provider}/settings/{}", user.user_id.as_uuid()),
@@ -294,8 +270,11 @@ pub async fn sync_settings(
 pub struct SyncSettingsPatch {
     #[serde(default)]
     pub auto_sync_enabled: Option<bool>,
+    /// The account's new conflict policy; omitted leaves it unchanged.
+    ///
+    /// See [`SyncOpts::policy`] for why this is typed rather than a bare string.
     #[serde(default)]
-    pub conflict_policy: Option<String>,
+    pub conflict_policy: Option<ConflictPolicy>,
 }
 
 /// Update automatic-sync settings
@@ -319,50 +298,42 @@ pub async fn sync_settings_patch(
     Path(provider): Path<String>,
     Json(body): Json<SyncSettingsPatch>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let url = format!(
-        "{}/v1/sync/{provider}/settings/{}",
-        state.sync_url.trim_end_matches('/'),
-        user.user_id.as_uuid()
-    );
     let payload = serde_json::json!({
         "user_id": user.user_id,
         "auto_sync_enabled": body.auto_sync_enabled,
         "conflict_policy": body.conflict_policy,
     });
-    let resp = state
-        .http
-        .patch(url)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "sync service unreachable");
-            ApiError::Internal
-        })?;
-    if !resp.status().is_success() {
-        return Err(ApiError::Internal);
-    }
+    // The upstream body is an implementation detail here; the documented response is a
+    // fixed acknowledgement, so the forwarded value is deliberately discarded. Named
+    // explicitly because nothing else in this call pins the decode type any more (ARCH-10).
+    let _: Json<serde_json::Value> = state
+        .sync
+        .patch(
+            &format!("/v1/sync/{provider}/settings/{}", user.user_id.as_uuid()),
+            &payload,
+        )
+        .await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 /// List pending sync conflicts
 ///
-/// The caller's pending conflicts across all providers (§B.6). Rows are `ConflictRow`, the
-/// same type the sync service reads from the database.
+/// The caller's pending conflicts across all providers (§B.6). Rows are
+/// `tankovault_contracts::sync::ConflictView`, the shape the sync service publishes.
 #[utoipa::path(
     get,
     path = "/v1/me/sync/conflicts",
     tag = ME_SYNC_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Pending conflicts, forwarded from the sync service", body = Vec<tankovault_db::repo::sync::ConflictRow>),
+        (status = 200, description = "Pending conflicts, forwarded from the sync service", body = Vec<tankovault_contracts::sync::ConflictView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn sync_conflicts(
     State(state): State<AppState>,
     user: AuthUser,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<Vec<ConflictView>>> {
     sync_get(
         &state,
         &format!("/v1/sync/conflicts/{}", user.user_id.as_uuid()),
@@ -387,7 +358,7 @@ pub struct ResolveConflict {
     request_body = ResolveConflict,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Resolved, forwarded from the sync service"),
+        (status = 200, description = "Resolved, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 404, description = "No such conflict", body = crate::error::ProblemDetails),
     )
@@ -419,8 +390,8 @@ pub struct HistoryParams {
 
 /// Get sync history
 ///
-/// A page of the caller's sync history (§B.6). Rows are `HistoryRow`, the same type the sync
-/// service reads from the database.
+/// A page of the caller's sync history (§B.6). Rows are
+/// `tankovault_contracts::sync::HistoryView`, the shape the sync service publishes.
 #[utoipa::path(
     get,
     path = "/v1/me/sync/history",
@@ -428,7 +399,7 @@ pub struct HistoryParams {
     params(HistoryParams),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "A page of sync history, forwarded from the sync service", body = Vec<tankovault_db::repo::sync::HistoryRow>),
+        (status = 200, description = "A page of sync history, forwarded from the sync service", body = Vec<tankovault_contracts::sync::HistoryView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
@@ -436,7 +407,7 @@ pub async fn sync_history(
     State(state): State<AppState>,
     user: AuthUser,
     Query(q): Query<HistoryParams>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<Vec<HistoryView>>> {
     let mut path = format!("/v1/sync/history/{}?", user.user_id.as_uuid());
     if let Some(s) = q.series_id {
         let _ = write!(path, "series_id={s}&");
@@ -448,59 +419,24 @@ pub async fn sync_history(
     sync_get(&state, &path).await
 }
 
-/// GET a JSON body from the sync service, mapping upstream errors like `sync_proxy`.
-pub(crate) async fn sync_get(state: &AppState, path: &str) -> ApiResult<Json<serde_json::Value>> {
-    let url = format!(
-        "{}/{}",
-        state.sync_url.trim_end_matches('/'),
-        path.trim_start_matches('/')
-    );
-    let resp = state.http.get(url).send().await.map_err(|e| {
-        tracing::error!(error = %e, "sync service unreachable");
-        ApiError::Internal
-    })?;
-    if !resp.status().is_success() {
-        if resp.status().as_u16() == 404 {
-            return Err(ApiError::NotFound);
-        }
-        return Err(ApiError::Internal);
-    }
-    Ok(Json(resp.json().await.map_err(|_| ApiError::Internal)?))
+/// GET a JSON body from the sync service.
+///
+/// A thin alias over [`crate::upstream::Upstream`], kept so `admin/sync.rs` reads the same
+/// way as this module. Error mapping, the internal token and the timeouts all live in the
+/// client rather than being restated per call site.
+pub(crate) async fn sync_get<T: serde::de::DeserializeOwned>(
+    state: &AppState,
+    path: &str,
+) -> ApiResult<Json<T>> {
+    state.sync.get(path).await
 }
 
-/// POST a JSON body to the sync service, tolerating an empty (`204`) response and mapping
-/// a "not linked" conflict through to the caller. `pub(crate)` so `admin.rs` can reuse it for
+/// POST a JSON body to the sync service. `pub(crate)` so `admin/sync.rs` can reuse it for
 /// operator-triggered force pull/push (design: admin Sync console tab).
 pub(crate) async fn sync_proxy(
     state: &AppState,
     path: &str,
     body: serde_json::Value,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let url = format!(
-        "{}/{}",
-        state.sync_url.trim_end_matches('/'),
-        path.trim_start_matches('/')
-    );
-    let resp = state.http.post(url).json(&body).send().await.map_err(|e| {
-        tracing::error!(error = %e, "sync service unreachable");
-        ApiError::Internal
-    })?;
-    let status = resp.status();
-    let text = resp.text().await.unwrap_or_default();
-    if !status.is_success() {
-        if status.as_u16() == 409 {
-            return Err(ApiError::Conflict("Account not linked".to_owned()));
-        }
-        if status.as_u16() == 404 {
-            return Err(ApiError::NotFound);
-        }
-        tracing::warn!(%status, body = %text, "sync service returned an error");
-        return Err(ApiError::Internal);
-    }
-    let value = if text.trim().is_empty() {
-        serde_json::json!({ "ok": true })
-    } else {
-        serde_json::from_str(&text).unwrap_or_else(|_| serde_json::json!({ "ok": true }))
-    };
-    Ok(Json(value))
+    state.sync.post(path, &body).await
 }

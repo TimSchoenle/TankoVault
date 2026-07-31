@@ -7,6 +7,17 @@
 //! - `xtask openapi` — regenerate `openapi.json` (the canonical spec) and the typed Rust
 //!   API client (`crates/api-client/src/lib.rs`) from the api service's `utoipa` schemas via
 //!   `progenitor`. No database needed.
+//! - `xtask ci` — run every offline gate CI runs, in CI's order, stopping at the first
+//!   failure. No database, no Docker, no network; see `ci.rs` for what it deliberately omits.
+//! - `xtask repo-lint` — the repository invariants no compiler or linter can see (a CSP and
+//!   the HTML it governs, a published secret and the code that refuses it). Runs as part of
+//!   `xtask ci`; see `repo_lint.rs` for the rules and why each one exists.
+//! - `xtask config-docs [--check]` — print the `TANKOVAULT_*` surface derived from the config
+//!   structs, or (with `--check`) fail if `docs/CONFIGURATION.md` no longer matches it. No
+//!   database.
+//! - `xtask coverage-ratchet [report.json]` — fail if line coverage has dropped below the
+//!   floor committed in `.github/coverage-floor.txt`. Reads a `cargo llvm-cov report --json`
+//!   document (default `target/llvm-cov/coverage.json`); runs no tests itself. No database.
 //! - `xtask sqlx-prepare [--check]` — regenerate (or verify, with `--check`) the committed
 //!   sqlx offline query cache (`.sqlx/`) so the compile-time-checked query macros in
 //!   `tankovault-db` build without a live database. Wraps `cargo sqlx prepare` (sqlx-cli).
@@ -14,15 +25,51 @@
 //! `migrate`/`reset`/`seed`/`sqlx-prepare` read `DATABASE_URL` from the environment;
 //! `openapi` does not.
 
+mod ci;
+mod config_docs;
+mod coverage;
+mod repo_lint;
+
 use progenitor_impl::{GenerationSettings, Generator, InterfaceStyle, TypePatch};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cmd = std::env::args().nth(1).unwrap_or_default();
 
+    if cmd == "install-hooks" {
+        return install_hooks();
+    }
+
+    // Every offline gate CI runs, in CI's order. No database, no Docker, no network.
+    if cmd == "ci" {
+        return ci::run(workspace_root());
+    }
+
+    // The invariants no compiler sees: two artefacts that must agree, with nothing else
+    // connecting them. Reads source and deployment files; no database, no network.
+    if cmd == "repo-lint" {
+        return repo_lint::run(workspace_root());
+    }
+
+    // The coverage ratchet. Reads the report `cargo llvm-cov` just wrote and compares it
+    // against the committed floor; needs no database and no network.
+    if cmd == "coverage-ratchet" {
+        let report = std::env::args()
+            .nth(2)
+            .unwrap_or_else(|| "target/llvm-cov/coverage.json".to_owned());
+        return coverage::run(workspace_root(), std::path::Path::new(&report));
+    }
+
     if cmd == "openapi" {
         let check = std::env::args().nth(2).as_deref() == Some("--check");
         return openapi(check);
+    }
+
+    // Does `docs/CONFIGURATION.md` still describe the keys the config structs read? Reads
+    // source and one markdown file; no database, no network.
+    if cmd == "config-docs" {
+        let check = std::env::args().nth(2).as_deref() == Some("--check");
+        return config_docs::run(workspace_root(), check);
     }
 
     // Regenerate the committed sqlx offline query cache (`.sqlx/`). Shells out to `sqlx-cli`,
@@ -46,7 +93,8 @@ async fn main() -> anyhow::Result<()> {
         other => {
             eprintln!(
                 "unknown command {other:?}; usage: xtask \
-                 <migrate|reset|seed|openapi [--check]|sqlx-prepare [--check]>"
+                 <migrate|reset|seed|openapi [--check]|config-docs [--check]|\
+                 sqlx-prepare [--check]>"
             );
             std::process::exit(2);
         }
@@ -107,6 +155,65 @@ fn sqlx_prepare(check: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Install `hooks/pre-commit` into `.git/hooks/pre-commit`.
+///
+/// This used to run from `xtask/build.rs`, i.e. on **every** `cargo build --workspace`. That is
+/// a build script mutating the developer's git configuration: a side effect outside `OUT_DIR`
+/// and outside the build sandbox, applied without consent, which also breaks hermetic build
+/// environments. The guards were well written; the design was the problem.
+///
+/// It is an explicit command now. The CI gate (`xtask openapi --check`) is what actually
+/// enforces the invariant — this hook only moves the discovery earlier, which is a
+/// convenience the developer should opt into.
+///
+/// # Errors
+/// When `.git/hooks` cannot be created or written.
+fn install_hooks() -> anyhow::Result<()> {
+    use std::fs;
+    use std::path::Path;
+
+    const MANAGED_MARKER: &str = "tankovault: managed by xtask";
+
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask/ has a parent directory")
+        .to_path_buf();
+    let git_dir = repo_root.join(".git");
+    if !git_dir.exists() {
+        anyhow::bail!("{} is not a git checkout", repo_root.display());
+    }
+
+    let hooks_dir = git_dir.join("hooks");
+    let hook_path = hooks_dir.join("pre-commit");
+    let template = include_str!("../hooks/pre-commit");
+
+    // Never clobber a hook we did not install ourselves.
+    if let Ok(existing) = fs::read_to_string(&hook_path) {
+        if existing == template {
+            println!("pre-commit hook is already up to date");
+            return Ok(());
+        }
+        if !existing.contains(MANAGED_MARKER) {
+            anyhow::bail!(
+                "{} exists and was not installed by xtask; move it aside first",
+                hook_path.display()
+            );
+        }
+    }
+
+    fs::create_dir_all(&hooks_dir)?;
+    fs::write(&hook_path, template)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook_path, fs::Permissions::from_mode(0o755))?;
+    }
+
+    println!("installed {}", hook_path.display());
+    Ok(())
+}
+
 /// Regenerate the two committed `OpenAPI` artifacts from the api service's `utoipa` schemas:
 ///
 /// 1. `openapi.json` — the canonical, pretty-printed `OpenAPI` 3.1 document.
@@ -159,8 +266,13 @@ fn openapi(check: bool) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to parse OpenAPI for progenitor: {e}"))?;
 
     let tokens = generator.generate_tokens(&spec)?;
+    // Formatted here rather than excluded from formatting: `rustfmt.toml`'s `ignore` key is
+    // nightly-only, so on stable it printed a warning and formatted the file anyway, which
+    // made `cargo fmt --check` permanently red and gated every job downstream of it.
+    // Emitting rustfmt's own output keeps `cargo fmt --check` and `xtask openapi --check`
+    // agreeing on one canonical form.
     let rendered_client = "// Generated by xtask. DO NOT EDIT.\n".to_owned()
-        + &progenitor_impl::space_out_items(tokens.to_string()).unwrap();
+        + &rustfmt(&progenitor_impl::space_out_items(tokens.to_string())?)?;
     let client_path = manifest_dir.join("../crates/api-client/src/lib.rs");
 
     let artifacts = [(spec_path, rendered_spec), (client_path, rendered_client)];
@@ -184,6 +296,35 @@ fn openapi(check: bool) -> anyhow::Result<()> {
         println!("wrote {}", path.display());
     }
     Ok(())
+}
+
+/// Format `src` with the toolchain's `rustfmt`, reading and writing over stdio.
+///
+/// The generated client must be byte-identical to what `cargo fmt` would produce, otherwise
+/// the two check gates contradict each other. `rustfmt` is a rustup component that ships with
+/// every toolchain that can build this workspace, so requiring it here adds no new dependency.
+fn rustfmt(src: &str) -> anyhow::Result<String> {
+    use std::io::Write as _;
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new("rustfmt")
+        .args(["--edition", "2024", "--emit", "stdout", "--quiet"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("failed to run rustfmt (is the component installed?): {e}"))?;
+
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("rustfmt stdin was not piped"))?
+        .write_all(src.as_bytes())?;
+
+    let out = child.wait_with_output()?;
+    if !out.status.success() {
+        anyhow::bail!("rustfmt exited with {}", out.status);
+    }
+    Ok(String::from_utf8(out.stdout)?)
 }
 
 /// The domain typed-id newtypes, shared by the client `TypePatch`es (extra derives applied in
@@ -389,4 +530,231 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// The workspace root, derived from this crate's manifest directory.
+///
+/// `xtask` sits directly under it by construction (it is a workspace member at `xtask/`), so
+/// this is exact rather than a search — and it is right regardless of the shell's working
+/// directory, which is what lets `cargo run -p xtask -- ci` work from anywhere in the tree.
+fn workspace_root() -> &'static std::path::Path {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask sits directly under the workspace root")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+    use serde_json::json;
+
+    /// Run the rewriter over `value` and hand back the result, so a test reads as one
+    /// expression rather than three lines of `let mut`.
+    fn downgraded(value: serde_json::Value) -> serde_json::Value {
+        let mut value = value;
+        downgrade_to_3_0(&mut value);
+        value
+    }
+
+    /// JSON of bounded depth, biased towards the keys the rewriter actually reacts to.
+    ///
+    /// A uniform generator would essentially never produce a `type` or `examples` key, so the
+    /// properties below would only ever exercise the pass-through path.
+    fn any_document() -> impl Strategy<Value = serde_json::Value> {
+        // A `type` member that is not a string — `[null]`, `[false]`, `[[]]` — is not something
+        // OpenAPI can express, and the converter is provably not idempotent on it. That behaviour
+        // is pinned explicitly by `a_non_string_type_member_is_not_idempotent`, so the generator
+        // must stay inside well-formed documents; otherwise this property just re-derives the same
+        // known edge on a random schedule.
+        //
+        // Restricting `leaf` to strings was not enough to achieve that, and this generator was
+        // failing intermittently because of it: `prop_recursive` can hand a `type` key an *array*,
+        // whose elements are then arbitrary sub-documents rather than leaves — `{"type": [[]]}`.
+        // So `type` gets its own strategy (a string, or 3.1's array-of-strings union) and is
+        // inserted separately from the recursive keys, which makes the invariant structural rather
+        // than hopeful.
+        let type_token = prop::sample::select(vec![
+            "string", "integer", "boolean", "null", "object", "array",
+        ]);
+        let leaf = prop::sample::select(vec![
+            "string", "integer", "boolean", "null", "object", "3.1.0", "3.0.3", "x", "",
+        ])
+        .prop_map(serde_json::Value::from);
+        // Deliberately without `type`: it is added from `type_token` below.
+        let key = prop::sample::select(vec![
+            "examples".to_owned(),
+            "openapi".to_owned(),
+            "properties".to_owned(),
+            "items".to_owned(),
+            "description".to_owned(),
+        ]);
+        leaf.prop_recursive(4, 24, 4, move |inner| {
+            let well_formed_type = prop_oneof![
+                type_token.clone().prop_map(serde_json::Value::from),
+                prop::collection::vec(type_token.clone(), 0..4).prop_map(serde_json::Value::from),
+            ];
+            prop_oneof![
+                prop::collection::vec(inner.clone(), 0..4).prop_map(serde_json::Value::from),
+                (
+                    prop::collection::hash_map(key.clone(), inner, 0..4),
+                    prop::option::of(well_formed_type),
+                )
+                    .prop_map(|(entries, type_value)| {
+                        let mut map: serde_json::Map<_, _> = entries.into_iter().collect();
+                        if let Some(type_value) = type_value {
+                            map.insert("type".to_owned(), type_value);
+                        }
+                        serde_json::Value::from(map)
+                    }),
+            ]
+        })
+    }
+
+    #[test]
+    fn the_document_version_is_rewritten() {
+        assert_eq!(
+            downgraded(json!({ "openapi": "3.1.0" }))["openapi"],
+            "3.0.3"
+        );
+        // Anything that is not the version this converter was written for is left alone, so a
+        // future utoipa emitting 3.2 is a visible failure downstream rather than a silent
+        // mislabelling of a document that was never converted.
+        assert_eq!(
+            downgraded(json!({ "openapi": "3.0.3" }))["openapi"],
+            "3.0.3"
+        );
+    }
+
+    #[test]
+    fn a_nullable_union_becomes_a_type_plus_a_nullable_flag() {
+        // The conversion this function exists for. `progenitor` reads the 3.0 spelling; getting
+        // it wrong makes every optional field on the generated client either non-optional or
+        // untyped, and the only signal is `openapi --check` comparing two artifacts that were
+        // both produced by this same function.
+        let out = downgraded(json!({ "type": ["string", "null"] }));
+        assert_eq!(out["type"], "string");
+        assert_eq!(out["nullable"], true);
+    }
+
+    #[test]
+    fn a_plain_type_is_left_exactly_as_it_was() {
+        let out = downgraded(json!({ "type": "string", "description": "a title" }));
+        assert_eq!(out, json!({ "type": "string", "description": "a title" }));
+    }
+
+    #[test]
+    fn a_bare_null_type_becomes_a_nullable_flag_with_no_type_at_all() {
+        assert_eq!(
+            downgraded(json!({ "type": "null" })),
+            json!({ "nullable": true })
+        );
+    }
+
+    /// Pins a **lossy** conversion so that changing it is a deliberate act.
+    ///
+    /// A union of three or more types collapses to the first non-null one and the rest are
+    /// discarded — the generated client will simply not know about them. Our own document does
+    /// not currently emit such a union, which is exactly why this would go unnoticed if it
+    /// started to.
+    #[test]
+    fn a_wider_union_collapses_to_its_first_type_and_silently_loses_the_rest() {
+        let out = downgraded(json!({ "type": ["string", "integer", "boolean"] }));
+        assert_eq!(out["type"], "string");
+        assert!(
+            out.get("nullable").is_none(),
+            "a union with no null member must not be marked nullable"
+        );
+    }
+
+    /// A second lossy edge: a `type` that is neither a string nor an array is **dropped**,
+    /// because it is removed from the map before the match and no arm puts it back.
+    #[test]
+    fn a_type_that_is_neither_a_string_nor_an_array_is_dropped() {
+        assert_eq!(downgraded(json!({ "type": 42 })), json!({}));
+    }
+
+    /// **Found by the idempotence property below, and pinned rather than fixed.**
+    ///
+    /// The "pick the first non-null type" branch inserts whatever it found, without checking
+    /// that it is a string. A `type` array holding a non-string member therefore survives the
+    /// first pass as a non-string `type` and is *dropped entirely* by a second, because the
+    /// match at the top of the function has no arm for it. `downgrade(downgrade(v))` is not
+    /// `downgrade(v)`.
+    ///
+    /// Impact today is nil: `utoipa` writes the null type as the string `"null"`, the converter
+    /// runs exactly once per document, and a document like this is not valid `OpenAPI` in the
+    /// first place. It is recorded because the two passes *disagree about the same input*,
+    /// which is the shape of a real bug the moment anything runs the converter twice or feeds
+    /// it a hand-edited spec. The fix belongs in that branch: reject a non-string member rather
+    /// than inserting it.
+    #[test]
+    fn a_non_string_type_member_is_not_idempotent() {
+        for malformed in [json!({ "type": [null] }), json!({ "type": [false] })] {
+            let once = downgraded(malformed);
+            assert!(
+                !once["type"].is_string(),
+                "the first pass kept a non-string type: {once}"
+            );
+            assert_eq!(
+                downgraded(once),
+                json!({}),
+                "a second pass drops what the first kept"
+            );
+        }
+    }
+
+    #[test]
+    fn the_examples_array_collapses_to_its_first_entry() {
+        let out = downgraded(json!({ "examples": ["first", "second"] }));
+        assert_eq!(out["example"], "first");
+        assert!(out.get("examples").is_none());
+        // An empty array yields neither key rather than `example: null`.
+        assert_eq!(downgraded(json!({ "examples": [] })), json!({}));
+    }
+
+    #[test]
+    fn the_rewrite_reaches_schemas_nested_in_objects_and_arrays() {
+        let out = downgraded(json!({
+            "components": { "schemas": { "S": { "properties": {
+                "a": { "type": ["string", "null"] },
+            } } } },
+            "anyOf": [{ "type": ["integer", "null"] }],
+        }));
+        assert_eq!(
+            out["components"]["schemas"]["S"]["properties"]["a"]["nullable"],
+            true
+        );
+        assert_eq!(out["anyOf"][0]["type"], "integer");
+        assert_eq!(out["anyOf"][0]["nullable"], true);
+    }
+
+    proptest! {
+        /// Idempotence. `openapi --check` compares a freshly generated artifact against the
+        /// committed one, and both go through this function — so if it were not idempotent the
+        /// check would still pass while the committed client drifted from the spec it claims to
+        /// describe. Nothing else in the pipeline would notice.
+        #[test]
+        fn the_downgrade_is_idempotent(document in any_document()) {
+            let once = downgraded(document);
+            let twice = downgraded(once.clone());
+            prop_assert_eq!(once, twice);
+        }
+
+        /// The rewriter touches only `openapi`, `type` and `examples`. Everything else in the
+        /// document — descriptions, `$ref`s, `x-rust-type` hints, security schemes — must
+        /// arrive at `progenitor` byte-identical.
+        #[test]
+        fn keys_the_rewriter_does_not_own_pass_through_unchanged(
+            key in "[a-z$][a-zA-Z0-9_-]{0,10}",
+            value in prop::sample::select(vec![
+                json!("text"), json!(7), json!(true), json!(null),
+                json!(["a", "b"]), json!({ "nested": "value" }),
+            ]),
+        ) {
+            prop_assume!(!["type", "examples", "openapi"].contains(&key.as_str()));
+            let document = json!({ key.clone(): value.clone() });
+            prop_assert_eq!(downgraded(document.clone()), document);
+        }
+    }
 }

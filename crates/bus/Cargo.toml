@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "NATS JetStream connection, stream provisioning, publish and consume helpers."
+# Not published: this is a workspace-internal crate. Also what lets `cargo deny`
+# skip license-checking our own code.
+publish = false
 
 [dependencies]
 tankovault-contracts = { workspace = true }
@@ -15,7 +18,12 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 futures = { workspace = true }
 tokio = { workspace = true }
+# `CancellationToken` in the shared `consume` loop's shutdown arm.
+tokio-util = { workspace = true }
 thiserror = { workspace = true }
+# Handler error type for the shared `consume` loop: the loop only logs and decides retry vs
+# settle, so it deliberately does not constrain what a handler's failures are.
+anyhow = { workspace = true }
 tracing = { workspace = true }
 
 [lints]

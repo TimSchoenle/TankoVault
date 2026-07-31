@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series_sources (id, series_id, provider_id, source_path, provider_title) SELECT DISTINCT ON (source_path) id, series_id, $2, source_path, provider_title FROM UNNEST($1::uuid[], $3::uuid[], $4::text[], $5::text[]) AS t(id, series_id, source_path, provider_title) ON CONFLICT (provider_id, source_path) DO UPDATE SET provider_title = EXCLUDED.provider_title",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Uuid",
+        "UuidArray",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "68c9745b58295add73487d8fbe06c4495693564b817aff3747daac654df188d2"
+}

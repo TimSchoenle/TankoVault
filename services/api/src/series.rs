@@ -8,6 +8,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue};
 use axum_extra::extract::Query as MultiQuery;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tankovault_db::repo::catalog::SeriesFilter;
 use tankovault_domain::{
     ContentType, Feature, ProviderId, SeriesId, SeriesSource, SeriesSourceId, SeriesStatus, UserId,
@@ -16,6 +17,13 @@ use tankovault_domain::{
 use utoipa::{IntoParams, ToSchema};
 
 use crate::openapi::SERIES_TAG;
+use crate::views::IntoView;
+
+/// Highest accepted page index for the browse listing.
+///
+/// At the 100-item maximum page size this is 10 million rows deep — far past any real
+/// catalogue, and far short of the `i64` overflow the unbounded value allowed.
+const MAX_PAGE: i64 = 100_000;
 
 /// Query parameters for the Discover browse list (frontend §9.1). All filters are optional;
 /// `tag`/`exclude_tag` may repeat (`?tag=action&tag=drama`). Sorting and offset pagination
@@ -45,7 +53,7 @@ pub struct ListParams {
     pub year_max: Option<i32>,
     #[serde(default)]
     pub min_chapters: Option<i32>,
-    /// `updated | title | chapters | sources | year` (default `updated`).
+    /// `updated | title | chapters | sources | year | rating` (default `updated`).
     #[serde(default)]
     pub sort: Option<String>,
     /// Zero-based page index (alias: `cursor`).
@@ -59,6 +67,20 @@ pub struct ListParams {
 
 fn default_limit() -> i64 {
     40
+}
+
+/// Parse an optional query-string token, refusing an unrecognised one.
+///
+/// An empty value means "not supplied" — the frontend's select controls submit `""` for their
+/// "any" option, and treating that as a parse failure would 400 the default page.
+fn parse_param<T: std::str::FromStr>(raw: Option<&str>, name: &str) -> ApiResult<Option<T>> {
+    match raw.map(str::trim).filter(|v| !v.is_empty()) {
+        None => Ok(None),
+        Some(value) => value
+            .parse()
+            .map(Some)
+            .map_err(|_| ApiError::BadRequest(format!("unknown {name}: {value:?}"))),
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -111,11 +133,32 @@ pub async fn list(
     }
 
     let limit = params.limit.clamp(1, 100);
-    let page = params.page.or(params.cursor).unwrap_or(0).max(0);
+    // `page` had no upper bound, so `page * limit` overflowed `i64` on
+    // `?page=92233720368547758&limit=100`. Release builds have `overflow-checks = false`, so
+    // it wrapped to a negative offset and produced a Postgres error; every debug and CI build
+    // panicked instead — and with `panic = "abort"` a panic in a handler terminates the
+    // *process*, taking every in-flight request on the replica with it.
+    //
+    // Both the clamp and the `saturating_mul` are kept: the clamp is the real bound (no
+    // catalogue has 100k pages), the saturation makes the arithmetic total regardless.
+    let page = params
+        .page
+        .or(params.cursor)
+        .unwrap_or(0)
+        .clamp(0, MAX_PAGE);
+    // Parsed at the edge rather than passed through as text. Previously an unrecognised
+    // `sort` silently fell back to recency and an unrecognised `content_type`/`status`
+    // matched nothing: both answered `200` with a page that looked plausible and was wrong.
+    // Binding the enums as their native Postgres types is also what lets the filters use an
+    // index — `s.content_type::text = $2` cast the column away from every one of them.
+    let sort = parse_param(params.sort.as_deref(), "sort")?.unwrap_or_default();
+    let content_type = parse_param(params.content_type.as_deref(), "content_type")?;
+    let status = parse_param(params.status.as_deref(), "status")?;
+
     let filter = SeriesFilter {
         query: params.query,
-        content_type: params.content_type.filter(|s| !s.is_empty()),
-        status: params.status.filter(|s| !s.is_empty()),
+        content_type,
+        status,
         provider_slug: params.provider.filter(|s| !s.is_empty()),
         tags: params.tag.into_iter().filter(|s| !s.is_empty()).collect(),
         exclude_tags: params
@@ -126,9 +169,9 @@ pub async fn list(
         year_min: params.year_min,
         year_max: params.year_max,
         min_chapters: params.min_chapters,
-        sort: params.sort.filter(|s| !s.is_empty()),
+        sort,
         limit,
-        offset: page * limit,
+        offset: page.saturating_mul(limit),
     };
     let out = tankovault_db::repo::catalog::list_series_filtered(&state.pool, &filter).await?;
 
@@ -209,8 +252,16 @@ pub async fn detail(
     State(state): State<AppState>,
     Path(id): Path<SeriesId>,
 ) -> ApiResult<Json<SeriesDetail>> {
-    let series = tankovault_db::repo::catalog::get_series(&state.pool, id).await?;
-    let sources = tankovault_db::repo::catalog::list_sources_for_series(&state.pool, id).await?;
+    use tankovault_db::repo::{catalog, providers, sync};
+
+    // This page used to cost `6 + 2N` serialized round trips, where N is the number of
+    // distinct providers on the series: a `count_full_chapters_across` and a `providers::get`
+    // inside two loops over the provider groups, then four independent tail reads one after
+    // another. The provider lookup in particular was a textbook N+1 over small, operator-
+    // managed reference data. It is now five: two grouped reads replace the two loops, and
+    // the four tail reads — which touch different tables and share nothing — overlap.
+    let series = catalog::get_series(&state.pool, id).await?;
+    let sources = catalog::list_sources_for_series(&state.pool, id).await?;
 
     // Same-source smart merge (§10): a canonical series can carry several `series_sources`
     // rows for the *same* provider (a work split into two entries on that site, merged into
@@ -220,17 +271,20 @@ pub async fn detail(
 
     // Reader-facing count per merged source: distinct whole chapters (§ chapter grouping)
     // across *all* of the provider's entries — part releases and chapters two entries happen
-    // to share never inflate the "Read on" card / hero stat.
-    let mut chapter_counts = Vec::with_capacity(groups.len());
-    for group in &groups {
-        chapter_counts.push(
-            tankovault_db::repo::catalog::count_full_chapters_across(
-                &state.pool,
-                &group.member_ids,
-            )
-            .await?,
-        );
-    }
+    // to share never inflate the "Read on" card / hero stat. Grouping by provider in SQL is
+    // exactly the fold `group_sources_by_provider` performs, so one statement answers every
+    // group. A provider whose rows carry no chapters at all is absent from the result and
+    // counts zero.
+    let counts_by_provider: HashMap<ProviderId, i32> =
+        catalog::count_full_chapters_by_provider(&state.pool, id)
+            .await?
+            .into_iter()
+            .collect();
+    let chapter_counts: Vec<i32> = groups
+        .iter()
+        .map(|g| counts_by_provider.get(&g.provider_id).copied().unwrap_or(0))
+        .collect();
+
     // The primary source is the merged provider carrying the most chapters (ties → first).
     let primary_idx = chapter_counts
         .iter()
@@ -238,27 +292,42 @@ pub async fn detail(
         .max_by_key(|(_, count)| **count)
         .map(|(i, _)| i);
 
+    let provider_ids: Vec<ProviderId> = groups.iter().map(|g| g.provider_id).collect();
+    let providers: HashMap<ProviderId, tankovault_domain::Provider> =
+        providers::get_many(&state.pool, &provider_ids)
+            .await?
+            .into_iter()
+            .map(|p| (p.id, p))
+            .collect();
+
     let mut source_dtos = Vec::with_capacity(groups.len());
     for (i, group) in groups.iter().enumerate() {
-        let provider = tankovault_db::repo::providers::get(&state.pool, group.provider_id).await?;
+        // A source row whose provider has since been deleted has no card to render. The
+        // foreign key makes this unreachable; treating it as "not found" rather than
+        // unwrapping keeps it that way if the constraint ever changes.
+        let provider = providers
+            .get(&group.provider_id)
+            .ok_or(ApiError::NotFound)?;
         // The outbound link points at the richest entry's page on the provider.
         let url = resolve_link(&provider.base_url, &group.link_source_path)
             .map_err(|_| ApiError::Internal)?;
         source_dtos.push(SourceDto {
             id: group.link_id,
-            provider_name: provider.name,
-            provider_slug: provider.slug,
+            provider_name: provider.name.clone(),
+            provider_slug: provider.slug.clone(),
             url,
             chapter_count: chapter_counts[i],
             is_primary: Some(i) == primary_idx,
         });
     }
 
-    let alt_titles = tankovault_db::repo::catalog::list_series_titles(&state.pool, id).await?;
-    let tags = tankovault_db::repo::catalog::list_series_tags(&state.pool, id).await?;
-    let authors = tankovault_db::repo::catalog::list_series_authors(&state.pool, id).await?;
-    let anilist_id =
-        tankovault_db::repo::sync::mapping_external_for_series(&state.pool, id, "anilist").await?;
+    // Four different tables, no shared state, nothing downstream of one another.
+    let (alt_titles, tags, authors, anilist_id) = tokio::try_join!(
+        catalog::list_series_titles(&state.pool, id),
+        catalog::list_series_tags(&state.pool, id),
+        catalog::list_series_authors(&state.pool, id),
+        sync::mapping_external_for_series(&state.pool, id, "anilist"),
+    )?;
 
     Ok(Json(SeriesDetail {
         id: series.id,
@@ -463,15 +532,14 @@ pub async fn tags(State(state): State<AppState>) -> ApiResult<Json<Vec<tankovaul
     path = "/v1/providers",
     tag = SERIES_TAG,
     responses(
-        (status = 200, description = "Enabled providers", body = Vec<tankovault_db::repo::providers::PublicProvider>),
+        (status = 200, description = "Enabled providers", body = Vec<tankovault_contracts::catalogue::PublicProviderView>),
     )
 )]
 pub async fn providers(
     State(state): State<AppState>,
-) -> ApiResult<Json<Vec<tankovault_db::repo::providers::PublicProvider>>> {
-    Ok(Json(
-        tankovault_db::repo::providers::list_public(&state.pool).await?,
-    ))
+) -> ApiResult<Json<Vec<tankovault_contracts::catalogue::PublicProviderView>>> {
+    let rows = tankovault_db::repo::providers::list_public(&state.pool).await?;
+    Ok(Json(rows.into_view()))
 }
 
 #[cfg(test)]

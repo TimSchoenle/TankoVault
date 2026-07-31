@@ -1,0 +1,96 @@
+# libFuzzer dictionary for the HTML-shaped targets (`adapters_html_parsers`,
+# `adapters_generic_series_page`). Tokens the mutator would otherwise have to assemble a
+# character at a time — a `</pre>` is nine coin flips away from random bytes, and until the
+# fuzzer produces one it never reaches the code behind it.
+#
+# Half of these are the Madara selector vocabulary the shipped presets actually use, so a
+# mutation has a chance of landing on an element the extractors select rather than on markup
+# they skip.
+
+# Structure the tree builder repairs, and the shapes that make it repair wrongly.
+"<html>"
+"<body>"
+"<div>"
+"</div>"
+"<span>"
+"</span>"
+"<a href=\"/\">"
+"</a>"
+"<pre>"
+"</pre>"
+"<h1>"
+"<h3>"
+"<img src=\"\">"
+"<table><tbody><tr><td>"
+"<!--"
+"-->"
+"<![CDATA["
+"<script>"
+"</script>"
+
+# The Madara selector vocabulary (crates/adapters/src/madara.rs defaults).
+"page-item-detail"
+"post-title"
+"post-status"
+"summary_content"
+"summary-content"
+"summary-heading"
+"genres-content"
+"wp-manga-chapter"
+"chapter-link"
+"listing-chapter"
+"manga-title-badges"
+"c-blog__heading"
+"tab-summary"
+"authors-content"
+"artist-content"
+
+# Attribute names `split_attr` routes on, and the lazy-loading attributes real sites use.
+"@href"
+"@src"
+"@data-src"
+"@content"
+"@title"
+"@datetime"
+
+# Status labels `map_status` recognises.
+"OnGoing"
+"Completed"
+"On Hold"
+"Canceled"
+"Dropped"
+"Hiatus"
+
+# Chapter-number markers `parse_chapter_number` searches for, in its own order.
+"Chapter "
+"Episode "
+"Chap "
+"Ch. "
+"#"
+"Vol. "
+
+# Entities `unescape_entities` decodes, plus the malformed forms around them.
+"&amp;"
+"&lt;"
+"&gt;"
+"&quot;"
+"&#39;"
+"&#x27;"
+"&amp"
+"&#"
+"&#x"
+
+# Bot-management markers, so the challenge classifier is reachable from an HTML seed.
+"Just a moment"
+"cf-turnstile"
+"cdn-cgi"
+"DDoS-Guard"
+
+# URL shapes `relativize`/`absolutize` branch on.
+"https://"
+"//"
+"../"
+"?page="
+"#"
+"javascript:"
+"data:"

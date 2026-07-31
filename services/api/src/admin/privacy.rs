@@ -18,12 +18,14 @@ use crate::audit::audit;
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::ADMIN_PRIVACY_TAG;
 use crate::state::{AppState, AuthUser};
+use crate::views::{IntoStored, IntoView};
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderValue, header};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
-use tankovault_db::repo::gdpr::{AdminRequestRow, RequestStatus};
+use tankovault_contracts::admin::AdminPrivacyRequestView;
+use tankovault_contracts::me::PrivacyRequestStatus;
 use tankovault_domain::{Permission, UserId};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -51,7 +53,7 @@ pub struct QueueQuery {
     params(QueueQuery),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "The request queue", body = Vec<AdminRequestRow>),
+        (status = 200, description = "The request queue", body = Vec<AdminPrivacyRequestView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
@@ -60,12 +62,11 @@ pub async fn list_privacy_queue(
     State(state): State<AppState>,
     user: AuthUser,
     Query(q): Query<QueueQuery>,
-) -> ApiResult<Json<Vec<AdminRequestRow>>> {
+) -> ApiResult<Json<Vec<AdminPrivacyRequestView>>> {
     user.require(Permission::PrivacyRead).await?;
-    Ok(Json(
-        tankovault_db::repo::gdpr::list_admin(&state.pool, !q.include_resolved, QUEUE_LIMIT)
-            .await?,
-    ))
+    let rows = tankovault_db::repo::gdpr::list_admin(&state.pool, !q.include_resolved, QUEUE_LIMIT)
+        .await?;
+    Ok(Json(rows.into_view()))
 }
 
 /// Claim a data-subject request
@@ -79,7 +80,7 @@ pub async fn list_privacy_queue(
     params(("id" = Uuid, Path, description = "Request id")),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "The claimed request", body = AdminRequestRow),
+        (status = 200, description = "The claimed request", body = AdminPrivacyRequestView),
         (status = 409, description = "already claimed or already resolved", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
@@ -90,7 +91,7 @@ pub async fn claim_privacy_request(
     State(state): State<AppState>,
     user: AuthUser,
     Path(id): Path<Uuid>,
-) -> ApiResult<Json<AdminRequestRow>> {
+) -> ApiResult<Json<AdminPrivacyRequestView>> {
     user.require(Permission::PrivacyWrite).await?;
 
     if !tankovault_db::repo::gdpr::claim(&state.pool, id, user.user_id).await? {
@@ -111,7 +112,9 @@ pub async fn claim_privacy_request(
     )
     .await;
     Ok(Json(
-        tankovault_db::repo::gdpr::get_admin(&state.pool, id).await?,
+        tankovault_db::repo::gdpr::get_admin(&state.pool, id)
+            .await?
+            .into_view(),
     ))
 }
 
@@ -119,7 +122,7 @@ pub async fn claim_privacy_request(
 pub struct ResolveRequest {
     /// How it ends. Only `completed` and `rejected` are operator decisions; `cancelled` belongs
     /// to the subject and is refused here.
-    pub status: RequestStatus,
+    pub status: PrivacyRequestStatus,
     /// What was done, or — for a rejection — why.
     ///
     /// Mandatory on a rejection: Art. 12(4) obliges the controller to give reasons for refusing
@@ -144,7 +147,7 @@ pub struct ResolveRequest {
     request_body = ResolveRequest,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "The resolved request", body = AdminRequestRow),
+        (status = 200, description = "The resolved request", body = AdminPrivacyRequestView),
         (status = 400, description = "invalid target status, or a rejection with no reason", body = crate::error::ProblemDetails),
         (status = 409, description = "the request was already resolved", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
@@ -157,12 +160,12 @@ pub async fn resolve_privacy_request(
     user: AuthUser,
     Path(id): Path<Uuid>,
     Json(body): Json<ResolveRequest>,
-) -> ApiResult<Json<AdminRequestRow>> {
+) -> ApiResult<Json<AdminPrivacyRequestView>> {
     user.require(Permission::PrivacyWrite).await?;
 
     if !matches!(
         body.status,
-        RequestStatus::Completed | RequestStatus::Rejected
+        PrivacyRequestStatus::Completed | PrivacyRequestStatus::Rejected
     ) {
         return Err(ApiError::BadRequest(
             "a request can only be resolved as completed or rejected".to_owned(),
@@ -174,14 +177,20 @@ pub async fn resolve_privacy_request(
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
-    if body.status == RequestStatus::Rejected && note.is_none() {
+    if body.status == PrivacyRequestStatus::Rejected && note.is_none() {
         return Err(ApiError::BadRequest(
             "a rejection must state its reasons (GDPR Art. 12(4))".to_owned(),
         ));
     }
 
-    if !tankovault_db::repo::gdpr::resolve(&state.pool, id, body.status, Some(user.user_id), note)
-        .await?
+    if !tankovault_db::repo::gdpr::resolve(
+        &state.pool,
+        id,
+        body.status.into_stored(),
+        Some(user.user_id),
+        note,
+    )
+    .await?
     {
         let _ = tankovault_db::repo::gdpr::get_admin(&state.pool, id).await?;
         return Err(ApiError::Conflict(
@@ -198,7 +207,9 @@ pub async fn resolve_privacy_request(
     )
     .await;
     Ok(Json(
-        tankovault_db::repo::gdpr::get_admin(&state.pool, id).await?,
+        tankovault_db::repo::gdpr::get_admin(&state.pool, id)
+            .await?
+            .into_view(),
     ))
 }
 
@@ -226,7 +237,7 @@ pub struct ExtendRequest {
     request_body = ExtendRequest,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "The request with its new deadline", body = AdminRequestRow),
+        (status = 200, description = "The request with its new deadline", body = AdminPrivacyRequestView),
         (status = 400, description = "the request is resolved, or the new date is not later", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
@@ -238,7 +249,7 @@ pub async fn extend_privacy_request(
     user: AuthUser,
     Path(id): Path<Uuid>,
     Json(body): Json<ExtendRequest>,
-) -> ApiResult<Json<AdminRequestRow>> {
+) -> ApiResult<Json<AdminPrivacyRequestView>> {
     user.require(Permission::PrivacyWrite).await?;
 
     let reason = body.reason.trim();
@@ -265,7 +276,9 @@ pub async fn extend_privacy_request(
     )
     .await;
     Ok(Json(
-        tankovault_db::repo::gdpr::get_admin(&state.pool, id).await?,
+        tankovault_db::repo::gdpr::get_admin(&state.pool, id)
+            .await?
+            .into_view(),
     ))
 }
 
@@ -363,7 +376,7 @@ pub struct FulfilErasure {
     request_body = FulfilErasure,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "The completed request", body = AdminRequestRow),
+        (status = 200, description = "The completed request", body = AdminPrivacyRequestView),
         (status = 400, description = "not an erasure request, or the confirmation did not match", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permissions", body = crate::error::ProblemDetails),
@@ -375,7 +388,7 @@ pub async fn fulfil_erasure(
     user: AuthUser,
     Path(id): Path<Uuid>,
     Json(body): Json<FulfilErasure>,
-) -> ApiResult<Json<AdminRequestRow>> {
+) -> ApiResult<Json<AdminPrivacyRequestView>> {
     user.require_all(&[Permission::PrivacyWrite, Permission::UsersDelete])
         .await?;
 
@@ -409,7 +422,7 @@ pub async fn fulfil_erasure(
     tankovault_db::repo::gdpr::resolve(
         &state.pool,
         id,
-        RequestStatus::Completed,
+        PrivacyRequestStatus::Completed.into_stored(),
         Some(user.user_id),
         Some("erasure carried out"),
     )
@@ -432,6 +445,8 @@ pub async fn fulfil_erasure(
     );
 
     Ok(Json(
-        tankovault_db::repo::gdpr::get_admin(&state.pool, id).await?,
+        tankovault_db::repo::gdpr::get_admin(&state.pool, id)
+            .await?
+            .into_view(),
     ))
 }

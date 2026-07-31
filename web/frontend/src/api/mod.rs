@@ -134,10 +134,61 @@ fn origin() -> String {
         .unwrap_or_default()
 }
 
-/// URL of the per-user SSE notification stream.
+/// URL of the per-user SSE notification stream, for a ticket from `POST /v1/me/stream-ticket`.
 ///
-/// The token rides in the query string because the browser's `EventSource` cannot set an
-/// `Authorization` header.
-pub(crate) fn stream_url(token: &str) -> String {
-    format!("/v1/me/stream?token={token}")
+/// The credential rides in the query string because the browser's `EventSource` cannot set an
+/// `Authorization` header. It is a single-use, 30-second **ticket** rather than the access token
+/// (SEC-8): a query string ends up in access logs, `Referer` headers and browser history, so the
+/// value that travels there has to be worthless by the time anyone reads it back.
+///
+/// This URL is hand-built — `EventSource` is created by the browser, not by the generated client —
+/// which is why [`tests::the_stream_url_uses_the_parameter_the_published_document_declares`]
+/// exists. That is not defensive decoration: this function sent `?token=` while the API required
+/// `?access_token=`, so every connection was rejected with `400` and live notifications had never
+/// worked. `live::run` treats a stream failure as silent best-effort degradation, so nothing
+/// surfaced it — and no compiler connects a `format!` here to a `Deserialize` field there.
+pub(crate) fn stream_url(ticket: &str) -> String {
+    format!("/v1/me/stream?ticket={ticket}")
+}
+
+#[cfg(test)]
+mod tests {
+    /// The SSE query parameter this crate builds must be the one the API publishes.
+    ///
+    /// Read out of the committed `openapi.json` — the same artefact `crates/api-client` is
+    /// generated from, and the only thing that connects these two workspaces. `xtask openapi
+    /// --check` keeps that file in step with the server, so agreeing with it is agreeing with the
+    /// handler.
+    ///
+    /// The bug this pins shipped: `?token=` against a handler reading `access_token`, silent
+    /// because a failed stream is a deliberately silent degradation here.
+    #[test]
+    fn the_stream_url_uses_the_parameter_the_published_document_declares() {
+        const SPEC: &str = include_str!("../../../../openapi.json");
+        let spec: serde_json::Value = serde_json::from_str(SPEC).expect("openapi.json parses");
+
+        let parameters = spec["paths"]["/v1/me/stream"]["get"]["parameters"]
+            .as_array()
+            .expect("the stream declares query parameters")
+            .clone();
+        let name = parameters
+            .iter()
+            .find(|p| p["in"] == "query")
+            .and_then(|p| p["name"].as_str())
+            .expect("a query parameter")
+            .to_owned();
+
+        let url = super::stream_url("TICKET");
+        assert!(
+            url.contains(&format!("{name}=TICKET")),
+            "the API reads `{name}`, this crate sends `{url}`"
+        );
+
+        // And the mint endpoint the ticket comes from has to exist in the same document, or the
+        // generated client has no `stream_ticket()` for `live::run` to call.
+        assert!(
+            spec["paths"]["/v1/me/stream-ticket"]["post"].is_object(),
+            "the published document must offer the endpoint that mints the ticket"
+        );
+    }
 }

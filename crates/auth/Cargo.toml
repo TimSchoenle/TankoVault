@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Password hashing (argon2id), JWT access tokens, rotating refresh tokens, secret sealing."
+# Not published: this is a workspace-internal crate. Also what lets `cargo deny`
+# skip license-checking our own code.
+publish = false
 
 [dependencies]
 tankovault-domain = { workspace = true }

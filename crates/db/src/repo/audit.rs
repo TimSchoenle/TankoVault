@@ -7,35 +7,51 @@ use tankovault_domain::UserId;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+/// One privileged action, as the audit sink hands it to this repository.
+///
+/// A struct rather than eight positional parameters, which is what this function used to
+/// take behind an `#[allow(clippy::too_many_arguments)]`. The suppression was the smell: five
+/// of those parameters were string-shaped and three of them `Option<&str>`, so transposing an
+/// adjacent pair compiled — and the pairs that transpose most easily are the two that decide
+/// what personal data is retained.
+pub struct AuditRecord<'a> {
+    /// `None` for system-originated actions (schedulers, sweeps).
+    pub actor_id: Option<UserId>,
+    /// The action key, e.g. `admin.user.update`.
+    pub action: &'a str,
+    /// What the action was performed on, when it names a single subject.
+    pub target: Option<&'a str>,
+    /// Action-specific detail; whatever the handler recorded.
+    pub detail: &'a Json,
+    /// One of `success` / `failure` / `denied`, enforced by the `audit_log_outcome_check`
+    /// constraint rather than by this type — a bad value is a write error, not a silent row.
+    pub outcome: &'a str,
+    /// Personal data. `None` unless the operator enabled the corresponding privacy toggle;
+    /// the decision is applied in `tankovault_service::PostgresAuditSink`, not here.
+    pub client_ip: Option<&'a str>,
+    /// Personal data, on the same terms as [`AuditRecord::client_ip`].
+    pub user_agent: Option<&'a str>,
+}
+
 /// Append one privileged-action record.
 ///
-/// `actor_id` is `None` for system-originated actions (schedulers, sweeps). `outcome` is
-/// one of `success` / `failure` / `denied`, enforced by the `audit_log_outcome_check`
-/// constraint. `client_ip` and `user_agent` are personal data and are passed as `None`
-/// unless the operator enabled the corresponding privacy toggle — the decision is applied
-/// in `tankovault_service::PostgresAuditSink`, not here.
-#[allow(clippy::too_many_arguments)]
-pub async fn record<'e, E: PgExecutor<'e>>(
-    exec: E,
-    actor_id: Option<UserId>,
-    action: &str,
-    target: Option<&str>,
-    detail: &Json,
-    outcome: &str,
-    client_ip: Option<&str>,
-    user_agent: Option<&str>,
-) -> DbResult<()> {
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An `outcome` outside
+/// `success`/`failure`/`denied` arrives here as a check-constraint violation rather than as
+/// [`crate::DbError::Conflict`], so it is a 500 and not a 409; that is deliberate, since the
+/// value is chosen by the audit sink and never by a request.
+pub async fn record<'e, E: PgExecutor<'e>>(exec: E, entry: &AuditRecord<'_>) -> DbResult<()> {
     sqlx::query!(
         "INSERT INTO audit_log (id, actor_id, action, target, detail, outcome, actor_ip, user_agent) \
          VALUES ($1,$2,$3,$4,$5,$6,$7::text::inet,$8)",
         Uuid::now_v7(),
-        actor_id.map(UserId::as_uuid),
-        action,
-        target,
-        detail,
-        outcome,
-        client_ip,
-        user_agent,
+        entry.actor_id.map(UserId::as_uuid),
+        entry.action,
+        entry.target,
+        entry.detail,
+        entry.outcome,
+        entry.client_ip,
+        entry.user_agent,
     )
     .execute(exec)
     .await?;
@@ -48,6 +64,10 @@ pub async fn record<'e, E: PgExecutor<'e>>(
 /// liability, not a stronger control. Deletion is capped per call so a first sweep over a
 /// long-neglected table cannot hold a lock long enough to stall the writers appending to
 /// it.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A sweep that deletes nothing
+/// is a success returning `0`, not an error.
 pub async fn prune_older_than<'e, E: PgExecutor<'e>>(
     exec: E,
     retention_days: u32,
@@ -68,7 +88,7 @@ pub async fn prune_older_than<'e, E: PgExecutor<'e>>(
 }
 
 /// One privileged-action record enriched with the actor's username, for the console feed.
-#[derive(Debug, Clone, serde::Serialize, FromRow, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct AuditView {
     pub id: Uuid,
     /// Actor username (`None` for system-originated actions or a since-deleted user).
@@ -77,12 +97,15 @@ pub struct AuditView {
     pub target: Option<String>,
     pub detail: Json,
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
 }
 
 /// The most recent privileged actions, newest first (design §16 audit trail surfaced in the
 /// operator console).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An empty log is an empty
+/// `Vec`, not [`crate::DbError::NotFound`].
 pub async fn list_recent<'e, E: PgExecutor<'e>>(exec: E, limit: i64) -> DbResult<Vec<AuditView>> {
     let rows: Vec<AuditView> = sqlx::query_as!(
         AuditView,

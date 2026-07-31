@@ -1,9 +1,9 @@
 //! The privileged-action audit trail (design §16): recent operator actions, newest first.
 
 use crate::api;
+use crate::components::async_block_list;
 use crate::i18n::use_i18n;
 use crate::models::*;
-use crate::state::use_session;
 use crate::util::rel_time;
 use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
@@ -14,68 +14,53 @@ use progenitor_client::ResponseValue;
 pub(super) fn AuditPanel(tick: RefreshTick) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
-    let session = use_session();
-    let res = {
-        use_resource(move || {
-            tick.track();
-            let client = api.client();
-            async move {
-                if session.is_authenticated() {
-                    Some(
-                        client
-                            .audit_log()
-                            .send()
-                            .await
-                            .map(ResponseValue::into_inner)
-                            .map_err(|e| api::friendly_error(i18n, e)),
-                    )
-                } else {
-                    None
-                }
-            }
-        })
-    };
-
-    let body = match &*res.read_unchecked() {
-        None | Some(None) => rsx! { div { class: "ik-skeleton", style: "height:80px;" } },
-        Some(Some(Err(e))) => {
-            rsx! {
-                p { class: "ik-muted", style: "font-size:13px;",
-                    {i18n.args("console.audit.unavailable", &[("message", e)])}
-                }
-            }
+    let res = use_resource(move || {
+        tick.track();
+        let client = api.client();
+        async move {
+            client
+                .audit_log()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))
         }
-        Some(Some(Ok(list))) if list.is_empty() => rsx! {
-            div { class: "ik-empty", {i18n.t("console.audit.empty")} }
-        },
-        Some(Some(Ok(list))) => {
-            let rows = list.clone();
-            rsx! {
-                div { class: "ik-tablewrap",
-                    table { class: "ik-table ik-table-compact",
-                        thead {
-                            tr {
-                                th { {i18n.t("console.audit.col.when")} }
-                                th { {i18n.t("console.audit.col.actor")} }
-                                th { {i18n.t("console.audit.col.action")} }
-                                th { {i18n.t("console.audit.col.target")} }
-                            }
-                        }
-                        tbody {
-                            for a in rows {
-                                AuditRow { key: "{a.id}", entry: Signal::new(a) }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
+    });
 
+    let empty = i18n.t("console.audit.empty");
     rsx! {
         section { style: "margin-bottom:18px;",
             h3 { {i18n.t("console.audit.title")} }
-            {body}
+            {
+                async_block_list(
+                    &res,
+                    tick.reload(),
+                    80,
+                    &empty,
+                    |rows| {
+                        let rows = rows.to_vec();
+                        rsx! {
+                            div { class: "ik-tablewrap",
+                                table { class: "ik-table ik-table-compact",
+                                    thead {
+                                        tr {
+                                            th { {i18n.t("console.audit.col.when")} }
+                                            th { {i18n.t("console.audit.col.actor")} }
+                                            th { {i18n.t("console.audit.col.action")} }
+                                            th { {i18n.t("console.audit.col.target")} }
+                                        }
+                                    }
+                                    tbody {
+                                        for a in rows {
+                                            AuditRow { key: "{a.id}", entry: Signal::new(a) }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                )
+            }
         }
     }
 }

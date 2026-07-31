@@ -1,0 +1,136 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ea.user_id, u.username, ea.provider, ea.external_username, ea.last_synced_at, ea.last_error, ea.auto_sync_enabled, ea.conflict_policy, (SELECT count(*) FROM sync_conflicts sc WHERE sc.user_id = ea.user_id AND sc.provider = ea.provider AND sc.resolved_at IS NULL) AS \"pending_conflicts!\", ea.created_at FROM external_accounts ea JOIN users u ON u.id = ea.user_id ORDER BY (ea.last_error IS NOT NULL) DESC, ea.last_synced_at DESC NULLS LAST LIMIT $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "external_accounts",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": {
+          "Custom": {
+            "name": "citext",
+            "kind": "Simple"
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "external_accounts",
+            "name": "provider"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "external_username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "external_accounts",
+            "name": "external_username"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "last_synced_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "external_accounts",
+            "name": "last_synced_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "last_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "external_accounts",
+            "name": "last_error"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "auto_sync_enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "external_accounts",
+            "name": "auto_sync_enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "conflict_policy",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "external_accounts",
+            "name": "conflict_policy"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "pending_conflicts!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "external_accounts",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      null,
+      false
+    ]
+  },
+  "hash": "0719015077c488dfc6247c27347886abb9b7190549ed580c02ca49e762540a66"
+}

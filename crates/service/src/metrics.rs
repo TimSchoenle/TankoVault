@@ -23,7 +23,7 @@ const LATENCY_BUCKETS: &[f64] = &[
     0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0,
 ];
 
-/// Total HTTP requests, labelled by method, matched route and status class.
+/// Total HTTP requests, labelled by method, matched route and the exact status code.
 const HTTP_REQUESTS: &str = "http_requests_total";
 /// HTTP request latency in seconds, labelled by method and matched route.
 const HTTP_DURATION: &str = "http_request_duration_seconds";
@@ -133,6 +133,33 @@ impl MetricsRegistry {
     }
 }
 
+/// Holds one unit of [`HTTP_IN_FLIGHT`] for as long as it is alive.
+///
+/// The decrement lives in `Drop` rather than at the end of [`track_request`] because a request
+/// future does not always *finish*: when a client disconnects, hyper drops the service future
+/// mid-`await` and every statement after it is simply never executed. A hand-written decrement
+/// therefore leaked one unit per disconnect, and the gauge climbed monotonically on a perfectly
+/// healthy process.
+///
+/// That was not a rare edge case here. `/v1/me/stream` is a long-lived SSE response whose
+/// *normal* end is the browser closing it, so on `api` and `frontend` the leak happened on
+/// essentially every notification stream — which made the one metric describing concurrency
+/// unusable, and would have made any alert built on it fire on uptime rather than on load.
+struct InFlightGuard;
+
+impl InFlightGuard {
+    fn enter() -> Self {
+        metrics::gauge!(HTTP_IN_FLIGHT).increment(1.0);
+        Self
+    }
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        metrics::gauge!(HTTP_IN_FLIGHT).decrement(1.0);
+    }
+}
+
 /// Record per-request metrics around the rest of the stack.
 ///
 /// Labels use axum's [`MatchedPath`] (`/v1/series/{id}`) rather than the concrete URI, so
@@ -140,6 +167,14 @@ impl MetricsRegistry {
 /// distinct id a client asks for. Requests that match no route are folded into a single
 /// `unmatched` label for the same reason — an unrouted path is attacker-controlled and
 /// would otherwise be an unbounded label source.
+///
+/// **A request the client abandons is counted in [`HTTP_IN_FLIGHT`] but not in
+/// [`HTTP_REQUESTS`] or [`HTTP_DURATION`].** Those two are recorded from the response, and a
+/// dropped future produces none — so a cancelled request has no status to attribute and no
+/// meaningful duration (the elapsed time would measure how long the client stayed, not how long
+/// the work took). The consequence worth knowing when reading a dashboard is that SSE streams
+/// are largely invisible in the request counter and the latency histogram, while being fully
+/// visible in the in-flight gauge.
 pub async fn track_request(req: Request, next: Next) -> Response {
     let method = req.method().clone();
     let route: String = req
@@ -147,11 +182,10 @@ pub async fn track_request(req: Request, next: Next) -> Response {
         .get::<MatchedPath>()
         .map_or_else(|| "unmatched".to_owned(), |p| p.as_str().to_owned());
 
-    metrics::gauge!(HTTP_IN_FLIGHT).increment(1.0);
+    let _in_flight = InFlightGuard::enter();
     let started = Instant::now();
     let response = next.run(req).await;
     let elapsed = started.elapsed();
-    metrics::gauge!(HTTP_IN_FLIGHT).decrement(1.0);
 
     let status = response.status().as_u16().to_string();
     metrics::counter!(
@@ -191,6 +225,42 @@ mod tests {
         };
         let registry = MetricsRegistry::install(&cfg).expect("disabled install cannot fail");
         assert!(!registry.is_enabled());
+    }
+
+    /// The gauge is released when the guard is **dropped**, not when the request completes.
+    ///
+    /// The bug: `track_request` decremented `http_requests_in_flight` on the line after
+    /// `next.run(req).await`. A client that disconnects causes hyper to drop that future
+    /// mid-await, so the decrement never ran and the gauge leaked one unit per abandoned
+    /// request. `/v1/me/stream` is an SSE response whose normal end *is* a client disconnect,
+    /// so on `api` the gauge climbed with every notification stream ever opened and reported
+    /// hundreds of concurrent requests on an idle process.
+    ///
+    /// Do not move the decrement back inline "for clarity": a `Drop` impl is the only place
+    /// that runs on both paths.
+    #[test]
+    fn in_flight_gauge_is_released_when_the_request_future_is_dropped() {
+        // A local recorder, so this test observes real gauge values without installing the
+        // process-wide one the sibling tests assert is absent.
+        let recorder = PrometheusBuilder::new().build_recorder();
+        let handle = recorder.handle();
+
+        metrics::with_local_recorder(&recorder, || {
+            let guard = InFlightGuard::enter();
+            assert_eq!(in_flight_value(&handle.render()), Some(1.0));
+            // Standing in for the future being dropped mid-`await`: the guard goes out of
+            // scope without `track_request` ever reaching its final statement.
+            drop(guard);
+            assert_eq!(in_flight_value(&handle.render()), Some(0.0));
+        });
+    }
+
+    /// The unlabelled `http_requests_in_flight` sample from a Prometheus exposition body.
+    fn in_flight_value(exposition: &str) -> Option<f64> {
+        exposition
+            .lines()
+            .find_map(|line| line.strip_prefix("http_requests_in_flight "))
+            .and_then(|value| value.trim().parse().ok())
     }
 
     #[test]

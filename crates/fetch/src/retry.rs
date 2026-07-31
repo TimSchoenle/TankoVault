@@ -4,7 +4,6 @@ use crate::error::FetchError;
 use crate::fetcher::Fetcher;
 use crate::types::{FetchRequest, FetchResponse};
 use async_trait::async_trait;
-use rand::Rng;
 use std::time::Duration;
 
 /// Retries the inner fetcher on transient failures with capped exponential backoff.
@@ -49,14 +48,10 @@ impl<F: Fetcher> Fetcher for RetryingFetcher<F> {
 }
 
 impl<F> RetryingFetcher<F> {
+    /// Jittered exponential backoff for `attempt` (1-based), capped at `max_delay`.
+    ///
+    /// One line because the policy is shared; see [`crate::jitter`].
     fn backoff(&self, attempt: u32) -> Duration {
-        let exp = self
-            .base_delay
-            .saturating_mul(2u32.saturating_pow(attempt.saturating_sub(1)))
-            .min(self.max_delay);
-        // Full jitter in [0, exp].
-        let jitter =
-            rand::thread_rng().gen_range(0..=u64::try_from(exp.as_millis()).unwrap_or(u64::MAX));
-        Duration::from_millis(jitter)
+        crate::jitter::full_jitter_now(self.base_delay, self.max_delay, attempt)
     }
 }

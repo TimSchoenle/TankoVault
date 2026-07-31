@@ -7,6 +7,7 @@
 //! return from the provider.
 
 use crate::api;
+use crate::components::EmptyBox;
 use crate::i18n::use_i18n;
 use crate::state::use_session;
 use crate::Route;
@@ -69,7 +70,7 @@ pub(crate) fn AnilistCallback(code: String) -> Element {
             }
         },
         None => rsx! {
-            div { class: "ik-empty", {i18n.t("account.callback.connecting")} }
+            EmptyBox { message: i18n.t("account.callback.connecting") }
         },
     }
 }

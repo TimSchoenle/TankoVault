@@ -4,7 +4,7 @@
 //! custom properties, and persists a `tv-*` key that `index.html` re-applies before the next
 //! first paint. Selecting a default clears the override so the stylesheet's own value wins.
 
-use super::PanelCard;
+use crate::components::PanelCard;
 use crate::i18n::{use_i18n, LOCALES};
 use crate::icons::Icon;
 use crate::state::prefs::{Knob, ACCENT, COVER, DENSITY, THEME};

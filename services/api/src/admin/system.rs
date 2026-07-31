@@ -8,6 +8,7 @@
 use crate::error::ApiResult;
 use crate::openapi::ADMIN_OVERVIEW_TAG;
 use crate::state::{AppState, AuthUser};
+use crate::views::IntoView;
 use axum::Json;
 use axum::extract::State;
 use tankovault_domain::Permission;
@@ -21,7 +22,7 @@ use tankovault_domain::Permission;
     tag = ADMIN_OVERVIEW_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "System-wide stats", body = tankovault_db::repo::stats::SystemStats),
+        (status = 200, description = "System-wide stats", body = tankovault_contracts::admin::SystemStatsView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "the system statistics feature is disabled", body = crate::error::ProblemDetails),
@@ -30,10 +31,12 @@ use tankovault_domain::Permission;
 pub async fn system_stats(
     State(state): State<AppState>,
     user: AuthUser,
-) -> ApiResult<Json<tankovault_db::repo::stats::SystemStats>> {
+) -> ApiResult<Json<tankovault_contracts::admin::SystemStatsView>> {
     user.require(Permission::SystemStats).await?;
     Ok(Json(
-        tankovault_db::repo::stats::system_overview(&state.pool).await?,
+        tankovault_db::repo::stats::system_overview(&state.pool)
+            .await?
+            .into_view(),
     ))
 }
 
@@ -46,7 +49,7 @@ pub async fn system_stats(
     tag = ADMIN_OVERVIEW_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Up to 40 most recent audit records", body = Vec<tankovault_db::repo::audit::AuditView>),
+        (status = 200, description = "Up to 40 most recent audit records", body = Vec<tankovault_contracts::admin::AuditView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "the audit trail feature is disabled", body = crate::error::ProblemDetails),
@@ -55,9 +58,8 @@ pub async fn system_stats(
 pub async fn audit_log(
     State(state): State<AppState>,
     user: AuthUser,
-) -> ApiResult<Json<Vec<tankovault_db::repo::audit::AuditView>>> {
+) -> ApiResult<Json<Vec<tankovault_contracts::admin::AuditView>>> {
     user.require(Permission::AuditRead).await?;
-    Ok(Json(
-        tankovault_db::repo::audit::list_recent(&state.pool, 40).await?,
-    ))
+    let rows = tankovault_db::repo::audit::list_recent(&state.pool, 40).await?;
+    Ok(Json(rows.into_view()))
 }

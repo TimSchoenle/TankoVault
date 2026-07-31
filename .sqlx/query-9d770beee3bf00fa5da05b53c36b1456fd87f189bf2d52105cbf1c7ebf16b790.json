@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series_tags (series_id, tag_id) SELECT $1, t.id FROM tags t WHERE t.slug = ANY($2::text[]) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9d770beee3bf00fa5da05b53c36b1456fd87f189bf2d52105cbf1c7ebf16b790"
+}

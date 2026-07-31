@@ -19,7 +19,7 @@ mod model;
 mod tracking;
 
 use crate::api;
-use crate::components::{async_view, Cover, ErrorBox, SkeletonBlock};
+use crate::components::{async_view, Cover, EmptyBox, ErrorBox, SkeletonBlock};
 use crate::hooks::{use_busy, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -53,7 +53,7 @@ pub(crate) fn Series(id: String) -> Element {
     let i18n = use_i18n();
     let Ok(id) = id.parse::<SeriesId>() else {
         return rsx! {
-            div { class: "ik-empty", {i18n.t("series.badLink")} }
+            EmptyBox { message: i18n.t("series.badLink") }
         };
     };
 
@@ -62,25 +62,16 @@ pub(crate) fn Series(id: String) -> Element {
     let reload_detail = use_reload();
     let reload_wl = use_reload();
     let reload_chapters = use_reload();
-    let mut pinned = use_signal(|| Option::<SeriesSourceId>::None);
-
-    // The pin is read once on mount and written back whenever it changes.
-    use_future(move || async move {
-        let script = format!("return localStorage.getItem('{}');", pin_key(id));
-        if let Ok(value) = document::eval(&script).await {
-            if let Some(stored) = value.as_str() {
-                if let Ok(source) = stored.trim_matches('"').parse::<SeriesSourceId>() {
-                    pinned.set(Some(source));
-                }
-            }
-        }
+    // The pin is read once on mount and written back whenever it changes. Reading it is a
+    // plain `localStorage` lookup (`crate::browser`), so the signal can be seeded with the
+    // stored value outright rather than rendering unpinned and correcting itself.
+    let pinned = use_signal(|| {
+        crate::browser::local_get(&pin_key(id))
+            .and_then(|stored| stored.parse::<SeriesSourceId>().ok())
     });
     use_effect(move || {
         if let Some(source) = *pinned.read() {
-            let _ = document::eval(&format!(
-                "localStorage.setItem('{key}','{source}');",
-                key = pin_key(id),
-            ));
+            crate::browser::local_set(&pin_key(id), &source.to_string());
         }
     });
 
@@ -220,7 +211,7 @@ pub(crate) fn Series(id: String) -> Element {
                     }
                 }
                 if loaded.sources.is_empty() {
-                    div { class: "ik-empty", {i18n.t("series.noSources")} }
+                    EmptyBox { message: i18n.t("series.noSources") }
                 } else {
                     {
                         async_view(
@@ -230,7 +221,7 @@ pub(crate) fn Series(id: String) -> Element {
                             |_| {
                                 if merged.is_empty() {
                                     return rsx! {
-                                        div { class: "ik-empty", {i18n.t("series.noChapters")} }
+                                        EmptyBox { message: i18n.t("series.noChapters") }
                                     };
                                 }
                                 rsx! {

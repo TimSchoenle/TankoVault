@@ -19,6 +19,7 @@ mod base;
 mod builder;
 mod error;
 mod fetcher;
+mod jitter;
 mod ratelimit;
 mod retry;
 mod solver_client;

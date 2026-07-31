@@ -7,14 +7,13 @@
 //! drop-in, and each is constructed purely from config.
 
 use std::fmt::Write as _;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use lettre::message::Mailbox;
-use lettre::message::header::ContentType;
-use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use serde::Deserialize;
 use tankovault_domain::{Feature, SeriesId};
+use tankovault_email::{EmailMessage, EmailService};
 
 /// Operator-configured external channel endpoints. All optional; a channel is only
 /// constructed when its URL is present and non-empty.
@@ -26,15 +25,11 @@ pub(crate) struct ChannelsConfig {
     /// A generic HTTP endpoint. Receives [`webhook_payload`] as a JSON `POST` body.
     #[serde(default)]
     pub webhook_url: Option<String>,
-    /// SMTP relay URL for the email channel, in lettre's
-    /// `AsyncSmtpTransport::from_url` format (e.g. `smtps://user:pass@smtp.host:465`);
-    /// TLS, port, and credentials are all encoded in the URL.
-    #[serde(default)]
-    pub email_smtp_url: Option<String>,
-    /// `From` address for outgoing email (e.g. `TankoVault <alerts@example.com>`).
-    #[serde(default)]
-    pub email_from: Option<String>,
     /// Recipients of a new-chapter alert email. Empty disables the email channel.
+    ///
+    /// The relay, credentials and `From` address are **not** here: they come from the shared
+    /// `TANKOVAULT_EMAIL__*` config that the API already uses, so one deployment has one SMTP
+    /// configuration rather than two that can disagree.
     #[serde(default)]
     pub email_to: Vec<String>,
     /// Per-request timeout for channel deliveries.
@@ -47,8 +42,6 @@ impl Default for ChannelsConfig {
         Self {
             discord_webhook_url: None,
             webhook_url: None,
-            email_smtp_url: None,
-            email_from: None,
             email_to: Vec::new(),
             timeout_secs: default_timeout_secs(),
         }
@@ -238,48 +231,27 @@ impl NotificationChannel for DiscordChannel {
     }
 }
 
-/// Email channel: sends a plain-text new-chapter alert to one or more recipients over
-/// SMTP (config-driven, operator-level — like the webhook/Discord channels).
+/// Email channel: a plain-text new-chapter alert to one or more operator recipients.
+///
+/// A thin adapter over [`tankovault_email::EmailService`], where it used to be a second,
+/// private SMTP client: its own `AsyncSmtpTransport::from_url`, its own `Mailbox` parsing, its
+/// own `Message` assembly, its own TLS configuration. Two SMTP stacks in one system means two
+/// `From`/envelope policies, and the difference was not cosmetic — `crates/email` resolves the
+/// **envelope sender from the SMTP login** rather than from the `From` header (relays that
+/// enforce "send as", notably OVH Exchange, reject the mismatch with `550 5.7.60`), and this
+/// copy did not. Operator alerts were therefore rejected by the same relay that happily
+/// accepted password-reset mail from the API.
+///
+/// It also means this path inherits `crates/email`'s ten tests, where it had none.
 pub(crate) struct EmailChannel {
-    transport: AsyncSmtpTransport<Tokio1Executor>,
-    from: Mailbox,
-    to: Vec<Mailbox>,
+    mailer: Arc<dyn EmailService>,
+    to: Vec<String>,
 }
 
 impl EmailChannel {
-    /// Build from a lettre relay URL, a `From` address, and one or more recipients.
-    ///
-    /// # Errors
-    /// Returns an error when the URL or any address fails to parse, or when no
-    /// recipient is supplied.
-    pub(crate) fn from_config(smtp_url: &str, from: &str, to: &[String]) -> anyhow::Result<Self> {
-        let transport = AsyncSmtpTransport::<Tokio1Executor>::from_url(smtp_url)?.build();
-        let from: Mailbox = from.parse()?;
-        let to = to
-            .iter()
-            .map(|addr| addr.parse::<Mailbox>().map_err(anyhow::Error::from))
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        if to.is_empty() {
-            anyhow::bail!("email channel requires at least one recipient");
-        }
-        Ok(Self {
-            transport,
-            from,
-            to,
-        })
-    }
-
-    /// Build the RFC 5322 message for `alert` (each recipient appended to `To`).
-    fn message(&self, alert: &Alert) -> anyhow::Result<Message> {
-        let mut builder = Message::builder().from(self.from.clone());
-        for recipient in &self.to {
-            builder = builder.to(recipient.clone());
-        }
-        let msg = builder
-            .subject(email_subject(alert))
-            .header(ContentType::TEXT_PLAIN)
-            .body(email_body(alert))?;
-        Ok(msg)
+    /// Build from the shared mailer and the configured recipients.
+    fn new(mailer: Arc<dyn EmailService>, to: Vec<String>) -> Self {
+        Self { mailer, to }
     }
 }
 
@@ -294,19 +266,22 @@ impl NotificationChannel for EmailChannel {
     }
 
     async fn deliver(&self, alert: &Alert) -> anyhow::Result<()> {
-        let resp = self.transport.send(self.message(alert)?).await?;
-        if !resp.is_positive() {
-            anyhow::bail!(
-                "smtp relay returned a non-positive response: {:?}",
-                resp.code()
-            );
-        }
+        let message = EmailMessage {
+            to: self.to.clone(),
+            subject: email_subject(alert),
+            text: email_body(alert),
+            html: None,
+        };
+        self.mailer.send(message).await?;
         Ok(())
     }
 }
 
 /// Build the set of enabled channels from config (empty when none are configured).
-pub(crate) fn build(cfg: &ChannelsConfig) -> Vec<Box<dyn NotificationChannel>> {
+pub(crate) fn build(
+    cfg: &ChannelsConfig,
+    email: &tankovault_config::EmailConfig,
+) -> Vec<Box<dyn NotificationChannel>> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(cfg.timeout_secs))
         .build()
@@ -319,25 +294,59 @@ pub(crate) fn build(cfg: &ChannelsConfig) -> Vec<Box<dyn NotificationChannel>> {
     if let Some(url) = cfg.discord_webhook_url.clone().filter(|u| !u.is_empty()) {
         channels.push(Box::new(DiscordChannel::new(client.clone(), url)));
     }
-    if let (Some(url), Some(from)) = (
-        cfg.email_smtp_url.clone().filter(|u| !u.is_empty()),
-        cfg.email_from.clone().filter(|f| !f.is_empty()),
-    ) {
+    // The mailer comes from the same `EmailConfig` and the same builder the API uses, so an
+    // unconfigured deployment gets `NoopMailer` and this channel degrades identically.
+    if email.is_enabled() {
         if cfg.email_to.is_empty() {
-            tracing::warn!("email channel has an smtp url + from but no recipients; skipping");
+            tracing::warn!("email is configured but the notifier has no recipients; skipping");
         } else {
-            match EmailChannel::from_config(&url, &from, &cfg.email_to) {
-                Ok(channel) => channels.push(Box::new(channel)),
-                Err(e) => tracing::warn!(error = %e, "email channel misconfigured; skipping"),
-            }
+            channels.push(Box::new(EmailChannel::new(
+                tankovault_email::build(email),
+                cfg.email_to.clone(),
+            )));
         }
+    } else if !cfg.email_to.is_empty() {
+        tracing::warn!(
+            "the notifier has email recipients but no relay is configured; set              TANKOVAULT_EMAIL__HOST and TANKOVAULT_EMAIL__FROM"
+        );
     }
     channels
 }
 
 #[cfg(test)]
 mod tests {
+    // Every client below targets the `wiremock` server this module starts on localhost, which
+    // answers immediately or is deliberately made to hang under a test's own timeout. A
+    // production client must carry its own timeouts (`WebhookChannel` builds one that does);
+    // a harness client that cannot outlive the test process does not.
+    #![expect(
+        clippy::disallowed_methods,
+        reason = "clients scoped to the in-process wiremock server, not the network"
+    )]
+
     use super::*;
+    use std::time::Instant;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    /// A server that accepts one `POST /hook` and records it.
+    async fn accepting_server() -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/hook"))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+        server
+    }
+
+    /// The JSON body of the one request the server received.
+    async fn sole_request_body(server: &MockServer) -> serde_json::Value {
+        let requests = server.received_requests().await.expect("request recording");
+        assert_eq!(requests.len(), 1, "expected exactly one request");
+        serde_json::from_slice(&requests[0].body).expect("a JSON request body")
+    }
 
     fn sample() -> Alert {
         Alert {
@@ -408,11 +417,17 @@ mod tests {
             timeout_secs: 5,
             ..ChannelsConfig::default()
         };
-        let built = build(&cfg);
+        let built = build(&cfg, &tankovault_config::EmailConfig::default());
         assert_eq!(built.len(), 1);
         assert_eq!(built[0].name(), "discord");
 
-        assert!(build(&ChannelsConfig::default()).is_empty());
+        assert!(
+            build(
+                &ChannelsConfig::default(),
+                &tankovault_config::EmailConfig::default()
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -443,48 +458,163 @@ mod tests {
         assert!(!email_body(&a).contains("Title:"));
     }
 
+    /// A relay is configured but the notifier names nobody: no channel, and a warning.
+    /// Building one would send operator alerts to an empty recipient list.
     #[test]
-    fn email_channel_builds_a_multi_recipient_message() {
-        let ch = EmailChannel::from_config(
-            "smtp://localhost:2525",
-            "TankoVault <alerts@example.com>",
-            &[
-                "reader@example.com".to_owned(),
-                "two@example.com".to_owned(),
-            ],
-        )
-        .expect("valid config");
-        let formatted =
-            String::from_utf8(ch.message(&sample()).expect("builds").formatted()).expect("utf8");
-        assert!(formatted.contains("Subject: New chapter 12"));
-        assert!(formatted.contains("reader@example.com"));
-        assert!(formatted.contains("two@example.com"));
-        assert!(formatted.contains("From:"));
-    }
+    fn email_needs_both_a_relay_and_recipients() {
+        let relay = tankovault_config::EmailConfig {
+            host: Some("smtp.example.com".to_owned()),
+            from: Some("TankoVault <alerts@example.com>".to_owned()),
+            ..tankovault_config::EmailConfig::default()
+        };
+        assert!(relay.is_enabled());
 
-    #[test]
-    fn email_channel_requires_a_recipient() {
-        assert!(EmailChannel::from_config("smtp://localhost:2525", "a@b.com", &[]).is_err());
-    }
+        // Relay, no recipients.
+        assert!(build(&ChannelsConfig::default(), &relay).is_empty());
 
-    #[test]
-    fn build_adds_email_when_fully_configured() {
-        let cfg = ChannelsConfig {
-            email_smtp_url: Some("smtp://localhost:2525".to_owned()),
-            email_from: Some("alerts@example.com".to_owned()),
+        // Recipients, no relay — the mirror image, and equally not a working channel.
+        let with_recipients = ChannelsConfig {
             email_to: vec!["reader@example.com".to_owned()],
             ..ChannelsConfig::default()
         };
-        let built = build(&cfg);
+        assert!(build(&with_recipients, &tankovault_config::EmailConfig::default()).is_empty());
+
+        // Both: one email channel.
+        let built = build(&with_recipients, &relay);
         assert_eq!(built.len(), 1);
         assert_eq!(built[0].name(), "email");
+        assert_eq!(built[0].feature(), Feature::NotificationsEmail);
+    }
 
-        // Missing recipients: no channel is constructed.
+    /// The subject and body are this module's contribution; the transport is
+    /// `crates/email`'s, and is tested there.
+    #[test]
+    fn the_alert_message_carries_every_recipient_and_the_chapter_subject() {
+        let channel = EmailChannel::new(
+            tankovault_email::build(&tankovault_config::EmailConfig::default()),
+            vec![
+                "reader@example.com".to_owned(),
+                "two@example.com".to_owned(),
+            ],
+        );
+        assert_eq!(channel.to.len(), 2);
+        assert_eq!(
+            email_subject(&sample()),
+            "New chapter 12: The Duel (kunmanga)"
+        );
+        assert!(email_body(&sample()).contains("kunmanga"));
+    }
+
+    /// The payload builders above are pure and were already covered; what was not was the step
+    /// that puts one on the wire. Nothing connected [`webhook_payload`] to the body an operator's
+    /// endpoint actually receives, so the delivered document is asserted to *be* the builder's
+    /// output rather than re-spelled here — the failure this catches is `deliver` sending
+    /// something else, not the builder changing shape, which its own test owns (F-09).
+    #[tokio::test]
+    async fn the_generic_webhook_posts_the_payload_builder_output_as_json() {
+        let server = accepting_server().await;
+        let alert = sample();
+
+        WebhookChannel::new(reqwest::Client::new(), format!("{}/hook", server.uri()))
+            .deliver(&alert)
+            .await
+            .expect("a 204 is a successful delivery");
+
+        assert_eq!(sole_request_body(&server).await, webhook_payload(&alert));
+        let requests = server.received_requests().await.expect("request recording");
+        assert_eq!(
+            requests[0]
+                .headers
+                .get("content-type")
+                .map(|v| v.to_str().expect("ASCII header")),
+            Some("application/json"),
+            "a receiver that dispatches on Content-Type would drop this"
+        );
+    }
+
+    /// The same for Discord, which is a *different* document to the same transport — the two
+    /// channels share `deliver`'s shape and nothing but a test would notice one being handed the
+    /// other's builder.
+    #[tokio::test]
+    async fn the_discord_webhook_posts_the_discord_document() {
+        let server = accepting_server().await;
+        let alert = sample();
+
+        DiscordChannel::new(reqwest::Client::new(), format!("{}/hook", server.uri()))
+            .deliver(&alert)
+            .await
+            .expect("a 204 is a successful delivery");
+
+        assert_eq!(sole_request_body(&server).await, discord_payload(&alert));
+    }
+
+    /// A rejected delivery has to *be* an error, and name the status: the caller logs whatever
+    /// comes back per channel and never aborts fan-out, so this string is the entire diagnostic
+    /// an operator gets for a webhook that has been quietly `401`ing for a week.
+    #[tokio::test]
+    async fn a_rejected_delivery_is_an_error_naming_the_channel_and_the_status() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/hook"))
+            .respond_with(ResponseTemplate::new(401))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let url = format!("{}/hook", server.uri());
+
+        let webhook = WebhookChannel::new(reqwest::Client::new(), url.clone())
+            .deliver(&sample())
+            .await
+            .expect_err("a 401 is a failed delivery")
+            .to_string();
+        assert!(webhook.contains("401"), "no status in: {webhook}");
+        assert!(webhook.contains("webhook"), "no channel in: {webhook}");
+
+        let discord = DiscordChannel::new(reqwest::Client::new(), url)
+            .deliver(&sample())
+            .await
+            .expect_err("a 401 is a failed delivery")
+            .to_string();
+        assert!(discord.contains("401"), "no status in: {discord}");
+        assert!(discord.contains("discord"), "no channel in: {discord}");
+    }
+
+    /// `timeout_secs` is the only knob on [`ChannelsConfig`] whose effect is invisible in the
+    /// constructed value, and a configuration knob that silently does nothing is worse than an
+    /// absent one — the operator who sets it believes deliveries are bounded. Driven through
+    /// [`build`] rather than by constructing a client here, because the wiring being asserted is
+    /// exactly the line in `build` that could drop it.
+    #[tokio::test]
+    async fn the_configured_timeout_reaches_the_client_that_delivers() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/hook"))
+            .respond_with(ResponseTemplate::new(204).set_delay(Duration::from_secs(30)))
+            .mount(&server)
+            .await;
+
         let cfg = ChannelsConfig {
-            email_smtp_url: Some("smtp://localhost:2525".to_owned()),
-            email_from: Some("alerts@example.com".to_owned()),
+            webhook_url: Some(format!("{}/hook", server.uri())),
+            timeout_secs: 1,
             ..ChannelsConfig::default()
         };
-        assert!(build(&cfg).is_empty());
+        let channels = build(&cfg, &tankovault_config::EmailConfig::default());
+        assert_eq!(channels.len(), 1);
+
+        let started = Instant::now();
+        let err = channels[0]
+            .deliver(&sample())
+            .await
+            .expect_err("the delivery outlives the timeout");
+        assert!(
+            err.downcast_ref::<reqwest::Error>()
+                .is_some_and(reqwest::Error::is_timeout),
+            "not a timeout: {err}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the 1s timeout was not applied: {:?}",
+            started.elapsed()
+        );
     }
 }

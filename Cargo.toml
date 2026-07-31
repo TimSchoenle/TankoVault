@@ -239,7 +239,7 @@ jsonwebtoken = { version = "10", default-features = false, features = ["rust_cry
 aes-gcm = "0.11"
 rand = "0.8"
 sha2 = "0.10"
-base64 = "0.22"
+base64 = "0.23"
 # Constant-time comparison for the internal service-to-service token. Already in the tree
 # transitively (aes-gcm, argon2); declared here so the comparison is not hand-rolled.
 subtle = "2"

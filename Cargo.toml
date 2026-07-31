@@ -89,17 +89,41 @@ multiple_crate_versions = "allow"
 # their reasoning: a harness helper panics by design, and `expect` means the compiler withdraws
 # the exemption if that ever stops being true.
 #
-# `missing_errors_doc` stays allowed, and the reason is now measured rather than assumed. It is
-# **172** warnings and every single one is in `crates/db` — every other member is already clean,
-# so this line exists for one crate. It is not a formatting backlog: `DbError` carries `NotFound`
-# and `Conflict` alongside the driver error, the API maps those to 404 and 409 (ARCH-4/ARCH-11),
-# and the only `# Errors` section worth writing says *which variants this function can produce*.
-# 172 copies of "returns an error if the query fails" would satisfy the lint while documenting
-# the wrong thing, permanently. Do it module by module against the function bodies, and delete
-# this line when `crates/db` is clean.
-missing_errors_doc = "allow"
+# `missing_errors_doc` is **on**, and the 172-warning backlog that kept it allowed is gone. All
+# 172 were in `crates/db`; every other member was already clean. The sections were written module
+# by module against the function bodies rather than generated, because the only one worth writing
+# says *which* variants a function can produce — `DbError` carries `NotFound` and `Conflict`
+# alongside the driver error, and the API maps those to 404 and 409 (ARCH-4/ARCH-11), so "returns
+# an error if the query fails" would satisfy the lint while documenting the wrong thing. The
+# convention the sections settled on: name the reachable variants (and say "`Sqlx` only — no
+# other variant is reachable" when that is the answer, because it tells a caller the result is
+# always a 500), then say what the function returns *instead of* an error, since nearly all of
+# them turn a miss into `Ok(None)`/`Ok(false)`/`Ok(0)` and several are security-relevant in that
+# choice. Writing them found four defects: OPS-2.2c, OPS-2.2d, OPS-2.2e and OPS-2.2f.
+missing_errors_doc = "warn"
 missing_panics_doc = "warn"
 must_use_candidate = "allow"
+
+# Intra-doc links, denied. Not in the audit; found while writing the `missing_errors_doc`
+# sections above, when a `cargo doc` run over the new links reported six pre-existing broken ones
+# nothing had ever checked (OPS-2.2f). It is the same shape this remediation keeps meeting — two
+# artefacts that must agree with nothing connecting them — and the cheapest possible fix, because
+# rustdoc already resolves every link and was simply not being asked to fail.
+#
+# `deny` rather than `warn`: a broken link renders as literal `[`Foo`]` text, so it is invisible
+# to anyone reading the source and only visible to whoever generates the documentation, which is
+# nobody by habit. `private_intra_doc_links` stays a warning — linking to a `pub(super)` helper
+# from a module doc is a reasonable thing to do while the item is being described, and the link
+# simply does not render.
+#
+# `crates/api-client` is exempt **by construction** rather than by an entry here: it declares its
+# own `[lints]` table (OPS-2.4) and so inherits nothing from this one. That is the right outcome —
+# 780 KB of `progenitor` output carries the `OpenAPI` descriptions' own `[`…`]` spans into Rust
+# doc comments, where they resolve against a module tree that does not exist, and fixing them
+# would mean editing a generated file.
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "warn"
 
 [workspace.dependencies]
 # --- internal crates ---

@@ -88,6 +88,9 @@ pub async fn create<'e, E: PgExecutor<'e>>(exec: E, new: NewProvider) -> DbResul
 }
 
 /// List all providers, most recently updated first.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable. An empty table is an empty `Vec`.
 pub async fn list<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<Provider>> {
     let rows = sqlx::query_as!(
         ProviderRow,
@@ -103,6 +106,9 @@ pub async fn list<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<Provider>> {
 }
 
 /// Fetch one provider by id.
+///
+/// # Errors
+/// [`DbError::NotFound`] — a 404 — when no provider has that id; otherwise [`DbError::Sqlx`].
 pub async fn get<'e, E: PgExecutor<'e>>(exec: E, id: ProviderId) -> DbResult<Provider> {
     let row = sqlx::query_as!(
         ProviderRow,
@@ -119,6 +125,10 @@ pub async fn get<'e, E: PgExecutor<'e>>(exec: E, id: ProviderId) -> DbResult<Pro
 }
 
 /// Fetch one provider by slug.
+///
+/// # Errors
+/// [`DbError::NotFound`] — a 404 — when no provider has that slug; otherwise
+/// [`DbError::Sqlx`].
 pub async fn get_by_slug<'e, E: PgExecutor<'e>>(exec: E, slug: &str) -> DbResult<Provider> {
     let row = sqlx::query_as!(
         ProviderRow,
@@ -138,6 +148,12 @@ pub async fn get_by_slug<'e, E: PgExecutor<'e>>(exec: E, slug: &str) -> DbResult
 ///
 /// Changing `base_url` is the **domain-migration** action: every stored relative link
 /// re-resolves against the new domain with zero data rewrite (design §5).
+///
+/// # Errors
+/// [`DbError::NotFound`] — a 404 — when `id` matches no row; otherwise [`DbError::Sqlx`].
+/// Not [`DbError::Conflict`]: `slug` is the unique column and this statement does not touch
+/// it. Note that `politeness` is stored through [`Politeness::clamped`], so an out-of-range
+/// rate is corrected rather than rejected.
 pub async fn update<'e, E: PgExecutor<'e>>(
     exec: E,
     id: ProviderId,
@@ -166,6 +182,11 @@ pub async fn update<'e, E: PgExecutor<'e>>(
 }
 
 /// Transition a provider's health state (circuit breaker / solver lifecycle).
+///
+/// # Errors
+/// [`DbError::NotFound`] — a 404 — when `id` matches no row; otherwise [`DbError::Sqlx`].
+/// No transition is rejected here: this is an unconditional assignment, so the circuit
+/// breaker's legal-transition rules live in its caller, not in the write.
 pub async fn set_state<'e, E: PgExecutor<'e>>(
     exec: E,
     id: ProviderId,
@@ -237,6 +258,11 @@ pub struct PublicProvider {
 }
 
 /// List providers for the public Discover filter, richest first, hiding disabled ones.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable. Every provider that is not
+/// `disabled` appears, including unhealthy ones, so an empty `Vec` means the deployment has
+/// no enabled provider rather than that the filter matched nothing.
 pub async fn list_public<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<PublicProvider>> {
     let rows = sqlx::query_as!(
         PublicProvider,
@@ -252,6 +278,11 @@ pub async fn list_public<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<PublicP
 }
 
 /// Stamp the completion time of a full scan.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable. A provider deleted while its scan
+/// was running updates nothing and still returns `Ok(())`, so this cannot report that the
+/// stamp was lost.
 pub async fn mark_full_scanned<'e, E: PgExecutor<'e>>(exec: E, id: ProviderId) -> DbResult<()> {
     sqlx::query!(
         "UPDATE providers SET last_full_scan_at = now(), updated_at = now() WHERE id = $1",

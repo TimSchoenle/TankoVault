@@ -30,6 +30,13 @@ pub struct FetchedRemoteEntry {
 /// UPDATE` cannot touch the same row twice in one statement, so a duplicate `external_id` in the
 /// input would abort the whole statement. Callers deduplicate before this point, but the guard
 /// stays because a provider list is untrusted input.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A duplicate `external_id`
+/// in `entries` is absorbed by the `DISTINCT ON` rather than raised as
+/// [`crate::DbError::Conflict`]; without it the same input would abort the statement with a
+/// driver error naming the whole batch, which is the failure mode this guard exists to prevent.
+/// An empty `entries` is `Ok(())` with no round trip.
 pub async fn upsert_remote_entries<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

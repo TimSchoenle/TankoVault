@@ -20,6 +20,12 @@ use uuid::Uuid;
 
 /// Find existing series whose canonical or alternative normalized titles are
 /// trigram-similar to `normalized`, ordered by best similarity.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. "No candidate cleared the
+/// trigram threshold" is an empty `Vec`, which the canonicaliser reads as "this is a new
+/// series", so a caller must not fold an `Err` into the same path: a failed lookup that looks
+/// like no match creates a duplicate series instead of attaching a source.
 pub async fn find_candidates<'e, E: PgExecutor<'e>>(
     exec: E,
     normalized: &str,
@@ -87,6 +93,12 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
 /// queries did, so a title with many weak candidates cannot crowd out another title's strong
 /// one. Similarity is still computed against the same expression, so scores are identical to
 /// the per-title path.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable, and the caution on
+/// [`find_candidates`] about treating `Err` as "no match" applies here too. An empty
+/// `normalized` returns `Ok(empty)` with no round trip, and a title with no candidates is
+/// **absent** from the result rather than present with an empty bucket.
 pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
     exec: E,
     normalized: &[String],
@@ -157,6 +169,11 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
 }
 
 /// Record an operator-review merge candidate (ambiguous confidence band).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Nothing deduplicates: the
+/// same pair scanned twice inserts two rows rather than raising
+/// [`crate::DbError::Conflict`], so the operator queue can hold duplicates of one ambiguity.
 pub async fn record_merge_candidate<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -194,6 +211,11 @@ pub struct MergeCandidateView {
 }
 
 /// List the open (unresolved) merge candidates, newest first.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An empty queue is an empty
+/// `Vec`. Note that both series are inner-joined, so a candidate naming a deleted series
+/// disappears from this list without being resolved — see the note on [`merge_series`].
 pub async fn list_open_merge_candidates<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
@@ -240,6 +262,12 @@ pub async fn list_open_merge_candidates<'e, E: PgExecutor<'e>>(
 }
 
 /// Dismiss a merge candidate (operator judged the two works distinct) without merging.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown id and an
+/// already-resolved one are both `Ok(false)`, not [`crate::DbError::NotFound`]: the
+/// `NOT resolved` predicate makes dismissal idempotent, so a double-click cannot report a
+/// failure for work that was already done.
 pub async fn dismiss_merge_candidate<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
@@ -287,6 +315,14 @@ pub async fn dismiss_merge_candidate<'e, E: PgExecutor<'e>>(
 /// candidate is left naming a series that no longer exists, because
 /// [`list_open_merge_candidates`] inner-joins both sides and such a row would silently vanish from
 /// the operator's queue while staying open in the table.
+///
+/// # Errors
+/// [`crate::DbError::Conflict`] — a 409 — when `keep_id == drop_id`, checked before the
+/// transaction opens. [`crate::DbError::NotFound`] — a 404 — when either series is missing,
+/// which is one `count(*) = 2` check rather than two lookups so a series deleted between them
+/// cannot slip through. Otherwise [`crate::DbError::Sqlx`] from any statement in the
+/// transaction, which rolls back whole: a partial merge would leave sources re-parented to a
+/// series whose titles and progress had not moved, so there is no partial-success return.
 // A straight-line sequence of per-table union inserts reads more clearly as one function
 // than split across arbitrary helpers just to dodge the line-count lint.
 #[expect(

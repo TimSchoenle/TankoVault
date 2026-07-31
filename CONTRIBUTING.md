@@ -110,6 +110,21 @@ behind each — module splits and their glob re-exports, `citext` comparisons, t
 error shape, where shared policy lives, and why a predicate that must exist in several places
 gets a differential test rather than a comment. Read that section before adding to any of them.
 
+Two that come up constantly and are easy to miss:
+
+- **Database fixtures come from `tankovault_test_support::seed`** —
+  `seed::provider(&db, "alpha").create().await`, `seed::user`, `seed::series(…).chapters(&[…])`.
+  Do not write another `a_provider`; there were seven, six of them byte-identical, and the
+  seventh had quietly diverged. Override what your test is actually about
+  (`.adapter(…)`, `.release_year(…)`) so the divergence is stated rather than inferred.
+- **Every public `fn` returning `Result` needs a `# Errors` section**, and the lint enforces it.
+  Name the variants the function can actually produce — in `crates/db` that is usually
+  "`DbError::Sqlx` only — no other variant is reachable", which tells a caller the answer is
+  always a 500 — and then say what it returns *instead of* an error, because most of this
+  codebase turns a miss into `Ok(None)`/`Ok(false)`/`Ok(0)` and several of those choices are
+  security-relevant. "Returns an error if the query fails" satisfies the lint and documents
+  nothing.
+
 ## Commit messages
 
 Conventional-commit prefixes (`feat`, `fix`, `refactor`, `docs`, `test`, `ci`, `chore`), and a

@@ -15191,7 +15191,7 @@ impl Client {
     pub fn delete_watchlist(&self) -> builder::DeleteWatchlist<'_> {
         builder::DeleteWatchlist::new(self)
     }
-    #[doc = "Set the per-series sync-exclusion flag\n\nSet the blanket per-series sync-exclusion flag (design v2 §A.5).\n\nSends a `PUT` request to `/v1/me/watchlist/{series_id}/sync`\n\nArguments:\n- `series_id`: Series id\n- `body`\n```ignore\nlet response = client.put_sync_excluded()\n    .series_id(series_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Set the per-series sync-exclusion flag\n\nSet the blanket per-series sync-exclusion flag (design v2 §A.5).\n\nThe flag lives on the watchlist entry, so the series must already be tracked. It answers\n`404` when it is not, rather than the `{\"ok\": true}` it used to answer unconditionally\n(OPS-2.2d): this decides whether the caller's reading progress is pushed to an external\nprovider, and a privacy setting that reports success without persisting is worse than one\nthat refuses.\n\nSends a `PUT` request to `/v1/me/watchlist/{series_id}/sync`\n\nArguments:\n- `series_id`: Series id\n- `body`\n```ignore\nlet response = client.put_sync_excluded()\n    .series_id(series_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn put_sync_excluded(&self) -> builder::PutSyncExcluded<'_> {
         builder::PutSyncExcluded::new(self)
     }
@@ -22019,6 +22019,9 @@ pub mod builder {
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

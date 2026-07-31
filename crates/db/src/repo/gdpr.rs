@@ -133,6 +133,12 @@ pub struct AdminRequestRow {
 ///
 /// Returns the created row so the caller can show the subject their due date immediately —
 /// which is the one piece of information Art. 12(3) makes them entitled to up front.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable. Filing a second request of the same
+/// kind is **not** [`DbError::Conflict`]: nothing in the schema forbids it, so the duplicate
+/// guard is [`has_open_of_kind`] and a caller that skips it silently starts a second
+/// Art. 12(3) clock.
 pub async fn create<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -183,6 +189,10 @@ impl From<RawRequest> for RequestRow {
 }
 
 /// A subject's own requests, newest first.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable. A subject who has filed nothing
+/// gets an empty `Vec`.
 pub async fn list_for_user<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -203,6 +213,12 @@ pub async fn list_for_user<'e, E: PgExecutor<'e>>(
 ///
 /// Guards against a subject filing the same request repeatedly — each duplicate would start
 /// its own Art. 12(3) clock and the queue would show several deadlines for one obligation.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable; `EXISTS` always yields a row, so
+/// "none open" is `Ok(false)`. Callers **must** propagate rather than defaulting to `false`:
+/// this is the duplicate guard, and treating a failed check as "nothing open" admits exactly
+/// the duplicate it exists to refuse.
 pub async fn has_open_of_kind<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -222,6 +238,9 @@ pub async fn has_open_of_kind<'e, E: PgExecutor<'e>>(
 
 /// The operator queue. `only_open` restricts it to what still needs work; the full list is
 /// the compliance record.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable. An empty queue is an empty `Vec`.
 pub async fn list_admin<'e, E: PgExecutor<'e>>(
     exec: E,
     only_open: bool,
@@ -293,6 +312,9 @@ pub async fn list_admin<'e, E: PgExecutor<'e>>(
 
 /// One request by id, with its subject — what every operator action reads first to decide
 /// whether the action is legal for that request's kind and status.
+///
+/// # Errors
+/// [`DbError::NotFound`] — a 404 — when no request has that id; otherwise [`DbError::Sqlx`].
 pub async fn get_admin<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<AdminRequestRow> {
     let rows = list_admin_by_id(exec, id).await?;
     rows.into_iter().next().ok_or(DbError::NotFound)
@@ -364,6 +386,11 @@ async fn list_admin_by_id<'e, E: PgExecutor<'e>>(
 /// The `status = 'pending'` predicate is the whole point: two operators opening the queue at
 /// the same time cannot both claim the same request, and the loser is told so rather than
 /// silently overwriting the winner's claim.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable. Losing the race, an unknown id and
+/// an already-claimed request are all `Ok(false)`, not [`DbError::Conflict`]; the caller
+/// decides whether that is a 404 or a 409, since only it knows whether it just read the row.
 pub async fn claim<'e, E: PgExecutor<'e>>(exec: E, id: Uuid, operator: UserId) -> DbResult<bool> {
     let result = sqlx::query!(
         "UPDATE gdpr_requests SET status = 'in_progress', claimed_by = $2, claimed_at = now() \
@@ -381,6 +408,11 @@ pub async fn claim<'e, E: PgExecutor<'e>>(exec: E, id: Uuid, operator: UserId) -
 /// Only transitions *out of* an open state, so a resolution cannot be recorded twice and a
 /// completed request cannot later be re-decided — an audit trail that can be rewritten is not
 /// one. Returns `false` when the request was already resolved.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable. An already-resolved request is
+/// `Ok(false)` rather than an error, and that `false` is the compliance-relevant answer: it
+/// means this call did **not** record the resolution the operator believes they just made.
 pub async fn resolve<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
@@ -404,6 +436,11 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(
 
 /// Withdraw one's own open request. Scoped to the owner, so the id alone is not authority to
 /// cancel someone else's.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable. A request belonging to someone else
+/// is `Ok(false)`, indistinguishable from an unknown or already-resolved id — which is what
+/// stops the endpoint confirming that another subject's request id exists.
 pub async fn cancel_own<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
@@ -424,6 +461,12 @@ pub async fn cancel_own<'e, E: PgExecutor<'e>>(
 ///
 /// Refuses to move a deadline *earlier*: the subject has been told a date, and a controller
 /// shortening its own window after the fact is not an extension.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable. An attempt to move the deadline
+/// earlier is `Ok(false)`, not an error, and so is an unknown or already-resolved id; the
+/// refusal and the miss are the same answer, so a caller wanting to explain which happened
+/// must read the row first.
 pub async fn extend_due<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
@@ -445,6 +488,12 @@ pub async fn extend_due<'e, E: PgExecutor<'e>>(
 /// Surfaced on the console overview: an overdue data-subject request is a compliance breach in
 /// progress, so it belongs on the front page rather than behind a tab someone has to remember
 /// to open.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable; the aggregate always returns a row,
+/// so a clean queue is `Ok((0, 0))`. The console must render a failure as unknown rather than
+/// as zero: "no overdue requests" and "could not tell" look identical on a front page
+/// otherwise, and only one of them is compliant.
 pub async fn open_counts<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<(i64, i64)> {
     #[derive(FromRow)]
     struct Row {

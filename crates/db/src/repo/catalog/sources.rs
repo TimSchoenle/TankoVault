@@ -43,6 +43,17 @@ impl TryFrom<SourceRow> for SeriesSource {
 }
 
 /// Upsert the (provider, path) source for a series. Idempotent on `(provider_id, source_path)`.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `series_id` or
+/// `provider_id` is a foreign-key violation and so a 500. There is no `Option` here and none is
+/// needed: `RETURNING id` fires on both the insert and the update arm, so the row always exists
+/// by the time this returns.
+///
+/// The id it returns is not necessarily the one passed in: on the conflict arm the *existing*
+/// row's id comes back, so a source keeps its identity across re-scans and the freshly generated
+/// [`SeriesSourceId`] is discarded. `series_id` is likewise **not** in the `DO UPDATE` list — a
+/// source that has already been attached to a canonical series is never re-pointed here.
 pub async fn upsert_source<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -80,6 +91,12 @@ pub async fn upsert_source<'e, E: PgExecutor<'e>>(
 /// ([`resolve_canonical_series`]); the subsequent `Series` task, resolving from the fuller
 /// series-page title, attaches to this same canonical series in the common case where the
 /// titles agree after normalisation.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An already-registered source
+/// is `Ok(())` with nothing written and the transaction dropped unsent, which is the no-op the
+/// paragraph above promises; it is indistinguishable from a fresh registration, so a caller that
+/// needs to know whether anything was created must count with [`register_source_stubs`] instead.
 pub async fn register_source_stub(
     pool: &sqlx::PgPool,
     provider_id: ProviderId,
@@ -206,7 +223,7 @@ async fn register_chunk(
 /// Same semantics as calling [`register_source_stub`] per entry, but set-based where it can be:
 /// the "is this source already registered?" check — the *only* work needed for the overwhelming
 /// majority of entries on a re-scan — is answered for the entire batch in one query, and the
-/// genuinely-new remainder is registered [`STUB_CHUNK`] entries per transaction.
+/// genuinely-new remainder is registered `STUB_CHUNK` entries per transaction.
 ///
 /// # Why the chunking matters (PERF-15)
 ///
@@ -225,6 +242,15 @@ async fn register_chunk(
 /// Returns the number of sources newly registered. A chunk that fails is retried entry by entry
 /// so one bad entry costs only itself: losing one series must not lose the rest, and the
 /// enrichment task is enqueued regardless (design §12).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable, and only from the **batch
+/// existence check**. Past that point registration failures are deliberately *not* errors: a
+/// failed chunk is retried entry by entry, and an entry that fails again is logged at `warn` and
+/// omitted from the count. That is the design §12 rule stated above — losing one series must not
+/// lose the page — but it means the returned count is the only signal a caller has, so
+/// `Ok(0)` on a page of genuinely new entries is a failure report, not an empty page. An empty
+/// `entries` short-circuits to `Ok(0)` without touching the database.
 pub async fn register_source_stubs(
     pool: &sqlx::PgPool,
     provider_id: ProviderId,
@@ -281,6 +307,13 @@ pub async fn register_source_stubs(
 }
 
 /// Record the result of a source scan: content hash + chapter count + timestamp.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A `source_id` that no longer
+/// exists matches nothing and is still `Ok(())`, not [`crate::DbError::NotFound`]. Its only
+/// caller writes inside the ingest transaction that created the source, so the row is there; a
+/// silent no-op elsewhere would mean the next scan re-does work the hash was meant to skip,
+/// which is wasteful rather than wrong.
 pub async fn update_source_scan<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
@@ -300,6 +333,14 @@ pub async fn update_source_scan<'e, E: PgExecutor<'e>>(
 }
 
 /// The previously stored content hash for a source, if any (change-detection skip).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Two different situations
+/// collapse into one `Ok(None)` — no such source, and a source registered but never scanned —
+/// and the `flatten` is what merges them. Both mean the same thing to the caller: there is no
+/// hash to compare against, so scan. That makes `None` the safe default and an error the one
+/// answer that must not be swallowed into it silently, since defaulting a failure to `Some(hash)`
+/// would skip a scan that should have run.
 pub async fn source_content_hash<'e, E: PgExecutor<'e>>(
     exec: E,
     provider_id: ProviderId,
@@ -316,6 +357,13 @@ pub async fn source_content_hash<'e, E: PgExecutor<'e>>(
 }
 
 /// List the sources of a canonical series (for the "Read on: A · B · C" strip).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `series_id` and a
+/// series no provider carries are the same empty `Vec`, not [`crate::DbError::NotFound`]: the
+/// series page establishes the series exists, and this only decides whether the "Read on" strip
+/// renders. The `try_from` per row cannot currently fail, for the same reason as in
+/// [`super::series::get_series`].
 pub async fn list_sources_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -333,6 +381,16 @@ pub async fn list_sources_for_series<'e, E: PgExecutor<'e>>(
 }
 /// The `(provider_id, base_url)` a source belongs to — the minimal input the API needs
 /// to resolve a source's relative paths into absolute links at read time.
+///
+/// # Errors
+/// - [`crate::DbError::NotFound`] if `source_id` names no source. The inner join means a source
+///   whose provider row has been deleted reports the same thing, which is correct for the
+///   caller's purpose: without a `base_url` there is no way to build the link either way.
+/// - [`crate::DbError::Sqlx`] for any driver or connection failure.
+///
+/// The absent case is an error rather than `Ok(None)` here — unlike most of this crate — because
+/// every caller is resolving a link it has already committed to rendering, and there is no
+/// sensible partial answer.
 pub async fn source_provider_base_url<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,

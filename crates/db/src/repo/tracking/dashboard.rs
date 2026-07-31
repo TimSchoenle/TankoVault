@@ -47,6 +47,11 @@ pub struct FeedItem {
 /// The user's "new chapters" feed (design §11 `GET /v1/me/feed`): chapters on watched
 /// series strictly above the user's read progress, most recently discovered first. Rows
 /// are per source; the caller may group across providers.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. "Nothing unread" and "nothing
+/// watched" are both an empty `Vec`; the feed cannot report [`crate::DbError::NotFound`] for a
+/// user, so an empty response is never evidence the account is gone.
 pub async fn feed<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -127,6 +132,10 @@ pub struct ContinueCard {
 /// on the whole frontier alone — as this did — left a card that could not be cleared: the badge
 /// claimed one unread, `next_number` pointed at a part already read, and marking that part read
 /// again is a deliberate no-op in [`progress_mark_read`](super::progress_mark_read).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A user with nothing left to
+/// read gets an empty `Vec`, which is the rail's empty state rather than an error.
 pub async fn continue_reading<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -220,6 +229,10 @@ pub struct MeStats {
 /// development catalogue (835 watchlist entries): it forces a nested loop per watchlist row
 /// and came out **slower** — 432 ms against 258 ms for the hash join plus one sort. The same
 /// rewrite is not automatically right in both places; this one was checked.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable; the aggregate always returns
+/// a row, so a user who tracks nothing gets zeros rather than [`crate::DbError::NotFound`].
 pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<MeStats> {
     let stats = sqlx::query_as!(
         MeStats,
@@ -251,6 +264,12 @@ pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResu
 /// "Because you read" recommendations (frontend §9.3, *Stub*): series that share a tag with
 /// the user's watchlist and are not already tracked, most shared tags first. Returns an
 /// empty vec when the user has no tagged watchlist yet (the API falls back to recent series).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. The empty case is a
+/// documented, expected result rather than an error, which is what lets the API substitute its
+/// fallback without having to distinguish "no recommendations" from "the query failed" — so a
+/// caller must not collapse `Err` into that same fallback.
 pub async fn recommendations<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

@@ -1,6 +1,6 @@
 //! Read progress: whole-chapter and part frontiers, sync exclusion, targeted push.
 
-use crate::error::ApiResult;
+use crate::error::{ApiError, ApiResult};
 use crate::openapi::{ME_PROGRESS_TAG, ME_WATCHLIST_TAG};
 use crate::state::{AppState, AuthUser};
 use axum::Json;
@@ -179,6 +179,12 @@ pub struct SyncExcluded {
 /// Set the per-series sync-exclusion flag
 ///
 /// Set the blanket per-series sync-exclusion flag (design v2 §A.5).
+///
+/// The flag lives on the watchlist entry, so the series must already be tracked. It answers
+/// `404` when it is not, rather than the `{"ok": true}` it used to answer unconditionally
+/// (OPS-2.2d): this decides whether the caller's reading progress is pushed to an external
+/// provider, and a privacy setting that reports success without persisting is worse than one
+/// that refuses.
 #[utoipa::path(
     put,
     path = "/v1/me/watchlist/{series_id}/sync",
@@ -189,6 +195,7 @@ pub struct SyncExcluded {
     responses(
         (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 404, description = "The caller does not track this series", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn put_sync_excluded(
@@ -197,13 +204,16 @@ pub async fn put_sync_excluded(
     Path(series_id): Path<SeriesId>,
     Json(body): Json<SyncExcluded>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    tankovault_db::repo::tracking::set_sync_excluded(
+    let written = tankovault_db::repo::tracking::set_sync_excluded(
         &state.pool,
         user.user_id,
         series_id,
         body.excluded,
     )
     .await?;
+    if !written {
+        return Err(ApiError::NotFound);
+    }
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 

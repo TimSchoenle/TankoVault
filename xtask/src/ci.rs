@@ -17,8 +17,9 @@
 //! | `fmt --check` | `integration` — needs Docker and ~15 minutes of migrations |
 //! | `clippy --all-targets --all-features -D warnings` | `sqlx` offline-cache check — needs a live, migrated Postgres |
 //! | `test --workspace` + `--doc` | `coverage` — needs `cargo-llvm-cov` and a full instrumented build |
-//! | `openapi --check` | `docker`, `css`, `observability`, `secrets` — need Docker, Node, promtool, gitleaks |
-//! | the `web/frontend` gates | `msrv`, `deny`, `audit`, `supply-chain` — need another toolchain or a network fetch |
+//! | `doc --no-deps` (intra-doc links) | `docker`, `css`, `observability`, `secrets` — need Docker, Node, promtool, gitleaks |
+//! | `openapi --check` | `msrv`, `deny`, `audit`, `supply-chain` — need another toolchain or a network fetch |
+//! | the `web/frontend` gates | |
 //!
 //! The excluded set is not a shortfall to fix. A local command that takes twenty minutes and
 //! needs four extra tools is a local command nobody runs, which puts it back where §2.1 found
@@ -92,6 +93,16 @@ const GATES: &[Gate] = &[
         step: Step::Cargo {
             dir: "",
             args: &["test", "--workspace", "--doc"],
+        },
+    },
+    // Intra-doc links. `cargo test --doc` runs the *examples* and says nothing about whether a
+    // `[`Foo`]` resolves; only rustdoc's own pass does, and until the `rustdoc` lint table landed
+    // nothing asked it to fail. `--no-deps` because a dependency's broken link is not ours to fix.
+    Gate {
+        name: "rustdoc (intra-doc links)",
+        step: Step::Cargo {
+            dir: "",
+            args: &["doc", "--workspace", "--no-deps", "--all-features"],
         },
     },
     Gate {
@@ -189,6 +200,32 @@ mod tests {
         assert!(
             !doc.contains(&"--all-targets"),
             "`--all-targets` excludes doc tests; the two cannot share an invocation"
+        );
+    }
+
+    /// The rustdoc gate is separate from the doc-test gate, and stays that way.
+    ///
+    /// They look like the same thing and are not: `cargo test --doc` *executes* the examples and
+    /// never resolves a `[`Foo`]`, while `cargo doc` resolves every link and runs no example.
+    /// Neither command subsumes the other, so consolidating them to save a build would silently
+    /// drop one half — which is how the six broken links this gate was added for accumulated.
+    #[test]
+    fn link_checking_and_doc_tests_are_separate_gates() {
+        let doc_gate = GATES.iter().find(|g| match &g.step {
+            Step::Cargo { args, .. } => args.first() == Some(&"doc"),
+            Step::InProcess(_) => false,
+        });
+        let args = match &doc_gate.expect("the rustdoc gate exists").step {
+            Step::Cargo { args, .. } => *args,
+            Step::InProcess(_) => unreachable!("matched as Cargo above"),
+        };
+        assert!(
+            args.contains(&"--no-deps"),
+            "a dependency's broken link is not ours to fix; the gate must stay `--no-deps`"
+        );
+        assert!(
+            !args.contains(&"--doc"),
+            "`cargo doc` and `cargo test --doc` are different commands checking different things"
         );
     }
 

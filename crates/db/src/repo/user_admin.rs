@@ -59,6 +59,11 @@ pub struct DirectoryPage {
 /// The counts come from lateral subqueries rather than `GROUP BY` joins: with two independent
 /// one-to-many relations (permissions and watchlist entries), a join would multiply rows and
 /// need `count(DISTINCT …)` on both.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable. A search matching nobody is an
+/// empty page with `total: 0`, not [`DbError::NotFound`]; note that `total` is read off the
+/// first row, so it is only meaningful because every returned row carries the same value.
 pub async fn directory<'e, E: PgExecutor<'e>>(
     exec: E,
     search: &str,
@@ -168,6 +173,9 @@ pub struct UserDetail {
 }
 
 /// Fetch one user's administrative detail.
+///
+/// # Errors
+/// [`DbError::NotFound`] — a 404 — when no such user exists; otherwise [`DbError::Sqlx`].
 pub async fn detail<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<UserDetail> {
     let row = sqlx::query_as!(
         UserDetail,
@@ -243,6 +251,11 @@ pub async fn update_identity<'e, E: PgExecutor<'e>>(
 ///
 /// Reinstating clears `suspended_at` and the reason, so a re-suspension records its own fresh
 /// timestamp rather than showing the first one.
+///
+/// # Errors
+/// [`DbError::NotFound`] — a 404 — when `id` matches no row. Otherwise [`DbError::Sqlx`].
+/// Setting the status an account already has is not [`DbError::Conflict`]: it succeeds and
+/// refreshes `suspended_at`, which is deliberate for a re-suspension.
 pub async fn set_status<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,
@@ -274,6 +287,12 @@ pub async fn set_status<'e, E: PgExecutor<'e>>(
 /// received the link: without it, an unverified account is permanently unable to sign in and
 /// has no self-service path back. Idempotent, matching
 /// [`crate::repo::users::mark_email_verified`].
+///
+/// # Errors
+/// [`DbError::NotFound`] — a 404 — when `id` matches no row; otherwise [`DbError::Sqlx`].
+/// Unlike [`crate::repo::users::mark_email_verified`], which returns `Ok(())` for a missing
+/// user, this one reports it: an operator invoking the escape hatch needs to be told it did
+/// nothing.
 pub async fn force_verify_email<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<()> {
     let result = sqlx::query!(
         "UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1",

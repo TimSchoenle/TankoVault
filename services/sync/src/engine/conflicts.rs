@@ -59,9 +59,19 @@ impl ConflictService {
         .await?)
     }
 
-    /// Apply a user's manual conflict resolution: write the chosen side, then mark the conflict
-    /// resolved and refresh that field's snapshot so it is not re-detected. Returns `false` if
-    /// the conflict does not exist / is already resolved.
+    /// Apply a user's manual conflict resolution: write the chosen side to whichever side does
+    /// not already hold it, then mark the conflict resolved. Returns `false` if the conflict
+    /// does not exist / is already resolved.
+    ///
+    /// It does **not** refresh the three-way-merge snapshot, despite what this comment used to
+    /// claim — nothing here calls `record_snapshot`. Re-detection is prevented by the write
+    /// above instead: both sides now hold the same value, so the next reconcile takes
+    /// `plan_merge`'s equality path, which is a `Noop` that refreshes the snapshot itself. The
+    /// distinction matters if that write ever becomes conditional, because then the conflict
+    /// *would* come back.
+    ///
+    /// The values applied are the ones stored when the conflict was first detected;
+    /// `insert_conflict`'s `DO NOTHING` deliberately does not refresh them on re-detection.
     pub(crate) async fn resolve(
         &self,
         user_id: UserId,

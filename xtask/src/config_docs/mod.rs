@@ -27,7 +27,8 @@
 //!
 //! # Where the gate lives
 //!
-//! In [`tests::the_document_matches_the_code`], not in a CI step and not in `xtask ci`. Unlike
+//! In `tests::the_document_matches_the_code` (a `#[cfg(test)]` module, so no link can reach it
+//! from here), not in a CI step and not in `xtask ci`. Unlike
 //! `openapi --check` there is no write half — the document is prose, so nothing regenerates it —
 //! which leaves only the comparison, and a comparison between two committed artefacts is a test
 //! in this repository (`crates/api-client/tests/workspace_lints.rs`, the `openapi.json` readers

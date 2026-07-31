@@ -31,7 +31,8 @@
 //! contract every other service exposes, exported no metrics, and mounted a bare `TraceLayer`
 //! instead of [`HttpStack`] — so the one tier that *originates* every request emitted no
 //! `x-request-id`, and a request could not be correlated across the frontend → api hop that
-//! the rest of the stack is built to trace. It now uses [`HttpStack`], [`ops_router`] and the
+//! the rest of the stack is built to trace. It now uses [`HttpStack`],
+//! [`ops_router`](tankovault_service::ops_router) and the
 //! isolated metrics listener like everything else, and its readiness probe reports the `api`
 //! upstream, which is the only dependency it has.
 //!

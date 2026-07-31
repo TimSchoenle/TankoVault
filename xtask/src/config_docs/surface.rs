@@ -89,7 +89,8 @@ impl Table {
     }
 }
 
-/// Every environment key a service reads through [`tankovault_config::load`], derived by
+/// Every environment key a service reads through `tankovault_config::load` (not a link: `xtask`
+/// parses that crate's source rather than depending on it), derived by
 /// descending from its root config struct.
 ///
 /// `local` is that service's own source; `shared` is `crates/config` plus the one domain type a

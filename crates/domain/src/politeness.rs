@@ -106,7 +106,7 @@ impl Politeness {
     }
 
     /// Clamp all tunables into policy. Returns a value guaranteed to be usable regardless of
-    /// what was configured, which is the contract [`crates/fetch`](tankovault_domain) relies on
+    /// what was configured, which is the contract `crates/fetch` relies on
     /// — the fetcher takes these numbers without re-validating them.
     ///
     /// Both bounds matter, not only the ceiling. See [`MIN_RPS`] for what a floor is doing in a

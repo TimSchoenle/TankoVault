@@ -1,6 +1,6 @@
 //! The user record itself: creation, the login lookup, and the authorization-relevant state.
 //!
-//! This is the aggregate root of the module — [`UserRow`] is the shared projection of the
+//! This is the aggregate root of the module — `UserRow` is the shared projection of the
 //! `users` table that [`super::password_reset`] and [`super::profile`] also read back.
 
 use super::CiText;
@@ -94,6 +94,11 @@ pub async fn create<'e, E: PgExecutor<'e>>(
 ///
 /// Both branches bind through [`CiText`], because both columns are `citext` and a bare `&str`
 /// would make this the one query in the system where case matters — see that type for why.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable. An unknown login is `Ok(None)`, not
+/// [`DbError::NotFound`]: the caller must answer "unknown account" and "wrong password"
+/// identically, and a distinct error variant here is how that distinction leaks back out.
 pub async fn find_credentials<'e, E: PgExecutor<'e>>(
     exec: E,
     login: &str,
@@ -144,6 +149,9 @@ pub async fn find_credentials<'e, E: PgExecutor<'e>>(
 }
 
 /// Fetch a user by id.
+///
+/// # Errors
+/// [`DbError::NotFound`] — a 404 — when no such user exists; otherwise [`DbError::Sqlx`].
 pub async fn get<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<User> {
     let row = sqlx::query_as!(
         UserRow,
@@ -161,6 +169,11 @@ pub async fn get<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<User> {
 /// Separate from the credential lookup so a *failed* attempt cannot advance the timestamp:
 /// "last login" that moves on every guess would be worse than not having it, both for the
 /// operator reading the directory and for a user checking their own account.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable. An `id` matching no row updates
+/// nothing and still returns `Ok(())`; a failure here must not fail the sign-in that already
+/// succeeded, so callers log rather than propagate.
 pub async fn touch_last_login<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<()> {
     sqlx::query!(
         "UPDATE users SET last_login_at = now() WHERE id = $1",
@@ -182,6 +195,11 @@ pub struct AccountState {
 }
 
 /// Read just the authorization-relevant account state.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable. A deleted account is `Ok(None)`,
+/// which the authorization layer must treat as "deny", not as "no constraint": this is the
+/// read that stands between a revoked account and a still-valid access token.
 pub async fn account_state<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,

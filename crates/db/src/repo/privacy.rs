@@ -43,6 +43,12 @@ use tankovault_domain::UserId;
 /// data subject's id. GDPR Art. 15(4) is explicit that an access request must not adversely
 /// affect the rights of others, and this is a file people forward by email. The compliance
 /// goal — showing the subject what was recorded about them — is fully met by the projection.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `user_id` is
+/// **not** [`crate::DbError::NotFound`]: every collection is a `coalesce(…, '[]')` subquery
+/// and `profile` is `null`, so the export succeeds with an empty document. A caller that
+/// needs to reject an unknown subject must check existence itself.
 pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<Json> {
     let export = sqlx::query_scalar!(
         "SELECT json_build_object( \
@@ -103,6 +109,11 @@ pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
 /// person is destroyed. Retaining an unlinkable record of an administrative action rests
 /// on legitimate interest (Art. 6(1)(f)), and once the actor reference is gone the record
 /// is no longer personal data.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. "No such user" is `Ok(false)`
+/// rather than [`crate::DbError::NotFound`], which is the distinction the return type exists
+/// to make.
 pub async fn erase_user<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<bool> {
     let deleted = sqlx::query!("DELETE FROM users WHERE id = $1", user_id.as_uuid())
         .execute(exec)

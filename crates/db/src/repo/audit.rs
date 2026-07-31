@@ -34,6 +34,12 @@ pub struct AuditRecord<'a> {
 }
 
 /// Append one privileged-action record.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An `outcome` outside
+/// `success`/`failure`/`denied` arrives here as a check-constraint violation rather than as
+/// [`crate::DbError::Conflict`], so it is a 500 and not a 409; that is deliberate, since the
+/// value is chosen by the audit sink and never by a request.
 pub async fn record<'e, E: PgExecutor<'e>>(exec: E, entry: &AuditRecord<'_>) -> DbResult<()> {
     sqlx::query!(
         "INSERT INTO audit_log (id, actor_id, action, target, detail, outcome, actor_ip, user_agent) \
@@ -58,6 +64,10 @@ pub async fn record<'e, E: PgExecutor<'e>>(exec: E, entry: &AuditRecord<'_>) -> 
 /// liability, not a stronger control. Deletion is capped per call so a first sweep over a
 /// long-neglected table cannot hold a lock long enough to stall the writers appending to
 /// it.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A sweep that deletes nothing
+/// is a success returning `0`, not an error.
 pub async fn prune_older_than<'e, E: PgExecutor<'e>>(
     exec: E,
     retention_days: u32,
@@ -92,6 +102,10 @@ pub struct AuditView {
 
 /// The most recent privileged actions, newest first (design §16 audit trail surfaced in the
 /// operator console).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An empty log is an empty
+/// `Vec`, not [`crate::DbError::NotFound`].
 pub async fn list_recent<'e, E: PgExecutor<'e>>(exec: E, limit: i64) -> DbResult<Vec<AuditView>> {
     let rows: Vec<AuditView> = sqlx::query_as!(
         AuditView,

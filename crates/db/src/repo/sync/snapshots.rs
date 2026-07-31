@@ -17,6 +17,11 @@ pub struct SyncSnapshot {
 }
 
 /// Fetch the stored three-way-merge snapshot for a mapped series, if any.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unmapped series is
+/// `Ok(None)`, not [`crate::DbError::NotFound`], because "never reconciled" is the first-sync
+/// case the engine handles rather than a failure.
 pub async fn get_snapshot<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -53,6 +58,12 @@ pub struct AgreedSnapshot<'a> {
 
 /// Record the agreed values as the new three-way-merge snapshot after a reconciliation
 /// (design v2 §B.3). The `sync_mappings` row must already exist.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Note the consequence of the
+/// precondition above: if the `sync_mappings` row does *not* exist the `UPDATE` matches nothing
+/// and this still returns `Ok(())`, so a missing mapping is silent here and surfaces later as a
+/// reconciliation that keeps re-deciding from no ancestor.
 pub async fn record_snapshot<'e, E: PgExecutor<'e>>(
     exec: E,
     agreed: &AgreedSnapshot<'_>,

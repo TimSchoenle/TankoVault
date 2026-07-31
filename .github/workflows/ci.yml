@@ -65,6 +65,13 @@ jobs:
       # was unverified. This is the run that compiles them.
       - name: doc tests
         run: cargo test --workspace --doc
+      # And this is the run that resolves the *links* in them. `cargo test --doc` executes the
+      # examples and never looks at a `[`Foo`]`, so a broken intra-doc link renders as literal
+      # bracket text and nothing notices — six had accumulated before the `[workspace.lints.rustdoc]`
+      # table made rustdoc fail on them. `crates/api-client` is exempt by construction: it declares
+      # its own `[lints]` table (OPS-2.4) and so inherits nothing from the workspace one.
+      - name: rustdoc (intra-doc links)
+        run: cargo doc --workspace --no-deps --all-features
       # Fails if a backend DTO changed without regenerating the OpenAPI artifacts
       # (services/api/src/openapi.rs -> xtask openapi -> openapi.json + the progenitor
       # crates/api-client client, consumed by the frontend via web/frontend/src/wire.rs). A

@@ -19,6 +19,11 @@ use uuid::Uuid;
 /// every watcher — only `user_id` varies — so `kind` and `payload` are bound once and only the
 /// user list is unnested. Ids are generated client-side so `RETURNING` can be paired back to
 /// its user without a second lookup.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable, and it is all-or-nothing:
+/// one statement means a single failure drops the whole fan-out rather than notifying some
+/// watchers and not others. An empty `user_ids` returns `Ok(empty)` with no round trip.
 pub async fn notifications_create_many<'e, E: PgExecutor<'e>>(
     exec: E,
     user_ids: &[UserId],
@@ -56,6 +61,10 @@ pub async fn notifications_create_many<'e, E: PgExecutor<'e>>(
 }
 
 /// List a user's notifications, newest first.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An empty inbox is an empty
+/// `Vec`.
 pub async fn notifications_list<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -97,6 +106,11 @@ pub async fn notifications_list<'e, E: PgExecutor<'e>>(
 ///
 /// Grouped rather than one query per user (PERF-3). Users with no unread rows are absent from
 /// the map — `GROUP BY` cannot invent a zero row — so callers must treat a miss as `0`.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An empty `user_ids` returns
+/// an empty map with no round trip, which is indistinguishable from "nobody has unread
+/// notifications" — the badge treats both as zero, so the distinction does not matter here.
 pub async fn notifications_unread_counts<'e, E: PgExecutor<'e>>(
     exec: E,
     user_ids: &[UserId],
@@ -120,6 +134,12 @@ pub async fn notifications_unread_counts<'e, E: PgExecutor<'e>>(
 }
 
 /// Mark the given notifications read (scoped to the owning user).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Ids belonging to another
+/// user, unknown ids and already-read ones all contribute `0` to the count rather than raising
+/// [`crate::DbError::NotFound`], so the returned number can be lower than the number of ids
+/// passed and that is not an error.
 pub async fn notifications_mark_read<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -155,6 +175,11 @@ pub struct Watcher {
 /// release of an already-read chapter was announced as new: with the frontier at `152`, chapter
 /// `152.5` satisfied `152.5 > 152` and went out as a notification for a chapter the user had
 /// finished. `covers` says it is read, so nothing should be sent.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A series nobody watches, and
+/// one whose watchers have all opted out, are both an empty `Vec`. A caller must not treat
+/// `Err` as "no watchers": that silently drops a fan-out instead of retrying it.
 pub async fn watchers_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -205,6 +230,13 @@ pub async fn watchers_for_series<'e, E: PgExecutor<'e>>(
 /// `ON CONFLICT DO NOTHING ... RETURNING` is what makes the claim atomic *and* observable:
 /// `RETURNING` yields exactly the rows this statement inserted, so a concurrent notifier
 /// handling the same event cannot make both processes believe they claimed the same watcher.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A watcher already claimed is
+/// **absent** from the result rather than raised as [`crate::DbError::Conflict`], which is what
+/// makes the whole fan-out idempotent under a redelivered event; an empty result means every
+/// watcher was already notified, not that the claim failed. An empty `user_ids` returns
+/// `Ok(empty)` with no round trip.
 pub async fn dedup_claim_many<'e, E: PgExecutor<'e>>(
     exec: E,
     user_ids: &[UserId],

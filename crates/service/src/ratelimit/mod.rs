@@ -281,13 +281,26 @@ impl RateLimiter {
     // On the function, not the parameter: a `cfg_attr` allow attached to an argument is
     // accepted by the parser but does not reach the lint, so the parameter-level form
     // silently does nothing for `needless_pass_by_value`.
-    #[cfg_attr(not(feature = "redis"), allow(clippy::needless_pass_by_value))]
+    #[cfg_attr(
+        not(feature = "redis"),
+        expect(
+            clippy::needless_pass_by_value,
+            reason = "`redis` is consumed only by the feature-gated branch below; without the \
+                      feature it is taken and dropped, which is the signature this function must \
+                      keep so callers do not have to be feature-aware"
+        )
+    )]
     pub fn from_config(
         cfg: &RateLimitConfig,
         classifier: RouteClassifier,
-        #[cfg_attr(not(feature = "redis"), allow(unused_variables))] redis: Option<
-            RedisStoreHandle,
-        >,
+        #[cfg_attr(
+            not(feature = "redis"),
+            expect(
+                unused_variables,
+                reason = "same: the only reader of this binding is behind `feature = \"redis\"`"
+            )
+        )]
+        redis: Option<RedisStoreHandle>,
     ) -> Option<Self> {
         if !cfg.enabled {
             tracing::info!("inbound rate limiting disabled by configuration");

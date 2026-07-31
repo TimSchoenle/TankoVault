@@ -1,7 +1,7 @@
 //! # render service
 //!
 //! Optional headless-browser rendering for JS-rendered listing pages (design §9), and an
-//! alternate [`ChallengeSolver`](tankovault_solver::ChallengeSolver) back-end for when
+//! alternate [`tankovault_solver::ChallengeSolver`] back-end for when
 //! `FlareSolverr` is unavailable. It drives a long-lived `chromiumoxide` browser and
 //! exposes:
 //!

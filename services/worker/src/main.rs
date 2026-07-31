@@ -351,7 +351,9 @@ const MAX_TASK_DELIVERIES: u64 = 3;
 
 /// Whether `err` is worth another delivery.
 ///
-/// The adapter layer owns this judgement ([`AdapterError::is_transient`]) because it is the
+/// The adapter layer owns this judgement
+/// ([`AdapterError::is_transient`](tankovault_adapters::AdapterError::is_transient)) because it
+/// is the
 /// layer that knows the difference between a provider that blocked us and a page whose markup
 /// changed. Anything else — a DB write, a broker publish, a malformed task — fails the task:
 /// a worker that cannot reach Postgres has a problem no redelivery fixes.

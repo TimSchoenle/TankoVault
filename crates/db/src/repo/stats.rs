@@ -66,6 +66,11 @@ pub struct ProviderStat {
 }
 
 /// Compute the system-wide rollup for the console header.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Every column is a
+/// `count(*)` scalar subquery, so the row always exists and an empty database yields zeros
+/// rather than [`crate::DbError::NotFound`].
 pub async fn system_overview<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<SystemStats> {
     let stats = sqlx::query_as!(
         SystemStats,
@@ -97,6 +102,9 @@ pub async fn system_overview<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<SystemS
 
 /// Per-provider crawl statistics, richest (most chapters) first. Providers with no sources
 /// yet still appear with zeroed counts so newly-added ones are visible in the table.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable.
 pub async fn provider_stats<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<ProviderStat>> {
     let rows = sqlx::query_as!(
         ProviderStat,

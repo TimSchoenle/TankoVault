@@ -23,6 +23,13 @@ pub struct RefreshRecord {
 }
 
 /// Persist a freshly issued refresh token (as its SHA-256 hash).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A `token_hash` that already
+/// exists is a unique violation left as a driver error rather than translated to
+/// [`crate::DbError::Conflict`]: the value is 256 bits of server-generated randomness, so a
+/// collision is a fault in the generator and must surface as a 500, never as a 409 a client
+/// could learn to trigger.
 pub async fn insert_refresh<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -45,6 +52,11 @@ pub async fn insert_refresh<'e, E: PgExecutor<'e>>(
 }
 
 /// Find a refresh token by its hash (regardless of revocation, for reuse detection).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown hash is
+/// `Ok(None)`, and it must stay indistinguishable from a revoked or expired one at this layer;
+/// see the module docs for why the filtering is the caller's job.
 pub async fn find_refresh<'e, E: PgExecutor<'e>>(
     exec: E,
     token_hash: &str,
@@ -75,6 +87,10 @@ pub async fn find_refresh<'e, E: PgExecutor<'e>>(
 }
 
 /// Revoke a single token by id (normal rotation).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown or
+/// already-revoked id is `Ok(())`, which makes rotation idempotent under a retry.
 pub async fn revoke_token<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<()> {
     sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL",
@@ -86,6 +102,11 @@ pub async fn revoke_token<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<
 }
 
 /// Revoke an entire token family (reuse detected → invalidate the lineage).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `family_id` is
+/// `Ok(())`. Callers **must** propagate: this is the response to detected token reuse, and a
+/// swallowed failure leaves a compromised lineage usable.
 pub async fn revoke_family<'e, E: PgExecutor<'e>>(exec: E, family_id: Uuid) -> DbResult<()> {
     sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() WHERE family_id = $1 AND revoked_at IS NULL",

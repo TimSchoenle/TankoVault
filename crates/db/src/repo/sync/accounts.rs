@@ -39,6 +39,13 @@ pub struct ExternalAccount {
 
 /// Insert or replace a user's account for `provider`. Idempotent on `(user_id, provider)`,
 /// so re-linking (e.g. a token refresh) overwrites the prior ciphertext in place.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A `user_id` that no longer
+/// exists is a foreign-key violation and so a 500, not [`crate::DbError::NotFound`]. Note what
+/// the `DO UPDATE` list does *not* touch: `auto_sync_enabled`, `conflict_policy`,
+/// `external_username`, `last_synced_at` and `last_error` survive a re-link, so refreshing a
+/// token does not reset the user's settings.
 pub async fn upsert_account<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -67,6 +74,13 @@ pub async fn upsert_account<'e, E: PgExecutor<'e>>(
 }
 
 /// Fetch a user's account for `provider`, if linked.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unlinked provider and an
+/// unknown user are both `Ok(None)`, not [`crate::DbError::NotFound`] — "not linked" is the
+/// state every account starts in and the status endpoint's ordinary answer. `Ok(None)` must not
+/// be produced from a failure either: the sync engine reads it as "this user has no account
+/// here" and skips the provider silently.
 pub async fn get_account<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -112,6 +126,14 @@ pub async fn get_account<'e, E: PgExecutor<'e>>(
 
 /// Update a linked account's automatic-sync policy (design v2 §B.2/§B.6). Either field may be
 /// left `None` to keep its current value. Seeds are set at link time via `seed_account_policy`.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. There is no
+/// [`crate::DbError::NotFound`] for an account that is not linked: the `UPDATE` matches nothing
+/// and this returns `Ok(())`, so a settings write against an unlinked provider reports success
+/// and persists nothing. Callers that expose this to a user must establish the account exists
+/// first — the same shape as `tracking::set_sync_excluded` (OPS-2.2d). `conflict_policy` is
+/// stored verbatim; the closed vocabulary is enforced by `ConflictPolicy` at the edge, not here.
 pub async fn update_account_settings<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -137,6 +159,15 @@ pub async fn update_account_settings<'e, E: PgExecutor<'e>>(
 /// Seed the per-account conflict policy from the service default the first time an account is
 /// linked, without disturbing an existing user choice (design v2 §B.1: the env default is only
 /// the seed). No-op once the user has set anything.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. `Ok(())` whether it seeded, was
+/// declined by the guard, or matched no account at all — the count is deliberately discarded,
+/// because all three are the same outcome for the caller: the account now carries a policy it
+/// did not choose to change. The guard is the column's own default value, so "the user has not
+/// chosen" is inferred from `conflict_policy = 'newest_wins'` rather than recorded: a user who
+/// deliberately picks `newest_wins` is indistinguishable from one who has never chosen, and a
+/// later re-link re-seeds them to the service default.
 pub async fn seed_account_policy<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -157,6 +188,12 @@ pub async fn seed_account_policy<'e, E: PgExecutor<'e>>(
 
 /// Every linked account with automatic sync enabled, as `(user_id, provider)` pairs, for the
 /// scheduled reconciliation loop (design v2 §B.4).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A deployment where nobody has
+/// linked an account is an empty `Vec`, which the scheduler treats as "nothing to do" — so this
+/// is one to propagate rather than default: an empty list produced by a failure would stop
+/// automatic sync for everyone while every tick still reported success.
 pub async fn list_auto_sync_accounts<'e, E: PgExecutor<'e>>(
     exec: E,
 ) -> DbResult<Vec<(UserId, String)>> {
@@ -182,6 +219,14 @@ pub async fn list_auto_sync_accounts<'e, E: PgExecutor<'e>>(
 /// account. Called after linking (captures the username) and after every pull/push (bumps
 /// `last_synced_at`), so the UI can render "Connected as X - last sync Ym ago" without ever
 /// calling the external provider on page load. A `None` username leaves the stored one as-is.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An account that has since been
+/// unlinked matches nothing and is `Ok(())`, not [`crate::DbError::NotFound`]: a sync that
+/// finished after the user disconnected has nothing left to stamp, and failing it would turn a
+/// completed sync into a reported error. Clearing `last_error` is part of this statement rather
+/// than a separate call, so a success cannot record its timestamp while leaving the previous
+/// failure on display.
 pub async fn mark_synced<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -206,6 +251,11 @@ pub async fn mark_synced<'e, E: PgExecutor<'e>>(
 
 /// Record a sync failure for a linked account (admin Sync console tab). Overwritten by the
 /// next successful `mark_synced`, which clears it back to `NULL`.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unlinked account is `Ok(())`
+/// with nothing written. This is on the failure path already, so callers log rather than
+/// propagate: losing the record of *why* a sync failed must not replace the failure itself.
 pub async fn record_sync_error<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -224,6 +274,13 @@ pub async fn record_sync_error<'e, E: PgExecutor<'e>>(
 }
 
 /// Unlink a user's account for `provider`. Returns `true` if a row was removed.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An account that was not linked
+/// is `Ok(false)`, not [`crate::DbError::NotFound`]; the desired end state — no stored tokens for
+/// this provider — holds either way, which is why unlink is safe to retry. Never default a
+/// failure to `true`: this is what removes a user's OAuth ciphertext, and reporting a
+/// disconnection that did not happen leaves live tokens behind under a UI that says otherwise.
 pub async fn delete_account<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

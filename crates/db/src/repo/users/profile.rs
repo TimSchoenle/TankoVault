@@ -23,6 +23,16 @@ use tankovault_domain::{AccountStatus, User, UserId};
 /// "Same value" is decided by `$3 <> email`, which is a comparison and therefore needs the
 /// [`CiText`] binding: bound as `text`, re-capitalising your own address counted as moving to
 /// a new one and mailed you a confirmation link for the mailbox you were already using.
+///
+/// # Errors
+/// [`DbError::Conflict`] if the new email or username is already registered — the unique
+/// violation is translated here so the API answers 409 rather than 500.
+///
+/// An `id` that matches no row is **not** [`DbError::NotFound`]: this is a `fetch_one`, so it
+/// arrives as the driver's `RowNotFound` inside [`DbError::Sqlx`] and the API maps it to 500.
+/// That is tolerable only because every caller holds an authenticated id, so the case means
+/// the account was erased mid-request. Note the asymmetry with [`set_notification_prefs`],
+/// which does return [`DbError::NotFound`] for the same condition.
 pub async fn update_profile<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,
@@ -58,6 +68,11 @@ pub async fn update_profile<'e, E: PgExecutor<'e>>(
 }
 
 /// Read a user's notification preferences JSON (frontend §9.4). `{}` means "defaults".
+///
+/// # Errors
+/// [`DbError::Sqlx`] only — no other variant is reachable. An unknown `id` yields `{}`, the
+/// same answer as a user who has never set a preference, rather than [`DbError::NotFound`];
+/// the reader has nothing to do differently in the two cases.
 pub async fn get_notification_prefs<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,
@@ -72,6 +87,10 @@ pub async fn get_notification_prefs<'e, E: PgExecutor<'e>>(
 }
 
 /// Replace a user's notification preferences JSON (frontend §9.4).
+///
+/// # Errors
+/// [`DbError::NotFound`] — a 404 — when `id` matches no row, because a write that silently
+/// stored nothing is worse than a rejection. Otherwise [`DbError::Sqlx`].
 pub async fn set_notification_prefs<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,

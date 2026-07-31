@@ -26,6 +26,10 @@ pub struct SessionInfo {
 }
 
 /// List a user's active sessions (live refresh tokens), newest first.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A user with no live session
+/// gets an empty `Vec`, not [`crate::DbError::NotFound`].
 pub async fn list_sessions<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -59,6 +63,12 @@ pub async fn list_sessions<'e, E: PgExecutor<'e>>(
 
 /// Revoke one of the user's own sessions (its whole rotation family), scoped to ownership.
 /// Returns the number of tokens revoked (0 if the session id was not the caller's).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A `session_id` belonging to
+/// another user is `Ok(0)`, not [`crate::DbError::NotFound`]: the ownership subquery makes the
+/// two cases identical on purpose, so probing ids cannot map out other people's sessions.
+/// A caller wanting a 404 must decide that from the count.
 pub async fn revoke_session<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -82,6 +92,10 @@ pub async fn revoke_session<'e, E: PgExecutor<'e>>(
 /// Distinct from [`revoke_all_for_user`], which exists for the password-reset path and
 /// discards the count: an operator forcing a sign-out needs to be told whether there was
 /// anything to sign out of.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. "Nothing was live" is
+/// `Ok(0)`.
 pub async fn revoke_all_sessions<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<u64> {
     let result = sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() \
@@ -95,6 +109,11 @@ pub async fn revoke_all_sessions<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId
 
 /// Revoke every live refresh token for a user — used after a password reset so any stolen
 /// session is invalidated along with the changed credential.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Callers **must** propagate:
+/// this runs after the password has already changed, so swallowing the failure would leave a
+/// stolen session alive against a credential its holder no longer knows.
 pub async fn revoke_all_for_user<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<()> {
     sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL",

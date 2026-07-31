@@ -11,6 +11,11 @@ use uuid::Uuid;
 
 /// Append one row to the user-facing sync history (design v2 §B.2): a transparency log of what
 /// the automatic engine actually did.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A `user_id` or `series_id`
+/// that no longer exists is a foreign-key violation, so losing a history row to a concurrent
+/// erasure is a 500 rather than a silent skip.
 pub async fn append_history<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -35,7 +40,8 @@ pub async fn append_history<'e, E: PgExecutor<'e>>(
 
 /// One row of the user-facing sync history (design v2 §B.6 `GET /v1/me/sync/history`).
 ///
-/// Schema'd and `Deserialize` for the same reason as [`ConflictRow`]: `services/api`
+/// Schema'd and `Deserialize` for the same reason as [`super::conflicts::ConflictRow`]:
+/// `services/api`
 /// re-publishes it, so the generated client needs it in the `OpenAPI` document.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct HistoryRow {
@@ -52,6 +58,11 @@ pub struct HistoryRow {
 }
 
 /// A page of a user's sync history, newest first, optionally filtered by series and/or provider.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A filter that matches nothing,
+/// an unknown `user_id` and an `offset` past the end are all an empty `Vec`, not
+/// [`crate::DbError::NotFound`].
 pub async fn list_history<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

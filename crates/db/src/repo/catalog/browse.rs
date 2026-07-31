@@ -15,6 +15,12 @@ pub struct SeriesListItem {
 }
 
 /// Query the browse list with keyset pagination on `(created_at, id)`.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A `query` matching nothing and
+/// an empty catalogue are the same empty `Vec`, not [`crate::DbError::NotFound`] — "no results"
+/// is a 200 with an empty list on every browse surface. `limit` is passed through unvalidated;
+/// the clamp lives at the edge (SEC-11).
 pub async fn list_series<'e, E: PgExecutor<'e>>(
     exec: E,
     query: Option<&str>,
@@ -247,6 +253,18 @@ struct FilteredRow {
 /// pair costs one round trip. Same catalogue, same filters: 179 ms → ~5 ms.
 ///
 /// Takes `&PgPool` rather than a generic executor precisely so the two can overlap.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A filter matching nothing is
+/// `SeriesPage { items: [], total: 0 }`, never [`crate::DbError::NotFound`].
+///
+/// `try_join!` means **either** statement failing fails the pair, and the other's result is
+/// discarded. That is the right trade here: a page without its total, or a total without its
+/// page, is a pager that renders wrong rather than one that renders less, and the two run on
+/// separate connections from the same pool so a pool exhausted by one of them fails both anyway.
+/// Note the consequence for the *count*: page and total are two statements, so a concurrent
+/// insert between them can make `total` disagree with what the page contains. The pager tolerates
+/// that by design; nothing here takes a snapshot to prevent it.
 pub async fn list_series_filtered(pool: &PgPool, filter: &SeriesFilter) -> DbResult<SeriesPage> {
     let query = filter
         .query
@@ -472,6 +490,11 @@ async fn count_filtered(
 }
 
 /// Alternative titles of a series (design §9.2 enrichment). Empty when none are recorded.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `series_id` and a
+/// series with no synonyms recorded are the same empty `Vec`, not [`crate::DbError::NotFound`];
+/// the series-detail handler has already established the series exists.
 pub async fn list_series_titles<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -486,6 +509,11 @@ pub async fn list_series_titles<'e, E: PgExecutor<'e>>(
 }
 
 /// Author/artist credits attached to a series, alphabetically (mirrors [`list_series_tags`]).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `series_id` and a
+/// series with no credits are the same empty `Vec`, not [`crate::DbError::NotFound`] — an
+/// uncredited series renders without the byline rather than failing the page.
 pub async fn list_series_authors<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -515,6 +543,10 @@ pub async fn list_series_authors<'e, E: PgExecutor<'e>>(
 }
 
 /// Tags attached to a series, alphabetically (design §9.2 enrichment).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `series_id` and an
+/// untagged series are the same empty `Vec`, not [`crate::DbError::NotFound`].
 pub async fn list_series_tags<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -544,6 +576,12 @@ pub async fn list_series_tags<'e, E: PgExecutor<'e>>(
 }
 
 /// List all tags/genres, alphabetically (design §11 `GET /v1/tags`).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A catalogue nothing has been
+/// ingested into yet is an empty `Vec`. This one feeds the discover filter panel, so a failure
+/// defaulted to an empty list would render a filter offering no tags — indistinguishable from a
+/// fresh install, and it would look like the feature works.
 pub async fn list_tags<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<tankovault_domain::Tag>> {
     #[derive(FromRow)]
     struct Row {

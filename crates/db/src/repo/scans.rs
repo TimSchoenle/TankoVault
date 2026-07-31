@@ -53,6 +53,11 @@ impl From<RunRow> for ScanRun {
 }
 
 /// Create a queued scan run.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A `provider_id` that does not
+/// exist is a foreign-key violation and so a 500, not [`crate::DbError::NotFound`]; `None` is a
+/// legitimate value meaning "all providers" rather than a missing one.
 pub async fn create_run<'e, E: PgExecutor<'e>>(
     exec: E,
     provider_id: Option<ProviderId>,
@@ -71,6 +76,12 @@ pub async fn create_run<'e, E: PgExecutor<'e>>(
 }
 
 /// Fetch a run by id.
+///
+/// # Errors
+/// - [`crate::DbError::NotFound`] if no run carries this id — one of the few functions here that
+///   raises it rather than answering `Ok(None)`, because every caller is serving a "show me this
+///   run" request where the miss *is* the 404.
+/// - [`crate::DbError::Sqlx`] for any driver or connection failure.
 pub async fn get_run<'e, E: PgExecutor<'e>>(exec: E, id: ScanRunId) -> DbResult<ScanRun> {
     let row = sqlx::query_as!(
         RunRow,
@@ -85,6 +96,10 @@ pub async fn get_run<'e, E: PgExecutor<'e>>(exec: E, id: ScanRunId) -> DbResult<
 }
 
 /// List recent runs (console overview).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A deployment that has never
+/// scanned is an empty `Vec`, not [`crate::DbError::NotFound`].
 pub async fn list_recent_runs<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
@@ -102,6 +117,14 @@ pub async fn list_recent_runs<'e, E: PgExecutor<'e>>(
 }
 
 /// Transition a run to `running` and stamp `started_at`.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `id` matches nothing
+/// and is still `Ok(())`, not [`crate::DbError::NotFound`]. There is no state guard either: this
+/// will move a `completed` run back to `running`, which is safe only because the planner is the
+/// sole caller and calls it once, before any task settles. The `COALESCE` protects the one thing
+/// a repeat would otherwise corrupt — `started_at` keeps the first start, so a run's duration
+/// cannot be reset by a redelivered plan.
 pub async fn start_run<'e, E: PgExecutor<'e>>(exec: E, id: ScanRunId) -> DbResult<()> {
     sqlx::query!(
         "UPDATE scan_runs SET state = 'running', started_at = COALESCE(started_at, now()) \
@@ -114,6 +137,14 @@ pub async fn start_run<'e, E: PgExecutor<'e>>(exec: E, id: ScanRunId) -> DbResul
 }
 
 /// Set a run's final state and stamp `finished_at`.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `id` is `Ok(())`
+/// with nothing written. This is the **unconditional** counterpart to
+/// [`finalize_if_complete`]: it has no `state = 'running'` guard, so it will re-stamp an
+/// already-finished run and cannot tell a caller whether it performed the transition. Use it for
+/// the operator-forced and plan-failed paths; use `finalize_if_complete` wherever exactly one
+/// terminal event must be emitted.
 pub async fn finish_run<'e, E: PgExecutor<'e>>(
     exec: E,
     id: ScanRunId,
@@ -136,6 +167,18 @@ pub async fn finish_run<'e, E: PgExecutor<'e>>(
 /// [`ScanRun`] when this call performed the transition, or `None` when the run was not
 /// yet complete or another actor already finalised it — so the progress aggregator emits
 /// exactly one terminal event and cannot loop (design §8, §12).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. `Ok(None)` carries four
+/// distinct situations deliberately collapsed into one, because the caller's response to all of
+/// them is the same — emit nothing: the run is not yet complete, another actor finalised it
+/// first, `total_tasks` is still `0` (a plan that has not fanned out yet), or the id names no
+/// run at all. It is never [`crate::DbError::NotFound`]; a missing run must not fail the
+/// aggregator, which reaches this on every task settle.
+///
+/// Do not default a failure to `Ok(None)`: the terminal event is emitted exactly once, so
+/// swallowing the error leaves a run that has genuinely completed sitting in `running` forever
+/// with nothing to retry it.
 pub async fn finalize_if_complete<'e, E: PgExecutor<'e>>(
     exec: E,
     id: ScanRunId,
@@ -158,6 +201,17 @@ pub async fn finalize_if_complete<'e, E: PgExecutor<'e>>(
 }
 
 /// Add to a run's planned task total (as the planner fans out).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `id` is `Ok(())`
+/// with nothing written, not [`crate::DbError::NotFound`]. The arithmetic is plain `+`, so a
+/// `delta` large enough to overflow `int4` is a driver error rather than a wrapped total —
+/// which is the answer that matters, since a wrapped `total_tasks` would make
+/// [`finalize_if_complete`]'s `>=` fire immediately and end the run before its tasks ran.
+///
+/// This must not be swallowed: the total is one half of the comparison that decides a run is
+/// over, so a lost increment finalises the run early and the tasks it forgot settle into a run
+/// that has already emitted its terminal event.
 pub async fn add_total_tasks<'e, E: PgExecutor<'e>>(
     exec: E,
     id: ScanRunId,
@@ -216,6 +270,13 @@ impl From<TaskRow> for ScanTask {
 /// back, so the caller skips the duplicate `add_total_tasks` + publish instead of
 /// re-enqueuing every series (design §12). Relies on the `scan_tasks_run_kind_target`
 /// unique index.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable; an unknown `run_id` is a
+/// foreign-key violation. `Ok(None)` means "already present", never
+/// [`crate::DbError::Conflict`] — the duplicate is the expected outcome of a redelivery rather
+/// than a client error, and the caller's correct response is to skip the publish, not to
+/// surface a 409.
 pub async fn create_task<'e, E: PgExecutor<'e>>(
     exec: E,
     run_id: ScanRunId,
@@ -246,6 +307,15 @@ pub async fn create_task<'e, E: PgExecutor<'e>>(
 /// batch are also resolved by the conflict clause, which `DO NOTHING` handles safely.
 ///
 /// Callers are expected to chunk large fan-outs; see `CATALOG_FANOUT_CHUNK` in the worker.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable, with the same foreign-key
+/// shape as [`create_task`]. An empty `targets` returns an empty `Vec` without issuing a
+/// statement.
+///
+/// The empty `Vec` is doing double duty and must not be read as failure: it is also what a fully
+/// redelivered fan-out returns — every target already present, nothing to publish — which is the
+/// ordinary result of a retry. Only the `Err` says nothing was written.
 pub async fn create_tasks<'e, E: PgExecutor<'e>>(
     exec: E,
     run_id: ScanRunId,
@@ -287,6 +357,15 @@ pub async fn create_tasks<'e, E: PgExecutor<'e>>(
 /// one task. `finalize_if_complete` fires on `done_tasks + failed_tasks >= total_tasks`, so two
 /// counts for one task finalise the run — and emit its single terminal event — while other
 /// tasks are still running.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Everything the guard above
+/// describes is silent: an unknown task, and a task that has already settled, are both `Ok(())`
+/// with no row touched, and this function returns no count that would distinguish them from a
+/// successful claim. That is a deliberate consequence of the settle-once rule — the worker is
+/// holding the `JetStream` message either way and will do the work and settle it, where the same
+/// guard applies again — but it means a caller cannot use this to decide whether to *skip* the
+/// work. `crates/db/tests/repo_scans.rs` pins the counter behaviour that depends on it.
 pub async fn claim_task<'e, E: PgExecutor<'e>>(
     exec: E,
     task_id: ScanTaskId,
@@ -306,6 +385,14 @@ pub async fn claim_task<'e, E: PgExecutor<'e>>(
 
 /// Durable fallback claim: atomically grab the oldest queued task for a run using
 /// `FOR UPDATE SKIP LOCKED`, used when the broker is unavailable.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. `Ok(None)` means the run has
+/// no claimable task *right now* — nothing queued, or every queued row locked by another worker,
+/// which `SKIP LOCKED` makes indistinguishable on purpose — and never
+/// [`crate::DbError::NotFound`], so an unknown `run_id` looks the same as a drained one. The
+/// caller polls; it must not read `None` as "the run is finished", since a task another worker
+/// is about to release is also `None`.
 pub async fn claim_next_queued<'e, E: PgExecutor<'e>>(
     exec: E,
     run_id: ScanRunId,
@@ -335,6 +422,17 @@ pub async fn claim_next_queued<'e, E: PgExecutor<'e>>(
 /// first settle that reaches it. Guarding only `state <> 'done'` let a redelivery that failed
 /// after an earlier success add a `failed_tasks` count on top of the `done_tasks` one, taking
 /// `done_tasks + failed_tasks` above `total_tasks` — see [`claim_task`].
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown task, and a task
+/// that has already settled, are both `Ok(())` with neither the row nor the counter touched —
+/// that silence *is* the settle-once property, not an oversight, and it is why a redelivery is
+/// safe to run to completion.
+///
+/// This is the error most worth propagating in the module: the task row and the run counter move
+/// in one statement, so a failure leaves the task unsettled and the run one count short of
+/// finalising. `JetStream` redelivery is what recovers it, which only happens if the worker
+/// declines to ack — so swallowing this error strands the run.
 pub async fn complete_task<'e, E: PgExecutor<'e>>(exec: E, task_id: ScanTaskId) -> DbResult<()> {
     // Two statements would race on the counter under concurrency; a CTE keeps them in
     // one round trip and lets each worker's increment commit independently.
@@ -357,6 +455,13 @@ pub async fn complete_task<'e, E: PgExecutor<'e>>(exec: E, task_id: ScanTaskId) 
 /// Same settle-once guard as [`complete_task`]: an already-settled task keeps the state and the
 /// count it first reached, so a redelivery cannot turn a completed task into a failed one and
 /// have the run count it twice.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable, and the same silent-no-op and
+/// stranded-run notes as [`complete_task`] apply unchanged. One difference is worth stating:
+/// this runs on a path that is *already* handling a failure, so a caller that logs rather than
+/// propagates loses the record of why the task failed **and** the count that ends the run. Both
+/// halves are in this one statement precisely so neither can be lost without the other.
 pub async fn fail_task<'e, E: PgExecutor<'e>>(
     exec: E,
     task_id: ScanTaskId,
@@ -394,6 +499,13 @@ pub struct FailedTaskView {
 
 /// The most recently failed tasks across all runs, newest first — the operator's triage
 /// feed for stuck providers / broken selectors (design §17.2.7).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Nothing failed is an empty
+/// `Vec`, which is the feed's goal state. The join to `providers` is a `LEFT` join on purpose —
+/// a run whose provider has since been deleted still appears, with `provider_slug: None`, rather
+/// than dropping out of the triage feed exactly when an operator deleted the thing that was
+/// failing.
 pub async fn recent_failed_tasks<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
@@ -420,6 +532,12 @@ pub async fn recent_failed_tasks<'e, E: PgExecutor<'e>>(
 /// Same settle-once guard as [`complete_task`]. `failed` joined the exclusion list here: it was
 /// the one terminal state this statement did not exclude, so a failed task could be skipped
 /// afterwards and add a `done_tasks` count next to its `failed_tasks` one.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable; the silent-no-op and
+/// stranded-run notes on [`complete_task`] apply unchanged. Note that a skip increments
+/// `done_tasks`, not a counter of its own: "nothing to do" settles a task as successfully as
+/// doing the work, which is what lets an unchanged-content re-scan finalise its run at all.
 pub async fn skip_task<'e, E: PgExecutor<'e>>(exec: E, task_id: ScanTaskId) -> DbResult<()> {
     sqlx::query!(
         "WITH skipped AS ( \

@@ -43,6 +43,18 @@ pub struct IngestOutcome {
 /// afterwards: the worker fans out `chapter.discovered` for the numbers in [`IngestOutcome`],
 /// and needs each one's title and path to do it. Consuming the value forced the worker to clone
 /// the entire parsed chapter list to keep a second copy alive across this call (PERF-19).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable, since every callee here is
+/// itself `Sqlx`-only and the [`Canonicaliser`] cannot fail. The transaction is the part worth
+/// stating: any failure drops `tx` unsent, so Postgres rolls the whole scan back and there is no
+/// state in which a series exists with half its chapters. A caller that retries therefore
+/// retries from nothing, which is what makes the at-least-once delivery above safe.
+///
+/// The one thing an error does *not* roll back is the fan-out decision: `new_chapters` is only
+/// returned on a committed transaction, so a failure publishes no `chapter.discovered` events —
+/// but a crash between `commit` and the publish loses them, which is why a replay must report
+/// no false-new chapters rather than merely converging on the same rows.
 pub async fn ingest_series(
     pool: &sqlx::PgPool,
     scanned: &ScannedSeries,

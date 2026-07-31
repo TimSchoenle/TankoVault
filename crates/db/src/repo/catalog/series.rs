@@ -71,6 +71,14 @@ impl TryFrom<SeriesRow> for Series {
 /// the series its predecessors created in that same transaction (PERF-15). Concurrent
 /// first-creation of the same title across providers can still produce two series; that is the
 /// case the ambiguous/merge queue and the re-scan Attach path converge.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. There is deliberately no
+/// [`crate::DbError::NotFound`]: this function's contract is that it *always* yields a series id,
+/// creating one when nothing matches, so an unrecognised title is the ordinary path rather than
+/// a miss. Note also that [`Canonicaliser::canonicalise`] returns a [`Decision`] and not a
+/// `Result` — a matching policy has no way to fail an ingest, which is why every error here is
+/// the driver's.
 pub async fn resolve_canonical_series(
     conn: &mut sqlx::PgConnection,
     meta: &SeriesUpsert,
@@ -134,6 +142,18 @@ async fn create_series(conn: &mut sqlx::PgConnection, meta: &SeriesUpsert) -> Db
 }
 
 /// Refresh metadata on an existing series, coalescing new non-null values over old.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An `id` that does not exist
+/// matches nothing and is still `Ok(())`, not [`crate::DbError::NotFound`]; the only caller is
+/// [`super::ingest::ingest_series`], which resolved the id one statement earlier in the same
+/// transaction, so the row is guaranteed to be there. A caller that obtained the id elsewhere
+/// gets no signal that it wrote nothing.
+///
+/// The `COALESCE`s are one-directional on purpose: a re-scan that stops reporting a description
+/// or cover keeps the stored one, so a provider page that breaks does not blank the catalogue.
+/// `canonical_title`, `content_type` and `status` are *not* coalesced — those the newest scan
+/// owns outright.
 pub async fn update_series_meta<'e, E: PgExecutor<'e>>(
     exec: E,
     id: SeriesId,
@@ -163,6 +183,17 @@ pub async fn update_series_meta<'e, E: PgExecutor<'e>>(
 }
 
 /// Fetch one canonical series by id.
+///
+/// # Errors
+/// - [`crate::DbError::NotFound`] if no series carries this id. This is one of the few
+///   repository functions that raises it rather than answering `Ok(None)`, because its callers
+///   are all "render this series" paths where a miss *is* the 404 the API must return.
+/// - [`crate::DbError::Sqlx`] for any driver or connection failure.
+///
+/// The `try_into` at the end cannot currently fail — [`Series`]'s `TryFrom<SeriesRow>` is
+/// infallible today, and both enum columns are decoded by the driver against native Postgres
+/// enums (so drift arrives as `Sqlx(ColumnDecode)`, see OPS-2.2c). It stays a `TryFrom` so that
+/// a future field needing validation has somewhere to fail.
 pub async fn get_series<'e, E: PgExecutor<'e>>(exec: E, id: SeriesId) -> DbResult<Series> {
     let row = sqlx::query_as!(
         SeriesRow,

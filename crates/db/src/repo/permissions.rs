@@ -38,6 +38,13 @@ pub struct Principal {
 ///
 /// The two facts come back together from one statement: `LEFT JOIN`, so an account with no
 /// grants still yields a row and is distinguishable from an account that is gone.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A deleted account is
+/// `Ok(None)`, never [`crate::DbError::NotFound`], and an unrecognised stored token is dropped
+/// with a warning rather than raised: this read runs on every authenticated request, so any
+/// error it can return is an outage of the whole authenticated surface. Callers must fail
+/// closed on both `Err` and `Ok(None)`.
 pub async fn resolve<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -88,6 +95,11 @@ pub struct GrantRow {
 }
 
 /// List a user's grants with provenance, newest first.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown user and a user
+/// with no grants both give an empty `Vec`; a token this build cannot parse comes back with
+/// `known: false` rather than as an error, which is the whole point of the field.
 pub async fn list_for_user<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -131,6 +143,14 @@ pub async fn list_for_user<'e, E: PgExecutor<'e>>(
 /// Deleting *all* rows for the user and re-inserting would lose `granted_at` provenance on
 /// every unchanged grant, so unchanged rows are left in place: only the genuine additions and
 /// removals are written.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable, from any of the four
+/// statements or the commit. The transaction rolls back on the first failure, so a partial
+/// grant set is never committed; `ON CONFLICT DO NOTHING` means a concurrent identical grant
+/// is absorbed rather than raised as [`crate::DbError::Conflict`]. A `user_id` that does not
+/// exist is **not** [`crate::DbError::NotFound`]: with an empty desired set it commits an
+/// empty diff, and otherwise it fails the insert's foreign key as a 500.
 pub async fn replace(
     conn: &mut sqlx::PgConnection,
     user_id: UserId,
@@ -207,6 +227,10 @@ impl GrantDiff {
 /// Grant a single permission, idempotently. Used by seeding and bootstrap paths, where the
 /// caller knows exactly one capability is being added and a whole-set replace would need to
 /// read the current set first.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Re-granting is `Ok(())` via
+/// `ON CONFLICT DO NOTHING`, which is what makes seeding safe to re-run.
 pub async fn grant<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -235,6 +259,12 @@ pub async fn grant<'e, E: PgExecutor<'e>>(
 ///
 /// Suspended accounts are not counted: a suspended administrator cannot sign in, so they are
 /// not a recovery path.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable; the `count(*)` always returns
+/// a row, so "nobody else holds it" is `Ok(0)`. Callers **must** propagate rather than
+/// defaulting to zero on failure: this is the lockout guard, and treating an unavailable
+/// database as "no other holders" would permit exactly the revocation it exists to refuse.
 pub async fn other_active_holders<'e, E: PgExecutor<'e>>(
     exec: E,
     permission: Permission,
@@ -256,6 +286,11 @@ pub async fn other_active_holders<'e, E: PgExecutor<'e>>(
 ///
 /// A batch read rather than a count per row: the directory lists up to a page of users and a
 /// per-row subquery is the N+1 this repository has removed elsewhere.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Users with no grants are
+/// **absent** from the result rather than present with `0`, so callers must default a missing
+/// id to zero instead of assuming one row per input.
 pub async fn counts_for<'e, E: PgExecutor<'e>>(
     exec: E,
     user_ids: &[Uuid],

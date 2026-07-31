@@ -10,6 +10,12 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// Add or update a watchlist entry.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Re-adding a tracked series
+/// is an update, not [`crate::DbError::Conflict`]; a `series_id` that does not exist is a
+/// foreign-key violation and so a 500 rather than a 404, which is safe only because callers
+/// resolve the series first.
 pub async fn watchlist_upsert<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -33,6 +39,11 @@ pub async fn watchlist_upsert<'e, E: PgExecutor<'e>>(
 }
 
 /// Remove a watchlist entry.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Removing something the user
+/// was not tracking is `Ok(())`, not [`crate::DbError::NotFound`] — the count is not returned
+/// at all, so untracking is idempotent and a caller cannot answer "was it there?".
 pub async fn watchlist_remove<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -49,6 +60,10 @@ pub async fn watchlist_remove<'e, E: PgExecutor<'e>>(
 }
 
 /// List a user's watchlist entries.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An empty watchlist is an
+/// empty `Vec`.
 pub async fn watchlist_list<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -84,6 +99,12 @@ pub async fn watchlist_list<'e, E: PgExecutor<'e>>(
 /// Set a watchlist entry's status without disturbing its `notify` flag, inserting the
 /// entry (with `notify` defaulted on) if absent. Used by `AniList` pull to import and
 /// refresh statuses without clobbering a user's per-title notification choice.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. As with
+/// [`watchlist_upsert`], an existing entry is updated rather than raised as
+/// [`crate::DbError::Conflict`] — which is what lets a pull run repeatedly without the
+/// import deciding it has already happened.
 pub async fn watchlist_set_status<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -107,6 +128,11 @@ pub async fn watchlist_set_status<'e, E: PgExecutor<'e>>(
 /// A user's current watch status for a series, if tracked. Used by the targeted single-series
 /// sync push (design: immediate targeted push) to read local state without fetching the whole
 /// watchlist.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An untracked series is
+/// `Ok(None)`, which the targeted push reads as "nothing local to send" rather than as a
+/// failure.
 pub async fn watchlist_status_get<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -126,6 +152,11 @@ pub async fn watchlist_status_get<'e, E: PgExecutor<'e>>(
 ///
 /// The batched form of [`watchlist_status_get`], prefetched once per reconciliation run rather
 /// than queried per remote entry (PERF-13).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Untracked series are
+/// **absent** from the map rather than present with a default, so a lookup miss must mean
+/// "not tracked" to the caller and never "status unknown".
 pub async fn watchlist_statuses_for_user<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -173,6 +204,12 @@ pub struct WatchlistCard {
 /// [`dashboard`](super::dashboard); it must stay the negation of
 /// [`ReadProgress::covers`](super::ReadProgress::covers), or this badge disagrees with the feed
 /// that links to the same chapters.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A user tracking nothing gets
+/// an empty `Vec`; a tracked series with no progress row comes back through the `LEFT JOIN`
+/// with `last_read_number: None` and its full chapter count as `unread`, which is a valid card
+/// rather than a missing one.
 pub async fn watchlist_detailed<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

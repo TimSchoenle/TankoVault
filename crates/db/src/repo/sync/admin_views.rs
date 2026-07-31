@@ -39,6 +39,13 @@ pub struct AdminAccountRow {
 
 /// All linked external accounts across every user, newest-error-first then most-recently
 /// synced (design: admin Sync console tab).
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A deployment where nobody has
+/// linked an account is an empty `Vec`, not [`crate::DbError::NotFound`]. The join to `users` is
+/// inner, so an account whose user has been erased is absent from the console rather than shown
+/// with a blank name; `external_accounts.user_id` cascades on delete, so that window closes with
+/// the erasure rather than lingering.
 pub async fn admin_list_accounts<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
@@ -73,6 +80,11 @@ pub struct AdminMappingRow {
 }
 
 /// All series↔external mappings across every provider, most recently updated first.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Nothing mapped yet is an empty
+/// `Vec`, not [`crate::DbError::NotFound`]. `limit` is passed through unvalidated: a negative
+/// value is a driver error from Postgres rather than a clamp here, so the caller owns the bound.
 pub async fn admin_list_mappings<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
@@ -94,6 +106,11 @@ pub async fn admin_list_mappings<'e, E: PgExecutor<'e>>(
 /// Every external mapping recorded for a single canonical series (one row per provider),
 /// used by the admin console's per-series "manga info" editor to show what the series is
 /// synced to (or not) across all external providers.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `series_id` and a
+/// series mapped nowhere are the same empty `Vec` — the editor renders "not synced anywhere" for
+/// both, and the series' own existence is established by the page around it rather than here.
 pub async fn admin_list_mappings_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -125,6 +142,16 @@ pub struct UnmappedSeriesRow {
 /// Series lacking a mapping for `provider`, richest (most sources) first so the operator
 /// works the most-connected — and therefore highest-value — entries at the top of the
 /// assign queue. An optional case-insensitive title `query` narrows the list.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A provider with everything
+/// already mapped, and a `query` matching nothing, are both an empty `Vec` — an empty assign
+/// queue is the goal state, not a failure.
+///
+/// One thing about the `query` guard is worth knowing, because its shape suggests otherwise:
+/// the length test is applied to the *wrapped* `%…%` pattern, which is always two bytes longer
+/// than the trimmed input, so `len() > 2` rejects only the empty query. A single-character
+/// search is honoured and scans the whole title column.
 pub async fn admin_list_unmapped<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: &str,
@@ -174,6 +201,11 @@ pub struct RemoteEntryRow {
 /// Unmatched remote entries for `provider`, alphabetically by title. An optional
 /// case-insensitive `query` narrows the list. This is the reverse of [`admin_list_unmapped`]:
 /// it works from the *remote* side so an operator can reconcile every loaded entry.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Nothing unmatched is an empty
+/// `Vec`, which is the queue's goal state. The `query` guard behaves exactly as described on
+/// [`admin_list_unmapped`] — same expression, same caveat.
 pub async fn admin_list_unmatched_remote<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: &str,
@@ -212,6 +244,12 @@ pub struct RemoteEntrySnapshot {
 }
 
 /// Fetch one stored remote-entry snapshot, if present.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An entry that no pull has
+/// loaded is `Ok(None)`, not [`crate::DbError::NotFound`]: the operator-assignment path reads
+/// that as "assign the mapping, import nothing" rather than as a failed assignment, so the
+/// mapping still lands and the next pull fills in status and progress.
 pub async fn get_remote_entry<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -249,9 +287,16 @@ pub struct SeriesCandidateRow {
 
 /// Trigram-similar local series for a remote entry's `normalized` title, richest signal
 /// first, enriched with the display title and source count so the admin console can rank,
-/// preview and inspect each suggestion. Mirrors [`matching::find_candidates`](super::matching)
+/// preview and inspect each suggestion. Mirrors [`crate::repo::matching::find_candidates`]
 /// but also returns the canonical display title and `source_count` (that lookup returns only
 /// normalized titles). The caller (sync suggest endpoint) applies the `matcher` score on top.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. No trigram-similar series is
+/// an empty `Vec`, not [`crate::DbError::NotFound`] — "nothing to suggest" is a legitimate answer
+/// for a title this catalogue does not carry, and the console offers manual assignment instead.
+/// `normalized` is expected to be the output of `domain::normalize_title`; a raw title still
+/// runs, it just compares against normalized text and matches poorly.
 pub async fn suggest_series_candidates<'e, E: PgExecutor<'e>>(
     exec: E,
     normalized: &str,
@@ -284,6 +329,14 @@ pub async fn suggest_series_candidates<'e, E: PgExecutor<'e>>(
 
 /// Record that a remote entry now resolves to `series_id` (removing it from the unmatched
 /// queue) after an operator assignment.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A `series_id` that does not
+/// exist is a foreign-key violation and therefore a 500. A remote entry that no pull has loaded
+/// matches nothing and is still `Ok(())`: the count is discarded, so an assignment against an
+/// entry this user does not have reports success and writes nothing. That is tolerable only
+/// because the operator reaches this through the queue the entry itself populates — a caller
+/// taking the triple from anywhere else must establish it exists first.
 pub async fn mark_remote_entry_matched<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

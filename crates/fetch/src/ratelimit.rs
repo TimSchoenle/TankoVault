@@ -2,9 +2,16 @@
 //! for the concurrency ceiling, a crawl-delay floor between requests, and a penalty the
 //! limiter imposes on **itself** when the provider says the budget is too high.
 //!
-//! The fetch stack is built per provider, so a single direct limiter is exactly the
-//! per-provider limiter the design calls for. (An aggregate cross-replica token bucket
-//! in Redis is a documented follow-up — see `docs/IMPLEMENTATION_STATUS.md`.)
+//! A single direct limiter is exactly the per-provider limiter the design calls for **as
+//! long as the whole stack is built once per provider and shared**. That is the caller's
+//! responsibility and it is easy to get wrong: the worker used to build a fresh stack for
+//! every scan task, which quietly turned `rps` and `concurrency` into a per-*task* budget —
+//! N concurrent tasks then offered N × rps to the provider, and the self-imposed penalty
+//! below was discarded each time. `Engine::fetcher_for` caches per provider id for that
+//! reason. Anything else constructing a fetch stack must do the same.
+//!
+//! (An aggregate cross-replica token bucket in Redis is a documented follow-up — see
+//! `docs/IMPLEMENTATION_STATUS.md`. Until then the budget is per worker *process*.)
 //!
 //! The configured budget is a guess made before the crawl: a provider's HTML pages and its
 //! JSON API rarely share a limit, and neither is published. Without feedback the crawler
@@ -16,8 +23,9 @@ use crate::fetcher::Fetcher;
 use crate::types::{FetchRequest, FetchResponse};
 use async_trait::async_trait;
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tankovault_domain::{MIN_RPS, Pacer};
 use tokio::sync::Semaphore;
 
 /// Statuses that mean the configured budget is above what the provider will serve.
@@ -25,96 +33,12 @@ const THROTTLE_STATUSES: [u16; 2] = [429, 503];
 
 /// How the limiter reacts to a provider answering "too many requests".
 ///
-/// Additive-then-multiplicative on the way up, halving on the way down: a crawl that trips a
-/// limit backs well off it quickly, and returns to full speed slowly enough not to trip it
-/// again on the way.
-#[derive(Debug, Clone, Copy)]
-pub struct ThrottlePolicy {
-    /// Spacing added by the first throttle signal, and the floor for any non-zero penalty.
-    pub step: Duration,
-    /// Ceiling on the added spacing, so a provider that answers `429` unconditionally
-    /// (or a misread body) cannot park a worker indefinitely.
-    pub max: Duration,
-    /// Throttle-free time after which the penalty halves.
-    pub recovery: Duration,
-}
-
-impl Default for ThrottlePolicy {
-    fn default() -> Self {
-        Self {
-            // A half-second of extra spacing is a large correction at crawl rates of a few
-            // rps, and small enough that a single stray 429 costs almost nothing.
-            step: Duration::from_millis(500),
-            // 8s spacing is ~0.125 rps: slow, but still progressing. Past this the provider
-            // is not rate-limiting us, it is refusing us, and that is the backoff layer's
-            // and the scheduler's problem, not the limiter's.
-            max: Duration::from_secs(8),
-            recovery: Duration::from_secs(60),
-        }
-    }
-}
-
-/// The self-imposed spacing penalty, shared by every request on this provider's stack.
-struct Throttle {
-    policy: ThrottlePolicy,
-    state: Mutex<PenaltyState>,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct PenaltyState {
-    penalty: Duration,
-    /// When the penalty may next halve. Meaningless while `penalty` is zero.
-    next_decay: Instant,
-}
-
-impl Throttle {
-    fn new(policy: ThrottlePolicy) -> Self {
-        Self {
-            policy,
-            state: Mutex::new(PenaltyState {
-                penalty: Duration::ZERO,
-                next_decay: Instant::now(),
-            }),
-        }
-    }
-
-    /// Lock the penalty state.
-    ///
-    /// Poisoning is recovered from rather than propagated: the state is two plain values with
-    /// no invariant a panicking thread could have broken, and refusing to fetch for the rest
-    /// of a process' life is a far worse failure than resuming with a stale penalty.
-    fn state(&self) -> std::sync::MutexGuard<'_, PenaltyState> {
-        self.state.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// The spacing to apply before the next request, decaying the penalty if the provider has
-    /// been quiet for a full recovery window.
-    fn spacing(&self, now: Instant) -> Duration {
-        let mut state = self.state();
-        if !state.penalty.is_zero() && now >= state.next_decay {
-            let halved = state.penalty / 2;
-            state.penalty = if halved < self.policy.step {
-                Duration::ZERO
-            } else {
-                halved
-            };
-            state.next_decay = now + self.policy.recovery;
-        }
-        state.penalty
-    }
-
-    /// Record a throttle signal, widening the spacing.
-    fn penalise(&self, now: Instant) -> Duration {
-        let mut state = self.state();
-        state.penalty = if state.penalty.is_zero() {
-            self.policy.step
-        } else {
-            (state.penalty * 2).min(self.policy.max)
-        };
-        state.next_decay = now + self.policy.recovery;
-        state.penalty
-    }
-}
+/// Re-exported from `tankovault_domain::pacing`, which owns the one implementation of outbound
+/// pacing in this workspace (ARCH-20). Both the policy and the penalty state used to be defined
+/// here, private to this crate — so `services/sync`, which cannot depend on this crate without
+/// pulling in the whole wreq/BoringSSL stack, grew a third and weaker pacer with no throttle
+/// penalty at all. The behaviour is unchanged and its tests moved with it.
+pub use tankovault_domain::PacingPolicy as ThrottlePolicy;
 
 /// Wraps an inner fetcher with rate + concurrency + crawl-delay controls.
 pub struct RateLimitedFetcher<F> {
@@ -122,7 +46,7 @@ pub struct RateLimitedFetcher<F> {
     limiter: Arc<DefaultDirectRateLimiter>,
     concurrency: Arc<Semaphore>,
     crawl_delay: Duration,
-    throttle: Arc<Throttle>,
+    throttle: Arc<Pacer>,
 }
 
 impl<F> RateLimitedFetcher<F> {
@@ -130,6 +54,13 @@ impl<F> RateLimitedFetcher<F> {
     /// with a `crawl_delay_ms` floor between requests, adapting to `throttle` when the
     /// provider pushes back. Inputs are assumed pre-clamped to policy ceilings by
     /// [`tankovault_domain::Politeness::clamped`].
+    ///
+    /// # Panics
+    /// Never, for any `f64` — including `0.0`, a negative and a `NaN`. The floor below is what
+    /// makes that true, and it deliberately repeats [`tankovault_domain::Politeness::clamped`]
+    /// rather than trusting it: the consequence of an out-of-range rate here is not a wrong
+    /// crawl rate but a **panic** inside `Duration::from_secs_f64`, and a guard one crate away
+    /// is the wrong distance from a panic.
     #[must_use]
     pub fn new(
         inner: F,
@@ -138,14 +69,17 @@ impl<F> RateLimitedFetcher<F> {
         crawl_delay_ms: u64,
         throttle: ThrottlePolicy,
     ) -> Self {
-        let period = Duration::from_secs_f64(1.0 / rps.max(f64::MIN_POSITIVE));
+        // `f64::max` returns the non-`NaN` operand, so this floors a `NaN` too.
+        let period = Duration::from_secs_f64(1.0 / rps.max(MIN_RPS));
         let quota = Quota::with_period(period).expect("rps > 0 yields a positive period");
         Self {
             inner,
             limiter: Arc::new(RateLimiter::direct(quota)),
             concurrency: Arc::new(Semaphore::new(concurrency.max(1) as usize)),
             crawl_delay: Duration::from_millis(crawl_delay_ms),
-            throttle: Arc::new(Throttle::new(throttle)),
+            // Zero minimum interval: this stack's own floor is the provider's configured crawl
+            // delay, applied below, so the pacer contributes only the adaptive penalty.
+            throttle: Arc::new(Pacer::new(Duration::ZERO, throttle)),
         }
     }
 }
@@ -161,7 +95,7 @@ impl<F: Fetcher> Fetcher for RateLimitedFetcher<F> {
             .await
             .expect("semaphore is never closed");
         self.limiter.until_ready().await;
-        let spacing = self.crawl_delay.max(self.throttle.spacing(Instant::now()));
+        let spacing = self.crawl_delay.max(self.throttle.penalty(Instant::now()));
         if !spacing.is_zero() {
             tokio::time::sleep(spacing).await;
         }
@@ -173,7 +107,9 @@ impl<F: Fetcher> Fetcher for RateLimitedFetcher<F> {
         // network.
         if let Ok(resp) = &resp {
             if THROTTLE_STATUSES.contains(&resp.status) {
-                let penalty = self.throttle.penalise(Instant::now());
+                let now = Instant::now();
+                self.throttle.penalise(now, None);
+                let penalty = self.throttle.penalty(now);
                 tracing::info!(
                     %provider,
                     status = resp.status,
@@ -187,58 +123,51 @@ impl<F: Fetcher> Fetcher for RateLimitedFetcher<F> {
     }
 }
 
+// The penalty behaviour these tests used to cover moved with the implementation to
+// `tankovault_domain::pacing`, which has a superset of them (including the `Retry-After` floor
+// this crate never exercised). Duplicating them here would assert the same properties against the
+// same code through one more layer of indirection.
+//
+// What is worth pinning *here* is the wiring: that the crawl delay and the penalty compose as
+// "whichever is wider", which is this crate's decision and not the pacer's.
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn throttle() -> Throttle {
-        Throttle::new(ThrottlePolicy {
-            step: Duration::from_millis(500),
-            max: Duration::from_secs(2),
-            recovery: Duration::from_secs(60),
-        })
-    }
-
+    /// A provider with a generous crawl delay and no push-back must be paced by the crawl delay,
+    /// not by the pacer — and a throttled provider by whichever is wider. Inverting this (taking
+    /// the pacer's value unconditionally) would silently discard every provider's configured
+    /// politeness the moment it answered a single 429.
     #[test]
-    fn an_unthrottled_provider_is_not_slowed() {
-        assert_eq!(throttle().spacing(Instant::now()), Duration::ZERO);
-    }
-
-    #[test]
-    fn spacing_widens_per_signal_and_stops_at_the_ceiling() {
-        let t = throttle();
+    fn the_crawl_delay_and_the_penalty_compose_as_the_wider_of_the_two() {
+        let crawl_delay = Duration::from_secs(3);
+        let pacer = Pacer::new(Duration::ZERO, ThrottlePolicy::default());
         let now = Instant::now();
-        assert_eq!(t.penalise(now), Duration::from_millis(500));
-        assert_eq!(t.penalise(now), Duration::from_secs(1));
-        assert_eq!(t.penalise(now), Duration::from_secs(2));
-        assert_eq!(t.penalise(now), Duration::from_secs(2), "capped at max");
-    }
 
-    #[test]
-    fn spacing_holds_until_a_quiet_recovery_window_has_passed() {
-        let t = throttle();
-        let now = Instant::now();
-        t.penalise(now);
-        t.penalise(now);
         assert_eq!(
-            t.spacing(now + Duration::from_secs(59)),
-            Duration::from_secs(1)
+            crawl_delay.max(pacer.penalty(now)),
+            crawl_delay,
+            "an unthrottled provider is paced by its own crawl delay"
         );
-        assert_eq!(
-            t.spacing(now + Duration::from_secs(61)),
-            Duration::from_millis(500),
-            "one window of quiet halves the penalty"
+
+        // Enough signals to grow the penalty past the crawl delay.
+        for _ in 0..4 {
+            pacer.penalise(now, None);
+        }
+        assert!(
+            crawl_delay.max(pacer.penalty(now)) > crawl_delay,
+            "once the penalty exceeds the crawl delay it takes over"
         );
     }
 
+    /// The statuses that count as push-back. 429 is the obvious one; 503 is included because a
+    /// provider shedding load is asking for the same thing. Both are also challenge statuses,
+    /// which is why this layer sits *outside* the solver — see `crate::backoff`.
     #[test]
-    fn spacing_returns_to_zero_rather_than_decaying_forever() {
-        let t = throttle();
-        let mut now = Instant::now();
-        t.penalise(now);
-        // A penalty that would halve below the step is dropped outright: sub-step spacing is
-        // indistinguishable from none and would keep the provider marked as throttled.
-        now += Duration::from_secs(61);
-        assert_eq!(t.spacing(now), Duration::ZERO);
+    fn only_the_throttle_statuses_signal_push_back() {
+        assert!(THROTTLE_STATUSES.contains(&429));
+        assert!(THROTTLE_STATUSES.contains(&503));
+        assert!(!THROTTLE_STATUSES.contains(&403));
+        assert!(!THROTTLE_STATUSES.contains(&500));
     }
 }

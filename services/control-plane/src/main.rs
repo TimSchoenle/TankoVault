@@ -15,13 +15,15 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::post;
 use axum::{Json, Router};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::time::Duration;
 use tankovault_bus::Bus;
+use tankovault_contracts::admin::ScanTriggeredView;
 use tankovault_contracts::{ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
 use tankovault_domain::{Feature, Provider, ProviderId, ScanMode, ScanRunId};
 use tankovault_service::health::PostgresCheck;
+use tankovault_service::problem::Problem;
 use tankovault_service::{
     FeatureGate, Health, HttpStack, MetricsRegistry, PostgresFlagSource, RateLimiter,
     RouteClassifier,
@@ -53,6 +55,10 @@ struct Config {
     /// Runtime feature flags — how often this replica re-reads the operator's decisions.
     #[serde(default)]
     features: tankovault_config::FeaturesConfig,
+    /// Shared secret every caller must present on `/internal/*`. Triggering scan runs is an
+    /// operator action; the endpoint's name is not an access control.
+    #[serde(default)]
+    internal: tankovault_config::InternalAuthConfig,
 }
 
 fn default_bind() -> String {
@@ -94,9 +100,22 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Before config, telemetry or anything else: this process may have been invoked by
+    // Docker's HEALTHCHECK rather than as the service. `scratch` images have no shell and no
+    // wget, so the binary probing itself is the only probe available. See
+    // `tankovault_service::healthcheck`.
+    if tankovault_service::healthcheck::requested() {
+        let cfg: Config = tankovault_config::load()?;
+        tankovault_service::run_healthcheck_and_exit(&cfg.bind_addr);
+    }
+
     let cfg: Config = tankovault_config::load()?;
     tankovault_service::init_tracing(&cfg.telemetry)?;
     let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    // Resolved before anything binds: a service in this tier that starts without a token
+    // silently downgrades to the unauthenticated behaviour the token exists to remove, so
+    // the production profile refuses to boot rather than serving privileged routes openly.
+    let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
     let shutdown = tankovault_service::install_shutdown();
 
     let pool = tankovault_db::connect(
@@ -147,8 +166,9 @@ async fn main() -> anyhow::Result<()> {
     // terminal `scan.progress` event so the console SSE need not DB-poll to a conclusion.
     let agg_pool = pool.clone();
     let agg_bus = bus.clone();
+    let agg_shutdown = shutdown.clone();
     tokio::spawn(async move {
-        if let Err(e) = aggregator::run(agg_pool, agg_bus).await {
+        if let Err(e) = aggregator::run(agg_pool, agg_bus, agg_shutdown).await {
             tracing::error!(error = %e, "progress aggregator exited");
         }
     });
@@ -169,6 +189,7 @@ async fn main() -> anyhow::Result<()> {
     let limiter = RateLimiter::from_config(&cfg.rate_limit, RouteClassifier::new(), None);
     let app = HttpStack::new(&cfg.security, metrics.clone())
         .with_rate_limit(limiter)
+        .with_internal_auth(internal_token)
         .apply(
             Router::new()
                 .route("/internal/scans", post(trigger_scan))
@@ -187,23 +208,24 @@ struct TriggerRequest {
     mode: ScanMode,
 }
 
-#[derive(Debug, Serialize)]
-struct TriggerResponse {
-    run_ids: Vec<ScanRunId>,
-}
+// The response shape is `tankovault_contracts::admin::ScanTriggeredView`, not a private struct
+// here: `services/api` republishes this body verbatim on `/v1/admin/scans`, and while the
+// definition lived in this binary the republisher could declare nothing more specific than
+// `serde_json::Value` (ARCH-10). Both ends name the same type now.
 
 async fn trigger_scan(
     State(state): State<AppState>,
     Json(req): Json<TriggerRequest>,
-) -> Result<Json<TriggerResponse>, (StatusCode, String)> {
+) -> Result<Json<ScanTriggeredView>, Problem> {
     // The API refuses a full scan on the same flag before it ever reaches here. Repeating the
     // check is not redundant: this endpoint is reachable by anything on the internal network,
     // and a switch an operator has thrown should hold at the component that does the work, not
     // only at the one that happens to be in front of it today.
     if req.mode == ScanMode::Full && !state.features.is_enabled(Feature::ScanningFull) {
-        return Err((
+        return Err(Problem::new(
             StatusCode::NOT_FOUND,
-            "full catalogue scans are switched off".to_owned(),
+            "feature_disabled",
+            "full catalogue scans are switched off",
         ));
     }
 
@@ -228,7 +250,7 @@ async fn trigger_scan(
             .map_err(internal)?;
         run_ids.push(run_id);
     }
-    Ok(Json(TriggerResponse { run_ids }))
+    Ok(Json(ScanTriggeredView { run_ids }))
 }
 
 /// Expand a run into its initial task(s) and dispatch them.
@@ -365,6 +387,13 @@ async fn tick(maybe: &mut Option<tokio::time::Interval>) {
     }
 }
 
-fn internal<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
-    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+/// Log the cause and answer with an opaque `500` [`Problem`].
+///
+/// This used to be `(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())`, which put the raw
+/// `Display` of a database or bus error on the wire — connection strings and SQL included — and
+/// left no trace in the log. It is now the other way around, which is the only correct way
+/// around, and it emits the same RFC 9457 body as every other service (ARCH-12).
+fn internal<E: std::fmt::Display>(e: E) -> Problem {
+    tracing::error!(error = %e, "control-plane request failed");
+    Problem::internal()
 }

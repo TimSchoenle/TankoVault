@@ -104,6 +104,33 @@ pub fn worker_consumer(provider_slug: &str, mode: ScanMode) -> String {
 /// Lets a worker recover the lanes that already exist on the stream, so tasks belonging to a
 /// provider that has since been renamed or deleted still get consumed instead of sitting in
 /// the stream forever.
+///
+/// The mode sits ahead of the slug for exactly this reason: a provider slug may itself
+/// contain `-`, so a name can only be taken apart from the left.
+///
+/// ```
+/// use tankovault_contracts::ScanMode;
+/// use tankovault_contracts::subjects::{worker_consumer, worker_consumer_lane};
+///
+/// // Round-trips for every mode, which is the property the recovery path relies on.
+/// for mode in ScanMode::all() {
+///     let name = worker_consumer("mangadex", *mode);
+///     assert_eq!(worker_consumer_lane(&name), Some((*mode, "mangadex")));
+/// }
+///
+/// // A slug containing the separator still comes back whole.
+/// let name = worker_consumer("kun-manga", ScanMode::Fast);
+/// assert_eq!(worker_consumer_lane(&name), Some((ScanMode::Fast, "kun-manga")));
+///
+/// // Anything that is not one of our consumer names is refused rather than half-parsed —
+/// // including the legacy wildcard consumer, which carries no lane and must be *deleted*
+/// // on upgrade rather than adopted.
+/// assert_eq!(worker_consumer_lane("some-other-consumer"), None);
+/// assert_eq!(
+///     worker_consumer_lane(tankovault_contracts::LEGACY_WILDCARD_WORKER_CONSUMER),
+///     None,
+/// );
+/// ```
 #[must_use]
 pub fn worker_consumer_lane(name: &str) -> Option<(ScanMode, &str)> {
     let rest = name

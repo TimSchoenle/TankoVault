@@ -5,21 +5,15 @@ use crate::audit::audit;
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::ADMIN_PROVIDERS_TAG;
 use crate::state::{AppState, AuthUser};
+use crate::views::IntoView;
 use axum::Json;
 use axum::extract::{Path, State};
 use serde::Deserialize;
-use std::sync::Arc;
-use std::time::Duration;
-use tankovault_adapters::{Ctx, SourceAdapter, build_adapter};
+use serde::Serialize;
 use tankovault_db::repo::providers::NewProvider;
 use tankovault_domain::{
     AdapterKind, Permission, Politeness, Provider, ProviderId, ProviderState, ScanMode,
 };
-use tankovault_fetch::{
-    HttpChallengeSolver, InMemorySessionStore, ProviderFetchConfig, SessionStore,
-    build_provider_fetcher,
-};
-use tankovault_solver::ChallengeSolver;
 use utoipa::ToSchema;
 
 /// List providers
@@ -60,6 +54,28 @@ fn empty_object() -> serde_json::Value {
     serde_json::json!({})
 }
 
+/// Refuse a `base_url` that points anywhere the crawler must not go.
+///
+/// This is the *supplying* side of the SSRF guard, and it was missing: a stored provider row
+/// is not a one-off fetch. `ProvidersCreate` + `ProvidersTest` — a role well short of full
+/// admin — could point a provider at `http://169.254.169.254` and read the dry-run's parsed
+/// output or, on a parse failure, the error text containing it. Worse, the scheduled scan
+/// workers then keep hitting the target on a timer, long after the operator's grant is gone.
+///
+/// Resolution is performed here, not only scheme and IP-literal checks, because the value is
+/// being *persisted*: refusing to store a host that resolves internally is cheaper than
+/// rediscovering it on every scan.
+async fn validate_base_url(base_url: &str) -> ApiResult<()> {
+    tankovault_domain::ssrf::validate_and_resolve(base_url)
+        .await
+        .map_err(|e| {
+            tracing::warn!(url = %base_url, error = %e, "refused a provider base_url");
+            ApiError::BadRequest(format!(
+                "base_url {base_url:?} is not an allowed target: {e}"
+            ))
+        })
+}
+
 /// Create a provider
 #[utoipa::path(
     post,
@@ -91,6 +107,7 @@ pub async fn create_provider(
             req.slug
         )));
     }
+    validate_base_url(&req.base_url).await?;
     let provider = tankovault_db::repo::providers::create(
         &state.pool,
         NewProvider {
@@ -155,6 +172,7 @@ pub async fn update_provider(
 ) -> ApiResult<Json<Provider>> {
     user.require(Permission::ProvidersWrite).await?;
     let before = tankovault_db::repo::providers::get(&state.pool, id).await?;
+    validate_base_url(&req.base_url).await?;
     let provider = tankovault_db::repo::providers::update(
         &state.pool,
         id,
@@ -275,7 +293,7 @@ pub async fn set_provider_state(
     params(("id" = ProviderId, Path, description = "Provider id")),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Scan queued, forwarded from the control-plane"),
+        (status = 200, description = "Scan queued, forwarded from the control-plane", body = tankovault_contracts::admin::ScanTriggeredView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
@@ -285,7 +303,7 @@ pub async fn resolve_provider(
     State(state): State<AppState>,
     user: AuthUser,
     Path(id): Path<ProviderId>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<tankovault_contracts::admin::ScanTriggeredView>> {
     user.require(Permission::ProvidersTest).await?;
     // Confirm the provider exists (and surface a clean 404 otherwise) before queuing work.
     let provider = tankovault_db::repo::providers::get(&state.pool, id).await?;
@@ -294,18 +312,7 @@ pub async fn resolve_provider(
         provider_id: Some(id),
         mode: ScanMode::Fast,
     };
-    let url = format!(
-        "{}/internal/scans",
-        state.control_plane_url.trim_end_matches('/')
-    );
-    let resp = state.http.post(url).json(&req).send().await.map_err(|e| {
-        tracing::error!(error = %e, "control-plane unreachable");
-        ApiError::Internal
-    })?;
-    if !resp.status().is_success() {
-        return Err(ApiError::Internal);
-    }
-    let body: serde_json::Value = resp.json().await.map_err(|_| ApiError::Internal)?;
+    let Json(body) = state.control_plane.post("/internal/scans", &req).await?;
 
     audit(
         &state,
@@ -327,7 +334,7 @@ pub async fn resolve_provider(
     tag = ADMIN_PROVIDERS_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Per-provider stats", body = Vec<tankovault_db::repo::stats::ProviderStat>),
+        (status = 200, description = "Per-provider stats", body = Vec<tankovault_contracts::admin::ProviderStatView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
@@ -335,14 +342,13 @@ pub async fn resolve_provider(
 pub async fn provider_stats(
     State(state): State<AppState>,
     user: AuthUser,
-) -> ApiResult<Json<Vec<tankovault_db::repo::stats::ProviderStat>>> {
+) -> ApiResult<Json<Vec<tankovault_contracts::admin::ProviderStatView>>> {
     user.require(Permission::ProvidersRead).await?;
-    Ok(Json(
-        tankovault_db::repo::stats::provider_stats(&state.pool).await?,
-    ))
+    let rows = tankovault_db::repo::stats::provider_stats(&state.pool).await?;
+    Ok(Json(rows.into_view()))
 }
 
-#[derive(Debug, Deserialize, Default, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, Default, ToSchema)]
 pub struct TestAdapterRequest {
     /// Optional relative series path to also fetch metadata + chapters for.
     #[serde(default)]
@@ -382,52 +388,21 @@ pub async fn test_adapter(
 ) -> ApiResult<Json<serde_json::Value>> {
     user.require(Permission::ProvidersTest).await?;
     let req = body.map(|b| b.0).unwrap_or_default();
-    let provider = tankovault_db::repo::providers::get(&state.pool, id).await?;
-    let (adapter, ctx) = build_test_context(&provider, &state.challenge_solver_url)?;
 
-    let sample = tokio::time::timeout(Duration::from_secs(25), async {
-        let latest = match adapter.list_latest(&ctx).await {
-            Ok(items) => serde_json::json!({
-                "ok": true,
-                "items": items.iter().take(10).map(|u| serde_json::json!({
-                    "path": u.path, "title": u.title, "latest_chapter": u.latest_chapter,
-                })).collect::<Vec<_>>(),
-            }),
-            Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
-        };
-        let series = req.path.as_deref().map(|path| async move {
-            let meta = match adapter.fetch_series(&ctx, path).await {
-                Ok(m) => serde_json::json!({
-                    "ok": true, "title": m.title, "alt_titles": m.alt_titles,
-                    "description": m.description, "cover_url": m.cover_url, "tags": m.tags,
-                    "status": m.status.as_str(), "content_type": m.content_type.as_str(),
-                }),
-                Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
-            };
-            let chapters = match adapter.fetch_chapters(&ctx, path).await {
-                Ok(list) => serde_json::json!({
-                    "ok": true, "count": list.len(),
-                    "sample": list.iter().take(10).map(|c| serde_json::json!({
-                        "number": c.number, "title": c.title, "path": c.path,
-                    })).collect::<Vec<_>>(),
-                }),
-                Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
-            };
-            serde_json::json!({ "meta": meta, "chapters": chapters })
-        });
-        let series = match series {
-            Some(fut) => Some(fut.await),
-            None => None,
-        };
-        serde_json::json!({
-            "provider": provider.slug,
-            "base_url": provider.base_url,
-            "latest": latest,
-            "series": series,
-        })
-    })
-    .await
-    .map_err(|_| ApiError::BadRequest("adapter test timed out".to_owned()))?;
+    // Proxied to the worker rather than run here (PERF-18). The dry run needs
+    // `tankovault-adapters` and `tankovault-fetch`, and `tankovault-fetch` is built on
+    // `wreq`/BoringSSL — so hosting it in this binary meant compiling a whole second TLS
+    // stack, from C and assembly, into the API image for one operator-facing endpoint. The
+    // worker already carries the stack because it is the tier that crawls.
+    //
+    // The authorization decision and the audit record stay here, which is the point of the
+    // split: the worker's endpoint is gated only by the internal token, so "may this operator
+    // dry-run this provider?" is answered by the tier that knows about operators, and the
+    // trail is written where every other privileged action's is.
+    let Json(sample): Json<serde_json::Value> = state
+        .worker
+        .post(&format!("/internal/providers/{id}/test"), &req)
+        .await?;
 
     audit(
         &state,
@@ -438,41 +413,4 @@ pub async fn test_adapter(
     )
     .await;
     Ok(Json(sample))
-}
-
-/// Build the provider's adapter + an injected fetch stack for a one-off dry-run. Mirrors
-/// the worker's per-provider context; kept inline to avoid a shared crate for one endpoint.
-fn build_test_context(
-    provider: &Provider,
-    solver_url: &str,
-) -> ApiResult<(Box<dyn SourceAdapter>, Ctx)> {
-    let adapter = build_adapter(provider.adapter, &provider.slug, &provider.config)
-        .map_err(|e| ApiError::BadRequest(format!("adapter build failed: {e}")))?;
-    let solver: Arc<dyn ChallengeSolver> = Arc::new(HttpChallengeSolver::new(
-        solver_url.to_owned(),
-        Duration::from_secs(90),
-    ));
-    let session_store: Arc<dyn SessionStore> = Arc::new(InMemorySessionStore::default());
-    let mut cfg = ProviderFetchConfig::new(
-        provider.politeness.user_agent.clone(),
-        solver,
-        session_store,
-    );
-    cfg.emulation = provider.politeness.emulation;
-    cfg.rps = provider.politeness.rps;
-    cfg.concurrency = provider.politeness.concurrency;
-    cfg.connect_timeout = Duration::from_secs(10);
-    cfg.request_timeout = Duration::from_secs(20);
-    let fetcher = build_provider_fetcher(cfg).map_err(|e| {
-        tracing::error!(error = %e, "fetcher build failed");
-        ApiError::Internal
-    })?;
-    Ok((
-        adapter,
-        Ctx {
-            base_url: provider.base_url.clone(),
-            provider_slug: provider.slug.clone(),
-            fetcher,
-        },
-    ))
 }

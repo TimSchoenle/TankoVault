@@ -75,14 +75,15 @@ crates/
 services/       api, control-plane, worker, notifier, sync, challenge-solver, render, frontend
 web/frontend/   Dioxus WASM SPA + Tailwind (excluded from the host workspace)
 migrations/     versioned sqlx migration SQL
-deploy/         Dockerfiles, docker-compose, Helm chart
-xtask/          dev/ops tasks: migrate, reset, seed, openapi, sqlx-prepare
+deploy/         Dockerfiles, docker-compose (+ an observability overlay), local env example
+xtask/          dev/ops tasks: ci, migrate, reset, seed, openapi, sqlx-prepare,
+                install-hooks, coverage-ratchet
 ```
 
 ## Tech stack
 
 - **Runtime / web** — Tokio, Axum, tower / tower-http
-- **Storage** — PostgreSQL 19 via SQLx (compile-time-checked SQL), Redis 7 via `fred`
+- **Storage** — PostgreSQL 17 via SQLx (compile-time-checked SQL), Redis 7 via `fred`
 - **Messaging** — NATS JetStream (`async-nats`)
 - **Crawl** — `wreq` + `wreq-util` (BoringSSL; browser TLS/HTTP2 fingerprint emulation) with
   `governor` rate limiting, `scraper` HTML parsing, optional `chromiumoxide` headless render.
@@ -127,8 +128,9 @@ Apply migrations only:
 docker compose -f deploy/docker-compose.yml run --rm migrate
 ```
 
-See [`deploy/README.md`](deploy/README.md) for single-service image builds, reproducible builds, and
-the Kubernetes / Helm chart.
+See [`deploy/README.md`](deploy/README.md) for single-service image builds and reproducible
+builds. `docker compose` on a single host is the only supported deployment shape today;
+Kubernetes is not implemented.
 
 ## Configuration
 
@@ -136,7 +138,11 @@ Every service reads layered config via `tankovault-config`: optional TOML at `$T
 overlaid by `TANKOVAULT_*` environment variables (`__` denotes nesting, e.g.
 `TANKOVAULT_DATABASE__URL`). The compose file sets dev defaults inline.
 
-**Replace these before any non-local use** (the compose defaults are dev-only):
+**[`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) is the complete reference** — every key, its
+default, which services read it, and the failure modes worth knowing (several are silent).
+
+**Required before any non-local use** — these have no working default and the stack fails fast
+rather than booting insecure:
 
 - `TANKOVAULT_AUTH__JWT_SECRET` — API token signing secret.
 - `TANKOVAULT_AUTH__PASSWORD_PEPPER` — optional server-side pepper mixed into every argon2id hash;
@@ -152,8 +158,22 @@ Build, test, and lint the host workspace (the frontend is excluded and built sep
 ```bash
 cargo build
 cargo test
+# `--all-targets` silently EXCLUDES doc tests, and the `///` examples are contracts here, so
+# they get their own run. CI does the same.
+cargo test --workspace --doc
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
+```
+
+Property tests (`proptest`) live in `tests/prop_*.rs` next to the code they cover and run in that
+ordinary `cargo test` — no extra toolchain. Coverage-guided fuzzing needs nightly and therefore
+lives outside the workspace, in [`fuzz/`](fuzz/README.md), which no CI gate runs:
+
+```bash
+cargo +nightly fuzz build                                     # all targets compile
+cargo +nightly fuzz run adapters_html_parsers \
+  fuzz/corpus/adapters_html_parsers fuzz/seeds/adapters_html_parsers \
+  -- -max_total_time=60 -timeout=2 -rss_limit_mb=512
 ```
 
 Dev/ops tasks live in `xtask` (`migrate` / `reset` / `seed` / `sqlx-prepare` read `DATABASE_URL`;
@@ -186,8 +206,10 @@ client, and the i18n rules.
 
 - [`docs/design.md`](docs/design.md) — authoritative architecture and build specification.
 - [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — running and operating the fleet.
+- [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — every `TANKOVAULT_*` key and its default.
 - [`docs/PROVIDERS.md`](docs/PROVIDERS.md) — provider adapters.
 - [`docs/READING_PROGRESS_AND_SYNC.md`](docs/READING_PROGRESS_AND_SYNC.md) — progress and AniList sync.
 - [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) — production checklist.
 - [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) — current status.
+- [`docs/audit/`](docs/audit/README.md) — full codebase audit (2026-07-29): findings and cleanup roadmap.
 - [`openapi.json`](openapi.json) — canonical REST API spec (also served at `/scalar`).

@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO sync_remote_entries (user_id, provider, external_id, title, status, progress, content_type, start_year, updated_at, series_id, fetched_at) SELECT DISTINCT ON (external_id) $1, $2, external_id, title, status, progress, content_type, CASE WHEN year_present THEN start_year END, updated_at, CASE WHEN series_present THEN series_id END, now() FROM UNNEST($3::text[], $4::text[], $5::text[], $6::float8[], $7::text[], $8::int4[], $9::bool[], $10::timestamptz[], $11::uuid[], $12::bool[]) AS t(external_id, title, status, progress, content_type, start_year, year_present, updated_at, series_id, series_present) ON CONFLICT (user_id, provider, external_id) DO UPDATE SET title = EXCLUDED.title, status = EXCLUDED.status, progress = EXCLUDED.progress, content_type = EXCLUDED.content_type, start_year = EXCLUDED.start_year, updated_at = EXCLUDED.updated_at, series_id = EXCLUDED.series_id, fetched_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "Float8Array",
+        "TextArray",
+        "Int4Array",
+        "BoolArray",
+        "TimestamptzArray",
+        "UuidArray",
+        "BoolArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "13209e9d224d55dfbf38a02fe2e1e40a9da9eea9e57c58be08dc0e1c2ce9978f"
+}

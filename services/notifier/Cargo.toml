@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Notification fan-out: chapter.discovered -> per-watcher notifications."
+# Not published: this is a workspace-internal crate. Also what lets `cargo deny`
+# skip license-checking our own code.
+publish = false
 
 [[bin]]
 name = "notifier"
@@ -16,6 +19,9 @@ tankovault-service = { workspace = true, features = ["db"] }
 tokio-util = { workspace = true }
 tankovault-db = { workspace = true }
 tankovault-domain = { workspace = true }
+# One SMTP stack for the whole system. This service used to carry a second, private one
+# with a different envelope-sender policy — see the note on `EmailChannel`.
+tankovault-email = { workspace = true }
 tankovault-bus = { workspace = true }
 tankovault-contracts = { workspace = true }
 axum = { workspace = true }
@@ -28,7 +34,12 @@ time = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true }
 async-trait = { workspace = true }
-lettre = { workspace = true }
+
+[dev-dependencies]
+# A scriptable upstream for `WebhookChannel`/`DiscordChannel`. Their payload builders were
+# already unit-tested as pure functions; what was untested was `deliver` — that the payload
+# reaches the wire at all, and what a non-2xx becomes (TEST F-09).
+wiremock = { workspace = true }
 
 [lints]
 workspace = true

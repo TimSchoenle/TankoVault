@@ -78,6 +78,53 @@ pub fn issue_access_token(
 
 /// Verify and decode an access token, enforcing expiry and HS256.
 ///
+/// The algorithm is **pinned**, not read from the token's own header. A verifier that trusts
+/// the header is the classic JWT confusion attack: the holder swaps `alg` for `none`, or for
+/// `RS256` so the HMAC secret is treated as an RSA public key, and signs their own claims.
+/// `crates/db` never sees this token — it is the whole of the API's authentication — so there
+/// is no second check behind it.
+///
+/// ```
+/// use tankovault_auth::{issue_access_token, verify_access_token};
+/// use tankovault_domain::UserId;
+/// use time::Duration;
+///
+/// let secret = b"a-test-secret-not-a-real-one";
+/// let user = UserId::new();
+/// let token = issue_access_token(secret, user, "alice", Duration::minutes(15))?;
+///
+/// // The round trip: the subject survives as a typed id, and the display name rides along so
+/// // the client can render it without a round-trip.
+/// let claims = verify_access_token(secret, &token)?;
+/// assert_eq!(claims.user_id(), Some(user));
+/// assert_eq!(claims.name, "alice");
+/// assert!(claims.exp > claims.iat);
+///
+/// // A different secret is a rejection, not a different answer.
+/// assert!(verify_access_token(b"some-other-secret", &token).is_err());
+///
+/// // Expiry is enforced here and nowhere else — issuing an already-expired token is legal,
+/// // because the caller chooses the TTL.
+/// let stale = issue_access_token(secret, user, "alice", Duration::seconds(-120))?;
+/// assert!(verify_access_token(secret, &stale).is_err());
+///
+/// // …but a token one second past `exp` still verifies. This looks like the expiry check
+/// // failing and is `jsonwebtoken`'s 60-second clock-skew leeway, inherited rather than
+/// // chosen: replicas share the signing secret but not a clock, so a token issued by one and
+/// // verified by another must survive a little drift. The practical effect is that every
+/// // access token outlives its stated TTL by up to a minute — acceptable against a 15-minute
+/// // TTL, and the number to revisit before anyone shortens that TTL towards it.
+/// let barely_stale = issue_access_token(secret, user, "alice", Duration::seconds(-1))?;
+/// assert!(verify_access_token(secret, &barely_stale).is_ok());
+///
+/// // Garbage is a rejection. Note what is *not* rejected: `sub` is a string in the claims, so
+/// // a validly-signed token whose subject is not a UUID verifies and then yields no user —
+/// // which is why `user_id()` returns `Option` rather than panicking, and why every caller
+/// // has to treat an unparseable subject as "no principal".
+/// assert!(verify_access_token(secret, "not.a.token").is_err());
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
 /// # Errors
 /// [`AuthError::InvalidToken`] if the signature, algorithm, or expiry check fails.
 pub fn verify_access_token(secret: &[u8], token: &str) -> Result<AccessClaims, AuthError> {

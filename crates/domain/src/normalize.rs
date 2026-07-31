@@ -14,6 +14,33 @@ const NOISE_WORDS: &[&str] = &[
 ///
 /// The result is lowercase ASCII-ish, punctuation-free, noise-word-free, and
 /// single-spaced. Empty input yields an empty string.
+///
+/// This key decides whether two providers' listings are the same work, so the examples below
+/// are the contract rather than illustration: every one of them is a pair a real catalogue
+/// produces, and each would be two separate series if the rule it shows were dropped.
+///
+/// ```
+/// use tankovault_domain::normalize_title;
+///
+/// // Case, punctuation and repeated spacing are noise.
+/// assert_eq!(normalize_title("Solo Leveling"), "solo leveling");
+/// assert_eq!(normalize_title("Re:Zero  -  Starting Life"), "re zero starting life");
+///
+/// // Latin diacritics fold, so an accented release matches its ASCII listing.
+/// assert_eq!(normalize_title("Ōoku"), "ooku");
+///
+/// // Medium words are noise too: providers append them inconsistently, and a work does not
+/// // stop being the same work because one site calls it a manhwa.
+/// assert_eq!(normalize_title("Solo Leveling Manhwa"), "solo leveling");
+/// assert_eq!(normalize_title("Berserk (Official Scan)"), "berserk");
+///
+/// // …but a title made *entirely* of noise words keeps them, because the alternative is an
+/// // empty key, and every empty key collides with every other one.
+/// assert_eq!(normalize_title("Manga"), "manga");
+///
+/// // Only genuinely empty input yields an empty key.
+/// assert_eq!(normalize_title("   "), "");
+/// ```
 #[must_use]
 pub fn normalize_title(title: &str) -> String {
     let lowered = title.to_lowercase();

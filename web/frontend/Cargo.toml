@@ -1,5 +1,9 @@
 [package]
-name = "tankovault-frontend"
+# Not `tankovault-frontend`: `services/frontend` already owns that name in the host workspace,
+# and two packages sharing one name made `cargo <cmd> -p tankovault-frontend` resolve to
+# whichever workspace the cwd happened to be in (OPS-1.6). Legal, because this crate is excluded
+# from the host workspace — but a silent, cwd-dependent target is not something to rely on.
+name = "tankovault-web"
 version = "0.1.0"
 edition = "2021"
 authors = ["TankoVault contributors"]
@@ -16,6 +20,15 @@ path = "src/main.rs"
 # This crate is intentionally excluded from the host workspace (see the root
 # Cargo.toml `exclude`) because it targets `wasm32-unknown-unknown` via the `dx`
 # CLI. Dependency versions are therefore pinned here rather than inherited.
+#
+# The empty `[workspace]` table below is load-bearing, not decoration. Without it, cargo walks
+# *up* looking for a workspace root and finds the host one — so `cargo fmt --all` run from this
+# directory silently formats the entire backend, and `cargo clippy --all-targets` reaches
+# crates this one has nothing to do with. Declaring this crate its own workspace root stops the
+# walk and keeps every command scoped to the frontend, which is what anyone running it here
+# intends.
+
+[workspace]
 
 [dependencies]
 dioxus = { version = "0.7", features = ["web", "router"] }
@@ -36,9 +49,13 @@ base64 = "0.22"
 # `Blob`/`Url`/`HtmlAnchorElement` back the personal-data export download: the endpoint is
 # bearer-authenticated, so a plain anchor navigation cannot reach it and the document has to be
 # handed to the browser from memory (see `util::save_text_file`).
+# `Storage`/`HtmlInputElement` back `src/browser.rs`, which replaced every `document::eval`
+# call in the app: Dioxus implements web `eval` as `new Function(...)`, and the served CSP
+# does not (and must not) carry `'unsafe-eval'`.
 web-sys = { version = "0.3", features = [
     "MessageEvent", "Window", "Location", "Navigator",
     "Blob", "BlobPropertyBag", "Url", "Document", "Element", "HtmlAnchorElement",
+    "Storage", "HtmlElement", "HtmlInputElement",
 ] }
 wasm-bindgen = "0.2"
 # Relative-time formatting on the console uses the browser's own ISO-8601 date parser.
@@ -71,6 +88,11 @@ rust_2018_idioms = { level = "warn", priority = -1 }
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
+# A suppression must be `#[expect(..., reason = "...")]`, never a bare `#[allow(...)]`, so that
+# one which stops being necessary warns instead of living on silently. Matches the host
+# workspace; see the note in the root `Cargo.toml`.
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
 module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"

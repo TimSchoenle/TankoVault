@@ -1,0 +1,2 @@
+DATABASE__URL=postgres://tankovault:secret@postgres:5432/tankovault
+TELEMETRY__SERVICE_NAME=api

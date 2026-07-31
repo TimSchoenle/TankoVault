@@ -36,17 +36,27 @@ pub struct AppState {
     pub password_pepper: Arc<Vec<u8>>,
     pub access_ttl: time::Duration,
     pub refresh_ttl: time::Duration,
-    /// Base URL of the control-plane, for proxying "Scan now".
-    pub control_plane_url: String,
-    /// Base URL of the `AniList` sync service, for proxying `/me/sync/anilist/*`.
-    pub sync_url: String,
-    /// Endpoint of the challenge-solver service, used by the "Test adapter" dry-run.
-    pub challenge_solver_url: String,
+    /// The control-plane, for proxying "Scan now".
+    pub control_plane: crate::upstream::Upstream,
+    /// The external-sync service, for proxying `/v1/me/sync/*` and the admin sync console.
+    pub sync: crate::upstream::Upstream,
+    /// The scan worker, for proxying the "Test adapter" dry-run.
+    ///
+    /// This used to be a bare `challenge_solver_url` plus the internal token, because the
+    /// dry-run ran *here* and built its own fetch stack — which is what linked `wreq` and
+    /// `BoringSSL` into this binary alongside `rustls` (PERF-18). The worker already carries
+    /// that stack, so the dry-run moved there and this is an ordinary proxy like the two
+    /// above.
+    pub worker: crate::upstream::Upstream,
     /// Core-NATS bus for relaying live per-user notifications over SSE. `None` when NATS
     /// was unreachable at boot: the live-stream endpoint degrades to `503` while every
     /// other route (including the durable notifications list) keeps working.
     pub bus: Option<tankovault_bus::Bus>,
-    pub http: reqwest::Client,
+    /// Single-use, 30-second tickets for opening `GET /v1/me/stream` — the credential that
+    /// replaced the access token in that route's query string (SEC-8). Redis-backed where Redis
+    /// is available, per-process otherwise; see [`crate::stream_tickets`].
+    pub stream_tickets: Arc<dyn crate::stream_tickets::StreamTicketStore>,
+
     /// Where audit records go. A [`tankovault_service::NoopAuditSink`] when the operator
     /// disabled auditing, so no handler ever branches on the toggle.
     pub audit: Arc<dyn AuditSink>,

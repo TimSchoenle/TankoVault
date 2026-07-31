@@ -16,6 +16,22 @@
 # and `dx` resolve against the committed lockfiles (`--locked`), and layer mtimes are clamped to
 # `SOURCE_DATE_EPOCH` when supplied.
 #
+# **Every cache mount below carries an explicit `id=`.** The default id is the target path, so
+# dropping one silently re-shares the mount with any other image that happens to build at the
+# same path — and this image builds alongside nine backend images (deploy/docker-compose.yml),
+# which is exactly that situation.
+#
+# For the `/usr/local/cargo/*` mounts the hazard is corruption: cargo's `$CARGO_HOME/.package-cache`
+# lock — the thing that makes concurrent cargos safe — sits *outside* those two subdirectories, so
+# a second image sharing them would race this one through `registry/src` and corrupt it mid-unpack.
+# The backend images mount a whole relocated CARGO_HOME instead (see deploy/docker/Dockerfile).
+#
+# For the two `target/` mounts the hazard is concrete rather than theoretical: the backend
+# `builder` stage also compiles in `/app/target`, under `id=tankovault-backend-target`. It is a
+# musl-*native* Alpine build; this one cross-compiles to musl from Debian with a different rustc
+# and different `RUSTFLAGS`, so sharing that directory would have the two invalidate each other's
+# fingerprints on every alternating build — the exact opposite of a cache. Keep the ids distinct.
+#
 # Build context is the repo root (see deploy/docker-compose.yml):
 #   docker build -f deploy/docker/Dockerfile.frontend -t tankovault-frontend .
 
@@ -35,13 +51,27 @@ ARG BUILD_TARGET
 # (`musl-tools` → `musl-gcc`, needed by the `ring` build script) and a CA bundle we later bake
 # into the certificate-less `scratch` image. The `dx` CLI version must match the `dioxus`
 # library version (web/frontend/Cargo.toml → 0.7.9) so asset hashing/codegen line up.
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
+# `rust-toolchain.toml` first, on its own, and *before* any `rustup target add`. The base image
+# tag floats within the 1.94 series (it currently ships 1.94.1) while the toolchain file pins
+# 1.94.0, so without this rustup would add the targets to the image's toolchain and then switch
+# to a freshly downloaded pinned one that has only the targets the file itself names — leaving
+# `${BUILD_TARGET}` missing at build time. Copied alone so this layer is invalidated by a
+# toolchain bump, not by every source edit.
+COPY rust-toolchain.toml ./
+RUN --mount=type=cache,id=frontend-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=frontend-cargo-git,target=/usr/local/cargo/git \
     rustup target add wasm32-unknown-unknown "${BUILD_TARGET}" \
  && apt-get update \
  && apt-get install -y --no-install-recommends musl-tools ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && cargo install dioxus-cli@0.7.9 --locked
+
+# `cargo auditable build` (used below) embeds the resolved dependency list into the binary — see
+# deploy/docker/Dockerfile for why a `scratch` image needs that and why the version is pinned.
+# Kept in its own layer so the toolchain layer above stays cached. Pin both files together.
+RUN --mount=type=cache,id=frontend-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=frontend-cargo-git,target=/usr/local/cargo/git \
+    cargo install cargo-auditable --locked --version 0.7.5
 
 # The frontend crate is excluded from the host workspace but takes path dependencies on
 # workspace crates, and the `frontend` server *is* a workspace member — so both builds need the
@@ -51,9 +81,9 @@ COPY . .
 # `dx build` emits the web bundle under target/dx/<app>/release/web/public. Locate it by path
 # rather than hardcoding the app name, require exactly one `release` hit (a stale `debug` bundle
 # slipping through once shipped the wrong assets), then flatten it into /dist.
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/app/web/frontend/target \
+RUN --mount=type=cache,id=frontend-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=frontend-cargo-git,target=/usr/local/cargo/git \
+    --mount=type=cache,id=frontend-wasm-target,target=/app/web/frontend/target \
     set -eu; \
     cd web/frontend; \
     dx build --platform web --release; \
@@ -71,10 +101,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # Compile the static musl server binary. `--locked` resolves against the committed `Cargo.lock`;
 # the cache mounts keep the registry and the musl build target warm across rebuilds while the
 # copied-out binary lands in the image layer so the runtime stage stays independent.
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/app/target \
-    cargo build --release --locked --target "${BUILD_TARGET}" --bin frontend \
+RUN --mount=type=cache,id=frontend-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=frontend-cargo-git,target=/usr/local/cargo/git \
+    --mount=type=cache,id=frontend-musl-target,target=/app/target \
+    cargo auditable build --release --locked --target "${BUILD_TARGET}" --bin frontend \
  && cp "target/${BUILD_TARGET}/release/frontend" /app/frontend
 
 # --- Runtime: scratch (static musl binary + the static bundle), nonroot. ------------

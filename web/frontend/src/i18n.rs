@@ -121,10 +121,10 @@ fn browser_language() -> Option<String> {
 fn HtmlLang() -> Element {
     let i18n = use_i18n();
     use_effect(move || {
-        // Serialised rather than interpolated so a language code can never break out of the
-        // string literal, matching how the appearance knobs write their attributes.
-        let language = serde_json::to_string(&i18n.language()).unwrap_or_else(|_| "\"en\"".into());
-        let _ = document::eval(&format!("document.documentElement.lang={language};"));
+        // Written through the typed DOM binding (`crate::browser`), so the tag is a value
+        // rather than a fragment of a script — there is no string literal to break out of,
+        // and nothing for the served CSP to have to permit.
+        crate::browser::set_document_language(&i18n.language());
     });
     rsx! {}
 }
@@ -234,10 +234,49 @@ fn interpolate(template: &str, args: &[(&str, &str)]) -> String {
     out
 }
 
+/// Whether the default catalogue defines `key`, addressed as a dot path.
+///
+/// Test-only, and deliberately not part of the runtime API: at runtime a missing key is
+/// already visible as the literal `Key '…' not found`, and nothing should be branching on
+/// whether a message exists. What it is for is the other direction — a module that maps a
+/// closed set of values to catalogue keys (adapter kinds, conflict policies, watch statuses)
+/// can assert that every value it can produce is actually worded, which no amount of catalogue
+/// parity checking covers: `locales_define_the_same_keys` proves the catalogues agree with
+/// *each other*, not that they cover the code.
+#[cfg(test)]
+pub(crate) fn has_key(key: &str) -> bool {
+    let reference = LOCALES
+        .iter()
+        .find(|l| l.code == DEFAULT_LANGUAGE)
+        .expect("default language is shipped");
+    let catalogue: serde_json::Value =
+        serde_json::from_str(reference.messages).expect("the default catalogue parses");
+
+    let mut node = &catalogue;
+    for segment in key.split('.') {
+        match node.get(segment) {
+            Some(next) => node = next,
+            None => return false,
+        }
+    }
+    node.is_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::Value;
+
+    #[test]
+    fn has_key_finds_a_leaf_and_rejects_a_branch() {
+        assert!(has_key("nav.watchlist"), "a real message must be found");
+        assert!(
+            !has_key("nav"),
+            "an interior node is not a message; treating one as present would let a module \
+             claim a whole section as its label and render `[object Object]`-shaped nonsense"
+        );
+        assert!(!has_key("nav.definitelyNotAKey"));
+    }
 
     #[test]
     fn substitutes_named_placeholders() {

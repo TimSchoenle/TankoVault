@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Axum HTTP edge: public read/write + admin, auth, resolved links, SSE."
+# Not published: this is a workspace-internal crate. Also what lets `cargo deny`
+# skip license-checking our own code.
+publish = false
 
 [[bin]]
 name = "api"
@@ -14,20 +17,25 @@ path = "src/main.rs"
 tankovault-config = { workspace = true }
 tankovault-service = { workspace = true, features = ["db", "redis"] }
 tankovault-db = { workspace = true }
-tankovault-domain = { workspace = true }
+# `dns` supplies `ssrf::validate_and_resolve`, which `admin/providers.rs` needs before it
+# stores an operator-supplied `base_url` (SEC-5). It used to come from `tankovault-fetch` —
+# and `tankovault-adapters`, `tankovault-fetch` and `tankovault-solver` are all *gone* from
+# this manifest as of PERF-18, because they pulled `wreq`/BoringSSL into a binary that already
+# links `rustls` through `reqwest` and `sqlx`. The one endpoint that needed them, the adapter
+# dry-run, is proxied to `services/worker` now. Do not re-add them: check
+# `cargo tree -p tankovault-api -i boring-sys2` before adding any dependency here.
+tankovault-domain = { workspace = true, features = ["dns"] }
 tankovault-auth = { workspace = true }
 tankovault-email = { workspace = true }
-tankovault-adapters = { workspace = true }
 tankovault-matcher = { workspace = true }
-tankovault-fetch = { workspace = true }
-tankovault-solver = { workspace = true }
 tankovault-bus = { workspace = true }
 tankovault-contracts = { workspace = true }
 axum = { workspace = true }
 tokio-stream = { workspace = true }
+# `StreamExt::take_until`, which bounds the SSE stream by the access token's expiry.
+# tokio-stream's StreamExt has no equivalent.
+futures = { workspace = true }
 axum-extra = { workspace = true }
-tower = { workspace = true }
-tower-http = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -43,6 +51,10 @@ utoipa-axum = { workspace = true }
 utoipa-scalar = { workspace = true }
 fred = { workspace = true }
 tokio-util = { workspace = true }
+# `crate::stream_tickets::StreamTicketStore` is held as `Arc<dyn …>` in `AppState`, and its two
+# methods are `async`. Native async fns in traits are not dyn compatible, so the seam needs this
+# — the same reason `tankovault_service::ratelimit::RateLimitStore` uses it.
+async-trait = { workspace = true }
 
 [features]
 # Opt-in: the HTTP integration suites need Docker (an ephemeral Postgres via the harness). Off
@@ -50,6 +62,9 @@ tokio-util = { workspace = true }
 integration = []
 
 [dev-dependencies]
+# The in-process router harness. Split out of `crates/test-support` (ARCH-17) so that the
+# repository-layer suites no longer compile this service to run SQL tests.
+tankovault-api-test-support = { path = "test-support" }
 tankovault-test-support = { path = "../../crates/test-support" }
 
 [lints]

@@ -4,9 +4,10 @@
 //! second provider needs no frontend change. Every claim on this screen comes from
 //! `GET /v1/me/sync/{provider}/status`: nothing is reported as connected while it is not.
 
-use super::PanelCard;
 use crate::api;
-use crate::components::{async_list, async_view, ErrorLine, OutcomeLine, SkeletonBlock};
+use crate::components::{
+    async_list, async_view, EmptyBox, ErrorLine, OutcomeLine, PanelCard, SkeletonBlock,
+};
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -131,9 +132,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
         .read_unchecked()
         .as_ref()
         .and_then(|s| s.as_ref())
-        .map_or(ConflictPolicy::NewestWins, |s| {
-            ConflictPolicy::parse(&s.conflict_policy)
-        });
+        .map_or(ConflictPolicy::NewestWins, |s| s.conflict_policy);
     let auto_sync = settings
         .read_unchecked()
         .as_ref()
@@ -183,9 +182,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                     Ok(response) => {
                         // A full-page navigation, not a router push: the consent screen lives
                         // on the provider's origin.
-                        let url = serde_json::to_string(&response.into_inner().url)
-                            .unwrap_or_else(|_| "\"\"".to_owned());
-                        let _ = document::eval(&format!("window.location.href = {url};"));
+                        crate::browser::navigate_to(&response.into_inner().url);
                     }
                     Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
                 }
@@ -231,7 +228,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
             let client = api.client();
             spawn(async move {
                 let opts = SyncOpts {
-                    policy: Some(policy.token().to_owned()),
+                    policy: Some(policy.into()),
                 };
                 match client
                     .sync_pull()
@@ -262,7 +259,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
             let client = api.client();
             spawn(async move {
                 let opts = SyncOpts {
-                    policy: Some(policy.token().to_owned()),
+                    policy: Some(policy.into()),
                 };
                 match client
                     .sync_push()
@@ -366,17 +363,17 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                     {i18n.args("account.sync.policyHeading", &[("provider", &card_name)])}
                 }
                 div { class: "ik-chips",
-                    for option in ConflictPolicy::ALL {
+                    for option in ConflictPolicy::all().iter().copied() {
                         {
                             let patch_settings = patch_settings.clone();
                             rsx! {
                                 button {
-                                    key: "{option.token()}",
+                                    key: "{option}",
                                     class: if policy == option { "ik-chip active" } else { "ik-chip" },
                                     "aria-pressed": policy == option,
                                     onclick: move |_| patch_settings(SyncSettingsPatch {
                                         auto_sync_enabled: None,
-                                        conflict_policy: Some(option.token().to_owned()),
+                                        conflict_policy: Some(option.into()),
                                     }),
                                     {i18n.t(option.label_key())}
                                 }
@@ -516,7 +513,7 @@ fn ConflictInbox(provider: String, show: Signal<bool>, parent_reload: Reload) ->
                             .collect();
                         if rows.is_empty() {
                             return rsx! {
-                                div { class: "ik-empty", {i18n.t("account.sync.conflictsEmpty")} }
+                                EmptyBox { message: i18n.t("account.sync.conflictsEmpty") }
                             };
                         }
                         rsx! {

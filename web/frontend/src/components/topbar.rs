@@ -54,6 +54,7 @@ pub(crate) fn TopBar() -> Element {
                     class: "ik-input",
                     r#type: "search",
                     placeholder: i18n.t("topbar.searchPlaceholder"),
+                    "aria-label": i18n.t("topbar.searchPlaceholder"),
                     value: "{query}",
                     oninput: move |e| query.set(e.value()),
                     onkeydown: move |e| {
@@ -80,10 +81,22 @@ pub(crate) fn TopBar() -> Element {
                             {i18n.t("topbar.anilistConnect")}
                         }
                     }
-                    Link { to: Route::Notifications {}, class: "ik-bell", title: i18n.t("nav.notifications"),
+                    Link {
+                        to: Route::Notifications {},
+                        class: "ik-bell",
+                        title: i18n.t("nav.notifications"),
+                        "aria-label": if unread > 0 {
+                            i18n.plural("topbar.unreadCount", unread, &[])
+                        } else {
+                            i18n.t("nav.notifications")
+                        },
                         Ic { icon: Icon::Notifications, size: 18 }
                         if unread > 0 {
-                            span { class: "dot", "{unread}" }
+                            // Polite, not assertive: a chapter landing while the reader is
+                            // mid-sentence elsewhere should not interrupt them. The count is
+                            // pushed by the SSE stream, so without a live region the change
+                            // is silent.
+                            span { class: "dot", "aria-live": "polite", "{unread}" }
                         }
                     }
                 }

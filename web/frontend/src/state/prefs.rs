@@ -59,21 +59,10 @@ impl Knob {
     /// Read the knob's persisted value into `signal` (`localStorage`, else the attribute the
     /// boot script already applied, else the default).
     pub(crate) fn load(self, mut signal: Signal<String>) {
-        spawn(async move {
-            let script = format!(
-                "return localStorage.getItem('{key}') \
-                 || document.documentElement.getAttribute('{attr}') \
-                 || '{default}';",
-                key = self.key,
-                attr = self.attr,
-                default = self.default,
-            );
-            if let Ok(value) = document::eval(&script).await {
-                if let Some(value) = value.as_str() {
-                    signal.set(value.trim_matches('"').to_owned());
-                }
-            }
-        });
+        let stored = crate::browser::local_get(self.key)
+            .or_else(|| crate::browser::root_attribute(self.attr))
+            .unwrap_or_else(|| self.default.to_owned());
+        signal.set(stored);
     }
 
     /// Apply and persist a choice. A non-default value sets the attribute and stores the key;
@@ -81,23 +70,12 @@ impl Knob {
     /// [`Knob::explicit_default`] knobs, which always write).
     pub(crate) fn apply(self, mut signal: Signal<String>, value: &str) {
         signal.set(value.to_owned());
-        let script = if value == self.default && !self.explicit_default {
-            format!(
-                "document.documentElement.removeAttribute('{attr}');\
-                 localStorage.removeItem('{key}');",
-                attr = self.attr,
-                key = self.key,
-            )
+        if value == self.default && !self.explicit_default {
+            crate::browser::remove_root_attribute(self.attr);
+            crate::browser::local_remove(self.key);
         } else {
-            // Serialise the value so a knob label can never break out of the string literal.
-            let value = serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_owned());
-            format!(
-                "document.documentElement.setAttribute('{attr}',{value});\
-                 localStorage.setItem('{key}',{value});",
-                attr = self.attr,
-                key = self.key,
-            )
-        };
-        let _ = document::eval(&script);
+            crate::browser::set_root_attribute(self.attr, value);
+            crate::browser::local_set(self.key, value);
+        }
     }
 }

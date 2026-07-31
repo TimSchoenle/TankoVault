@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT series_id AS \"series_id!\" FROM ( SELECT w.series_id, COALESCE(o.excluded, w.sync_excluded) AS excluded FROM watchlist_entries w LEFT JOIN series_sync_overrides o ON o.user_id = w.user_id AND o.series_id = w.series_id AND o.provider = $2 WHERE w.user_id = $1 UNION ALL SELECT o.series_id, o.excluded FROM series_sync_overrides o WHERE o.user_id = $1 AND o.provider = $2 AND NOT EXISTS (SELECT 1 FROM watchlist_entries w WHERE w.user_id = o.user_id AND w.series_id = o.series_id) ) resolved WHERE excluded",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e10e3990fb3ad9f2090a3ee7daeb7e1427389a8aa2197546e8ab1485ee773e47"
+}

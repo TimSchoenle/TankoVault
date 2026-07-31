@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO authors (slug, name) SELECT * FROM UNNEST($1::text[], $2::text[]) ON CONFLICT (slug) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6a3bca1fa091989093c64c28c2946613ce5b9dbd86116c5e4546c026dec72131"
+}

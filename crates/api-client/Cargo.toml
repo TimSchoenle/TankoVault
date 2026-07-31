@@ -16,11 +16,19 @@ bytes = { workspace = true }
 url = { workspace = true }
 thiserror = { workspace = true }
 tankovault-domain = { workspace = true }
-progenitor-client = "0.14.0"
+progenitor-client = { workspace = true }
 
 # This crate is 100% generated codegen output (`src/lib.rs` is emitted by `xtask`
 # and marked "DO NOT EDIT"), so the workspace's `clippy::pedantic` group is not
 # actionable here. Keep the compiler lints but silence clippy for the generated code.
+#
+# This is the only workspace member that does not write `[lints] workspace = true`, because
+# Cargo refuses a manifest that both inherits the workspace lint table and declares its own.
+# The cost is that a lint added to `[workspace.lints.rust]` silently skips this crate — which
+# is where a new rustc lint is most likely to fire and least likely to be read.
+# `tests/workspace_lints.rs` is what closes that: it compares the block below against
+# `[workspace.lints.rust]` line for line and fails when they diverge, so the copy is enforced
+# rather than remembered. Keep one lint per line; the check scans text, not TOML.
 [lints.rust]
 unsafe_code = "forbid"
 unreachable_pub = "warn"

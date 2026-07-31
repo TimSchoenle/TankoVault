@@ -1,0 +1,23 @@
+# blackbox_exporter modules for the TankoVault stack.
+#
+# One module, and only because the shipped `http_2xx` default is not quite right for `/ready`:
+#
+# * `timeout: 3s` — `crates/service/src/health.rs` bounds every dependency check at 2s and runs
+#   them concurrently, so a service that is *going to* answer `503` answers within ~2s. A 3s
+#   probe timeout therefore distinguishes "the readiness check ran and reported a dependency
+#   down" (a `503`, probe_success = 0, body available) from "the process did not answer at all"
+#   (probe timeout, probe_success = 0, no body) — two different pages for the operator.
+# * `follow_redirects: false` — `/ready` never redirects. Following one would let a
+#   misconfiguration turn into a probe that reports on some other endpoint's health.
+# * `valid_status_codes` is left empty, which means 2xx: `/ready` answers `200` when every
+#   registered dependency answered and `503` otherwise, so "2xx" is exactly the question.
+
+modules:
+  tankovault_ready:
+    prober: http
+    timeout: 3s
+    http:
+      method: GET
+      follow_redirects: false
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false

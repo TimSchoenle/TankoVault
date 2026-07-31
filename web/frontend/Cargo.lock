@@ -3102,7 +3102,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tankovault-frontend"
+name = "tankovault-web"
 version = "0.1.0"
 dependencies = [
  "base64",

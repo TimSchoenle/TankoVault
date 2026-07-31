@@ -4,6 +4,11 @@
 //! layer supplies trigram [`Candidate`]s, this crate scores them and returns a
 //! [`Decision`]. Automation is aggressive where safe and human-reviewed where ambiguous.
 //!
+//! The nouns ([`Candidate`], [`Query`], [`Decision`]) and the [`Canonicaliser`] port they are
+//! exchanged over live in [`tankovault_domain::matching`] and are re-exported here; this crate
+//! owns the *scoring*. `crates/db` names the port, not this crate, so the repository layer can
+//! ask for a decision without linking a scorer (ARCH-16).
+//!
 //! Score = trigram similarity, boosted by content-type agreement and release-year
 //! proximity, capped at 1.0. Three bands:
 //! - `>= high` → [`Decision::Attach`] (attach the new source to the existing series),
@@ -12,31 +17,11 @@
 
 use tankovault_domain::{ContentType, SeriesId};
 
-/// A candidate existing series to match against (from `db::repo::matching::find_candidates`).
-#[derive(Debug, Clone)]
-pub struct Candidate {
-    pub series_id: SeriesId,
-    pub normalized_title: String,
-    /// Raw trigram similarity in `[0,1]`.
-    pub similarity: f32,
-    pub content_type: ContentType,
-    pub release_year: Option<i32>,
-    /// Genre/tag names attached to this series. Empty when unavailable to the caller —
-    /// the tag-overlap bonus in [`score`] simply never fires, no different from today.
-    pub tags: Vec<String>,
-    /// Author/artist credits attached to this series (same empty-means-no-signal contract).
-    pub authors: Vec<String>,
-}
-
-/// The incoming source's identifying attributes.
-#[derive(Debug, Clone)]
-pub struct Query {
-    pub normalized_title: String,
-    pub content_type: ContentType,
-    pub release_year: Option<i32>,
-    pub tags: Vec<String>,
-    pub authors: Vec<String>,
-}
+// The scorer's input and output vocabulary lives in `tankovault_domain::matching`, because it
+// is the seam `crates/db` has to name in order to *ask* for a decision rather than make one
+// (ARCH-16 step 3). Re-exported here so `tankovault_matcher::Candidate` and friends still
+// resolve — the scoring is what this crate owns, not the nouns.
+pub use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 
 /// Confidence thresholds for the decision bands.
 #[derive(Debug, Clone, Copy)]
@@ -52,17 +37,6 @@ impl Default for Thresholds {
             low: 0.6,
         }
     }
-}
-
-/// The matching outcome.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Decision {
-    /// High confidence: attach the new source to this existing series.
-    Attach(SeriesId),
-    /// Ambiguous: create the source but flag a merge candidate for operator review.
-    Ambiguous { candidate: SeriesId, score: f32 },
-    /// Low/no confidence: create a new canonical series.
-    Create,
 }
 
 /// Score a single candidate against the query, capped at 1.0.
@@ -87,9 +61,12 @@ pub fn score(query: &Query, candidate: &Candidate) -> f32 {
         }
     }
 
-    // Release-year proximity.
+    // Release-year proximity. Saturating, not `(a - b).abs()`: `release_year` is an unvalidated
+    // `i32` on `GET /v1/admin/sync/suggest`, and `i32::MIN - i32::MAX` overflowed — a panic in
+    // debug *and*, since SEC-11 turned on `overflow-checks` for release, in production too. See
+    // `tests/prop_scoring.rs::score_survives_the_extremes_of_the_release_year_range`.
     if let (Some(a), Some(b)) = (query.release_year, candidate.release_year) {
-        match (a - b).abs() {
+        match a.saturating_sub(b).saturating_abs() {
             0 => s += 0.06,
             1 => s += 0.03,
             d if d >= 3 => s -= 0.05,
@@ -129,20 +106,20 @@ pub fn score(query: &Query, candidate: &Candidate) -> f32 {
 /// side has nothing to compare (so the caller can skip the bonus entirely rather than
 /// treating "no data" as "no overlap").
 #[must_use]
-#[allow(clippy::cast_precision_loss)] // name-set sizes are tiny (tag/author counts)
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "name-set sizes are tag/author counts, orders of magnitude below f32's exact range"
+)]
 fn name_set_overlap(a: &[String], b: &[String]) -> Option<f32> {
     if a.is_empty() || b.is_empty() {
         return None;
     }
     let sa: std::collections::BTreeSet<String> = a.iter().map(|s| s.to_lowercase()).collect();
     let sb: std::collections::BTreeSet<String> = b.iter().map(|s| s.to_lowercase()).collect();
-    let inter = sa.intersection(&sb).count();
+    // Both slices are non-empty by the guard above, so the union has at least one member and
+    // the division cannot be `0 / 0`. A `union == 0` arm stood here and was unreachable.
     let union = sa.union(&sb).count();
-    Some(if union == 0 {
-        0.0
-    } else {
-        inter as f32 / union as f32
-    })
+    Some(sa.intersection(&sb).count() as f32 / union as f32)
 }
 
 /// Whether `a` and `b` share at least one name, compared case-insensitively.
@@ -156,26 +133,30 @@ fn shares_a_name(a: &[String], b: &[String]) -> bool {
 /// duplicate-insensitive, so "life starting in another world" and "another world starting
 /// life" score identically. Pure and DB-free.
 #[must_use]
-#[allow(clippy::cast_precision_loss)] // word-set sizes are tiny (title token counts)
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "word-set sizes are title token counts, orders of magnitude below f32's exact range"
+)]
 pub fn token_set_ratio(a: &str, b: &str) -> f32 {
-    if a.is_empty() || b.is_empty() {
-        return 0.0;
-    }
-    if a == b {
-        return 1.0;
-    }
+    // Three guards used to stand in front of this — `a.is_empty() || b.is_empty()`, an `a == b`
+    // fast path, and `sa.is_empty() || sb.is_empty()` — and `cargo mutants` showed all three to
+    // be dead: every input they answered, the Jaccard below answers identically, so a mutation
+    // of any of them survived the whole suite. The one remaining guard is not dead: two
+    // whitespace-only titles produce two empty sets, and `0 / 0` is `NaN`, which would then
+    // propagate through every later term in `score` and compare false against both thresholds.
+    //
+    // The `a == b` path was the one worth thinking about, since it was also an allocation
+    // shortcut for the common exact-title case. It went anyway: two `BTreeSet`s of a handful of
+    // tokens cost nothing beside the trigram query that produced the candidate, and it was not
+    // in fact behaviour-preserving — it answered `1.0` for two *whitespace-only* titles, i.e. a
+    // perfect match between two series with no title at all.
     let sa: std::collections::BTreeSet<&str> = a.split_whitespace().collect();
     let sb: std::collections::BTreeSet<&str> = b.split_whitespace().collect();
-    if sa.is_empty() || sb.is_empty() {
-        return 0.0;
-    }
-    let inter = sa.intersection(&sb).count();
     let union = sa.union(&sb).count();
     if union == 0 {
-        0.0
-    } else {
-        inter as f32 / union as f32
+        return 0.0;
     }
+    sa.intersection(&sb).count() as f32 / union as f32
 }
 
 /// Whether every word of `needle` also appears in `haystack` (both space-separated), with
@@ -202,6 +183,89 @@ pub fn best_match(query: &Query, candidates: &[Candidate]) -> Option<(SeriesId, 
 }
 
 /// Decide how to canonicalise the query given its candidates and thresholds.
+///
+/// Three outcomes, and the middle one is why this is a function rather than a comparison:
+/// at or above [`Thresholds::high`] the source attaches to the existing series, below
+/// [`Thresholds::low`] a new canonical series is created, and *between* them nothing is
+/// decided automatically — the source is created and a merge candidate is queued for an
+/// operator. Collapsing that band into either neighbour is how a catalogue either splits one
+/// work across two entries or silently merges two different ones.
+///
+/// Only the best-scoring candidate is considered, so a long candidate list cannot outvote it.
+///
+/// The realistic case — the same work listed by a second provider:
+///
+/// ```
+/// use tankovault_domain::{ContentType, SeriesId};
+/// use tankovault_matcher::{Candidate, Decision, Query, Thresholds, decide};
+///
+/// let existing = SeriesId::new();
+/// let query = Query {
+///     normalized_title: "solo leveling".to_owned(),
+///     content_type: ContentType::Manhwa,
+///     release_year: Some(2018),
+///     tags: Vec::new(),
+///     authors: Vec::new(),
+/// };
+/// let same_work = Candidate {
+///     series_id: existing,
+///     normalized_title: "solo leveling".to_owned(),
+///     // Even a poor raw trigram score attaches here: [`score`] takes the *stronger* of the
+///     // trigram similarity and a token-set ratio, and identical titles agree completely.
+///     similarity: 0.2,
+///     content_type: ContentType::Manhwa,
+///     release_year: Some(2018),
+///     tags: Vec::new(),
+///     authors: Vec::new(),
+/// };
+/// assert_eq!(
+///     decide(&query, &[same_work], Thresholds::default()),
+///     Decision::Attach(existing),
+/// );
+/// ```
+///
+/// The three bands, with every corroborating signal switched off (unknown medium, no year,
+/// unrelated titles) so the score *is* the trigram similarity and the boundaries are visible:
+///
+/// ```
+/// use tankovault_domain::{ContentType, SeriesId};
+/// use tankovault_matcher::{Candidate, Decision, Query, Thresholds, decide};
+///
+/// let existing = SeriesId::new();
+/// let query = Query {
+///     normalized_title: "solo leveling".to_owned(),
+///     content_type: ContentType::Unknown,
+///     release_year: None,
+///     tags: Vec::new(),
+///     authors: Vec::new(),
+/// };
+/// let scoring = |similarity| Candidate {
+///     series_id: existing,
+///     normalized_title: "berserk".to_owned(),
+///     similarity,
+///     content_type: ContentType::Unknown,
+///     release_year: None,
+///     tags: Vec::new(),
+///     authors: Vec::new(),
+/// };
+///
+/// assert_eq!(
+///     decide(&query, &[scoring(0.9)], Thresholds::default()),
+///     Decision::Attach(existing),
+/// );
+/// assert!(matches!(
+///     decide(&query, &[scoring(0.7)], Thresholds::default()),
+///     Decision::Ambiguous { candidate, .. } if candidate == existing
+/// ));
+/// assert_eq!(
+///     decide(&query, &[scoring(0.3)], Thresholds::default()),
+///     Decision::Create,
+/// );
+///
+/// // No candidates at all is the same answer as a bad one: the first source of a work has
+/// // nothing to match against.
+/// assert_eq!(decide(&query, &[], Thresholds::default()), Decision::Create);
+/// ```
 #[must_use]
 pub fn decide(query: &Query, candidates: &[Candidate], thresholds: Thresholds) -> Decision {
     let best = candidates
@@ -222,7 +286,11 @@ pub fn decide(query: &Query, candidates: &[Candidate], thresholds: Thresholds) -
 #[cfg(test)]
 mod tests {
     // Tests assert exact equality of small, exactly-representable score values.
-    #![allow(clippy::float_cmp)]
+    #![expect(
+        clippy::float_cmp,
+        reason = "scores are compared against the exact constants the scorer is defined to \
+                  produce; a tolerance here would stop the test detecting a changed weight"
+    )]
 
     use super::*;
 
@@ -371,5 +439,168 @@ mod tests {
         );
         let s = score(&q, &c);
         assert!(s > 0.55, "containment should lift the score, got {s}");
+    }
+
+    // --- the individual scoring terms (TESTING F-10, mutation testing) ---------------------
+    //
+    // Everything above asserts on an *ordering* — this candidate outscores that one — or on a
+    // band. `cargo mutants` showed that to be too weak to hold the scorer in place: 22 mutants
+    // of `score` and its helpers survived the whole suite, including deleting the exact-year
+    // bonus outright, flipping the distant-year penalty into a bonus, and turning the tag
+    // bonus from `0.05 * overlap` into `0.05 + overlap`. Each one changes what the matcher
+    // attaches; none changed an ordering any test compared. The tests below pin the terms
+    // themselves, which is the only assertion a weight change cannot slip past.
+    //
+    // Two titles that share no token, so the base score is the raw trigram similarity and
+    // every bonus below is visible as an exact delta from it.
+    const BASE_SIMILARITY: f32 = 0.5;
+    fn unrelated_pair(ct: ContentType, year: Option<i32>) -> (Query, Candidate) {
+        (
+            query("alpha beta", ct, year),
+            cand(BASE_SIMILARITY, ContentType::Unknown, None, "gamma delta"),
+        )
+    }
+
+    /// Content-type agreement is consulted only when **both** sides know their type.
+    ///
+    /// `Unknown` means "not recorded", not "a type that differs from yours" — an adapter that
+    /// does not publish a type would otherwise take a 0.15 penalty against every candidate,
+    /// which is a third of the way from the ambiguous band to a rejection. Every earlier test
+    /// gave both sides a known type, so flipping the `&&` in that guard to `||` survived.
+    #[test]
+    fn content_type_is_ignored_unless_both_sides_know_theirs() {
+        let (q, c) = unrelated_pair(ContentType::Manga, None);
+        assert!(
+            (score(&q, &c) - BASE_SIMILARITY).abs() < 1e-6,
+            "an unknown candidate type must be neutral, got {}",
+            score(&q, &c)
+        );
+
+        let mut known = c.clone();
+        known.content_type = ContentType::Manga;
+        assert!((score(&q, &known) - (BASE_SIMILARITY + 0.08)).abs() < 1e-6);
+        known.content_type = ContentType::Manhwa;
+        assert!((score(&q, &known) - (BASE_SIMILARITY - 0.15)).abs() < 1e-6);
+    }
+
+    /// Release-year proximity is a **signed band**, and the two-year gap is deliberately
+    /// neutral rather than a small penalty: reprints, regional releases and the difference
+    /// between serialisation and volume publication routinely drift that far.
+    ///
+    /// Nothing asserted on this term at all before — every test either left `release_year`
+    /// `None` or gave both sides the same year — so seven mutants of it survived, including
+    /// deleting the exact-year arm and turning the distant-year penalty into a bonus.
+    #[test]
+    fn release_year_proximity_is_a_signed_band() {
+        for (gap, expected) in [(0, 0.06_f32), (1, 0.03), (2, 0.0), (3, -0.05), (40, -0.05)] {
+            let (q, mut c) = unrelated_pair(ContentType::Unknown, Some(2018));
+            c.release_year = Some(2018 - gap);
+            let s = score(&q, &c);
+            assert!(
+                (s - (BASE_SIMILARITY + expected)).abs() < 1e-6,
+                "a {gap}-year gap must move the score by {expected}, got {s}"
+            );
+        }
+
+        // The band is symmetric: a candidate published *later* is no different from one
+        // published earlier by the same margin.
+        let (q, mut c) = unrelated_pair(ContentType::Unknown, Some(2018));
+        c.release_year = Some(2021);
+        assert!((score(&q, &c) - (BASE_SIMILARITY - 0.05)).abs() < 1e-6);
+
+        // One side missing a year is "no data", not "an infinite gap".
+        let (q, c) = unrelated_pair(ContentType::Unknown, Some(2018));
+        assert!((score(&q, &c) - BASE_SIMILARITY).abs() < 1e-6);
+    }
+
+    /// The containment nudge fires in **either** direction and is a bonus, not a penalty.
+    ///
+    /// Which side carries the fuller title is an accident of which site was scraped, so
+    /// requiring the query to be the subset (the `&&` mutant) would silently halve the cases
+    /// this helps. Deliberately smaller than the exact-match bonus so genuine sequels — whose
+    /// titles *are* subsets of each other — do not get over-attached.
+    #[test]
+    fn the_containment_nudge_is_symmetric_and_positive() {
+        // "alpha beta" ⊂ "alpha beta gamma": two shared tokens of three, so the base score is
+        // the token-set ratio rather than the weaker trigram similarity.
+        let expected = 2.0 / 3.0 + 0.05;
+        let forward = score(
+            &query("alpha beta", ContentType::Unknown, None),
+            &cand(0.1, ContentType::Unknown, None, "alpha beta gamma"),
+        );
+        let backward = score(
+            &query("alpha beta gamma", ContentType::Unknown, None),
+            &cand(0.1, ContentType::Unknown, None, "alpha beta"),
+        );
+        assert!((forward - expected).abs() < 1e-6, "forward: {forward}");
+        assert!((backward - expected).abs() < 1e-6, "backward: {backward}");
+    }
+
+    /// The tag bonus **scales** with agreement rather than firing at full strength.
+    ///
+    /// Genres are coarse and inconsistently tagged across sites, so a single shared "Action"
+    /// must not count as much as a complete match. The earlier test asserted only that more
+    /// overlap scores higher, which `0.05 + overlap` satisfies just as well as `0.05 *
+    /// overlap` — and the additive form gives a *single* shared genre more weight than a
+    /// shared author.
+    #[test]
+    fn the_tag_bonus_scales_with_the_overlap() {
+        let (q_base, c_base) = unrelated_pair(ContentType::Unknown, None);
+        let mut q = q_base;
+        q.tags = vec!["Action".to_owned(), "Fantasy".to_owned()];
+
+        // One shared of three distinct: a Jaccard overlap of 1/3.
+        let mut partial = c_base.clone();
+        partial.tags = vec!["Action".to_owned(), "Romance".to_owned()];
+        let s = score(&q, &partial);
+        assert!(
+            (s - (BASE_SIMILARITY + 0.05 / 3.0)).abs() < 1e-6,
+            "a one-third overlap must be worth a third of the bonus, got {s}"
+        );
+
+        let mut full = c_base.clone();
+        full.tags.clone_from(&q.tags);
+        assert!((score(&q, &full) - (BASE_SIMILARITY + 0.05)).abs() < 1e-6);
+    }
+
+    /// "No tags on one side" is not "no overlap", and the difference is why this returns
+    /// `Option`: a candidate nobody has tagged must not be scored as one whose tags disagree.
+    ///
+    /// Unobservable through [`score`] — both answers add nothing — so it is asserted here, on
+    /// the contract the doc comment states.
+    #[test]
+    fn missing_tag_data_is_none_not_zero_overlap() {
+        let some = ["Action".to_owned()];
+        assert_eq!(name_set_overlap(&[], &some), None);
+        assert_eq!(name_set_overlap(&some, &[]), None);
+        assert_eq!(name_set_overlap(&[], &[]), None);
+        assert_eq!(name_set_overlap(&some, &["Romance".to_owned()]), Some(0.0));
+    }
+
+    /// Containment needs **two** shared words, so a single common one ("chronicles", "the
+    /// world") is not treated as one title containing the other.
+    #[test]
+    fn one_shared_word_is_not_containment() {
+        assert!(!is_token_subset("alpha", "alpha beta"));
+        assert!(!is_token_subset("", "alpha beta"));
+        assert!(is_token_subset("alpha beta", "alpha beta gamma"));
+        assert!(is_token_subset(
+            "alpha beta gamma",
+            "alpha beta gamma delta"
+        ));
+        assert!(!is_token_subset("alpha beta", "alpha gamma"));
+    }
+
+    /// Two titles with no words left after normalisation are not a perfect match.
+    ///
+    /// They score `0.0`, and the reason the arm producing it cannot be deleted is arithmetic:
+    /// an empty union makes the Jaccard `0 / 0`, and a `NaN` propagates through every later
+    /// term in [`score`] and then compares `false` against *both* thresholds — a candidate
+    /// that is neither attached, nor flagged, nor rejected.
+    #[test]
+    fn two_untitled_series_are_not_a_perfect_match() {
+        assert_eq!(token_set_ratio("   ", "  "), 0.0);
+        assert_eq!(token_set_ratio("", ""), 0.0);
+        assert_eq!(token_set_ratio("   ", "alpha"), 0.0);
     }
 }

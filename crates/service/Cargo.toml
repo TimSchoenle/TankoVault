@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Shared production runtime for TankoVault services: bootstrap, graceful shutdown, health probes, middleware, rate limiting, audit and metrics."
+# Not published: this is a workspace-internal crate. Also what lets `cargo deny`
+# skip license-checking our own code.
+publish = false
 
 [lints]
 workspace = true
@@ -29,6 +32,7 @@ metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+subtle.workspace = true
 thiserror.workspace = true
 time.workspace = true
 tokio.workspace = true
@@ -37,7 +41,6 @@ tower.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-uuid.workspace = true
 
 tankovault-db = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }
@@ -47,3 +50,6 @@ fred = { workspace = true, optional = true, features = ["i-scripts"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
+# `tests/prop_ratelimit.rs` (TEST P-07). Already in the lockfile via five other members, so
+# this adds no new resolution and nothing to `cargo deny`'s duplicate budget.
+proptest = { workspace = true }

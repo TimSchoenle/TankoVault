@@ -23,7 +23,6 @@ use crate::error::FetchError;
 use crate::fetcher::Fetcher;
 use crate::types::{FetchRequest, FetchResponse};
 use async_trait::async_trait;
-use rand::Rng;
 use std::time::Duration;
 
 /// Statuses that mean "you are going too fast" or "come back later".
@@ -56,15 +55,12 @@ impl<F> BackoffFetcher<F> {
     }
 
     /// Jittered exponential backoff for `attempt` (1-based), capped at `max_delay`.
+    ///
+    /// The policy itself lives in [`crate::jitter`], shared with [`crate::retry`] — the two
+    /// layers differ in *what* they retry, not in how long they wait, and this was the same
+    /// eleven lines in both files.
     fn backoff(&self, attempt: u32) -> Duration {
-        let exp = self
-            .base_delay
-            .saturating_mul(2u32.saturating_pow(attempt.saturating_sub(1)))
-            .min(self.max_delay);
-        // Full jitter in [0, exp]: spreads a fleet's retries instead of synchronising them
-        // into a second thundering herd against a host that is already struggling.
-        let millis = u64::try_from(exp.as_millis()).unwrap_or(u64::MAX);
-        Duration::from_millis(rand::thread_rng().gen_range(0..=millis))
+        crate::jitter::full_jitter_now(self.base_delay, self.max_delay, attempt)
     }
 
     /// How long to wait before the next attempt, preferring the server's instruction.

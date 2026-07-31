@@ -117,49 +117,27 @@ fn strip_tags(s: &str) -> String {
 
 /// Append every balanced JSON object found in `doc` (outermost first) to `out`, stopping at
 /// [`MAX_CANDIDATES`].
-fn collect_objects(doc: &str, out: &mut Vec<String>) {
-    let bytes = doc.as_bytes();
-    for (start, _) in doc.match_indices('{') {
-        if out.len() >= MAX_CANDIDATES {
-            return;
-        }
-        // Only braces that open an object with a key (or an empty object) are plausible API
-        // payloads; this is what keeps the scan off every JavaScript block and CSS rule in a
-        // rendered page.
-        if !opens_object(bytes, start) {
-            continue;
-        }
-        if let Some(span) = balanced_span(doc, start) {
-            out.push(span.to_owned());
-        }
-    }
-}
-
-/// Whether the byte after the brace at `start` (ignoring whitespace) starts a key or closes
-/// an empty object.
-fn opens_object(bytes: &[u8], start: usize) -> bool {
-    bytes
-        .iter()
-        .skip(start + 1)
-        .find(|b| !b.is_ascii_whitespace())
-        .is_some_and(|b| matches!(b, b'"' | b'}'))
-}
-
-/// The slice from the brace at `start` to the brace that closes it, or `None` if it never
-/// closes.
 ///
-/// String-aware, so braces inside JSON string values do not shift the depth. Scanning bytes
-/// is safe for the same reason it is fast: every delimiter is ASCII, and no byte of a
-/// multi-byte UTF-8 sequence can collide with one.
-fn balanced_span(doc: &str, start: usize) -> Option<&str> {
+/// Single-pass and therefore linear in the body length. The previous shape — re-scanning to
+/// the end of the document from every `{` — was quadratic and remotely triggerable: a 600 KB
+/// body of nested braces took ~30 s, and the fetch stack's 8 MiB cap admits bodies three
+/// orders of magnitude worse.
+fn collect_objects(doc: &str, out: &mut Vec<String>) {
+    /// How many candidate openings to track at once. Bounds the working set for a hostile
+    /// body while staying comfortably above [`MAX_CANDIDATES`], so a handful of tracked
+    /// braces that never close cannot starve the result.
+    const TRACKED_OPENS: usize = MAX_CANDIDATES * 8;
+
     let bytes = doc.as_bytes();
-    if bytes.get(start) != Some(&b'{') {
-        return None;
-    }
+    // (start, end_inclusive) of each balanced candidate, gathered in one pass.
+    let mut spans: Vec<(usize, usize)> = Vec::new();
+    // Openings still waiting for their closing brace, as (nesting depth, byte offset).
+    let mut pending: Vec<(usize, usize)> = Vec::new();
     let mut depth = 0usize;
     let mut in_string = false;
     let mut escaped = false;
-    for (i, &b) in bytes.iter().enumerate().skip(start) {
+
+    for (i, &b) in bytes.iter().enumerate() {
         if in_string {
             if escaped {
                 escaped = false;
@@ -172,17 +150,49 @@ fn balanced_span(doc: &str, start: usize) -> Option<&str> {
         }
         match b {
             b'"' => in_string = true,
-            b'{' => depth += 1,
-            b'}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(&doc[start..=i]);
+            b'{' => {
+                depth += 1;
+                // Only braces that open an object with a key (or an empty object) are
+                // plausible API payloads; this is what keeps the scan off every JavaScript
+                // block and CSS rule in a rendered page.
+                if pending.len() < TRACKED_OPENS && opens_object(bytes, i) {
+                    pending.push((depth, i));
                 }
+            }
+            b'}' => {
+                if depth == 0 {
+                    continue;
+                }
+                if let Some(&(open_depth, start)) = pending.last() {
+                    if open_depth == depth {
+                        pending.pop();
+                        spans.push((start, i));
+                    }
+                }
+                depth -= 1;
             }
             _ => {}
         }
     }
-    None
+
+    // Document order, which for nested objects is outermost first.
+    spans.sort_unstable();
+    for (start, end) in spans {
+        if out.len() >= MAX_CANDIDATES {
+            return;
+        }
+        out.push(doc[start..=end].to_owned());
+    }
+}
+
+/// Whether the byte after the brace at `start` (ignoring whitespace) starts a key or closes
+/// an empty object.
+fn opens_object(bytes: &[u8], start: usize) -> bool {
+    bytes
+        .iter()
+        .skip(start + 1)
+        .find(|b| !b.is_ascii_whitespace())
+        .is_some_and(|b| matches!(b, b'"' | b'}'))
 }
 
 /// Turn an exhausted parse into the most specific error the response supports.
@@ -234,6 +244,58 @@ mod tests {
             body: body.to_owned(),
             from_cache: false,
         }
+    }
+
+    /// Regression: `collect_objects` used to re-scan to end-of-document from every `{`,
+    /// which is quadratic. A 600 KB nested body took ~30 s and the fetch stack admits 8 MiB.
+    /// Linear now, so a deeply nested hostile body finishes immediately.
+    #[test]
+    fn collect_objects_is_linear_in_body_length() {
+        let depth = 60_000;
+        let doc = format!(
+            "{}{}",
+            r#"{"a":"#.repeat(depth),
+            "1".to_owned() + &"}".repeat(depth)
+        );
+        let started = std::time::Instant::now();
+        let mut out = Vec::new();
+        collect_objects(&doc, &mut out);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "quadratic scan regressed: {:?}",
+            started.elapsed()
+        );
+        assert_eq!(out.len(), MAX_CANDIDATES);
+    }
+
+    #[test]
+    fn collect_objects_yields_outermost_first() {
+        let mut out = Vec::new();
+        collect_objects(r#"prefix {"a":{"b":1}} suffix {"c":2}"#, &mut out);
+        assert_eq!(
+            out,
+            vec![
+                r#"{"a":{"b":1}}"#.to_owned(),
+                r#"{"b":1}"#.to_owned(),
+                r#"{"c":2}"#.to_owned(),
+            ]
+        );
+    }
+
+    /// Braces inside string values must not move the depth, and an unterminated object must
+    /// not swallow the objects that follow it.
+    #[test]
+    fn collect_objects_is_string_aware_and_tolerates_unbalanced_input() {
+        let mut out = Vec::new();
+        collect_objects(r#"{"a":"} { \" {"} then {"b":2}"#, &mut out);
+        assert_eq!(
+            out,
+            vec![r#"{"a":"} { \" {"}"#.to_owned(), r#"{"b":2}"#.to_owned()]
+        );
+
+        let mut unbalanced = Vec::new();
+        collect_objects(r#"{"never":"closed" [ {"ok":1}"#, &mut unbalanced);
+        assert_eq!(unbalanced, vec![r#"{"ok":1}"#.to_owned()]);
     }
 
     #[test]

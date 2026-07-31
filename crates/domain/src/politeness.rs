@@ -10,6 +10,15 @@ use utoipa::ToSchema;
 
 /// Hard upper bound on requests-per-second for any single provider, per worker process.
 pub const MAX_RPS: f64 = 4.0;
+/// Hard **lower** bound on requests-per-second: one request every 1000 seconds.
+///
+/// A floor sounds like the opposite of politeness and is not — it exists because the consumer
+/// turns this into a *period*. [`Politeness::clamped`] used to clamp a non-positive `rps` to
+/// [`f64::MIN_POSITIVE`], whose reciprocal is `4.5e307` seconds; `Duration::from_secs_f64`
+/// cannot represent that and **panics**, so a provider saved with `rps: 0` took the worker
+/// down at fetcher construction rather than crawling slowly. Anything below this is
+/// indistinguishable from "switch the provider off", which is what the `active` flag is for.
+pub const MIN_RPS: f64 = 0.001;
 /// Hard upper bound on concurrent in-flight requests for any single provider, per worker
 /// process.
 pub const MAX_CONCURRENCY: u32 = 8;
@@ -88,21 +97,30 @@ impl Politeness {
         DEFAULT_USER_AGENT.to_owned()
     }
     // Always `Some`, but the signature must match the field's type for `#[serde(default)]`.
-    #[allow(clippy::unnecessary_wraps)]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "must match the Option<BrowserEmulation> field it defaults"
+    )]
     fn default_emulation() -> Option<BrowserEmulation> {
         Some(BrowserEmulation::Chrome)
     }
 
-    /// Clamp all tunables to the hard ceilings. Returns a value guaranteed to be
-    /// within policy regardless of what was configured.
+    /// Clamp all tunables into policy. Returns a value guaranteed to be usable regardless of
+    /// what was configured, which is the contract `crates/fetch` relies on
+    /// — the fetcher takes these numbers without re-validating them.
+    ///
+    /// Both bounds matter, not only the ceiling. See [`MIN_RPS`] for what a floor is doing in a
+    /// politeness policy, and note that a non-finite `rps` is replaced rather than clamped:
+    /// `NaN` satisfies neither `>` nor `<`, and `f64::clamp` returns `NaN` for a `NaN` input, so
+    /// it would otherwise pass through every guard here untouched.
     #[must_use]
     pub fn clamped(mut self) -> Self {
-        if self.rps > MAX_RPS || self.rps <= 0.0 {
-            self.rps = self.rps.clamp(f64::MIN_POSITIVE, MAX_RPS);
-        }
-        if self.concurrency == 0 || self.concurrency > MAX_CONCURRENCY {
-            self.concurrency = self.concurrency.clamp(1, MAX_CONCURRENCY);
-        }
+        self.rps = if self.rps.is_finite() {
+            self.rps.clamp(MIN_RPS, MAX_RPS)
+        } else {
+            Self::default_rps()
+        };
+        self.concurrency = self.concurrency.clamp(1, MAX_CONCURRENCY);
         self
     }
 }
@@ -122,7 +140,11 @@ impl Default for Politeness {
 #[cfg(test)]
 mod tests {
     // Clamping returns exactly the ceiling constants, so exact float comparison is correct.
-    #![allow(clippy::float_cmp)]
+    #![expect(
+        clippy::float_cmp,
+        reason = "these assertions compare clamped values against the exact bounds they were \
+                  clamped to, so equality is the property under test"
+    )]
 
     use super::*;
 
@@ -150,8 +172,51 @@ mod tests {
             emulation: None,
         }
         .clamped();
-        assert!(p.rps > 0.0);
+        assert_eq!(p.rps, MIN_RPS);
         assert_eq!(p.concurrency, 1);
+    }
+
+    /// A clamped rate must survive being turned into a **period**, which is the only thing any
+    /// consumer does with it.
+    ///
+    /// This was a live panic. `clamped` used to map a non-positive `rps` to `f64::MIN_POSITIVE`
+    /// and the test above asserted only `p.rps > 0.0`, which that satisfies — so a provider
+    /// saved with `"rps": 0` produced a period of `4.5e307` seconds, and
+    /// `Duration::from_secs_f64` panics rather than saturating. The worker died at fetcher
+    /// construction, before a single request, and the guard whose entire job was to make the
+    /// value safe is what produced it.
+    ///
+    /// `NaN` was worse: it satisfies neither `>` nor `<=`, so the old guard never fired, and
+    /// `f64::clamp` returns `NaN` unchanged — it passed through untouched into the same panic.
+    /// Found while writing the `# Panics` section for `RateLimitedFetcher::new` (OPS-2.2).
+    #[test]
+    fn a_clamped_rate_survives_conversion_to_a_period() {
+        for rps in [
+            0.0,
+            -1.0,
+            f64::MIN_POSITIVE,
+            1e-300,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            100.0,
+        ] {
+            let clamped = Politeness {
+                rps,
+                concurrency: 1,
+                crawl_delay_ms: 0,
+                user_agent: "x".into(),
+                emulation: None,
+            }
+            .clamped()
+            .rps;
+            assert!(
+                (MIN_RPS..=MAX_RPS).contains(&clamped),
+                "rps {rps} clamped to {clamped}, outside [{MIN_RPS}, {MAX_RPS}]"
+            );
+            // Precisely what `tankovault_fetch::RateLimitedFetcher::new` does with it.
+            let _period = std::time::Duration::from_secs_f64(1.0 / clamped);
+        }
     }
 
     #[test]

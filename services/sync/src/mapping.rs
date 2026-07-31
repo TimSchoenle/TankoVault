@@ -4,7 +4,6 @@
 //! conflict policy — are exhaustively unit-tested. The engine layer wires these to the
 //! database and the `AniList` GraphQL client.
 
-use serde::{Deserialize, Serialize};
 use tankovault_domain::{ContentType, WatchStatus};
 
 /// `AniList` `MediaListStatus` enum values.
@@ -84,47 +83,31 @@ pub(crate) fn content_type_from_country(country: Option<&str>) -> ContentType {
     }
 }
 
+/// Round a fractional local progress to the whole-chapter count a provider expects.
+///
+/// Lives here rather than in the provider module because this file owns every other unit
+/// conversion across the boundary (ARCH-7), and the rounding rule is not `AniList`-specific:
+/// remote trackers count whole chapters, local progress does not.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the target is signed and `max(0.0)` rules out a negative, and Rust's \
+              float-to-int cast saturates rather than wrapping, so the value is the \
+              rounded progress or `i64::MAX`, never a wrapped one"
+)]
+#[must_use]
+pub(crate) fn progress_to_int(progress: f64) -> i64 {
+    progress.max(0.0).round() as i64
+}
+
 /// The user-selectable reconciliation policy when a series exists on both sides (§15).
-/// The shared `Wins` suffix is intentional, user-facing vocabulary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-#[allow(clippy::enum_variant_names)]
-pub(crate) enum ConflictPolicy {
-    /// Local progress/status is authoritative.
-    LocalWins,
-    /// The remote (`AniList`) value is authoritative.
-    RemoteWins,
-    /// Whichever side was updated most recently wins.
-    #[default]
-    NewestWins,
-    /// Genuine conflicts are queued for the user to resolve rather than auto-picked
-    /// (design v2 §B.3).
-    AskMe,
-}
-
-impl ConflictPolicy {
-    /// The persisted token for this policy (matches `serde` `snake_case`).
-    #[must_use]
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::LocalWins => "local_wins",
-            Self::RemoteWins => "remote_wins",
-            Self::NewestWins => "newest_wins",
-            Self::AskMe => "ask_me",
-        }
-    }
-
-    /// Parse a persisted policy token, falling back to `NewestWins` for anything unknown.
-    #[must_use]
-    pub(crate) fn parse(token: &str) -> Self {
-        match token {
-            "local_wins" => Self::LocalWins,
-            "remote_wins" => Self::RemoteWins,
-            "ask_me" => Self::AskMe,
-            _ => Self::NewestWins,
-        }
-    }
-}
+///
+/// Re-exported rather than defined here. This was a private enum plus a bare `String` on the
+/// wire, so the vocabulary lived in three unconnected places — this service, the `OpenAPI` prose
+/// and a closed enumeration the frontend maintained by hand — and both parsers had a
+/// `_ => NewestWins` arm, which turned a misspelled token into a silent policy change rather
+/// than an error. It is now declared once in [`tankovault_contracts::sync::ConflictPolicy`],
+/// which is what the schema publishes and the generated client carries.
+pub(crate) use tankovault_contracts::sync::ConflictPolicy;
 
 /// Which side a reconciliation deemed authoritative.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -245,10 +228,6 @@ fn resolve_conflict(policy: ConflictPolicy, newer: Side) -> MergeDecision {
 
 #[cfg(test)]
 mod tests {
-    // Reconciliation returns exactly one side's stored progress unchanged, so exact
-    // float comparison is correct here.
-    #![allow(clippy::float_cmp)]
-
     use super::*;
 
     fn newer_local() -> Side {
@@ -426,19 +405,77 @@ mod tests {
         assert_eq!(d.action, MergeAction::Conflict);
     }
 
+    /// **Half** a snapshot is not a common ancestor.
+    ///
+    /// The four snapshot fields are independent `Option`s, so a row can carry the local value
+    /// and not the remote one — a partially written snapshot, or one from before a field was
+    /// added. Treating that as an ancestor makes the missing side look *changed*, so the
+    /// absent half wins: with `last_remote` empty and both sides sitting on the same value,
+    /// this returns `Noop`, while reading `have_ancestor` as "either side has one" turns it
+    /// into a `PullRemote` that overwrites the user's progress with the value it already had —
+    /// invisible when the values agree, and a silent rollback the moment they do not.
+    ///
+    /// `cargo mutants` found this: flipping the `&&` in `have_ancestor` to `||` survived the
+    /// whole suite, because every earlier test supplied either both halves or neither.
     #[test]
-    fn policy_tokens_round_trip() {
-        for p in [
-            ConflictPolicy::LocalWins,
-            ConflictPolicy::RemoteWins,
-            ConflictPolicy::NewestWins,
-            ConflictPolicy::AskMe,
-        ] {
-            assert_eq!(ConflictPolicy::parse(p.as_str()), p);
+    fn one_half_of_a_snapshot_is_not_an_ancestor() {
+        for (last_local, last_remote) in [(Some(5.0), None), (None, Some(5.0))] {
+            let agreed = three_way(
+                5.0,
+                5.0,
+                last_local,
+                last_remote,
+                ConflictPolicy::LocalWins,
+                newer_local(),
+            );
+            assert_eq!(
+                agreed.action,
+                MergeAction::Noop,
+                "{last_local:?}/{last_remote:?}"
+            );
+
+            // …and a disagreement is a real conflict decided by policy, not by which half of
+            // the snapshot happens to be present.
+            let disagreed = three_way(
+                5.0,
+                9.0,
+                last_local,
+                last_remote,
+                ConflictPolicy::AskMe,
+                newer_local(),
+            );
+            assert_eq!(
+                disagreed.action,
+                MergeAction::Conflict,
+                "{last_local:?}/{last_remote:?}"
+            );
         }
-        assert_eq!(
-            ConflictPolicy::parse("nonsense"),
-            ConflictPolicy::NewestWins
-        );
     }
+
+    /// Local progress is fractional (a part release is `152.5`); every remote tracker counts
+    /// whole chapters. The rounding rule is the whole of this function and nothing asserted on
+    /// it — `cargo mutants` replaced the body with `0`, `1` and `-1` in turn and the suite
+    /// stayed green, which for a *push* means writing the wrong chapter count to somebody's
+    /// public list.
+    ///
+    /// Three properties, each with a way to get it wrong: it **rounds** rather than truncating,
+    /// so a reader on `152.5` is pushed as having finished 153 rather than 152; it clamps at
+    /// zero, because a negative chapter count is a value no tracker accepts; and the cast
+    /// saturates rather than wrapping, so the `f64::INFINITY` that `parse_number` used to be
+    /// able to produce (F-01b) becomes `i64::MAX` instead of a negative count.
+    #[test]
+    fn progress_rounds_to_whole_chapters_and_never_goes_negative() {
+        assert_eq!(progress_to_int(0.0), 0);
+        assert_eq!(progress_to_int(152.0), 152);
+        assert_eq!(progress_to_int(152.4), 152);
+        assert_eq!(progress_to_int(152.5), 153);
+        assert_eq!(progress_to_int(-3.0), 0);
+        assert_eq!(progress_to_int(f64::INFINITY), i64::MAX);
+    }
+
+    // The policy token round trip used to be pinned here, against this module's own copy of
+    // the enum. Both moved: the vocabulary is `tankovault_contracts::sync::ConflictPolicy` and
+    // its round trip is pinned there, while the tolerance for an unreadable *persisted* token
+    // — the part that was this service's own judgement, not the wire's — is pinned by
+    // `engine::accounts::tests`.
 }

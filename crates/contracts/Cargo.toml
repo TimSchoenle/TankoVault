@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Shared NATS message/event schemas, HTTP wire contracts and subject naming."
+# Not published: this is a workspace-internal crate. Also what lets `cargo deny`
+# skip license-checking our own code.
+publish = false
 
 [dependencies]
 tankovault-domain = { workspace = true }
@@ -15,6 +18,9 @@ time = { workspace = true }
 # The HTTP contracts in `sync` are schema'd so `services/api` can annotate the routes it
 # proxies, which is what lets `xtask openapi` generate a typed client for them.
 utoipa = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
 
 [lints]
 workspace = true

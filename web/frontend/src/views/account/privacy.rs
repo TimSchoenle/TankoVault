@@ -6,9 +6,8 @@
 //! gone — it moves into the request queue below, which is exactly why the request form lists
 //! erasure as a kind an operator can act on.
 
-use super::PanelCard;
 use crate::api;
-use crate::components::{async_list, OutcomeLine, SkeletonRows};
+use crate::components::{async_list, OutcomeLine, PanelCard, SkeletonRows};
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::Icon;
@@ -69,7 +68,7 @@ fn ExportCard() -> Element {
                                 Ok(()) => {
                                     outcome.set(Some(Ok(i18n.t("account.privacy.export.done"))));
                                 }
-                                Err(message) => outcome.set(Some(Err(message))),
+                                Err(key) => outcome.set(Some(Err(i18n.t(key)))),
                             }
                         }
                         Err(_) => outcome.set(Some(Err(i18n.t("account.privacy.export.failed")))),

@@ -13,7 +13,11 @@
 // Handlers are `pub` so the router (and `openapi::ApiDoc`) can name them, but their
 // containing modules stay private — this crate's only real external surface is
 // `openapi` and the few items re-exported below, so the lint is noise everywhere else.
-#![allow(unreachable_pub)]
+#![expect(
+    unreachable_pub,
+    reason = "a service crate with a thin lib target for its tests; handlers are `pub` for \
+              utoipa's generated siblings, not for an external consumer"
+)]
 
 pub mod openapi;
 
@@ -25,6 +29,9 @@ mod mailer;
 mod me;
 mod series;
 mod state;
+pub mod stream_tickets;
+mod upstream;
+mod views;
 
 use axum::Router;
 pub use state::AppState;
@@ -34,6 +41,7 @@ use tankovault_service::{
     FeatureGate, FeatureLayer, Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier,
     RouteFeatures,
 };
+pub use upstream::Upstream;
 use utoipa::OpenApi as _;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -87,7 +95,18 @@ pub fn route_classifier() -> RouteClassifier {
 /// feature flag; it is turning the service off, which the orchestrator already does better.
 #[must_use]
 pub fn route_features() -> RouteFeatures {
-    RouteFeatures::new()
+    // The external-sync surface's gates come from the single declaration in
+    // `tankovault_contracts::sync`, prefixed with this tier's mount point, so the API and the
+    // sync service cannot drift apart on which routes are gated (ARCH-18). The finer sync flags
+    // that govern *behaviour* rather than routes (scheduled pull) are still checked where that
+    // behaviour happens.
+    let sync = tankovault_contracts::sync::sync_route_features()
+        .iter()
+        .fold(RouteFeatures::new(), |table, (suffix, feature)| {
+            table.gate(format!("/v1/me/sync{suffix}"), *feature)
+        });
+
+    sync
         // --- public catalogue ---
         .gate("/v1/series", Feature::CatalogueBrowse)
         .gate("/v1/tags", Feature::CatalogueBrowse)
@@ -107,9 +126,18 @@ pub fn route_features() -> RouteFeatures {
         .gate("/v1/admin/privacy", Feature::PrivacyRequests)
         // --- tracking ---
         .gate("/v1/me/watchlist", Feature::TrackingWatchlist)
+        // One rule, covering the whole progress family — the per-chapter write
+        // (`PUT /v1/me/progress/{series_id}/chapters/{number}`) and the bulk mark-read
+        // (`POST /v1/me/progress/{series_id}/mark-read-to`) both sit under this prefix.
+        //
+        // **Two further rules used to sit here**, `/v1/me/chapter-progress` and
+        // `/v1/me/mark-read-to`, and neither has ever been a route: both are the *tails* of the
+        // paths above, written as if they were top-level. They are deleted rather than left,
+        // because a rule that gates nothing while looking like it gates something is how the
+        // next person concludes their endpoint is already covered. Nothing was ungated — this
+        // prefix already covered both — and nothing in the build could have said so, which is
+        // why `feature_gating.rs::every_gated_prefix_still_matches_a_published_route` exists.
         .gate("/v1/me/progress", Feature::TrackingProgress)
-        .gate("/v1/me/chapter-progress", Feature::TrackingProgress)
-        .gate("/v1/me/mark-read-to", Feature::TrackingProgress)
         .gate("/v1/me/feed", Feature::TrackingFeed)
         .gate("/v1/me/continue", Feature::TrackingFeed)
         .gate("/v1/me/stats", Feature::TrackingStats)
@@ -121,13 +149,6 @@ pub fn route_features() -> RouteFeatures {
             "/v1/me/notification-prefs",
             Feature::NotificationsPreferences,
         )
-        // --- external sync ---
-        // The `/v1/me/sync` prefix covers the whole user-facing surface; the finer sync flags
-        // (auto-push, scheduled pull) govern *behaviour* rather than routes and are checked
-        // where that behaviour happens.
-        .gate("/v1/me/sync", Feature::SyncExternal)
-        .gate("/v1/me/sync/conflicts", Feature::SyncConflictReview)
-        .gate("/v1/me/sync/history", Feature::SyncHistory)
         // --- operator surfaces ---
         .gate("/v1/admin/providers", Feature::AdminProviders)
         .gate("/v1/admin/providers/{id}/test", Feature::AdminAdapterTest)
@@ -174,11 +195,24 @@ pub fn build_router(
     // disabled feature should still have been rate limited, tagged with a request id and
     // measured, so the middleware above it must run first. Applied here rather than in
     // `HttpStack` because the feature table is the API's own, not something every service has.
+    // `/scalar` publishes every admin path, the permission vocabulary and exact request
+    // bodies to anyone who asks, with no auth gate and no entry in `route_features()`. Off in
+    // the production profile by default (`SecurityConfig::expose_api_docs`), on in
+    // development where it is genuinely useful. Note this also removes a per-request
+    // re-serialization of the 253 KB document.
+    let router = if security.expose_api_docs {
+        router.merge(Scalar::with_url("/scalar", api))
+    } else {
+        router
+    };
+
+    let principal = bearer_principal_resolver(state.jwt_secret.clone());
+
     let app = HttpStack::new(security, metrics.clone())
         .with_rate_limit(limiter)
+        .with_principal(Some(principal))
         .apply(
             router
-                .merge(Scalar::with_url("/scalar", api))
                 .with_state(state)
                 .layer(axum::middleware::from_fn_with_state(
                     features,
@@ -187,6 +221,31 @@ pub fn build_router(
         );
 
     app.merge(tankovault_service::ops_router(health, metrics))
+}
+
+/// Identify the caller from a `Bearer` access token, for per-account rate limiting.
+///
+/// The signature is **verified** before the subject is returned, which is the whole
+/// requirement: `tankovault_service::ratelimit::Principal` is trusted by the limiter, so a
+/// resolver that read an unverified header would let any caller mint themselves an unlimited
+/// supply of fresh buckets — worse than the IP bucketing it replaces, not better.
+///
+/// Deliberately cheaper than [`crate::state::AuthUser`]: no database round trip, no suspension
+/// or permission check. This runs on *every* request including anonymous ones, and its only
+/// job is to name a bucket. A suspended account still gets rate limited under its own id; the
+/// handler is what refuses it.
+fn bearer_principal_resolver(
+    jwt_secret: std::sync::Arc<Vec<u8>>,
+) -> tankovault_service::http::PrincipalResolver {
+    std::sync::Arc::new(move |headers: &axum::http::HeaderMap| {
+        let token = headers
+            .get(axum::http::header::AUTHORIZATION)?
+            .to_str()
+            .ok()?
+            .strip_prefix("Bearer ")?;
+        let claims = tankovault_auth::verify_access_token(&jwt_secret, token).ok()?;
+        Some(claims.user_id()?.as_uuid().to_string())
+    })
 }
 
 /// Load the deployment's flag overrides and keep them fresh for the lifetime of the process.
@@ -247,6 +306,7 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(me::capabilities))
         // account settings (§9.4)
         .routes(routes!(me::patch_profile))
+        .routes(routes!(me::change_password))
         .routes(routes!(me::sessions))
         .routes(routes!(me::delete_session))
         .routes(routes!(me::notification_prefs, me::put_notification_prefs))
@@ -261,8 +321,9 @@ fn documented_router() -> OpenApiRouter<AppState> {
             me::create_privacy_request
         ))
         .routes(routes!(me::cancel_privacy_request))
-        // live per-user notification stream (SSE; token in query — EventSource cannot set headers)
-        .routes(routes!(me::stream))
+        // live SSE stream + the mint for its query credential (a single-use ticket since SEC-8,
+        // not the access token). Both gated by the one `/v1/me/stream` prefix rule below.
+        .routes(routes!(me::stream, me::stream_ticket))
         // me — external sync, provider-keyed (proxied to the sync service; design: generalized
         // multi-provider sync)
         .routes(routes!(me::sync_providers))
@@ -461,6 +522,25 @@ mod tests {
             features.required(&Method::GET, "/v1/me/sync/history"),
             Some(Feature::SyncHistory)
         );
+    }
+
+    /// Every suffix in the shared declaration is actually gated under this tier's prefix.
+    ///
+    /// The two tiers used to keep independent tables and had already drifted — the API gated
+    /// `/conflicts` and `/history` but not `/push-series` — with nothing asserting they agreed
+    /// (ARCH-18). `services/sync` carries the mirror of this test, so adding a suffix to the
+    /// shared list and forgetting one tier's prefix now fails the build on that tier.
+    #[test]
+    fn the_shared_sync_declaration_is_applied_under_this_tier_s_prefix() {
+        let features = route_features();
+        for (suffix, expected) in tankovault_contracts::sync::sync_route_features() {
+            let path = format!("/v1/me/sync{suffix}");
+            assert_eq!(
+                features.required(&Method::GET, &path),
+                Some(*expected),
+                "{path} is not gated by the feature the shared declaration names"
+            );
+        }
     }
 
     #[test]

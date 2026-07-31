@@ -9,8 +9,8 @@
             "type": "boolean"
           },
           "conflict_policy": {
-            "description": "How to settle a local/remote disagreement — one of `local_wins`, `remote_wins`,\n`newest_wins`, `ask_me`.",
-            "type": "string"
+            "$ref": "#/components/schemas/ConflictPolicy",
+            "description": "How to settle a local/remote disagreement."
           },
           "linked": {
             "description": "Whether a linked external account exists; the other fields are inert without one.",
@@ -165,6 +165,10 @@
               "null"
             ]
           },
+          "needs_export": {
+            "description": "Whether fulfilling this request means disclosing the subject's data export, i.e.\nwhether the queue should offer the \"release export\" action on this row.\n\nDerived server-side from `RequestKind::needs_export` for the same reason `overdue` is\ncomputed in SQL: the console used to re-derive it from `kind` in its own `match`\n(FRONTEND F10), so the set of kinds that disclose an export lived in two places with\nnothing connecting them — and the one the operator sees is the one that decides which\nbutton appears. The server refuses the call either way, so the divergence would have\nshown as a button that does nothing rather than as a disclosure; still a bug, and one\nno test could reach.",
+            "type": "boolean"
+          },
           "overdue": {
             "description": "Whether the Art. 12(3) deadline has passed with the request still open. Computed in\nSQL against `now()` so the queue cannot disagree with itself about what is late\ndepending on when a client's clock says it rendered.",
             "type": "boolean"
@@ -196,7 +200,8 @@
         },
         "required": [
           "request",
-          "overdue"
+          "overdue",
+          "needs_export"
         ],
         "type": "object"
       },
@@ -385,8 +390,18 @@
         ],
         "type": "object"
       },
+      "ConflictPolicy": {
+        "description": "How to settle a local/remote disagreement when a series exists on both sides\n(design v2 §B.3).\n\n# Why this is here rather than in `services/sync`\n\nIt was a `pub(crate)` enum in the sync service and a **bare string** on the wire, which put\nthe vocabulary in three places that nothing connected: the service's enum, a prose list in\nthis file's doc comment, and a closed enumeration the frontend maintained by hand\n(FRONTEND F10). A policy added to the service would have compiled everywhere and then\nsilently failed to appear in the picker; a token misspelled in the frontend would have been\nrejected by the service at the far end of a round trip, if at all. Declaring it once here —\nwhere `utoipa` publishes it, `progenitor` generates it and the frontend consumes the\ngenerated form — makes the compiler the connection in both directions.\n\nThe JSON representation is unchanged: `snake_case`, the same four tokens the wire always\ncarried. What changed is that the *schema* now says so, so an unknown token is a `422` at\nthe edge instead of a value that reaches the merge and is quietly read as `newest_wins`.",
+        "enum": [
+          "local_wins",
+          "remote_wins",
+          "newest_wins",
+          "ask_me"
+        ],
+        "type": "string"
+      },
       "ConflictRow": {
-        "description": "One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).\n\nSchema'd and `Deserialize` because `services/api` re-publishes this row under\n`/v1/me/sync/conflicts`, so it has to appear in the `OpenAPI` document for the generated\nclient to expose the endpoint at all.",
+        "description": "One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).\n\nProduced by `services/sync` from a repository row and re-published verbatim by\n`services/api`. It lives here rather than on the row struct for the reason given in\n[`crate::admin`]: a `SELECT` column rename must not be able to rewrite the public API\nwithout a compile error. The published component name is pinned to `ConflictRow` — the\nmove is an internal layering fix and must not rename anything on the wire.",
         "properties": {
           "detected_at": {
             "type": "string"
@@ -904,7 +919,7 @@
         "type": "object"
       },
       "HistoryRow": {
-        "description": "One row of the user-facing sync history (design v2 §B.6 `GET /v1/me/sync/history`).\n\nSchema'd and `Deserialize` for the same reason as [`ConflictRow`]: `services/api`\nre-publishes it, so the generated client needs it in the `OpenAPI` document.",
+        "description": "One row of the user-facing sync history (design v2 §B.6 `GET /v1/me/sync/history`).\nSee [`ConflictView`] for why it lives here.",
         "properties": {
           "action": {
             "description": "What the engine did, e.g. `pull`, `push` or `resolve`.",
@@ -1104,6 +1119,21 @@
         "format": "uuid",
         "type": "string"
       },
+      "PasswordChange": {
+        "properties": {
+          "current_password": {
+            "type": "string"
+          },
+          "new_password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "type": "object"
+      },
       "Permission": {
         "description": "Everything a principal can be authorized to do.\n\nThe enum is exhaustive by design: a permission that exists only as a string somewhere\ncannot be listed in the admin UI, cannot be spell-checked by the compiler, and cannot be\naudited as a known capability. Adding a capability means adding a variant here and\nnothing else.",
         "enum": [
@@ -1259,7 +1289,7 @@
         "type": "object"
       },
       "ProblemDetails": {
-        "description": "RFC 9457 `application/problem+json` error body shape produced by [`ApiError`]. Declared\npurely for `OpenAPI` documentation — [`ApiError::into_response`] builds the JSON by hand so\nruntime callers never construct this type.",
+        "description": "RFC 9457 `application/problem+json` error body shape produced by [`ApiError`]. Declared\npurely for `OpenAPI` documentation — `tankovault_service::problem` builds the JSON, so runtime\ncallers never construct this type. It mirrors `problem::ProblemBody`; a test asserts the two\nagree field for field, since only this copy is published to clients.",
         "example": {
           "detail": "resource not found",
           "status": 404,
@@ -1317,6 +1347,13 @@
       },
       "ProfileUpdate": {
         "properties": {
+          "current_password": {
+            "description": "Required when `email` changes the address on the account. See [`patch_profile`].",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "email": {
             "type": [
               "string",
@@ -1551,7 +1588,7 @@
         "type": "string"
       },
       "PublicProvider": {
-        "description": "A public-facing provider entry for the Discover filter list (frontend §9.3\n`GET /v1/providers`): identity plus how many distinct series it carries, so the UI can\nshow \"Provider (N)\" options without exposing operator-only config/politeness.",
+        "description": "A provider entry for the Discover filter list: identity plus how many distinct series it\ncarries, so the UI can show \"Provider (N)\" options without exposing operator-only\nconfig/politeness.",
         "properties": {
           "id": {
             "format": "uuid",
@@ -1597,7 +1634,7 @@
         "type": "object"
       },
       "RegisterResponse": {
-        "description": "The result of [`register`]. Registration has two outcomes depending on whether email\ndelivery is configured:\n\n- Email enabled: the account is created **unconfirmed**, a confirmation link is emailed,\n  and no session is issued (`verification_required = true`, `access_token` absent). The\n  user must click the link before they can sign in.\n- Email not configured (dev/self-host without SMTP): confirmation cannot be delivered, so\n  the account is activated immediately and a session is issued exactly like [`login`]\n  (`verification_required = false`, `access_token` present).",
+        "description": "The result of [`register`]. Registration has two outcomes depending on whether email\ndelivery is configured:\n\n- Email enabled: the account is created **unconfirmed**, a confirmation link is emailed,\n  and no session is issued (`verification_required = true`, `access_token` absent). The\n  user must click the link before they can sign in.\n- Email not configured (dev/self-host without SMTP): confirmation cannot be delivered, so\n  the account is activated immediately and a session is issued exactly like\n  [`super::login::login`] (`verification_required = false`, `access_token` present).",
         "properties": {
           "access_token": {
             "description": "The issued bearer access token — present only when the account was activated\nimmediately (email delivery not configured). Mirrors [`TokenResponse::access_token`].",
@@ -1674,7 +1711,7 @@
         "type": "object"
       },
       "RequestKind": {
-        "description": "What the subject is exercising. Mirrors the `gdpr_request_kind` SQL enum.",
+        "description": "What a data subject is exercising (GDPR Chapter III). Mirrors the `gdpr_request_kind` SQL\nenum, whose `sqlx`-typed counterpart stays in `tankovault_db` — this crate must not depend\non the driver.",
         "enum": [
           "access",
           "portability",
@@ -1734,7 +1771,7 @@
         "type": "object"
       },
       "RequestStatus": {
-        "description": "Where a request is in its lifecycle. Mirrors the `gdpr_request_status` SQL enum.",
+        "description": "Where a data-subject request is in its lifecycle. Mirrors the `gdpr_request_status` SQL\nenum; see [`PrivacyRequestKind`] for why the mirror exists.",
         "enum": [
           "pending",
           "in_progress",
@@ -1892,6 +1929,22 @@
         "description": "Identifies a scan task.",
         "format": "uuid",
         "type": "string"
+      },
+      "ScanTriggered": {
+        "description": "What the control plane answers when a scan is planned: the runs it created.\n\nPublished by `services/control-plane` on its internal `POST /internal/scans`, and\nrepublished verbatim by `services/api` on `POST /v1/admin/scans` and\n`POST /v1/admin/providers/{id}/resolve`. It lives here, rather than staying a private\nstruct in the control plane's `main.rs`, for the reason ARCH-10 exists: while the producer\nowned the only definition, the API could declare nothing more specific than\n`serde_json::Value`, so the console's \"N scans queued\" was reading a field no compiler had\never connected to the field the planner writes. Both ends now name this type, so removing\n`run_ids` fails to build at the producer *and* the republisher.",
+        "properties": {
+          "run_ids": {
+            "description": "One id per run planned — one per provider when the request names none.",
+            "items": {
+              "$ref": "#/components/schemas/ScanRunId"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "run_ids"
+        ],
+        "type": "object"
       },
       "SeriesDetail": {
         "properties": {
@@ -2152,6 +2205,26 @@
         ],
         "type": "object"
       },
+      "StreamTicket": {
+        "description": "A freshly minted stream ticket.",
+        "properties": {
+          "expires_in": {
+            "description": "Seconds until it expires. Redeem immediately; this is for diagnostics, not scheduling.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ticket": {
+            "description": "The opaque value to pass as `?ticket=` when opening the stream.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket",
+          "expires_in"
+        ],
+        "type": "object"
+      },
       "SuggestedMatch": {
         "description": "One ranked suggestion for the admin \"match every loaded entry\" screen: a local series the\nmatcher thinks the remote entry could be, with enough info (title, type, sources) to\neyeball it and its confidence `score` in `[0,1]`.",
         "properties": {
@@ -2261,10 +2334,14 @@
       "SyncOpts": {
         "properties": {
           "policy": {
-            "description": "`local_wins` | `remote_wins` | `newest_wins`; omitted uses the service default.",
-            "type": [
-              "string",
-              "null"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ConflictPolicy",
+                "description": "Overrides the account's own conflict policy for this run; omitted uses it.\n\nTyped rather than a bare string since FRONTEND F10: the sync service's request body\nhas always been a `ConflictPolicy`, so a token this proxy accepted and that one did not\nused to fail one hop downstream, as a `502` with no useful detail. Now the two name the\nsame type and the rejection happens here, as a `422` that says which values are legal."
+              }
             ]
           }
         },
@@ -2279,16 +2356,21 @@
             ]
           },
           "conflict_policy": {
-            "type": [
-              "string",
-              "null"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ConflictPolicy",
+                "description": "The account's new conflict policy; omitted leaves it unchanged.\n\nSee [`SyncOpts::policy`] for why this is typed rather than a bare string."
+              }
             ]
           }
         },
         "type": "object"
       },
       "SystemStats": {
-        "description": "System-wide rollup for the console header (single-row query).",
+        "description": "System-wide rollup for the console header.",
         "properties": {
           "chapters_1h": {
             "format": "int64",
@@ -2534,7 +2616,7 @@
         "type": "object"
       },
       "UserDetail": {
-        "description": "Everything the user-detail panel shows, minus the grant list (fetched separately by\n[`crate::repo::permissions::list_for_user`] so the panel can refresh just that part after\nan edit).",
+        "description": "Everything the user-detail panel shows, minus the grant list (fetched separately by\n`tankovault_db::repo::permissions::list_for_user` so the panel can refresh just that part\nafter an edit).",
         "properties": {
           "active_sessions": {
             "description": "Live login sessions. Tells an operator whether a suspension will actually take effect\nwithout also revoking sessions.",
@@ -2724,6 +2806,12 @@
       "bearer_auth": {
         "scheme": "bearer",
         "type": "http"
+      },
+      "stream_ticket": {
+        "description": "Single-use, 30-second ticket from `POST /v1/me/stream-ticket`. `EventSource` cannot set an `Authorization` header, so the credential has to ride in the URL; making it single-use and short-lived is what stops the access log, `Referer` header and browser history that record it from being worth reading (SEC-8).",
+        "in": "query",
+        "name": "ticket",
+        "type": "apiKey"
       }
     }
   },
@@ -3984,6 +4072,13 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanTriggered"
+                }
+              }
+            },
             "description": "Scan queued, forwarded from the control-plane"
           },
           "401": {
@@ -4320,6 +4415,13 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanTriggered"
+                }
+              }
+            },
             "description": "Scan queued, forwarded from the control-plane"
           },
           "401": {
@@ -4917,6 +5019,11 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
             "description": "Pulled, forwarded from the sync service"
           },
           "401": {
@@ -4977,6 +5084,11 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
             "description": "Pushed, forwarded from the sync service"
           },
           "401": {
@@ -5178,6 +5290,11 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
             "description": "Unlinked, forwarded from the sync service"
           },
           "401": {
@@ -6079,7 +6196,7 @@
     },
     "/v1/auth/password/forgot": {
       "post": {
-        "description": "Always responds `202 Accepted`, whether or not the address is registered, so the\nendpoint can't be used to probe which emails have accounts. When the address does exist\nand email is configured, a single-use, time-limited reset link is sent.",
+        "description": "Always responds `202 Accepted`, whether or not the address is registered, so the\nendpoint can't be used to probe which emails have accounts. When the address does exist\nand email is configured, a single-use, time-limited reset link is sent.\n\n**Every** account-dependent step happens on a detached task (SEC-10). The uniform `202`\nwas previously defeated by timing: the known-address branch generated a token, hashed it\nand performed an `INSERT` — a write, so a WAL flush — before answering, while the unknown\nbranch returned straight after the lookup. That is a smaller gap than `login`'s two orders\nof magnitude but it is the same oracle, and it needs no credentials at all to read. With\nthe whole body spawned, this handler's only statement is the spawn, so there is no branch\nleft for a response time to disclose.\n\nThe return type is deliberately `StatusCode` rather than `ApiResult<StatusCode>`: the\nanti-enumeration property is \"this endpoint has exactly one answer\", and making that a\ntype rather than a convention means a later edit cannot reintroduce a second one.",
         "operationId": "forgot_password",
         "requestBody": {
           "content": {
@@ -6265,7 +6382,7 @@
     },
     "/v1/auth/verify-email/resend": {
       "post": {
-        "description": "Always responds `202 Accepted`, whether or not the address is registered or already\nconfirmed, so the endpoint can't be used to probe which emails have accounts. A fresh\nlink is only sent when the address exists, is still unconfirmed, and email is configured.",
+        "description": "Always responds `202 Accepted`, whether or not the address is registered or already\nconfirmed, so the endpoint can't be used to probe which emails have accounts. A fresh\nlink is only sent when the address exists, is still unconfirmed, and email is configured.\n\nSpawned in full, for the reason `auth::password::forgot_password` explains at length\n(SEC-10). This endpoint's channel was in fact the wider of the two: the known-and-unconfirmed\nbranch performed the token `INSERT`, while both \"no such address\" *and* \"already confirmed\"\nreturned straight after the lookup — so the timing separated three states rather than two,\nand \"this address exists and has not been confirmed\" is the more useful answer of the pair.\nThe audit named `forgot_password`; this is the same defect in the sibling handler.",
         "operationId": "resend_verification",
         "requestBody": {
           "content": {
@@ -6318,7 +6435,7 @@
         },
         "security": [
           {
-            "bearer": []
+            "bearer_auth": []
           }
         ],
         "summary": "Delete my account",
@@ -6436,7 +6553,7 @@
         },
         "security": [
           {
-            "bearer": []
+            "bearer_auth": []
           }
         ],
         "summary": "Export my data",
@@ -6642,6 +6759,56 @@
         ]
       }
     },
+    "/v1/me/password": {
+      "post": {
+        "description": "Change the caller's password, proving knowledge of the current one.\n\nThere was previously **no authenticated path to a new password at all** — the only route\nwas the emailed reset link, so a signed-in user who simply wanted to rotate their password\nhad to go through an out-of-band channel, and a user whose email had been taken over could\nnot lock the attacker out.\n\nEvery session is revoked on success, including the caller's: a password change is exactly\nwhen you want the other device signed out, and leaving the caller's own session alive would\nmean special-casing the one session an attacker is most likely to be holding.",
+        "operationId": "change_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Password changed; every session was revoked"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "New password fails the policy"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required, or current_password is wrong"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Change the password",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
     "/v1/me/privacy/requests": {
       "get": {
         "description": "The authenticated account's own requests, newest first, including resolved ones — the\nsubject is entitled to see how their requests were handled, not only which are outstanding.",
@@ -6811,7 +6978,7 @@
     },
     "/v1/me/profile": {
       "patch": {
-        "description": "Update the caller's username and/or email (frontend §9.4). A duplicate email/username\nsurfaces as `409 Conflict`.",
+        "description": "Update the caller's username and/or email (frontend §9.4). A duplicate email/username\nsurfaces as `409 Conflict`.\n\nChanging the **email address** additionally requires `current_password`, because the\naddress is the account's recovery channel. Without that check, anyone holding an access\ntoken for 15 minutes — a shared browser, a proxy log, a leaked SSE URL — could point the\naccount at their own address, request a password reset to it, and take the account over;\n`reset_password` would then revoke the real owner's sessions on the attacker's behalf.\n\nOn a successful change the new address starts **unverified**\n(`repo::users::update_profile` clears `email_verified_at`), a confirmation link is sent to\nit, a warning is sent to the *old* address, and every session is revoked — matching what\n`reset_password` already does for the other credential.",
         "operationId": "patch_profile",
         "requestBody": {
           "content": {
@@ -6834,6 +7001,16 @@
             },
             "description": "Updated profile"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid username or email"
+          },
           "401": {
             "content": {
               "application/json": {
@@ -6842,7 +7019,7 @@
                 }
               }
             },
-            "description": "authentication required"
+            "description": "authentication required, or current_password is wrong"
           },
           "409": {
             "content": {
@@ -7278,13 +7455,13 @@
     },
     "/v1/me/stream": {
       "get": {
-        "description": "Server-Sent Events of live per-user notifications (design §14, §17.4). Authenticated by the\n`access_token` query parameter (not the `Authorization` header — `EventSource` cannot set\nit), it subscribes to the user's core-NATS subject and relays each `UserNotification` as a\n`notification` SSE event, with a periodic keep-alive comment so proxies keep the connection\nopen. Ownership is implicit: the subscription is scoped to the token's own `user_id`.",
+        "description": "Server-Sent Events of live per-user notifications (design §14, §17.4). Authenticated by a\nsingle-use `ticket` query parameter obtained from `POST /v1/me/stream-ticket` — not the\n`Authorization` header, which `EventSource` cannot set. It subscribes to the ticket's own\nuser's core-NATS subject and relays each `UserNotification` as a `notification` SSE event,\nwith a periodic keep-alive comment so proxies keep the connection open. Ownership is\nimplicit: the subscription is scoped to the user the ticket was minted for.\n\nThe ticket is consumed here, so `EventSource`'s *automatic* reconnect cannot re-open this\nstream — the client has to mint a new ticket per attempt (`web/frontend/src/live.rs` does).\nThat is a feature rather than a cost: re-minting goes through `AuthUser`, so a suspension\napplied mid-stream is caught by the mint call as well as by the check below.",
         "operationId": "stream",
         "parameters": [
           {
-            "description": "Access token, passed as a query parameter because the browser `EventSource` API\ncannot attach an `Authorization` header (design §17.4). It is verified exactly like\na `Bearer` token and never logged.",
+            "description": "Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (design §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.",
             "in": "query",
-            "name": "access_token",
+            "name": "ticket",
             "required": true,
             "schema": {
               "type": "string"
@@ -7306,7 +7483,7 @@
                 }
               }
             },
-            "description": "missing or invalid access_token"
+            "description": "missing, expired, or already-redeemed ticket"
           },
           "503": {
             "content": {
@@ -7319,7 +7496,59 @@
             "description": "the live notification stream is temporarily unavailable"
           }
         },
+        "security": [
+          {
+            "stream_ticket": []
+          }
+        ],
         "summary": "Live notification stream",
+        "tags": [
+          "me-notifications"
+        ]
+      }
+    },
+    "/v1/me/stream-ticket": {
+      "post": {
+        "description": "Exchanges the caller's `Bearer` session for a single-use, 30-second credential that\n`EventSource` can carry in a query string. Mint one per connection attempt — including each\nreconnect, since redeeming a ticket spends it.",
+        "operationId": "stream_ticket",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StreamTicket"
+                }
+              }
+            },
+            "description": "A single-use ticket for `GET /v1/me/stream`"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the ticket store is temporarily unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Mint a stream ticket",
         "tags": [
           "me-notifications"
         ]
@@ -7327,7 +7556,7 @@
     },
     "/v1/me/sync/conflicts": {
       "get": {
-        "description": "The caller's pending conflicts across all providers (§B.6). Rows are `ConflictRow`, the\nsame type the sync service reads from the database.",
+        "description": "The caller's pending conflicts across all providers (§B.6). Rows are\n`tankovault_contracts::sync::ConflictView`, the shape the sync service publishes.",
         "operationId": "sync_conflicts",
         "responses": {
           "200": {
@@ -7393,6 +7622,11 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
             "description": "Resolved, forwarded from the sync service"
           },
           "401": {
@@ -7429,7 +7663,7 @@
     },
     "/v1/me/sync/history": {
       "get": {
-        "description": "A page of the caller's sync history (§B.6). Rows are `HistoryRow`, the same type the sync\nservice reads from the database.",
+        "description": "A page of the caller's sync history (§B.6). Rows are\n`tankovault_contracts::sync::HistoryView`, the shape the sync service publishes.",
         "operationId": "sync_history",
         "parameters": [
           {
@@ -7552,6 +7786,11 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
             "description": "Unlinked, forwarded from the sync service"
           },
           "401": {
@@ -7649,6 +7888,11 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
             "description": "Linked, forwarded from the sync service"
           },
           "401": {
@@ -7727,6 +7971,11 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
             "description": "Pulled, forwarded from the sync service"
           },
           "401": {
@@ -7795,6 +8044,11 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
             "description": "Pushed, forwarded from the sync service"
           },
           "401": {
@@ -8138,7 +8392,7 @@
     },
     "/v1/me/watchlist/{series_id}/sync": {
       "put": {
-        "description": "Set the blanket per-series sync-exclusion flag (design v2 §A.5).",
+        "description": "Set the blanket per-series sync-exclusion flag (design v2 §A.5).\n\nThe flag lives on the watchlist entry, so the series must already be tracked. It answers\n`404` when it is not, rather than the `{\"ok\": true}` it used to answer unconditionally\n(OPS-2.2d): this decides whether the caller's reading progress is pushed to an external\nprovider, and a privacy setting that reports success without persisting is worse than one\nthat refuses.",
         "operationId": "put_sync_excluded",
         "parameters": [
           {
@@ -8182,6 +8436,16 @@
               }
             },
             "description": "authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The caller does not track this series"
           }
         },
         "security": [
@@ -8378,7 +8642,7 @@
             }
           },
           {
-            "description": "`updated | title | chapters | sources | year` (default `updated`).",
+            "description": "`updated | title | chapters | sources | year | rating` (default `updated`).",
             "in": "query",
             "name": "sort",
             "required": false,

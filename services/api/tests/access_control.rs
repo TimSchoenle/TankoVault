@@ -10,8 +10,8 @@
 
 use axum::http::StatusCode;
 use serde_json::json;
+use tankovault_api_test_support::TestApp;
 use tankovault_domain::{AccountStatus, Permission};
-use tankovault_test_support::TestApp;
 
 /// Every permission-gated **read** endpoint, paired with the capability it requires. Read
 /// endpoints are used for the matrix because a `2xx` is cleanly assertable against an empty

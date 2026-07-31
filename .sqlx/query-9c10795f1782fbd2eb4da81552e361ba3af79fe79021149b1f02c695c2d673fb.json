@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series_titles (series_id, title, normalized) SELECT $1, u.title, u.normalized FROM UNNEST($2::text[], $3::text[]) AS u(title, normalized) ON CONFLICT (series_id, normalized) DO UPDATE SET title = EXCLUDED.title",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9c10795f1782fbd2eb4da81552e361ba3af79fe79021149b1f02c695c2d673fb"
+}

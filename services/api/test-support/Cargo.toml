@@ -1,0 +1,33 @@
+[package]
+name = "tankovault-api-test-support"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Dev-only in-process router harness for the API service."
+publish = false
+
+# The half of the old `crates/test-support` that genuinely needs the API service (ARCH-17).
+# `crates/test-support` used to hold both, which put a `services/*` dependency in the layer
+# beneath services and made `cargo test -p tankovault-db` compile the whole API. The database
+# harness stayed in `crates/test-support`; only this crate depends on `tankovault-api`.
+#
+# The resulting `api -> (dev) api-test-support -> api` cycle is permitted by Cargo precisely
+# because the edge back into this crate is a dev-dependency. Nothing but `services/api`'s own
+# tests may depend on it.
+
+[dependencies]
+tankovault-api = { path = ".." }
+tankovault-test-support = { path = "../../../crates/test-support" }
+tankovault-config = { workspace = true }
+tankovault-service = { workspace = true }
+tankovault-domain = { workspace = true }
+tankovault-email = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
+
+[lints]
+workspace = true

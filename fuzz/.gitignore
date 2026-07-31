@@ -1,0 +1,20 @@
+# libFuzzer's *working* corpus. It reads from every directory on the command line and writes
+# every newly-discovered input back into the **first** one, so the two are kept apart: `seeds/`
+# is committed and only ever read, `corpus/` is where the machine writes.
+#
+# The per-target directories themselves are tracked (via `.gitkeep`) rather than left to be
+# created, because libFuzzer errors out on a corpus directory that does not exist — so a fresh
+# clone would fail the very command README.md documents.
+/corpus/*/*
+!/corpus/*/.gitkeep
+
+# Crash/timeout/OOM reproducers. One worth keeping becomes a named regression test in the crate
+# that owns the bug — as F-01, F-02 and the `parse_number` infinity did — not a committed blob.
+/artifacts/
+/coverage/
+/target/
+
+# Not committed, deliberately. No CI job resolves this crate, so a committed lockfile here
+# would only rot unnoticed, and a fuzz campaign's value does not depend on a pinned dependency
+# set. The host workspace's `Cargo.lock` is committed and gate-checked; this is not that.
+Cargo.lock

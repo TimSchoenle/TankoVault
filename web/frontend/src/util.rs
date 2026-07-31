@@ -20,13 +20,19 @@ use crate::i18n::Translator;
 /// memory until they navigate away.
 ///
 /// # Errors
-/// A short, already-worded message when any step of the DOM dance is unavailable. Every failure
-/// here means the browser is missing something ordinary, so the wording is deliberately generic
-/// rather than naming an API the reader has never heard of.
-pub(crate) fn save_text_file(filename: &str, mime: &str, contents: &str) -> Result<(), String> {
+/// A **catalogue key**, not a sentence. Every failure here means the browser is missing
+/// something ordinary, so there is one generic message rather than one per DOM call — but it
+/// used to be baked in as English and handed verbatim to the reader by both callers, in
+/// contradiction of this module's own contract (see the module docs). Callers hold a
+/// [`Translator`]; resolving there is the same pattern `politeness_json` uses.
+pub(crate) fn save_text_file(
+    filename: &str,
+    mime: &str,
+    contents: &str,
+) -> Result<(), &'static str> {
     use wasm_bindgen::JsCast as _;
 
-    let failed = || "your browser would not accept the download".to_owned();
+    let failed = || "common.downloadRefused";
 
     let parts = js_sys::Array::new();
     parts.push(&wasm_bindgen::JsValue::from_str(contents));
@@ -56,9 +62,11 @@ pub(crate) fn save_text_file(filename: &str, mime: &str, contents: &str) -> Resu
 /// releases keep their fraction (`#152.6`).
 pub(crate) fn chapter_number(n: f64) -> String {
     if n.fract() == 0.0 {
-        // Chapter numbers are small positive counts, so the truncating cast is exact for
-        // every value the API can produce; the guard above has already ruled out fractions.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the guard above has ruled out a fractional part, and chapter numbers are \
+                      small positive counts, so the cast is exact"
+        )]
         return format!("{}", n as i64);
     }
     format!("{n}")
@@ -147,8 +155,10 @@ impl Age {
         if diff_ms < 45_000.0 {
             return Self::JustNow;
         }
-        // A difference in minutes cannot overflow `i64` for any timestamp the API emits.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a difference in minutes cannot overflow i64 for any timestamp the API emits"
+        )]
         let mins = (diff_ms / 60_000.0) as i64;
         if mins < 60 {
             return Self::Minutes(mins);

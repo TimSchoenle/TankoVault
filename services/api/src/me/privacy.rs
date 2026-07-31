@@ -25,12 +25,14 @@ use crate::audit::{audit, audit_failure};
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::ME_ACCOUNT_TAG;
 use crate::state::{AppState, AuthUser};
+use crate::views::{IntoStored, IntoView};
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
-use tankovault_db::repo::gdpr::{RequestKind, RequestRow, RequestStatus};
+use tankovault_contracts::me::{PrivacyRequestKind, PrivacyRequestView};
+use tankovault_db::repo::gdpr::RequestStatus;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -47,7 +49,7 @@ use uuid::Uuid;
     get,
     path = "/v1/me/export",
     tag = ME_ACCOUNT_TAG,
-    security(("bearer" = [])),
+    security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "Complete personal-data export", body = serde_json::Value),
         (status = 401, description = "Unauthenticated"),
@@ -106,7 +108,7 @@ pub struct DeleteAccount {
     delete,
     path = "/v1/me",
     tag = ME_ACCOUNT_TAG,
-    security(("bearer" = [])),
+    security(("bearer_auth" = [])),
     request_body = DeleteAccount,
     responses(
         (status = 204, description = "Account and all owned data erased"),
@@ -192,7 +194,7 @@ async fn close_open_requests_for_self_erasure(
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct NewPrivacyRequest {
     /// Which right is being exercised.
-    pub kind: RequestKind,
+    pub kind: PrivacyRequestKind,
     /// What the subject is asking for, in their words. Required for rectification — "correct
     /// my data" without saying which field to what is not actionable — and optional otherwise.
     #[serde(default)]
@@ -213,7 +215,7 @@ pub struct NewPrivacyRequest {
     request_body = NewPrivacyRequest,
     security(("bearer_auth" = [])),
     responses(
-        (status = 201, description = "The filed request, with its response deadline", body = RequestRow),
+        (status = 201, description = "The filed request, with its response deadline", body = PrivacyRequestView),
         (status = 400, description = "rectification without detail, or a duplicate open request", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 404, description = "the data-subject request queue is switched off", body = crate::error::ProblemDetails),
@@ -223,27 +225,38 @@ pub async fn create_privacy_request(
     State(state): State<AppState>,
     user: AuthUser,
     Json(body): Json<NewPrivacyRequest>,
-) -> ApiResult<(StatusCode, Json<RequestRow>)> {
+) -> ApiResult<(StatusCode, Json<PrivacyRequestView>)> {
     let detail = body
         .detail
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
 
-    if body.kind == RequestKind::Rectification && detail.is_none() {
+    if body.kind == PrivacyRequestKind::Rectification && detail.is_none() {
         return Err(ApiError::BadRequest(
             "say which data is wrong and what it should be".to_owned(),
         ));
     }
 
-    if tankovault_db::repo::gdpr::has_open_of_kind(&state.pool, user.user_id, body.kind).await? {
+    if tankovault_db::repo::gdpr::has_open_of_kind(
+        &state.pool,
+        user.user_id,
+        body.kind.into_stored(),
+    )
+    .await?
+    {
         return Err(ApiError::BadRequest(
             "you already have an open request of this kind".to_owned(),
         ));
     }
 
-    let request =
-        tankovault_db::repo::gdpr::create(&state.pool, user.user_id, body.kind, detail).await?;
+    let request = tankovault_db::repo::gdpr::create(
+        &state.pool,
+        user.user_id,
+        body.kind.into_stored(),
+        detail,
+    )
+    .await?;
 
     audit(
         &state,
@@ -254,7 +267,7 @@ pub async fn create_privacy_request(
     )
     .await;
 
-    Ok((StatusCode::CREATED, Json(request)))
+    Ok((StatusCode::CREATED, Json(request.into_view())))
 }
 
 /// List my data-subject requests
@@ -267,7 +280,7 @@ pub async fn create_privacy_request(
     tag = ME_ACCOUNT_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "The caller's requests", body = Vec<RequestRow>),
+        (status = 200, description = "The caller's requests", body = Vec<PrivacyRequestView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 404, description = "the data-subject request queue is switched off", body = crate::error::ProblemDetails),
     )
@@ -275,10 +288,9 @@ pub async fn create_privacy_request(
 pub async fn list_privacy_requests(
     State(state): State<AppState>,
     user: AuthUser,
-) -> ApiResult<Json<Vec<RequestRow>>> {
-    Ok(Json(
-        tankovault_db::repo::gdpr::list_for_user(&state.pool, user.user_id).await?,
-    ))
+) -> ApiResult<Json<Vec<PrivacyRequestView>>> {
+    let rows = tankovault_db::repo::gdpr::list_for_user(&state.pool, user.user_id).await?;
+    Ok(Json(rows.into_view()))
 }
 
 /// Withdraw a data-subject request

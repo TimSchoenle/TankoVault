@@ -5,7 +5,8 @@ document is the operator-facing reference for what it provides and how to config
 
 Configuration is layered (defaults → `$TANKOVAULT_CONFIG` TOML → `TANKOVAULT_*` env), so
 every key below has an environment form: nest with `__`, e.g. `rate_limit.auth.per_minute`
-→ `TANKOVAULT_RATE_LIMIT__AUTH__PER_MINUTE`.
+→ `TANKOVAULT_RATE_LIMIT__AUTH__PER_MINUTE`. This document explains what the settings *mean*;
+[`CONFIGURATION.md`](./CONFIGURATION.md) is the exhaustive key-by-key reference.
 
 ---
 
@@ -18,7 +19,7 @@ healthy replica look unhealthy to its orchestrator.
 |---|---|
 | `GET /health` | **Liveness.** The process is up and its executor is scheduling. Checks nothing external — a failing dependency must not trigger a restart loop that deepens the outage. |
 | `GET /ready` | **Readiness.** Probes every registered dependency concurrently, each bounded at 2s. `200` when all answer; `503` with a per-dependency JSON body otherwise. |
-| `GET /metrics` | Prometheus exposition, or `404` when metrics are disabled. |
+| `GET /metrics` | Prometheus exposition, or `404` when metrics are disabled. Served on its own listener (`TANKOVAULT_METRICS__LISTEN`, default `0.0.0.0:9090`), not the request-facing port. |
 
 `/ready` body when something is down:
 
@@ -37,9 +38,34 @@ Per-service readiness dependencies:
 | `notifier` | postgres, nats | Same. |
 | `sync` | postgres | A third-party provider outage is expected and degrades per-request; probing it would flap readiness on someone else's uptime. |
 | `render`, `challenge-solver` | *(none)* | Stateless. The browser is launched lazily by design, so probing it would report a healthy replica as down until its first render. |
+| `frontend` | api upstream | The only dependency it has. Nothing checked it before, so a frontend whose upstream was gone still reported healthy and kept serving an app that could not load a page of data. |
 
 The `worker` has no HTTP contract of its own but now serves this listener anyway
 (`TANKOVAULT_BIND_ADDR`, default `0.0.0.0:8085`) — previously a wedged worker was invisible.
+
+The `frontend` also exposes `GET /healthz` as a legacy alias of `/health`, kept only because
+the retired nginx image published that path. Nothing in the stack uses it.
+
+### The container healthcheck
+
+Every service image carries a Docker `HEALTHCHECK`, which is what lets `depends_on` say
+`service_healthy` rather than `service_started`. It cannot be an HTTP probe: these are
+`scratch` images with no shell, no `wget` and no `curl`, so there is nothing to run a
+`CMD-SHELL` with. The binary probes **itself** instead —
+
+```yaml
+test: ["CMD", "/usr/local/bin/tankovault-service", "--healthcheck"]
+```
+
+`--healthcheck` is an argv branch taken at the very top of `main`, before config loading and
+telemetry (`crates/service/src/healthcheck.rs`). It TCP-connects to the service's own
+`bind_addr` — read from the same configuration the server binds, so a rebind is followed
+automatically — and exits `0` or `1`.
+
+It is a **liveness** probe by design, and deliberately not an HTTP `GET /ready`: "the listener
+is accepting" is what should trigger a restart, whereas "Postgres is reachable" is a traffic
+routing decision, and conflating them turns a database blip into a fleet-wide restart loop.
+`/ready` answers the second question over HTTP for anything that can speak it.
 
 ---
 
@@ -67,19 +93,43 @@ instead of drawing a silently flat graph.
 `http_requests` is separate because the request histogram is the expensive part: a service
 can keep cheap domain counters while dropping per-route cardinality.
 
-Emitted metrics:
+Emitted metrics — the complete set, across every service:
 
-| Metric | Type | Labels |
-|---|---|---|
-| `http_requests_total` | counter | `method`, `route`, `status` |
-| `http_request_duration_seconds` | histogram | `method`, `route` |
-| `http_requests_in_flight` | gauge | — |
-| `http_rate_limited_total` | counter | `class` |
-| `rate_limit_store_errors_total` | counter | `backend` |
+| Metric | Type | Labels | Emitted by |
+|---|---|---|---|
+| `http_requests_total` | counter | `method`, `route`, `status` | the shared middleware |
+| `http_request_duration_seconds` | histogram | `method`, `route` | the shared middleware |
+| `http_requests_in_flight` | gauge | — | the shared middleware |
+| `http_rate_limited_total` | counter | `class` | the rate limiter |
+| `rate_limit_store_errors_total` | counter | `backend` | the Redis limiter backend |
+| `http_feature_disabled_total` | counter | `feature` | the feature-flag middleware (§4) |
+| `scan_tasks_served_total` | counter | `provider`, `scan` | `worker`, per lane (§7) |
+| `solve_attempts_total` | counter | `result` | `challenge-solver` **and** `render` |
+| `render_requests_total` | counter | `result` | `render` |
+
+This table was four rows short of what the workspace emits until OPS-8.3 enumerated the call
+sites; the last four were being emitted and documented nowhere.
 
 `route` is axum's **matched path** (`/v1/series/{id}`), never the concrete URI — an
 unrouted path is attacker-controlled and would otherwise be an unbounded label source, so
-those are folded into a single `unmatched` label.
+those are folded into a single `unmatched` label. `status` is the **exact code**, not a class.
+
+No metric carries the emitting service's name; `TANKOVAULT_TELEMETRY__SERVICE_NAME` is a log
+field. Prometheus' `job` label is what identifies the service, which is why the scrape config
+declares one job per service.
+
+Probe traffic appears in none of these: `ops_router` is merged outside the middleware stack, so
+`/health` and `/ready` never reach the metrics layer.
+
+A request the client abandons is counted in `http_requests_in_flight` but **not** in
+`http_requests_total` or `http_request_duration_seconds`, which are recorded from the response
+that a dropped future never produces. This is why long-lived `/v1/me/stream` connections are
+largely invisible in the counter and the histogram while being fully visible in the gauge.
+
+**Collection, dashboards and alerts:** [`OBSERVABILITY.md`](./OBSERVABILITY.md). It carries the
+metric inventory above with its label values, the recording and alerting rules, the runbook entry
+for every alert, and — the part worth reading before writing a new rule — the list of documented
+failure modes this stack currently emits **nothing** for.
 
 ### `audit`
 
@@ -118,8 +168,8 @@ burst      = 60
 per_minute = 10
 burst      = 5
 [rate_limit.expensive] # data export, scan triggers, sync push/pull
-per_minute = 6
-burst      = 2
+per_minute = 30
+burst      = 10
 ```
 
 `per_minute` is the bucket's **refill rate**; `burst` is its **depth**. A burst below the
@@ -423,6 +473,12 @@ failed to open (`could not open provider task lane` in the worker log). A `scan=
 counter that stays flat while fast runs are being planned points at the lane, not the
 scheduler.
 
+Both of those diagnostics now exist as alerts — `TankoVaultFastScanLanesStarved` and
+`TankoVaultScanLaneUnfair` in [`OBSERVABILITY.md`](./OBSERVABILITY.md). One caveat that matters
+when reading the counter either way: it counts tasks **handed out**, and a JetStream redelivery
+increments it again (`MAX_TASK_DELIVERIES` is 3), so a lane that is failing and retrying looks
+busy rather than broken. Nothing currently distinguishes the two.
+
 **Adding a provider.** Its lanes open on the next refresh — `worker.provider_refresh_secs`,
 default 60 — not instantly. Until then its tasks sit queued, which is why a freshly created
 provider can take up to a minute to start scanning. Provider slugs are restricted to
@@ -450,3 +506,98 @@ Tasks published before the upgrade sit on the untiered `scan.tasks.<slug>` subje
 full-scan lane binds that subject alongside its own, so they are executed as backfill rather
 than stranded. During a rolling deploy, an old replica that has not yet restarted loses its
 consumer and stops consuming; it recovers when it is replaced.
+
+---
+
+## 8. Schema migrations
+
+### How they are applied
+
+Migration is a **discrete deploy step, not something a service does at startup.** No
+`main.rs` calls `migrate()`; the reference stack runs a one-shot `xtask migrate` container
+with `restart: "no"`, and every service gates on it with
+`condition: service_completed_successfully`.
+
+Keep it that way. A startup migration in a service with `replicas: 2` is a race, and the
+usual "helpful" refactor is to add one. (`sqlx::migrate::Migrator::run` does take a Postgres
+advisory lock, so concurrent invocations serialise safely — but serialising a race is not the
+same as not having one: every replica then blocks on the winner's DDL before it can bind.)
+
+```bash
+docker compose -f deploy/docker-compose.yml run --rm migrate
+```
+
+### Rollback: there isn't one, below 0021
+
+Migrations `0001`–`0020` are sqlx **simple** (up-only) migrations. There is no `.down.sql` for
+any of them and none is coming: `0018` dropped `users.role` and the `user_role` type outright,
+so the pre-0018 schema cannot be reconstructed by DDL at all, and a down script for a schema
+nobody can reach is busywork that would still not be a rollback path.
+
+**From `0021` onward every migration ships as a reversible `.up.sql` / `.down.sql` pair.**
+`0021_username_not_an_email` is the pattern: `sqlx migrate add -r <name>` generates both, and
+the down script must be genuinely safe to run — if reversing it would destroy data, the change
+belongs in an expand/contract sequence (below) rather than behind a down script that lies.
+
+```bash
+sqlx migrate revert --source migrations   # reverts exactly one migration
+```
+
+Because the floor is 0020, **the rollback procedure for anything at or below it is a
+point-in-time restore.** Before any deploy that carries a new `migrations/*.sql`:
+
+1. `pg_dump -Fc` the database, and **verify the dump restores into a scratch instance.** An
+   unverified backup is not a backup.
+2. Record the high-water mark: `SELECT max(version) FROM _sqlx_migrations;`
+3. Deploy.
+4. On failure, restore the dump. **Do not hand-edit `_sqlx_migrations`** — the ledger stores a
+   checksum per migration, and a row removed by hand makes sqlx re-run DDL against a schema
+   that already has it.
+
+### Writing a new migration
+
+Four conventions, each with a reason:
+
+**1. Destructive changes go through expand/contract, across two releases.** Release *N* stops
+writing the column and ships. Release *N+1* drops it. A single-release drop is a one-way door:
+if the deploy fails after the DDL, the previous application version cannot start, and per the
+above there is nothing to roll back to. `0018` and `0019` are exactly this shape and are the
+reason the rule is written down.
+
+**2. Everything is `IF NOT EXISTS`.** `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT
+EXISTS`, and — because Postgres has no `ADD CONSTRAINT IF NOT EXISTS` and no `CREATE TYPE IF
+NOT EXISTS` — a `DO $$ ... $$` guard for those two. sqlx's ledger means a migration never runs
+twice on its own, so this only matters for a manual replay or a damaged ledger; it costs one
+line and turns a confusing failure into a no-op.
+
+**3. `CONCURRENTLY` is not available in this migrator, at all.** This is not a style
+preference. sqlx's `-- no-transaction` directive suppresses the *explicit* transaction, but
+sqlx sends the whole file as one simple-query string and Postgres wraps any multi-statement
+simple query in an **implicit** transaction — so `CREATE INDEX CONCURRENTLY` still fails with
+*"cannot run inside a transaction block"*. The only workaround is one statement per migration
+file. The full reasoning, and the decision not to do that, is recorded at the top of
+[`migrations/0020_performance_indexes.sql`](../migrations/0020_performance_indexes.sql).
+
+The consequence an operator has to act on: **a plain `CREATE INDEX` holds an `ACCESS
+EXCLUSIVE` lock for the whole build.** That is milliseconds on a small table and a write
+outage of unbounded length on a large one. `0017` added an index to an already-populated
+`audit_log` this way, which is a write outage on every privileged action for the duration.
+
+So, when a migration indexes a table that is already large, **run the concurrent build by hand
+before deploying**; every statement is `IF NOT EXISTS`, so the migration then finds the index
+present and does nothing:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS <name> ON <table> (<cols>);
+```
+
+An interrupted `CONCURRENTLY` build leaves an `INVALID` index the planner ignores:
+
+```sql
+SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;
+REINDEX INDEX CONCURRENTLY <name>;
+```
+
+**4. Say why in the file.** Every migration in this tree carries a header explaining what the
+change is for and what breaks without it. That is what makes a schema reviewable years later,
+and it is the single most useful thing in `migrations/`.

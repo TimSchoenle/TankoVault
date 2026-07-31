@@ -1,0 +1,21 @@
+# Grafana dashboard provisioning: load every JSON file under the mounted dashboards directory.
+apiVersion: 1
+
+providers:
+  - name: tankovault
+    orgId: 1
+    folder: TankoVault
+    type: file
+    # The dashboard is a committed artefact, so an in-browser edit must not become the source of
+    # truth. `allowUiUpdates: false` makes Grafana refuse the save rather than accept it and lose
+    # it on the next restart.
+    allowUiUpdates: false
+    disableDeletion: true
+    updateIntervalSeconds: 30
+    options:
+      # Deliberately not under /var/lib/grafana, which is Grafana's own writable data volume:
+      # nesting a read-only bind mount inside a named volume works but makes the ownership of
+      # that directory depend on mount ordering. /etc/grafana is configuration, which is what a
+      # committed dashboard is.
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

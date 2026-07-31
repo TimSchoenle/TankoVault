@@ -4,6 +4,7 @@
 
 use super::auth::AuthBrand;
 use crate::api;
+use crate::components::Field;
 use crate::hooks::use_busy;
 use crate::i18n::use_i18n;
 use crate::models::*;
@@ -69,19 +70,14 @@ pub(crate) fn ForgotPassword() -> Element {
                     }
                 }
 
-                div { class: "ik-field",
-                    label { {i18n.t("auth.field.email")} }
-                    input {
-                        class: "ik-input",
-                        r#type: "email",
-                        value: "{email}",
-                        oninput: move |e| email.set(e.value()),
-                        onkeydown: move |e| {
-                            if e.key() == Key::Enter {
-                                submit.call(());
-                            }
-                        },
-                    }
+                Field {
+                    id: "tv-forgot-email",
+                    label: i18n.t("auth.field.email"),
+                    kind: "email",
+                    autocomplete: "email",
+                    value: email(),
+                    on_input: move |v| email.set(v),
+                    on_enter: move |()| submit.call(()),
                 }
 
                 button {
@@ -179,28 +175,23 @@ pub(crate) fn ResetPassword(token: String) -> Element {
                     }
                 }
 
-                div { class: "ik-field",
-                    label { {i18n.t("password.reset.newPassword")} }
-                    input {
-                        class: "ik-input",
-                        r#type: "password",
-                        value: "{password}",
-                        oninput: move |e| password.set(e.value()),
-                    }
+                Field {
+                    id: "tv-reset-password",
+                    label: i18n.t("password.reset.newPassword"),
+                    kind: "password",
+                    autocomplete: "new-password",
+                    value: password(),
+                    on_input: move |v| password.set(v),
+                    on_enter: move |()| submit.call(()),
                 }
-                div { class: "ik-field",
-                    label { {i18n.t("password.reset.confirmPassword")} }
-                    input {
-                        class: "ik-input",
-                        r#type: "password",
-                        value: "{confirm}",
-                        oninput: move |e| confirm.set(e.value()),
-                        onkeydown: move |e| {
-                            if e.key() == Key::Enter {
-                                submit.call(());
-                            }
-                        },
-                    }
+                Field {
+                    id: "tv-reset-confirm",
+                    label: i18n.t("password.reset.confirmPassword"),
+                    kind: "password",
+                    autocomplete: "new-password",
+                    value: confirm(),
+                    on_input: move |v| confirm.set(v),
+                    on_enter: move |()| submit.call(()),
                 }
 
                 button {

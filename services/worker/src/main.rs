@@ -6,6 +6,7 @@
 //! - `worker` (no args) — subscribe to the `JetStream` tasks stream (consumer group →
 //!   horizontal scale) and process tasks until shutdown.
 
+mod dryrun;
 mod engine;
 mod queue;
 
@@ -39,6 +40,15 @@ struct Config {
     /// Prometheus metrics. Togglable; disabling installs no recorder.
     #[serde(default)]
     metrics: tankovault_config::MetricsConfig,
+    /// Shared secret presented to `challenge-solver`. The worker exposes no contract of its
+    /// own, so this is outbound-only.
+    #[serde(default)]
+    internal: tankovault_config::InternalAuthConfig,
+    /// The confidence policy for canonicalising a scanned series onto an existing one. Shared
+    /// with external sync so the two paths cannot disagree about whether two series are the
+    /// same (ARCH-16).
+    #[serde(default)]
+    matching: tankovault_config::MatchingConfig,
 }
 
 fn default_bind() -> String {
@@ -85,9 +95,19 @@ fn default_max_pages() -> u32 {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Before config, telemetry or anything else: this process may have been invoked by
+    // Docker's HEALTHCHECK rather than as the service. `scratch` images have no shell and no
+    // wget, so the binary probing itself is the only probe available. See
+    // `tankovault_service::healthcheck`.
+    if tankovault_service::healthcheck::requested() {
+        let cfg: Config = tankovault_config::load()?;
+        tankovault_service::run_healthcheck_and_exit(&cfg.bind_addr);
+    }
+
     let cfg: Config = tankovault_config::load()?;
     tankovault_service::init_tracing(&cfg.telemetry)?;
     let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
     let shutdown = tankovault_service::install_shutdown();
 
     let pool = tankovault_db::connect(
@@ -112,17 +132,19 @@ async fn main() -> anyhow::Result<()> {
     let solver: Arc<dyn ChallengeSolver> = Arc::new(HttpChallengeSolver::new(
         cfg.worker.challenge_solver_endpoint.clone(),
         Duration::from_secs(90),
+        internal_token.as_ref().map(|t| t.expose().to_owned()),
     ));
     let session_store: Arc<dyn SessionStore> = Arc::new(InMemorySessionStore::default());
 
-    let engine = Engine {
-        pool: pool.clone(),
-        bus: bus.clone(),
+    let engine = Engine::new(
+        pool.clone(),
+        bus.clone(),
         solver,
         session_store,
-        worker_id: format!("worker-{}", uuid::Uuid::now_v7()),
-        max_catalog_pages: cfg.worker.max_catalog_pages,
-    };
+        format!("worker-{}", uuid::Uuid::now_v7()),
+        cfg.worker.max_catalog_pages,
+        cfg.matching.clone(),
+    );
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.as_slice() {
@@ -133,7 +155,16 @@ async fn main() -> anyhow::Result<()> {
             // Serve the metrics scrape on its own port when configured, keeping it off the
             // request-facing ops listener.
             tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
-            spawn_ops_listener(&cfg, &pool, bus.as_ref(), metrics, shutdown.clone());
+            let engine = Arc::new(engine);
+            spawn_ops_listener(
+                &cfg,
+                &pool,
+                bus.as_ref(),
+                metrics,
+                Arc::clone(&engine),
+                internal_token,
+                shutdown.clone(),
+            );
             run_consumer(&engine, &cfg.worker, shutdown).await
         }
         _ => {
@@ -153,6 +184,8 @@ fn spawn_ops_listener(
     pool: &tankovault_db::PgPool,
     bus: Option<&Bus>,
     metrics: MetricsRegistry,
+    engine: Arc<Engine>,
+    internal_token: Option<tankovault_service::InternalToken>,
     shutdown: tokio_util::sync::CancellationToken,
 ) {
     let ready_pool = pool.clone();
@@ -170,8 +203,11 @@ fn spawn_ops_listener(
         })
         .build();
 
+    // The dry-run route goes *inside* `apply`, so it is behind the internal-token gate;
+    // `ops_router` is merged outside it, so an orchestrator still probes without the secret.
     let app = HttpStack::new(&cfg.security, metrics.clone())
-        .apply(axum::Router::new())
+        .with_internal_auth(internal_token)
+        .apply(dryrun::router(engine))
         .merge(tankovault_service::ops_router(health, metrics));
 
     let bind = cfg.bind_addr.clone();
@@ -315,7 +351,9 @@ const MAX_TASK_DELIVERIES: u64 = 3;
 
 /// Whether `err` is worth another delivery.
 ///
-/// The adapter layer owns this judgement ([`AdapterError::is_transient`]) because it is the
+/// The adapter layer owns this judgement
+/// ([`AdapterError::is_transient`](tankovault_adapters::AdapterError::is_transient)) because it
+/// is the
 /// layer that knows the difference between a provider that blocked us and a page whose markup
 /// changed. Anything else — a DB write, a broker publish, a malformed task — fails the task:
 /// a worker that cannot reach Postgres has a problem no redelivery fixes.
@@ -441,5 +479,83 @@ mod tests {
         assert_eq!(describe_target(&msg), "<no path>");
         let msg = task(TaskKind::LatestFeed, serde_json::Value::Null);
         assert_eq!(describe_target(&msg), "latest-updates feed");
+    }
+
+    /// A provider-side refusal is transient; a broken page or a database fault is not.
+    ///
+    /// This is the whole retry policy in one predicate, and getting it backwards is silent
+    /// either way: treating a permanent failure as transient burns three deliveries and 26
+    /// minutes per task against a provider that will never answer, while treating a throttle
+    /// as permanent drops real chapters on the floor after one attempt.
+    #[test]
+    fn only_a_provider_side_failure_is_worth_another_delivery() {
+        use tankovault_adapters::AdapterError;
+
+        let throttled = anyhow::Error::from(AdapterError::Throttled {
+            url: "https://provider.test/manga/x/".to_owned(),
+        });
+        assert!(is_retryable(&throttled), "a throttle clears on its own");
+
+        // A parse failure reproduces exactly on replay: the markup does not change between
+        // deliveries, so retrying it only delays the run.
+        let parse = anyhow::Error::from(AdapterError::Parse("selector matched nothing".to_owned()));
+        assert!(!is_retryable(&parse));
+
+        // Anything that is not an adapter error at all — a database write, a broker publish —
+        // is the worker's own problem and no redelivery fixes it.
+        assert!(!is_retryable(&anyhow::anyhow!("connection pool exhausted")));
+    }
+
+    /// Backoff grows and then stops growing.
+    ///
+    /// The growth matters because the failures being retried are provider-side: retrying into
+    /// a rate-limit window faster than it clears is how a scan becomes the reason it stays
+    /// blocked. The cap matters because an unbounded delay would hold a run open indefinitely.
+    #[test]
+    fn retry_delay_grows_monotonically_and_is_capped() {
+        let delays: Vec<Duration> = (0..8).map(retry_delay).collect();
+        for pair in delays.windows(2) {
+            assert!(
+                pair[1] >= pair[0],
+                "backoff went backwards: {:?} then {:?}",
+                pair[0],
+                pair[1]
+            );
+        }
+        let cap = *delays.last().expect("delays is non-empty");
+        assert_eq!(
+            cap,
+            retry_delay(u64::MAX),
+            "the backoff must be capped, not open-ended"
+        );
+        assert!(
+            delays[0] >= Duration::from_secs(60),
+            "the first backoff must outlast a provider's rate-limit window, got {:?}",
+            delays[0]
+        );
+    }
+
+    /// The delivery ceiling bounds how long one failing task can hold a scan run open.
+    ///
+    /// A run finalises only once every task settles, so the worst case here is the worst case
+    /// for the run's completion and for everything downstream of it. Raising
+    /// `MAX_TASK_DELIVERIES` or the backoff cap without noticing that second effect is the
+    /// regression this pins, and it states the bound in wall-clock terms so the trade-off is
+    /// legible rather than implied by two constants sitting far apart in the file.
+    #[test]
+    fn the_delivery_ceiling_bounds_how_long_a_task_can_hold_a_run_open() {
+        const {
+            assert!(
+                MAX_TASK_DELIVERIES > 1,
+                "a ceiling of one means a transient provider failure is never retried at all"
+            );
+        }
+
+        let worst_case: Duration = (0..MAX_TASK_DELIVERIES).map(retry_delay).sum();
+        assert!(
+            worst_case <= Duration::from_secs(30 * 60),
+            "a single task can now delay its run by {worst_case:?}, past the half hour the \
+             ceiling was sized for"
+        );
     }
 }

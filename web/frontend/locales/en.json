@@ -76,7 +76,11 @@
       }
     },
     "profile": {
+      "currentPassword": "Current password",
+      "currentPasswordHint": "Required to change your email address. Everyone will be signed out, and the new address must be confirmed before it can be used to sign in or reset your password.",
+      "currentPasswordMissing": "Enter your current password to change your email address.",
       "displayName": "Display name",
+      "emailChanged": "Email updated. Check the new address for a confirmation link — you have been signed out everywhere.",
       "emailPlaceholder": "new email address",
       "nothingToSave": "Enter a new display name or email first.",
       "save": "Save profile",
@@ -130,6 +134,7 @@
     }
   },
   "auth": {
+    "badCredentials": "That email/username and password don't match an account. Check them and try again.",
     "confirmFirst": "Please confirm your email address before signing in. Check your inbox for the confirmation link.",
     "field": {
       "email": "Email",
@@ -158,6 +163,7 @@
     "backToSignIn": "Back to sign in",
     "cancel": "Cancel",
     "close": "Close",
+    "downloadRefused": "Your browser would not accept the download.",
     "markRead": "Mark read",
     "markUnread": "Mark unread",
     "next": "Next",
@@ -385,6 +391,7 @@
       "metaToday": "{count} new ch today",
       "migrateWarning": "domain change — {count} series will be re-pathed on the next scan",
       "missingFields": "Slug, name and base URL are all required.",
+      "namePlaceholder": "Acme Scans",
       "new": "New provider",
       "noRuns": "No scan runs for this provider yet.",
       "noStats": "No statistics for this provider yet.",
@@ -625,6 +632,7 @@
     "page": {
       "go": "Go",
       "goTo": "Go to",
+      "label": "Pagination",
       "next": "Next",
       "ofTotal": "of {pages}",
       "prev": "Prev"
@@ -633,6 +641,8 @@
     "presetsSoon": "Saving filter presets is coming soon.",
     "provider": "Provider",
     "releaseYear": "Release year",
+    "releaseYearFrom": "Earliest release year",
+    "releaseYearTo": "Latest release year",
     "resetFilters": "Reset filters",
     "sort": {
       "chapters": "Most chapters",
@@ -768,7 +778,9 @@
     },
     "home": "Home",
     "notifications": "Notifications",
+    "railLabel": "Main",
     "search": "Search",
+    "skipToContent": "Skip to content",
     "tagline": "SOURCE · TRACK · SYNC",
     "watchlist": "Watchlist"
   },
@@ -914,7 +926,11 @@
   "topbar": {
     "anilistConnect": "Connect AniList",
     "anilistSynced": "AniList synced",
-    "searchPlaceholder": "Search series, tags, authors…"
+    "searchPlaceholder": "Search series, tags, authors…",
+    "unreadCount": {
+      "one": "{count} unread notification",
+      "other": "{count} unread notifications"
+    }
   },
   "verifyEmail": {
     "confirmed": "Email confirmed. Taking you to your library…",

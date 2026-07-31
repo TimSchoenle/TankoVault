@@ -4,34 +4,41 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Dev-only integration-test harness: ephemeral Postgres, seeding, token minting, and an in-process router."
+description = "Dev-only database test harness: ephemeral Postgres, migrations, seeding and token minting."
 publish = false
 
 # This crate exists only to support integration tests. It is a normal workspace member so it
 # builds under the same lints as the rest of the tree, but it is never depended on by a
-# shipping binary — only as a `dev-dependency` of the crates whose behaviour it exercises. The
-# resulting `api -> (dev) test-support -> api` cycle is permitted by Cargo precisely because the
-# edge back into `test-support` is a dev-dependency.
+# shipping binary — only as a `dev-dependency` of the crates whose behaviour it exercises.
+#
+# It deliberately depends on **no** `services/*` crate (ARCH-17): the previous version pulled in
+# `tankovault-api` for the router harness, which made `cargo test -p tankovault-db` compile the
+# entire API service and put a dev-time edge from the lowest layer of the workspace to the
+# highest. The router harness now lives in `services/api/test-support`.
 
 [dependencies]
-tankovault-api = { path = "../../services/api" }
-tankovault-config = { workspace = true }
-tankovault-service = { workspace = true }
 tankovault-db = { workspace = true }
 tankovault-domain = { workspace = true }
+# For `MatchingConfig`, which is the workspace's only `Canonicaliser` implementation and so what
+# `seed::series` has to hand `ingest_series` (ARCH-16 moved the policy out of `crates/db`).
+tankovault-config = { workspace = true }
 tankovault-auth = { workspace = true }
 tankovault-email = { workspace = true }
-axum = { workspace = true }
-tower = { workspace = true }
+tankovault-service = { workspace = true }
 tokio = { workspace = true }
 sqlx = { workspace = true }
-reqwest = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
-anyhow = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }
 testcontainers-modules = { version = "0.13.0", features = ["postgres"] }
+# Declared directly, at the version `testcontainers-modules` already resolves to, for one
+# feature: `reusable-containers`. `testcontainers-modules` does not forward it (it forwards
+# `blocking`, `http_wait`, `properties-config` and `watchdog` and nothing else), and without it
+# every `--features integration` run leaked one Postgres container per test binary — see
+# ARCH-6b. Keep the version in lockstep with the `testcontainers-modules` bump, or `cargo deny`
+# will fail on `multiple-versions`.
+testcontainers = { version = "0.25.0", features = ["reusable-containers"] }
 
 [lints]
 workspace = true

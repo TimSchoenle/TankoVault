@@ -12,7 +12,7 @@ mod sync;
 pub(crate) use callback::AnilistCallback;
 
 use crate::api;
-use crate::components::SignInGate;
+use crate::components::{AuthRequired, TabBar, TabKind};
 use crate::i18n::use_i18n;
 use crate::state::capabilities::{use_capabilities, CapabilitySet};
 use crate::state::use_session;
@@ -29,15 +29,17 @@ enum Panel {
     Privacy,
 }
 
-impl Panel {
-    const ALL: [Panel; 6] = [
-        Self::Profile,
-        Self::Appearance,
-        Self::Security,
-        Self::Sync,
-        Self::Notifications,
-        Self::Privacy,
-    ];
+impl TabKind for Panel {
+    fn all() -> &'static [Self] {
+        &[
+            Self::Profile,
+            Self::Appearance,
+            Self::Security,
+            Self::Sync,
+            Self::Notifications,
+            Self::Privacy,
+        ]
+    }
 
     /// The catalogue key of this panel's tab label (see [`crate::i18n`]).
     fn label_key(self) -> &'static str {
@@ -50,7 +52,9 @@ impl Panel {
             Self::Privacy => "account.tab.privacy",
         }
     }
+}
 
+impl Panel {
     /// Whether this deployment offers the panel at all.
     ///
     /// Appearance is unconditional: it is entirely client-side and has no endpoint to switch
@@ -79,13 +83,10 @@ pub(crate) fn Account() -> Element {
     let caps = use_capabilities();
     let i18n = use_i18n();
     let api = api::use_api();
-    let mut panel = use_signal(|| Panel::Profile);
+    let panel = use_signal(|| Panel::Profile);
 
     if !session.is_authenticated() {
-        return rsx! {
-            h1 { class: "ik-page-title", {i18n.t("nav.account")} }
-            SignInGate {}
-        };
+        return rsx! { AuthRequired { title: i18n.t("nav.account") } };
     }
 
     let name = session
@@ -94,8 +95,9 @@ pub(crate) fn Account() -> Element {
     // Derived from capabilities, not a stored role — see `CapabilitySet::label_key`.
     let tier = i18n.t(caps.label_key());
 
-    let visible: Vec<Panel> = Panel::ALL
-        .into_iter()
+    let visible: Vec<Panel> = Panel::all()
+        .iter()
+        .copied()
         .filter(|p| p.is_visible(&caps))
         .collect();
     // Appearance is always visible, so this cannot be empty; falling back to it rather than
@@ -127,16 +129,7 @@ pub(crate) fn Account() -> Element {
             h1 { class: "ik-page-title", {i18n.t("nav.account")} }
             button { class: "ik-btn", onclick: sign_out, {i18n.t("account.signOut")} }
         }
-        div { class: "ik-tabs",
-            for entry in visible.iter().copied() {
-                button {
-                    key: "{entry.label_key()}",
-                    class: if current == entry { "ik-tab active" } else { "ik-tab" },
-                    onclick: move |_| panel.set(entry),
-                    {i18n.t(entry.label_key())}
-                }
-            }
-        }
+        TabBar { selected: panel, visible: visible.clone() }
         match current {
             Panel::Profile => rsx! { profile::ProfilePanel { name: name.clone(), tier: tier.clone() } },
             Panel::Appearance => rsx! { appearance::AppearancePanel {} },
@@ -144,23 +137,6 @@ pub(crate) fn Account() -> Element {
             Panel::Sync => rsx! { sync::SyncPanel {} },
             Panel::Notifications => rsx! { notifications::NotificationsPanel {} },
             Panel::Privacy => rsx! { privacy::PrivacyPanel {} },
-        }
-    }
-}
-
-/// The shared card chrome every panel sits in: an icon + title header and a body.
-///
-/// `title` arrives already resolved — a panel has its [`crate::i18n::Translator`] to hand and
-/// this keeps the chrome free of any opinion about where the words came from.
-#[component]
-fn PanelCard(icon: crate::icons::Icon, title: String, children: Element) -> Element {
-    rsx! {
-        div { class: "ik-sidebar-card", style: "max-width:560px;",
-            div { class: "ik-flex", style: "margin-bottom:12px;",
-                crate::icons::Ic { icon, size: 18 }
-                strong { "{title}" }
-            }
-            {children}
         }
     }
 }

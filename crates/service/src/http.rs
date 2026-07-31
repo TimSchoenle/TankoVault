@@ -41,12 +41,31 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(20);
 /// 4. **Security headers / CORS** — applied to *every* response, including the `429` from
 ///    the limiter and the `408` from the timeout.
 /// 5. **Rate limit** — sheds load before any real work, but after the cheap layers above.
-/// 6. **Timeout**, **body limit**, **compression** — the per-request work bounds.
+/// 6. **Principal** — identifies the caller so the limiter below can bucket per account
+///    rather than per IP. Above the limiter because the limiter reads what it inserts.
+/// 7. **Internal auth** (internal tier only) — an unauthenticated caller is refused before
+///    it can spend the timeout or the body budget, but after the headers above are set.
+/// 8. **Timeout**, **body limit**, **compression** — the per-request work bounds.
 pub struct HttpStack {
     security: SecurityConfig,
     metrics: MetricsRegistry,
     limiter: Option<RateLimiter>,
+    internal_token: Option<crate::internal_auth::InternalToken>,
+    principal: Option<PrincipalResolver>,
 }
+
+/// Turns request headers into a **verified** caller identity, or `None` for an anonymous
+/// request.
+///
+/// A function rather than a trait: there is exactly one implementation per service and it is
+/// three lines. Supplied by the service so this crate need not know how tokens are signed.
+///
+/// The contract is that the returned identity is *verified* — the limiter treats it as
+/// trusted, so a resolver that reads an unauthenticated header would hand every caller a
+/// free bucket per value they choose, which is the bug this whole mechanism exists to
+/// prevent on the IP path.
+pub type PrincipalResolver =
+    std::sync::Arc<dyn Fn(&axum::http::HeaderMap) -> Option<String> + Send + Sync>;
 
 impl HttpStack {
     /// Build the stack described by `security`, recording into `metrics`.
@@ -56,6 +75,8 @@ impl HttpStack {
             security: security.clone(),
             metrics,
             limiter: None,
+            internal_token: None,
+            principal: None,
         }
     }
 
@@ -67,12 +88,53 @@ impl HttpStack {
         self
     }
 
+    /// Identify the caller for per-account rate limiting.
+    ///
+    /// [`crate::ratelimit::Principal`] was read by the limiter and **inserted by nobody**, so
+    /// the per-user budget documented in that module was dead code and every request —
+    /// authenticated or not — was bucketed by IP alone. That matters because an IP bucket is
+    /// the wrong unit for a signed-in user: they share it with a household, an office NAT or
+    /// a mobile carrier, and an attacker with one account and many addresses evades it
+    /// entirely.
+    ///
+    /// The resolver is supplied by the service rather than implemented here, so this crate
+    /// does not need to know how tokens are signed — and, more importantly, so the limiter
+    /// can never be handed a principal derived from unverified client input. It must verify.
+    ///
+    /// Mounted *outside* the rate limiter, because the limiter reads what it inserts.
+    #[must_use]
+    pub fn with_principal(mut self, resolver: Option<PrincipalResolver>) -> Self {
+        self.principal = resolver;
+        self
+    }
+
+    /// Require [`crate::internal_auth::INTERNAL_TOKEN_HEADER`] on every routed request.
+    ///
+    /// For services in the internal tier (`sync`, `control-plane`, `render`,
+    /// `challenge-solver`), whose contract is privileged and whose only legitimate callers
+    /// are other services. Pass `None` to leave the tier unauthenticated, which
+    /// [`tankovault_config::InternalAuthConfig::resolve`] permits outside the production
+    /// profile so local development stays frictionless.
+    ///
+    /// Health and readiness stay reachable: [`ops_router`] is merged *outside* [`Self::apply`],
+    /// so an orchestrator never needs the secret.
+    #[must_use]
+    pub fn with_internal_auth(
+        mut self,
+        token: Option<crate::internal_auth::InternalToken>,
+    ) -> Self {
+        self.internal_token = token;
+        self
+    }
+
     /// Wrap `router` in the assembled stack.
     pub fn apply(self, router: Router) -> Router {
         let Self {
             security,
             metrics,
             limiter,
+            internal_token,
+            principal,
         } = self;
 
         // `option_layer` turns each optional concern into a no-op `Identity` when absent,
@@ -83,6 +145,14 @@ impl HttpStack {
         let metrics_layer = metrics
             .records_http_requests()
             .then(|| axum::middleware::from_fn(service_metrics::track_request));
+        // Innermost of the auth-ish layers but outside the work bounds: an unauthenticated
+        // caller must not be able to spend the body limit or the request timeout, and must
+        // still receive the security headers and a request id on the way out.
+        let internal_auth = internal_token.map(|token| {
+            axum::middleware::from_fn_with_state(token, crate::internal_auth::enforce)
+        });
+        let principal_layer = principal
+            .map(|resolve| axum::middleware::from_fn_with_state(resolve, identify_principal));
         let cors = security.cors.is_enabled().then(|| build_cors(&security));
         let security_headers = security.security_headers.then(|| {
             axum::middleware::from_fn_with_state(security.clone(), apply_security_headers)
@@ -94,13 +164,20 @@ impl HttpStack {
         // normalises back to. Each call wraps the previous one, so the **last** layer
         // listed is the outermost.
         router
+            // Innermost, so it wraps the handler itself. A panic becomes a 500 for the one
+            // request that caused it instead of taking down the replica — which is what
+            // happened while the release profile used `panic = "abort"` (see the note there).
+            .layer(tower_http::catch_panic::CatchPanicLayer::new())
             .layer(CompressionLayer::new())
             .layer(DefaultBodyLimit::max(security.max_body_bytes))
             .layer(TimeoutLayer::with_status_code(
                 StatusCode::REQUEST_TIMEOUT,
                 Duration::from_secs(security.request_timeout_secs.max(1)),
             ))
+            .layer(tower::util::option_layer(internal_auth))
             .layer(tower::util::option_layer(rate_limit))
+            // Outside the limiter, so the extension exists by the time the limiter keys on it.
+            .layer(tower::util::option_layer(principal_layer))
             .layer(tower::util::option_layer(cors))
             .layer(tower::util::option_layer(security_headers))
             .layer(tower::util::option_layer(metrics_layer))
@@ -166,6 +243,22 @@ fn build_cors(security: &SecurityConfig) -> CorsLayer {
     }
 }
 
+/// Insert [`crate::ratelimit::Principal`] when the caller can be identified.
+///
+/// Deliberately does **not** reject an unidentified caller: authentication is the handler's
+/// business, and a route that is legitimately anonymous (sign-in, registration) still has to
+/// reach its handler — bucketed by IP, which is what the limiter falls back to.
+async fn identify_principal(
+    State(resolve): State<PrincipalResolver>,
+    mut req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    if let Some(id) = resolve(req.headers()) {
+        req.extensions_mut().insert(crate::ratelimit::Principal(id));
+    }
+    next.run(req).await
+}
+
 /// Attach the baseline hardening headers to every response.
 ///
 /// Set with `insert` rather than `append` so a handler cannot end up emitting two
@@ -194,6 +287,17 @@ async fn apply_security_headers(
     headers.insert(
         HeaderName::from_static("cross-origin-resource-policy"),
         HeaderValue::from_static("same-origin"),
+    );
+    // A JSON API needs to load nothing and be framed by nobody. `frame-ancestors` is the
+    // modern, CSP-level statement of the `X-Frame-Options` above; both are sent because the
+    // two are honoured by different browser generations.
+    //
+    // Deliberately not configurable: unlike CORS, there is no deployment shape in which an
+    // API response should be allowed to pull a script or be embedded in a frame, and a knob
+    // here would only be a way to turn the protection off.
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static("default-src 'none'; frame-ancestors 'none'; base-uri 'none'"),
     );
 
     if security.hsts {

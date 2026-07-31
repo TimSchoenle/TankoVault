@@ -16,6 +16,7 @@ members = [
     "crates/api-client",
     "crates/test-support",
     "services/api",
+    "services/api/test-support",
     "services/control-plane",
     "services/worker",
     "services/notifier",
@@ -25,9 +26,18 @@ members = [
     "services/frontend",
     "xtask",
 ]
-# The Dioxus WASM frontend is built with the `dx` CLI against the `wasm32` target
-# and is intentionally excluded from the default host workspace build.
-exclude = ["web/frontend"]
+# Two members are deliberately outside the host workspace, each because it needs a
+# toolchain this one does not have:
+#
+# - `web/frontend` — the Dioxus SPA, built with the `dx` CLI against `wasm32`.
+# - `fuzz` — the `cargo-fuzz` targets. `libfuzzer-sys` needs `-Z sanitizer`, i.e. **nightly**,
+#   while `rust-toolchain.toml` pins 1.94.0 and the `msrv` CI job builds at 1.85. As a member
+#   it would drag nightly into `cargo fmt --all`, `cargo clippy --workspace --all-targets`,
+#   `cargo deny` (a `libfuzzer-sys`/`arbitrary` duplicate would land in the `bans` budget) and
+#   the `--locked` resolution the `msrv` and `supply-chain` jobs measure — for a crate no gate
+#   runs. It carries its own `rust-toolchain.toml` and its own lockfile instead. See
+#   `fuzz/README.md`.
+exclude = ["web/frontend", "fuzz"]
 
 [workspace.package]
 version = "0.1.0"
@@ -45,10 +55,75 @@ rust_2018_idioms = { level = "warn", priority = -1 }
 [workspace.lints.clippy]
 # `pedantic` on as a warn-level group; individual noisy lints relaxed workspace-wide.
 pedantic = { level = "warn", priority = -1 }
+# The `cargo` group, which nothing enforced at compile time. It catches
+# `wildcard_dependencies` and the feature-naming lints at `cargo clippy` rather than only in
+# `cargo deny`, which runs as a separate job and is therefore skipped by anyone iterating
+# locally.
+cargo = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
+# A suppression must be `#[expect(…, reason = "…")]`, never a bare `#[allow(…)]`.
+#
+# The difference is what happens when the suppression stops being necessary: an `allow` goes on
+# silently forever, an `expect` warns. Every one of the ~45 suppressions in this workspace is a
+# claim about the code beneath it — "this cast cannot truncate because the value is bounded by
+# a LIMIT", "these arguments cannot be transposed because they are differently typed" — and a
+# claim nothing re-checks is exactly the shape of defect this codebase keeps finding. Making
+# the compiler re-check them costs one attribute keyword.
+#
+# `reason` is convention rather than enforcement: `allow_attributes_without_reason` covers
+# `allow`, and clippy has no counterpart for `expect`. Write one anyway — the lint name says
+# what is suppressed, and only the reason says why that is sound.
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+# Duplicate transitive versions are tracked as a *budget* in `deny.toml`, which denies them
+# against an explicit, dated skip list naming each in-flight upstream transition. This lint
+# would report the same 30-odd duplicates with no way to record why any of them is acceptable,
+# so the two would immediately disagree. One owner per policy.
+multiple_crate_versions = "allow"
+# `missing_panics_doc` is **on** (OPS-2.2). The audit's premise — that the codebase already
+# writes these by hand, so the allow was weaker than the practice — held: the whole workspace
+# had three undocumented panicking functions, all `.expect(…)` at construction. Writing the
+# third section found a live panic (`Politeness::clamped` mapped `rps: 0` to `f64::MIN_POSITIVE`,
+# whose reciprocal `Duration::from_secs_f64` cannot represent), which is the argument for the
+# lint in one example. The two `*-test-support` crates carry a crate-level `#![expect(…)]` with
+# their reasoning: a harness helper panics by design, and `expect` means the compiler withdraws
+# the exemption if that ever stops being true.
+#
+# `missing_errors_doc` is **on**, and the 172-warning backlog that kept it allowed is gone. All
+# 172 were in `crates/db`; every other member was already clean. The sections were written module
+# by module against the function bodies rather than generated, because the only one worth writing
+# says *which* variants a function can produce — `DbError` carries `NotFound` and `Conflict`
+# alongside the driver error, and the API maps those to 404 and 409 (ARCH-4/ARCH-11), so "returns
+# an error if the query fails" would satisfy the lint while documenting the wrong thing. The
+# convention the sections settled on: name the reachable variants (and say "`Sqlx` only — no
+# other variant is reachable" when that is the answer, because it tells a caller the result is
+# always a 500), then say what the function returns *instead of* an error, since nearly all of
+# them turn a miss into `Ok(None)`/`Ok(false)`/`Ok(0)` and several are security-relevant in that
+# choice. Writing them found four defects: OPS-2.2c, OPS-2.2d, OPS-2.2e and OPS-2.2f.
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
 must_use_candidate = "allow"
+
+# Intra-doc links, denied. Not in the audit; found while writing the `missing_errors_doc`
+# sections above, when a `cargo doc` run over the new links reported six pre-existing broken ones
+# nothing had ever checked (OPS-2.2f). It is the same shape this remediation keeps meeting — two
+# artefacts that must agree with nothing connecting them — and the cheapest possible fix, because
+# rustdoc already resolves every link and was simply not being asked to fail.
+#
+# `deny` rather than `warn`: a broken link renders as literal `[`Foo`]` text, so it is invisible
+# to anyone reading the source and only visible to whoever generates the documentation, which is
+# nobody by habit. `private_intra_doc_links` stays a warning — linking to a `pub(super)` helper
+# from a module doc is a reasonable thing to do while the item is being described, and the link
+# simply does not render.
+#
+# `crates/api-client` is exempt **by construction** rather than by an entry here: it declares its
+# own `[lints]` table (OPS-2.4) and so inherits nothing from this one. That is the right outcome —
+# 780 KB of `progenitor` output carries the `OpenAPI` descriptions' own `[`…`]` spans into Rust
+# doc comments, where they resolve against a module tree that does not exist, and fixing them
+# would mean editing a generated file.
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "warn"
 
 [workspace.dependencies]
 # --- internal crates ---
@@ -64,12 +139,29 @@ tankovault-auth = { path = "crates/auth" }
 tankovault-email = { path = "crates/email" }
 tankovault-matcher = { path = "crates/matcher" }
 tankovault-bus = { path = "crates/bus" }
+# Not referenced by any workspace member — `web/frontend` is excluded from the workspace
+# and uses its own path dep. Kept as the single place the crate is named, so a future
+# host-side consumer inherits the same path rather than inventing one.
 tankovault-api-client = { path = "crates/api-client" }
 
 # --- OpenAPI: schema derivation from handlers + browsable API docs ---
 # The derived spec is exported by `xtask openapi` and fed to `progenitor` (an xtask dep) to
 # regenerate the typed `crates/api-client`, which the frontend consumes; `utoipa-scalar`
 # serves the same spec as a browsable UI at `/scalar`.
+# `progenitor` generates `crates/api-client` from that spec. The two halves are pinned here
+# rather than in their own manifests because they **must** stay in lockstep — `progenitor-impl`
+# (in `xtask`) emits code against `progenitor-client`'s (in `crates/api-client`) runtime types,
+# and bumping only one produces a generated crate that does not compile, or worse compiles
+# against a changed `ResponseValue`. They were two hand-maintained `"0.14.0"` literals in two
+# manifests (BUILD_AND_OPS §1.7).
+progenitor-client = "0.14.0"
+progenitor-impl = "0.14.0"
+# `xtask config-docs` reads the configuration surface out of the config structs themselves
+# rather than out of a hand-kept list, so it needs a real Rust parser. Pinned to the major
+# version already in the tree via the proc-macro crates, so it adds no `multiple-versions`
+# entry to `deny.toml`'s budget. `full` is what `syn::parse_file` needs; the derive-only
+# default feature set parses attributes and items but not whole files.
+syn = { version = "2", features = ["full"] }
 utoipa = { version = "5", features = ["uuid", "axum_extras"] }
 utoipa-axum = "0.2"
 utoipa-scalar = { version = "0.3", features = ["axum"] }
@@ -83,8 +175,25 @@ futures = "0.3"
 axum = { version = "0.8", features = ["macros", "json", "query"] }
 axum-extra = { version = "0.12", features = ["cookie", "typed-header", "query"] }
 tower = { version = "0.5", features = ["util", "timeout", "limit"] }
-tower-http = { version = "0.7", features = ["trace", "cors", "compression-full", "timeout", "request-id", "set-header"] }
-hyper = "1.5"
+# `catch-panic`: turns a panicking handler into a 500 for that one request instead of a
+# process abort. See the `panic = "unwind"` note in the release profile at the end of this file.
+tower-http = { version = "0.7", features = ["trace", "cors", "compression-full", "timeout", "request-id", "set-header", "catch-panic"] }
+
+# --- testing ---
+# Property-based testing on stable. Chosen over `quickcheck`/`arbitrary` because the
+# invariants worth pinning here (idempotence, symmetry, serde round-trips) need shrinking to
+# a minimal counterexample far more than they need coverage-guided input generation, and
+# because it runs in the ordinary `cargo test` job with no extra toolchain.
+proptest = { version = "1", default-features = false, features = ["std", "bit-set"] }
+# A scriptable HTTP upstream, for the clients that had no test below the trait boundary at all
+# (TEST F-09): the `AniList` transport, the notifier's webhook channels, and the two solve
+# clients on the render path. Those are `reqwest`/`wreq` round trips whose contract is what goes
+# on the wire and what a non-2xx or a `429` is turned into, and a trait fake cannot see either.
+# Chosen over hand-rolling an `axum` stub -- which would cost no new dependency -- because the
+# assertions that matter here are *on the request*: `received_requests` and `expect(n)` are the
+# feature, and reimplementing request capture and call-count verification is how a harness grows
+# bugs that make a test pass. Dev-only, so it reaches no shipping binary.
+wiremock = "0.6"
 
 # --- data / storage ---
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "json", "macros", "migrate"] }
@@ -118,14 +227,11 @@ chromiumoxide = { version = "0.9", default-features = false, features = ["bytes"
 # --- domain building blocks ---
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_with = "3"
 uuid = { version = "1", features = ["v7", "serde", "std"] }
 time = { version = "0.3", features = ["serde", "macros", "formatting", "parsing"] }
 thiserror = "2"
 anyhow = "1"
-validator = { version = "0.20", features = ["derive"] }
 figment = { version = "0.10", features = ["toml", "env"] }
-regex = "1.11"
 
 # --- auth / security ---
 argon2 = "0.5"          # 0.6 is only a pre-release (rc); 0.5 is the current stable.
@@ -133,21 +239,24 @@ jsonwebtoken = { version = "10", default-features = false, features = ["rust_cry
 aes-gcm = "0.11"
 rand = "0.8"
 sha2 = "0.10"
-hmac = "0.12"
 base64 = "0.22"
+# Constant-time comparison for the internal service-to-service token. Already in the tree
+# transitively (aes-gcm, argon2); declared here so the comparison is not hand-rolled.
+subtle = "2"
 
 # --- observability ---
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
-tracing-opentelemetry = "0.33"
-opentelemetry = "0.32"
-opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic"] }
+# NOTE: the OpenTelemetry stack (`opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`,
+# `tracing-opentelemetry`) was declared here and used by zero members, while
+# `crates/config` exposed an `otlp_endpoint` knob that only logged "export is pending". A
+# config knob that silently does nothing is worse than an absent one: an operator who sets it
+# believes traces are being exported and finds out during an incident. Both the declarations
+# and the knob are removed. Re-add them together, with an actual `OpenTelemetryLayer` in
+# `crates/service/src/telemetry.rs`, or not at all.
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
 
-# --- scheduling ---
-tokio-cron-scheduler = "0.15"
 
 # --- email ---
 # rustls + ring to match the rest of the stack (no native-tls / OpenSSL in the
@@ -157,9 +266,42 @@ tokio-cron-scheduler = "0.15"
 # for the notifier's occasional alerts and keeps construction runtime-independent.
 lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "smtp-transport", "tokio1", "tokio1-rustls", "ring", "webpki-roots"] }
 
+# The dev profile was entirely untuned (PERFORMANCE §17): only the release profile below
+# existed, so every edit-rebuild cycle paid cargo's defaults across ~600 lockfile entries — a
+# C/asm BoringSSL build, both TLS stacks, `chromiumoxide`, `scraper` and the whole sqlx macro
+# machinery.
+[profile.dev]
+# Full DWARF across that many crates produces very large object files and dominates *link*
+# time, which is paid on every single rebuild. Line tables keep backtraces resolvable, which is
+# the only thing the debug info is actually used for here.
+debug = "line-tables-only"
+incremental = true
+
+# Dependencies change rarely; workspace crates change constantly. Optimise the former once and
+# leave the latter at `opt-level = 0` so incremental rebuilds stay fast.
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+# `argon2` is deliberately expensive by design and is 10-50x slower unoptimised, so at
+# `opt-level = 0` it dominates the wall-clock of every auth test.
+[profile.test.package.argon2]
+opt-level = 3
+
 [profile.release]
 opt-level = 3
 lto = "thin"
 codegen-units = 1
 strip = true
-panic = "abort"
+# `unwind`, not `abort`. With `abort`, a panic anywhere in a handler terminated the whole
+# process — so any single panicking code path (an overflow, an out-of-range slice, an
+# `unwrap` on a `HeaderValue`) let an unauthenticated client restart a replica at will and
+# take every in-flight request with it. Unwinding lets `CatchPanicLayer`
+# (`crates/service/src/http.rs`) turn it into a 500 for the one request that caused it.
+#
+# The cost is landing-pad code in the binary. That is the correct trade for a network
+# service: a panic here is a bug to fix, not a reason to drop everyone else's requests.
+panic = "unwind"
+# Silent wrapping in a pagination offset is worse than a caught error, and this workload is
+# nowhere near arithmetic-bound. Cheap insurance against the class of bug SEC-11 found.
+overflow-checks = true

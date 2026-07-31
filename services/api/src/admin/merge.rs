@@ -4,10 +4,11 @@ use crate::audit::audit;
 use crate::error::ApiResult;
 use crate::openapi::ADMIN_MATCHING_TAG;
 use crate::state::{AppState, AuthUser};
+use crate::views::IntoView;
 use axum::Json;
 use axum::extract::State;
 use serde::Deserialize;
-use tankovault_db::repo::matching::MergeCandidateView;
+use tankovault_contracts::admin::MergeCandidateView;
 use tankovault_domain::{Permission, SeriesId};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -31,9 +32,8 @@ pub async fn list_merge_candidates(
     user: AuthUser,
 ) -> ApiResult<Json<Vec<MergeCandidateView>>> {
     user.require(Permission::MergeRead).await?;
-    Ok(Json(
-        tankovault_db::repo::matching::list_open_merge_candidates(&state.pool, 200).await?,
-    ))
+    let rows = tankovault_db::repo::matching::list_open_merge_candidates(&state.pool, 200).await?;
+    Ok(Json(rows.into_view()))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

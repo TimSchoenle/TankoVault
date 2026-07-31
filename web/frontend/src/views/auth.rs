@@ -2,6 +2,7 @@
 //! is set as an httpOnly cookie by the API. On success we route to Discover.
 
 use crate::api;
+use crate::components::Field;
 use crate::hooks::use_busy;
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -9,6 +10,31 @@ use crate::models::*;
 use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
+
+/// How a failed sign-in should be worded, and whether to offer "resend confirmation".
+///
+/// Returns the catalogue key plus the resend flag, or `None` when the status has nothing
+/// sign-in-specific to say and [`api::friendly_error`]'s generic wording is right.
+///
+/// Split out from the submit callback for the reason `api::error::status_key` is split out
+/// from `status_message`: the mapping is the part worth testing, and testing it must not
+/// require a Dioxus runtime.
+///
+/// `401` is worded here rather than left to [`api::friendly_error`] because the shared
+/// catalogue entry for 401 is "You need to sign in to do that." That is right on every other
+/// screen and nonsense on this one: it tells the reader to do the thing they are already
+/// doing, and names nothing they could correct. On the sign-in form a 401 has exactly one
+/// meaning — the identifier and password did not match an account.
+///
+/// `403` is the neighbouring case: the password *was* right, the address just isn't confirmed
+/// yet, which is why it is the only status that offers the resend action.
+fn sign_in_failure(status: Option<u16>) -> Option<(&'static str, bool)> {
+    match status? {
+        401 => Some(("auth.badCredentials", false)),
+        403 => Some(("auth.confirmFirst", true)),
+        _ => None,
+    }
+}
 
 #[component]
 pub(crate) fn Login() -> Element {
@@ -88,13 +114,13 @@ pub(crate) fn Login() -> Element {
                         session.set_token(res.into_inner().access_token);
                         nav.push(Route::Discover {});
                     }
-                    // A 403 on sign-in means the password was right but the email address
-                    // hasn't been confirmed yet — offer to resend the link.
-                    Err(e) if api::error_status(&e) == Some(403) => {
-                        needs_verification.set(true);
-                        error.set(Some(i18n.t("auth.confirmFirst")));
-                    }
-                    Err(e) => error.set(Some(api::friendly_error(i18n, e))),
+                    Err(e) => match sign_in_failure(api::error_status(&e)) {
+                        Some((key, offer_resend)) => {
+                            needs_verification.set(offer_resend);
+                            error.set(Some(i18n.t(key)));
+                        }
+                        None => error.set(Some(api::friendly_error(i18n, e))),
+                    },
                 }
             }
             busy.release();
@@ -172,46 +198,43 @@ pub(crate) fn Login() -> Element {
             }
 
             if is_register {
-                div { class: "ik-field",
-                    label { {i18n.t("auth.field.email")} }
-                    input {
-                        class: "ik-input",
-                        r#type: "email",
-                        value: "{email}",
-                        oninput: move |e| email.set(e.value()),
-                    }
+                Field {
+                    id: "tv-auth-email",
+                    label: i18n.t("auth.field.email"),
+                    kind: "email",
+                    autocomplete: "email",
+                    value: email(),
+                    on_input: move |v| email.set(v),
+                    on_enter: move |()| submit.call(()),
                 }
-                div { class: "ik-field",
-                    label { {i18n.t("auth.field.username")} }
-                    input {
-                        class: "ik-input",
-                        value: "{username}",
-                        oninput: move |e| username.set(e.value()),
-                    }
+                Field {
+                    id: "tv-auth-username",
+                    label: i18n.t("auth.field.username"),
+                    autocomplete: "username",
+                    value: username(),
+                    on_input: move |v| username.set(v),
+                    on_enter: move |()| submit.call(()),
                 }
             } else {
-                div { class: "ik-field",
-                    label { {i18n.t("auth.field.emailOrUsername")} }
-                    input {
-                        class: "ik-input",
-                        value: "{login}",
-                        oninput: move |e| login.set(e.value()),
-                    }
+                Field {
+                    id: "tv-auth-login",
+                    label: i18n.t("auth.field.emailOrUsername"),
+                    autocomplete: "username",
+                    value: login(),
+                    on_input: move |v| login.set(v),
+                    on_enter: move |()| submit.call(()),
                 }
             }
-            div { class: "ik-field",
-                label { {i18n.t("auth.field.password")} }
-                input {
-                    class: "ik-input",
-                    r#type: "password",
-                    value: "{password}",
-                    oninput: move |e| password.set(e.value()),
-                    onkeydown: move |e| {
-                        if e.key() == Key::Enter {
-                            submit.call(());
-                        }
-                    },
-                }
+            Field {
+                id: "tv-auth-password",
+                label: i18n.t("auth.field.password"),
+                kind: "password",
+                // `new-password` on the register form is what tells a password manager to
+                // offer to *generate* one rather than fill the existing one.
+                autocomplete: if is_register { "new-password" } else { "current-password" },
+                value: password(),
+                on_input: move |v| password.set(v),
+                on_enter: move |()| submit.call(()),
             }
 
             if !is_register {
@@ -333,5 +356,51 @@ pub(crate) fn VerifyEmail(token: String) -> Element {
                 },
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A rejected sign-in must not be worded "You need to sign in to do that."
+    ///
+    /// That is the shared catalogue's sentence for *any* 401, and for a while it was what the
+    /// sign-in form showed when the password was wrong — the one screen where it is
+    /// meaningless, because the reader is already signing in and the sentence names nothing
+    /// to correct. It cost a live debugging session: the message reads like a session or
+    /// routing fault, so it sent the search towards the auth middleware and the proxy, when
+    /// the API had in fact answered correctly and audited the attempt as `bad_password`.
+    ///
+    /// The generic wording stays right everywhere else, so the fix is per-screen and this
+    /// test pins the screen, not the catalogue.
+    #[test]
+    fn a_rejected_sign_in_is_worded_as_bad_credentials() {
+        assert_eq!(
+            sign_in_failure(Some(401)),
+            Some(("auth.badCredentials", false))
+        );
+    }
+
+    /// 403 is the neighbouring case and must stay distinguishable from 401: the password was
+    /// accepted and only the address is unconfirmed, so this is the one status that offers
+    /// the resend action. Collapsing the two would make a confirmable account look like a
+    /// typo'd password.
+    #[test]
+    fn an_unconfirmed_address_still_offers_the_resend_action() {
+        assert_eq!(
+            sign_in_failure(Some(403)),
+            Some(("auth.confirmFirst", true))
+        );
+    }
+
+    /// Anything else falls through to `api::friendly_error`, which buckets transport faults
+    /// and undocumented statuses into plain language. `None` for a missing status matters:
+    /// that is a transport fault, where there is no status to word at all.
+    #[test]
+    fn other_failures_fall_through_to_the_generic_wording() {
+        assert_eq!(sign_in_failure(Some(429)), None);
+        assert_eq!(sign_in_failure(Some(500)), None);
+        assert_eq!(sign_in_failure(None), None);
     }
 }

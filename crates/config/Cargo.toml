@@ -5,8 +5,18 @@ edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Layered typed configuration loading."
+# Not published: this is a workspace-internal crate. Also what lets `cargo deny`
+# skip license-checking our own code.
+publish = false
 
 [dependencies]
+# For `MatchingConfig`: its defaults are the scorer's own — so a knob and the value it overrides
+# cannot drift apart — and its `impl Canonicaliser` is the one place the configured thresholds
+# meet the scorer, which is what keeps both out of `crates/db` (ARCH-16). `tankovault-matcher` is
+# a leaf crate over `domain`.
+tankovault-matcher = { workspace = true }
+# For the `Canonicaliser` port itself, which is domain vocabulary rather than the scorer's.
+tankovault-domain = { workspace = true }
 serde = { workspace = true }
 figment = { workspace = true }
 thiserror = { workspace = true }

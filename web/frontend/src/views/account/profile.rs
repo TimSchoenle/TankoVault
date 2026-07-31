@@ -18,12 +18,21 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
     let mut outcome = use_outcome();
     let mut username = use_signal(|| name.clone());
     let mut email = use_signal(String::new);
+    let mut current_password = use_signal(String::new);
 
     let save = move |_| {
         let new_username = username.peek().trim().to_owned();
         let new_email = email.peek().trim().to_owned();
+        let password = current_password.peek().clone();
         if new_username.is_empty() && new_email.is_empty() {
             outcome.set(Some(Err(i18n.t("account.profile.nothingToSave"))));
+            return;
+        }
+        let changing_email = !new_email.is_empty();
+        // Checked here as well as on the server so the user is told what is missing before a
+        // round trip, not after a 400. The server's check is the one that matters.
+        if changing_email && password.is_empty() {
+            outcome.set(Some(Err(i18n.t("account.profile.currentPasswordMissing"))));
             return;
         }
         if !busy.claim() {
@@ -34,7 +43,8 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
         spawn(async move {
             let update = ProfileUpdate {
                 username: (!new_username.is_empty()).then_some(new_username),
-                email: (!new_email.is_empty()).then_some(new_email),
+                email: changing_email.then_some(new_email),
+                current_password: changing_email.then_some(password),
             };
             match client.patch_profile().body(update).send().await {
                 Ok(response) => {
@@ -44,7 +54,14 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
                     username.set(profile.username.clone());
                     session.set_display_name(profile.username);
                     email.set(String::new());
-                    outcome.set(Some(Ok(i18n.t("account.profile.updated"))));
+                    current_password.set(String::new());
+                    outcome.set(Some(Ok(if changing_email {
+                        // An address change revokes every session server-side, so say so:
+                        // the next request will fail and the user should know why.
+                        i18n.t("account.profile.emailChanged")
+                    } else {
+                        i18n.t("account.profile.updated")
+                    })));
                 }
                 Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
             }
@@ -84,6 +101,26 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
                     placeholder: i18n.t("account.profile.emailPlaceholder"),
                     value: "{email}",
                     oninput: move |e| email.set(e.value()),
+                }
+            }
+            // Only asked for when it is actually required, so the ordinary display-name
+            // change stays a two-field form.
+            if !email.read().trim().is_empty() {
+                div { class: "ik-field",
+                    label { r#for: "tv-profile-current-password",
+                        {i18n.t("account.profile.currentPassword")}
+                    }
+                    input {
+                        id: "tv-profile-current-password",
+                        class: "ik-input",
+                        r#type: "password",
+                        autocomplete: "current-password",
+                        value: "{current_password}",
+                        oninput: move |e| current_password.set(e.value()),
+                    }
+                    div { class: "ik-muted", style: "font-size:12px;margin-top:6px;",
+                        {i18n.t("account.profile.currentPasswordHint")}
+                    }
                 }
             }
             OutcomeLine { outcome: outcome.read().clone() }

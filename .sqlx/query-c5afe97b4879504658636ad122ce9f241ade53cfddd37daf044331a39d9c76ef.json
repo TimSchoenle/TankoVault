@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO notification_dedup (user_id, series_id, chapter_number) SELECT u, $2, $3::float8::numeric(10,4) FROM UNNEST($1::uuid[]) AS u ON CONFLICT DO NOTHING RETURNING user_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "notification_dedup",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c5afe97b4879504658636ad122ce9f241ade53cfddd37daf044331a39d9c76ef"
+}

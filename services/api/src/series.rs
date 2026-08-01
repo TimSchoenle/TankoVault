@@ -180,10 +180,10 @@ pub async fn list(
         headers.insert("X-Total-Count", v);
     }
     let returned = i64::try_from(out.items.len()).unwrap_or(0);
-    if filter.offset + returned < out.total {
-        if let Ok(v) = HeaderValue::from_str(&(page + 1).to_string()) {
-            headers.insert("X-Next-Cursor", v);
-        }
+    if filter.offset + returned < out.total
+        && let Ok(v) = HeaderValue::from_str(&(page + 1).to_string())
+    {
+        headers.insert("X-Next-Cursor", v);
     }
 
     let items = out

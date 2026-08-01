@@ -105,19 +105,19 @@ impl<F: Fetcher> Fetcher for RateLimitedFetcher<F> {
         // Only a response can carry the signal; a transport failure says nothing about the
         // provider's budget, and treating it as if it did would slow every crawl on a flaky
         // network.
-        if let Ok(resp) = &resp {
-            if THROTTLE_STATUSES.contains(&resp.status) {
-                let now = Instant::now();
-                self.throttle.penalise(now, None);
-                let penalty = self.throttle.penalty(now);
-                tracing::info!(
-                    %provider,
-                    status = resp.status,
-                    url = %resp.url,
-                    spacing_ms = penalty.as_millis(),
-                    "provider signalled rate limiting; widening this provider's request spacing"
-                );
-            }
+        if let Ok(resp) = &resp
+            && THROTTLE_STATUSES.contains(&resp.status)
+        {
+            let now = Instant::now();
+            self.throttle.penalise(now, None);
+            let penalty = self.throttle.penalty(now);
+            tracing::info!(
+                %provider,
+                status = resp.status,
+                url = %resp.url,
+                spacing_ms = penalty.as_millis(),
+                "provider signalled rate limiting; widening this provider's request spacing"
+            );
         }
         resp
     }

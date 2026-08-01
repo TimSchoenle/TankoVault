@@ -37,7 +37,7 @@ verify, that its header really was decoded, and that the comparison really ran.
 
 `libfuzzer-sys` compiles the crate under test with `-Z sanitizer=address`, which is **nightly
 only**. The host workspace pins `1.94.0` in `rust-toolchain.toml` and its `msrv` CI job builds at
-`1.85`.
+`1.94`.
 
 As a workspace member, this crate would put nightly and `libfuzzer-sys`/`arbitrary` into the path
 of `cargo fmt --all`, `cargo clippy --workspace --all-targets`, `cargo deny check bans` (whose

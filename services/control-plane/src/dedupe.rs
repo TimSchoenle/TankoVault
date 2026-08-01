@@ -135,14 +135,8 @@ pub(crate) async fn sweep(
                 } else {
                     (right, left)
                 };
-                matching::merge_series(
-                    pool,
-                    keep.series_id,
-                    drop.series_id,
-                    actor,
-                    "auto_merged",
-                )
-                .await?;
+                matching::merge_series(pool, keep.series_id, drop.series_id, actor, "auto_merged")
+                    .await?;
                 absorbed.insert(drop.series_id);
                 report.auto_merged += 1;
                 // Logged at info, with both titles and the deciding signals: this is a

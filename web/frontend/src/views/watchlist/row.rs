@@ -27,6 +27,12 @@ use std::rc::Rc;
 /// One context rather than three, and a newtype rather than bare `Signal<Outcome>`, so the
 /// lookup names what it wants: `use_context::<Signal<Outcome>>()` would match any other slot of
 /// the same shape a future component happens to provide above this one.
+///
+/// It is taken **by value** everywhere, which trips `clippy::large_types_passed_by_value` at
+/// 288 bytes against a 256-byte limit. That is the one thing it cannot stop doing: every action
+/// below moves its copy into a `spawn`ed future, and a `&RowCtx` has a lifetime that no
+/// `'static` future can hold. The bundle is four `Copy` handles — copying it is four pointer
+/// copies, not a deep clone — so the functions carry an `#[expect]` rather than a reference.
 #[derive(Clone, Copy)]
 pub(super) struct RowCtx {
     pub(super) api: api::Api,
@@ -66,6 +72,10 @@ fn index_of(board: &Signal<Board>, series_id: SeriesId) -> Option<usize> {
 }
 
 /// Flip a row's notification flag, writing the row first and restoring it on failure.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "`RowCtx` outlives this call inside a spawned future; see its doc comment"
+)]
 pub(super) fn toggle_mute(item: &WatchlistItem, mut board: Signal<Board>, ctx: RowCtx) {
     let series_id = item.series_id;
     let status = item.status;
@@ -104,6 +114,10 @@ pub(super) fn toggle_mute(item: &WatchlistItem, mut board: Signal<Board>, ctx: R
 /// filtered tab it no longer belongs to. Rows vanishing from under the cursor as you triage is
 /// disorienting, and the row stays honest about its new status while it sits there; the next
 /// fetch drops it.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "`RowCtx` outlives this call inside a spawned future; see its doc comment"
+)]
 fn set_status(item: &WatchlistItem, next: WatchStatus, mut board: Signal<Board>, ctx: RowCtx) {
     let series_id = item.series_id;
     let notify = item.notify;
@@ -167,6 +181,10 @@ fn bucket_mut(counts: &mut WatchlistCounts, status: WatchStatus) -> &mut i64 {
 /// Mark every chapter of one series read. Reuses the bulk endpoint with a single id rather than
 /// a second code path — the frontier rule that decides what "everything" means lives on the
 /// server, and having two callers of it is how the two drift.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "`RowCtx` outlives this call inside a spawned future; see its doc comment"
+)]
 fn mark_all_read(item: &WatchlistItem, mut board: Signal<Board>, ctx: RowCtx) {
     let series_id = item.series_id;
     let Some(index) = index_of(&board, series_id) else {
@@ -199,6 +217,10 @@ fn mark_all_read(item: &WatchlistItem, mut board: Signal<Board>, ctx: RowCtx) {
 
 /// Untrack a series. This one *does* remove the row — the entry is gone, and leaving it on
 /// screen would be showing something that no longer exists.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "`RowCtx` outlives this call inside a spawned future; see its doc comment"
+)]
 fn remove(item: &WatchlistItem, mut board: Signal<Board>, ctx: RowCtx) {
     let series_id = item.series_id;
     let Some(index) = index_of(&board, series_id) else {
@@ -360,10 +382,7 @@ pub(super) fn WatchRow(
         if item.source_count > 1 {
             i18n.args(
                 "watchlist.sourceMeta",
-                &[
-                    ("source", &name),
-                    ("count", &item.source_count.to_string()),
-                ],
+                &[("source", &name), ("count", &item.source_count.to_string())],
             )
         } else {
             name
@@ -523,6 +542,10 @@ impl MenuItem {
 /// non-`Copy` capture cannot be shared by the six `onclick` closures the menu renders, and
 /// re-reading is also what keeps the action operating on the row's *current* state rather than
 /// on the snapshot the menu was opened with.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "`RowCtx` outlives this call inside a spawned future; see its doc comment"
+)]
 fn act(
     entry: MenuItem,
     series_id: SeriesId,

@@ -111,7 +111,8 @@ pub fn assess(query: &Query, candidate: &Candidate) -> Assessment {
     let title_match = best_title_match(&query.normalized_title, &query_compact, candidate);
     signals.exact_title = title_match.exact && !title_match.via_alias;
     signals.compact_identity = title_match.compact_equal && !title_match.via_alias;
-    signals.alias_identity = (title_match.exact || title_match.compact_equal) && title_match.via_alias;
+    signals.alias_identity =
+        (title_match.exact || title_match.compact_equal) && title_match.via_alias;
     signals.near_identical =
         !title_match.exact && !title_match.compact_equal && title_match.edit_ratio >= 0.9;
     signals.containment = title_match.containment;
@@ -203,6 +204,12 @@ pub fn assess(query: &Query, candidate: &Candidate) -> Assessment {
 
 /// How the query title compares against the best of the candidate's titles.
 #[derive(Debug, Default, Clone, Copy)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the return value of one comparison, private to this module and consumed field by \
+              field a few lines later. Packing four independent yes/no answers into flags would \
+              hide at the call site exactly what the names make obvious."
+)]
 struct TitleMatch {
     /// The best textual agreement in `[0,1]` across all of the candidate's titles.
     ratio: f32,
@@ -778,7 +785,10 @@ mod tests {
             ("spy x family", "spyxfamily"),
             ("hana kimi", "hanakimi"),
             ("day break", "daybreak"),
-            ("the villainess just wants to live in peace", "the villainess just wantsto live in peace"),
+            (
+                "the villainess just wants to live in peace",
+                "the villainess just wantsto live in peace",
+            ),
         ] {
             let q = query(a, ContentType::Unknown, None);
             // A raw trigram score far below the review band, so the compact rule is the only
@@ -864,7 +874,10 @@ mod tests {
     fn differing_numbers_veto_a_match() {
         for (a, b) in [
             ("kingdom of the wind", "kingdom of the wind 2"),
-            ("tensei shitara slime datta ken", "tensei shitara slime datta ken 2"),
+            (
+                "tensei shitara slime datta ken",
+                "tensei shitara slime datta ken 2",
+            ),
             ("dungeon reset volume 3", "dungeon reset volume 4"),
         ] {
             let q = query(a, ContentType::Unknown, None);
@@ -1029,7 +1042,13 @@ mod tests {
             ..MatchSignals::default()
         };
         assert_eq!(
-            adjudicate(Assessment { score: 1.0, signals }, t),
+            adjudicate(
+                Assessment {
+                    score: 1.0,
+                    signals
+                },
+                t
+            ),
             MergeVerdict::Distinct
         );
     }
@@ -1050,11 +1069,13 @@ mod tests {
         );
         assert!(MatchSignals::default().labels().is_empty());
         assert!(signals.is_structural());
-        assert!(!MatchSignals {
-            near_identical: true,
-            ..MatchSignals::default()
-        }
-        .is_structural());
+        assert!(
+            !MatchSignals {
+                near_identical: true,
+                ..MatchSignals::default()
+            }
+            .is_structural()
+        );
     }
 
     // --- the individual scoring terms (TESTING F-10, mutation testing) ---------------------

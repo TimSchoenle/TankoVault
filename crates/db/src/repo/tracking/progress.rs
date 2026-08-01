@@ -194,10 +194,10 @@ pub async fn progress_mark_read(
 
     if is_whole(number) {
         whole = whole.max(number);
-        if let Some(p) = part {
-            if p.floor() <= whole {
-                part = None; // now stale, superseded by whole-chapter progress
-            }
+        if let Some(p) = part
+            && p.floor() <= whole
+        {
+            part = None; // now stale, superseded by whole-chapter progress
         }
     } else if number.floor() > whole {
         // Ahead of the whole frontier: the part release itself can only ever be recorded by the

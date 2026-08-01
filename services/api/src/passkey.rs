@@ -2,11 +2,16 @@
 //! handler needs from it.
 //!
 //! The handlers themselves live next to the flows they belong to — sign-in in
-//! [`crate::auth::passkey`], credential management in [`crate::me::passkeys`] — because those
+//! [`crate::auth::passkey`], credential management in `crate::me::passkeys` — because those
 //! are the modules a reader looking for "how does one log in" or "how do I revoke a key"
 //! opens. What is here is the part both share and neither should re-decide: constructing the
 //! relying party from configuration, storing and consuming ceremony state, and turning a
 //! [`WebauthnError`] into an HTTP answer that discloses nothing.
+//!
+//! (`crate::me::passkeys` is written as a path rather than an intra-doc link because `me` is a
+//! private module: rustdoc has no item to resolve, and `broken_intra_doc_links = "deny"` in the
+//! workspace lint table turns that into a failed `cargo doc`. `auth` is private too, but
+//! `auth::passkey` inside it is `pub`, which is enough for the link to resolve.)
 //!
 //! # Why the relying party is optional
 //!

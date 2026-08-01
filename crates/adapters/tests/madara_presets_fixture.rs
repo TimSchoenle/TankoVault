@@ -149,7 +149,10 @@ async fn manhuaus_catalog_terminates_on_the_first_empty_page() {
         .expect("the 404 shell still parses");
 
     assert!(past_end.items.is_empty());
-    assert!(!past_end.has_next, "an empty listing ends the catalogue walk");
+    assert!(
+        !past_end.has_next,
+        "an empty listing ends the catalogue walk"
+    );
 }
 
 #[tokio::test]

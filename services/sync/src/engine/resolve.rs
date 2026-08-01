@@ -81,10 +81,10 @@ impl SeriesResolver {
                 tags: entry.metadata.tags.clone(),
                 authors: entry.metadata.authors.clone(),
             };
-            if let Some((id, assessment)) = best_assessment(&query, &candidates) {
-                if best.is_none_or(|(_, b)| assessment.score > b.score) {
-                    best = Some((id, assessment));
-                }
+            if let Some((id, assessment)) = best_assessment(&query, &candidates)
+                && best.is_none_or(|(_, b)| assessment.score > b.score)
+            {
+                best = Some((id, assessment));
             }
         }
 

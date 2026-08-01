@@ -490,7 +490,8 @@ The Dioxus WASM frontend under `web/frontend/` is **excluded** from the default
 workspace (it targets `wasm32` via the `dx` CLI) and is built separately.
 
 ### Toolchain / dependency policy
-- Rust **edition 2024**, `rust-version = 1.85`. Toolchain in use: 1.94.
+- Rust **edition 2024**, `rust-version = 1.94` — raised from 1.85, which SQLx 0.9 (itself
+  `rust-version = 1.94.0`) had made untrue. Toolchain in use: 1.94.
 - **Latest stable** versions of every dependency (per user instruction). Deliberate
   pin-backs: `argon2 = "0.5"` (0.6 is pre-release only).
 - SQLx **0.9**. Queries are runtime-checked (`query`/`query_as`), not the compile-time

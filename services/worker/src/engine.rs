@@ -142,10 +142,10 @@ impl Engine {
         // `provider_context` async for no benefit.
         {
             let cache = self.fetchers.lock().expect("fetcher cache mutex poisoned");
-            if let Some(entry) = cache.get(&provider.id) {
-                if entry.fingerprint == fingerprint {
-                    return Ok(Arc::clone(&entry.fetcher));
-                }
+            if let Some(entry) = cache.get(&provider.id)
+                && entry.fingerprint == fingerprint
+            {
+                return Ok(Arc::clone(&entry.fetcher));
             }
         }
 

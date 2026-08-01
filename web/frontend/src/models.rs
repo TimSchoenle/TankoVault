@@ -18,9 +18,9 @@ pub(crate) use crate::wire::types::{
     AccountStatus, AdapterKind, AssignRemoteEntry, ChapterDto, ChapterRead, ConflictPolicy,
     ConflictRow, ContentType, ContinueItem, CreateProvider, DismissRequest, FeedEntry,
     ForgotPasswordRequest, LoginRequest, MarkRead, MarkReadTo, MergeRequest, PasskeyLoginRequest,
-    PermissionPreset, Politeness, PolitenessEmulation, ProfileUpdate, ProgressDto, ProgressUpdate,
-    Provider, ProviderId, ProviderInfo, ProviderStat, ProviderState, PublicProvider,
-    ProblemDetails, RegisterRequest, RequestKind, RequestStatus, ResendVerificationRequest,
+    PermissionPreset, Politeness, PolitenessEmulation, ProblemDetails, ProfileUpdate, ProgressDto,
+    ProgressUpdate, Provider, ProviderId, ProviderInfo, ProviderStat, ProviderState,
+    PublicProvider, RegisterRequest, RequestKind, RequestStatus, ResendVerificationRequest,
     ResetPasswordRequest, ResolveConflict, RunState, ScanMode, ScanRun, ScanRunProviderId,
     SeriesDetail, SeriesId, SeriesSourceId, SeriesStatus, SeriesSummary,
     SetProviderState as SetProviderStateBody, SourceDto, SuggestedMatch, SyncExcluded, SyncOpts,
@@ -400,7 +400,10 @@ mod tests {
     /// unpickable from the bulk bar — silently, and only for whichever the `find` hit second.
     #[test]
     fn every_watch_status_has_a_distinct_token() {
-        let mut tokens: Vec<&str> = WatchStatus::all().iter().map(|s| s.token()).collect();
+        let mut tokens: Vec<&str> = WatchStatus::all()
+            .iter()
+            .map(super::WatchStatusExt::token)
+            .collect();
         let listed = tokens.len();
         tokens.sort_unstable();
         tokens.dedup();

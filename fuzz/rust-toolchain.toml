@@ -9,7 +9,7 @@
 #
 # The reason `fuzz/` is excluded from the host workspace rather than being a member is this
 # channel: as a member it would drag nightly into `cargo fmt --all`, `cargo clippy --workspace`
-# and the `--locked` resolution the `msrv` (1.85) and `supply-chain` jobs measure.
+# and the `--locked` resolution the `msrv` (1.94) and `supply-chain` jobs measure.
 [toolchain]
 channel = "nightly"
 components = ["rust-src"]

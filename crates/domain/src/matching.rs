@@ -72,6 +72,12 @@ pub struct Query {
 /// Deliberately a flat struct of `bool`s rather than a bitflag set: it is `Copy`, it appears in
 /// [`Decision`], and each field is named where it is read.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the flat bools are the point, as the doc comment above argues: this is a Copy \
+              record of which rules fired, each field read by name. The lint's suggested \
+              remedy — a bitflag or an enum — is what it was deliberately not written as."
+)]
 pub struct MatchSignals {
     /// The two normalized titles are byte-identical.
     pub exact_title: bool,

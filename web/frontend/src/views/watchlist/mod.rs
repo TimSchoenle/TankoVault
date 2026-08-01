@@ -463,8 +463,12 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
                                     title_count: stats.map_or(0, |g| g.title_count),
                                     chapter_count: stats.map_or(0, |g| g.chapter_count),
                                     ids: band_ids(&snapshot.items, band),
+                                    // `try_from` on the count rather than `as i64` on the
+                                    // length: the cast is the one direction that can wrap, and
+                                    // a wrapped comparison would mark a band complete.
                                     complete: stats.is_some_and(|g| {
-                                        band_ids(&snapshot.items, band).len() as i64 == g.title_count
+                                        usize::try_from(g.title_count)
+                                            .is_ok_and(|n| band_ids(&snapshot.items, band).len() == n)
                                     }),
                                 }
                             }
@@ -591,7 +595,7 @@ fn sort_header(
     }
 }
 
-/// "AniList synced 4m ago", when there is an account linked to say it about.
+/// "`AniList` synced 4m ago", when there is an account linked to say it about.
 fn sync_chip(i18n: Translator, status: &Resource<Option<SyncAccountStatus>>) -> Element {
     let Some(Some(status)) = status.read().clone() else {
         return rsx! {};
@@ -648,6 +652,11 @@ fn empty_state(
 /// `J`/`K` rather than only the arrow keys because the reader's hands are on the home row while
 /// triaging, and both are bound so neither habit is punished. Every key here is inert while a
 /// modifier other than `Shift` is held, so the browser's own `⌘K`/`Ctrl+F` keep working.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "`RowCtx` reaches a spawned future through the actions this dispatches to; see \
+              its doc comment in `row.rs`"
+)]
 fn on_key(
     event: &Event<KeyboardData>,
     board: Signal<Board>,

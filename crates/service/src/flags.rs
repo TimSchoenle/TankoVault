@@ -437,13 +437,12 @@ pub async fn enforce(State(layer): State<FeatureLayer>, req: Request, next: Next
         .get::<MatchedPath>()
         .and_then(|path| layer.routes.required(&method, path.as_str()));
 
-    if let Some(feature) = required {
-        if !layer.gate.is_enabled(feature) {
-            metrics::counter!("http_feature_disabled_total", "feature" => feature.key())
-                .increment(1);
-            tracing::debug!(feature = %feature, "refusing request for a disabled feature");
-            return feature_disabled(feature);
-        }
+    if let Some(feature) = required
+        && !layer.gate.is_enabled(feature)
+    {
+        metrics::counter!("http_feature_disabled_total", "feature" => feature.key()).increment(1);
+        tracing::debug!(feature = %feature, "refusing request for a disabled feature");
+        return feature_disabled(feature);
     }
 
     next.run(req).await

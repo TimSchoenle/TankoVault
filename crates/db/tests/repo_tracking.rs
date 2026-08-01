@@ -49,9 +49,9 @@
 #![cfg(feature = "integration")]
 
 use tankovault_db::repo::tracking::{
-    ReadProgress, continue_reading, feed, is_sync_excluded, me_stats, progress_get_full,
-    progress_mark_read, progress_mark_unread, progress_set, set_sync_excluded, watchers_for_series,
-    watchlist_page, watchlist_upsert, WatchlistFilter,
+    ReadProgress, WatchlistFilter, continue_reading, feed, is_sync_excluded, me_stats,
+    progress_get_full, progress_mark_read, progress_mark_unread, progress_set, set_sync_excluded,
+    watchers_for_series, watchlist_page, watchlist_upsert,
 };
 use tankovault_domain::{ProviderId, SeriesId, UserId, WatchStatus};
 use tankovault_test_support::{TestDb, seed};

@@ -595,7 +595,10 @@ async fn the_ambiguous_band_creates_a_series_and_queues_the_pair() {
     // be relied on. Both ids are still here; which one survives a merge is decided separately,
     // from `suggested_keep`.
     assert_eq!(
-        (candidate.series_id.min(candidate.candidate_id), candidate.series_id.max(candidate.candidate_id)),
+        (
+            candidate.series_id.min(candidate.candidate_id),
+            candidate.series_id.max(candidate.candidate_id)
+        ),
         (candidate.series_id, candidate.candidate_id),
         "the pair must be stored in canonical id order"
     );
@@ -733,7 +736,9 @@ async fn the_merge_queue_lists_only_unresolved_candidates_by_confidence() {
     // tie-break is what is actually being observed: newest first within a confidence level.
     assert!(queued[0].created_at >= queued[1].created_at);
 
-    let limited = list_open_merge_candidates(&db.pool, 1, 0.0).await.expect("list");
+    let limited = list_open_merge_candidates(&db.pool, 1, 0.0)
+        .await
+        .expect("list");
     assert_eq!(limited.len(), 1);
     assert_eq!(limited[0].id, queued[0].id);
 
@@ -1337,15 +1342,13 @@ async fn a_dismissed_pair_is_not_resurrected_by_a_later_observation() {
 /// enrichment has filled them in.
 async fn insert_series_directly(db: &TestDb, title: &str) -> SeriesId {
     let id = SeriesId::new();
-    sqlx::query(
-        "INSERT INTO series (id, canonical_title, normalized_title) VALUES ($1, $2, $3)",
-    )
-    .bind(id.as_uuid())
-    .bind(title)
-    .bind(normalize_title(title))
-    .execute(&db.pool)
-    .await
-    .expect("insert a series row directly");
+    sqlx::query("INSERT INTO series (id, canonical_title, normalized_title) VALUES ($1, $2, $3)")
+        .bind(id.as_uuid())
+        .bind(title)
+        .bind(normalize_title(title))
+        .execute(&db.pool)
+        .await
+        .expect("insert a series row directly");
     id
 }
 
@@ -1506,7 +1509,10 @@ async fn a_merge_carries_the_sync_and_notification_state_across() {
         .fetch_one(&db.pool)
         .await
         .expect("count history");
-    assert_eq!(history, 1, "the user-visible sync log must move, not vanish");
+    assert_eq!(
+        history, 1,
+        "the user-visible sync log must move, not vanish"
+    );
 
     let mapped: Option<uuid::Uuid> =
         sqlx::query_scalar("SELECT series_id FROM sync_remote_entries WHERE external_id = 'ext-1'")

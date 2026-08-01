@@ -349,12 +349,15 @@ pub async fn list_open_merge_candidates<'e, E: PgExecutor<'e>>(
             // More sources, then more chapters, then the lower id — the last only so the answer
             // is deterministic for two identically-sized series rather than an artefact of row
             // order.
-            let keep_series = (r.series_sources, r.series_chapters, std::cmp::Reverse(r.series_id))
-                >= (
-                    r.candidate_sources,
-                    r.candidate_chapters,
-                    std::cmp::Reverse(r.candidate_id),
-                );
+            let keep_series = (
+                r.series_sources,
+                r.series_chapters,
+                std::cmp::Reverse(r.series_id),
+            ) >= (
+                r.candidate_sources,
+                r.candidate_chapters,
+                std::cmp::Reverse(r.candidate_id),
+            );
             MergeCandidateView {
                 id: r.id,
                 series_id,

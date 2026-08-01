@@ -353,10 +353,10 @@ impl RateLimiter {
         if let Some(Principal(id)) = req.extensions().get::<Principal>() {
             return format!("u:{id}");
         }
-        if self.trust_forwarded_for {
-            if let Some(ip) = forwarded_client_ip(req.headers()) {
-                return format!("ip:{}", bucket_ip(&ip));
-            }
+        if self.trust_forwarded_for
+            && let Some(ip) = forwarded_client_ip(req.headers())
+        {
+            return format!("ip:{}", bucket_ip(&ip));
         }
         req.extensions()
             .get::<ConnectInfo<SocketAddr>>()
@@ -383,12 +383,12 @@ impl RateLimiter {
 /// `deploy/docker-compose.yml` deploys; if another proxy is added, it must also append, and
 /// `trust_forwarded_for` must stay off wherever the service is reachable directly.
 fn forwarded_client_ip(headers: &HeaderMap) -> Option<String> {
-    if let Some(forwarded) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-        if let Some(last) = forwarded.rsplit(',').next() {
-            let trimmed = last.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_owned());
-            }
+    if let Some(forwarded) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok())
+        && let Some(last) = forwarded.rsplit(',').next()
+    {
+        let trimmed = last.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_owned());
         }
     }
     headers

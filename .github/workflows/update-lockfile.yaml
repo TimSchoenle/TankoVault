@@ -38,6 +38,17 @@ jobs:
     # commit on its behalf. Skipping is correct: a fork's lockfile drift is the author's to fix.
     if: github.event.pull_request.head.repo.full_name == github.repository
     permissions: {}
+    # `RELEASE_BOT_APP_ID` and `RELEASE_BOT_PRIVATE_KEY` are secrets of the `release`
+    # environment, not of the repository — the same pair `release-please.yaml` mints its token
+    # from, declared in one place so there is one app to rotate. A job that does not name the
+    # environment reads them as empty strings, and `create-github-app-token` then fails with
+    # "the 'client-id' (or deprecated 'app-id') input must be set to a non-empty string",
+    # which is what made this workflow red on every pull request. `deployment: false`: this is
+    # a secret scope, not a deployment, and a deployment record would show up in the timeline
+    # of every PR.
+    environment:
+      name: release
+      deployment: false
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0

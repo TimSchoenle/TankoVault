@@ -386,7 +386,7 @@ Everything that can fail, what owns it, and how to run it.
 | licences, advisories, duplicate-version budget, banned crates | `deny.toml` | `cargo deny check` |
 | secrets in history | gitleaks | CI `secrets` job |
 | coverage floor | `xtask coverage-ratchet` | CI `coverage` job |
-| MSRV (1.85) | CI `msrv` job | — |
+| MSRV (1.94) | CI `msrv` job | — |
 | **all of the offline ones, in CI's order** | `xtask ci` | `cargo run -p xtask -- ci` |
 
 `xtask ci` deliberately omits what needs Docker, a database, Node, promtool or the network.

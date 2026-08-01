@@ -294,7 +294,7 @@ impl NotificationChannel for EmailChannel {
 /// A webhook URL is a `SecretString` for a reason: for both Discord and the generic receiver the
 /// token *is* the path (`…/webhooks/{id}/{token}`), so an `http://` endpoint puts a bearer
 /// credential and the alert body on the wire in plain text, readable and replayable by anything
-/// on the path. That is what CodeQL `rust/cleartext-transmission` flags at the two `post` calls
+/// on the path. That is what `CodeQL` `rust/cleartext-transmission` flags at the two `post` calls
 /// above, and it is a fair flag.
 ///
 /// It is a warning and not a refusal because `http://` is a legitimate choice for a receiver on

@@ -93,7 +93,7 @@ xtask/          dev/ops tasks: ci, migrate, reset, seed, openapi, sqlx-prepare,
 - **Observability** — `tracing` + OpenTelemetry + Prometheus metrics
 - **IDs / time** — UUID v7, `time`
 
-Rust edition 2024, MSRV 1.85. Lints are strict workspace-wide (`unsafe_code = "forbid"`,
+Rust edition 2024, MSRV 1.94. Lints are strict workspace-wide (`unsafe_code = "forbid"`,
 `clippy::pedantic`).
 
 ## Quick start (Docker)

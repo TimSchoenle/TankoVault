@@ -78,8 +78,8 @@ impl Enricher {
         // catalogue with more unresolvable series than `max_series` never advanced past them.
         let started_at = OffsetDateTime::now_utc();
         while report.scanned < max_series {
-            let rows = catalog::list_series_for_enrichment(&self.pool, batch_size, started_at)
-                .await?;
+            let rows =
+                catalog::list_series_for_enrichment(&self.pool, batch_size, started_at).await?;
             if rows.is_empty() {
                 break;
             }

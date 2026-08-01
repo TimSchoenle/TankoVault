@@ -15,10 +15,7 @@ use dioxus::prelude::*;
 use std::collections::HashSet;
 
 #[component]
-pub(super) fn CoverGrid(
-    items: Vec<WatchlistItem>,
-    selected: Signal<HashSet<SeriesId>>,
-) -> Element {
+pub(super) fn CoverGrid(items: Vec<WatchlistItem>, selected: Signal<HashSet<SeriesId>>) -> Element {
     let i18n = use_i18n();
     rsx! {
         div { class: "ik-wl-grid",

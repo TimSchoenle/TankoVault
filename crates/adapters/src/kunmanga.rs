@@ -223,18 +223,54 @@ fn catalog_item(page_url: &str, loc: &str) -> Option<CatalogItem> {
 }
 
 /// Render a URL slug as a provisional display title: `the-frontier-base` → `The Frontier Base`.
+///
+/// A lone `s` segment is glued back onto the word before it as `'s`. The slug is the only
+/// title this listing has, and it has to collapse to the same [`normalize_title`] key as the
+/// title the site itself will serve later — otherwise enrichment creates a second canonical
+/// series instead of attaching to this stub. `normalize_title` *elides* apostrophes, so
+/// `world-s-strongest` left as three words keys as `world s strongest` while the site's
+/// `World's Strongest` keys as `worlds strongest`. The two agreed only for as long as the
+/// normalizer treated an apostrophe as a word boundary, which it deliberately no longer does.
+///
+/// [`normalize_title`]: tankovault_domain::normalize_title
 fn title_from_slug(slug: &str) -> String {
-    slug.split('-')
-        .filter(|word| !word.is_empty())
-        .map(|word| {
-            let mut chars = word.chars();
-            match chars.next() {
-                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                None => String::new(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+    let mut words: Vec<String> = Vec::new();
+    for word in slug.split('-').filter(|word| !word.is_empty()) {
+        if word == "s" && words.last().is_some_and(|prev| takes_possessive_s(prev)) {
+            // `expect` over `if let`: `is_some_and` above already established the element.
+            words
+                .last_mut()
+                .expect("the guard above matched on the last element")
+                .push_str("'s");
+            continue;
+        }
+        let mut chars = word.chars();
+        words.push(match chars.next() {
+            Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            None => String::new(),
+        });
+    }
+    words.join(" ")
+}
+
+/// Whether a lone `s` following `word` reads as a flattened possessive.
+///
+/// It usually does — but `S` is also a rank, and `the-s-rank-hunter` and `hunter-rank-s` are
+/// ordinary spellings in this catalogue. An apostrophe-`s` attaches to a noun or a name, so a
+/// determiner or a rank noun in front of it rules the possessive reading out; gluing there
+/// would invent `The's Rank Hunter` and produce exactly the key mismatch the gluing exists to
+/// avoid.
+fn takes_possessive_s(word: &str) -> bool {
+    const NEVER_AFTER: &[&str] = &[
+        // Determiners, prepositions and the copula: nothing that can own anything.
+        "a", "an", "the", "and", "or", "of", "in", "on", "at", "to", "for", "with", "from", "by",
+        "is", "was", "be", "my", "your", "his", "her", "its", "our", "their", "this", "that",
+        "these", "those", "no",
+        "not", // Rank nouns: `rank-s`, `class-s`, `grade-s`, `tier-s`, `level-s`.
+        "rank", "ranked", "class", "grade", "tier", "level",
+    ];
+    let lowered = word.to_lowercase();
+    !NEVER_AFTER.contains(&lowered.as_str())
 }
 
 #[async_trait]
@@ -557,6 +593,27 @@ mod tests {
             tankovault_domain::normalize_title(&title_from_slug(slug)),
             tankovault_domain::normalize_title(real)
         );
+    }
+
+    /// The possessive rule above must not fire on an `S`-rank title.
+    ///
+    /// `-s-` in a slug is a flattened `'s` often enough to be worth repairing, but `S` is also
+    /// a rank: gluing it unconditionally would render `the-s-rank-hunter` as `The's Rank
+    /// Hunter` and key it as `thes rank hunter`, against `the s rank hunter` for the site's own
+    /// title — the same duplicate-series split the gluing exists to prevent, just moved.
+    #[test]
+    fn an_s_rank_slug_keeps_the_rank_a_word_of_its_own() {
+        for (slug, real) in [
+            ("the-s-rank-hunter-returns", "The S-Rank Hunter Returns"),
+            ("hunter-rank-s-only", "Hunter Rank S Only"),
+            ("s-rank-party", "S-Rank Party"),
+        ] {
+            assert_eq!(
+                tankovault_domain::normalize_title(&title_from_slug(slug)),
+                tankovault_domain::normalize_title(real),
+                "slug-derived stub and real title must share one key ({slug})"
+            );
+        }
     }
 
     #[test]

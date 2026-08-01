@@ -293,7 +293,11 @@ pub async fn bulk_mark_read(
 /// API with its own rate limit — every time someone clears a group header. One task walking the
 /// list keeps the caller's response immediate (which is the only thing the spawn was for)
 /// without turning a UI click into a thundering herd.
-pub(super) fn spawn_targeted_push_many(state: &AppState, user_id: UserId, series_ids: Vec<SeriesId>) {
+pub(super) fn spawn_targeted_push_many(
+    state: &AppState,
+    user_id: UserId,
+    series_ids: Vec<SeriesId>,
+) {
     if series_ids.is_empty() {
         return;
     }

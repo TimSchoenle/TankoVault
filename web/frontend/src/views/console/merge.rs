@@ -366,7 +366,10 @@ impl SideSummary {
     /// "3 sources · 412 chapters" — the two numbers that decide which side should survive.
     fn summary(&self, i18n: crate::i18n::Translator) -> String {
         let sources = i18n.plural("series.sources", self.sources, &[]);
-        let chapters = i18n.args("series.chapterCount", &[("count", &self.chapters.to_string())]);
+        let chapters = i18n.args(
+            "series.chapterCount",
+            &[("count", &self.chapters.to_string())],
+        );
         format!("{sources} · {chapters}")
     }
 }

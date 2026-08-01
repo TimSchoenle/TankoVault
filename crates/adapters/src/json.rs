@@ -163,11 +163,11 @@ fn collect_objects(doc: &str, out: &mut Vec<String>) {
                 if depth == 0 {
                     continue;
                 }
-                if let Some(&(open_depth, start)) = pending.last() {
-                    if open_depth == depth {
-                        pending.pop();
-                        spans.push((start, i));
-                    }
+                if let Some(&(open_depth, start)) = pending.last()
+                    && open_depth == depth
+                {
+                    pending.pop();
+                    spans.push((start, i));
                 }
                 depth -= 1;
             }

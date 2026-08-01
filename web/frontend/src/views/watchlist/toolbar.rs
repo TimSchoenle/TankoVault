@@ -130,7 +130,10 @@ pub(super) fn FilterBar(
                 return;
             }
             if committed.q != value {
-                on_change_quiet.call(WatchlistQuery { q: value, ..committed });
+                on_change_quiet.call(WatchlistQuery {
+                    q: value,
+                    ..committed
+                });
             }
         });
     };
@@ -166,7 +169,7 @@ pub(super) fn FilterBar(
                     on_change.call(WatchlistQuery {
                         unread_only: !unread_query.unread_only,
                         ..unread_query.clone()
-                    })
+                    });
                 },
                 {i18n.t("watchlist.unreadOnly")}
             }
@@ -180,7 +183,7 @@ pub(super) fn FilterBar(
                         on_change.call(WatchlistQuery {
                             source_issues: !issues_query.source_issues,
                             ..issues_query.clone()
-                        })
+                        });
                     },
                     Ic { icon: Icon::Warning, size: 14 }
                     {i18n.args("watchlist.sourceIssues", &[("count", &source_issues.to_string())])}

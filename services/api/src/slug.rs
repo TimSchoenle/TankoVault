@@ -1,6 +1,6 @@
 //! The only type a caller-supplied provider slug may reach an upstream URL through.
 //!
-//! # The hole this closes (CodeQL `rust/request-forgery`)
+//! # The hole this closes (`CodeQL` `rust/request-forgery`)
 //!
 //! Every sync proxy handler used to take `Path(provider): Path<String>` and interpolate it
 //! straight into the upstream path — `format!("/v1/sync/{provider}/push")` — which

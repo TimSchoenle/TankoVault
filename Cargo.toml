@@ -31,7 +31,7 @@ members = [
 #
 # - `web/frontend` — the Dioxus SPA, built with the `dx` CLI against `wasm32`.
 # - `fuzz` — the `cargo-fuzz` targets. `libfuzzer-sys` needs `-Z sanitizer`, i.e. **nightly**,
-#   while `rust-toolchain.toml` pins 1.94.0 and the `msrv` CI job builds at 1.85. As a member
+#   while `rust-toolchain.toml` pins 1.94.0 and the `msrv` CI job builds at 1.94. As a member
 #   it would drag nightly into `cargo fmt --all`, `cargo clippy --workspace --all-targets`,
 #   `cargo deny` (a `libfuzzer-sys`/`arbitrary` duplicate would land in the `bans` budget) and
 #   the `--locked` resolution the `msrv` and `supply-chain` jobs measure — for a crate no gate
@@ -43,7 +43,14 @@ exclude = ["web/frontend", "fuzz"]
 version = "0.1.0"
 edition = "2024"
 authors = ["TankoVault contributors"]
-rust-version = "1.85"
+# The minimum this workspace actually builds on, verified by the `msrv` CI job rather than
+# asserted. It was "1.85" and had stopped being true: `sqlx 0.9` declares `rust-version =
+# "1.94.0"`, and `time`, `webauthn-rs`, `progenitor` and `testcontainers` all sit above 1.85 as
+# well, so the job could only fail. Raising it is the honest half of the fix — the number is a
+# consequence of the dependency set, and lowering it again means moving those pins, not editing
+# this line. It equals the `rust-toolchain.toml` channel today; that is a coincidence of `sqlx`
+# tracking the newest stable, not a rule.
+rust-version = "1.94"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

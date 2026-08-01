@@ -165,6 +165,13 @@ fn widen(c: char) -> char {
 /// Three outcomes, and which one a character gets is the whole of the normalization policy:
 /// elided (contributes nothing and does **not** break the word), expanded to one or more ASCII
 /// letters, or treated as a word boundary.
+#[expect(
+    clippy::match_same_arms,
+    reason = "the two elided arms have the same *body* and different reasons — apostrophes sit \
+              inside a word, combining marks belong to the letter before them — and each \
+              carries the comment explaining which duplicate class it exists to prevent. \
+              Merging them into one arm would leave one comment describing two rules."
+)]
 fn fold_into(c: char, out: &mut String) {
     match c {
         // --- elided: these sit *inside* a word ------------------------------------------
@@ -176,7 +183,9 @@ fn fold_into(c: char, out: &mut String) {
         | '\u{2032}' => {}
         // Combining marks. Dropping them folds an NFD-encoded title onto its NFC twin;
         // separating on them split `İstanbul` (which lowercases to `i` + U+0307) into two words.
-        '\u{0300}'..='\u{036F}' | '\u{1AB0}'..='\u{1AFF}' | '\u{20D0}'..='\u{20F0}'
+        '\u{0300}'..='\u{036F}'
+        | '\u{1AB0}'..='\u{1AFF}'
+        | '\u{20D0}'..='\u{20F0}'
         | '\u{FE20}'..='\u{FE2F}' => {}
 
         // --- expanded: one character that is really several letters ---------------------
@@ -301,7 +310,10 @@ mod tests {
     fn combining_marks_are_elided_not_separated() {
         assert_eq!(normalize_title("\u{0130}stanbul"), "istanbul");
         assert_eq!(normalize_title("Be\u{0301}rserk"), "berserk");
-        assert_eq!(normalize_title("Bérserk"), normalize_title("Be\u{0301}rserk"));
+        assert_eq!(
+            normalize_title("Bérserk"),
+            normalize_title("Be\u{0301}rserk")
+        );
     }
 
     /// Full-width forms are the same characters as their ASCII twins.

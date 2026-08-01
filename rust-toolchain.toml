@@ -9,9 +9,11 @@
 # Pinning here means `cargo`, `rustfmt` and `clippy` agree everywhere, and a toolchain bump
 # becomes a reviewed commit rather than a Tuesday.
 #
-# `rust-version = "1.85"` in the workspace manifest is the *minimum supported* version and is
-# what the `msrv` CI job checks; this is the version everything is actually built with. The
-# two are deliberately different numbers with different jobs behind them.
+# `rust-version` in the workspace manifest is the *minimum supported* version and is what the
+# `msrv` CI job checks; this is the version everything is actually built with. The two are
+# separate claims with separate jobs behind them, and they happen to be the same number right
+# now: `sqlx 0.9` declares `rust-version = "1.94.0"`, which drags the workspace minimum up to
+# the channel below. They diverge again the moment the channel moves ahead of `sqlx`.
 [toolchain]
 channel = "1.94.0"
 components = ["rustfmt", "clippy"]

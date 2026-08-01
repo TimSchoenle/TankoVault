@@ -192,11 +192,9 @@ impl SmtpMailer {
             if let (Some(user), Some(pass)) = (
                 cfg.username.as_deref(),
                 cfg.password.as_ref().map(ExposeSecret::expose_secret),
-            ) {
-                if !user.is_empty() {
-                    builder =
-                        builder.credentials(Credentials::new(user.to_owned(), pass.to_owned()));
-                }
+            ) && !user.is_empty()
+            {
+                builder = builder.credentials(Credentials::new(user.to_owned(), pass.to_owned()));
             }
             builder.build()
         };

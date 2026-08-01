@@ -1,6 +1,6 @@
 # A workspace of its own, on purpose. `libfuzzer-sys` compiles the target with
 # `-Z sanitizer=address`, which is nightly-only, and the host workspace pins 1.94.0 in
-# `rust-toolchain.toml` with an MSRV job at 1.85. See the `exclude` comment in the root
+# `rust-toolchain.toml` with an MSRV job at 1.94. See the `exclude` comment in the root
 # `Cargo.toml` and `README.md` here.
 [workspace]
 

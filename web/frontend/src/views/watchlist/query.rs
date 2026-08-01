@@ -18,6 +18,7 @@
 
 use crate::models::{WatchStatus, WatchStatusExt};
 use std::fmt;
+use std::fmt::Write as _;
 
 /// How the list is ordered. Mirrors `tankovault_db::repo::tracking::WatchlistSort`; the tokens
 /// are the wire contract between them.
@@ -232,7 +233,10 @@ impl WatchlistQuery {
     /// Drives the "no matches — widen your filter" empty state, which is only the right advice
     /// when there is in fact something to widen.
     pub(crate) fn is_narrowed(&self) -> bool {
-        !self.q.is_empty() || self.released != Released::Any || self.unread_only || self.source_issues
+        !self.q.is_empty()
+            || self.released != Released::Any
+            || self.unread_only
+            || self.source_issues
     }
 
     /// The status token to send, or `None` for the `All` tab.
@@ -332,7 +336,12 @@ fn encode_component(value: &str) -> String {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 out.push(byte as char);
             }
-            _ => out.push_str(&format!("%{byte:02X}")),
+            // `write!` rather than `push_str(&format!(…))`: the latter allocates a `String` per
+            // escaped byte only to copy it away again. Writing into a `String` is infallible,
+            // which is why the `Result` is discarded rather than propagated.
+            _ => {
+                let _ = write!(out, "%{byte:02X}");
+            }
         }
     }
     out

@@ -287,12 +287,11 @@ pub async fn refresh(
 )]
 pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> ApiResult<CookieJar> {
     let (name, path) = refresh_cookie(state.cookie_secure);
-    if let Some(raw) = jar.get(name).map(|c| SecretString::from(c.value())) {
-        if let Some(record) =
+    if let Some(raw) = jar.get(name).map(|c| SecretString::from(c.value()))
+        && let Some(record) =
             tankovault_db::repo::users::find_refresh(&state.pool, &hash_refresh_token(&raw)).await?
-        {
-            tankovault_db::repo::users::revoke_family(&state.pool, record.family_id).await?;
-        }
+    {
+        tankovault_db::repo::users::revoke_family(&state.pool, record.family_id).await?;
     }
     // The removal must match the name *and* path the cookie was set with, or the browser keeps
     // its copy: a `Set-Cookie` for `refresh_token` at `/v1/auth` does not clear
@@ -312,7 +311,7 @@ pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> ApiResult<
 /// The `Set-Cookie` that clears the refresh cookie, built to the same rules as the one that set
 /// it. Separate from [`logout`] so those rules are assertable without a database.
 ///
-/// `secure` is a parameter and not a literal `true`, which CodeQL `rust/insecure-cookie` reports
+/// `secure` is a parameter and not a literal `true`, which `CodeQL` `rust/insecure-cookie` reports
 /// here exactly as it does on [`issue_session_tokens`]. Do not "fix" it by pinning: a `Secure`
 /// cookie sent over plain HTTP is ignored by the browser, so a hard `true` would stop the
 /// local-HTTP opt-out from ever clearing its cookie — trading the production bug this function

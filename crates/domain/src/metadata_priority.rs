@@ -103,12 +103,11 @@ impl MetadataPriority {
     ) -> Option<String> {
         for source in self.order_for(field) {
             for (candidate_source, value) in candidates {
-                if candidate_source == source {
-                    if let Some(v) = value {
-                        if !v.trim().is_empty() {
-                            return Some(v.clone());
-                        }
-                    }
+                if candidate_source == source
+                    && let Some(v) = value
+                    && !v.trim().is_empty()
+                {
+                    return Some(v.clone());
                 }
             }
         }

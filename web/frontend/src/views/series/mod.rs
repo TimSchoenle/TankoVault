@@ -520,7 +520,9 @@ fn WatchControls(
 /// A failed or in-flight lookup is `None`, i.e. "not tracked as far as this page knows" — the
 /// watch button then offers to add the title, and adding one already tracked is an upsert, so
 /// the worst case is a no-op rather than a wrong write.
-fn current_entry(watchlist: &Resource<Result<Option<WatchlistItem>, String>>) -> Option<WatchlistItem> {
+fn current_entry(
+    watchlist: &Resource<Result<Option<WatchlistItem>, String>>,
+) -> Option<WatchlistItem> {
     match &*watchlist.read_unchecked() {
         Some(Ok(entry)) => entry.clone(),
         _ => None,

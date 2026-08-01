@@ -80,7 +80,11 @@ fn extract_text_source(
                 };
                 // Themes are inconsistent about a trailing colon and about case, and
                 // `text_of` has already collapsed the surrounding whitespace.
-                if !label.trim_end_matches(':').trim().eq_ignore_ascii_case(wanted) {
+                if !label
+                    .trim_end_matches(':')
+                    .trim()
+                    .eq_ignore_ascii_case(wanted)
+                {
                     continue;
                 }
                 return Ok(extract_first(row, &cfg.value)?

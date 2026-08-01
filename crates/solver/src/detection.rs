@@ -29,10 +29,10 @@ pub fn detect_challenge<R: ResponseView>(resp: &R) -> Option<ChallengeKind> {
     let status = resp.status();
 
     // Header signal is the strongest and cheapest: a managed challenge announces itself.
-    if let Some(mitigated) = resp.header("cf-mitigated") {
-        if mitigated.eq_ignore_ascii_case("challenge") {
-            return Some(ChallengeKind::CloudflareManaged);
-        }
+    if let Some(mitigated) = resp.header("cf-mitigated")
+        && mitigated.eq_ignore_ascii_case("challenge")
+    {
+        return Some(ChallengeKind::CloudflareManaged);
     }
 
     let server_is_cf = resp

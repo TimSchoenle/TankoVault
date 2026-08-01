@@ -300,7 +300,11 @@ fn dockerfile_ships_every_workspace_binary(root: &Path) -> anyhow::Result<Vec<Fi
     let mut actual = Vec::new();
     // `exclude`d members are not workspace binaries; `target` holds build output, and a vendored
     // manifest under it would otherwise be read as a member.
-    for manifest in walk(root, &["toml"], &["target", "web", "fuzz", "mutants.out", "mutants.out.old"]) {
+    for manifest in walk(
+        root,
+        &["toml"],
+        &["target", "web", "fuzz", "mutants.out", "mutants.out.old"],
+    ) {
         if manifest.file_name().is_none_or(|name| name != "Cargo.toml") {
             continue;
         }

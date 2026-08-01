@@ -391,10 +391,10 @@ fn inject_rust_types(value: &mut serde_json::Value) {
 fn downgrade_to_3_0(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(map) => {
-            if let Some(v) = map.get_mut("openapi") {
-                if v == "3.1.0" {
-                    *v = serde_json::json!("3.0.3");
-                }
+            if let Some(v) = map.get_mut("openapi")
+                && v == "3.1.0"
+            {
+                *v = serde_json::json!("3.0.3");
             }
 
             // Handle 'type' which can be a string or an array in 3.1
@@ -437,10 +437,10 @@ fn downgrade_to_3_0(value: &mut serde_json::Value) {
             }
 
             // Also handle 'examples' -> 'example' (OpenAPI 3.0 vs 3.1)
-            if let Some(serde_json::Value::Array(arr)) = map.remove("examples") {
-                if !arr.is_empty() {
-                    map.insert("example".to_string(), arr[0].clone());
-                }
+            if let Some(serde_json::Value::Array(arr)) = map.remove("examples")
+                && !arr.is_empty()
+            {
+                map.insert("example".to_string(), arr[0].clone());
             }
 
             for v in map.values_mut() {

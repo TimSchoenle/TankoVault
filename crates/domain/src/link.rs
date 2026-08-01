@@ -38,10 +38,10 @@ pub enum ResolveError {
 /// or the join cannot be parsed.
 pub fn resolve_link(base_url: &str, path: &str) -> Result<String, ResolveError> {
     // Defensive path: a stored value that is already an absolute web URL passes through.
-    if let Ok(parsed) = Url::parse(path) {
-        if matches!(parsed.scheme(), "http" | "https") {
-            return Ok(parsed.to_string());
-        }
+    if let Ok(parsed) = Url::parse(path)
+        && matches!(parsed.scheme(), "http" | "https")
+    {
+        return Ok(parsed.to_string());
     }
 
     let base = Url::parse(base_url).map_err(|_| ResolveError::InvalidBase(base_url.to_owned()))?;

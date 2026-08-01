@@ -49,7 +49,10 @@ pub(super) fn BulkBar(
                         "watchlist.bulkPartial",
                         &[
                             ("applied", &outcome.applied.len().to_string()),
-                            ("total", &(outcome.applied.len() + outcome.skipped.len()).to_string()),
+                            (
+                                "total",
+                                &(outcome.applied.len() + outcome.skipped.len()).to_string(),
+                            ),
                         ],
                     ))));
                 }

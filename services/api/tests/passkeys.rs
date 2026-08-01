@@ -206,10 +206,9 @@ async fn one_account_cannot_touch_anothers_passkeys() {
     assert_eq!(deleted, StatusCode::NOT_FOUND);
 
     // And the row is untouched, which the status alone does not prove.
-    let still_there =
-        tankovault_db::repo::users::passkeys::list_for_user(&app.db.pool, owner)
-            .await
-            .expect("list");
+    let still_there = tankovault_db::repo::users::passkeys::list_for_user(&app.db.pool, owner)
+        .await
+        .expect("list");
     assert_eq!(still_there.len(), 1);
     assert_eq!(still_there[0].label, "Owner's phone");
 

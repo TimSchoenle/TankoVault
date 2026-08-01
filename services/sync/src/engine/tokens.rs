@@ -66,13 +66,12 @@ impl TokenVault {
 
         if let (Some(expiry), Some(refresh_ct)) =
             (account.expires_at, account.refresh_token.as_ref())
+            && expiry <= OffsetDateTime::now_utc()
         {
-            if expiry <= OffsetDateTime::now_utc() {
-                let refresh = self.secret.open_string(refresh_ct)?;
-                if let Ok(tokens) = provider.refresh(&refresh).await {
-                    self.store(slug, user_id, &tokens).await?;
-                    return Ok(tokens.access_token);
-                }
+            let refresh = self.secret.open_string(refresh_ct)?;
+            if let Ok(tokens) = provider.refresh(&refresh).await {
+                self.store(slug, user_id, &tokens).await?;
+                return Ok(tokens.access_token);
             }
         }
 

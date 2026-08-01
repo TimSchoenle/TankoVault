@@ -43,10 +43,10 @@ const SELECTOR_CACHE_CAP: usize = 4096;
 /// # Errors
 /// [`AdapterError::Selector`] if `spec` is not a valid selector.
 pub fn parse_selector(spec: &str) -> Result<Arc<Selector>, AdapterError> {
-    if let Ok(cache) = SELECTOR_CACHE.read() {
-        if let Some(hit) = cache.get(spec) {
-            return Ok(Arc::clone(hit));
-        }
+    if let Ok(cache) = SELECTOR_CACHE.read()
+        && let Some(hit) = cache.get(spec)
+    {
+        return Ok(Arc::clone(hit));
     }
 
     let parsed = Arc::new(Selector::parse(spec).map_err(|e| AdapterError::Selector {
@@ -54,10 +54,10 @@ pub fn parse_selector(spec: &str) -> Result<Arc<Selector>, AdapterError> {
         reason: e.to_string(),
     })?);
 
-    if let Ok(mut cache) = SELECTOR_CACHE.write() {
-        if cache.len() < SELECTOR_CACHE_CAP {
-            cache.insert(spec.to_owned(), Arc::clone(&parsed));
-        }
+    if let Ok(mut cache) = SELECTOR_CACHE.write()
+        && cache.len() < SELECTOR_CACHE_CAP
+    {
+        cache.insert(spec.to_owned(), Arc::clone(&parsed));
     }
     Ok(parsed)
 }
@@ -309,15 +309,15 @@ pub fn parse_chapter_number(text: &str) -> Option<f64> {
 /// ```
 #[must_use]
 pub fn relativize(page_url: &str, href: &str) -> String {
-    if let Ok(base) = Url::parse(page_url) {
-        if let Ok(joined) = base.join(href.trim()) {
-            let mut path = joined.path().to_owned();
-            if let Some(q) = joined.query() {
-                path.push('?');
-                path.push_str(q);
-            }
-            return path;
+    if let Ok(base) = Url::parse(page_url)
+        && let Ok(joined) = base.join(href.trim())
+    {
+        let mut path = joined.path().to_owned();
+        if let Some(q) = joined.query() {
+            path.push('?');
+            path.push_str(q);
         }
+        return path;
     }
     if href.starts_with('/') {
         href.to_owned()

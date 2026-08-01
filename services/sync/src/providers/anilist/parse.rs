@@ -192,19 +192,19 @@ fn titles_from_media(media: &serde_json::Value) -> Vec<String> {
     let mut titles = Vec::new();
     if let Some(title) = media.get("title") {
         for key in ["romaji", "english", "native"] {
-            if let Some(t) = title.get(key).and_then(serde_json::Value::as_str) {
-                if !t.trim().is_empty() {
-                    titles.push(t.to_owned());
-                }
+            if let Some(t) = title.get(key).and_then(serde_json::Value::as_str)
+                && !t.trim().is_empty()
+            {
+                titles.push(t.to_owned());
             }
         }
     }
     if let Some(synonyms) = media.get("synonyms").and_then(serde_json::Value::as_array) {
         for s in synonyms {
-            if let Some(t) = s.as_str() {
-                if !t.trim().is_empty() {
-                    titles.push(t.to_owned());
-                }
+            if let Some(t) = s.as_str()
+                && !t.trim().is_empty()
+            {
+                titles.push(t.to_owned());
             }
         }
     }

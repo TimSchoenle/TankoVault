@@ -174,9 +174,8 @@ fn parse_param<T: std::str::FromStr>(raw: Option<&str>, name: &str) -> ApiResult
 /// Refused rather than ignored: a client asking for "last 24 hours" and silently receiving the
 /// unfiltered list is the failure mode this whole surface exists to avoid.
 fn released_cutoff(raw: Option<&str>) -> ApiResult<Option<OffsetDateTime>> {
-    let token = match raw.map(str::trim).filter(|v| !v.is_empty()) {
-        None => return Ok(None),
-        Some(t) => t,
+    let Some(token) = raw.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
     };
     let window = match token {
         "any" => return Ok(None),
@@ -239,8 +238,8 @@ pub async fn watchlist(
         offset: params.offset.clamp(0, MAX_OFFSET),
     };
 
-    let page = tankovault_db::repo::tracking::watchlist_page(&state.pool, user.user_id, &filter)
-        .await?;
+    let page =
+        tankovault_db::repo::tracking::watchlist_page(&state.pool, user.user_id, &filter).await?;
 
     Ok(Json(WatchlistView {
         items: page.items.into_iter().map(WatchlistItem::from).collect(),

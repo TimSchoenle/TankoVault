@@ -11,10 +11,27 @@
 # `/v1/admin/scans/stream`) stream through unbuffered. Because it is a static binary, it runs on
 # `scratch` exactly like every other backend service (no shell, no OS, numeric nonroot user).
 #
-# Caching: BuildKit `type=cache` mounts keep the crate registry/git downloads and the WASM/musl
-# build targets warm across rebuilds. Reproducibility: base images are pinned by digest, cargo
-# and `dx` resolve against the committed lockfiles (`--locked`), and layer mtimes are clamped to
-# `SOURCE_DATE_EPOCH` when supplied.
+# Reproducibility: base images are pinned by digest, cargo and `dx` resolve against the committed
+# lockfiles (`--locked`), and layer mtimes are clamped to `SOURCE_DATE_EPOCH` when supplied.
+#
+# Caching
+# -------
+# This image compiles **two** dependency graphs — `web/frontend`'s, for
+# `wasm32-unknown-unknown`, and the host workspace's, for musl — and cargo-chef cooks each into
+# an image layer (`cook-web`, `cook-server`) before any source is copied.
+#
+# That structure is not a micro-optimisation, it is the only kind of cache CI can keep. A
+# BuildKit `type=cache` mount lives in the local builder's state and is **not** carried by
+# `cache-to: type=gha`; every GitHub runner is fresh, so mounts start empty on every run. Before
+# the cook stages existed the two target directories were mounts and nothing else, which meant
+# every CI build of this image recompiled both graphs from cold — the wasm one at
+# `lto = "fat"`, `codegen-units = 1`. An image *layer* is what `type=gha` actually stores, so
+# putting the cooked dependencies in one is what makes the cache survive.
+#
+# Consequently **neither cook stage may mount a cache over the target directory it is cooking
+# into** — a cache mount shadows the layer, and the artefacts would land somewhere the layer
+# does not keep. The `builder` stage below re-mounts both as caches (for fast local rebuilds)
+# and seeds them from the cooked layers with `from=`, exactly as deploy/docker/Dockerfile does.
 #
 # **Every cache mount below carries an explicit `id=`.** The default id is the target path, so
 # dropping one silently re-shares the mount with any other image that happens to build at the
@@ -41,10 +58,10 @@ ARG BUILD_TARGET=x86_64-unknown-linux-musl
 # Passed through so BuildKit can clamp layer mtimes for reproducible images. Empty is fine.
 ARG SOURCE_DATE_EPOCH
 
-# --- Build: WASM bundle (dx) + the static musl server binary (cargo). ---------------
+# --- Toolchain: rustc, both targets, and the three pinned cargo subcommands. --------
 # Pinned by digest for reproducible, tamper-evident builds. Refresh with:
 #   docker buildx imagetools inspect rust:1.94-bookworm
-FROM rust:${RUST_VERSION}-bookworm@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55 AS builder
+FROM rust:${RUST_VERSION}-bookworm@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55 AS chef
 WORKDIR /app
 ARG BUILD_TARGET
 # Both targets (wasm for the SPA, musl for the static server) plus the musl C toolchain
@@ -68,22 +85,143 @@ RUN --mount=type=cache,id=frontend-cargo-registry,target=/usr/local/cargo/regist
 
 # `cargo auditable build` (used below) embeds the resolved dependency list into the binary — see
 # deploy/docker/Dockerfile for why a `scratch` image needs that and why the version is pinned.
-# Kept in its own layer so the toolchain layer above stays cached. Pin both files together.
+# `cargo-chef` plans and cooks the two dependency graphs (see the header). Kept in their own
+# layer so the toolchain layer above stays cached. Pin all three files together.
 RUN --mount=type=cache,id=frontend-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=frontend-cargo-git,target=/usr/local/cargo/git \
-    cargo install cargo-auditable --locked --version 0.7.5
+    cargo install cargo-auditable --locked --version 0.7.5 \
+ && cargo install cargo-chef --locked --version 0.1.77
 
+# --- Plan: capture both dependency recipes. ----------------------------------------
+# Two, because `web/frontend` declares `[workspace]` and is excluded from the host workspace
+# (see the comment on that table) — `cargo metadata` run at the root cannot see it, and vice
+# versa. The recipes are written to `/` rather than into the tree so the `COPY --from` below
+# names one stable path regardless of which directory each was produced in.
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path /recipe-server.json \
+ && cd web/frontend \
+ && cargo chef prepare --recipe-path /recipe-web.json
+
+# --- Cook (musl): the server binary's dependency graph, into an image layer. ---------
+# This one comes first, and the order is load-bearing rather than arbitrary. `cargo chef cook`
+# reconstructs a *skeleton* — every manifest in the recipe, with stub sources — and the web
+# recipe below contains exactly **one** manifest, `web/frontend/Cargo.toml`. Its two path
+# dependencies, `crates/api-client` and `crates/domain`, live outside that crate's workspace, so
+# `cargo chef prepare` does not capture them and cooking the web graph on a bare toolchain fails
+# to resolve them. The host-workspace recipe *does* carry all three (root `Cargo.toml` included,
+# which is what makes `workspace = true` inheritance in those manifests resolve), so cooking it
+# first leaves precisely the skeleton the web cook needs sitting at `/app`.
+FROM chef AS cook-server
+WORKDIR /app
+ARG BUILD_TARGET
+# The `tankovault-db` repositories use sqlx's compile-time-checked query macros. There is no
+# database in the build sandbox, so they resolve from the committed offline query cache
+# (`.sqlx/`). Nothing `--bin frontend` reaches should need it, but the recipe describes the whole
+# host workspace and resolution walks all of it.
+ENV SQLX_OFFLINE=true
+COPY --from=planner /recipe-server.json recipe.json
+# `--bin frontend`, emphatically not the whole workspace. The recipe covers all 25 host
+# manifests, and cooking it wholesale drags in `wreq` → `boring-sys`, which compiles BoringSSL
+# from C/C++/assembly and needs `cmake`, `nasm`, `perl`, `g++` and `clang-dev`. That toolchain
+# is deliberately absent here: this is a Debian image cross-compiling to musl, where — as
+# deploy/docker/Dockerfile's header explains at length — a musl C++ toolchain cannot be
+# assembled from `musl-tools` alone. The backend images are Alpine precisely so BoringSSL can be
+# built natively; this one has no reason to build it at all.
+#
+# Scoping the cook to the one binary this image ships matches what the `builder` stage below
+# actually compiles, so every cooked artefact is one it will reuse, and nothing is compiled that
+# `musl-gcc` cannot handle. It is both the fix and the cheaper option.
+RUN --mount=type=cache,id=frontend-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=frontend-cargo-git,target=/usr/local/cargo/git \
+    cargo chef cook --release --recipe-path recipe.json --locked \
+      --target "${BUILD_TARGET}" --bin frontend
+
+# --- Cook (wasm): the SPA's dependency graph, into an image layer. -------------------
+# Chained onto `cook-server` for the skeleton it leaves behind (see above), and so that one
+# lineage carries both cooked target directories down to `builder` — branching from `chef`
+# would need a multi-gigabyte `COPY --from` to reunite them.
+#
+# The profile and `RUSTFLAGS` here are not free choices — they must reproduce byte-for-byte what
+# `dx build --platform web --release` asks cargo for, because a cargo fingerprint covers the
+# profile settings *and* the rustflags. Get either wrong and this stage still succeeds, still
+# costs its full wall clock, and caches precisely nothing: `dx` simply rebuilds the whole graph
+# under a different fingerprint. Both values below were read back out of a real `dx` build rather
+# than guessed; see the re-derivation recipe at the end of this comment.
+#
+#   * `dx` does not build under `release`. It synthesises a per-platform profile — `wasm-release`
+#     for web + `--release` — and injects it on the cargo command line as
+#     `--config profile.wasm-release.inherits="release"` and
+#     `--config profile.wasm-release.strip=false` (it needs the symbols that
+#     `[profile.release] strip = "symbols"` would remove, and strips the bundle itself later).
+#   * `--cfg getrandom_backend="wasm_js"` is the `RUSTFLAGS` `dx` sets for wasm targets. `uuid`'s
+#     `v7` feature is switched on transitively and demands an explicit randomness source on
+#     `wasm32-unknown-unknown`; without the cfg the graph does not compile at all.
+#
+# `cargo chef cook` has no `--config` passthrough, so the profile is supplied through cargo's
+# environment-variable config layer instead. **It must be supplied that way and not by declaring
+# `[profile.wasm-release]` in `web/frontend/Cargo.toml`, even though that is tidier and produces
+# a provably identical cargo fingerprint.** `dx` parses manifest profiles itself — that is how it
+# emits "wasm-split requires LTO to be enabled in the profile" — and takes a different code path
+# when it finds one it expected to inject: with the profile declared in the manifest, `wasm-opt`
+# aborted (`0xc0000409`) and `dx` shipped an unoptimised bundle while still reporting success,
+# which is the worst possible failure mode. Env config is invisible to that parser.
+#
+# To re-derive both after a `dx` upgrade, build once and read what cargo actually recorded:
+#   dx build --platform web --release
+#   cat web/frontend/target/wasm32-unknown-unknown/wasm-release/.fingerprint/*/*.json | grep rustflags
+# and check `target/wasm32-unknown-unknown/` for the profile directory name. The check that the
+# match still holds is that a `cargo build --profile wasm-release --target wasm32-unknown-unknown`
+# run straight after a `dx build --release` recompiles almost nothing.
+FROM cook-server AS cook-web
+WORKDIR /app/web/frontend
+COPY --from=planner /recipe-web.json recipe.json
+# Inline rather than `ENV`: `builder` below inherits this stage, and leaking either a wasm-only
+# cfg or a wasm-only profile into the musl `cargo auditable build` would fingerprint-poison the
+# graph `cook-server` just cooked.
+#
+# No `--locked`, and it is the one cook that cannot have it. `cargo chef` rewrites the version of
+# every *local* package in a skeleton to `0.0.1`, so that a version bump does not invalidate a
+# recipe — which means `cook-server` left `crates/api-client` and `crates/domain` on disk claiming
+# `0.0.1`, while this recipe's `Cargo.lock` still records their real versions (the web recipe
+# never saw those two manifests; that is the same cross-workspace gap that fixes the stage order
+# above). Cargo then has to reconcile exactly those two entries, and `--locked` forbids it.
+#
+# Dropping the flag costs nothing that matters: every *registry* dependency stays pinned by the
+# recipe's lock file, cargo only rewrites what it must, and this stage compiles nothing that
+# ships — it warms a cache. The build that produces the artefact still resolves against the
+# committed lock, because `builder` below copies the real tree back over this skeleton and `dx`
+# reads that lock.
+RUN --mount=type=cache,id=frontend-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=frontend-cargo-git,target=/usr/local/cargo/git \
+    CARGO_PROFILE_WASM_RELEASE_INHERITS=release \
+    CARGO_PROFILE_WASM_RELEASE_STRIP=false \
+    RUSTFLAGS='--cfg getrandom_backend="wasm_js"' \
+    cargo chef cook --recipe-path recipe.json \
+      --target wasm32-unknown-unknown \
+      --profile wasm-release
+
+# --- Build: the WASM bundle and the static musl server binary. ----------------------
 # The frontend crate is excluded from the host workspace but takes path dependencies on
 # workspace crates, and the `frontend` server *is* a workspace member — so both builds need the
-# whole workspace on disk. Copy the full context (the toolchain layer above stays cached).
+# whole workspace on disk. Copy the full context; this overwrites the skeleton sources
+# `cargo chef cook` left behind and leaves the cooked artefacts in place.
+FROM cook-web AS builder
+WORKDIR /app
+ARG BUILD_TARGET
 COPY . .
 
 # `dx build` emits the web bundle under target/dx/<app>/release/web/public. Locate it by path
 # rather than hardcoding the app name, require exactly one `release` hit (a stale `debug` bundle
 # slipping through once shipped the wrong assets), then flatten it into /dist.
+#
+# `from=cook-web` seeds the cache mount when it is empty, which is load-bearing rather than an
+# optimisation: the mount *shadows* the cooked layer underneath, so without the seed a cold
+# cache would find the dependencies missing and rebuild the entire graph. CI's mount is always
+# cold, so this is the line that makes the cook stage pay off there at all.
 RUN --mount=type=cache,id=frontend-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=frontend-cargo-git,target=/usr/local/cargo/git \
-    --mount=type=cache,id=frontend-wasm-target,target=/app/web/frontend/target \
+    --mount=type=cache,id=frontend-wasm-target,target=/app/web/frontend/target,from=cook-web,source=/app/web/frontend/target \
     set -eu; \
     cd web/frontend; \
     dx build --platform web --release; \
@@ -99,11 +237,11 @@ RUN --mount=type=cache,id=frontend-cargo-registry,target=/usr/local/cargo/regist
     test -f /dist/index.html || { echo "bundle missing index.html" >&2; exit 1; }
 
 # Compile the static musl server binary. `--locked` resolves against the committed `Cargo.lock`;
-# the cache mounts keep the registry and the musl build target warm across rebuilds while the
-# copied-out binary lands in the image layer so the runtime stage stays independent.
+# the target mount is seeded from `cook-server` for the same reason as above, and the copied-out
+# binary lands in the image layer so the runtime stage stays independent.
 RUN --mount=type=cache,id=frontend-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=frontend-cargo-git,target=/usr/local/cargo/git \
-    --mount=type=cache,id=frontend-musl-target,target=/app/target \
+    --mount=type=cache,id=frontend-musl-target,target=/app/target,from=cook-server,source=/app/target \
     cargo auditable build --release --locked --target "${BUILD_TARGET}" --bin frontend \
  && cp "target/${BUILD_TARGET}/release/frontend" /app/frontend
 

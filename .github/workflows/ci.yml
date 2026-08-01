@@ -1098,14 +1098,21 @@ jobs:
           tags: tankovault-${{ matrix.bin }}:ci
           # Reproducible output: no attestation/provenance layer, and mtimes rewritten.
           provenance: false
-          # Two imports, one export. `backend-deps` is the shared `cook` stage published by the
-          # `docker-deps` job above and is never written back to from here; `backend-<bin>` holds
-          # the per-binary layers on top of it, scoped so the legs stop overwriting each
-          # other's export (see `docker-deps`).
-          cache-from: |
-            type=gha,scope=backend-deps
-            type=gha,scope=backend-${{ matrix.bin }}
-          cache-to: type=gha,scope=backend-${{ matrix.bin }},mode=max
+          # Import only — this job writes no cache at all, deliberately.
+          #
+          # `backend-deps` is the shared `cook` stage published by the `docker-deps` job above.
+          # Everything below `builder` comes from there; `builder` itself starts with `COPY . .`,
+          # so its cache key changes with every commit and a per-`bin` export could only ever be
+          # hit by re-running the *identical* commit.
+          #
+          # That near-zero benefit was being bought at a serious price. `mode=max` re-exports
+          # every layer a build touched, including ones it imported — so each of the eight legs
+          # uploaded its own copy of the multi-gigabyte `cook` layer under `backend-<bin>`.
+          # GitHub's Actions cache is **10 GB per repository, evicted least-recently-used**, so
+          # eight duplicates of the one layer that matters evicted `backend-deps` itself, and the
+          # next run cooked ~600 crates from cold at `codegen-units = 1`. The matrix was paying
+          # minutes per leg to export a cache whose main effect was to delete the cache.
+          cache-from: type=gha,scope=backend-deps
 
       # Enforce the image contract (design §21): non-root UID:GID 1001:1001, the expected
       # entrypoint, the required baked-in files (service binary, CA trust store), and — for the

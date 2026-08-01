@@ -104,16 +104,20 @@ jobs:
         # `runtime-browser` stage, and the frontend is built from a different Dockerfile
         # entirely (WASM bundle + axum server). Expressing that as `${{ x == y && a || b }}`
         # inline is how the two get out of step.
+        #
+        # `cache` names the **ci.yml** scope this leg reads (see the build step below): the eight
+        # backend images all derive from the one `cook` stage `ci.yml`'s `docker-deps` job
+        # publishes, and the frontend image's toolchain layers come from its own `frontend` scope.
         include:
-          - { bin: api, file: deploy/docker/Dockerfile, target: runtime, cst: service }
-          - { bin: worker, file: deploy/docker/Dockerfile, target: runtime, cst: service }
-          - { bin: control-plane, file: deploy/docker/Dockerfile, target: runtime, cst: service }
-          - { bin: notifier, file: deploy/docker/Dockerfile, target: runtime, cst: service }
-          - { bin: sync, file: deploy/docker/Dockerfile, target: runtime, cst: service }
-          - { bin: challenge-solver, file: deploy/docker/Dockerfile, target: runtime, cst: service }
-          - { bin: render, file: deploy/docker/Dockerfile, target: runtime-browser, cst: render }
-          - { bin: xtask, file: deploy/docker/Dockerfile, target: runtime, cst: service }
-          - { bin: frontend, file: deploy/docker/Dockerfile.frontend, target: frontend, cst: frontend }
+          - { bin: api, file: deploy/docker/Dockerfile, target: runtime, cst: service, cache: backend-deps }
+          - { bin: worker, file: deploy/docker/Dockerfile, target: runtime, cst: service, cache: backend-deps }
+          - { bin: control-plane, file: deploy/docker/Dockerfile, target: runtime, cst: service, cache: backend-deps }
+          - { bin: notifier, file: deploy/docker/Dockerfile, target: runtime, cst: service, cache: backend-deps }
+          - { bin: sync, file: deploy/docker/Dockerfile, target: runtime, cst: service, cache: backend-deps }
+          - { bin: challenge-solver, file: deploy/docker/Dockerfile, target: runtime, cst: service, cache: backend-deps }
+          - { bin: render, file: deploy/docker/Dockerfile, target: runtime-browser, cst: render, cache: backend-deps }
+          - { bin: xtask, file: deploy/docker/Dockerfile, target: runtime, cst: service, cache: backend-deps }
+          - { bin: frontend, file: deploy/docker/Dockerfile.frontend, target: frontend, cst: frontend, cache: frontend }
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -176,8 +180,18 @@ jobs:
           # attestation layer carries build timestamps, which breaks byte-identical rebuilds.
           # The cost is no SLSA attestation, which the SBOM below partly compensates for.
           provenance: false
-          cache-from: type=gha,scope=release-${{ matrix.bin }}
-          cache-to: type=gha,scope=release-${{ matrix.bin }},mode=max
+          # Read `ci.yml`'s scopes; write nothing. A tag build restores from the default
+          # branch's cache, and `main` is exactly where `ci.yml` last published the `cook` stage
+          # this image is built on — so importing it is both free and warmer than anything a
+          # release-private scope could hold, releases being weeks apart.
+          #
+          # Writing is what had to stop. Nine legs exporting `mode=max` re-uploaded the whole
+          # imported layer chain under nine `release-<bin>` scopes, and GitHub's Actions cache is
+          # 10 GB per repository with least-recently-used eviction — so every release flushed the
+          # caches `ci.yml` depends on, and the next pull request paid for it by cooking ~600
+          # crates from cold. A release build is also the one build that should not be able to
+          # poison what CI reads.
+          cache-from: type=gha,scope=${{ matrix.cache }}
 
       # The image contract, enforced against the artefact that would actually ship rather than
       # only against the CI build.

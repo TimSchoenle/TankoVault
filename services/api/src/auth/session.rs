@@ -311,6 +311,12 @@ pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> ApiResult<
 
 /// The `Set-Cookie` that clears the refresh cookie, built to the same rules as the one that set
 /// it. Separate from [`logout`] so those rules are assertable without a database.
+///
+/// `secure` is a parameter and not a literal `true`, which CodeQL `rust/insecure-cookie` reports
+/// here exactly as it does on [`issue_session_tokens`]. Do not "fix" it by pinning: a `Secure`
+/// cookie sent over plain HTTP is ignored by the browser, so a hard `true` would stop the
+/// local-HTTP opt-out from ever clearing its cookie — trading the production bug this function
+/// was written to fix for the same bug in development. Both directions are asserted below.
 fn removal_cookie(name: &'static str, path: &'static str, secure: bool) -> Cookie<'static> {
     Cookie::build((name, ""))
         .http_only(true)

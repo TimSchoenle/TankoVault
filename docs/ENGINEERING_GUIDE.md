@@ -46,7 +46,8 @@ The short list. Everything else in this document is elaboration.
 6. **Generated artefacts are generated.** Never hand-edit `openapi.json` or
    `crates/api-client/src/lib.rs`. [§1.4](#14-generated-artefacts)
 7. **A fix that could silently come back gets a test whose doc comment says what the bug was.** [§3.6](#36-tests-carry-the-story)
-8. **Run `cargo run -p xtask -- ci` before you claim a change is done.** [§7](#7-before-you-push)
+8. **`cargo run -p xtask -- ci` is what a change passes before it lands** — run by the human
+   pushing it, not by an agent after every edit. [§7](#7-before-you-push), [§8](#8-for-agents)
 
 ---
 
@@ -434,7 +435,19 @@ without having read it.
   it calls; `openapi.json` is the only connector.
 - **Do not add `'unsafe-eval'`, `#[allow]`, or a hardcoded CSP hash** to make something pass.
   Each has a gate, and each gate exists because that shortcut was taken once.
-- **`cargo run -p xtask -- ci` is the definition of done.** Not "it compiles".
+- **Verify at the narrowest scope that answers the question, and stop there.** The default is
+  `cargo check -p <the crate you touched>`. Do not run `xtask ci`, `cargo test --workspace`,
+  workspace clippy, the doc-test or rustdoc gates, or the `web/frontend` gates unless the user
+  asked for the full gate, asked you to commit or push, or asked you to verify end to end.
+  Chasing a specific failure means running that one gate scoped as narrowly as it goes
+  (`cargo test -p <crate> <test_name>`), not the suite around it. §7 is what the *human* runs
+  before pushing; a full pass rebuilds two workspaces and both test suites, and deciding to
+  spend that is theirs, not yours.
+- **Regeneration is not part of that exemption.** `xtask openapi`, `xtask sqlx-prepare` and
+  `docs/CONFIGURATION.md` still get updated when you change the surface behind them, because
+  the artefacts are committed and rule 6 bans hand-editing them.
 - **When a gate fails, read the rule's doc comment before changing the rule.** Every rule in
   `repo_lint.rs` and both `clippy.toml` files carries its reason inline.
-- **Report honestly.** If a suite fails, say so with the output. If you skipped a step, say which.
+- **Report honestly, and report the scope.** If a suite fails, say so with the output. If you
+  skipped a step, say which. Name the command you ran and say plainly that the full gate was
+  not run — a passing `cargo check` must never read as a green CI run.

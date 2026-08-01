@@ -6,13 +6,34 @@ short version, kept here because it is what gets loaded first.
 
 ## The definition of done
 
+`cargo run -p xtask -- ci` is still the gate a change has to pass — every offline gate CI runs,
+in CI's order. It is **not** what you run by default. One pass rebuilds the workspace under
+`--all-features` and `wasm32-unknown-unknown`, runs `test --workspace`, the doc tests, rustdoc
+and the three `web/frontend` gates; that is minutes per iteration, and spending it after every
+edit buys nothing CI will not report anyway.
+
+Default while working — the whole obligation:
+
 ```
-cargo run -p xtask -- ci
+cargo check -p <the crate you touched>
 ```
 
-Every offline gate CI runs, in CI's order. "It compiles" is not done. If you changed the OpenAPI
-surface, the config surface or a SQL query, regenerate before running it — the gates check, they
-do not fix.
+Do **not** run `xtask ci`, `cargo test --workspace`, workspace clippy, the doc-test or rustdoc
+gates, or the `web/frontend` gates on your own initiative. Run them when, and only when:
+
+- the user asks for the full gate, or asks you to commit or push;
+- the user asks you to verify a change end to end;
+- you are chasing a failure those gates already reported, in which case run *that* gate, scoped
+  as narrowly as it will go (`cargo test -p <crate> <test_name>`), not the suite around it.
+
+"It compiles" is not done — but it is as far as *you* take it unless told otherwise. What the
+remaining gates cost is the user's call to spend, not yours.
+
+Regeneration is the exception and stays mandatory, because the artefacts are committed and
+hand-editing them is banned (rule 6): OpenAPI surface changed → `cargo run -p xtask -- openapi`;
+a `query!`/`query_as!` changed → `cargo run -p xtask -- sqlx-prepare` against a migrated
+database; config surface changed → update `docs/CONFIGURATION.md` (`cargo run -p xtask --
+config-docs` prints the current surface). The gates check these, they do not fix them.
 
 ## Eight rules you will otherwise break
 
@@ -47,3 +68,7 @@ the HTML it governs, a secret published in the compose file and the code that re
 
 Say what actually happened. If a suite fails, quote it. If you skipped a step, name it. If part
 of the task is blocked, finish the rest and say what you left.
+
+Verification is deliberately scoped now, so it has to be reported as scoped: name the command
+you actually ran and state that the full gate was not run — "`cargo check -p tankovault-api`
+passed; `xtask ci` not run". Never let a type-check be read as a green CI run.

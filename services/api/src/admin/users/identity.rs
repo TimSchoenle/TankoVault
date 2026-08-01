@@ -1,11 +1,5 @@
 //! Who the account *is*: its username, its email address, and whether that address is
 //! confirmed.
-//!
-//! The two handlers share a subject rather than a verb. Editing the address and force-confirming
-//! it both write the identity columns, and they are coupled: an administrator who corrects an
-//! address usually has to confirm it in the same sitting, because the edit deliberately does not
-//! re-open verification (see [`update_user`]). Reading one without the other leaves the
-//! confirmation state looking arbitrary.
 
 use crate::audit::audit;
 use crate::error::{ApiError, ApiResult};
@@ -73,10 +67,8 @@ pub async fn update_user(
         return Err(ApiError::BadRequest("nothing to update".to_owned()));
     }
 
-    // The same validators registration and `PATCH /v1/me/profile` run. This path was missed
-    // (SEC-9), so an operator could write a username containing `@` — which is exactly the
-    // value that makes a login identifier ambiguous between the `username` and `email`
-    // columns. A rule enforced on two of three write paths is not a rule.
+    // Same validators as registration and `PATCH /v1/me/profile`: without them here, an operator
+    // could set a username containing `@`, making login ambiguous between username and email.
     if let Some(username) = username {
         crate::auth::validate_username(username)?;
     }

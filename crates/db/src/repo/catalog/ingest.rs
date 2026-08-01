@@ -31,30 +31,16 @@ pub struct IngestOutcome {
     pub new_chapters: Vec<f64>,
 }
 
-/// Persist a scanned series and its chapters in a single transaction.
+/// Persist a scanned series and its chapters in a single transaction. All writes are
+/// idempotent, so replaying under at-least-once delivery converges without false-new chapters.
 ///
-/// All writes are idempotent (`ON CONFLICT`), so replaying a task under at-least-once
-/// delivery converges to the same state and reports no false-new chapters.
-///
-/// `canonicaliser` is the caller's matching policy: this function owns the transaction and
-/// performs the writes, the policy decides which series the scan belongs to (ARCH-16).
-///
-/// Takes `scanned` by reference because it only ever reads it, and the caller has a use for it
-/// afterwards: the worker fans out `chapter.discovered` for the numbers in [`IngestOutcome`],
-/// and needs each one's title and path to do it. Consuming the value forced the worker to clone
-/// the entire parsed chapter list to keep a second copy alive across this call (PERF-19).
+/// `canonicaliser` decides which series the scan belongs to; this function only writes.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable, since every callee here is
-/// itself `Sqlx`-only and the [`Canonicaliser`] cannot fail. The transaction is the part worth
-/// stating: any failure drops `tx` unsent, so Postgres rolls the whole scan back and there is no
-/// state in which a series exists with half its chapters. A caller that retries therefore
-/// retries from nothing, which is what makes the at-least-once delivery above safe.
-///
-/// The one thing an error does *not* roll back is the fan-out decision: `new_chapters` is only
-/// returned on a committed transaction, so a failure publishes no `chapter.discovered` events —
-/// but a crash between `commit` and the publish loses them, which is why a replay must report
-/// no false-new chapters rather than merely converging on the same rows.
+/// [`crate::DbError::Sqlx`] only; any failure rolls back the whole transaction, so a series
+/// never exists with only some of its chapters. A crash after commit but before the caller
+/// publishes `chapter.discovered` can still lose events — a replay must not report false-new
+/// chapters.
 pub async fn ingest_series(
     pool: &sqlx::PgPool,
     scanned: &ScannedSeries,
@@ -83,14 +69,10 @@ pub async fn ingest_series(
     )
     .await?;
 
-    // One statement, not one per chapter. A series with two thousand chapters used to mean
-    // two thousand sequential round trips inside this transaction — which also holds row
-    // locks on the shared `tags`/`authors` rows, so a single slow series stalled every other
-    // provider's ingest behind it.
+    // One statement, not a per-chapter loop: this transaction holds row locks on shared
+    // `tags`/`authors` rows, so per-chapter round trips would stall other providers' ingests.
     let mut new_chapters = upsert_chapters(&mut *tx, source_id, &scanned.chapters).await?;
-    // The row-at-a-time loop emitted these in listing order; `RETURNING` does not promise
-    // any order. `chapter.discovered` consumers do not depend on it, but a stable order
-    // keeps the notification stream and the tests deterministic.
+    // `RETURNING` doesn't promise order; sort for a deterministic notification stream.
     new_chapters.sort_by(f64::total_cmp);
 
     let count = i32::try_from(scanned.chapters.len()).unwrap_or(i32::MAX);

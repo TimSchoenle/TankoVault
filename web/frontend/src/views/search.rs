@@ -1,7 +1,4 @@
 //! Search (`DESIGN_SPEC` §7.6) — a trigram-backed query passed straight to the API.
-//!
-//! A different route from Discover, which is why it is a different module: it was declared at
-//! the foot of `views/discover.rs` and shared nothing with it but `CoverCard`.
 
 use crate::api;
 use crate::components::{async_list, CoverCard, SkeletonGrid};
@@ -13,10 +10,9 @@ use progenitor_client::ResponseValue;
 /// Search screen — trigram-backed query passed straight to the API (§7.6).
 #[component]
 pub(crate) fn Search(q: String) -> Element {
-    // `q` is a plain prop, not a signal, so re-running a search from the search page itself
-    // (same route, new `?q=`) reuses this mounted component and only changes `q` — that
-    // alone doesn't restart `use_resource`, which only reacts to signals read inside it.
-    // Mirror the prop into a signal so the fetch actually restarts when it changes.
+    // `q` is a plain prop; re-running a search from this same page only changes the prop, which
+    // alone doesn't restart `use_resource` (it only reacts to signals). Mirror it into a signal
+    // so the fetch actually restarts.
     let mut q_state = use_signal(|| q.clone());
     if *q_state.peek() != q {
         q_state.set(q.clone());

@@ -1,9 +1,5 @@
-//! Self-service account settings (frontend §9.4): the identity a user may change about
-//! themselves, plus their notification preferences.
-//!
-//! [`update_profile`] carries SEC-4's rule that a *changed* email address loses its
-//! verification. The sessions half of the old "account settings" section lives in
-//! [`super::sessions`].
+//! Self-service account settings: the identity a user may change about themselves, plus their
+//! notification preferences. Session management lives in [`super::sessions`].
 
 use super::CiText;
 use super::credentials::UserRow;
@@ -13,26 +9,14 @@ use tankovault_domain::{AccountStatus, User, UserId};
 
 /// Apply a username and/or email change.
 ///
-/// A **changed** email clears `email_verified_at`, so the new address inherits nothing from
-/// the old one. Previously it did: an attacker holding a 15-minute access token could point
-/// the account at their own address, which arrived already "verified", then drive a password
-/// reset to it and lock the owner out of an account whose recovery address they no longer
-/// controlled. `COALESCE` on the same-value case keeps a no-op PATCH from forcing a
-/// re-verification for nothing.
-///
-/// "Same value" is decided by `$3 <> email`, which is a comparison and therefore needs the
-/// [`CiText`] binding: bound as `text`, re-capitalising your own address counted as moving to
-/// a new one and mailed you a confirmation link for the mailbox you were already using.
+/// A changed email clears `email_verified_at` — prevents an attacker with a short-lived token
+/// re-pointing the account to an already-"verified"-looking address. `$3 <> email` compares
+/// through [`CiText`] so re-capitalising your own address isn't treated as a change.
 ///
 /// # Errors
-/// [`DbError::Conflict`] if the new email or username is already registered — the unique
-/// violation is translated here so the API answers 409 rather than 500.
-///
-/// An `id` that matches no row is **not** [`DbError::NotFound`]: this is a `fetch_one`, so it
-/// arrives as the driver's `RowNotFound` inside [`DbError::Sqlx`] and the API maps it to 500.
-/// That is tolerable only because every caller holds an authenticated id, so the case means
-/// the account was erased mid-request. Note the asymmetry with [`set_notification_prefs`],
-/// which does return [`DbError::NotFound`] for the same condition.
+/// [`DbError::Conflict`] if the new email or username is taken. An unknown `id` is **not**
+/// [`DbError::NotFound`] (arrives as `RowNotFound` inside [`DbError::Sqlx`]) — every caller
+/// holds an authenticated id, so a miss means erasure mid-request.
 pub async fn update_profile<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,
@@ -67,12 +51,10 @@ pub async fn update_profile<'e, E: PgExecutor<'e>>(
     Ok(row.into())
 }
 
-/// Read a user's notification preferences JSON (frontend §9.4). `{}` means "defaults".
+/// Read a user's notification preferences JSON. `{}` means "defaults".
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only — no other variant is reachable. An unknown `id` yields `{}`, the
-/// same answer as a user who has never set a preference, rather than [`DbError::NotFound`];
-/// the reader has nothing to do differently in the two cases.
+/// [`DbError::Sqlx`] only. An unknown `id` yields `{}`, not [`DbError::NotFound`].
 pub async fn get_notification_prefs<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,
@@ -86,11 +68,10 @@ pub async fn get_notification_prefs<'e, E: PgExecutor<'e>>(
     Ok(prefs.unwrap_or_else(|| serde_json::json!({})))
 }
 
-/// Replace a user's notification preferences JSON (frontend §9.4).
+/// Replace a user's notification preferences JSON.
 ///
 /// # Errors
-/// [`DbError::NotFound`] — a 404 — when `id` matches no row, because a write that silently
-/// stored nothing is worse than a rejection. Otherwise [`DbError::Sqlx`].
+/// [`DbError::NotFound`] — a 404 — when `id` matches no row. Otherwise [`DbError::Sqlx`].
 pub async fn set_notification_prefs<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,

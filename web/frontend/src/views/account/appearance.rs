@@ -1,8 +1,7 @@
 //! Appearance panel (`DESIGN_SPEC` §8) — theme, accent, density and cover style.
 //!
-//! Every knob is real: each writes a `data-*` attribute on `<html>` that swaps a block of CSS
-//! custom properties, and persists a `tv-*` key that `index.html` re-applies before the next
-//! first paint. Selecting a default clears the override so the stylesheet's own value wins.
+//! Each knob writes a `data-*` attribute on `<html>` and persists a `tv-*` key that `index.html`
+//! must re-apply before first paint, or the wrong theme flashes.
 
 use crate::components::PanelCard;
 use crate::i18n::{use_i18n, LOCALES};
@@ -18,8 +17,7 @@ pub(crate) fn AppearancePanel() -> Element {
     let density = use_signal(|| DENSITY.default.to_owned());
     let cover = use_signal(|| COVER.default.to_owned());
 
-    // Seed each control from what is actually applied, so the panel opens showing the
-    // reader's real settings rather than the defaults.
+    // Seed from the applied value, not the default.
     use_effect(move || {
         THEME.load(theme);
         ACCENT.load(accent);
@@ -78,12 +76,7 @@ pub(crate) fn AppearancePanel() -> Element {
     }
 }
 
-/// The language picker.
-///
-/// Sits alongside the appearance knobs because it is the same kind of choice — a per-device
-/// presentation preference — but it is not a [`Knob`]: the value is persisted by the `i18nrs`
-/// provider rather than by a `data-*` attribute on `<html>`, and the options are whichever
-/// catalogues are shipped rather than a fixed list.
+/// The language picker; not a [`Knob`] since `i18nrs` persists it, not a `data-*` attribute.
 #[component]
 fn LanguageGroup() -> Element {
     let i18n = use_i18n();
@@ -99,8 +92,7 @@ fn LanguageGroup() -> Element {
                         key: "{locale.code}",
                         class: if current == locale.code { "ik-chip active" } else { "ik-chip" },
                         "aria-pressed": current == locale.code,
-                        // Each option is written in its own language, so tag it as such: the
-                        // page's `lang` cannot be right for all of them at once.
+                        // Tag with its own language; the page's `lang` can't fit all options.
                         lang: locale.code,
                         onclick: move |_| i18n.set_language(locale.code),
                         "{locale.endonym}"

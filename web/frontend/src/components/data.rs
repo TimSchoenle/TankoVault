@@ -1,19 +1,10 @@
 //! Small read-only data displays: the KPI tile and the provider health pill.
-//!
-//! Both existed twice before this module. There were two rival `Kpi` components in sibling
-//! console modules with different prop sets (one with a sub-line and an accent, one with a
-//! hardcoded `font-size:24px;`) plus a third hand-rolled inline in `users.rs`, and
-//! [`HealthPill`] lived inside `views/console/providers.rs` where two *other views* imported it
-//! sideways.
 
 use crate::i18n::use_i18n;
 use crate::models::ProviderState;
 use dioxus::prelude::*;
 
 /// A single KPI tile: label, big value, and an optional supporting sub-line.
-///
-/// `accent` is `""`, `"good"` or `"warn"`; `large` picks the 24px value used by the tiles that
-/// stand alone rather than in a nine-up grid.
 #[component]
 pub(crate) fn Kpi(
     label: String,
@@ -38,15 +29,8 @@ pub(crate) fn Kpi(
     }
 }
 
-/// A provider's health as a coloured pill. `None` is "the wire said something we do not know a
-/// word for", which is only reachable from `ProviderStat::state` — the one place the API hands
-/// this over as a bare string.
-///
-/// Takes the enum, not a token. The previous signature was `state: String`, so two of the three
-/// call sites round-tripped `ProviderState` → `&'static str` → `String` for nothing while the
-/// third passed a raw wire string, and the compiler could not relate the two paths. The
-/// hand-written token table it round-tripped through duplicated the generated client's own
-/// `Display`/`FromStr`.
+/// A provider's health as a coloured pill. `None` renders as "unknown" — the wire returned a
+/// state this build has no word for.
 #[component]
 pub(crate) fn HealthPill(state: Option<ProviderState>) -> Element {
     let i18n = use_i18n();

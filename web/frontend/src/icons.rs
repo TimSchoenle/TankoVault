@@ -6,12 +6,8 @@ use dioxus::prelude::*;
 
 /// Every glyph the `TankoVault` design uses (`DESIGN_SPEC` §6–7).
 ///
-/// This used to carry a blanket `#[allow(dead_code)]` for the glyphs "later screens use". The
-/// later screens shipped, and the allow outlived its reason: 14 variants (26%) were unreferenced
-/// behind it, including several intended for the console entity rail — which was rendering a
-/// bare `span` per entity, a visible gap against `DESIGN_SPEC` §6-7. The rail now draws them and
-/// the rest are gone, so the next glyph that stops being drawn is a warning rather than a
-/// silent passenger in the bundle.
+/// No blanket dead-code allow: an unreferenced variant should warn, not sit silently in the
+/// bundle.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Icon {
     // nav
@@ -49,10 +45,6 @@ pub(crate) enum Icon {
     ShieldLock,
     Code,
     Dashboard,
-    // Five glyphs used to live here — one per kanban column (`Fire`, `Schedule`, `TaskAlt`,
-    // `PauseCircle`, `Cancel`). The board is gone and its replacement's status tabs are text
-    // plus a count pill, so they are deleted rather than kept "in case": an unused arm in
-    // `path_for` is path data nothing renders and nothing reviews.
     // watchlist list view
     /// Source-health warning on a row and on a grid card.
     Warning,

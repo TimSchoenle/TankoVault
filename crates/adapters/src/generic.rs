@@ -58,13 +58,8 @@ fn extract_href(
 
 /// Resolve a [`TextSource`] against a parsed page.
 ///
-/// [`TextSource::Selector`] is the ordinary case: every non-empty match is a value.
-///
-/// [`TextSource::LabelledRow`] exists because CSS cannot select on text. Madara renders
-/// `Alternative`, `Author(s)`, `Artist(s)` and `Genre(s)` as structurally identical
-/// `div.post-content_item` rows whose only distinguishing feature is the heading text, so the
-/// row has to be found by reading each label. The first row whose label matches wins; a page
-/// that omits the row yields no values, which is the correct answer rather than a failure.
+/// [`TextSource::LabelledRow`] finds the row by its label since CSS cannot select on text; a
+/// page missing the row yields no values, which is correct, not a failure.
 fn extract_text_source(
     root: ElementRef<'_>,
     source: &TextSource,
@@ -78,8 +73,7 @@ fn extract_text_source(
                 let Some(label) = extract_first(row, &cfg.label)? else {
                     continue;
                 };
-                // Themes are inconsistent about a trailing colon and about case, and
-                // `text_of` has already collapsed the surrounding whitespace.
+                // Themes vary on a trailing colon and case; whitespace is already collapsed.
                 if !label
                     .trim_end_matches(':')
                     .trim()
@@ -105,16 +99,13 @@ impl SourceAdapter for GenericConfigAdapter {
             .path
             .replace("{page}", &page.to_string());
         let resp = ctx.fetch(&path).await?;
-        // The config is cloned into the closure because it must be `'static`: a clone of a
-        // handful of selector strings is nothing next to the parse it is guarding.
+        // Cloned because the closure must be `'static`; cheap next to the parse it guards.
         let cfg = self.config.catalog.clone();
         parse_blocking(resp, move |root, resp| {
             let page_url = &resp.url;
             let item_sel = parse_selector(&cfg.item)?;
-            // Sized from the match count rather than grown by doubling (PERF-19). The
-            // element handles are `Copy` two-word references, so materialising them costs a
-            // transient slice and saves the repeated reallocate-and-copy of the far larger
-            // result — and it is an *upper* bound, since the loop skips entries with no link.
+            // Sized from the match count, not grown by doubling: an upper bound, since the
+            // loop below skips entries with no link.
             let elements: Vec<_> = root.select(&item_sel).collect();
             let mut items = Vec::with_capacity(elements.len());
             for el in elements {
@@ -290,8 +281,7 @@ impl SourceAdapter for GenericConfigAdapter {
                     number,
                     title: None,
                     path: relativize(&resp.url, href),
-                    // Date formats vary wildly per provider; left unparsed for now (optional
-                    // metadata). A per-format parser is a documented refinement.
+                    // Date formats vary wildly per provider; left unparsed as optional metadata.
                     published_at: None,
                 });
             }

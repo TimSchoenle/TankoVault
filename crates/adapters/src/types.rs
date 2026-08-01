@@ -30,12 +30,8 @@ impl Ctx {
         self.fetch_with(relative_path, &[]).await
     }
 
-    /// [`fetch`](Self::fetch) with extra request headers.
-    ///
-    /// Exists for provider endpoints that are not pages: a site's own JSON API is called by
-    /// its front-end as an XHR, and some back-ends content-negotiate or gate on that — so an
-    /// adapter that knows it is calling an API can say so, instead of asking for a document
-    /// and hoping.
+    /// [`fetch`](Self::fetch) with extra request headers, for XHR-only provider APIs that
+    /// content-negotiate or gate on them.
     ///
     /// # Errors
     /// [`AdapterError`] on resolve/transport failure or a non-success status.

@@ -50,8 +50,8 @@ pub(crate) struct RenderConfig {
     /// Extra settle delay applied after navigation on every `/v1/render` (ms).
     #[serde(default)]
     pub(crate) default_wait_ms: u64,
-    /// User-agent override. When set, it is applied to the page and reported back so a
-    /// solved `cf_clearance` cookie stays paired with a stable UA (design §9).
+    /// User-agent override, applied to the page and reported back so a solved
+    /// `cf_clearance` cookie stays paired with a stable UA.
     #[serde(default)]
     pub(crate) user_agent: Option<String>,
     /// TTL attached to a solved session when acting as a `ChallengeSolver` back-end (s).

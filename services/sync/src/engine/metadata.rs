@@ -1,18 +1,5 @@
-//! The one place upstream metadata is folded into a local series.
-//!
-//! Two paths learn what a provider knows about a work, and both write through here:
-//!
-//! - [`super::enrich`], the tokenless sweep, which walks the whole catalogue asking every
-//!   public-metadata provider about each series in turn;
-//! - [`super::reconcile`], which already resolves every entry in a linked user's list to a
-//!   canonical series and now carries that entry's metadata with it.
-//!
-//! They used to be one path — the sweep — and reconciliation dropped its metadata on the floor
-//! after matching. A series in a user's `AniList` library therefore kept its scraped description
-//! and an `unknown` content type until a sweep that walks tens of thousands of rows at a few
-//! hundred per hour happened to reach it. Sharing this collaborator is also what keeps the
-//! configured [`MetadataPriority`] meaningful: one field resolution and one write statement, so
-//! the two paths cannot come to different conclusions about who outranks whom.
+//! The one place upstream metadata is folded into a local series, shared by [`super::enrich`]'s
+//! catalogue sweep and [`super::reconcile`] so both paths resolve [`MetadataPriority`] the same way.
 
 use tankovault_db::PgPool;
 use tankovault_db::repo::catalog::{MetadataEnrichment, SeriesEnrichmentRow};
@@ -42,9 +29,6 @@ impl MetadataWriter {
 
     /// The subset of `series_ids` whose metadata has not been attempted since `stale_before`,
     /// with the locally-stored values [`Self::apply`] needs to resolve priority against.
-    ///
-    /// One statement for the whole set. Reconciliation calls this with every series it matched,
-    /// so on a settled catalogue it returns nothing and the run does no metadata work at all.
     pub(crate) async fn needing_metadata(
         &self,
         series_ids: &[SeriesId],
@@ -100,11 +84,8 @@ impl MetadataWriter {
             &MetadataEnrichment {
                 description: description.as_deref(),
                 cover_url: cover.as_deref(),
-                // Content type, publication status and release year are additive gap-fills
-                // (never overwrite a value the adapters already determined), so the upstream
-                // value only lands where local data is missing — no priority resolution needed.
-                // `None` here is "upstream did not say", which the statement leaves alone; an
-                // `Unknown`/`unknown` token would be indistinguishable from a real answer.
+                // Additive gap-fills only: never overwrite an adapter-determined value. `None`
+                // means "upstream had no opinion"; an `Unknown` token would look like a real answer.
                 content_type: content_type_token(meta.content_type),
                 status: series_status_token(meta.series_status),
                 release_year: meta.start_year,
@@ -119,9 +100,8 @@ impl MetadataWriter {
 
     /// Record that `series_id` was examined and there was nothing to write.
     ///
-    /// Load-bearing, not bookkeeping: the sweep's work list is "least recently attempted first",
-    /// so a series left unstamped leads every following page and the sweep spends its whole
-    /// budget retrying it. Failures are stamped for the same reason successes are.
+    /// Load-bearing: an unstamped series leads every following sweep page, so the sweep would
+    /// spend its whole budget retrying it forever.
     pub(crate) async fn mark_checked(&self, series_id: SeriesId) -> anyhow::Result<()> {
         catalog::mark_metadata_checked(&self.pool, series_id).await?;
         Ok(())

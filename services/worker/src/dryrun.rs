@@ -1,26 +1,6 @@
-//! The adapter dry-run: `POST /internal/providers/{id}/test`.
-//!
-//! # Why this lives in the worker
-//!
-//! It used to live in `services/api`, which is the only place an operator can reach — but the
-//! *implementation* needs `tankovault-adapters` and `tankovault-fetch`, and `tankovault-fetch`
-//! is built on `wreq`/`BoringSSL`. So the API binary linked two complete TLS stacks, one of them
-//! compiled from C and assembly, for a single operator-facing dry run (PERFORMANCE §18). The
-//! route is unchanged: `POST /v1/admin/providers/{id}/test` still exists, still requires
-//! `providers.test`, still audits — it proxies here through `Upstream`, the same way the
-//! scan triggers proxy to the control plane (ARCH-4).
-//!
-//! Moving it also fixed something the API could not do at all. There, every dry run built a
-//! **fresh** fetch stack, so it carried its own rate limiter and its own 429 penalty: an
-//! operator testing selectors offered the provider a second, private request budget on top of
-//! whatever the scan workers were already spending, and any backoff the workers had accumulated
-//! did not apply. That is PERF-1's defect in a different place. Here the dry run goes through
-//! [`Engine::provider_context`], so it shares the provider's one cached stack, one limiter and
-//! one penalty with the scans.
-//!
-//! The listener is the worker's ops listener, which is why the path is `/internal/…` and why it
-//! sits inside `HttpStack::with_internal_auth`: `ops_router` is merged *outside* the stack, so
-//! `/health` and `/ready` stay reachable without the shared secret while this does not.
+//! The adapter dry-run: `POST /internal/providers/{id}/test`, proxied from the API. Runs
+//! through [`Engine::provider_context`] so it shares the provider's cached fetch stack and
+//! rate limiter with scans, rather than getting a private request budget.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -50,10 +30,8 @@ pub(crate) struct TestAdapterRequest {
 
 /// Everything that can go wrong before a sample exists.
 ///
-/// A failure of the *adapter* is not one of these: a provider whose selectors no longer match
-/// is precisely what the operator ran this to find out, so it is reported inside the `200` body
-/// as `{"ok": false, "error": …}` per section. Only "could not even start" and "took too long"
-/// are errors of the request.
+/// An adapter failure is not one of these — that's what the operator ran this to find
+/// out, so it's reported in the `200` body as `{"ok": false, "error": …}`.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum DryRunError {
     #[error("provider not found")]
@@ -87,7 +65,8 @@ impl IntoResponse for DryRunError {
     }
 }
 
-/// The dry-run route, for merging into the worker's internally-authenticated router.
+/// The dry-run route, merged into the worker's internally-authenticated router — not
+/// into `ops_router`, which stays reachable without the shared secret.
 pub(crate) fn router(engine: Arc<Engine>) -> Router {
     Router::new()
         .route("/internal/providers/{id}/test", post(test_adapter))
@@ -167,11 +146,8 @@ mod tests {
     use axum::http::StatusCode;
     use tankovault_service::problem::IntoProblem as _;
 
-    /// An adapter that cannot even be built is the operator's mistake (a malformed config), a
-    /// missing provider is a `404`, and only a genuinely internal failure is a `500`. The
-    /// distinction matters because this endpoint's whole purpose is to report adapter
-    /// failures — so the *status* has to mean "the request was wrong", never "the adapter
-    /// was", or the console will show a red banner for the answer the operator asked for.
+    /// The status must mean "the request was wrong", never "the adapter was" — otherwise
+    /// the console shows a red banner for the answer the operator asked for.
     #[test]
     fn only_a_request_level_failure_is_an_error_status() {
         assert_eq!(
@@ -190,8 +166,8 @@ mod tests {
         );
     }
 
-    /// An internal failure must not put its `Display` on the wire: `DbError` routinely carries
-    /// connection strings and SQL (ARCH-12).
+    /// An internal failure must not put its `Display` on the wire: `DbError` can carry
+    /// connection strings and SQL.
     #[test]
     fn an_internal_failure_discloses_nothing() {
         let problem = DryRunError::Internal(anyhow::anyhow!(

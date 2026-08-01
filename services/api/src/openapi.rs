@@ -1,52 +1,6 @@
-//! The `OpenApi` root. Every handler across [`crate::auth`], [`crate::series`], [`crate::me`]
-//! and [`crate::admin`] carries a `#[utoipa::path(..)]` annotation; [`crate::full_openapi`]
-//! and [`crate::build_router`] collect them via `utoipa_axum`'s `OpenApiRouter`, and
-//! `build_router` serves the resulting spec through a browsable Scalar UI at `/scalar`.
-//! `xtask openapi` serialises this document to `openapi.json` and feeds it to `progenitor`,
-//! regenerating the typed Rust API client (`crates/api-client`, `src/lib.rs`) that the
-//! Dioxus frontend consumes directly (re-exported via `web/frontend/src/wire.rs`).
-//!
-//! Endpoints that proxy another service's JSON now *return* what they declare (ARCH-10). The
-//! six read proxies on `/v1/me/sync/*` are typed as `tankovault_contracts::sync::{ProviderInfo,
-//! AuthorizeUrl, AccountStatus, AccountSettings, ConflictView, HistoryView}`, the same
-//! definitions `services/sync` produces, so the producing service, this document and the
-//! generated client cannot disagree — and [`crate::upstream::Upstream`]'s decode step enforces
-//! it at the edge rather than forwarding whatever arrived. They previously returned
-//! `Json<serde_json::Value>` while declaring a concrete `body`, which is the drift class
-//! `tankovault_contracts::sync` was created to end, reintroduced one layer up. Without the
-//! shared definitions the frontend had to hand-mirror those structs, and they drifted.
-//!
-//! What is still `serde_json::Value` is *declared* as `serde_json::Value`, so the document is
-//! honest rather than aspirational. Two groups, neither of which has a fixed schema to publish:
-//!
-//! - **Command proxies**, whose body is a progress or outcome blob no caller destructures:
-//!   `/v1/me/sync/{provider}/{callback,push,pull}`, `DELETE /v1/me/sync/{provider}`,
-//!   `/v1/me/sync/conflicts/{id}/resolve` and `/v1/admin/sync/{pull,push,unlink}`.
-//! - **Ad-hoc acknowledgements and free-form JSON** produced by this service itself:
-//!   `{"ok": true}` / `{"revoked": n}` / `{"removed": b}` on the local admin and
-//!   `/v1/me/progress/*` writes, the provider dry-run sample (which is deliberately shaped by
-//!   whichever adapter ran), and `/v1/me/notification-prefs`, which is product-defined
-//!   free-form JSON, not a fixed schema.
-//!
-//! The **control-plane scan triggers** — `POST /v1/admin/scans` and
-//! `POST /v1/admin/providers/{id}/resolve` — used to be a third such group, and were the one
-//! case ARCH-10 could not close from this crate alone: the planner's `{ "run_ids": [...] }` was
-//! a private struct in `services/control-plane`'s `main.rs`, so the republisher had nothing
-//! more specific to name. That type moved to `tankovault_contracts::admin::ScanTriggeredView`
-//! (published as `ScanTriggered`) and both ends name it now, which is why the console's
-//! "N scans queued" is finally reading a field a compiler connects to the field the planner
-//! writes.
-//!
-//! Typed ids (`SeriesId`, `UserId`, ...) are listed explicitly below and left with their
-//! native `utoipa` "uuid" schema (`{"type":"string","format":"uuid"}`); `xtask openapi` tags
-//! them with `x-rust-type` so `progenitor` maps them back to our domain newtypes on the
-//! frontend, keeping ids a real, compiler-checked type there too, not a plain `String`.
-//!
-//! The `components(schemas(..))` list below is kept even though every listed type is now also
-//! reachable transitively from an annotated path (utoipa auto-registers schemas referenced by
-//! `request_body`/`responses`): duplicate registration is a no-op, and keeping the explicit
-//! list means the generated client can't silently lose a type just because a handler's
-//! signature changes.
+//! The `OpenApi` root. Every `#[utoipa::path(..)]` handler across the crate is collected here
+//! via `utoipa_axum`, and `xtask openapi` serialises the result to `openapi.json` to
+//! regenerate the typed frontend client.
 
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
@@ -73,12 +27,8 @@ pub const BEARER_AUTH: &str = "bearer_auth";
 
 /// The single-use `ticket` query parameter accepted by `GET /v1/me/stream`.
 ///
-/// `GET /v1/me/stream` used to be documented as needing no authentication at all — it was listed
-/// by name as the one operation whose credential no scheme in this document could express,
-/// because a raw bearer token in a query string is not an `OpenAPI` security scheme. Replacing it
-/// with a ticket (SEC-8) made it expressible: an `apiKey` in `query` is exactly what this is, so
-/// the operation now *declares* its requirement like every other private route, and
-/// `tests/openapi_contract.rs` no longer needs an exception for it.
+/// Replaces a raw bearer token in the query string, which no `OpenAPI` security scheme could
+/// express; an `apiKey` in `query` can.
 pub const STREAM_TICKET_AUTH: &str = "stream_ticket";
 
 struct SecurityAddon;
@@ -182,8 +132,7 @@ impl Modify for SecurityAddon {
     tankovault_contracts::sync::ConflictView,
     tankovault_contracts::sync::HistoryView,
     tankovault_contracts::me::MeStatsView,
-    // --- sync HTTP contract (produced by services/sync, re-published verbatim by the
-    //     `/v1/me/sync/*` proxies here; see `tankovault_contracts::sync`) ---
+    // --- sync HTTP contract (produced by services/sync, re-published by the /v1/me/sync/* proxies) ---
     tankovault_contracts::sync::AccountStatus,
     tankovault_contracts::sync::AccountSettings,
     tankovault_contracts::sync::ProviderInfo,

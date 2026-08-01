@@ -1,15 +1,8 @@
 //! The HTTP wire contract for the external-sync surface.
 //!
-//! These are the response bodies `services/sync` produces on its `/v1/sync/*` routes and
-//! `services/api` re-publishes under `/v1/me/sync/*`. They live here, rather than privately
-//! in the sync service, for one reason: `services/api` proxies those routes verbatim and so
-//! cannot describe them from its own types. Without a shared definition its `#[utoipa::path]`
-//! annotations had no `body`, the generated client had no methods for them, and the frontend
-//! carried hand-written mirror structs that quietly drifted out of shape — silently dropping
-//! the connected display name, the last-sync time and every persisted auto-sync setting.
-//!
-//! Because the producer returns these types and the API's schema annotations reference the
-//! same ones, the generated client and the real payload cannot disagree.
+//! Response bodies `services/sync` produces on `/v1/sync/*` and `services/api` re-publishes
+//! verbatim under `/v1/me/sync/*`. Shared here so both services' `#[utoipa::path]` annotations
+//! reference the same types instead of the frontend hand-mirroring structs that drift.
 
 use serde::{Deserialize, Serialize};
 use tankovault_domain::Feature;
@@ -74,11 +67,8 @@ impl ConflictPolicy {
     /// Every policy, in the order a picker should offer them.
     ///
     /// Hand-listed because Rust cannot enumerate an enum's variants without a derive macro.
-    /// [`ConflictPolicy::as_str`]'s exhaustive `match` is what forces a new variant to be
-    /// noticed here — it fails to compile until an arm is added — and
-    /// `every_policy_is_listed_once_and_round_trips` fails until the variant reaches this
-    /// array too. Everything else about the vocabulary is derived from these two, so there is
-    /// no third place to keep in step.
+    /// [`ConflictPolicy::as_str`]'s exhaustive `match` forces a new variant to be added here to
+    /// compile, and `every_policy_is_listed_once_and_round_trips` catches one missing from it.
     pub const ALL: [Self; 4] = [
         Self::LocalWins,
         Self::RemoteWins,
@@ -132,9 +122,9 @@ impl std::str::FromStr for ConflictPolicy {
     type Err = UnknownConflictPolicy;
 
     /// Derived from [`ConflictPolicy::ALL`] and [`ConflictPolicy::as_str`] rather than written
-    /// as a second `match`, so parsing is the exact inverse of rendering by construction. The
-    /// previous implementation was a hand-written `match` with a `_ => NewestWins` arm, which
-    /// is how a typo became a silent policy change rather than an error.
+    /// as a second `match`, so parsing is the exact inverse of rendering by construction — a
+    /// hand-written `match` with a `_ => NewestWins` fallback previously let a typo silently
+    /// become a policy change instead of an error.
     fn from_str(token: &str) -> Result<Self, Self::Err> {
         Self::ALL
             .into_iter()
@@ -216,20 +206,13 @@ pub struct HistoryView {
 /// The feature flag gating each route of the external-sync surface, keyed on the path **suffix**
 /// beneath the surface's mount point.
 ///
-/// # Why the mapping lives here
+/// `services/api` (`/v1/me/sync`) and `services/sync` (`/v1/sync`) both serve this surface;
+/// declaring the mapping once, suffix-keyed, means adding a route gates it at both hops or
+/// neither, instead of the two tiers' tables drifting apart (ARCH-18). A tier that does not
+/// serve a suffix still gates it, so nothing depends on which routes a given tier mounts.
 ///
-/// The same surface is gated at two hops with different prefixes: `services/api` mounts it under
-/// `/v1/me/sync` and `services/sync` serves it under `/v1/sync`. Both used to maintain their own
-/// `RouteFeatures` table, and the tables had already drifted — the API gated `/conflicts` and
-/// `/history` but not `/push-series` — with no test asserting they agreed (ARCH-18). Declaring the
-/// mapping once, suffix-keyed, means adding a route gates it at *both* hops or neither.
-///
-/// A tier that does not serve a suffix still gates it: a rule for a path nothing routes to never
-/// matches, and the alternative — each tier filtering the list to what it happens to mount — is
-/// exactly the per-tier judgement that drifted in the first place.
-///
-/// `""` is the whole-surface rule. `RouteFeatures` resolves longest-prefix-first, so the specific
-/// suffixes below win over it regardless of the order here.
+/// `""` is the whole-surface rule; `RouteFeatures` resolves longest-prefix-first, so specific
+/// suffixes win over it regardless of order here.
 #[must_use]
 pub const fn sync_route_features() -> &'static [(&'static str, Feature)] {
     &[

@@ -1,19 +1,9 @@
-//! The canonicalisation review queue, with merge and dismiss actions, the standing duplicate
-//! sweep, and the compact read-only series card the compare view is built from.
+//! The canonicalisation review queue: merge and dismiss actions, the standing duplicate sweep,
+//! and the compact read-only series card the compare view is built from.
 //!
-//! # What this surface has to answer
-//!
-//! On a real catalogue this queue is thousands of rows long, and a row is only actionable if it
-//! answers three questions without opening both series: *is this actually one work*, *which of
-//! the two should survive*, and *why does the matcher think so*. It used to answer none of them
-//! — every row carried the same "ambiguous title match" reason, the list was ordered by
-//! insertion time so the certain duplicates were buried among the coincidences, and the merge
-//! button always kept whichever series the scan happened to create *second*, deleting the older,
-//! richer one.
-//!
-//! So: the band filter narrows to a confidence range, the server orders by score, the signal
-//! badges say which rule fired, the counts say which side carries more of the catalogue, and the
-//! direction defaults to the server's `suggested_keep` with an explicit swap.
+//! Merge direction defaults to the server's `suggested_keep`, swappable by the operator, because
+//! merging into the wrong side discards the richer series — the absorbed id stops existing and
+//! everything pointing at it breaks.
 
 use crate::api;
 use crate::components::{async_block, async_block_list, Cover};
@@ -24,11 +14,7 @@ use crate::state::use_session;
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
 
-/// The confidence bands an operator triages in.
-///
-/// Working a large queue means working it in bands: above 90% is nearly all genuine duplicates
-/// and can be actioned quickly, while 60–75% needs real attention per row. Filtering server-side
-/// keeps the page small as well as the list relevant.
+/// Confidence bands an operator triages in, from all matches down to near-certain duplicates.
 const BANDS: &[(f32, &str)] = &[
     (0.0, "console.merge.bandAll"),
     (0.6, "console.merge.bandLow"),
@@ -72,9 +58,8 @@ pub(super) fn MergeQueue() -> Element {
         }
     });
 
-    // The sweep is the only control here that acts on rows the operator cannot see — it finds
-    // duplicates the queue never recorded — so its outcome is reported as a line of text rather
-    // than left to be inferred from the list changing length.
+    // Sweep acts on rows the operator can't see, so its outcome is reported as text, not
+    // inferred from the list changing length.
     let run_sweep = move |_| {
         if *busy.peek() {
             return;
@@ -178,8 +163,6 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
     let i18n = use_i18n();
     let session = use_session();
     let can = candidate.read();
-    // The score is a 0..=1 ratio, so the rounded percentage is always in range; clamping
-    // makes that total rather than relying on the input being well-formed.
     #[expect(
         clippy::cast_possible_truncation,
         reason = "the score is a 0..=1 ratio and the clamp makes the percentage total rather \
@@ -189,12 +172,10 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
     let id = can.id;
     let mut open = use_signal(|| false);
     let mut busy = use_signal(|| false);
-    // Which side survives. Seeded from the server's suggestion — the series with more sources,
-    // then more chapters — because the absorbed id stops existing and everything already
-    // pointing at it breaks. Swappable, because the operator can see something the counts cannot.
+    // Which side survives; seeded from the server's suggestion, swappable since the operator
+    // can see something the counts can't.
     let mut keep_first = use_signal(|| can.suggested_keep == can.series_id);
 
-    // Higher-confidence matches get a warmer pill so operators can triage at a glance.
     let score_class = if pct >= 90 {
         "ik-mono acc"
     } else if pct >= 75 {

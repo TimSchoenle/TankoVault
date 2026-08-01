@@ -22,15 +22,9 @@ pub struct ReadProgress {
 impl ReadProgress {
     /// Whether chapter `number` counts as read (design v2 §A.3).
     ///
-    /// A part release (`152.5`) belongs *to* the whole chapter it floors to — sources ship
-    /// parts ahead of the compiled chapter, they are not chapters that follow it — so reading
-    /// whole chapter `152` covers every `152.x`. Only ahead of the whole frontier does the
-    /// part frontier decide. Callers that hold a whole frontier but no part frontier must not
-    /// hand-roll `number <= whole`: that silently reports every part release as unread while
-    /// [`progress_mark_read`] treats marking one a no-op, leaving a dead toggle in the UI.
-    ///
-    /// Read models that must decide this in SQL mirror the same two clauses inline (see
-    /// [`super::dashboard::feed`]); this is the definition they mirror.
+    /// A part release belongs to the whole chapter it floors to; hand-rolling `number <= whole`
+    /// instead of calling this reports already-read parts as unread forever. SQL read models
+    /// mirror this same test inline (see [`super::dashboard::feed`]).
     #[must_use]
     pub fn covers(self, number: f64) -> bool {
         number.floor() <= self.last_read_whole_number
@@ -271,10 +265,9 @@ pub async fn progress_mark_unread(
             // no-op rather than a reason to move.
             Some(p) if p < number => Some(p),
             // `number` is at or below the frontier, so the frontier retreats to the highest
-            // part release the catalogue holds below it. Being *at* the frontier used to be a
-            // separate branch that cleared it outright, which threw away every earlier part of
-            // the same chapter: with `152.1`..`152.6` read, un-reading `152.6` reported the
-            // other five unread too, from one click and with no undo.
+            // part release the catalogue holds below it — clearing it outright here would
+            // throw away every earlier part of the same chapter (e.g. un-reading `152.6` of
+            // `152.1`..`152.6` read would report the other five unread too).
             Some(_) => prev_part_below(pool, series_id, number, whole).await?,
         };
     }

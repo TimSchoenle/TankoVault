@@ -7,17 +7,9 @@ use serde::Deserialize;
 pub struct TelemetryConfig {
     /// Logical service name reported in traces/metrics.
     pub service_name: String,
-    /// **Removed.** `TANKOVAULT_TELEMETRY__OTLP_ENDPOINT` used to be accepted here and did
-    /// nothing but log "collector export is pending" — no `OTel` layer was ever installed and
-    /// the four `OTel` crates in `[workspace.dependencies]` were used by zero members.
+    /// **`TANKOVAULT_TELEMETRY__OTLP_ENDPOINT` is removed** (it silently did nothing); setting
+    /// it is now a hard config error. Re-add only with a real `OpenTelemetryLayer`.
     ///
-    /// A knob that silently does nothing is worse than an absent one: an operator who sets it
-    /// believes traces are being exported and discovers otherwise during an incident. Setting
-    /// the variable is now a hard configuration error (figment rejects unknown keys only when
-    /// asked, so the removal is documented here instead), which is the honest signal.
-    ///
-    /// Re-add this together with a real `OpenTelemetryLayer` in
-    /// `crates/service/src/telemetry.rs`, never separately.
     /// `RUST_LOG`-style filter (e.g. `info,tankovault=debug`).
     #[serde(default = "TelemetryConfig::default_log_filter")]
     pub log_filter: String,

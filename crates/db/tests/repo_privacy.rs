@@ -1,19 +1,8 @@
-//! GDPR portability (Art. 20) and erasure (Art. 17) against a real, migrated schema.
+//! GDPR portability (Art. 20) and erasure (Art. 17), verified from the live schema: tables
+//! referencing `user_id`/`actor_id` are enumerated at runtime, so a migration that misses
+//! export or erasure fails the build instead of silently leaking or retaining data.
 //!
-//! # Why these are driven from `information_schema`
-//!
-//! The failure mode for both operations is **silent incompleteness**: a table added in a later
-//! migration that stores something about a subject, and nobody remembering to add it to the
-//! export or to check that erasure reaches it. Nothing fails, no error is logged, and the
-//! deficiency only surfaces as a complaint to a regulator.
-//!
-//! So the two headline tests here do not hard-code a list of tables. They ask the live schema
-//! which tables reference a user, and reconcile that answer against a declaration kept in this
-//! file. A nineteenth migration that adds `user_notes(user_id …)` turns the build red on the
-//! pull request that adds it, and the only ways to make it green are to export the table or to
-//! write down, here, why it must not be.
-//!
-//! Opt-in: gated behind the `integration` feature because it requires Docker.
+//! Gated behind the `integration` feature (requires Docker).
 #![cfg(feature = "integration")]
 
 use std::collections::BTreeSet;
@@ -22,13 +11,8 @@ use tankovault_db::repo::{privacy, users};
 use tankovault_domain::{AccountStatus, Permission, UserId};
 use tankovault_test_support::TestDb;
 
-/// Every table whose rows are about a subject, paired with the key it appears under in the
-/// export document.
-///
-/// This is the declaration the schema is reconciled against. Adding an entry here is the
-/// *second* half of adding a table to the export; the first half is the SQL in
-/// `repo::privacy::export_user_data`, and [`the_export_has_a_key_for_every_declared_table`]
-/// checks that the two agree.
+/// Tables whose rows are about the subject, keyed by their export-document key.
+/// [`the_export_has_a_key_for_every_declared_table`] checks the SQL agrees.
 const EXPORTED: &[(&str, &str)] = &[
     ("users", "profile"),
     ("refresh_tokens", "sessions"),
@@ -45,10 +29,7 @@ const EXPORTED: &[(&str, &str)] = &[
     ("gdpr_requests", "privacy_requests"),
 ];
 
-/// Tables that reference a subject and are deliberately **not** exported, each with the reason.
-///
-/// An allow-list, not an oversight list: every entry here is a decision someone has to defend,
-/// which is exactly the property that makes the reconciliation test worth having.
+/// Tables referencing a subject that are deliberately not exported, with the reason.
 const NOT_EXPORTED: &[(&str, &str)] = &[
     (
         "password_reset_tokens",
@@ -66,10 +47,7 @@ const NOT_EXPORTED: &[(&str, &str)] = &[
     ),
 ];
 
-/// The tables the live schema says hold a reference to a user.
-///
-/// Both the owning column names are looked for: `user_id` on the tables a subject owns, and
-/// `actor_id`, which is how `audit_log` names the same relationship.
+/// Tables the live schema says reference a user, via `user_id` or (for `audit_log`) `actor_id`.
 async fn tables_referencing_a_user(db: &TestDb) -> BTreeSet<String> {
     let rows: Vec<String> = sqlx::query_scalar(
         "SELECT DISTINCT table_name::text FROM information_schema.columns \
@@ -92,9 +70,7 @@ async fn seed_subject(db: &TestDb, name: &str) -> UserId {
 
 #[tokio::test]
 async fn every_table_that_references_a_subject_is_either_exported_or_documented_as_excluded() {
-    // The guard against silent incompleteness. A migration that adds a table storing something
-    // about a person fails here until it is either added to the export or written down in
-    // NOT_EXPORTED with a reason — which is the review conversation this test exists to force.
+    // Fails until a new table is exported or listed in NOT_EXPORTED with a reason.
     let db = TestDb::spawn().await;
     let in_schema = tables_referencing_a_user(&db).await;
 
@@ -120,9 +96,7 @@ async fn every_table_that_references_a_subject_is_either_exported_or_documented_
 
 #[tokio::test]
 async fn the_export_has_a_key_for_every_declared_table() {
-    // The other half of the reconciliation: the declaration above is only meaningful if the
-    // SQL actually produces the keys it names. A table removed from `json_build_object`
-    // without being removed from EXPORTED fails here.
+    // The declaration is only meaningful if the SQL actually produces these keys.
     let db = TestDb::spawn().await;
     let subject = seed_subject(&db, "portability").await;
 
@@ -145,9 +119,7 @@ async fn the_export_has_a_key_for_every_declared_table() {
 
 #[tokio::test]
 async fn a_subject_with_no_activity_exports_empty_arrays_not_nulls() {
-    // Stated by the doc comment on `export_user_data`, and load-bearing for whoever parses the
-    // file: a `null` where an array was promised breaks a consumer on exactly the accounts
-    // that are least interesting.
+    // A `null` where an array was promised breaks a consumer, for the least-active accounts.
     let db = TestDb::spawn().await;
     let subject = seed_subject(&db, "quiet").await;
 
@@ -173,9 +145,8 @@ async fn a_subject_with_no_activity_exports_empty_arrays_not_nulls() {
 
 #[tokio::test]
 async fn the_export_carries_no_credential_material() {
-    // The redaction contract, asserted on the *rendered document* rather than by reading the
-    // SQL. A future `to_jsonb(u)` that forgot its `- 'password_hash'` would hand an offline
-    // Argon2 cracking target to anyone who obtains a file people routinely forward by email.
+    // Redaction is asserted on the rendered document, not the SQL: a forgotten
+    // `- 'password_hash'` would leak an Argon2 cracking target in an emailed export.
     let db = TestDb::spawn().await;
     let subject = seed_subject(&db, "credentialed").await;
 
@@ -219,10 +190,8 @@ async fn the_export_carries_no_credential_material() {
 
 #[tokio::test]
 async fn the_export_names_no_third_party_from_the_subjects_own_audit_trail() {
-    // Regression for SEC-15. The export used to dump whole `audit_log` rows. An operator's own
-    // rows describe actions taken *on other people* — `admin/users.rs` records the edited
-    // account's username and email in `detail` — so an operator's subject access request
-    // disclosed other data subjects. Art. 15(4) forbids exactly that.
+    // Whole `audit_log` rows would name other subjects (e.g. an edited account's username and
+    // email in `detail`) — Art. 15(4) forbids that.
     let db = TestDb::spawn().await;
     let operator = seed_subject(&db, "operator").await;
     let bystander = db.seed_user("bystander", &[], AccountStatus::Active).await;
@@ -273,10 +242,8 @@ async fn the_export_names_no_third_party_from_the_subjects_own_audit_trail() {
 
 #[tokio::test]
 async fn erasing_a_subject_leaves_no_row_referencing_them_anywhere() {
-    // Schema-driven for the same reason the export test is: a table added later with a
-    // `user_id` that is *not* `ON DELETE CASCADE` would survive an erasure silently. This
-    // walks every table the live schema says references a user and requires zero surviving
-    // rows — except the two that are deliberately pseudonymised rather than deleted.
+    // Schema-driven: a later table with a `user_id` not `ON DELETE CASCADE` would otherwise
+    // survive erasure silently.
     let db = TestDb::spawn().await;
     let subject = seed_subject(&db, "erasable").await;
 
@@ -327,9 +294,8 @@ async fn erasing_a_subject_leaves_no_row_referencing_them_anywhere() {
         "erasing an existing subject reports that it happened"
     );
 
-    // `audit_log` and `gdpr_requests` are `ON DELETE SET NULL` by design: the accountability
-    // record survives, the identity linking it to a person does not. Both are checked below
-    // rather than skipped, because "the reference is gone" is the property that matters.
+    // `ON DELETE SET NULL` by design: the accountability record survives, the identity link
+    // does not.
     let pseudonymised = ["audit_log", "gdpr_requests"];
 
     for table in tables_referencing_a_user(&db).await {
@@ -367,8 +333,7 @@ async fn erasing_a_subject_leaves_no_row_referencing_them_anywhere() {
 
 #[tokio::test]
 async fn erasing_a_subject_that_is_already_gone_reports_that_it_was_not_there() {
-    // The caller distinguishes "erased" from "was already gone" off this boolean, without a
-    // prior existence check that would race with a concurrent erasure.
+    // Distinguishes "erased" from "already gone" without a racy prior existence check.
     let db = TestDb::spawn().await;
     let subject = seed_subject(&db, "twiceerased").await;
 

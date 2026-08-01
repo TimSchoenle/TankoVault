@@ -1,33 +1,20 @@
 //! Database-layer test harness for `TankoVault`.
 //!
-//! Provides a **Postgres started with testcontainers**: one named container shared by every test
-//! binary and every run, and each [`TestDb::spawn`] creates its own freshly-migrated database
-//! inside it, so tests are hermetic and parallel-safe without a shared, mutable fixture. The
-//! harness owns container lifecycle, migration, seeding and token minting, so there is no
-//! divergent `DATABASE_URL` wiring to keep in sync.
+//! A Postgres container (via testcontainers) shared by every test binary and run;
+//! [`TestDb::spawn`] creates a freshly-migrated database inside it per test — see
+//! [`shared_container`] for why the container is reused rather than ephemeral. Also holds
+//! service-agnostic in-memory doubles ([`RecordingAuditSink`], [`RecordingMailer`]) and the
+//! entity builders in [`seed`].
 //!
-//! The container is **reused, not ephemeral** — [`shared_container`] explains why, and why the
-//! stale-database sweep beside it is a required half of that choice rather than a nicety
-//! (ARCH-6b). To start clean: `docker rm -f tankovault-test-postgres`.
-//!
-//! Also holds the in-memory doubles that are not specific to any one service:
-//! [`RecordingAuditSink`] and [`RecordingMailer`], and the entity builders in [`seed`] — which
-//! exist because seven of the ten `crates/db` suites had written their own `a_provider` and six
-//! were byte-identical (TEST F-09).
-//!
-//! # Layering
-//!
-//! This crate deliberately depends on **no** `services/*` crate, so the repository-layer suites
-//! can use it without compiling a service (ARCH-17). The in-process router harness that does
-//! need the API lives in `services/api/test-support` as `tankovault-api-test-support`.
+//! Depends on no `services/*` crate, so repository-layer suites can use it without compiling a
+//! service (ARCH-17); the in-process API router harness lives in `services/api/test-support`.
 //!
 //! # On `# Panics`
 //!
-//! This crate is exempt from `clippy::missing_panics_doc`, declared as an `expect` at the crate
-//! root so the compiler withdraws the exemption if the last panicking helper ever goes away. A
-//! harness helper panics *by design*: a failure here is a failed test, which is the outcome the
-//! caller wants, and `Result` would only move the `unwrap` into every test in the workspace.
-//! Documenting each site would restate that contract once per function.
+//! This crate is exempt from `clippy::missing_panics_doc` (an `expect` at the crate root, so the
+//! exemption lapses if the last panicking helper is ever removed): a harness helper panics *by
+//! design* — a failure here is a failed test — and `Result` would only move the `unwrap` into
+//! every caller.
 #![expect(
     clippy::missing_panics_doc,
     reason = "a test-harness helper's failure mode is a panicking test, which is its contract"

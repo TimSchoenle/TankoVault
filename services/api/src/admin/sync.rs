@@ -14,10 +14,6 @@ use tankovault_domain::{Permission, SeriesId, UserId, WatchStatus};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-// ---------------------------------------------------------------------------
-// External sync — admin visibility + operator actions (design: admin Sync console tab)
-// ---------------------------------------------------------------------------
-
 /// List linked external accounts
 ///
 /// Every linked external account across all users.
@@ -67,14 +63,9 @@ pub async fn list_sync_mappings(
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SyncAccountTarget {
     pub user_id: UserId,
-    // A `ProviderSlug`, not a `String`: this value is interpolated into the upstream path
-    // (`/v1/sync/{provider}/pull`) by all three handlers below, so it is the same
-    // request-forgery source `crate::slug` exists to close — an operator endpoint is still a
-    // network-reachable one, and `SyncAdminWrite` is not a licence to choose which internal
-    // endpoint the API calls with its own token attached.
-    //
-    // `//` and not `///`: utoipa publishes a doc comment as the field's public `description`,
-    // and `value_type = String` is here precisely so `openapi.json` does not move (rule 9).
+    // `ProviderSlug`, not `String`: interpolated into the upstream path by every handler below,
+    // so it's the request-forgery surface `crate::slug` closes. Kept as `//` (with
+    // `value_type = String`) because `///` here would publish into `openapi.json`.
     #[schema(value_type = String)]
     pub provider: ProviderSlug,
 }
@@ -485,10 +476,8 @@ pub async fn list_suggestions(
                 series_id: SeriesId::from_uuid(r.series_id),
                 normalized_title: r.normalized_title,
                 similarity: r.similarity,
-                // `suggest_series_candidates` returns one row per series without its synonym
-                // list, so the alias rules simply never fire here. An operator is eyeballing
-                // the ranked list, and the trigram query behind it already searched
-                // `series_titles`, so the ranking is unaffected in the cases that matter.
+                // No synonym list from `suggest_series_candidates`, so alias rules never fire;
+                // the trigram query already searched `series_titles`, so ranking is unaffected.
                 alt_normalized_titles: Vec::new(),
                 content_type: ct,
                 release_year: r.release_year,

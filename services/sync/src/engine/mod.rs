@@ -1,35 +1,6 @@
 //! Sync engine: OAuth linking plus provider ⇆ local pull/push, a targeted single-series push,
-//! metadata enrichment, and the multi-provider registry (design: generalized multi-provider
-//! sync).
-//!
-//! Tokens are sealed with `Sealer` before persistence and only ever decrypted in
-//! [`tokens::TokenVault`]. Series are mapped to canonical works by reusing `tankovault_matcher`
-//! over trigram candidates, then cached in `sync_mappings` so later syncs skip re-matching.
-//! Reconciling progress across the two sides is delegated to the pure [`crate::mapping`] logic.
-//! Status crosses the provider boundary as `WatchStatus` — provider-specific vocabularies (e.g.
-//! `AniListStatus`) never leave their own provider module.
-//!
-//! # Layout (ARCH-6)
-//!
-//! [`SyncEngine`] is a facade holding six collaborators and no logic of its own. It used to be
-//! one struct with seven fields and a single 22-method `impl` covering six unrelated concerns,
-//! where every method could reach every field:
-//!
-//! | module | owns |
-//! |---|---|
-//! | [`registry`] | the provider set, and the one "unknown provider" error |
-//! | [`tokens`] | the encryption key; sealing, opening and refreshing OAuth tokens |
-//! | [`accounts`] | linking, unlinking, the status card, settings and the effective policy |
-//! | [`conflicts`] | the conflict/history read models and manual resolution |
-//! | [`resolve`] | series ⇆ external-id matching in both directions |
-//! | [`reconcile`] | the account-wide three-way merge (I/O half) |
-//! | [`push`] | the targeted single-series push |
-//! | [`enrich`] | the tokenless public-metadata sweep |
-//! | [`metadata`] | folding provider metadata into a series — shared by `enrich` and `reconcile` |
-//! | [`plan`] | the three-way merge rules themselves — pure, no I/O, unit-tested |
-//!
-//! The key seam is `plan` vs `reconcile`: the merge *decisions* are now a pure function over
-//! values, so they are testable without a pool and a provider behind them.
+//! metadata enrichment, and the multi-provider registry. [`SyncEngine`] is a facade delegating
+//! to the collaborator modules below; it holds no logic of its own.
 
 mod accounts;
 mod conflicts;
@@ -91,9 +62,8 @@ impl SyncEngine {
     ) -> Self {
         let registry = Arc::new(ProviderRegistry::new(providers));
         let tokens = Arc::new(TokenVault::new(pool.clone(), secret));
-        // From configuration, and the *same* configuration the worker's ingest canonicalisation
-        // reads: the two used to take their thresholds from different places, so the worker
-        // could attach a source this service would refuse to map (ARCH-16).
+        // Same `MatchingConfig` the worker's ingest canonicalisation reads, so the two paths
+        // can't disagree on match thresholds.
         let resolver = Arc::new(SeriesResolver::new(
             pool.clone(),
             matching.thresholds(),
@@ -105,9 +75,7 @@ impl SyncEngine {
             Arc::clone(&tokens),
             default_policy,
         ));
-        // One writer behind both metadata paths. The sweep and a linked account's list sync now
-        // fold the same fields into a series through the same field-priority resolution, so the
-        // two cannot disagree about which source outranks which.
+        // One writer behind both metadata paths so they can't disagree on field priority.
         let metadata = Arc::new(MetadataWriter::new(pool.clone(), metadata_priority));
 
         Self {

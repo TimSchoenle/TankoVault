@@ -1,46 +1,8 @@
-//! Operator Console — a master–detail application surface: an entity rail, an entity list, and
-//! a deep inspector.
+//! Operator Console: a master–detail surface with an entity rail, an entity list, and a deep
+//! inspector, one module per entity.
 //!
-//! ```text
-//! ┌──────────────────────────────────────────────────────────┐
-//! │ Console  / providers        ⌘K jump      Live · 4s       │  56px bar
-//! ├────────────┬───────────────┬─────────────────────────────┤
-//! │ entity     │ entity list   │ inspector                   │
-//! │ rail 186px │ 328px         │ 1fr, two columns            │
-//! └────────────┴───────────────┴─────────────────────────────┘
-//! ```
-//!
-//! One module per entity:
-//!
-//! - [`overview`] + [`stats`] — system KPIs and the per-provider statistics table;
-//! - [`scans`] — trigger runs, watch progress, triage task failures;
-//! - [`providers`] — provider lifecycle, as a list + inspector;
-//! - [`solver`] — challenge/solver health and the standalone adapter test;
-//! - [`merge`] — the canonicalisation review queue;
-//! - [`sync`] — linked accounts, per-series mappings and the matching backlogs;
-//! - [`users`] — user administration, as a list + inspector;
-//! - [`flags`] — the feature-flag control plane;
-//! - [`privacy`] — the GDPR data-subject request queue;
-//! - [`audit`] — the privileged-action trail.
-//!
-//! **Providers** and **Users** are the two entities redesigned into the list+inspector shape.
-//! The rest render their existing panel across the inspector column (`.wide`), which is why
-//! the rail is the shell and the panes are not.
-//!
-//! # Which entities a reader sees
-//!
-//! Each entity declares the permission that opens it *and* the feature that has to be on for
-//! it to be worth opening, so someone granted nothing but `merge.read` gets a rail with one
-//! entry rather than eleven that mostly 403 or 404. Every one of those checks is a courtesy:
-//! the server authorizes each call independently and hiding a control has never been the
-//! boundary. What it buys is not showing a reader work they cannot do.
-//!
-//! # What refreshes
-//!
-//! The read-only entities share one pausable 4s [`RefreshTick`]. Providers, Users and Flags are
-//! deliberately **off** it: they are work surfaces where someone is mid-edit, and a background
-//! refetch landing on a half-filled form discards it. Those say so in the header and offer a
-//! manual reload instead.
+//! Providers, Users and Flags are deliberately off the shared [`RefreshTick`]: they are mid-edit
+//! work surfaces, and a background refetch landing on a half-filled form would discard it.
 
 mod audit;
 mod controls;
@@ -72,15 +34,9 @@ const REFRESH_MS: u32 = 4000;
 
 /// The shared refetch signal for every auto-refreshing console panel.
 ///
-/// One tick drives them all, so the whole dashboard is consistent at each cadence instead of
-/// each panel drifting on its own timer — and pausing is a single switch rather than nine.
-///
-/// A newtype over [`Reload`], not a second `Signal<u32>`. The two were structurally identical
-/// but not interchangeable, so a tick-driven panel had nothing to hand [`ErrorBox`] as its
-/// retry action — which is why five of them open-coded their error state as muted grey body
-/// text with no retry at all, quietly breaking the "a failed fetch is always visible and always
-/// retryable" invariant the helpers exist to hold. The distinct type is still worth keeping:
-/// in prop position it says "the shared console cadence", not "this panel's own reload".
+/// A newtype over [`Reload`] rather than reusing it directly: in prop position it says "the
+/// shared console cadence", not "this panel's own reload", so a tick-driven panel still has
+/// something distinct to hand [`ErrorBox`] as its retry action.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct RefreshTick(Reload);
 
@@ -118,11 +74,6 @@ enum Entity {
 }
 
 /// The rail's groups, in order, each with the entities it holds.
-///
-/// The design's `CATALOGUE` group also lists Series and Chapters; neither has a console surface
-/// yet, and an entry that opens nothing is worse than no entry, so they are absent rather than
-/// stubbed. `Overview` gains its own leading group because it is a real surface the design's
-/// rail does not account for.
 const RAIL: &[(&str, &[Entity])] = &[
     ("console.group.system", &[Entity::Overview]),
     ("console.group.catalogue", &[Entity::Merge]),
@@ -165,8 +116,7 @@ impl Entity {
         }
     }
 
-    /// This entity's rail glyph (`DESIGN_SPEC` §6-7). The rail shipped without any, which is
-    /// why a quarter of the icon inventory was unreferenced.
+    /// This entity's rail glyph.
     fn icon(self) -> Icon {
         match self {
             Self::Overview => Icon::Dashboard,
@@ -203,15 +153,11 @@ impl Entity {
 
     /// The permission that opens this entity, and the feature that has to be switched on for it
     /// to be worth opening.
-    ///
-    /// Both stated in one place so adding an entity means answering both questions at once —
-    /// the alternative is an entry that renders for everyone, or one whose panel 404s.
     fn requires(self) -> (Permission, Feature) {
         match self {
             Self::Overview => (Permission::SystemStats, Feature::AdminStats),
             Self::Scans => (Permission::ScansRead, Feature::ScanningManual),
-            // Solver health is provider health seen from the fetch pipeline's side: same data,
-            // same permission, same feature — a second view rather than a second surface.
+            // Solver health is provider health from the fetch pipeline's side: same data and permission.
             Self::Providers | Self::Solver => (Permission::ProvidersRead, Feature::AdminProviders),
             Self::AdapterTest => (Permission::ProvidersTest, Feature::AdminAdapterTest),
             Self::Merge => (Permission::MergeRead, Feature::ScanningMergeQueue),
@@ -253,16 +199,9 @@ enum CountTone {
 
 /// Selectable adapter implementations, in the order the create form offers them.
 ///
-/// This was a `&[(&str, &str)]` table of hand-written wire tokens beside the real enum
-/// (FRONTEND F10), and `create.rs` parsed the token back with a `_ => AdapterKind::Custom`
-/// arm — so a typo in the table registered every provider as `Custom`, silently and with a
-/// perfectly plausible-looking picker. The tokens are now the generated `Display`, the parse
-/// is the generated `FromStr`, and this array carries only the *order*.
-///
-/// Still hand-listed, because the generated client offers no way to enumerate a schema enum's
-/// variants. What stops it drifting is [`adapter_label_key`]: its `match` is exhaustive, so a
-/// variant added to `AdapterKind` fails to compile until it is worded, and
-/// `the_picker_offers_every_adapter_kind` fails until it reaches this array too.
+/// Hand-listed because the generated client offers no way to enumerate a schema enum's
+/// variants. Kept in sync by [`adapter_label_key`]'s exhaustive match and by
+/// `the_picker_offers_every_adapter_kind`.
 pub(super) const ADAPTER_KINDS: &[AdapterKind] = &[
     AdapterKind::GenericConfig,
     AdapterKind::Madara,
@@ -285,18 +224,14 @@ pub(crate) fn Console() -> Element {
     let caps = use_capabilities();
     let session = crate::state::use_session();
 
-    // The gate every other protected route has, and this one did not. `/console` is a public
-    // route (the rail link is merely hidden while signed out), so a bookmark, a shared link,
-    // a session expiry with the page open, or signing out from here all land on it — and
-    // capabilities are cleared to `Loading` whenever there is no session, so `is_ready()`
-    // below was permanently false and the skeleton was permanent with it.
+    // `/console` is a public route (the rail link is merely hidden while signed out), so a
+    // bookmark, a shared link, or a session expiry can land here unauthenticated.
     if !session.is_authenticated() {
         return rsx! { crate::components::AuthRequired { title: i18n.t("nav.console") } };
     }
 
     // Held back until the capability fetch lands: rendering "operators only" first and the
-    // console a moment later reads as a permission error to anyone who blinks. Reachable only
-    // for a signed-in reader now, so it is a genuine in-flight fetch rather than a dead end.
+    // console a moment later reads as a permission error to anyone who blinks.
     if !caps.is_ready() {
         return rsx! {
             h1 { class: "ik-page-title", {i18n.t("nav.console")} }
@@ -316,8 +251,6 @@ pub(crate) fn Console() -> Element {
         };
     };
 
-    // One tick drives every read-only panel's refetch: the background loop bumps it on a
-    // cadence while `auto` is on, and the Refresh control bumps it on demand.
     let tick = RefreshTick(use_reload());
     let auto = use_signal(|| true);
     let mut selected = use_signal(|| first);
@@ -332,8 +265,7 @@ pub(crate) fn Console() -> Element {
         }
     });
 
-    // Rail counts come from the one endpoint that already aggregates them. A reader without
-    // `system.stats` simply gets a rail with no numbers on it.
+    // A reader without `system.stats` simply gets a rail with no numbers on it.
     let can_count = caps.can(Permission::SystemStats) && caps.has_feature(Feature::AdminStats);
     let stats = use_resource(move || {
         tick.track();
@@ -351,9 +283,8 @@ pub(crate) fn Console() -> Element {
         }
     });
 
-    // The selected entity can stop being visible under the reader's feet — a permission
-    // revoked, a feature switched off — in which case fall back to the first one they still
-    // have rather than rendering a panel whose every call now fails.
+    // Fall back to the first still-visible entity if the selected one loses its permission
+    // or feature under the reader's feet.
     let current = {
         let choice = *selected.read();
         if visible.contains(&choice) {

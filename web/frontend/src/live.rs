@@ -1,26 +1,11 @@
 //! Live per-user notification stream (design §14, §17.4).
 //!
-//! The browser's `EventSource` connects to the API's `/v1/me/stream` SSE endpoint — the credential
-//! rides in the query string because `EventSource` cannot set headers — and each push updates the
-//! rail's unread badge in real time.
+//! Connects to `/v1/me/stream` via `EventSource`, updating the rail's unread badge; a dropped
+//! stream fails silently and just waits for the next navigation refetch.
 //!
-//! This is a best-effort enhancement over the durable notifications list: if the stream drops, the
-//! badge simply stops updating until the next navigation refetch. No data is lost, so a failure
-//! here is deliberately silent rather than an error state in the reader's face.
-//!
-//! # Why this reconnects itself
-//!
-//! The query credential is a **single-use, 30-second ticket** minted by `POST
-//! /v1/me/stream-ticket`, not the access token (SEC-8). Opening the stream spends it, so
-//! `EventSource`'s own automatic reconnect — which replays the same URL — can no longer work: the
-//! retry would present a spent ticket and draw a `401`, and per spec `EventSource` gives up for
-//! good on a non-200. [`run`] therefore drives the reconnect itself, minting a fresh ticket each
-//! time, with backoff so a persistent failure does not spin.
-//!
-//! That is a security property as much as a mechanical one. The API caps each stream at one
-//! access-token lifetime precisely so its suspension check re-runs; re-minting is what makes the
-//! reconnect happen, and the mint call goes through the `AuthUser` extractor, so a suspension
-//! applied mid-stream is refused by the mint *and* by the stream.
+//! The query credential is a single-use ticket rather than the access token, so `EventSource`'s
+//! own reconnect would replay a spent ticket into a `401` loop — [`run`] reconnects itself
+//! instead, minting a fresh ticket each attempt (which also re-triggers the suspension check).
 
 use crate::api::Api;
 use crate::components::UnreadBadge;
@@ -36,27 +21,23 @@ const RECONNECT_BACKOFF_START_MS: u32 = 1_000;
 const RECONNECT_BACKOFF_MAX_MS: u32 = 60_000;
 /// How long an attempt has to stay open before it counts as having worked.
 ///
-/// The API ends each stream on purpose at the access token's lifetime so its account checks re-run,
-/// and at this layer that is indistinguishable from a failure: `EventSource` retries the closed
-/// connection itself, the retry presents the spent ticket, and the `401` surfaces as the same
-/// `Err` a rejected ticket would. Duration is the signal that separates them — a refused ticket
-/// fails in milliseconds, a served stream lasts minutes — and it is what keeps a healthy
-/// long-lived stream from ratcheting the backoff up every time it is deliberately recycled.
+/// The API deliberately ends each stream at the token's lifetime, which looks identical to a
+/// failure here — duration tells them apart: a refused ticket fails in milliseconds, a served
+/// stream lasts minutes. Without this, a healthy stream would ratchet the backoff up every
+/// time it's recycled.
 const SETTLED_MS: f64 = 5_000.0;
 
 /// Subscribe to the live-notification stream, updating `badge` as pushes arrive.
 ///
-/// Runs until the returned future is dropped — which the caller's `use_resource` does
-/// automatically when the session token changes or the user signs out, dropping the `EventSource`
-/// and closing the connection.
+/// Runs until dropped — the caller's `use_resource` does that on a token change or sign-out,
+/// closing the `EventSource`.
 pub(crate) async fn run(api: Api, badge: UnreadBadge) {
     let mut backoff_ms = RECONNECT_BACKOFF_START_MS;
     loop {
         // A fresh ticket per attempt: redeeming one spends it.
         let Ok(response) = api.client().stream_ticket().send().await else {
-            // Includes the `401` of a session that has gone away, and the `403` of a suspension.
-            // Backing off rather than giving up keeps a recovered session picked up without a
-            // reload, and the caller's `use_resource` tears this whole future down on sign-out.
+            // Covers a gone-away session (401) and a suspension (403); backing off rather than
+            // giving up resumes a recovered session without a reload.
             TimeoutFuture::new(backoff_ms).await;
             backoff_ms = backoff_ms.saturating_mul(2).min(RECONNECT_BACKOFF_MAX_MS);
             continue;
@@ -90,10 +71,8 @@ async fn consume(api: &Api, ticket: &str, badge: UnreadBadge) -> bool {
     let started = js_sys::Date::now();
     let mut badge = badge.0;
     while let Some(item) = subscription.next().await {
-        // `EventSource` retries a dropped connection on its own before surfacing an `Err`, and with
-        // a spent ticket that retry cannot succeed — so an error here ends this attempt and the
-        // caller mints a new ticket, rather than being ignored as it was when the credential in the
-        // URL was reusable and the browser could recover unaided.
+        // A spent ticket can't be reused, so `EventSource`'s own retry cannot succeed — treat any
+        // error here as attempt-ending and let the caller mint a fresh ticket.
         let Ok((_event, message)) = item else {
             break;
         };

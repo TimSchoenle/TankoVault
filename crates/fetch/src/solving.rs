@@ -145,11 +145,10 @@ impl<F: Fetcher> Fetcher for SolvingFetcher<F> {
         };
         self.store.put(&req.provider_slug, session.clone()).await;
 
-        // If the solver already fetched the solved page, use it directly — but only once it
-        // is established that what came back is the *page* and not the interstitial again.
-        // A solver that timed out mid-challenge still returns 200-shaped HTML, and passing
-        // that off as content is how an unsolved challenge reaches an adapter disguised as a
-        // malformed page: the caller then reports a parse failure for a body it never had.
+        // Use the solver's fetched page directly, but only once it's confirmed to be the
+        // *page* and not the interstitial again — a solver that timed out mid-challenge still
+        // returns 200-shaped HTML, and passing that off as content reaches the adapter
+        // disguised as a malformed body.
         if let Some(html) = outcome.html {
             if let Some(kind) = detect_challenge_body(&html) {
                 tracing::warn!(

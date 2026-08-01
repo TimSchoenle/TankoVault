@@ -285,14 +285,9 @@ pub async fn bulk_mark_read(
     Ok(Json(BulkResult::new(&body.series_ids, applied)))
 }
 
-/// Best-effort background push of every id in `series_ids`, one after another in a single
-/// task.
-///
-/// **Sequential, not a task per id.** A bulk mark-read is capped at 200 series, and spawning
-/// 200 concurrent pushes would aim a burst at `services/sync` — and through it at a third-party
-/// API with its own rate limit — every time someone clears a group header. One task walking the
-/// list keeps the caller's response immediate (which is the only thing the spawn was for)
-/// without turning a UI click into a thundering herd.
+/// Best-effort background push of every id, sequentially in one task rather than one task per
+/// id — a 200-item bulk mark-read would otherwise burst 200 concurrent pushes at
+/// `services/sync` and the third-party API behind it.
 pub(super) fn spawn_targeted_push_many(
     state: &AppState,
     user_id: UserId,
@@ -309,11 +304,9 @@ pub(super) fn spawn_targeted_push_many(
     });
 }
 
-/// Best-effort background push of `series_id` to every provider `user_id` has linked. Mirrors
-/// this codebase's existing "best-effort side effect" convention (notifier channels, the sync
-/// engine's viewer-name lookup on link): logged on failure, never surfaced to the caller, never
-/// blocks the response (design: immediate targeted push — marking a chapter/series read locally
-/// reflects to `AniList` without a manual "Push" click).
+/// Best-effort background push of `series_id` to every linked provider; logged on failure,
+/// never surfaced to the caller (design: local reads reflect to `AniList` without a manual
+/// "Push" click).
 pub(super) fn spawn_targeted_push(state: &AppState, user_id: UserId, series_id: SeriesId) {
     if !push_enabled(state) {
         return;
@@ -324,21 +317,16 @@ pub(super) fn spawn_targeted_push(state: &AppState, user_id: UserId, series_id: 
     });
 }
 
-/// Whether a targeted push should be attempted at all.
-///
-/// Gated on [`Feature::SyncAutoPush`] — and on [`Feature::SyncExternal`], since the finer flag
-/// is meaningless when the whole surface is off. This is a *behaviour* rather than a route, so
-/// it is checked here rather than in the route-feature table: the caller is marking a chapter
-/// read, which must keep working either way; the only question is whether that reaches a
-/// third party.
+/// Whether a targeted push should be attempted, gated on both [`Feature::SyncAutoPush`] and
+/// [`Feature::SyncExternal`]. Checked here rather than in the route-feature table since marking
+/// a chapter read must keep working regardless — only whether it reaches a third party varies.
 fn push_enabled(state: &AppState) -> bool {
     state.features.is_enabled(Feature::SyncExternal)
         && state.features.is_enabled(Feature::SyncAutoPush)
 }
 
-/// One push. Logged on failure, never surfaced to the caller — the caller's write already
-/// succeeded locally, and failing their request because a third party is unreachable would be
-/// reporting the wrong thing.
+/// One push. Logged on failure, never surfaced — the caller's write already succeeded locally,
+/// so failing their request over an unreachable third party would report the wrong thing.
 async fn push_series(state: &AppState, user_id: UserId, series_id: SeriesId) {
     if !push_enabled(state) {
         return;

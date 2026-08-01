@@ -21,22 +21,14 @@ pub struct FetchedRemoteEntry {
     pub series_id: Option<SeriesId>,
 }
 
-/// Upsert every fetched remote entry for one account in a single statement.
+/// Upsert every fetched remote entry for one account in one statement, not one round trip per
+/// entry.
 ///
-/// The batched form: a pull used to issue one round trip per entry,
-/// so a 500-entry library cost 500 sequential writes before any merge work began (PERF-13).
-///
-/// `DISTINCT ON` is load-bearing, exactly as in `catalog::upsert_chapters`: `ON CONFLICT DO
-/// UPDATE` cannot touch the same row twice in one statement, so a duplicate `external_id` in the
-/// input would abort the whole statement. Callers deduplicate before this point, but the guard
-/// stays because a provider list is untrusted input.
+/// `DISTINCT ON` is required: `ON CONFLICT DO UPDATE` aborts if a statement touches one row
+/// twice, and an untrusted provider list can repeat an `external_id`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A duplicate `external_id`
-/// in `entries` is absorbed by the `DISTINCT ON` rather than raised as
-/// [`crate::DbError::Conflict`]; without it the same input would abort the statement with a
-/// driver error naming the whole batch, which is the failure mode this guard exists to prevent.
-/// An empty `entries` is `Ok(())` with no round trip.
+/// [`crate::DbError::Sqlx`] only; an empty `entries` is `Ok(())` with no round trip.
 pub async fn upsert_remote_entries<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

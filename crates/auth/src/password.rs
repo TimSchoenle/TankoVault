@@ -6,14 +6,11 @@ use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, Salt
 use argon2::{Algorithm, Argon2, Params, Version};
 use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
 
-/// Build an argon2id hasher keyed with a server-side `pepper` — a secret held outside the
-/// database (config/KMS/env), never alongside the hashes.
+/// Build an argon2id hasher keyed with a server-side `pepper` (held outside the database).
 ///
-/// The pepper is supplied as argon2's *secret* input rather than concatenated with the
-/// password: this is the keyed-hash construction argon2 provides for exactly this purpose,
-/// so a database leak on its own — without the pepper — cannot be brute-forced offline. An
-/// **empty** pepper reproduces the parameters of [`Argon2::default`], so hashes written
-/// before any pepper was configured keep verifying (pass an empty pepper for them).
+/// Passed as argon2's *secret* input, not concatenated with the password — the keyed-hash
+/// construction means a database leak alone cannot be brute-forced offline. An empty pepper
+/// reproduces [`Argon2::default`], so pre-pepper hashes keep verifying.
 fn hasher(pepper: &SecretSlice<u8>) -> Result<Argon2<'_>, AuthError> {
     Argon2::new_with_secret(
         pepper.expose_secret(),
@@ -24,16 +21,12 @@ fn hasher(pepper: &SecretSlice<u8>) -> Result<Argon2<'_>, AuthError> {
     .map_err(|_| AuthError::Hashing)
 }
 
-/// Hash a plaintext password into an argon2id PHC string (salt embedded).
+/// Hash a plaintext password into an argon2id PHC string (salt embedded), keyed by `pepper`.
+/// The pepper is not embedded and must be supplied again to [`verify_password`]; pass an
+/// empty [`SecretSlice`] to hash without one.
 ///
-/// Uses argon2's default (tuned) parameters, keyed by `pepper` (see the private `hasher`). The
-/// returned string is what the DB stores; the pepper is **not** embedded and must be
-/// supplied again to [`verify_password`]. Pass an empty [`SecretSlice`] to hash without a
-/// pepper.
-///
-/// The return type is a plain `String` on purpose: a PHC hash is what goes into the database
-/// and is not itself a secret, so wrapping it would make `expose_secret()` mean two different
-/// things at neighbouring call sites.
+/// Returns a plain `String`, not a secret wrapper: a PHC hash isn't itself a secret, and
+/// wrapping it would blur what `expose_secret()` means at neighbouring call sites.
 ///
 /// # Errors
 /// [`AuthError::Hashing`] if the pepper is unusable or the KDF fails.
@@ -48,15 +41,14 @@ pub fn hash_password(
         .map_err(|_| AuthError::Hashing)
 }
 
-/// Verify `password` against a stored argon2id PHC `hash`, keyed by the same `pepper` used
-/// to produce it.
+/// Verify `password` against a stored argon2id PHC `hash`, keyed by the same `pepper`.
 ///
-/// Returns `Ok(false)` on a mismatch (wrong password *or* wrong pepper) and `Err` only when
-/// the stored hash is unparseable or the pepper is unusable.
+/// Returns `Ok(false)` on a mismatch (wrong password or wrong pepper), `Err` only when the
+/// hash is unparseable or the pepper is unusable.
 ///
 /// # Errors
-/// [`AuthError::MalformedHash`] if `hash` is not a valid PHC string;
-/// [`AuthError::Hashing`] if the pepper is unusable.
+/// [`AuthError::MalformedHash`] for an invalid PHC string; [`AuthError::Hashing`] for an
+/// unusable pepper.
 pub fn verify_password(
     password: &SecretString,
     hash: &str,
@@ -115,8 +107,7 @@ mod tests {
 
     #[test]
     fn wrong_pepper_rejects_password() {
-        // The whole point of a pepper: the stored hash is useless to an attacker who has the
-        // database but not the pepper.
+        // A pepper's whole point: the stored hash is useless without it.
         let password = SecretString::from("s3cret");
         let hash = hash_password(&password, &default_pepper()).unwrap();
         assert!(!verify_password(&password, &hash, &pepper(b"different-pepper")).unwrap());
@@ -124,8 +115,7 @@ mod tests {
 
     #[test]
     fn empty_pepper_is_backward_compatible() {
-        // A deployment that never configured a pepper hashes and verifies with an empty one;
-        // this must keep working so existing stored hashes remain valid.
+        // No configured pepper means hashing/verifying with an empty one; must keep working.
         let password = SecretString::from("s3cret");
         let hash = hash_password(&password, &pepper(b"")).unwrap();
         assert!(verify_password(&password, &hash, &pepper(b"")).unwrap());

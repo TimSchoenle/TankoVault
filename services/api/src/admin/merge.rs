@@ -14,10 +14,8 @@ use tankovault_domain::{Permission, SeriesId};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-/// How many candidates one page of the review queue returns.
-///
-/// The queue is ordered by score now, so the first page is the confident end of it rather than
-/// whatever the last scan happened to observe — which is what makes a cap acceptable at all.
+/// Page size cap for the review queue; safe because results are score-ordered, so a cap only
+/// trims the low-confidence end.
 const MAX_CANDIDATES: i64 = 200;
 
 #[derive(Debug, Default, Deserialize, IntoParams)]

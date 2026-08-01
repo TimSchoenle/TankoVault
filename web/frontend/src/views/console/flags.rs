@@ -1,10 +1,9 @@
-//! The feature-flag control plane: every switchable capability in the product, grouped, with
-//! its current state and who last changed it.
+//! The feature-flag control plane: every switchable capability, grouped, with its current
+//! state and who last changed it.
 //!
-//! Deliberately **not** on the shared auto-refresh tick. Every other console panel polls; this
-//! one is an editing surface, and a background refetch landing between a reader deciding to
-//! flip a switch and their click would be the one place in the console where that actually
-//! changes what they hit. It reloads after its own writes instead.
+//! Deliberately not on the shared auto-refresh tick: a background refetch landing between a
+//! reader deciding to flip a switch and their click would change what they hit. Reloads after
+//! its own writes instead.
 
 use crate::api;
 use crate::components::async_view;
@@ -135,8 +134,7 @@ fn FlagRow(flag: FlagView, can_write: bool, reload: Reload) -> Element {
                             {i18n.t("console.flags.locked")}
                         }
                     }
-                    // Only worth saying when it differs from what the build ships: an operator
-                    // scanning the page is looking for what somebody changed.
+                    // Show only when it differs from the shipped default: that's what an operator scans for.
                     if flag.overridden && flag.enabled != flag.default_enabled {
                         span { class: "ik-pill acc", {i18n.t("console.flags.changed")} }
                     }
@@ -166,8 +164,7 @@ fn FlagRow(flag: FlagView, can_write: bool, reload: Reload) -> Element {
                         busy,
                         reload,
                     }
-                    // Only offered when there is something to withdraw. "Reset" on a feature
-                    // already following its default would do nothing and say so afterwards.
+                    // Only offered when there's an override to withdraw; otherwise reset would do nothing.
                     if flag.overridden {
                         ResetButton { feature: key.clone(), busy, reload }
                     }
@@ -203,8 +200,7 @@ fn ToggleButton(
                 })
                 .send()
                 .await;
-            // Refetch either way: on success to show the new state, on failure because the
-            // list is the only thing that can tell the reader nothing changed.
+            // Refetch either way: the list is what tells the reader whether it actually changed.
             reload.bump();
             busy.release();
         });

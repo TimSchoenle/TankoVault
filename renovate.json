@@ -6,25 +6,25 @@
   ],
   "packageRules": [
     {
-      "description": "The Rust toolchain is a reviewed decision, not a dependency. `rust-toolchain.toml` is the one place it is named (ci.yml reads the channel out of that file, and the Dockerfiles' RUST_VERSION arg tracks it by hand); a bot moving any one of them alone re-introduces exactly the three-way drift OPS-4.1 closed. `dtolnay/rust-toolchain` is pinned to a `master` commit for the same reason — it has no useful release tags.",
+      "description": "The Rust toolchain is a reviewed decision, not a dependency — `rust-toolchain.toml`, ci.yml and the Dockerfiles' RUST_VERSION must move together, not one at a time.",
       "matchPackageNames": ["dtolnay/rust-toolchain"],
       "enabled": false
     },
     {
-      "description": "Same lockstep, from the image side: the `cargo-chef` and `rust` base tags embed the Rust minor (`latest-rust-1.94-alpine`, `1.94-bookworm`) and must not move ahead of rust-toolchain.toml. Digest updates are still wanted — they are security rebuilds of the *same* toolchain — so only the version half is disabled.",
+      "description": "Same lockstep from the image side: these base tags embed the Rust minor and must not move ahead of rust-toolchain.toml. Digest updates (same toolchain, rebuilt) are still wanted.",
       "matchPackageNames": ["lukemathwalker/cargo-chef", "rust"],
       "matchUpdateTypes": ["major", "minor", "patch"],
       "enabled": false
     },
     {
-      "description": "Postgres majors are not a routine bump here. The committed `.sqlx` offline query cache was verified byte-identical against the CI major (OPS-4.2), and a new major has to be re-verified the same way before the `sqlx` job's result means anything. Needs a human on the dashboard.",
+      "description": "Postgres majors need the committed `.sqlx` cache re-verified byte-identical before the `sqlx` job's result means anything — needs a human.",
       "matchPackageNames": ["postgres"],
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true,
       "automerge": false
     },
     {
-      "description": "promtool validates the alert rules in CI and Prometheus evaluates them in the deploy overlay. If those two versions ever differ, CI is testing a different PromQL engine from the one that runs — so the ci.yml pin and the compose pin move in one pull request or not at all.",
+      "description": "promtool (CI) and Prometheus (deploy overlay) must be the same version, or CI tests a different PromQL engine than the one that runs.",
       "matchPackageNames": ["prom/prometheus"],
       "groupName": "prometheus"
     },
@@ -35,13 +35,13 @@
       "groupName": "cargo non-major"
     },
     {
-      "description": "The Tailwind CLI and the font packages are dev-only — they produce the committed assets/main.css and ship nothing into the WASM bundle. The `css` CI job rebuilds and diffs that file, so a bad bump fails loudly rather than silently restyling the SPA.",
+      "description": "Dev-only; the `css` CI job rebuilds and diffs the committed assets/main.css, so a bad bump fails loudly rather than silently restyling the SPA.",
       "matchManagers": ["npm"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "tailwind toolchain"
     },
     {
-      "description": "oasdiff has no stable major tag (it is 0.x), so its pin is exact and only a bot keeps it current. Left explicitly enabled because the default 0.x handling would otherwise treat every minor as a major and park it on the dashboard.",
+      "description": "oasdiff has no stable major tag (0.x); explicitly enabled so its default 0.x handling doesn't park every minor on the dashboard as a major.",
       "matchPackageNames": ["oasdiff/oasdiff-action"],
       "matchUpdateTypes": ["minor", "patch"],
       "automerge": true
@@ -50,7 +50,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "`cargo install` pins inside the Dockerfiles. These are unreviewed toolchain changes on every cache miss if left floating, so they carry exact versions — which means nothing but a bot will ever move them.",
+      "description": "`cargo install` pins inside the Dockerfiles, exact so a bot (not a cache miss) is what moves them.",
       "managerFilePatterns": ["/^deploy/docker/Dockerfile[^/]*$/"],
       "matchStrings": [
         "cargo install (?<depName>[a-z0-9_-]+) --locked --version (?<currentValue>[0-9][^\\s\\\\]*)",

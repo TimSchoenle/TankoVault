@@ -1,22 +1,13 @@
-//! Per-provider rate limiting: a `governor` cell rate for requests/second, a semaphore
-//! for the concurrency ceiling, a crawl-delay floor between requests, and a penalty the
-//! limiter imposes on **itself** when the provider says the budget is too high.
+//! Per-provider rate limiting: a `governor` cell rate for requests/second, a semaphore for the
+//! concurrency ceiling, a crawl-delay floor, and a penalty the limiter imposes on **itself**
+//! when the provider signals its budget is too high.
 //!
-//! A single direct limiter is exactly the per-provider limiter the design calls for **as
-//! long as the whole stack is built once per provider and shared**. That is the caller's
-//! responsibility and it is easy to get wrong: the worker used to build a fresh stack for
-//! every scan task, which quietly turned `rps` and `concurrency` into a per-*task* budget —
-//! N concurrent tasks then offered N × rps to the provider, and the self-imposed penalty
-//! below was discarded each time. `Engine::fetcher_for` caches per provider id for that
-//! reason. Anything else constructing a fetch stack must do the same.
-//!
-//! (An aggregate cross-replica token bucket in Redis is a documented follow-up — see
-//! `docs/IMPLEMENTATION_STATUS.md`. Until then the budget is per worker *process*.)
-//!
-//! The configured budget is a guess made before the crawl: a provider's HTML pages and its
-//! JSON API rarely share a limit, and neither is published. Without feedback the crawler
-//! keeps offering the same rate a provider is already refusing, and a large scan spends
-//! itself on `429`s — which is a slower way to fail than simply crawling slower.
+//! This is a per-provider limiter only if the whole stack is built once per provider and
+//! shared: a fresh stack per task turns `rps`/`concurrency` into a per-*task* budget and
+//! discards the self-imposed penalty each time. `Engine::fetcher_for` caches per provider id;
+//! anything else constructing a fetch stack must do the same. The budget is per worker
+//! *process*; an aggregate cross-replica limiter is a documented follow-up
+//! (`docs/IMPLEMENTATION_STATUS.md`).
 
 use crate::error::FetchError;
 use crate::fetcher::Fetcher;
@@ -33,11 +24,9 @@ const THROTTLE_STATUSES: [u16; 2] = [429, 503];
 
 /// How the limiter reacts to a provider answering "too many requests".
 ///
-/// Re-exported from `tankovault_domain::pacing`, which owns the one implementation of outbound
-/// pacing in this workspace (ARCH-20). Both the policy and the penalty state used to be defined
-/// here, private to this crate — so `services/sync`, which cannot depend on this crate without
-/// pulling in the whole wreq/BoringSSL stack, grew a third and weaker pacer with no throttle
-/// penalty at all. The behaviour is unchanged and its tests moved with it.
+/// Re-exported from `tankovault_domain::pacing`, the single implementation of outbound pacing
+/// in this workspace — kept there so `services/sync`, which cannot pull in the wreq/BoringSSL
+/// stack, can share the same policy.
 pub use tankovault_domain::PacingPolicy as ThrottlePolicy;
 
 /// Wraps an inner fetcher with rate + concurrency + crawl-delay controls.
@@ -123,13 +112,9 @@ impl<F: Fetcher> Fetcher for RateLimitedFetcher<F> {
     }
 }
 
-// The penalty behaviour these tests used to cover moved with the implementation to
-// `tankovault_domain::pacing`, which has a superset of them (including the `Retry-After` floor
-// this crate never exercised). Duplicating them here would assert the same properties against the
-// same code through one more layer of indirection.
-//
-// What is worth pinning *here* is the wiring: that the crawl delay and the penalty compose as
-// "whichever is wider", which is this crate's decision and not the pacer's.
+// Penalty behaviour itself is tested in `tankovault_domain::pacing`. What's worth pinning
+// here is the wiring: crawl delay and penalty compose as "whichever is wider", which is this
+// crate's decision, not the pacer's.
 #[cfg(test)]
 mod tests {
     use super::*;

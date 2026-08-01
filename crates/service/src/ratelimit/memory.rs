@@ -17,29 +17,19 @@ use tankovault_config::{RateLimitConfig, RateLimitPolicy};
 /// Checks between sweeps of keys whose buckets have fully refilled.
 ///
 /// The keyed store allocates one entry per distinct client key and never reclaims them on
-/// its own, so a long-lived process facing many source addresses would grow without
-/// bound. Sweeping on a request counter rather than a timer keeps this dependency-free
-/// and self-tuning: a busy edge sweeps often, an idle one holds a handful of stale keys.
+/// its own, so a long-lived process would grow without bound. Sweeping on a request counter
+/// rather than a timer is self-tuning: a busy edge sweeps often, an idle one holds a
+/// handful of stale keys.
 const SWEEP_EVERY_N_CHECKS: u32 = 10_000;
 
 type KeyedLimiter<C> =
     RateLimiter<String, DefaultKeyedStateStore<String>, C, StateInformationMiddleware>;
 
-/// One `governor` keyed limiter per [`RouteClass`].
+/// One `governor` keyed limiter per [`RouteClass`], giving each an independent budget
+/// (a `governor` quota is fixed at construction, so one shared limiter could not).
 ///
-/// Separate limiters rather than one with a per-call quota because a `governor` quota is
-/// fixed at construction — which is also what lets each class have genuinely independent
-/// buckets instead of sharing one budget.
-///
-/// # The clock is a parameter
-///
-/// `C` defaults to [`DefaultClock`], so every production call site writes `MemoryStore` and is
-/// unaffected. It exists because the two behaviours that are *only* expressible in terms of
-/// elapsed time — a spent bucket refilling, and [`SWEEP_EVERY_N_CHECKS`] reclaiming keys whose
-/// buckets have — cannot otherwise be asserted without sleeping for a minute in a unit test,
-/// which is why neither was asserted at all. `governor` already models the clock as a trait
-/// ([`governor::clock::FakeRelativeClock`] is its test implementation), so this needs no port of
-/// our own: TESTING F-09's "rate-limit windows" axis is a type parameter, not a `Clock` service.
+/// `C` is generic over [`Clock`] (default [`DefaultClock`]) so refill and sweep timing can
+/// be tested against [`governor::clock::FakeRelativeClock`] instead of sleeping in tests.
 pub struct MemoryStore<C: Clock = DefaultClock> {
     limiters: [KeyedLimiter<C>; RouteClass::COUNT],
     limits: [u32; RouteClass::COUNT],
@@ -82,22 +72,16 @@ impl<C: Clock> MemoryStore<C> {
         }
     }
 
-    /// How many client keys each class is currently holding state for.
-    ///
-    /// Test-only, and the reason it exists is that the sweep's whole purpose is invisible from
-    /// the outside: an unswept store answers every request identically to a swept one and
-    /// simply grows.
+    /// How many client keys each class is currently holding state for. Test-only: the
+    /// sweep's effect is otherwise invisible from the outside.
     #[cfg(test)]
     fn tracked_keys(&self) -> usize {
         self.limiters.iter().map(RateLimiter::len).sum()
     }
 }
 
-/// A `governor` quota from a policy.
-///
-/// `per_minute` sets the sustained refill rate and `capacity` the burst the bucket
-/// tolerates. Both are clamped to at least 1: a zero-rate limiter would reject every
-/// request forever, which is never what a misconfigured number is meant to express.
+/// A `governor` quota from a policy. Both fields are clamped to at least 1: a zero-rate
+/// limiter would reject every request forever, never what a misconfigured number should mean.
 fn build_limiter<C: Clock>(policy: RateLimitPolicy, clock: C) -> KeyedLimiter<C> {
     let per_minute = NonZeroU32::new(policy.per_minute.max(1)).expect("clamped to >= 1");
     let capacity = NonZeroU32::new(policy.capacity().max(1)).expect("clamped to >= 1");
@@ -214,8 +198,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_zero_rate_policy_does_not_deny_everything() {
-        // A misconfigured `0` reads as "I did not think about this", not "reject all
-        // traffic"; clamping to 1/min keeps the service usable and visibly throttled.
+        // A misconfigured `0` should not mean "reject all traffic".
         let store = MemoryStore::new(&config(0, 0));
         assert!(
             store
@@ -225,13 +208,9 @@ mod tests {
         );
     }
 
-    /// A spent bucket refills at the configured rate — the half of a rate limit that only
-    /// exists in time, and the half nothing asserted on.
-    ///
-    /// Every test above proves the limiter says *no*; none proved it ever says yes again. A
-    /// limiter that denied forever after the first burst would pass all of them, and the symptom
-    /// in production is a client locked out until the process restarts. 60/minute is one token
-    /// per second, so the assertions below are exactly the quota arithmetic.
+    /// A spent bucket refills at the configured rate. Every test above proves the limiter
+    /// says *no*; none proved it says yes again — a limiter that denies forever after the
+    /// first burst would pass all of them, locking a client out until process restart.
     #[tokio::test]
     async fn a_spent_bucket_refills_at_the_configured_rate() {
         let clock = FakeRelativeClock::default();
@@ -260,13 +239,8 @@ mod tests {
         );
     }
 
-    /// The sweep reclaims keys whose buckets have fully refilled.
-    ///
-    /// This is the memory bound, and it was asserted by nothing: a store that never swept
-    /// answers every request identically to one that does and simply grows, one entry per
-    /// distinct client key, for the life of the process. The clock is what makes it observable
-    /// — `retain_recent` keeps any key still mid-refill, so without advancing time the sweep
-    /// runs and correctly drops nothing, which is indistinguishable from not running.
+    /// The sweep reclaims keys whose buckets have fully refilled — the memory bound. A store
+    /// that never swept answers every request identically to one that does, and just grows.
     #[tokio::test]
     async fn the_sweep_reclaims_keys_whose_buckets_have_refilled() {
         let clock = FakeRelativeClock::default();
@@ -292,10 +266,8 @@ mod tests {
         );
     }
 
-    /// …and the sweep must **not** drop a key that is still rate-limited, which is the way to
-    /// get this wrong that has a security consequence rather than a memory one: reclaiming a
-    /// live bucket hands the client a fresh burst on the spot, so a caller could evade the limit
-    /// indefinitely by staying in the map long enough to be swept.
+    /// The sweep must **not** drop a key that is still rate-limited: reclaiming a live bucket
+    /// hands the client a fresh burst, letting them evade the limit by outlasting a sweep.
     #[tokio::test]
     async fn the_sweep_keeps_a_bucket_that_is_still_spent() {
         let clock = FakeRelativeClock::default();
@@ -318,9 +290,8 @@ mod tests {
 
     #[test]
     fn capacity_is_the_burst_depth_independent_of_the_refill_rate() {
-        // Regression: capacity once clamped the burst *up* to `per_minute`, so the
-        // shipped default of 300/min with a 60-deep bucket actually allowed 300
-        // back-to-back requests — the burst setting had no effect at all.
+        // Regression: capacity once clamped the burst *up* to `per_minute`, silently
+        // ignoring the burst setting.
         assert_eq!(RateLimitPolicy::new(300, 60).capacity(), 60);
         assert_eq!(RateLimitPolicy::new(60, 90).capacity(), 90);
         assert_eq!(

@@ -1,15 +1,10 @@
 //! # tankovault-solver
 //!
-//! The modular bot-management bypass tier (design §9). Three pieces, all solver-agnostic
-//! so a new back-end is a one-method drop-in:
+//! The modular bot-management bypass tier (design §9): cheap challenge detection, the
+//! pluggable [`ChallengeSolver`] contract, and the default [`FlareSolverrSolver`] back-end.
 //!
-//! - [`detect_challenge`] — a cheap, allocation-light classifier run on every response.
-//!   On a normal page it is a couple of comparisons; only a positive hit triggers a solve.
-//! - [`ChallengeSolver`] — the trait every back-end implements.
-//! - [`FlareSolverrSolver`] — the default back-end (talks to a `FlareSolverr` companion).
-//!
-//! The crate deliberately does **not** depend on `tankovault-fetch`; detection operates over
-//! the minimal [`ResponseView`] trait that the fetch layer implements, avoiding a cycle.
+//! Does not depend on `tankovault-fetch`; detection uses the minimal [`ResponseView`] trait
+//! instead, to avoid a cycle.
 
 mod detection;
 mod fake;

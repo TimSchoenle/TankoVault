@@ -1,8 +1,5 @@
-//! Fixture tests for the shipped provider presets. `manhuaus` is a straight Madara preset;
-//! `kunmanga` is the custom hybrid (Madara-shaped catalogue/series HTML, JSON chapter API).
-//! These exercise the *actual* `presets::builtin()` config against markup/JSON trimmed from
-//! live solver-fetched responses, so a wrong selector or a chapter-API regression fails here
-//! rather than in production.
+//! Fixture tests for the shipped provider presets against the actual `presets::builtin()`
+//! config, using markup/JSON trimmed from live solver-fetched responses.
 
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -21,17 +18,15 @@ struct SiteFetcher {
     /// Bodies for kunmanga's sitemap index and its series shards; unused elsewhere.
     sitemap_index: &'static str,
     sitemap_shard: &'static str,
-    /// Body served for catalogue pages after page 1, when a test supplies one. This is how
-    /// walking off the end of a catalogue is expressed for a site whose only end-of-list
-    /// signal is a page with no items.
+    /// Body for catalogue pages after page 1, when supplied; expresses walking off the end
+    /// of a catalogue whose only end-of-list signal is an empty page.
     catalog_past_end: &'static str,
 }
 
 #[async_trait]
 impl Fetcher for SiteFetcher {
     async fn get(&self, req: FetchRequest) -> Result<FetchResponse, FetchError> {
-        // Route by URL shape: sitemap documents, the JSON chapter API, catalogue listings
-        // under `/manga/page/`, else a series page.
+        // Route by URL shape: sitemap, chapter API, catalogue listing, else series page.
         let body = if req.url.contains("/sitemap-comic-") {
             self.sitemap_shard
         } else if req.url.ends_with("/sitemap.xml") {
@@ -39,8 +34,7 @@ impl Fetcher for SiteFetcher {
         } else if req.url.contains("/api/comics/") {
             self.chapters_api
         } else if req.url.contains("/manga/page/") {
-            // Page 1 always gets `catalog`; later pages get `catalog_past_end` when the
-            // test supplied one, so a walk can be driven off the end of the listing.
+            // Page 1 gets `catalog`; later pages get `catalog_past_end` to drive off the end.
             if self.catalog_past_end.is_empty() || req.url.contains("/manga/page/1/") {
                 self.catalog
             } else {
@@ -97,14 +91,12 @@ fn kunmanga_fixtures() -> SiteFetcher {
     }
 }
 
-/// The bug: the preset selected `link[rel=next]` as the has-next marker, but manhuaus renders
-/// no such link — and no `a.nextpostslink` either, since the theme paginates through an AJAX
-/// "LOAD MORE" control. `has_next` was therefore false on every page, the fan-out stopped
-/// after page 1, and a full scan registered 12 series out of roughly 1300.
+/// Bug: the preset selected `link[rel=next]` as the has-next marker, but manhuaus paginates
+/// via an AJAX "LOAD MORE" control and renders neither that link nor `a.nextpostslink` — so
+/// `has_next` was false on every page and the fan-out stopped after page 1.
 ///
-/// The preset now clears `catalog.next`, which puts termination on the item count. This pins
-/// the first half of that: a populated listing continues the walk. `catalog.html` deliberately
-/// contains the LOAD MORE control and no rel=next, so re-introducing either selector fails here.
+/// The preset now clears `catalog.next`, putting termination on item count; this pins that a
+/// populated listing continues, and that neither selector re-appears in the fixture.
 #[tokio::test]
 async fn manhuaus_catalog_continues_while_pages_yield_items() {
     let (adapter, ctx) = preset_adapter(
@@ -129,9 +121,8 @@ async fn manhuaus_catalog_continues_while_pages_yield_items() {
     );
 }
 
-/// The other half of the contract above: without a next-link marker, the walk has to stop on
-/// its own. Past the last page manhuaus answers `200` with the `WordPress` `error404` shell and
-/// no catalogue items, so `has_next` goes false there and the fan-out ends.
+/// The other half: without a next-link marker, the walk must stop on its own — manhuaus
+/// answers `200` with the `WordPress` `error404` shell and no items past the last page.
 #[tokio::test]
 async fn manhuaus_catalog_terminates_on_the_first_empty_page() {
     let (adapter, ctx) = preset_adapter(
@@ -173,10 +164,8 @@ async fn manhuaus_series_reads_lazy_cover() {
     assert_eq!(meta.title, "Reborn As The Heavenly Demon");
     assert_eq!(meta.status, SeriesStatus::Ongoing);
     assert!(meta.tags.iter().any(|t| t == "Action"));
-    // Read from the summary row labelled "Alternative", not from the labels themselves.
-    // Until this was fixed the preset harvested `div.summary-heading`, so every manhuaus and
-    // kunmanga series was stored with the alternative titles "Alternative", "Genre(s)" and
-    // "Status" — 4713 such rows in `series_titles`, which the trigram matcher scores against.
+    // Read from the row labelled "Alternative", not the label itself — the old
+    // `div.summary-heading` selector harvested every row's label into `series_titles`.
     assert_eq!(
         meta.alt_titles,
         vec![
@@ -221,8 +210,7 @@ async fn kunmanga_catalog_reads_series_from_sitemap_shards() {
 async fn kunmanga_catalog_terminates_after_the_last_shard() {
     let (adapter, ctx) = preset_adapter("kunmanga", kunmanga_fixtures());
 
-    // ...and the walk stops on the index's own shard count rather than on a heuristic —
-    // the fixture index lists 5 comic shards (chapter shards and `sitemap0` are ignored).
+    // Stops on the index's own shard count (5, ignoring chapter shards and sitemap0).
     let last = adapter.list_catalog(&ctx, 5).await.expect("catalog parses");
     assert!(!last.has_next, "page 5 is the final series shard");
 

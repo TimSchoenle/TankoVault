@@ -1,9 +1,6 @@
-//! Administrative erasure: the one action in this module that cannot be undone.
-//!
-//! It is alone in its own module for that reason. Everything else here is reversible — a
-//! suspension is lifted, a grant is re-granted, an address is corrected — and this is the only
-//! path where the confirmation ritual, the pre-emptive audit write and both guards are all
-//! load-bearing at once.
+//! Administrative erasure — irreversible, unlike everything else in `users`, which is why it
+//! gets its own module: confirmation, the pre-emptive audit write, and both guards are all
+//! load-bearing here.
 
 use crate::audit::{audit, audit_failure};
 use crate::error::{ApiError, ApiResult};
@@ -79,9 +76,8 @@ pub async fn delete_user(
         ));
     }
 
-    // Recorded before the deletion: afterwards the account no longer exists and its username —
-    // the only human-readable handle on what was erased — is unrecoverable. The target id is
-    // retained because it is no longer an identifier for anything.
+    // Recorded before deletion: afterward the username — the only human-readable handle on
+    // what was erased — is gone. The id is kept though it no longer identifies anything.
     audit(
         &state,
         &user,

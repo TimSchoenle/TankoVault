@@ -1,20 +1,5 @@
-//! The Watchlist's view state, and its encoding as a URL query string.
-//!
-//! Everything that decides *which rows you are looking at* lives here and rides in the address
-//! bar (§3.4): the status tab, the sort, the filter text, the recency window, the unread toggle
-//! and the list/grid choice. That is what makes a filtered watchlist shareable and the browser's
-//! back button meaningful — with the state in component signals, as the Discover screen still
-//! keeps it, reloading a filtered list silently returns you to the default one.
-//!
-//! The whole query is one route field rather than seven, using `dioxus_router`'s catch-all
-//! `?:..query` form. Seven fields would mean every `Route::Watchlist { .. }` construction
-//! naming seven defaults, and the per-argument form gives no way to *omit* a default — so the
-//! rail's own link would read `/watchlist?status=&sort=&order=&q=&…`. Writing the encoding by
-//! hand costs a `Display` impl and buys a URL that only names what the reader actually changed.
-//!
-//! (The router still emits the leading `?` unconditionally, so the default route is
-//! `/watchlist?`. That is the macro's, not ours, and it is the reason the parser must accept an
-//! empty query string.)
+//! The Watchlist's view state, encoded as a URL query string (§3.4) so a filtered watchlist is
+//! shareable and the back button is meaningful; one catch-all `?:..query` field rather than seven.
 
 use crate::models::{WatchStatus, WatchStatusExt};
 use std::fmt;
@@ -24,8 +9,7 @@ use std::fmt::Write as _;
 /// are the wire contract between them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Sort {
-    /// Newest release first — the default, and the only order the Today/This week/Earlier
-    /// grouping means anything under.
+    /// Newest release first — the default, and the only order the band grouping means anything under.
     #[default]
     Released,
     Unread,
@@ -64,9 +48,8 @@ impl Sort {
         }
     }
 
-    /// An unrecognised token falls back to the default rather than refusing the route: this is
-    /// a hand-editable URL, and a typo should land you on the default list, not a broken page.
-    /// The *server* refuses unknown tokens; this never sends one.
+    /// An unrecognised token falls back to the default rather than refusing the route — a typo
+    /// in a hand-edited URL should land on the default list, not a broken page.
     fn parse(token: &str) -> Self {
         Self::ALL
             .into_iter()
@@ -74,9 +57,8 @@ impl Sort {
             .unwrap_or_default()
     }
 
-    /// The direction that reads as "most interesting first" for this key — the server applies
-    /// the same rule, and this copy exists so the caret in the column header can be drawn
-    /// without a round trip.
+    /// The direction that reads as "most interesting first" — mirrors the server's rule so the
+    /// column caret can be drawn without a round trip.
     pub(crate) fn natural_order(self) -> Order {
         match self {
             Self::Title => Order::Asc,
@@ -84,9 +66,8 @@ impl Sort {
         }
     }
 
-    /// Whether the release-recency group headers apply. They band rows by *when the last
-    /// chapter landed*, which describes nothing once the list is ordered by title or progress —
-    /// a `TODAY` header over rows scattered through the alphabet is noise.
+    /// Whether release-recency group headers apply — meaningless once sorted by title or
+    /// progress, since a `TODAY` header over alphabetized rows is noise.
     pub(crate) fn groups_by_release(self) -> bool {
         self == Self::Released
     }
@@ -135,8 +116,8 @@ pub(crate) enum Released {
 impl Released {
     pub(crate) const ALL: [Released; 4] = [Self::Any, Self::Day, Self::Week, Self::Month];
 
-    /// The wire token. `Any` is the absence of the parameter, not a value — sending `any` would
-    /// work (the server accepts it) but would put a no-op in every URL.
+    /// The wire token; `Any` is the absence of the parameter, not a value, so a shared URL
+    /// doesn't carry a no-op.
     pub(crate) fn token(self) -> &'static str {
         match self {
             Self::Any => "",
@@ -194,13 +175,12 @@ pub(crate) struct WatchlistQuery {
     /// `None` is the `All` tab, not a missing value.
     pub(crate) status: Option<WatchStatus>,
     pub(crate) sort: Sort,
-    /// `None` means "whichever direction [`Sort::natural_order`] gives", which is what keeps
-    /// `?sort=title` out of the surprising Z→A ordering without also pinning the direction of
-    /// every other sort into the URL.
+    /// `None` means whichever direction [`Sort::natural_order`] gives — keeps `?sort=title` off
+    /// the surprising Z→A order without pinning every other sort's direction into the URL.
     pub(crate) order: Option<Order>,
     pub(crate) q: String,
-    /// Defaults to **on**: the list exists to be a triage queue, and 564 titles of which 40 have
-    /// something new is a queue of 40.
+    /// Defaults to **on** — the list is a triage queue, and most of a large watchlist is noise
+    /// without this.
     pub(crate) unread_only: bool,
     /// Only titles whose preferred source is unhealthy.
     pub(crate) source_issues: bool,
@@ -229,9 +209,8 @@ impl WatchlistQuery {
         self.order.unwrap_or_else(|| self.sort.natural_order())
     }
 
-    /// Whether any filter narrows the list beyond the plain "Reading, newest first" default.
-    /// Drives the "no matches — widen your filter" empty state, which is only the right advice
-    /// when there is in fact something to widen.
+    /// Whether any filter narrows the list beyond the default — gates the "widen your filter"
+    /// empty state so it doesn't show when there's nothing to widen.
     pub(crate) fn is_narrowed(&self) -> bool {
         !self.q.is_empty()
             || self.released != Released::Any
@@ -258,8 +237,7 @@ impl From<&str> for WatchlistQuery {
                 "sort" => out.sort = Sort::parse(&value),
                 "order" => out.order = Order::parse(&value),
                 "q" => out.q = value,
-                // Present-and-`0` is the only way to switch the default off, so an absent
-                // parameter keeps unread-only on.
+                // Present-and-`0` is the only way to turn off the default; absence keeps it on.
                 "unread" => out.unread_only = value != "0",
                 "issues" => out.source_issues = value != "0",
                 "released" => out.released = Released::parse(&value),
@@ -278,8 +256,7 @@ impl fmt::Display for WatchlistQuery {
         let default = Self::default();
         let mut parts: Vec<String> = Vec::new();
         if self.status != default.status {
-            // `all` rather than an empty value: the `All` tab is a choice, and an absent
-            // parameter already means "the default tab".
+            // `all`, not empty — the `All` tab is a choice; an absent parameter already means default.
             parts.push(format!(
                 "status={}",
                 self.status.map_or("all", |s| s.token())
@@ -310,9 +287,8 @@ impl fmt::Display for WatchlistQuery {
     }
 }
 
-/// `all` is the `All` tab; anything unrecognised is also treated as `All` rather than silently
-/// becoming `Reading`, which is what [`WatchStatusExt::parse`] would do — a typo'd status must
-/// not quietly hide four fifths of the list.
+/// `all` is the `All` tab; anything unrecognised is too, rather than silently falling back to
+/// `Reading` (what [`WatchStatusExt::parse`] would do) and hiding most of the list.
 fn parse_status(token: &str) -> Option<WatchStatus> {
     if token == "all" {
         return None;
@@ -325,10 +301,8 @@ fn parse_status(token: &str) -> Option<WatchStatus> {
 
 /// Percent-encode everything the query grammar reserves.
 ///
-/// The router percent-encodes what it writes, but its set (`CONTROLS | ' ' | '"' | '#' | '<' |
-/// '>'`) leaves `&` and `=` alone — so a filter for `fate/stay & night` would be re-parsed as
-/// two parameters. Encoding here is what makes the round trip total; the router's later pass
-/// then finds nothing left to escape.
+/// The router's own encoding leaves `&` and `=` alone, so a filter like `fate/stay & night`
+/// would otherwise re-parse as two parameters.
 fn encode_component(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
@@ -336,9 +310,8 @@ fn encode_component(value: &str) -> String {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 out.push(byte as char);
             }
-            // `write!` rather than `push_str(&format!(…))`: the latter allocates a `String` per
-            // escaped byte only to copy it away again. Writing into a `String` is infallible,
-            // which is why the `Result` is discarded rather than propagated.
+            // `write!` into a `String` is infallible, so discarding the `Result` is safe (and
+            // avoids an allocation per escaped byte).
             _ => {
                 let _ = write!(out, "%{byte:02X}");
             }
@@ -361,8 +334,7 @@ fn decode_component(value: &str) -> String {
                 continue;
             }
         }
-        // `+` is a form-encoding convention, not a URL one, and `encode_component` never emits
-        // it — but browsers and share sheets do, so a pasted `?q=one+piece` has to work.
+        // `+` is a form-encoding convention `encode_component` never emits, but pasted URLs do.
         out.push(if bytes[i] == b'+' { b' ' } else { bytes[i] });
         i += 1;
     }
@@ -373,9 +345,7 @@ fn decode_component(value: &str) -> String {
 mod tests {
     use super::*;
 
-    /// Every field must survive the address bar, because the address bar is where this state
-    /// now lives: a field that encodes but does not parse back is a filter that silently resets
-    /// on reload — the exact bug moving the state into the URL was meant to fix.
+    /// Every field must round-trip: one that doesn't is a filter that silently resets on reload.
     #[test]
     fn every_field_round_trips_through_the_query_string() {
         let cases = [
@@ -455,8 +425,7 @@ mod tests {
         );
     }
 
-    /// The router hands us an empty string for `/watchlist?`, which it writes for the default
-    /// route.
+    /// The router writes an empty string for `/watchlist?`'s default route.
     #[test]
     fn an_empty_query_is_the_default_state() {
         assert_eq!(WatchlistQuery::from(""), WatchlistQuery::default());

@@ -29,8 +29,7 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
             return;
         }
         let changing_email = !new_email.is_empty();
-        // Checked here as well as on the server so the user is told what is missing before a
-        // round trip, not after a 400. The server's check is the one that matters.
+        // Mirrors the server's check to save a round trip; the server's is the one that matters.
         if changing_email && password.is_empty() {
             outcome.set(Some(Err(i18n.t("account.profile.currentPasswordMissing"))));
             return;
@@ -49,8 +48,7 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
             match client.patch_profile().body(update).send().await {
                 Ok(response) => {
                     let profile = response.into_inner();
-                    // Reflect the server's canonical value immediately, both here and — via
-                    // the session override — everywhere else the name appears. No relog.
+                    // Reflect the server's canonical value everywhere the name appears; no relog.
                     username.set(profile.username.clone());
                     session.set_display_name(profile.username);
                     email.set(String::new());
@@ -103,8 +101,7 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
                     oninput: move |e| email.set(e.value()),
                 }
             }
-            // Only asked for when it is actually required, so the ordinary display-name
-            // change stays a two-field form.
+            // Only asked for when actually required.
             if !email.read().trim().is_empty() {
                 div { class: "ik-field",
                     label { r#for: "tv-profile-current-password",

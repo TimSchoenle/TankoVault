@@ -18,9 +18,7 @@ pub(crate) fn Rail() -> Element {
     let unread = *use_context::<UnreadBadge>().0.read();
     let caps = use_capabilities();
 
-    // Rail entries answer to both halves of a capability: the reader has to be allowed, and the
-    // deployment has to offer the feature at all. A link to a screen whose endpoints 404 is
-    // worse than no link.
+    // Each entry needs both: the reader is allowed, and the deployment offers the feature.
     let show_search = caps.has_feature(Feature::CatalogueSearch);
     let show_discover = caps.has_feature(Feature::CatalogueBrowse);
     let show_watchlist = caps.has_feature(Feature::TrackingWatchlist);
@@ -32,8 +30,7 @@ pub(crate) fn Rail() -> Element {
             div { class: "ik-brand",
                 div { class: "ik-brand-tile", Ic { icon: Icon::MenuBook, size: 22 } }
                 div {
-                    // The wordmark is the product's name, not a message: it reads the same in
-                    // every language and is deliberately not in the catalogue.
+                    // The product's name, not a message: deliberately not in the catalogue.
                     div { class: "ik-wordmark",
                         "Tankō"
                         span { class: "acc", "Vault" }
@@ -150,9 +147,7 @@ fn UserFooter() -> Element {
     let name = session
         .username()
         .unwrap_or_else(|| i18n.t("common.readerFallback"));
-    // Derived from what the reader can actually do rather than from a stored role — there is
-    // no role any more, and inventing one from a grant set would re-introduce the fiction the
-    // permission model removed.
+    // Derived from the reader's actual capabilities, not a stored role.
     let tier = i18n.t(caps.label_key());
     rsx! {
         div { class: "ik-userbox",

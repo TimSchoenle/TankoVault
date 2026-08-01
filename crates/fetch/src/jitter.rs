@@ -1,25 +1,10 @@
-//! Full-jitter exponential backoff: the delay policy both retrying fetch layers use.
+//! Full-jitter exponential backoff: the delay policy shared by [`crate::backoff`] and
+//! [`crate::retry`] — the two layers differ in *what* they retry, not in how long they wait.
 //!
-//! # Why this is a module rather than a method on each layer
-//!
-//! It was a private `fn backoff(&self, attempt: u32)` on **both** [`crate::backoff::BackoffFetcher`]
-//! and [`crate::retry::RetryingFetcher`], with identical bodies down to the comment. Nothing
-//! connected them, which is the shape of duplication this codebase has already had to un-drift
-//! three times (`repo_browse`, `repo_tracking`/TRACK-1, the browse `WHERE` clause). Here the two
-//! genuinely are one policy — the layers differ in *what* they retry, not in how long they wait.
-//!
-//! # Why the RNG is a parameter (TEST F-09)
-//!
-//! The delay was drawn from the thread-local generator (`rand::rng()`) inline, so no test could
-//! assert anything about it beyond "it did not panic". That matters more than it sounds: the
-//! whole point of full jitter is the *spread*, and a mutant replacing the draw with the constant
-//! `0` — or with the ceiling — survives every bound-only assertion while destroying the property.
-//! That is precisely the class of surviving mutant F-10 spent a session eliminating.
-//!
-//! So [`ceiling`] is pure and exactly assertable, and [`full_jitter`] takes the generator. The
-//! shape follows the convention this remediation settled on for the rate limiter's clock: pass
-//! the source of non-determinism as an argument rather than building a service abstraction over
-//! it, and give production a wrapper so no call site has to know.
+//! [`ceiling`] is pure and exactly assertable; [`full_jitter`] takes the RNG as a parameter
+//! rather than drawing from the thread-local generator, so a test can catch a mutant that
+//! replaces the draw with a constant instead of preserving the spread. [`full_jitter_now`]
+//! wraps it for production callers.
 
 // `rand` 0.10 split the old `Rng` in two: `Rng` is the core generator trait (what a caller can
 // hand us), `RngExt` is the blanket-implemented sampling surface `random_range` lives on. The

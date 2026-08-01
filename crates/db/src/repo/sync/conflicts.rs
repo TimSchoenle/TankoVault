@@ -9,10 +9,8 @@ use uuid::Uuid;
 
 /// A conflict to queue: which field disagreed, and what each side held.
 ///
-/// A parameter struct rather than seven positional arguments, for the same reason as
-/// [`super::snapshots::AgreedSnapshot`]: four consecutive `&str`s ending in
-/// `local_value, remote_value` is transposable in silence, and getting *that* pair backwards
-/// would show the user their own value as the remote one.
+/// A struct, not positional args, as [`super::snapshots::AgreedSnapshot`]: `local_value` next
+/// to `remote_value` transposes silently and would show a user their own value as the remote one.
 #[derive(Debug, Clone, Copy)]
 pub struct NewConflict<'a> {
     pub user_id: UserId,
@@ -24,16 +22,12 @@ pub struct NewConflict<'a> {
     pub remote_value: &'a str,
 }
 
-/// Queue a genuine, unresolved conflict for the `ask_me` policy (design v2 §B.3). Idempotent:
-/// the unique partial index guarantees at most one pending row per
-/// `(user, series, provider, field)`, so re-detection never double-queues.
+/// Queue a genuine, unresolved conflict for the `ask_me` policy (design v2 §B.3). Idempotent: a
+/// unique partial index caps this at one pending row per `(user, series, provider, field)`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. The `DO NOTHING` means a
-/// conflict that is already queued is `Ok(())` rather than [`crate::DbError::Conflict`], which
-/// is the intended idempotence; note what it also means, because the resolution path applies the
-/// *stored* values verbatim: the row keeps the values of the **first** detection, so a remote
-/// that moves on between detection and the user's answer is not reflected here.
+/// [`crate::DbError::Sqlx`] only; an already-queued conflict is `Ok(())`, not
+/// [`crate::DbError::Conflict`] — the row keeps the first detection's values.
 pub async fn insert_conflict<'e, E: PgExecutor<'e>>(
     exec: E,
     conflict: &NewConflict<'_>,
@@ -64,11 +58,9 @@ pub async fn insert_conflict<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).
+/// One pending conflict awaiting the user's decision (design v2 §B.6).
 ///
-/// Schema'd and `Deserialize` because `services/api` re-publishes this row under
-/// `/v1/me/sync/conflicts`, so it has to appear in the `OpenAPI` document for the generated
-/// client to expose the endpoint at all.
+/// `Deserialize` + schema'd: `services/api` republishes this row, so it must appear in `OpenAPI`.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct ConflictRow {
     pub id: Uuid,
@@ -86,9 +78,8 @@ pub struct ConflictRow {
 /// Every pending (unresolved) conflict for a user, across all providers, newest first.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A user with nothing queued and
-/// an unknown `user_id` are both an empty `Vec`, not [`crate::DbError::NotFound`] — "no conflicts"
-/// is the state the account panel expects most of the time.
+/// [`crate::DbError::Sqlx`] only; nothing queued is an empty `Vec`, never
+/// [`crate::DbError::NotFound`].
 pub async fn list_pending_conflicts<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -120,10 +111,8 @@ pub struct ConflictDetail {
 /// Fetch a single pending conflict scoped to its owner, if it exists and is unresolved.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Three different situations are
-/// deliberately one `Ok(None)`: no such conflict, a conflict belonging to somebody else, and one
-/// this user has already resolved. Keep them indistinguishable — separating "not yours" from
-/// "does not exist" would turn this into an oracle for other users' conflict ids.
+/// [`crate::DbError::Sqlx`] only; unknown, not-yours and already-resolved are all `Ok(None)` —
+/// distinguishing them would let a client probe other users' conflict ids.
 pub async fn get_pending_conflict<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -146,12 +135,8 @@ pub async fn get_pending_conflict<'e, E: PgExecutor<'e>>(
 /// pending row was updated.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. `Ok(false)` covers the same
-/// three situations as [`get_pending_conflict`], and the caller must not default it to `true`:
-/// this runs *after* the chosen side has been written to the local database and to the provider,
-/// so a `false` here means the conflict will be offered again for a decision already applied.
-/// `resolution` is stored verbatim — this layer does not check it is `local` or `remote`; the
-/// engine does, before it acts on it.
+/// [`crate::DbError::Sqlx`] only; `Ok(false)` covers the same cases as [`get_pending_conflict`] —
+/// never default it to `true`, or an already-applied resolution is silently re-offered.
 pub async fn resolve_conflict<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -173,10 +158,8 @@ pub async fn resolve_conflict<'e, E: PgExecutor<'e>>(
 /// Count a user's pending conflicts, for the account panel badge and the admin console.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A user with none queued is
-/// `Ok(0)` — `count(*)` is never `NULL`, which is what the `count!` override asserts. Do not
-/// default a failure to zero: zero is the badge's "nothing needs your attention" state, so a
-/// failed count would hide decisions the user has to make rather than showing an error.
+/// [`crate::DbError::Sqlx`] only; never default a failure to `0` — the badge reads zero as
+/// "nothing needs attention" and would hide the failure.
 pub async fn count_pending_conflicts<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

@@ -1,13 +1,5 @@
-//! # api service
-//!
-//! The public edge (design §11): Axum REST + JSON, JWT auth with rotating refresh
-//! cookies, permission-gated admin routes, and link resolution at read time. This binary is a
-//! thin entrypoint — the route table and app state live in the `tankovault_api` library
-//! (`src/lib.rs`), which also exposes the `openapi` schema export `xtask openapi` uses to
-//! regenerate the frontend's generated wire types.
-//!
-//! Everything cross-cutting (rate limiting, CORS, security headers, request ids, metrics,
-//! timeouts, body caps, health probes, graceful shutdown) comes from `tankovault-service`.
+//! Entrypoint for the `api` service: loads config, wires up infra, and calls into
+//! `tankovault_api` for the route table and app state.
 
 use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
 use std::sync::Arc;
@@ -28,16 +20,13 @@ struct Config {
     sync_url: String,
     #[serde(default = "default_worker")]
     worker_url: String,
-    /// NATS connection for live SSE relay. Optional: when absent or unreachable the API
-    /// still serves every other route; only `/v1/me/stream` degrades.
+    /// NATS for the live SSE relay; absent or unreachable only degrades `/v1/me/stream`.
     #[serde(default)]
     nats: Option<tankovault_config::NatsConfig>,
-    /// Redis, used for cross-replica rate-limit counters. Optional: without it the
-    /// limiter falls back to per-replica in-memory counters.
+    /// Redis for cross-replica rate-limit counters; falls back to per-replica in-memory without it.
     #[serde(default)]
     redis: Option<tankovault_config::RedisConfig>,
-    /// Transactional email (welcome on registration, password reset). Optional: when
-    /// unconfigured a no-op mailer is used and those flows silently skip sending.
+    /// Transactional email (registration, password reset); unconfigured falls back to a no-op mailer.
     #[serde(default)]
     email: tankovault_config::EmailConfig,
     /// Edge hardening: CORS allowlist, body cap, request timeout, security headers.
@@ -52,26 +41,24 @@ struct Config {
     /// Audit trail. Togglable; disabling installs a no-op sink.
     #[serde(default)]
     audit: tankovault_config::AuditConfig,
-    /// Runtime feature flags. Only the refresh cadence is configured here — which features
-    /// are on is an operator decision made in the control plane at runtime.
+    /// Runtime feature flags; only refresh cadence lives here — on/off is an operator
+    /// decision made in the control plane at runtime.
     #[serde(default)]
     features: tankovault_config::FeaturesConfig,
-    /// Shared secret presented to `sync`, `control-plane` and `challenge-solver`. Must be
-    /// identical on every service in the internal tier.
+    /// Shared secret presented to `sync`, `control-plane` and `challenge-solver`; must match
+    /// across every service in the internal tier.
     #[serde(default)]
     internal: tankovault_config::InternalAuthConfig,
 }
 
 #[derive(Debug, serde::Deserialize)]
 struct AuthConfig {
-    /// HS256 signing key for access tokens. A [`SecretString`]: this struct derives `Debug`
-    /// and is nested in `Config`, so without the wrapper a single `tracing::debug!(?cfg)`
-    /// would publish the key that authenticates every session.
+    /// HS256 signing key for access tokens; wrapped in `SecretString` so a `tracing::debug!(?cfg)`
+    /// on this Debug-deriving, nested struct can't publish the key that authenticates every session.
     jwt_secret: SecretString,
-    /// Server-side password pepper: a secret mixed into every argon2id hash so a database
-    /// leak alone cannot be brute-forced offline. Optional — empty (the default) keeps
-    /// hashing un-peppered, which is backward-compatible with hashes stored before it was
-    /// set. Once configured it must stay stable, or existing passwords stop verifying.
+    /// Server-side password pepper: mixed into every argon2id hash so a leak alone can't be
+    /// brute-forced offline. Empty (default) is un-peppered, for compatibility with old
+    /// hashes; once configured it must stay stable or passwords stop verifying.
     #[serde(default)]
     password_pepper: SecretString,
     #[serde(default = "default_access_minutes")]
@@ -80,40 +67,26 @@ struct AuthConfig {
     refresh_ttl_days: i64,
     /// Mark the refresh cookie `Secure`.
     ///
-    /// Defaults to **true**. It was `#[serde(default)]` on a `bool` — that is `false` — and
-    /// nothing in the reference deployment set it, so the shipped stack sent a 30-day
-    /// credential over plain HTTP. One accidental `http://` on an untrusted network (a typo,
-    /// an old bookmark, a captive portal, SSL-strip) handed it over; with HSTS also off by
-    /// default, the browser had no memory that the origin should have been HTTPS.
+    /// Defaults to true — a `bool`'s implicit default is `false`, which would silently send a
+    /// 30-day refresh credential over plain HTTP.
     ///
-    /// The opt-out exists for local HTTP development, where a `Secure` cookie is simply never
-    /// sent. Set it explicitly there; do not default it off for everyone.
-    ///
-    /// It also selects the cookie's **name and path**: `__Host-refresh_token` at `Path=/` when
-    /// on, the unprefixed `refresh_token` at `/v1/auth` when off, because a `__Host-` cookie
-    /// without `Secure` is refused by the browser rather than downgraded. Flipping this setting
-    /// therefore invalidates every already-issued refresh cookie — one forced sign-in, once. See
-    /// `auth::session::refresh_cookie` for the review behind the wider path.
+    /// Also selects the cookie's name/path (`__Host-` vs unprefixed), since a `__Host-`
+    /// cookie without `Secure` is refused by the browser. Flipping this forces one re-login.
     #[serde(default = "tankovault_config::default_true")]
     cookie_secure: bool,
     /// Public origin of the web app, for passkeys — `https://tanko.example.com`.
     ///
-    /// A `WebAuthn` credential is bound to an origin by the browser, so this cannot be
-    /// inferred from a request: the `Host` header is attacker-controlled, and trusting it
-    /// would let anyone mint credentials under a domain of their choosing. Unset means this
-    /// deployment offers no passkeys — every other credential path is unaffected — and
-    /// defaults to [`tankovault_config::EmailConfig::base_url`], which is already documented
-    /// as the public base URL of the web app and is the same value in every real deployment.
+    /// Cannot be inferred from a request: `Host` is attacker-controlled, and trusting it
+    /// would let anyone mint credentials under a domain of their choosing. Unset falls back
+    /// to [`tankovault_config::EmailConfig::base_url`] and disables only passkeys.
     #[serde(default)]
     webauthn_origin: Option<String>,
     /// Relying-party id: the registrable domain credentials are bound to. Defaults to
-    /// [`Self::webauthn_origin`]'s host, which is what a single-origin deployment wants. Set
-    /// it to a parent domain only if the app moves between subdomains and keys must survive
-    /// the move — a passkey registered under a parent domain works on every child of it.
+    /// [`Self::webauthn_origin`]'s host. Set to a parent domain only if the app moves between
+    /// subdomains and keys must survive the move.
     #[serde(default)]
     webauthn_rp_id: Option<String>,
-    /// The name the authenticator shows in its prompt ("Save a passkey for …"). Purely
-    /// cosmetic, but it is what the user sees at the moment they decide to trust the site.
+    /// The name the authenticator shows in its prompt ("Save a passkey for …"); purely cosmetic.
     #[serde(default)]
     webauthn_rp_name: Option<String>,
 }
@@ -129,8 +102,8 @@ fn default_sync() -> String {
 }
 /// The worker's ops listener, which also serves the internally-authenticated dry-run.
 ///
-/// Port 8085 is the worker's own `bind_addr` default; compose runs two replicas behind the one
-/// service name, and a dry run is stateless, so either may answer.
+/// Port 8085 is the worker's own default; either compose replica may answer since a dry
+/// run is stateless.
 fn default_worker() -> String {
     "http://worker:8085".to_owned()
 }
@@ -156,9 +129,8 @@ const MIN_JWT_SECRET_LEN: usize = 32;
 
 /// Whether this process is running under the production profile.
 ///
-/// Keyed off `TANKOVAULT_PROFILE=production` (or `prod`). Absent/anything else is treated as
-/// development, so local runs, tests and the integration harness — which use generated or short
-/// secrets — are never blocked; only a real deployment opts into the strict check.
+/// Keyed off `TANKOVAULT_PROFILE=production`/`prod`; anything else is development, so tests
+/// and the integration harness with short secrets are never blocked.
 fn is_production() -> bool {
     matches!(
         std::env::var("TANKOVAULT_PROFILE").as_deref(),
@@ -168,9 +140,8 @@ fn is_production() -> bool {
 
 /// Placeholder secrets that ship in this repository, and are therefore public.
 ///
-/// Kept as data rather than as a `matches!` inside one caller: the same list has to be
-/// consulted by the seed step and by any future secret. Returns the human name of the match
-/// so the refusal can say *which* placeholder was found.
+/// Kept as data rather than a `matches!` inside one caller, since the seed step consults
+/// the same list.
 const KNOWN_PLACEHOLDERS: [(&str, &str); 4] = [
     ("dev-jwt-secret-change-me", "development JWT secret"),
     (
@@ -183,11 +154,8 @@ const KNOWN_PLACEHOLDERS: [(&str, &str); 4] = [
 
 /// Re-wrap a configured secret as the key material `tankovault_auth` takes.
 ///
-/// A `SecretString` and a `SecretSlice<u8>` are the same bytes under two wrappers, and the
-/// crossing has to happen somewhere: the config surface is text, and HMAC and argon2 both take
-/// a byte slice. Doing it here — once, for both secrets — means neither the JWT key nor the
-/// pepper ever exists as a bare `String` or `Vec<u8>` in this process, which is what
-/// `String::into_bytes` used to produce and hand to `Arc::new`.
+/// Doing this crossing here, once, for both secrets means neither the JWT key nor the
+/// pepper ever exists as a bare `String` or `Vec<u8>` in this process.
 fn secret_bytes(value: &SecretString) -> SecretSlice<u8> {
     SecretSlice::from(value.expose_secret().as_bytes().to_vec())
 }
@@ -203,23 +171,15 @@ fn known_placeholder(value: &str) -> Option<&'static str> {
 
 /// Fail fast on a misconfigured secret **before** the edge accepts a single request.
 ///
-/// A production deployment that boots with a missing or weak `jwt_secret` can have every session
-/// forged; refusing to start is strictly safer than serving with a broken trust root. An empty
-/// `password_pepper` is a weakened — not broken — posture (hashes are simply un-peppered), so it
-/// is a loud warning rather than a hard stop, preserving compatibility with hashes stored before
-/// a pepper was configured.
+/// A weak or missing `jwt_secret` in production can have every session forged, so refusing to
+/// start is safer than serving with a broken trust root. An empty `password_pepper` is only
+/// weakened, not broken, so it warns instead of blocking boot.
 ///
 /// # Errors
-/// Returns an error in a production profile when `jwt_secret` is empty or shorter than
-/// [`MIN_JWT_SECRET_LEN`].
+/// Production only: `jwt_secret` empty or shorter than [`MIN_JWT_SECRET_LEN`].
 fn validate_auth_secrets(auth: &AuthConfig, production: bool) -> anyhow::Result<()> {
-    // Checked in **every** profile, not just production. A weak-secret check a deployment
-    // can skip by forgetting one environment variable is not a check — and these exact
-    // strings shipped in the reference compose file, so they are what an operator who never
-    // set TANKOVAULT_PROFILE is running with.
-    // The *length* of a secret is what an operator has to act on and is not itself sensitive,
-    // so it appears in these messages. The value never does: `expose_secret` is called below
-    // only to measure and to compare, never to format.
+    // Checked in every profile — placeholder strings ship in the reference compose file.
+    // Length is safe to log; the value never is (`expose_secret` only measures/compares).
     if let Some(name) = known_placeholder(auth.jwt_secret.expose_secret()) {
         anyhow::bail!(
             "refusing to start: jwt_secret is the well-known {name} placeholder, which is \
@@ -263,10 +223,8 @@ fn validate_auth_secrets(auth: &AuthConfig, production: bool) -> anyhow::Result<
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Before config, telemetry or anything else: this process may have been invoked by
-    // Docker's HEALTHCHECK rather than as the service. `scratch` images have no shell and no
-    // wget, so the binary probing itself is the only probe available. See
-    // `tankovault_service::healthcheck`.
+    // Before anything else: this may be Docker's HEALTHCHECK invocation, not the service.
+    // `scratch` images have no shell, so the binary probing itself is the only probe available.
     if tankovault_service::healthcheck::requested() {
         let cfg: Config = tankovault_config::load()?;
         tankovault_service::run_healthcheck_and_exit(&cfg.bind_addr);
@@ -309,17 +267,14 @@ async fn main() -> anyhow::Result<()> {
     let features =
         tankovault_api::install_feature_gate(pool.clone(), &cfg.features, shutdown.clone()).await;
 
-    // One client for every internal hop, with connect and request timeouts. The previous
-    // `reqwest::Client::new()` had neither, and fed an unbounded `tokio::spawn` in
-    // `spawn_targeted_push` — a hung `sync` leaked a task and a socket per marked chapter.
+    // One client for every internal hop, with connect and request timeouts — without them, a
+    // hung downstream leaks a task and a socket per request.
     let internal_http = tankovault_api::Upstream::client()?;
     let internal_http_worker = internal_http.clone();
     let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
 
-    // The passkey relying party, or `None` if this deployment configured no origin for it.
-    // A *malformed* origin is fatal, an *absent* one is not: the first is an operator mistake
-    // that would otherwise surface as browsers refusing every ceremony with an opaque
-    // `SecurityError`, and the second is simply a deployment that does not offer passkeys.
+    // `None` origin is a valid "no passkeys" state; a *malformed* one is fatal — it would
+    // otherwise surface as browsers refusing every ceremony with an opaque `SecurityError`.
     let webauthn = build_relying_party(&cfg.auth, &cfg.email.base_url)?;
 
     // Abandoned ceremonies — a user who closed the tab at the authenticator prompt — are
@@ -328,9 +283,8 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState {
         pool: pool.clone(),
-        // The only place these two cross from text to key material. `secret_bytes` keeps them
-        // inside a wrapper across the hop; the `Arc` is because axum clones the state per
-        // request — see `AppState::jwt_secret`.
+        // The only place these cross from text to key material; `Arc` because axum clones
+        // state per request — see `AppState::jwt_secret`.
         jwt_secret: Arc::new(secret_bytes(&cfg.auth.jwt_secret)),
         password_pepper: Arc::new(secret_bytes(&cfg.auth.password_pepper)),
         access_ttl: time::Duration::minutes(cfg.auth.access_ttl_minutes),
@@ -384,10 +338,8 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The audit sink named by configuration.
-///
-/// Returned as a trait object so the toggle is resolved exactly once, here, and never
-/// again at a call site.
+/// The audit sink named by configuration; returned as a trait object so the toggle is
+/// resolved once, here.
 fn build_audit_sink(
     pool: &tankovault_db::PgPool,
     cfg: &tankovault_config::AuditConfig,
@@ -410,9 +362,8 @@ fn build_audit_sink(
 
 /// Start the audit-retention sweep, unless retention is switched off.
 ///
-/// Runs on the API rather than a dedicated job because this is where the audit sink lives;
-/// with several replicas each sweep is idempotent (a bounded `DELETE` by age), so no leader
-/// election is needed — concurrent sweeps simply share the work.
+/// Idempotent (a bounded `DELETE` by age), so replicas racing on it just share the work —
+/// no leader election needed.
 fn spawn_audit_retention(
     pool: &tankovault_db::PgPool,
     cfg: &tankovault_config::AuditConfig,
@@ -454,15 +405,11 @@ fn spawn_audit_retention(
 
 /// The `WebAuthn` relying party this deployment offers, if any.
 ///
-/// `email.base_url` is the fallback because it is already defined as "public base URL of the
-/// web app, used to build absolute links inside emails" — the password-reset link the user
-/// clicks resolves to exactly the origin a passkey has to be bound to. Requiring the same
-/// string to be written twice would mean deployments where the two silently disagree, and a
-/// disagreement here shows up as browsers refusing ceremonies rather than as anything legible.
+/// Falls back to `email.base_url`: the password-reset link resolves to the same origin a
+/// passkey must be bound to, so duplicating the string risks silent disagreement.
 ///
 /// # Errors
-/// Returns an error when the resolved origin is not a URL, has no host, or is not covered by
-/// the configured relying-party id. All three are refused at boot rather than at first use.
+/// Origin is not a URL, has no host, or isn't covered by the relying-party id.
 fn build_relying_party(
     auth: &AuthConfig,
     email_base_url: &str,
@@ -498,18 +445,14 @@ fn build_relying_party(
 
 /// How often abandoned `WebAuthn` ceremonies are swept.
 ///
-/// Generous, because expiry is already enforced in the read: `take_ceremony` filters on
-/// `expires_at`, so a row that outlives its deadline is unusable, not dangerous. This only
-/// stops the table growing by one row per user who walked away from an authenticator prompt.
+/// Generous: expiry is already enforced in the read (`take_ceremony` filters on
+/// `expires_at`), so an unswept row is unusable, not dangerous — this only stops table growth.
 const CEREMONY_SWEEP_INTERVAL: Duration = Duration::from_secs(15 * 60);
 
 /// Start the abandoned-ceremony sweep, unless this deployment has no relying party.
 ///
-/// Skipped entirely when passkeys are off: with no relying party nothing writes ceremonies, so
-/// the sweep would be a `DELETE` against an empty table every quarter of an hour forever.
-///
-/// Like the audit sweep, this is idempotent (a bounded `DELETE` by age), so replicas racing on
-/// it simply share the work and no leader election is needed.
+/// Skipped when passkeys are off — nothing would write ceremonies. Idempotent like the audit
+/// sweep, so racing replicas just share the work.
 fn spawn_ceremony_sweep(
     pool: &tankovault_db::PgPool,
     enabled: bool,
@@ -545,11 +488,8 @@ fn spawn_ceremony_sweep(
 
 /// Connect Redis, or `None` when unconfigured/unreachable.
 ///
-/// One client for both of this service's Redis users — the cross-replica rate-limit counters and
-/// the SSE stream-ticket store — as `tankovault_service::ratelimit::redis` already assumes ("the
-/// same connection is typically shared with other Redis users in the process"). Neither is worth
-/// refusing to boot over: rate limits degrade to per-replica counters and tickets to per-process
-/// ones, both with a warning.
+/// One client shared by both Redis users (rate-limit counters, stream tickets). Neither is
+/// worth refusing to boot over — both degrade to per-replica/per-process state with a warning.
 async fn connect_redis(
     cfg: Option<&tankovault_config::RedisConfig>,
 ) -> Option<fred::clients::Client> {
@@ -582,13 +522,10 @@ async fn connect_redis(
     }
 }
 
-/// The stream-ticket store this deployment gets.
+/// The stream-ticket store this deployment gets: Redis where available, this process otherwise.
 ///
-/// Redis where it is available, this process otherwise. The fallback is **wrong across
-/// replicas** — a ticket minted on one is unknown to the others, so opening the stream fails
-/// until a retry happens to land on the minting replica — and it says so loudly rather than
-/// degrading in silence. Refusing to boot instead would take the whole edge down for a
-/// best-effort notification badge.
+/// The fallback is wrong across replicas — a ticket minted on one is unknown to others — so
+/// it warns loudly rather than degrading silently.
 fn stream_ticket_store(
     redis: Option<&fred::clients::Client>,
 ) -> std::sync::Arc<dyn tankovault_api::stream_tickets::StreamTicketStore> {

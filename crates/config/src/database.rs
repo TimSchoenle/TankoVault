@@ -8,10 +8,8 @@ use serde::Deserialize;
 pub struct DatabaseConfig {
     /// e.g. `postgres://user:pass@host:5432/tankovault`.
     ///
-    /// A [`SecretString`], because a DSN is a credential — the password is *in* it. This
-    /// struct derives `Debug` and is nested inside every service's config aggregate, which is
-    /// in turn nested inside state that gets recorded with `?`; the wrapper is what makes
-    /// that safe rather than merely untested.
+    /// A [`SecretString`]: the DSN carries the password, and this struct's `Debug` is nested
+    /// inside state routinely logged with `?`.
     pub url: SecretString,
     /// Upper bound on the connection pool.
     #[serde(default = "DatabaseConfig::default_max_connections")]

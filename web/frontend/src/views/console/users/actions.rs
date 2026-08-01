@@ -11,9 +11,6 @@ use crate::wire::types::DeleteUser;
 use dioxus::prelude::*;
 
 /// Erase an account.
-///
-/// A free function rather than a closure: it needs every handle the editor holds, and a closure
-/// that moves its captured signals into a spawned task can only be called once.
 #[expect(
     clippy::too_many_arguments,
     reason = "every parameter is a distinct handle type, so none can be transposed; grouping \
@@ -54,8 +51,7 @@ pub(super) fn erase(
     });
 }
 
-/// Force an account out of every device it is signed in on. Free-standing for the same reason
-/// as [`erase`]: the header and the Sessions tab both offer it.
+/// Force an account out of every device it is signed in on.
 pub(super) fn revoke_all(
     api: api::Api,
     i18n: crate::i18n::Translator,

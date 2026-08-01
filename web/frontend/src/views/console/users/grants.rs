@@ -15,9 +15,8 @@ use std::collections::BTreeSet;
 /// The permission checklist, grouped, with provenance and the preset bundles as starting
 /// points.
 ///
-/// Edits are local until the inspector's one Save submits them, and the whole set goes at once
-/// — the server replaces it wholesale, so two administrators editing concurrently produce one
-/// of their two intents rather than an interleaving of both.
+/// The whole set is submitted at once on Save; the server replaces it wholesale, so concurrent
+/// edits by two administrators produce one intent rather than an interleaving of both.
 #[component]
 pub(super) fn PermissionGrants(
     grants: Vec<GrantRow>,
@@ -91,9 +90,8 @@ pub(super) fn PermissionGrants(
 
 /// The preset bundles, applied as a starting point the operator then edits.
 ///
-/// Applying one *replaces* the current selection rather than adding to it, which is what makes
-/// it a starting point rather than a cumulative grant — and why it is safe that presets are
-/// never stored: what gets saved is whatever is ticked afterwards.
+/// Applying one replaces the current selection rather than adding to it; presets are never
+/// stored, since what gets saved is whatever is ticked afterwards.
 #[component]
 pub(super) fn PresetPicker(
     catalogue: PermissionCatalogue,

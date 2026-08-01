@@ -1,15 +1,7 @@
-//! The admin Sync console read models (`crates/db/src/repo/sync/admin_views.rs`, TEST F-05).
+//! Admin Sync console read models: each test asserts that dropping the scoping predicate it
+//! names fails only that test.
 //!
-//! Eight statements that had no test at any level. They are all *reads*, so a wrong answer
-//! here is never an error — it is an operator queue that quietly omits work, a suggestion list
-//! ordered by the wrong column, or one user's data appearing under another's name. Each test
-//! below is written so that dropping the scoping predicate it names fails it and nothing else.
-//!
-//! The one that found a defect is [`pending_conflicts_is_scoped_to_the_account_not_the_user`]:
-//! the count subquery joined on `user_id` alone while the row it decorates is keyed by
-//! `(user, provider)`, so a second linked provider made both rows report the union.
-//!
-//! Opt-in: gated behind the `integration` feature because it requires Docker.
+//! Gated behind the `integration` feature (requires Docker).
 #![cfg(feature = "integration")]
 
 use tankovault_db::repo::sync::{
@@ -22,12 +14,9 @@ use tankovault_test_support::{TestDb, seed};
 use time::OffsetDateTime;
 use time::ext::NumericalDuration as _;
 
-// ---------------------------------------------------------------------------
 // Fixture
-// ---------------------------------------------------------------------------
 
-/// Ingest one canonical series with `sources` distinct local providers behind it, so the
-/// assign queue's `source_count` ordering has something to order by.
+/// One canonical series with `sources` distinct providers, for `source_count` ordering.
 async fn a_series(db: &TestDb, title: &str, sources: usize, alt_titles: &[&str]) -> SeriesId {
     let mut series_id = None;
     for n in 0..sources {
@@ -37,8 +26,7 @@ async fn a_series(db: &TestDb, title: &str, sources: usize, alt_titles: &[&str])
         )
         .create()
         .await;
-        // Every source carries the same title, so canonicalisation attaches them all to one
-        // series — which is the point: `source_count` is what the assign queue orders by.
+        // Same title on every source, so canonicalisation attaches them to one series.
         series_id = Some(
             seed::series(db, provider, title)
                 .source_path(format!("/s/{n}"))
@@ -76,15 +64,9 @@ fn a_remote_entry(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Linked accounts
-// ---------------------------------------------------------------------------
 
-/// Failing accounts sort to the top, then the most recently synced, then the never-synced.
-///
-/// This ordering is the whole point of the table: it is an operator's work queue, and
-/// `NULLS LAST` is what keeps an account that has never synced from displacing one that is
-/// actively failing. Dropping either clause still renders a table, just not a useful one.
+/// Failing accounts sort first, then most-recently-synced, then never-synced (`NULLS LAST`).
 #[tokio::test]
 async fn admin_list_accounts_surfaces_failures_first_then_recency() {
     let db = TestDb::spawn().await;
@@ -140,13 +122,8 @@ async fn admin_list_accounts_surfaces_failures_first_then_recency() {
     assert_eq!(capped[0].provider, "mal");
 }
 
-/// The pending-conflict count belongs to the account row, not to the user.
-///
-/// The bug this pins: the correlated subquery matched on `sc.user_id = ea.user_id` only, while
-/// the row it decorates is one per `(user, provider)`. A user with two linked providers saw
-/// each provider's row claim the other's conflicts — and since the console offers a per-row
-/// "resolve" affordance, an operator would have been sent to the wrong provider's queue.
-/// Invisible today only because one provider ships.
+/// The bug this pins: the conflict count joined on `user_id` alone, so a user with two linked
+/// providers had each provider's row claim the other's pending conflicts.
 #[tokio::test]
 async fn pending_conflicts_is_scoped_to_the_account_not_the_user() {
     let db = TestDb::spawn().await;
@@ -231,8 +208,7 @@ async fn admin_list_accounts_reports_the_users_current_sync_policy() {
     let alice = db.seed_user("alice", &[], AccountStatus::Active).await;
     link(&db, alice, "anilist").await;
 
-    // The column defaults (`0014_progress_sync_v2.sql`): linking opts a user in, and
-    // disagreements are decided by whichever side moved last unless they say otherwise.
+    // Defaults: auto-sync on, conflicts resolved by whichever side moved last.
     let before = admin_list_accounts(&db.pool, 10).await.expect("list");
     assert!(before[0].auto_sync_enabled);
     assert_eq!(before[0].conflict_policy, "newest_wins");
@@ -246,15 +222,10 @@ async fn admin_list_accounts_reports_the_users_current_sync_policy() {
     assert_eq!(after[0].conflict_policy, "ask_me");
 }
 
-// ---------------------------------------------------------------------------
 // Mappings
-// ---------------------------------------------------------------------------
 
-/// The global mapping table joins the canonical title and orders by recency; the per-series
-/// one returns every provider for one series, ordered by provider.
-///
-/// Two statements, one row type, different `WHERE`/`ORDER BY`. Asserting them together is what
-/// makes it obvious if one starts answering the other's question.
+/// The global view joins canonical titles ordered by recency; the per-series view returns
+/// every provider for one series, ordered by provider.
 #[tokio::test]
 async fn the_two_mapping_views_answer_their_own_questions() {
     let db = TestDb::spawn().await;
@@ -307,16 +278,11 @@ async fn the_two_mapping_views_answer_their_own_questions() {
     assert_eq!(after[0].external_id, "b-mal-2");
 }
 
-// ---------------------------------------------------------------------------
 // The assign queue
-// ---------------------------------------------------------------------------
 
-/// A series missing a mapping for *this* provider is in the queue even if it is mapped
-/// elsewhere, richest first.
-///
-/// `NOT EXISTS (… AND sm.provider = $1)` is the whole predicate. Without the provider term,
-/// mapping a series at `AniList` would also clear it from every other provider's queue —
-/// silently dropping work that has to be done per provider.
+/// A series missing a mapping for this provider is queued even if mapped elsewhere, richest
+/// first. Without the provider term in `NOT EXISTS`, mapping one provider would clear the
+/// queue for all of them.
 #[tokio::test]
 async fn the_assign_queue_is_per_provider_and_richest_first() {
     let db = TestDb::spawn().await;
@@ -355,12 +321,9 @@ async fn the_assign_queue_is_per_provider_and_richest_first() {
     );
 }
 
-/// The queue's title search is an emptiness check, not a minimum length.
-///
-/// The guard reads `format!("%{q}%").len() > 2`, which looks like "ignore queries under three
-/// characters" and is not: the two `%` already make the string two characters long, so the
-/// rule is exactly "the trimmed query is non-empty". Pinned as written, because the next
-/// reader will otherwise either "fix" the off-by-two or assume a minimum that is not enforced.
+/// The guard `format!("%{q}%").len() > 2` looks like a 3-character minimum but, since `%%`
+/// already adds two, it really means "non-empty after trim". Pinned so a refactor doesn't
+/// "fix" the off-by-two.
 #[tokio::test]
 async fn the_assign_queues_search_ignores_only_a_blank_query() {
     let db = TestDb::spawn().await;
@@ -392,16 +355,10 @@ async fn the_assign_queues_search_ignores_only_a_blank_query() {
     assert_eq!(matched(None).await.len(), 2);
 }
 
-// ---------------------------------------------------------------------------
 // Unmatched remote entries
-// ---------------------------------------------------------------------------
 
-/// The unmatched queue shows entries with no series, for one provider, alphabetically — and
-/// assigning one removes it.
-///
-/// Two predicates carry it: `series_id IS NULL` (an already-matched entry is finished work)
-/// and `provider = $1`. The user join is what puts a name next to each row; getting it wrong
-/// attributes one user's library to another in an operator-visible list.
+/// Shows entries with no series for one provider, alphabetically; assigning one removes it.
+/// The user join must not attribute one user's library to another.
 #[tokio::test]
 async fn the_unmatched_queue_shows_only_unassigned_entries_for_one_provider() {
     let db = TestDb::spawn().await;
@@ -480,12 +437,9 @@ async fn the_unmatched_queue_shows_only_unassigned_entries_for_one_provider() {
     );
 }
 
-/// Both single-entry statements are scoped to the owning user.
-///
-/// Two users can hold the same `external_id` — they are both tracking the same work at the
-/// same provider, which is the normal case. `get_remote_entry` without `user_id = $1` returns
-/// whichever row Postgres reaches first; `mark_remote_entry_matched` without it assigns every
-/// user's copy from one operator click.
+/// Two users can hold the same `external_id` at one provider. Without `user_id` in the
+/// predicate, `get_remote_entry` returns an arbitrary row and `mark_remote_entry_matched`
+/// assigns every user's copy at once.
 #[tokio::test]
 async fn the_single_entry_reads_and_writes_are_scoped_to_one_user() {
     let db = TestDb::spawn().await;
@@ -537,16 +491,11 @@ async fn the_single_entry_reads_and_writes_are_scoped_to_one_user() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Candidate suggestions
-// ---------------------------------------------------------------------------
 
-/// Suggestions come back best-similarity first, and an alternative title counts as a match.
-///
-/// The `ORDER BY 7 DESC` is a positional reference to the seventh select item. Inserting a
-/// column before it re-sorts the operator's suggestion list by something arbitrary — with no
-/// error, and with the correct rows. This test is the only thing that notices, which is why
-/// it asserts the sequence rather than the set.
+/// Best-similarity first; an alternative title counts as a match. `ORDER BY 7` is positional —
+/// a column inserted before it would silently re-sort by the wrong thing, so this asserts
+/// sequence, not just membership.
 #[tokio::test]
 async fn suggestions_rank_by_the_best_similarity_across_every_title() {
     let db = TestDb::spawn().await;

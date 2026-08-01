@@ -1,17 +1,8 @@
-//! Database error type.
+//! Database error type. Variants map to HTTP status in `services/api`: [`DbError::NotFound`]
+//! to 404, [`DbError::Conflict`] to 409, everything else to 500.
 //!
-//! The variants are not interchangeable at the edge: `services/api` maps [`DbError::NotFound`]
-//! to 404 and [`DbError::Conflict`] to 409, and everything else to 500. That mapping is why
-//! every repository function's `# Errors` section names *which* variants it can produce rather
-//! than saying it returns an error — the variant is the status code.
-//!
-//! There is deliberately **no** variant for a row holding an enum token this build does not
-//! recognise. Domain enums derive `sqlx::Type` against a native Postgres enum, so an
-//! unrecognised token is decoded by the driver and arrives as
-//! `Sqlx(sqlx::Error::ColumnDecode)` — a 500, which is the right answer for schema/code drift.
-//! A dedicated variant existed here until it was removed: nothing in the workspace could
-//! construct it (no repository parses an enum from text) and nothing matched on it, so it
-//! documented a failure mode that could not occur while naming the one that could.
+//! An unrecognised enum token decodes as `Sqlx(ColumnDecode)` (500); there is no dedicated
+//! variant for it.
 
 /// Errors surfaced by the repository layer.
 #[derive(Debug, thiserror::Error)]

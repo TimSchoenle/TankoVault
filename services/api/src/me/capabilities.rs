@@ -1,23 +1,8 @@
-//! `GET /v1/me/capabilities` — what this caller may do, and what this deployment offers.
+//! `GET /v1/me/capabilities` — the caller's permissions and this deployment's enabled features,
+//! served together so a client never holds one stale against the other.
 //!
-//! # Why one endpoint for both
-//!
-//! A client has to answer two questions before it can render anything: *am I allowed to do
-//! this* (permissions) and *does this deployment even have this* (feature flags). Both change
-//! independently of the session, both are needed at exactly the same moment — the first paint
-//! after sign-in — and neither is derivable from the other. Serving them together means the
-//! client makes one request and can never hold a permission list from one instant next to a
-//! flag set from another.
-//!
-//! # Why not claims in the token
-//!
-//! Because the previous design did exactly that with the RBAC role and it was wrong twice over:
-//! a revoked privilege stayed live until the token expired, and the client's copy could not be
-//! refreshed without minting a new token. This response is a plain read, so the client can
-//! refetch it whenever it likes — and, crucially, the server does not trust it: the numbers
-//! here are for *drawing the UI*, and every action is authorized again by the handler that
-//! performs it. Hiding a control the server would refuse anyway is a courtesy, never the
-//! security boundary.
+//! Not carried in the token (a revoked permission used to stay live until it expired); the
+//! server never trusts this response for authorization.
 
 use crate::error::ApiResult;
 use crate::openapi::ME_ACCOUNT_TAG;
@@ -65,8 +50,7 @@ pub async fn capabilities(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> ApiResult<Json<Capabilities>> {
-    // No permission check: every authenticated caller is entitled to know what they can do.
-    // Requiring a permission to read one's own permissions would be circular.
+    // No permission check: requiring one to read your own permissions would be circular.
     Ok(Json(Capabilities {
         permissions: user.permissions,
         features: state.features.enabled_features(),

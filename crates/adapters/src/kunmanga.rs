@@ -1,33 +1,7 @@
-//! Custom adapter for kunmanga (`www.kunmanga.co.uk`).
-//!
-//! The site is a hybrid: its catalogue and series pages are Madara-shaped HTML (so the
-//! [`GenericConfigAdapter`] parses them with the standard selectors), but its **chapter
-//! list is served from a JSON API**, not rendered into the series page. The generic
-//! `div.wp-manga-chapter` rows only appear after client-side JS calls that API, so a
-//! non-JS fetch of the series page yields zero chapters (design §7, §9).
-//!
-//! It is also **not enumerable through its own listing**: `/manga/page/{n}` is clamped
-//! server-side at page 100 while the paginator's "Next" control is always rendered, so the
-//! generic catalogue walk loops forever over the same ~1.1k series and never reaches the
-//! other ~87k. [`list_catalog`](KunMangaAdapter::list_catalog) is therefore overridden to
-//! walk the site's sitemap shards instead — see that method.
-//!
-//! This adapter therefore delegates latest/series parsing to an internal
-//! [`GenericConfigAdapter`] and overrides [`list_catalog`](KunMangaAdapter::list_catalog)
-//! and [`fetch_chapters`](KunMangaAdapter::fetch_chapters). The latter reads every page of
-//! `/api/comics/{slug}/chapters?page={n}&per_page={N}&order=asc`:
-//!
-//! ```json
-//! { "success": true, "data": { "chapters": [ { "chapter_num": 57,
-//!   "chapter_name": "Chapter 57", "chapter_slug": "chapter-57",
-//!   "updated_at": "2026-07-20T18:11:23.000000Z" } ],
-//!   "total": 57, "current_page": 1, "per_page": 50, "last_page": 2 } }
-//! ```
-//!
-//! The API GET is routed through the same injected fetch stack, so it may come back as raw
-//! JSON (plain fetch) or as solver-rendered markup wrapping the JSON when a bot-management
-//! challenge had to be solved; [`crate::json::parse_json_body`] tolerates both shapes and
-//! reports an unsolved challenge as such rather than as malformed JSON.
+//! Custom adapter for kunmanga: Madara-shaped HTML for catalogue/series (delegated to
+//! [`GenericConfigAdapter`]), but catalogue enumeration and chapters are overridden — see
+//! [`list_catalog`](KunMangaAdapter::list_catalog) and
+//! [`fetch_chapters`](KunMangaAdapter::fetch_chapters).
 
 use crate::config::AdapterConfig;
 use crate::error::AdapterError;
@@ -60,10 +34,8 @@ const COMIC_SHARD_MARKER: &str = "sitemap-comic-";
 
 /// Names the chapters call for what it is: the same XHR the site's own front-end makes.
 ///
-/// The endpoint is behind the same bot management as the pages, and a request for
-/// `text/html` with no XHR marker is exactly what that tier scores as automation. These
-/// headers cost nothing and make the plain (unsolved) fetch more likely to succeed, which is
-/// the fetch that does *not* burn a solve.
+/// The endpoint is behind the same bot management as the pages; these headers make the plain
+/// (unsolved) fetch more likely to succeed, avoiding a solve.
 const API_HEADERS: [(&str, &str); 2] = [
     ("Accept", "application/json, text/plain, */*"),
     ("X-Requested-With", "XMLHttpRequest"),
@@ -87,10 +59,9 @@ impl KunMangaAdapter {
 
 /// The `/api/comics/{slug}/chapters` envelope.
 ///
-/// `data` is optional because the API answers a request it cannot serve — an unknown slug,
-/// a series it has withdrawn — with `{"success": false, "message": …}` and no payload at
-/// all. Modelling that as a required field turned every such answer into "unparseable JSON",
-/// which pointed at the parser instead of at the provider's actual reply.
+/// `data` is optional: the API answers an unservable request (unknown slug, withdrawn series)
+/// with `{"success": false, "message": …}` and no payload — modelling it as required would
+/// report every such reply as unparseable JSON instead of the provider's actual answer.
 #[derive(Debug, Deserialize)]
 struct ChaptersResponse {
     #[serde(default)]
@@ -162,13 +133,11 @@ fn series_slug(path: &str) -> Option<&str> {
 
 /// Extract every `<loc>` value from a sitemap document.
 ///
-/// Like the chapters JSON, this tolerates both shapes the fetch stack can return: raw XML
-/// from a plain fetch, and solver-rendered output when a challenge had to be solved (the
-/// headless browser serves an XML *viewer* page that embeds the original document and also
-/// renders an entity-escaped pretty-print of it). Scanning for literal `<loc>` picks up the
-/// embedded original in the rendered case and the document itself in the raw case, and
-/// deduplication makes the two views of the same document collapse to one list. The
-/// unescaping fallback covers a viewer that escapes the payload everywhere.
+/// Tolerates both shapes the fetch stack can return: raw XML from a plain fetch, and a
+/// solver-rendered XML viewer page (embedding the original document alongside an
+/// entity-escaped pretty-print) when a challenge had to be solved. Scanning for literal
+/// `<loc>` picks up both; deduplication collapses the two views into one list, and the
+/// unescaping fallback covers a viewer that escapes everywhere.
 fn sitemap_locs(body: &str) -> Vec<String> {
     let locs = scan_locs(body);
     if locs.is_empty() {
@@ -197,10 +166,9 @@ fn scan_locs(doc: &str) -> Vec<String> {
 /// Turn one sitemap `<loc>` into a catalogue entry, rejecting anything that is not a
 /// series landing page (`/manga/{slug}` — chapter URLs carry a further segment).
 ///
-/// The sitemap carries no titles, so the entry gets a **provisional** title derived from
-/// the slug. That is only ever used to seed a brand-new stub: the slug is itself a
-/// normalised form of the real title, so it collapses to the same matching key, and the
-/// per-series enrichment task then overwrites it with the title from the series page.
+/// The provisional title is slug-derived, used only to seed a stub: it must collapse to the
+/// same [`normalize_title`](tankovault_domain::normalize_title) key as the real title, or
+/// enrichment creates a duplicate series instead of attaching to this stub.
 fn catalog_item(page_url: &str, loc: &str) -> Option<CatalogItem> {
     let path = relativize(page_url, loc);
     let mut segments = path
@@ -224,13 +192,10 @@ fn catalog_item(page_url: &str, loc: &str) -> Option<CatalogItem> {
 
 /// Render a URL slug as a provisional display title: `the-frontier-base` → `The Frontier Base`.
 ///
-/// A lone `s` segment is glued back onto the word before it as `'s`. The slug is the only
-/// title this listing has, and it has to collapse to the same [`normalize_title`] key as the
-/// title the site itself will serve later — otherwise enrichment creates a second canonical
-/// series instead of attaching to this stub. `normalize_title` *elides* apostrophes, so
-/// `world-s-strongest` left as three words keys as `world s strongest` while the site's
-/// `World's Strongest` keys as `worlds strongest`. The two agreed only for as long as the
-/// normalizer treated an apostrophe as a word boundary, which it deliberately no longer does.
+/// A lone `s` segment glues onto the previous word as `'s`. This must collapse to the same
+/// [`normalize_title`] key as the site's real title: `normalize_title` elides apostrophes, so
+/// leaving `world-s-strongest` as three words keys differently than the site's `World's
+/// Strongest` — the whole reason this gluing exists.
 ///
 /// [`normalize_title`]: tankovault_domain::normalize_title
 fn title_from_slug(slug: &str) -> String {
@@ -255,11 +220,9 @@ fn title_from_slug(slug: &str) -> String {
 
 /// Whether a lone `s` following `word` reads as a flattened possessive.
 ///
-/// It usually does — but `S` is also a rank, and `the-s-rank-hunter` and `hunter-rank-s` are
-/// ordinary spellings in this catalogue. An apostrophe-`s` attaches to a noun or a name, so a
-/// determiner or a rank noun in front of it rules the possessive reading out; gluing there
-/// would invent `The's Rank Hunter` and produce exactly the key mismatch the gluing exists to
-/// avoid.
+/// Usually yes, but `S` is also a rank (`the-s-rank-hunter`, `hunter-rank-s`): a determiner or
+/// rank noun before it rules out the possessive reading, since gluing there would invent
+/// `The's Rank Hunter` and reintroduce the key mismatch this function exists to avoid.
 fn takes_possessive_s(word: &str) -> bool {
     const NEVER_AFTER: &[&str] = &[
         // Determiners, prepositions and the copula: nothing that can own anything.
@@ -275,19 +238,13 @@ fn takes_possessive_s(word: &str) -> bool {
 
 #[async_trait]
 impl SourceAdapter for KunMangaAdapter {
-    /// Enumerate the catalogue from the site's **sitemap**, one `sitemap-comic-{n}.xml`
-    /// shard per `page`, rather than from the paginated HTML listing.
+    /// Enumerate the catalogue from the site's sitemap, one `sitemap-comic-{n}.xml` shard per
+    /// `page`, instead of the paginated HTML listing.
     ///
-    /// The HTML listing at `/manga/page/{n}` cannot be used to enumerate this site: the
-    /// server **clamps the page number at 100** (requesting page 101, 500 or 20000 all
-    /// return the page-100 body, which still reports `Page 100 of ~6900`) while the
-    /// `a[aria-label="Next"]` control is rendered unconditionally, so `has_next` never goes
-    /// false. Walking it therefore both loops forever and can only ever reach ~1.1k of the
-    /// site's ~88k series. The sitemap — advertised in `robots.txt` — lists every series
-    /// exactly once, ~20k URLs per shard.
-    ///
-    /// `has_next` is derived from the shard count in the index, so it is exact and the walk
-    /// terminates on the site's own data instead of on a heuristic.
+    /// The HTML listing clamps at a fixed page number server-side while its "Next" control
+    /// renders unconditionally, so walking it loops forever without reaching most of the
+    /// catalogue. `has_next` here comes from the sitemap index's shard count, so the walk
+    /// terminates on exact data instead of a heuristic.
     async fn list_catalog(&self, ctx: &Ctx, page: u32) -> Result<CatalogPage, AdapterError> {
         let index = ctx.fetch(SITEMAP_INDEX_PATH).await?;
         let shards: Vec<String> = sitemap_locs(&index.body)
@@ -334,9 +291,9 @@ impl SourceAdapter for KunMangaAdapter {
 
     /// Read every page of the chapters API for one series.
     ///
-    /// Pagination terminates on the API's own `last_page`, with two independent backstops —
-    /// a page that adds nothing new, and a hard page cap — because a paginator that lies
-    /// about `last_page` must not be able to hold a scan task open indefinitely.
+    /// Pagination terminates on the API's own `last_page`, backed by two independent guards
+    /// — a page that adds nothing new, and a hard page cap — so a paginator that lies about
+    /// `last_page` cannot hold a scan task open indefinitely.
     async fn fetch_chapters(
         &self,
         ctx: &Ctx,
@@ -345,8 +302,7 @@ impl SourceAdapter for KunMangaAdapter {
         let slug = series_slug(path)
             .ok_or_else(|| AdapterError::Missing(format!("kunmanga series slug in {path:?}")))?;
 
-        // The site's front-end calls this endpoint from the series page; sending the same
-        // Referer keeps the request consistent with the session that fetched that page.
+        // Matches the site's own front-end: same Referer as the session that fetched the page.
         let referer = tankovault_domain::resolve_link(&ctx.base_url, &format!("/manga/{slug}"))?;
         let mut headers: Vec<(&str, &str)> = API_HEADERS.to_vec();
         headers.push(("Referer", referer.as_str()));
@@ -362,10 +318,9 @@ impl SourceAdapter for KunMangaAdapter {
             let resp = ctx.fetch_with(&api_path, &headers).await?;
             let payload: ChaptersResponse = parse_json_body("kunmanga chapters API", &resp)?;
 
-            // A well-formed envelope carrying no payload is the API declining, not a parse
-            // problem. On the first page that means this series has no chapter data at all —
-            // worth surfacing with the provider's own wording; on a later page it just ends
-            // the walk with what we already have.
+            // A well-formed envelope with no payload is the API declining, not a parse
+            // problem: on page 1 that's surfaced as missing data, on a later page it just
+            // ends the walk.
             let Some(data) = payload.data else {
                 if page == 1 {
                     return Err(AdapterError::Missing(format!(
@@ -388,8 +343,8 @@ impl SourceAdapter for KunMangaAdapter {
                     unnumbered += 1;
                     continue;
                 };
-                // Guards against a paginator that replays a page: a duplicate would ride all
-                // the way to the upsert and inflate every count on the way.
+                // Guards against a replayed page: a duplicate would ride to the upsert and
+                // inflate every count on the way.
                 if !seen.insert(ch.chapter_slug.clone()) {
                     continue;
                 }
@@ -425,8 +380,7 @@ impl SourceAdapter for KunMangaAdapter {
             page += 1;
         }
 
-        // Silent drops are how a provider's format change becomes a slow data loss instead
-        // of a failure, so the count is reported even though the scan succeeds.
+        // Reported even on success: silent drops are how a format change becomes slow data loss.
         if unnumbered > 0 {
             tracing::warn!(
                 series = %slug,
@@ -501,8 +455,7 @@ mod tests {
 
     #[test]
     fn an_api_refusal_parses_and_carries_its_reason() {
-        // The API answers an unknown series with a payload-less envelope. That must parse —
-        // reporting it as unparseable JSON hid the real message for the whole class.
+        // A payload-less envelope must parse; reporting it as unparseable JSON hid the message.
         let env = parse(r#"{"success":false,"message":"Comic not found"}"#)
             .expect("refusal envelope parses");
         assert!(env.data.is_none());
@@ -582,9 +535,7 @@ mod tests {
 
     #[test]
     fn provisional_title_normalises_to_the_real_one() {
-        // The stub title is slug-derived, so it must collapse to the same matching key as
-        // the site's real title — otherwise the enrichment task would create a second
-        // canonical series instead of attaching to this stub.
+        // Must key identically to the real title, or enrichment creates a duplicate series.
         let slug =
             "the-frontier-unexpectedly-became-the-world-s-strongest-and-most-comfortable-base";
         let real =
@@ -595,12 +546,9 @@ mod tests {
         );
     }
 
-    /// The possessive rule above must not fire on an `S`-rank title.
-    ///
-    /// `-s-` in a slug is a flattened `'s` often enough to be worth repairing, but `S` is also
-    /// a rank: gluing it unconditionally would render `the-s-rank-hunter` as `The's Rank
-    /// Hunter` and key it as `thes rank hunter`, against `the s rank hunter` for the site's own
-    /// title — the same duplicate-series split the gluing exists to prevent, just moved.
+    /// The possessive rule must not fire on an `S`-rank title: gluing `the-s-rank-hunter`
+    /// would key it against the site's own `The S-Rank Hunter`, reintroducing the
+    /// duplicate-series split the rule exists to prevent.
     #[test]
     fn an_s_rank_slug_keeps_the_rank_a_word_of_its_own() {
         for (slug, real) in [

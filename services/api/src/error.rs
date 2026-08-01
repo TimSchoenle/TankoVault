@@ -1,8 +1,4 @@
 //! Typed API error → RFC 9457 problem+json. Internal errors never leak details.
-//!
-//! The wire encoding itself lives in `tankovault_service::problem` so that every service emits
-//! the same shape (ARCH-12); this module owns only the mapping from [`ApiError`]'s variants onto
-//! it. That split is what makes `crate::upstream` able to have one error mapper instead of four.
 
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -42,22 +38,19 @@ pub enum ApiError {
     Unauthorized,
     #[error("forbidden")]
     Forbidden,
-    /// Login attempted before the account's email address was confirmed. Distinct from
-    /// [`Self::Forbidden`] so the frontend can recognise it and offer to resend the link.
+    /// Login attempted before the account's email address was confirmed; distinct from
+    /// [`Self::Forbidden`] so the frontend can offer to resend the link.
     #[error("email not verified")]
     EmailNotVerified,
-    /// The account has been suspended by an administrator. Distinct from [`Self::Forbidden`],
-    /// which means "you may not do *this*": suspension means the account may not act at all,
-    /// and telling the user "insufficient privileges" would send them looking for a permission
-    /// they can never be granted while suspended.
+    /// The account has been suspended by an administrator. Distinct from [`Self::Forbidden`]:
+    /// suspension means the account may not act at all, not that it lacks a grantable permission.
     #[error("account suspended")]
     Suspended,
     /// The requested capability exists in the code but is switched off for this deployment.
     ///
-    /// `404`, matching `tankovault_service::flags::enforce`: the resource genuinely is not part
-    /// of this deployment's API. Handlers use this for the cases the route-level middleware
-    /// cannot express — a request body that asks for a disabled *mode* rather than a disabled
-    /// path, such as a full scan when only fast scans are enabled.
+    /// `404`, matching `tankovault_service::flags::enforce`. Handlers use this where
+    /// route-level middleware can't express it — e.g. a request body asking for a disabled
+    /// *mode* rather than a disabled path.
     #[error("feature disabled")]
     FeatureDisabled(tankovault_domain::Feature),
     #[error("{0}")]
@@ -65,9 +58,8 @@ pub enum ApiError {
     #[error("service unavailable")]
     Unavailable,
     /// An internal service this request depends on is unreachable or answered with something
-    /// this service cannot represent. Distinct from [`Self::Internal`]: a `sync` outage is an
-    /// upstream fault, and reporting it as `500` made an operator problem look like a bug
-    /// here. See `crate::upstream`.
+    /// this service cannot represent. Distinct from [`Self::Internal`]: an upstream outage is
+    /// not a bug here.
     #[error("upstream unavailable")]
     BadGateway,
     /// An internal service did not answer within its budget.

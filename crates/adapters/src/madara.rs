@@ -1,8 +1,5 @@
-//! Madara `WordPress` theme defaults.
-//!
-//! Most target sites (kunmanga, manhuaus, …) run the Madara theme with near-identical
-//! markup, differing only in a few selectors. Onboarding one is therefore a single row
-//! whose `config` overrides only what differs from these defaults (design §7).
+//! Madara `WordPress` theme defaults: most target sites share this markup, so onboarding one is
+//! a single config row overriding only what differs.
 
 use serde_json::{Value, json};
 
@@ -30,13 +27,9 @@ pub fn madara_default_config() -> Value {
             "cover": "div.summary_image img@src",
             "tags": "div.genres-content a",
             "status": "div.post-status .summary-content",
-            // A labelled row, not a selector: the theme's summary block renders Alternative,
-            // Author(s), Artist(s) and Genre(s) as identical `div.post-content_item` rows
-            // that differ only in their heading text. This field used to be
-            // `div.summary-heading`, which matched every row's *label* — so every series on
-            // every Madara provider was ingested with the alternative titles "Alternative",
-            // "Author(s)", "Genre(s)" and "Status", and those went into `series_titles`,
-            // which the trigram matcher and the catalogue search both read. See `TextSource`.
+            // `match` disambiguates this row from Author(s)/Artist(s)/Status rows sharing the
+            // same container; matching the label selector alone silently mislabels those as
+            // alternative titles, polluting `series_titles` (trigram match, catalogue search).
             "alt": {
                 "row": "div.post-content_item",
                 "label": "div.summary-heading h5",

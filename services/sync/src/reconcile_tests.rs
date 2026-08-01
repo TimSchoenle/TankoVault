@@ -1,21 +1,5 @@
-//! Reconciliation tests for the sync merge engine (audit TEST F-06).
-//!
-//! # Why these exist
-//!
-//! [`crate::engine`] is the code that decides **whose reading progress wins**. The pure
-//! three-way merge in [`crate::mapping`] was already exhaustively unit-tested; what was not
-//! tested was the far larger half that wires those decisions to the database and the provider:
-//! which side actually gets written, how many writes are issued, whether the common-ancestor
-//! snapshot advances, and whether a queued conflict survives to the next run. Every one of
-//! those is a silent-data-loss surface — a wrong branch overwrites a reader's position with no
-//! error anywhere.
-//!
-//! The engine is driven through its real entry points ([`SyncEngine::pull`] /
-//! [`SyncEngine::push`], both of which run the full reconciliation) against a real, migrated
-//! Postgres and a [`FakeProvider`] that records every remote write. Nothing is mocked below the
-//! engine, so a change to the SQL these paths issue fails here too.
-//!
-//! Opt-in: gated behind the `integration` feature because it requires Docker.
+//! Reconciliation tests driving [`crate::engine`] through its real entry points against a
+//! migrated Postgres and a [`FakeProvider`]. Opt-in: gated behind `integration`, requires Docker.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -337,9 +321,8 @@ mod reconcile {
 
     #[tokio::test]
     async fn excluded_series_touches_neither_side() {
-        // §A.5: a series the user excluded from sync must not be read *or* written by either
-        // direction. The exclusion is checked before any merge, so a divergence that would
-        // otherwise conflict has to stay divergent.
+        // Excluded series must not be read or written by either direction, so a divergence
+        // that would otherwise conflict stays divergent.
         let f = Fixture::spawn().await;
         f.local_state(WatchStatus::Reading, 12.0).await;
         f.map("m1").await;
@@ -361,9 +344,8 @@ mod reconcile {
 
     #[tokio::test]
     async fn series_absent_on_the_remote_is_created_from_local_state() {
-        // The local-driven pass: a watchlist entry that maps to a remote id absent from the
-        // fetched list is created there outright, local values authoritative, and the snapshot
-        // is seeded so the *next* run has a common ancestor.
+        // A watchlist entry mapped to a remote id absent from the fetched list is created
+        // there outright, local authoritative, seeding a snapshot for the next run.
         let f = Fixture::spawn().await;
         f.local_state(WatchStatus::Paused, 31.0).await;
         f.map("m1").await;
@@ -460,10 +442,8 @@ mod reconcile {
 
     #[tokio::test]
     async fn ask_me_conflict_queues_and_leaves_the_ancestor_alone() {
-        // The highest-value assertion in this module. Under `AskMe` a genuine conflict must
-        // write to *neither* side, and — critically — must not advance the common-ancestor
-        // snapshot. If it did, the next run would see "nothing changed" and the queued conflict
-        // would become unresolvable silently, with one side's progress lost.
+        // Under `AskMe`, a genuine conflict must write to neither side and must not advance the
+        // ancestor snapshot, or the next run sees "nothing changed" and the conflict is lost.
         let f = Fixture::spawn().await;
         f.local_state(WatchStatus::Reading, 7.0).await;
         f.map("m1").await;
@@ -537,9 +517,7 @@ mod reconcile {
 
     #[tokio::test]
     async fn a_first_sync_imports_the_remote_status_without_counting_a_pull_twice() {
-        // No local watchlist row: the entry is imported at the remote's status so the status
-        // merge has something meaningful to compare. The import must not then *also* be
-        // reported as a pulled status change — `imported` suppresses exactly that double count.
+        // Imported entries must not also be reported as a pulled status change (double count).
         let f = Fixture::spawn().await;
         f.map("m1").await;
         f.set_list(vec![remote_entry("m1", WatchStatus::Completed, 0.0, STALE)]);
@@ -556,10 +534,8 @@ mod reconcile {
 
     #[tokio::test]
     async fn two_remote_ids_resolving_to_one_series_reconcile_it_once() {
-        // Two distinct remote works whose titles both match one local series. Reconciling the
-        // series twice in one run would replay the merge against a second, divergent remote
-        // value — the flip-flop the `handled_series` guard exists to prevent. Exactly one
-        // remote write may be issued, and it must carry the first entry's id.
+        // Two remote works matching one local series must reconcile it once, not replay the
+        // merge against a second divergent value — what `handled_series` guards against.
         let f = Fixture::spawn().await;
         f.local_state(WatchStatus::Reading, 7.0).await;
         f.set_list(vec![

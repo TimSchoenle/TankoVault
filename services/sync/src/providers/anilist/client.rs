@@ -53,11 +53,8 @@ impl AniListClient {
         })
     }
 
-    /// The URL the user is redirected to in order to grant access.
-    ///
-    /// The query is built with `url`'s serializer rather than a hand-rolled percent-encoder
-    /// (ARCH-7). RFC 6749 §3.1 specifies the authorization endpoint's query as
-    /// `application/x-www-form-urlencoded`, which is exactly what this produces.
+    /// The URL the user is redirected to in order to grant access. Built with `url`'s
+    /// serializer, producing the `application/x-www-form-urlencoded` query RFC 6749 §3.1 requires.
     #[must_use]
     pub(crate) fn authorize_url(&self) -> String {
         let query = url::form_urlencoded::Serializer::new(String::new())
@@ -170,10 +167,8 @@ impl AniListClient {
             let resp = req.send().await.context("AniList GraphQL request failed")?;
 
             if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                // Record the signal on *every* 429, not only the retried one: the penalty is what
-                // makes the requests after this one back off too. Previously the retry slept once
-                // and every later call went straight back to the base interval, so a sync run
-                // against a throttling provider kept offering full rate (ARCH-20).
+                // Recorded on every 429, not only the retried one, so later requests back off
+                // too instead of reverting to full rate after one sleep.
                 let retry_after = resp
                     .headers()
                     .get("retry-after")
@@ -182,28 +177,18 @@ impl AniListClient {
                     .map(Duration::from_secs);
                 self.pacer.penalise(std::time::Instant::now(), retry_after);
                 if attempt == 0 {
-                    // Wait the widened gap out *here*, explicitly. This used to `continue`
-                    // straight into `wait_for_slot` on the claim that it "already carries the
-                    // widened gap", and it does not: `Pacer::reserve` starts a fresh schedule
-                    // whenever the slot it last handed out has already elapsed — which it
-                    // always has by the time a response has come back — so the retry reserved
-                    // `now` and went out with **no delay at all**. The penalty reached only the
-                    // request after the retry. That is deliberate in the pacer, which must not
-                    // let idle time accumulate into a burst allowance, and wrong here: an
-                    // immediate retry into a `429` (ignoring `Retry-After` outright) is the
-                    // behaviour ARCH-20 set out to remove (F-09).
+                    // Must sleep the penalty out here, explicitly: `Pacer::reserve` starts a
+                    // fresh schedule once its last-handed-out slot has elapsed (always true by
+                    // the time a response returns), so `continue`-ing straight into
+                    // `wait_for_slot` would retry with no delay at all and ignore `Retry-After`.
                     let penalty = self.pacer.penalty(std::time::Instant::now());
                     if !penalty.is_zero() {
                         tokio::time::sleep(penalty).await;
                     }
                     continue;
                 }
-                // Leave the loop so the retry-exhausted error below is what the caller sees.
-                // This used to fall through to the decoder instead, which made that error
-                // unreachable: a provider throttling us persistently was reported as
-                // "decoding AniList GraphQL response" — a parse bug, on a body we never
-                // expected to be JSON — and the one fact an operator needs, that AniList is
-                // rate-limiting this deployment, appeared nowhere (F-09).
+                // Break rather than fall through to the decoder: persistent throttling used to
+                // surface as a JSON parse error, hiding the actual rate-limit cause.
                 break;
             }
 
@@ -223,14 +208,9 @@ impl AniListClient {
         Err(anyhow!("AniList GraphQL rate-limited after retry"))
     }
 
-    /// Wait for this client's next paced slot.
-    ///
-    /// The pacer is [`tankovault_domain::Pacer`], shared with the crawler's rate limiter
-    /// (ARCH-20). This client used to carry a private minimum-gap mutex with **no persistent
-    /// throttle penalty**: it retried a `429` once and then went straight back to full rate,
-    /// which is the behaviour a provider reads as ignoring them. The shared pacer keeps the
-    /// penalty, so a throttle signal widens every later gap until `AniList` has been quiet for
-    /// a recovery window.
+    /// Wait for this client's next paced slot. Uses the shared [`tankovault_domain::Pacer`],
+    /// which keeps a persistent throttle penalty rather than reverting to full rate after one
+    /// retry, so a `429` widens every later gap until `AniList` has been quiet for a while.
     async fn wait_for_slot(&self) {
         let delay = self.pacer.reserve(std::time::Instant::now());
         if !delay.is_zero() {
@@ -260,8 +240,8 @@ mod tests {
         .expect("client")
     }
 
-    /// A client pointed at a scripted upstream. `min_interval` is the pacer's floor, kept at 1 ms
-    /// so the *penalty* is the only thing a timing assertion below can be measuring.
+    /// A client pointed at a scripted upstream; `min_interval` is kept at 1 ms so a timing
+    /// assertion below measures only the penalty.
     fn client_for(server: &MockServer, min_interval: Duration) -> AniListClient {
         AniListClient::new(
             format!("{}/graphql", server.uri()),
@@ -293,9 +273,8 @@ mod tests {
             .await;
     }
 
-    /// The consent URL used to be assembled with a hand-rolled percent-encoder (ARCH-7). This
-    /// pins that the replacement still escapes everything that would otherwise break the query
-    /// — a redirect URI's `:`, `/` and `?` above all.
+    /// Pins that reserved characters in the redirect URI (`:`, `/`, `?`) are escaped in the
+    /// consent URL query.
     #[test]
     fn the_authorize_url_escapes_every_reserved_character() {
         let url = client("46552", "https://app.example/callback?next=/console").authorize_url();
@@ -307,11 +286,8 @@ mod tests {
         );
     }
 
-    /// The replacement encodes to `application/x-www-form-urlencoded`, which differs from the
-    /// old hand-rolled RFC-3986 encoder in two places: a space becomes `+` rather than `%20`,
-    /// and `~` is escaped. That is the encoding RFC 6749 §3.1 specifies for this endpoint, so
-    /// the difference is the fix rather than a regression — stated here so nobody "corrects"
-    /// it back.
+    /// Pins `application/x-www-form-urlencoded` encoding (space as `+`, `~` escaped) rather than
+    /// RFC-3986 — the encoding RFC 6749 §3.1 specifies, not a regression to "fix" back.
     #[test]
     fn the_authorize_url_uses_form_encoding_not_rfc_3986() {
         let url = client("a b~c", "https://a.example/cb").authorize_url();
@@ -321,10 +297,8 @@ mod tests {
         );
     }
 
-    /// The whole authorization-code grant, asserted as an **exact** body rather than field by
-    /// field: RFC 6749 §4.1.3 names all five members, and a test that only checks the ones it
-    /// remembers would pass with `client_secret` silently dropped — which `AniList` answers with
-    /// a bare `400` that says nothing about which member is missing.
+    /// Asserts the exact grant body (all five RFC 6749 §4.1.3 members): checking only some
+    /// fields would pass even with `client_secret` silently dropped.
     #[tokio::test]
     async fn the_code_exchange_posts_the_authorization_code_grant_and_returns_the_tokens() {
         let server = MockServer::start().await;
@@ -346,9 +320,7 @@ mod tests {
             .expect("the exchange succeeds");
         let after = OffsetDateTime::now_utc();
 
-        // `SecretString` has no `PartialEq` — comparing a secret has to be a deliberate act,
-        // and a failing `assert_eq!` would print it. Here the values are test fixtures, so the
-        // comparison is on the exposed strings.
+        // `SecretString` has no `PartialEq`; exposed here deliberately since these are fixtures.
         assert_eq!(tokens.access_token.expose_secret(), "at-1");
         assert_eq!(
             tokens
@@ -357,8 +329,6 @@ mod tests {
                 .map(ExposeSecret::expose_secret),
             Some("rt-1")
         );
-        // `expires_in` is a duration and `expires_at` an instant; the conversion is the only
-        // arithmetic in this function and is bracketed rather than approximated.
         let expires_at = tokens.expires_at.expect("expires_in yields an expiry");
         assert!(
             expires_at >= before + time::Duration::seconds(3600)
@@ -378,11 +348,8 @@ mod tests {
         );
     }
 
-    /// A refresh is a *different* grant, and the difference is not decoration: RFC 6749 §6 has no
-    /// `redirect_uri` and no `code`, and a server that validates the member set rejects a request
-    /// carrying them. The response half matters as much — `AniList` returns no `refresh_token`
-    /// and no `expires_in` on some refreshes, and both fields are `#[serde(default)]` for that
-    /// reason, so this pins that such a response is a success rather than a decode error.
+    /// RFC 6749 §6's refresh grant has no `redirect_uri`/`code`, and a response lacking
+    /// `refresh_token`/`expires_in` (both `#[serde(default)]`) must still be a success.
     #[tokio::test]
     async fn a_refresh_sends_the_refresh_grant_and_accepts_a_response_carrying_only_a_token() {
         let server = MockServer::start().await;
@@ -416,10 +383,8 @@ mod tests {
         );
     }
 
-    /// The body is the only diagnostic a rejected grant carries — `AniList` answers `400` for a
-    /// spent code, a wrong secret and a mismatched redirect alike, and distinguishes them only in
-    /// the payload. Reporting the status without it would leave an operator with nothing to act
-    /// on, so both halves are asserted.
+    /// `AniList` answers `400` alike for a spent code, wrong secret, or mismatched redirect,
+    /// distinguished only in the body — so both status and body must be asserted.
     #[tokio::test]
     async fn a_rejected_token_request_reports_the_status_and_the_body() {
         let server = MockServer::start().await;
@@ -441,11 +406,8 @@ mod tests {
         assert!(message.contains("invalid_grant"), "no body in: {message}");
     }
 
-    /// The tokenless enrichment path (`graphql_public`) and the per-user path differ in exactly
-    /// one thing, and it is a credential. Both legs are asserted together because the failure
-    /// worth catching is the public path acquiring a bearer token — which would attribute every
-    /// catalogue enrichment call to one user's rate-limit budget, and would still pass a test
-    /// that only checked the authenticated leg.
+    /// Both legs asserted together: the failure worth catching is `graphql_public` acquiring a
+    /// bearer token, attributing catalogue enrichment to one user's rate-limit budget.
     #[tokio::test]
     async fn the_authenticated_call_carries_a_bearer_token_and_the_public_one_carries_none() {
         let server = MockServer::start().await;
@@ -480,9 +442,8 @@ mod tests {
         );
     }
 
-    /// A single `429` is survivable: the retry is what answers the caller. Asserting the *count*
-    /// as well as the value is the point — returning the first response's absence of `data` as an
-    /// error, or retrying twice, both produce a plausible-looking failure this would catch.
+    /// Asserts the request *count* too: returning the first (data-less) response as-is, or
+    /// retrying twice, would both otherwise look like a pass.
     #[tokio::test]
     async fn a_429_is_retried_once_and_the_retry_is_what_answers() {
         let server = MockServer::start().await;
@@ -511,11 +472,8 @@ mod tests {
         );
     }
 
-    /// **This is the test that found the defect.** A provider throttling us persistently used to
-    /// be reported as `decoding AniList GraphQL response`: the second `429` fell through to the
-    /// JSON decoder, which failed on a body nobody ever expected to be JSON, and the retry-
-    /// exhausted error below the loop was unreachable. The operator-facing fact — `AniList` is
-    /// rate-limiting this deployment — appeared nowhere in the logs.
+    /// Pins the bug where a second `429` fell through to the JSON decoder instead of the
+    /// retry-exhausted error, reporting persistent throttling as a decode failure.
     #[tokio::test]
     async fn a_second_429_is_reported_as_rate_limiting_rather_than_as_a_decode_failure() {
         let server = MockServer::start().await;
@@ -541,15 +499,9 @@ mod tests {
         );
     }
 
-    /// ARCH-20's property, and the one the pre-`Pacer` client got wrong: a `429` widens the gap
-    /// for **every later request**, not only for the retry that immediately follows it. The old
-    /// private minimum-gap mutex retried once and then went straight back to full rate, which is
-    /// the behaviour a provider reads as ignoring them.
-    ///
-    /// Measured on a *separate, later* call rather than on the retry, because the retry is slow
-    /// under either implementation. The default policy's first-`429` step is 500 ms against a
-    /// 1 ms floor, so the margin between the two behaviours is three orders of magnitude and the
-    /// lower-bound assertion cannot flake.
+    /// Pins that a `429` widens the gap for every later request, not just the immediate retry —
+    /// the old minimum-gap mutex reverted to full rate right after. Measured on a separate later
+    /// call, not the retry itself, since the retry is slow under either implementation.
     #[tokio::test]
     async fn a_429_widens_the_gap_for_later_requests_not_only_for_the_retry() {
         let server = MockServer::start().await;
@@ -579,9 +531,8 @@ mod tests {
         );
     }
 
-    /// The inverse leg. Without it, a client that slept half a second before every request would
-    /// satisfy the test above while pacing nothing — the assertion there is a lower bound, and a
-    /// lower bound alone cannot tell "backs off after a 429" from "is simply slow".
+    /// The inverse leg: without it, a client that always slept half a second would satisfy the
+    /// lower-bound assertion above while pacing nothing.
     #[tokio::test]
     async fn an_unthrottled_client_pays_no_penalty_gap() {
         let server = MockServer::start().await;
@@ -605,10 +556,8 @@ mod tests {
         );
     }
 
-    /// `Retry-After` is read here and honoured as a *floor* by [`tankovault_domain::Pacer`]. The
-    /// header parse is this module's own code, so it needs its own test: dropping it leaves the
-    /// default 500 ms step, and 2 s is four times that — far enough apart that the lower bound
-    /// distinguishes "honoured the header" from "fell back to the step".
+    /// `Retry-After` parsing is this module's own code and needs its own test: dropping it
+    /// falls back to the 500 ms default step, well short of the 2 s asserted here.
     #[tokio::test]
     async fn a_numeric_retry_after_is_honoured_as_the_floor_for_the_gap() {
         let server = MockServer::start().await;
@@ -660,10 +609,8 @@ mod tests {
         );
     }
 
-    /// The companion to the case above, and the reason the check is `filter(|e| !e.is_null())`
-    /// rather than a bare `get("errors")`: `AniList` sends `"errors": null` on perfectly good
-    /// responses, and treating a present-but-null key as a failure would reject them all. Kept as
-    /// a test because it is the case that looks like a bug and is not (F-11).
+    /// `AniList` sends `"errors": null` on good responses, so the check is
+    /// `filter(|e| !e.is_null())`, not a bare `get("errors")` that would reject them all.
     #[tokio::test]
     async fn a_null_errors_key_beside_real_data_is_a_success() {
         let server = MockServer::start().await;

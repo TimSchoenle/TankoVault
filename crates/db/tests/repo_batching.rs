@@ -1,19 +1,8 @@
-//! Set-based rewrites of the per-row loops the audit found (PERF-3, PERF-13, PERF-15).
+//! Set-based rewrites of per-row loops, tested against a real Postgres for semantics a type
+//! check can't catch — e.g. `ON CONFLICT DO UPDATE` aborting when one statement touches a row
+//! twice.
 //!
-//! Each of these replaced an N-round-trip loop with one statement, and each carries a semantic
-//! trap that only a real Postgres shows:
-//!
-//! - `ON CONFLICT DO UPDATE` **aborts** if one statement touches the same row twice, so every
-//!   batch insert needs a `DISTINCT ON` whose tie-break reproduces what the sequential loop left
-//!   behind. A wrong tie-break is not a crash; it silently persists the wrong row.
-//! - `dedup_claim_many` decides whether a notification is sent at all. If it over-reports the
-//!   claimed set, every rescan re-notifies; if it under-reports, a genuinely new chapter is
-//!   announced to nobody.
-//! - `sync_excluded_series` re-derives the §A.5 exclusion precedence that `is_sync_excluded`
-//!   expresses in SQL. A divergence means a series the user opted out of gets synced anyway, so
-//!   the two are asserted to agree rather than each asserted separately.
-//!
-//! Opt-in: gated behind the `integration` feature because it requires Docker.
+//! Gated behind the `integration` feature (requires Docker).
 #![cfg(feature = "integration")]
 
 use tankovault_config::MatchingConfig;
@@ -26,8 +15,7 @@ use tankovault_test_support::{TestDb, seed};
 use time::OffsetDateTime;
 
 async fn a_series(db: &TestDb, provider_id: ProviderId, title: &str, path: &str) -> SeriesId {
-    // Type and status stay `Unknown`: these tests are about batched writes, not about metadata,
-    // and the builder's `Manga`/`Ongoing` defaults would be a claim this file does not make.
+    // Type/status stay `Unknown`; these tests are about batched writes, not metadata.
     seed::series(db, provider_id, title)
         .source_path(path)
         .content_type(ContentType::Unknown)
@@ -36,9 +24,7 @@ async fn a_series(db: &TestDb, provider_id: ProviderId, title: &str, path: &str)
         .await
 }
 
-// ---------------------------------------------------------------------------
-// PERF-3 — the notifier fan-out
-// ---------------------------------------------------------------------------
+// Notifier fan-out
 
 #[tokio::test]
 async fn dedup_claim_many_returns_only_the_users_that_actually_claimed() {
@@ -58,8 +44,7 @@ async fn dedup_claim_many_returns_only_the_users_that_actually_claimed() {
     expected.sort_by_key(|u| u.as_uuid());
     assert_eq!(first_sorted, expected, "both users are new to this chapter");
 
-    // A rescan republishes the same event. Only the user who has never been notified may claim,
-    // or every rescan re-fires the external channels.
+    // A rescan must not re-claim an already-notified user.
     let second = tracking::dedup_claim_many(&db.pool, &[a, b, c], series, 12.0)
         .await
         .expect("second claim");
@@ -74,8 +59,7 @@ async fn dedup_claim_many_returns_only_the_users_that_actually_claimed() {
 
 #[tokio::test]
 async fn dedup_claim_many_on_an_empty_list_is_a_no_op() {
-    // The fan-out reaches this whenever every watcher has already read past the chapter. It must
-    // not send an `UNNEST` over an empty array (or, worse, a bare statement).
+    // Must not send `UNNEST` over an empty array.
     let db = TestDb::spawn().await;
     let provider = seed::provider(&db, "p1").create().await;
     let series = a_series(&db, provider, "Solo Leveling", "/s/solo").await;
@@ -97,8 +81,7 @@ async fn notifications_create_many_writes_one_row_per_user_and_counts_group() {
         .expect("create notifications");
     assert_eq!(created.len(), 2);
 
-    // Every returned id must belong to the user it was returned with — the pairing is what the
-    // live push uses to address each SSE message.
+    // The returned id must belong to its paired user (SSE addressing depends on it).
     for (user, id) in &created {
         let rows = tracking::notifications_list(&db.pool, *user, 10)
             .await
@@ -114,8 +97,7 @@ async fn notifications_create_many_writes_one_row_per_user_and_counts_group() {
     assert_eq!(counts.get(&a), Some(&1));
     assert_eq!(counts.get(&b), Some(&1));
 
-    // A user with nothing unread is absent from the map rather than present as zero — the
-    // grouped query cannot invent a row, and the caller has to treat a miss as 0.
+    // Absent from the map, not zero — `GROUP BY` can't invent a row.
     let c = db.seed_user("c", &[], AccountStatus::Active).await;
     let counts = tracking::notifications_unread_counts(&db.pool, &[c])
         .await
@@ -123,20 +105,16 @@ async fn notifications_create_many_writes_one_row_per_user_and_counts_group() {
     assert!(!counts.contains_key(&c));
 }
 
-// ---------------------------------------------------------------------------
-// PERF-13 — the sync reconciliation prefetch and batch upserts
-// ---------------------------------------------------------------------------
+// Sync reconciliation prefetch and batch upserts
 
 /// The prefetched exclusion set must agree with the single-series check on every combination of
-/// (on watchlist?, blanket flag, per-provider override) — that is the §A.5 precedence, and a
-/// divergence syncs a series the user opted out of.
+/// watchlist membership, blanket flag and per-provider override.
 #[tokio::test]
 async fn sync_excluded_series_agrees_with_the_single_series_check() {
     let db = TestDb::spawn().await;
     let provider = seed::provider(&db, "p1").create().await;
     let user = db.seed_user("reader", &[], AccountStatus::Active).await;
 
-    // Six series covering the precedence matrix.
     let mut cases: Vec<(SeriesId, &str)> = Vec::new();
     for (i, label) in [
         "not-on-watchlist",
@@ -168,8 +146,7 @@ async fn sync_excluded_series_agrees_with_the_single_series_check() {
                     .await
                     .expect("blanket exclude");
             }
-            // Same action as "override-only"; the cases differ in whether the series is on the
-            // watchlist at all, which is set above.
+            // Same action as "override-only"; differs only in watchlist membership, set above.
             "override-excludes" | "override-only" => {
                 tracking::set_sync_override(&db.pool, user, *series, "p1", true)
                     .await
@@ -252,10 +229,8 @@ async fn progress_and_status_prefetches_match_the_per_series_reads() {
 
 #[tokio::test]
 async fn upsert_mappings_lets_the_last_external_id_win() {
-    // `sync_mappings` is keyed on `(series_id, provider)`, so two remote ids resolving to one
-    // series is a same-row-twice conflict. The sequential loop left the *last* id in place;
-    // without `DISTINCT ON … ORDER BY ord DESC` the statement would either abort or persist an
-    // arbitrary one.
+    // Two remote ids resolving to one `(series_id, provider)` row is a same-row-twice conflict;
+    // `DISTINCT ON … ORDER BY ord DESC` must keep the last one.
     let db = TestDb::spawn().await;
     let provider = seed::provider(&db, "p1").create().await;
     let series = a_series(&db, provider, "Solo Leveling", "/s/solo").await;
@@ -282,9 +257,8 @@ async fn upsert_mappings_lets_the_last_external_id_win() {
 
 #[tokio::test]
 async fn upsert_remote_entries_persists_nullable_columns_and_survives_a_duplicate_id() {
-    // `start_year` and `series_id` travel as value + present-flag arrays because sqlx cannot bind
-    // `Vec<Option<_>>` to a Postgres array. Getting that wrong would store 0 / the nil UUID
-    // instead of NULL, which the admin console reads as a real year and a real series.
+    // Nullable columns travel as value + present-flag arrays (sqlx can't bind `Vec<Option<_>>`);
+    // getting this wrong stores 0 / the nil UUID instead of NULL.
     let db = TestDb::spawn().await;
     let provider = seed::provider(&db, "p1").create().await;
     let series = a_series(&db, provider, "Solo Leveling", "/s/solo").await;
@@ -336,9 +310,7 @@ async fn upsert_remote_entries_persists_nullable_columns_and_survives_a_duplicat
     );
 }
 
-// ---------------------------------------------------------------------------
-// PERF-15 — chunked catalogue stub registration
-// ---------------------------------------------------------------------------
+// Chunked catalogue stub registration
 
 #[tokio::test]
 async fn register_source_stubs_registers_once_and_is_idempotent() {
@@ -358,8 +330,7 @@ async fn register_source_stubs_registers_once_and_is_idempotent() {
             .expect("first registration");
     assert_eq!(registered, 4, "every fresh entry is reported registered");
 
-    // A re-scan must find everything known and register nothing — this is the path that used to
-    // be the only cheap one, and it has to stay cheap *and* correct after the chunking change.
+    // A re-scan must register nothing.
     let again = register_source_stubs(&db.pool, provider, &entries, &MatchingConfig::default())
         .await
         .expect("second registration");
@@ -368,8 +339,7 @@ async fn register_source_stubs_registers_once_and_is_idempotent() {
 
 #[tokio::test]
 async fn stubs_sharing_a_normalized_title_attach_to_one_canonical_series() {
-    // Canonicalisation inside a chunk must still see the series its predecessors created — that
-    // is why the loop stays per-entry inside one transaction rather than being batched away.
+    // Canonicalisation inside a chunk must see series its predecessors just created.
     let db = TestDb::spawn().await;
     let provider = seed::provider(&db, "p1").create().await;
 

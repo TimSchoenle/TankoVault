@@ -20,10 +20,8 @@ macro_rules! str_enum {
         $(#[$meta])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
         #[serde(rename_all = "snake_case")]
-        // With the `sqlx` feature on (enabled by `tankovault-db`), the enum maps to its
-        // native Postgres enum type so repositories can bind/decode it directly and let the
-        // `query!`/`query_as!` macros verify it at compile time. The feature is off for the
-        // WASM frontend, keeping this crate free of the native sqlx stack there.
+        // `sqlx` on maps this to its native Postgres enum so `query!`/`query_as!` verify it at
+        // compile time; off (the WASM frontend) keeps this crate free of the native sqlx stack.
         #[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
         #[cfg_attr(feature = "sqlx", sqlx(type_name = $sql_type))]
         $vis enum $name {

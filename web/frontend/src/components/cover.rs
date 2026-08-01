@@ -7,9 +7,6 @@ use crate::Route;
 use dioxus::prelude::*;
 
 /// A cover image with a typographic fallback when no `cover_url` is stored.
-///
-/// Images are lazily decoded and given explicit `decoding="async"` so a grid of covers never
-/// blocks the main thread while the reader is already scrolling past them.
 #[component]
 pub(crate) fn Cover(url: Option<String>, title: String) -> Element {
     match url {

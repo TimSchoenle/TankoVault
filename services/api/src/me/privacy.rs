@@ -1,25 +1,8 @@
-//! GDPR data-subject endpoints: portability (Art. 20), erasure (Art. 17), and the request
-//! queue that covers everything those two cannot.
+//! GDPR data-subject endpoints: portability (Art. 20), erasure (Art. 17), and a request queue
+//! for rights needing human judgment (rectification, restriction, objection).
 //!
-//! Every handler here acts only on the authenticated principal — there is no path by which one
-//! user reaches another's data, and no operator override. An administrator acting on someone
-//! else's behalf uses [`crate::admin::privacy`], which has different permissions and a
-//! different audit action; conflating them would leave the trail unable to answer "who asked
-//! for this export?".
-//!
-//! The export and erasure endpoints are classified `RouteClass::Expensive` by the rate limiter
-//! (see [`crate::route_classifier`]): an export assembles a dozen table scans, and an erasure
-//! cascades across every user-owned table.
-//!
-//! # Why a request queue exists next to endpoints that already work
-//!
-//! Self-service export and erasure satisfy the two rights people actually exercise, instantly.
-//! They cannot satisfy the rest of Chapter III: rectification, restriction and objection are
-//! decisions a human has to make; Art. 12(3) imposes a one-month deadline, which needs a
-//! tracked object with a due date rather than a call that either happened or did not; and
-//! Art. 5(2) requires the controller to be able to *demonstrate* it responded. When self-service
-//! erasure is switched off, the queue is also what preserves the right — the request is still
-//! accepted, it just becomes mediated.
+//! Every handler acts only on the authenticated principal; administrator-initiated actions go
+//! through [`crate::admin::privacy`] instead.
 
 use crate::audit::{audit, audit_failure};
 use crate::error::{ApiError, ApiResult};
@@ -59,8 +42,7 @@ use uuid::Uuid;
 pub async fn export_data(State(state): State<AppState>, user: AuthUser) -> ApiResult<Response> {
     let export = tankovault_db::repo::privacy::export_user_data(&state.pool, user.user_id).await?;
 
-    // Auditing the export is itself a privacy control: it is the highest-value artefact
-    // this system produces, and an unexplained one is worth investigating.
+    // The export is itself the highest-value artefact this system produces, so it's audited too.
     audit(
         &state,
         &user,
@@ -125,8 +107,7 @@ pub async fn delete_account(
     let account = tankovault_db::repo::users::get(&state.pool, user.user_id).await?;
 
     if req.confirm_username.trim() != account.username {
-        // Audit the refusal: repeated failed deletion attempts on an account are a signal
-        // worth having, and this is the one branch where the user's intent is in doubt.
+        // Repeated failed deletion attempts are a signal worth auditing.
         audit_failure(
             &state,
             &user,
@@ -140,9 +121,8 @@ pub async fn delete_account(
         ));
     }
 
-    // Record *before* deleting. Afterwards the actor no longer exists and the insert's
-    // `actor_id` would be rejected or nulled — losing the one record that explains why
-    // the account is gone.
+    // Record before deleting: afterwards the actor no longer exists and `actor_id` would be
+    // rejected or nulled, losing the record of why the account is gone.
     audit(
         &state,
         &user,
@@ -162,9 +142,7 @@ pub async fn delete_account(
 
 /// Resolve the user's open requests as completed, immediately before their account is erased.
 ///
-/// Best-effort: a failure here must not block someone exercising Art. 17. The consequence of
-/// missing it is a queue entry whose subject is gone, which the operator queue already renders
-/// as such.
+/// Best-effort: a failure here must not block someone exercising Art. 17.
 async fn close_open_requests_for_self_erasure(
     state: &AppState,
     user_id: tankovault_domain::UserId,

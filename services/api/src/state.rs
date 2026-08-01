@@ -1,17 +1,7 @@
 //! Shared application state and the authenticated-principal extractor.
 //!
-//! # Authorization model
-//!
-//! Every privileged handler asks for a named capability —
-//! `user.require(Permission::ProvidersDelete).await?` — and the capability set is resolved
-//! from the database on each request rather than read out of the access token. See
-//! [`tankovault_domain::permissions`] for why the previous ordered `user < operator < admin`
-//! role was removed rather than extended, and
-//! [`tankovault_db::repo::permissions`] for why resolution is per-request.
-//!
-//! The extractor also refuses a **suspended** account outright, before any capability is
-//! consulted. Suspension is not the absence of permissions: an account with no grants can
-//! still read its own watchlist, which is precisely what a suspended one must not do.
+//! Capabilities are resolved from the database per request, not read from the access token,
+//! and a suspended account is refused before any capability is consulted.
 
 use crate::error::ApiError;
 use axum::extract::{ConnectInfo, FromRequestParts};
@@ -31,16 +21,13 @@ pub struct AppState {
     pub pool: PgPool,
     /// HS256 signing key for access tokens.
     ///
-    /// `Arc<SecretSlice<u8>>`, not `SecretSlice<u8>`: axum clones the whole state on every
-    /// request, and `SecretSlice`'s `Clone` copies the heap allocation — so a bare wrapper
-    /// would scatter a fresh copy of the signing key across the heap per request, which is
-    /// the opposite of what the wrapper is for. The `Arc` keeps exactly one copy, and that
-    /// one copy is what gets zeroized at shutdown.
+    /// `Arc<SecretSlice<u8>>`: axum clones state per request, and `SecretSlice`'s `Clone`
+    /// copies the heap allocation, so a bare wrapper would scatter fresh copies of the key
+    /// across the heap. The `Arc` keeps one copy, zeroized at shutdown.
     pub jwt_secret: Arc<SecretSlice<u8>>,
-    /// Server-side password pepper: a secret mixed into every argon2id hash as its keyed
-    /// input, held here rather than in the database so a database leak alone cannot be
-    /// brute-forced offline. Empty when the operator configured none, which reproduces
-    /// un-peppered hashing for backward compatibility.
+    /// Server-side password pepper: mixed into every argon2id hash, held here rather than the
+    /// database so a leak alone cannot be brute-forced offline. Empty reproduces un-peppered
+    /// hashing for backward compatibility.
     ///
     /// `Arc` for the same reason as [`Self::jwt_secret`].
     pub password_pepper: Arc<SecretSlice<u8>>,
@@ -51,20 +38,12 @@ pub struct AppState {
     /// The external-sync service, for proxying `/v1/me/sync/*` and the admin sync console.
     pub sync: crate::upstream::Upstream,
     /// The scan worker, for proxying the "Test adapter" dry-run.
-    ///
-    /// This used to be a bare `challenge_solver_url` plus the internal token, because the
-    /// dry-run ran *here* and built its own fetch stack — which is what linked `wreq` and
-    /// `BoringSSL` into this binary alongside `rustls` (PERF-18). The worker already carries
-    /// that stack, so the dry-run moved there and this is an ordinary proxy like the two
-    /// above.
     pub worker: crate::upstream::Upstream,
-    /// Core-NATS bus for relaying live per-user notifications over SSE. `None` when NATS
-    /// was unreachable at boot: the live-stream endpoint degrades to `503` while every
-    /// other route (including the durable notifications list) keeps working.
+    /// Core-NATS bus for relaying live per-user notifications over SSE; `None` degrades
+    /// `/v1/me/stream` to `503` while every other route keeps working.
     pub bus: Option<tankovault_bus::Bus>,
-    /// Single-use, 30-second tickets for opening `GET /v1/me/stream` — the credential that
-    /// replaced the access token in that route's query string (SEC-8). Redis-backed where Redis
-    /// is available, per-process otherwise; see [`crate::stream_tickets`].
+    /// Single-use, 30-second tickets for opening `GET /v1/me/stream` — replaces the access
+    /// token in that route's query string. Redis-backed where available, per-process otherwise.
     pub stream_tickets: Arc<dyn crate::stream_tickets::StreamTicketStore>,
 
     /// Where audit records go. A [`tankovault_service::NoopAuditSink`] when the operator
@@ -77,9 +56,7 @@ pub struct AppState {
     /// Whether refresh cookies are marked `Secure` (true in production/TLS).
     pub cookie_secure: bool,
     /// The `WebAuthn` relying party, or `None` when this deployment configured no origin for
-    /// it. `None` is a working state, not a broken one: passkeys are simply unavailable and
-    /// every other credential path is untouched. See [`crate::passkey`] for why an origin
-    /// cannot be inferred from the request.
+    /// it. `None` is a working state, not a broken one — passkeys are simply unavailable.
     pub webauthn: Option<crate::passkey::SharedRelyingParty>,
     /// Transactional email back-end (welcome, password reset). A no-op mailer when email
     /// is unconfigured, so these flows degrade gracefully rather than failing.
@@ -91,9 +68,8 @@ pub struct AppState {
 
 /// Where a request came from, for the audit trail.
 ///
-/// Captured for every authenticated request but persisted only when the operator enabled
-/// the corresponding privacy toggle — the filtering happens in the sink, so a handler
-/// cannot accidentally retain an IP by constructing an event differently.
+/// Persisted only when the operator enabled the privacy toggle — filtering happens in the
+/// sink, so a handler can't accidentally retain an IP.
 #[derive(Debug, Clone, Default)]
 pub struct ClientContext {
     pub ip: Option<String>,
@@ -102,10 +78,8 @@ pub struct ClientContext {
 
 /// Extract [`ClientContext`] on an unauthenticated route.
 ///
-/// Infallible — a missing peer address or `User-Agent` yields `None` rather than an
-/// error, because failing a login request over a missing header would be absurd. Exists so
-/// the credential endpoints, which have no `AuthUser` to carry the context, can still
-/// produce audit records that name where the attempt came from.
+/// Infallible — a missing peer address or `User-Agent` yields `None`, not an error, since
+/// credential endpoints need audit context without an `AuthUser` to carry it.
 impl<S: Send + Sync> FromRequestParts<S> for ClientContext {
     type Rejection = std::convert::Infallible;
 
@@ -117,10 +91,9 @@ impl<S: Send + Sync> FromRequestParts<S> for ClientContext {
 impl ClientContext {
     /// Read the peer address and `User-Agent` from the request.
     ///
-    /// Uses the connection's peer address rather than `X-Forwarded-For`: an audit record
-    /// naming a client-supplied address is worse than one naming none, because it reads
-    /// as authoritative. A deployment behind a proxy should record the real client at the
-    /// proxy, where the value can be trusted.
+    /// Uses the connection's peer address, not `X-Forwarded-For`: a client-supplied address
+    /// that reads as authoritative is worse than none. A proxy deployment should record the
+    /// real client at the proxy, where the value can be trusted.
     pub(crate) fn from_parts(parts: &Parts) -> Self {
         Self {
             ip: parts
@@ -152,9 +125,8 @@ pub struct AuthUser {
 impl AuthUser {
     /// Enforce a single capability, returning `Forbidden` otherwise.
     ///
-    /// A refusal is audited. That is the whole reason this is `async`: an attempt to use a
-    /// privileged endpoint without the capability — the single most interesting thing an audit
-    /// trail can tell you — would otherwise return `403` and leave no trace.
+    /// A refusal is audited — the whole reason this is `async`: an unauthorized attempt is
+    /// the single most interesting thing an audit trail can tell you.
     ///
     /// # Errors
     /// [`ApiError::Forbidden`] if the principal does not hold `required`.
@@ -164,9 +136,8 @@ impl AuthUser {
 
     /// Enforce several capabilities at once.
     ///
-    /// Exists because permissions deliberately do not imply one another: a handler that both
-    /// reads and writes has to ask for both, and asking in one call keeps the audit record for
-    /// a refusal naming *everything* that was missing rather than only the first check to fail.
+    /// Permissions deliberately do not imply one another, so a dual-purpose handler asks for
+    /// both at once — keeping the audit record for a refusal naming everything missing.
     ///
     /// # Errors
     /// [`ApiError::Forbidden`] if any of `required` is missing.

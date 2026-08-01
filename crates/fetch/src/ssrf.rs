@@ -9,16 +9,10 @@
 //!   [`wreq::dns::Resolve`] so the client only ever connects to vetted public IPs —
 //!   closing the DNS-rebinding / redirect-to-internal hole.
 //!
-//! **The policy itself is not here.** The address table, the pre-flight check *and* the
-//! DNS-resolving `validate_and_resolve` all live in [`tankovault_domain::ssrf`], so a service
-//! that must apply the same policy does not have to link this crate's `wreq`/`BoringSSL` stack
-//! to do it — `services/render` and `services/challenge-solver` fetch caller-supplied URLs,
-//! and `services/api` validates a `base_url` before storing one (PERF-18). They are re-exported
-//! here, so this crate's own call sites are unchanged.
-//!
-//! What genuinely belongs to this crate is [`SsrfResolver`] below: it is a `wreq::dns::Resolve`,
-//! so it can only exist where `wreq` does, and it is what re-checks every address at connect
-//! time and on every redirect hop.
+//! **The policy itself is not here** — it lives in [`tankovault_domain::ssrf`] and is
+//! re-exported, so a service needing the same checks does not have to link this crate's
+//! `wreq`/`BoringSSL` stack. What belongs here is [`SsrfResolver`]: a `wreq::dns::Resolve`,
+//! which can only exist where `wreq` does.
 
 use std::net::SocketAddr;
 use wreq::dns::{Addrs, Name, Resolve, Resolving};

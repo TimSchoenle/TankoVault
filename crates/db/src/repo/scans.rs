@@ -1,16 +1,8 @@
-//! Scan run + task repository. The task row is the truth for **progress and audit**;
-//! the `JetStream` stream is the truth for **dispatch** (design §2). A durable
-//! `SELECT ... FOR UPDATE SKIP LOCKED` claim path is provided as the fallback/audit
-//! mechanism when the broker is unavailable.
+//! Scan run + task repository. The task row is the truth for progress/audit; `JetStream` is
+//! the truth for dispatch, with a `FOR UPDATE SKIP LOCKED` claim path as fallback.
 //!
-//! # Settle once
-//!
-//! `scan_runs.done_tasks` / `.failed_tasks` are counts of *tasks*, not of settle calls, and
-//! [`finalize_if_complete`] compares their sum against `total_tasks` to decide a run is over.
-//! That only holds if a task can be counted at most once, so every statement that settles a task
-//! ([`complete_task`], [`fail_task`], [`skip_task`]) and the claim that precedes it
-//! ([`claim_task`]) excludes the same three terminal states. Delivery is at-least-once, so this
-//! is a live path, not a theoretical one: see `crates/db/tests/repo_scans.rs`.
+//! Settle-once: every claim/settle statement excludes the same three terminal states, so a
+//! task counts toward `done_tasks`/`failed_tasks` at most once (`tests/repo_scans.rs` pins this).
 
 use crate::error::{DbError, DbResult};
 use serde_json::Value as Json;
@@ -529,9 +521,8 @@ pub async fn recent_failed_tasks<'e, E: PgExecutor<'e>>(
 
 /// Mark a task skipped (unchanged content, no work needed) and count it as done.
 ///
-/// Same settle-once guard as [`complete_task`]. `failed` joined the exclusion list here: it was
-/// the one terminal state this statement did not exclude, so a failed task could be skipped
-/// afterwards and add a `done_tasks` count next to its `failed_tasks` one.
+/// Same settle-once guard as [`complete_task`]; excluding `failed` here too stops a failed task
+/// from later being skipped and adding a `done_tasks` count next to its `failed_tasks` one.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable; the silent-no-op and

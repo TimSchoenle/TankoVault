@@ -1,9 +1,6 @@
 //! Per-provider crawl politeness: request rate, concurrency, crawl delay, and the browser
-//! identity presented to the provider.
-//!
-//! Operators may tune these **downward** (more polite) but a set of hard ceilings
-//! bound them so no configuration can crawl a provider more aggressively than the
-//! system permits (design §9 "operator-tunable downward … bounded by hard ceilings").
+//! identity presented to the provider. Operators may tune these downward only — hard
+//! ceilings bound how aggressively any configuration can crawl a provider.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -12,12 +9,9 @@ use utoipa::ToSchema;
 pub const MAX_RPS: f64 = 4.0;
 /// Hard **lower** bound on requests-per-second: one request every 1000 seconds.
 ///
-/// A floor sounds like the opposite of politeness and is not — it exists because the consumer
-/// turns this into a *period*. [`Politeness::clamped`] used to clamp a non-positive `rps` to
-/// [`f64::MIN_POSITIVE`], whose reciprocal is `4.5e307` seconds; `Duration::from_secs_f64`
-/// cannot represent that and **panics**, so a provider saved with `rps: 0` took the worker
-/// down at fetcher construction rather than crawling slowly. Anything below this is
-/// indistinguishable from "switch the provider off", which is what the `active` flag is for.
+/// A floor, not just a ceiling: the consumer turns `rps` into a *period*, and a non-positive
+/// value's reciprocal overflows `Duration::from_secs_f64`, which panics rather than saturating.
+/// Anything below this is indistinguishable from "off", which is what `active` is for.
 pub const MIN_RPS: f64 = 0.001;
 /// Hard upper bound on concurrent in-flight requests for any single provider, per worker
 /// process.
@@ -105,14 +99,11 @@ impl Politeness {
         Some(BrowserEmulation::Chrome)
     }
 
-    /// Clamp all tunables into policy. Returns a value guaranteed to be usable regardless of
-    /// what was configured, which is the contract `crates/fetch` relies on
-    /// — the fetcher takes these numbers without re-validating them.
+    /// Clamp all tunables into policy — `crates/fetch` takes these numbers without
+    /// re-validating them, so the result must be usable regardless of what was configured.
     ///
-    /// Both bounds matter, not only the ceiling. See [`MIN_RPS`] for what a floor is doing in a
-    /// politeness policy, and note that a non-finite `rps` is replaced rather than clamped:
-    /// `NaN` satisfies neither `>` nor `<`, and `f64::clamp` returns `NaN` for a `NaN` input, so
-    /// it would otherwise pass through every guard here untouched.
+    /// A non-finite `rps` is replaced rather than clamped: `NaN` satisfies neither `>` nor
+    /// `<`, and `f64::clamp` returns `NaN` unchanged, so it would pass every guard here untouched.
     #[must_use]
     pub fn clamped(mut self) -> Self {
         self.rps = if self.rps.is_finite() {
@@ -176,19 +167,10 @@ mod tests {
         assert_eq!(p.concurrency, 1);
     }
 
-    /// A clamped rate must survive being turned into a **period**, which is the only thing any
-    /// consumer does with it.
-    ///
-    /// This was a live panic. `clamped` used to map a non-positive `rps` to `f64::MIN_POSITIVE`
-    /// and the test above asserted only `p.rps > 0.0`, which that satisfies — so a provider
-    /// saved with `"rps": 0` produced a period of `4.5e307` seconds, and
-    /// `Duration::from_secs_f64` panics rather than saturating. The worker died at fetcher
-    /// construction, before a single request, and the guard whose entire job was to make the
-    /// value safe is what produced it.
-    ///
-    /// `NaN` was worse: it satisfies neither `>` nor `<=`, so the old guard never fired, and
-    /// `f64::clamp` returns `NaN` unchanged — it passed through untouched into the same panic.
-    /// Found while writing the `# Panics` section for `RateLimitedFetcher::new` (OPS-2.2).
+    /// A clamped rate must survive being turned into a period. `rps: 0` used to clamp to
+    /// `f64::MIN_POSITIVE`, whose reciprocal overflowed `Duration::from_secs_f64` and panicked
+    /// the worker at fetcher construction; `NaN` hit the same panic by skipping the guard
+    /// entirely, since it satisfies neither `>` nor `<=`.
     #[test]
     fn a_clamped_rate_survives_conversion_to_a_period() {
         for rps in [

@@ -5,20 +5,17 @@ use serde::Deserialize;
 /// Append-only audit trail for privileged and privacy-relevant actions (design §16).
 #[derive(Debug, Clone, Deserialize)]
 pub struct AuditConfig {
-    /// Write audit records. When `false` a no-op sink is installed and call sites stay
-    /// unchanged — auditing is a wiring decision, never an `if` in a handler.
+    /// Write audit records; `false` installs a no-op sink instead of branching at call sites.
     #[serde(default = "crate::default_true")]
     pub enabled: bool,
-    /// Record the client IP alongside each event. Off by default: an IP is personal data
-    /// under GDPR Art. 4(1), so retaining it is an explicit operator decision.
+    /// Record the client IP. Off by default: an IP is personal data under GDPR Art. 4(1).
     #[serde(default)]
     pub record_ip: bool,
     /// Record the client `User-Agent` alongside each event.
     #[serde(default)]
     pub record_user_agent: bool,
-    /// Days to retain audit records before the retention sweep deletes them. `0` disables
-    /// the sweep and keeps records forever, which is rarely what a GDPR-scoped deployment
-    /// wants (storage limitation, Art. 5(1)(e)).
+    /// Days to retain audit records before the sweep deletes them. `0` disables the sweep
+    /// (rarely right under GDPR Art. 5(1)(e), storage limitation).
     #[serde(default = "AuditConfig::default_retention_days")]
     pub retention_days: u32,
     /// Hours between retention sweeps. Ignored when [`Self::retention_days`] is `0`.

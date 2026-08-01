@@ -7,10 +7,8 @@ use crate::loader::is_production;
 
 /// Edge hardening applied by the shared middleware stack.
 ///
-/// `struct_excessive_bools` is allowed deliberately. The lint exists to catch boolean
-/// *parameters* that should have been an enum; these are independent operator toggles that
-/// map one-to-one onto `TANKOVAULT_SECURITY__*` environment variables. Collapsing them into
-/// an enum or a bitflag would make the config surface harder to write, not easier.
+/// `struct_excessive_bools` allowed: these are independent operator toggles mapped 1:1 onto
+/// `TANKOVAULT_SECURITY__*` env vars, not boolean parameters that should be an enum.
 #[derive(Debug, Clone, Deserialize)]
 #[expect(
     clippy::struct_excessive_bools,
@@ -26,8 +24,8 @@ pub struct SecurityConfig {
     /// Abort a request that has not produced a response within this many seconds.
     #[serde(default = "SecurityConfig::default_request_timeout_secs")]
     pub request_timeout_secs: u64,
-    /// Emit `Strict-Transport-Security`. Only meaningful when the edge is reached over
-    /// TLS; sending it over plain HTTP is ignored by browsers but still misleading.
+    /// Emit `Strict-Transport-Security`; meaningless without TLS (browsers ignore it over
+    /// plain HTTP).
     #[serde(default)]
     pub hsts: bool,
     /// `max-age` for the HSTS header, seconds (default: two years, the preload minimum).
@@ -37,23 +35,15 @@ pub struct SecurityConfig {
     /// `X-Frame-Options`, `Referrer-Policy`, `Cross-Origin-Resource-Policy`).
     #[serde(default = "crate::default_true")]
     pub security_headers: bool,
-    /// Accept and echo an inbound `X-Request-Id` instead of always minting a fresh one.
-    /// Requires a trusted proxy for the same reason as
-    /// [`crate::RateLimitConfig::trust_forwarded_for`] — a client-supplied id can otherwise
-    /// be used to collide or poison log correlation.
+    /// Accept an inbound `X-Request-Id` instead of minting one. Requires a trusted proxy —
+    /// a client-supplied id could otherwise poison log correlation.
     #[serde(default)]
     pub trust_request_id: bool,
-    /// Serve the browsable API documentation (`/scalar`) and the `OpenAPI` document.
+    /// Serve the browsable API docs (`/scalar`) and the `OpenAPI` document.
     ///
-    /// **Defaults to off in the production profile and on everywhere else**, which is why
-    /// this default is a function that reads the environment rather than a literal: the
-    /// useful behaviour differs between the two, and requiring an operator to remember a
-    /// third variable to switch it off is how it stays on.
-    ///
-    /// Unauthenticated, it hands an attacker the complete admin surface — every
-    /// `/v1/admin/*` path, the permission vocabulary and exact request bodies — without a
-    /// single failed probe. That is reconnaissance rather than compromise, but it removes
-    /// the discovery cost of every other weakness.
+    /// Defaults off in production, on elsewhere (hence a function, not a literal): left on,
+    /// it hands an attacker the whole admin surface — every `/v1/admin/*` path, the
+    /// permission vocabulary, exact request bodies — with no failed probe.
     #[serde(default = "SecurityConfig::default_expose_api_docs")]
     pub expose_api_docs: bool,
 }

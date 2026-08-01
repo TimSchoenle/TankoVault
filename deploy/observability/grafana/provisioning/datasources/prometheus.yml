@@ -1,8 +1,5 @@
-# Grafana datasource provisioning.
-#
-# The `uid` is fixed rather than generated because the committed dashboard JSON references it. A
-# generated uid would make the dashboard import cleanly and then render every panel as "datasource
-# not found", which is worse than failing.
+# `uid` is fixed, not generated: the committed dashboard JSON references it, and a generated one
+# would render every panel "datasource not found" instead of failing the import.
 apiVersion: 1
 
 datasources:
@@ -12,13 +9,10 @@ datasources:
     access: proxy
     url: http://prometheus:9090
     isDefault: true
-    # Provisioned datasources are read-only in the UI by default; making that explicit means an
-    # operator who edits one in the browser is told why it reverts on restart instead of
-    # discovering it later.
     editable: false
     jsonData:
-      # Must match `global.scrape_interval` in prometheus.yml, or Grafana's `$__rate_interval`
-      # picks a window narrower than the scrape interval and every `rate()` renders as gaps.
+      # Must match global.scrape_interval in prometheus.yml or $__rate_interval picks a window
+      # narrower than the scrape interval and every rate() renders as gaps.
       timeInterval: 15s
       httpMethod: POST
       prometheusType: Prometheus

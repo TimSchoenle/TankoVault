@@ -1,23 +1,10 @@
-//! Server-directed backoff: honour a provider telling us to slow down.
+//! Server-directed backoff: honours a provider's `429`/`503` + `Retry-After`, distinct from
+//! the rate limiter's self-chosen budget.
 //!
-//! The rate limiter enforces the crawl budget *we* chose; this layer enforces the one the
-//! **provider** asks for. On a `429 Too Many Requests` or `503 Service Unavailable` that
-//! survived challenge solving, it waits — preferring the server's own `Retry-After` over
-//! our guess — and retries, instead of spending the rest of the crawl hammering a host that
-//! has explicitly asked us to stop. At catalogue scale (tens of thousands of requests per
-//! run) this is the difference between a crawl that degrades politely and one that earns a
-//! block.
-//!
-//! **Placement matters.** This sits *outside* [`crate::SolvingFetcher`], not inside the
-//! inner [`crate::RetryingFetcher`]: 429 and 503 are also two of the three statuses
-//! Cloudflare serves interstitials with (`detect_challenge`'s `CHALLENGE_STATUSES`), so a
-//! layer below the solver could not tell "slow down" from "solve this" and would burn every
-//! attempt retrying a challenge the solver was about to handle. By the time a response
-//! reaches this layer the solver has already had its turn, so a remaining 429/503 is a
-//! genuine rate-limit or outage signal.
-//!
-//! It also sits *outside* [`crate::RateLimitedFetcher`], so each retry re-acquires a rate
-//! token and a concurrency permit rather than slipping past the crawl budget.
+//! Sits outside [`crate::SolvingFetcher`] — 429/503 are also two of the three challenge
+//! statuses, so a layer below the solver couldn't tell "slow down" from "solve this" — and
+//! outside [`crate::RateLimitedFetcher`], so each retry re-acquires a token instead of
+//! slipping past the crawl budget.
 
 use crate::error::FetchError;
 use crate::fetcher::Fetcher;
@@ -56,9 +43,8 @@ impl<F> BackoffFetcher<F> {
 
     /// Jittered exponential backoff for `attempt` (1-based), capped at `max_delay`.
     ///
-    /// The policy itself lives in [`crate::jitter`], shared with [`crate::retry`] — the two
-    /// layers differ in *what* they retry, not in how long they wait, and this was the same
-    /// eleven lines in both files.
+    /// Shared with [`crate::retry`] via [`crate::jitter`] — the two layers differ in *what*
+    /// they retry, not in how long they wait.
     fn backoff(&self, attempt: u32) -> Duration {
         crate::jitter::full_jitter_now(self.base_delay, self.max_delay, attempt)
     }

@@ -1,9 +1,7 @@
 //! Togglable Prometheus metrics.
 //!
-//! [`MetricsRegistry`] is the on/off switch. When metrics are disabled the recorder is
-//! never installed, so `metrics::counter!` calls throughout the workspace dispatch to the
-//! crate's default no-op recorder and retain nothing — domain code needs no `if`, and
-//! there is no hidden memory cost for a metric nobody scrapes.
+//! [`MetricsRegistry`] is the on/off switch: when disabled, no recorder is installed and
+//! `metrics::counter!` calls dispatch to a no-op, so domain code needs no `if`.
 
 use crate::ServiceError;
 use axum::extract::{MatchedPath, Request};
@@ -14,11 +12,8 @@ use std::sync::Arc;
 use std::time::Instant;
 use tankovault_config::MetricsConfig;
 
-/// Histogram bucket boundaries for HTTP request latency, in seconds.
-///
-/// Chosen to straddle the interesting range for this system: sub-millisecond cache hits
-/// through to the multi-second proxied sync calls, with tight resolution around the
-/// 10ms–1s band where most handlers actually live.
+/// Histogram bucket boundaries for HTTP request latency, in seconds. Tight resolution
+/// around the 10ms-1s band where most handlers live.
 const LATENCY_BUCKETS: &[f64] = &[
     0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0,
 ];
@@ -47,9 +42,8 @@ pub struct MetricsRegistry {
 impl MetricsRegistry {
     /// Install the process-wide Prometheus recorder if `cfg` enables it.
     ///
-    /// Latency histograms are registered with explicit buckets rather than the exporter's
-    /// default summary/quantile behaviour, so recording rules can aggregate across
-    /// replicas — quantiles cannot be averaged, buckets can.
+    /// Uses explicit latency buckets, not the exporter's default quantiles: quantiles
+    /// cannot be averaged across replicas by a recording rule, buckets can.
     ///
     /// # Errors
     /// Returns [`ServiceError::Metrics`] if a recorder is already installed.
@@ -135,16 +129,9 @@ impl MetricsRegistry {
 
 /// Holds one unit of [`HTTP_IN_FLIGHT`] for as long as it is alive.
 ///
-/// The decrement lives in `Drop` rather than at the end of [`track_request`] because a request
-/// future does not always *finish*: when a client disconnects, hyper drops the service future
-/// mid-`await` and every statement after it is simply never executed. A hand-written decrement
-/// therefore leaked one unit per disconnect, and the gauge climbed monotonically on a perfectly
-/// healthy process.
-///
-/// That was not a rare edge case here. `/v1/me/stream` is a long-lived SSE response whose
-/// *normal* end is the browser closing it, so on `api` and `frontend` the leak happened on
-/// essentially every notification stream — which made the one metric describing concurrency
-/// unusable, and would have made any alert built on it fire on uptime rather than on load.
+/// Decrement lives in `Drop`, not at the end of [`track_request`]: a client disconnect
+/// drops the service future mid-`await`, skipping any statement placed after it, which
+/// previously leaked one unit per disconnect on every SSE stream.
 struct InFlightGuard;
 
 impl InFlightGuard {
@@ -162,19 +149,10 @@ impl Drop for InFlightGuard {
 
 /// Record per-request metrics around the rest of the stack.
 ///
-/// Labels use axum's [`MatchedPath`] (`/v1/series/{id}`) rather than the concrete URI, so
-/// cardinality stays bounded by the size of the route table instead of growing with every
-/// distinct id a client asks for. Requests that match no route are folded into a single
-/// `unmatched` label for the same reason — an unrouted path is attacker-controlled and
-/// would otherwise be an unbounded label source.
-///
-/// **A request the client abandons is counted in [`HTTP_IN_FLIGHT`] but not in
-/// [`HTTP_REQUESTS`] or [`HTTP_DURATION`].** Those two are recorded from the response, and a
-/// dropped future produces none — so a cancelled request has no status to attribute and no
-/// meaningful duration (the elapsed time would measure how long the client stayed, not how long
-/// the work took). The consequence worth knowing when reading a dashboard is that SSE streams
-/// are largely invisible in the request counter and the latency histogram, while being fully
-/// visible in the in-flight gauge.
+/// Labels use axum's [`MatchedPath`], not the concrete URI, so cardinality stays bounded by
+/// the route table; unmatched (attacker-controlled) paths fold into `unmatched`. An abandoned
+/// request is counted in [`HTTP_IN_FLIGHT`] but not [`HTTP_REQUESTS`]/[`HTTP_DURATION`], which
+/// record from a response a dropped future never produces.
 pub async fn track_request(req: Request, next: Next) -> Response {
     let method = req.method().clone();
     let route: String = req
@@ -227,17 +205,8 @@ mod tests {
         assert!(!registry.is_enabled());
     }
 
-    /// The gauge is released when the guard is **dropped**, not when the request completes.
-    ///
-    /// The bug: `track_request` decremented `http_requests_in_flight` on the line after
-    /// `next.run(req).await`. A client that disconnects causes hyper to drop that future
-    /// mid-await, so the decrement never ran and the gauge leaked one unit per abandoned
-    /// request. `/v1/me/stream` is an SSE response whose normal end *is* a client disconnect,
-    /// so on `api` the gauge climbed with every notification stream ever opened and reported
-    /// hundreds of concurrent requests on an idle process.
-    ///
-    /// Do not move the decrement back inline "for clarity": a `Drop` impl is the only place
-    /// that runs on both paths.
+    /// Bug pinned: an inline decrement after `next.run(req).await` never ran on a dropped
+    /// future, leaking one unit per abandoned SSE stream. Do not move it back inline.
     #[test]
     fn in_flight_gauge_is_released_when_the_request_future_is_dropped() {
         // A local recorder, so this test observes real gauge values without installing the

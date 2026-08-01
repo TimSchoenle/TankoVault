@@ -1,13 +1,9 @@
 //! Appearance preferences (`DESIGN_SPEC` §8).
 //!
-//! Each knob is a `data-*` attribute on `<html>` that swaps a block of CSS custom properties
-//! (see the `[data-theme]` / `[data-accent]` / `[data-density]` / `[data-cover]` rules in
-//! `input.css`), mirrored into a `tv-*` `localStorage` key so it survives a reload.
-//!
-//! The *initial* application deliberately does not happen here. It runs from an inline script
-//! in `index.html`, before the first paint — a WASM app cannot set the attribute until the
-//! bundle has downloaded, instantiated and rendered, which is long enough to flash the wrong
-//! theme at the reader. This module only handles changes made while the app is running.
+//! Each knob is a `data-*` attribute on `<html>`, mirrored into a `tv-*` `localStorage` key so
+//! it survives a reload. The *initial* application runs from an inline script in `index.html`,
+//! before first paint, since a WASM app can't set the attribute soon enough to avoid a flash of
+//! the wrong theme — this module only handles changes made while the app is running.
 
 use dioxus::prelude::*;
 

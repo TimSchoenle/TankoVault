@@ -1,29 +1,5 @@
-//! Developer/ops tasks.
-//!
-//! - `xtask migrate` — apply all pending migrations (used as the deploy migration step).
-//! - `xtask reset`   — drop & recreate the `public` schema, then re-migrate (DESTRUCTIVE,
-//!   local dev only; guarded by `TANKOVAULT_CONFIRM_RESET=1`).
-//! - `xtask seed`    — insert a demo admin user and the built-in provider presets.
-//! - `xtask openapi` — regenerate `openapi.json` (the canonical spec) and the typed Rust
-//!   API client (`crates/api-client/src/lib.rs`) from the api service's `utoipa` schemas via
-//!   `progenitor`. No database needed.
-//! - `xtask ci` — run every offline gate CI runs, in CI's order, stopping at the first
-//!   failure. No database, no Docker, no network; see `ci.rs` for what it deliberately omits.
-//! - `xtask repo-lint` — the repository invariants no compiler or linter can see (a CSP and
-//!   the HTML it governs, a published secret and the code that refuses it). Runs as part of
-//!   `xtask ci`; see `repo_lint.rs` for the rules and why each one exists.
-//! - `xtask config-docs [--check]` — print the `TANKOVAULT_*` surface derived from the config
-//!   structs, or (with `--check`) fail if `docs/CONFIGURATION.md` no longer matches it. No
-//!   database.
-//! - `xtask coverage-ratchet [report.json]` — fail if line coverage has dropped below the
-//!   floor committed in `.github/coverage-floor.txt`. Reads a `cargo llvm-cov report --json`
-//!   document (default `target/llvm-cov/coverage.json`); runs no tests itself. No database.
-//! - `xtask sqlx-prepare [--check]` — regenerate (or verify, with `--check`) the committed
-//!   sqlx offline query cache (`.sqlx/`) so the compile-time-checked query macros in
-//!   `tankovault-db` build without a live database. Wraps `cargo sqlx prepare` (sqlx-cli).
-//!
-//! `migrate`/`reset`/`seed`/`sqlx-prepare` read `DATABASE_URL` from the environment;
-//! `openapi` does not.
+//! Developer/CI entry point: migrations, seeding, OpenAPI regeneration, the offline CI gate,
+//! and the repo-invariant/config-docs/coverage checks. Run with no arguments for usage.
 
 mod ci;
 mod config_docs;
@@ -41,19 +17,14 @@ async fn main() -> anyhow::Result<()> {
         return install_hooks();
     }
 
-    // Every offline gate CI runs, in CI's order. No database, no Docker, no network.
     if cmd == "ci" {
         return ci::run(workspace_root());
     }
 
-    // The invariants no compiler sees: two artefacts that must agree, with nothing else
-    // connecting them. Reads source and deployment files; no database, no network.
     if cmd == "repo-lint" {
         return repo_lint::run(workspace_root());
     }
 
-    // The coverage ratchet. Reads the report `cargo llvm-cov` just wrote and compares it
-    // against the committed floor; needs no database and no network.
     if cmd == "coverage-ratchet" {
         let report = std::env::args()
             .nth(2)
@@ -66,15 +37,13 @@ async fn main() -> anyhow::Result<()> {
         return openapi(check);
     }
 
-    // Does `docs/CONFIGURATION.md` still describe the keys the config structs read? Reads
-    // source and one markdown file; no database, no network.
     if cmd == "config-docs" {
         let check = std::env::args().nth(2).as_deref() == Some("--check");
         return config_docs::run(workspace_root(), check);
     }
 
-    // Regenerate the committed sqlx offline query cache (`.sqlx/`). Shells out to `sqlx-cli`,
-    // which manages its own `DATABASE_URL` connection, so this runs before the pool below.
+    // Shells out to `sqlx-cli`, which manages its own `DATABASE_URL` connection, so this runs
+    // before the pool below is opened.
     if cmd == "sqlx-prepare" {
         let check = std::env::args().nth(2).as_deref() == Some("--check");
         return sqlx_prepare(check);
@@ -107,16 +76,8 @@ async fn main() -> anyhow::Result<()> {
 }
 
 /// Regenerate (or, with `check = true`, verify) the committed sqlx offline query cache in
-/// `.sqlx/`. The repository queries in `tankovault-db` are the compile-time-checked
-/// `query!`/`query_as!` macros; this cache lets `cargo build`/CI/Docker resolve them without
-/// a live database (`SQLX_OFFLINE=true`).
-///
-/// Shells out to `sqlx-cli` (`cargo sqlx prepare`), which connects using `DATABASE_URL` and
-/// must run from the workspace root against a migrated database. Install it once with
-/// `cargo install sqlx-cli --no-default-features --features rustls,postgres`.
-///
-/// With `check = true` (used by CI) nothing is written; the command fails if the cache is
-/// out of date relative to the current queries + schema.
+/// `.sqlx/` via `cargo sqlx prepare`. Needs `DATABASE_URL` pointing at a migrated database and
+/// `sqlx-cli` installed.
 fn sqlx_prepare(check: bool) -> anyhow::Result<()> {
     if std::env::var_os("DATABASE_URL").is_none() {
         anyhow::bail!("DATABASE_URL must be set (point it at a migrated database)");
@@ -161,14 +122,8 @@ fn sqlx_prepare(check: bool) -> anyhow::Result<()> {
 
 /// Install `hooks/pre-commit` into `.git/hooks/pre-commit`.
 ///
-/// This used to run from `xtask/build.rs`, i.e. on **every** `cargo build --workspace`. That is
-/// a build script mutating the developer's git configuration: a side effect outside `OUT_DIR`
-/// and outside the build sandbox, applied without consent, which also breaks hermetic build
-/// environments. The guards were well written; the design was the problem.
-///
-/// It is an explicit command now. The CI gate (`xtask openapi --check`) is what actually
-/// enforces the invariant — this hook only moves the discovery earlier, which is a
-/// convenience the developer should opt into.
+/// An opt-in convenience, not the enforcement: `xtask openapi --check` in CI is what actually
+/// catches a regenerated artefact that never got committed.
 ///
 /// # Errors
 /// When `.git/hooks` cannot be created or written.
@@ -218,35 +173,23 @@ fn install_hooks() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Regenerate the two committed `OpenAPI` artifacts from the api service's `utoipa` schemas:
-///
-/// 1. `openapi.json` — the canonical, pretty-printed `OpenAPI` 3.1 document.
-/// 2. `crates/api-client/src/lib.rs` — the typed Rust client `progenitor` derives from it,
-///    consumed directly by the Dioxus frontend.
-///
-/// With `check = true` nothing is written: each freshly rendered artifact is compared against
-/// the copy on disk and the command exits non-zero on any difference. Used by CI
-/// (`.github/workflows/ci.yml`) and the pre-commit hook (`hooks/pre-commit`) to catch a
-/// backend DTO change that never got regenerated, without a generate-then-`git diff` dance.
+/// Regenerate `openapi.json` and the typed `crates/api-client/src/lib.rs` from the api
+/// service's `utoipa` schemas. With `check = true`, verifies both against disk instead of
+/// writing, and fails on any difference.
 fn openapi(check: bool) -> anyhow::Result<()> {
     let doc = tankovault_api::full_openapi();
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
 
-    // The canonical spec, serialised once and reused as the progenitor input below.
     let spec_value = serde_json::to_value(&doc)?;
     let rendered_spec = serde_json::to_string_pretty(&spec_value)?;
     let spec_path = manifest_dir.join("../openapi.json");
 
-    // Generate the typed Rust client for crates/api-client.
     let mut settings = GenerationSettings::default();
     settings.with_interface(InterfaceStyle::Builder);
-    // Every generated type crosses a Dioxus component boundary on the frontend (props,
-    // signals, memos), all of which require `PartialEq`. progenitor only derives it when
-    // asked, so add it globally here.
+    // Every generated type crosses a Dioxus prop/signal boundary, which requires `PartialEq`.
     settings.with_derive("PartialEq");
 
-    // Map our domain IDs back to the real newtypes instead of generating generic Uuids.
-    // This preserves our labels and logic in the frontend.
+    // Map domain IDs back to their real newtypes instead of generating generic Uuids.
     for id_type in ID_TYPES {
         settings.with_patch(
             id_type,
@@ -270,11 +213,8 @@ fn openapi(check: bool) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to parse OpenAPI for progenitor: {e}"))?;
 
     let tokens = generator.generate_tokens(&spec)?;
-    // Formatted here rather than excluded from formatting: `rustfmt.toml`'s `ignore` key is
-    // nightly-only, so on stable it printed a warning and formatted the file anyway, which
-    // made `cargo fmt --check` permanently red and gated every job downstream of it.
-    // Emitting rustfmt's own output keeps `cargo fmt --check` and `xtask openapi --check`
-    // agreeing on one canonical form.
+    // Piped through rustfmt here (not excluded via `rustfmt.toml`'s nightly-only `ignore`) so
+    // `cargo fmt --check` and `xtask openapi --check` agree on one canonical form.
     let rendered_client = "// Generated by xtask. DO NOT EDIT.\n".to_owned()
         + &rustfmt(&progenitor_impl::space_out_items(tokens.to_string())?)?;
     let client_path = manifest_dir.join("../crates/api-client/src/lib.rs");
@@ -302,11 +242,10 @@ fn openapi(check: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Format `src` with the toolchain's `rustfmt`, reading and writing over stdio.
+/// Format `src` with the toolchain's `rustfmt` over stdio.
 ///
-/// The generated client must be byte-identical to what `cargo fmt` would produce, otherwise
-/// the two check gates contradict each other. `rustfmt` is a rustup component that ships with
-/// every toolchain that can build this workspace, so requiring it here adds no new dependency.
+/// Must match `cargo fmt`'s output exactly, or `xtask openapi --check` and `cargo fmt --check`
+/// would disagree on the same file.
 fn rustfmt(src: &str) -> anyhow::Result<String> {
     use std::io::Write as _;
     use std::process::{Command, Stdio};
@@ -331,8 +270,8 @@ fn rustfmt(src: &str) -> anyhow::Result<String> {
     Ok(String::from_utf8(out.stdout)?)
 }
 
-/// The domain typed-id newtypes, shared by the client `TypePatch`es (extra derives applied in
-/// [`openapi`]) and the `x-rust-type` hints below, so the two lists can never drift.
+/// The domain typed-id newtypes. Shared by the `TypePatch`es in [`openapi`] and the
+/// `x-rust-type` hints below, so the two lists cannot drift apart.
 const ID_TYPES: [&str; 10] = [
     "SeriesId",
     "ChapterId",
@@ -348,11 +287,9 @@ const ID_TYPES: [&str; 10] = [
 
 /// Domain enums re-mapped to their canonical Rust definitions on the frontend.
 ///
-/// `Permission` and `Feature` are deliberately **absent**. Both are `#[non_exhaustive]` and
-/// exist to be matched exhaustively against a specific build's registry; mapping them onto the
-/// domain types would make the generated client refuse to deserialise a response from a server
-/// that has a capability this build does not, turning a routine version skew into a hard
-/// failure. The frontend treats them as their wire strings instead.
+/// `Permission` and `Feature` are absent on purpose: both are `#[non_exhaustive]`, and mapping
+/// them would make the client reject a response naming a capability this build lacks. The
+/// frontend keeps them as wire strings instead.
 const ENUM_TYPES: [&str; 7] = [
     "ContentType",
     "SeriesStatus",
@@ -472,13 +409,12 @@ async fn reset(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
 }
 
 async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
-    // Admin user (idempotent: ignore if already present).
+    // Idempotent: ignore if the admin already exists.
     let password = SecretString::from(
         std::env::var("TANKOVAULT_SEED_ADMIN_PASSWORD")
             .unwrap_or_else(|_| "changeme12345".to_owned()),
     );
-    // Hash with the same pepper the API is configured with, or the seeded admin could never
-    // log in. Absent (the common local-dev case) means no pepper, matching the API default.
+    // Must match the API's configured pepper, or the seeded admin could never log in.
     let pepper = SecretSlice::from(
         std::env::var("TANKOVAULT_AUTH__PASSWORD_PEPPER")
             .unwrap_or_default()
@@ -493,19 +429,15 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
             // whenever a mailer is configured.
             tankovault_db::repo::users::mark_email_verified(pool, u.id).await?;
 
-            // Accounts are created with no permissions — the registration path must never be
-            // able to mint privilege. The seed is the deliberate exception: a fresh deployment
-            // needs one account that can reach the console, and above all one that holds
-            // `users.permissions`, since without it nobody could ever grant anything.
-            //
-            // `granted_by` is `None`: nobody granted these, the installation did.
+            // Accounts otherwise get no permissions — registration must never mint privilege.
+            // The seed is the deliberate exception: without one account holding
+            // `users.permissions`, nobody could ever grant anything. `granted_by` is `None`:
+            // the installation granted these, not another account.
             for permission in tankovault_domain::Permission::all() {
                 tankovault_db::repo::permissions::grant(pool, u.id, *permission, None).await?;
             }
-            // The seed password is printed on purpose: this is a local bootstrap command
-            // whose whole output is "here is the account you can now log in with", and it is
-            // the operator's own value or the published default. `expose_secret` is what
-            // makes that deliberate rather than incidental.
+            // Printed on purpose: this bootstrap command's whole output is the account you can
+            // now log in with, so `expose_secret` here is deliberate.
             println!(
                 "seeded admin user {} with all {} permissions (password: {})",
                 u.username,
@@ -519,9 +451,8 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
         Err(e) => return Err(e.into()),
     }
 
-    // Built-in provider presets (design §7): the custom demonicscans adapter plus the
-    // Madara-configured manhuaus and kunmanga. Operators are responsible for the legality
-    // of crawling; disable or retarget any provider via the admin console.
+    // Built-in provider presets. Operators are responsible for the legality of crawling;
+    // disable or retarget any provider via the admin console.
     for preset in tankovault_adapters::builtin_presets() {
         match tankovault_db::repo::providers::create(
             pool,
@@ -547,11 +478,8 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The workspace root, derived from this crate's manifest directory.
-///
-/// `xtask` sits directly under it by construction (it is a workspace member at `xtask/`), so
-/// this is exact rather than a search — and it is right regardless of the shell's working
-/// directory, which is what lets `cargo run -p xtask -- ci` work from anywhere in the tree.
+/// The workspace root, derived from this crate's manifest directory (`xtask` sits directly
+/// under it), so this works regardless of the shell's current directory.
 fn workspace_root() -> &'static std::path::Path {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -577,18 +505,9 @@ mod tests {
     /// A uniform generator would essentially never produce a `type` or `examples` key, so the
     /// properties below would only ever exercise the pass-through path.
     fn any_document() -> impl Strategy<Value = serde_json::Value> {
-        // A `type` member that is not a string — `[null]`, `[false]`, `[[]]` — is not something
-        // OpenAPI can express, and the converter is provably not idempotent on it. That behaviour
-        // is pinned explicitly by `a_non_string_type_member_is_not_idempotent`, so the generator
-        // must stay inside well-formed documents; otherwise this property just re-derives the same
-        // known edge on a random schedule.
-        //
-        // Restricting `leaf` to strings was not enough to achieve that, and this generator was
-        // failing intermittently because of it: `prop_recursive` can hand a `type` key an *array*,
-        // whose elements are then arbitrary sub-documents rather than leaves — `{"type": [[]]}`.
-        // So `type` gets its own strategy (a string, or 3.1's array-of-strings union) and is
-        // inserted separately from the recursive keys, which makes the invariant structural rather
-        // than hopeful.
+        // `type` gets its own strategy rather than falling out of the recursive generator: a
+        // non-string `type` (e.g. `[null]`) is invalid OpenAPI the converter isn't idempotent
+        // on (see `a_non_string_type_member_is_not_idempotent`), so this must stay well-formed.
         let type_token = prop::sample::select(vec![
             "string", "integer", "boolean", "null", "object", "array",
         ]);
@@ -632,9 +551,8 @@ mod tests {
             downgraded(json!({ "openapi": "3.1.0" }))["openapi"],
             "3.0.3"
         );
-        // Anything that is not the version this converter was written for is left alone, so a
-        // future utoipa emitting 3.2 is a visible failure downstream rather than a silent
-        // mislabelling of a document that was never converted.
+        // Any other version is left alone, so a future utoipa emitting 3.2 fails visibly
+        // instead of being silently mislabelled as converted.
         assert_eq!(
             downgraded(json!({ "openapi": "3.0.3" }))["openapi"],
             "3.0.3"
@@ -643,10 +561,8 @@ mod tests {
 
     #[test]
     fn a_nullable_union_becomes_a_type_plus_a_nullable_flag() {
-        // The conversion this function exists for. `progenitor` reads the 3.0 spelling; getting
-        // it wrong makes every optional field on the generated client either non-optional or
-        // untyped, and the only signal is `openapi --check` comparing two artifacts that were
-        // both produced by this same function.
+        // The conversion this function exists for; getting it wrong makes every optional field
+        // on the generated client either non-optional or untyped.
         let out = downgraded(json!({ "type": ["string", "null"] }));
         assert_eq!(out["type"], "string");
         assert_eq!(out["nullable"], true);
@@ -666,12 +582,8 @@ mod tests {
         );
     }
 
-    /// Pins a **lossy** conversion so that changing it is a deliberate act.
-    ///
-    /// A union of three or more types collapses to the first non-null one and the rest are
-    /// discarded — the generated client will simply not know about them. Our own document does
-    /// not currently emit such a union, which is exactly why this would go unnoticed if it
-    /// started to.
+    /// Pins a **lossy** conversion: a union of three-plus types collapses to the first
+    /// non-null one, silently discarding the rest. Deliberate, not a bug fix waiting to happen.
     #[test]
     fn a_wider_union_collapses_to_its_first_type_and_silently_loses_the_rest() {
         let out = downgraded(json!({ "type": ["string", "integer", "boolean"] }));
@@ -689,20 +601,13 @@ mod tests {
         assert_eq!(downgraded(json!({ "type": 42 })), json!({}));
     }
 
-    /// **Found by the idempotence property below, and pinned rather than fixed.**
+    /// Found by the idempotence property below; pinned rather than fixed.
     ///
-    /// The "pick the first non-null type" branch inserts whatever it found, without checking
-    /// that it is a string. A `type` array holding a non-string member therefore survives the
-    /// first pass as a non-string `type` and is *dropped entirely* by a second, because the
-    /// match at the top of the function has no arm for it. `downgrade(downgrade(v))` is not
-    /// `downgrade(v)`.
-    ///
-    /// Impact today is nil: `utoipa` writes the null type as the string `"null"`, the converter
-    /// runs exactly once per document, and a document like this is not valid `OpenAPI` in the
-    /// first place. It is recorded because the two passes *disagree about the same input*,
-    /// which is the shape of a real bug the moment anything runs the converter twice or feeds
-    /// it a hand-edited spec. The fix belongs in that branch: reject a non-string member rather
-    /// than inserting it.
+    /// The "pick the first non-null type" branch inserts whatever it found without checking
+    /// it's a string, so a non-string member survives one pass and is dropped by a second:
+    /// `downgrade(downgrade(v))` != `downgrade(v)`. No impact today — `utoipa` never emits this
+    /// shape and the converter runs once per document — but it is live the moment anything
+    /// runs it twice or feeds it a hand-edited spec.
     #[test]
     fn a_non_string_type_member_is_not_idempotent() {
         for malformed in [json!({ "type": [null] }), json!({ "type": [false] })] {
@@ -745,10 +650,9 @@ mod tests {
     }
 
     proptest! {
-        /// Idempotence. `openapi --check` compares a freshly generated artifact against the
-        /// committed one, and both go through this function — so if it were not idempotent the
-        /// check would still pass while the committed client drifted from the spec it claims to
-        /// describe. Nothing else in the pipeline would notice.
+        /// Idempotence: `openapi --check` diffs a freshly generated artifact against the
+        /// committed one through this same function, so non-idempotence would let the two
+        /// silently drift apart with nothing else noticing.
         #[test]
         fn the_downgrade_is_idempotent(document in any_document()) {
             let once = downgraded(document);
@@ -756,8 +660,7 @@ mod tests {
             prop_assert_eq!(once, twice);
         }
 
-        /// The rewriter touches only `openapi`, `type` and `examples`. Everything else in the
-        /// document — descriptions, `$ref`s, `x-rust-type` hints, security schemes — must
+        /// The rewriter touches only `openapi`, `type` and `examples`; everything else must
         /// arrive at `progenitor` byte-identical.
         #[test]
         fn keys_the_rewriter_does_not_own_pass_through_unchanged(

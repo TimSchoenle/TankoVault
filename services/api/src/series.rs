@@ -119,10 +119,9 @@ pub async fn list(
     State(state): State<AppState>,
     MultiQuery(params): MultiQuery<ListParams>,
 ) -> ApiResult<(HeaderMap, Json<Vec<SeriesSummary>>)> {
-    // Search is a *parameter* of the browse route rather than a route of its own, so the
-    // feature table cannot express it: `catalogue.search` must be refusable without taking
-    // down browsing, which shares this handler. Refused rather than silently ignored — a
-    // search that quietly returns the unfiltered catalogue is worse than one that says no.
+    // Search is a *parameter* of the browse route, not a route of its own, so the feature
+    // table can't express it. Refused rather than silently ignored — a quietly unfiltered
+    // catalogue is worse than a clear no.
     if params
         .query
         .as_deref()
@@ -133,24 +132,18 @@ pub async fn list(
     }
 
     let limit = params.limit.clamp(1, 100);
-    // `page` had no upper bound, so `page * limit` overflowed `i64` on
-    // `?page=92233720368547758&limit=100`. Release builds have `overflow-checks = false`, so
-    // it wrapped to a negative offset and produced a Postgres error; every debug and CI build
-    // panicked instead — and with `panic = "abort"` a panic in a handler terminates the
-    // *process*, taking every in-flight request on the replica with it.
+    // Unbounded `page * limit` overflows `i64` in release (`overflow-checks = false`),
+    // wrapping to a negative offset; debug/CI builds panic instead, aborting the process.
     //
-    // Both the clamp and the `saturating_mul` are kept: the clamp is the real bound (no
-    // catalogue has 100k pages), the saturation makes the arithmetic total regardless.
+    // Clamp is the real bound; `saturating_mul` keeps the arithmetic total regardless.
     let page = params
         .page
         .or(params.cursor)
         .unwrap_or(0)
         .clamp(0, MAX_PAGE);
-    // Parsed at the edge rather than passed through as text. Previously an unrecognised
-    // `sort` silently fell back to recency and an unrecognised `content_type`/`status`
-    // matched nothing: both answered `200` with a page that looked plausible and was wrong.
-    // Binding the enums as their native Postgres types is also what lets the filters use an
-    // index — `s.content_type::text = $2` cast the column away from every one of them.
+    // Parsed at the edge: an unrecognised `sort`/`content_type`/`status` must fail loudly,
+    // not silently answer `200` with a wrong page. Native Postgres types also let the
+    // filters use an index; casting the column to text would lose it.
     let sort = parse_param(params.sort.as_deref(), "sort")?.unwrap_or_default();
     let content_type = parse_param(params.content_type.as_deref(), "content_type")?;
     let status = parse_param(params.status.as_deref(), "status")?;
@@ -254,27 +247,18 @@ pub async fn detail(
 ) -> ApiResult<Json<SeriesDetail>> {
     use tankovault_db::repo::{catalog, providers, sync};
 
-    // This page used to cost `6 + 2N` serialized round trips, where N is the number of
-    // distinct providers on the series: a `count_full_chapters_across` and a `providers::get`
-    // inside two loops over the provider groups, then four independent tail reads one after
-    // another. The provider lookup in particular was a textbook N+1 over small, operator-
-    // managed reference data. It is now five: two grouped reads replace the two loops, and
-    // the four tail reads — which touch different tables and share nothing — overlap.
+    // Two grouped reads replace what used to be an N+1 loop over providers; the four
+    // independent tail reads below touch different tables and can overlap.
     let series = catalog::get_series(&state.pool, id).await?;
     let sources = catalog::list_sources_for_series(&state.pool, id).await?;
 
-    // Same-source smart merge (§10): a canonical series can carry several `series_sources`
-    // rows for the *same* provider (a work split into two entries on that site, merged into
-    // one series). Those are one work, not two adapter sources, so fold every provider's rows
-    // into a single reader-visible "completing" source before building the DTOs.
+    // Same-source smart merge (§10): several `series_sources` rows can share a provider (one
+    // work split across site entries). Fold them into one reader-visible "completing" source.
     let groups = group_sources_by_provider(&sources);
 
-    // Reader-facing count per merged source: distinct whole chapters (§ chapter grouping)
-    // across *all* of the provider's entries — part releases and chapters two entries happen
-    // to share never inflate the "Read on" card / hero stat. Grouping by provider in SQL is
-    // exactly the fold `group_sources_by_provider` performs, so one statement answers every
-    // group. A provider whose rows carry no chapters at all is absent from the result and
-    // counts zero.
+    // Distinct whole chapters (§ chapter grouping) across all of a provider's entries, so
+    // part releases and shared chapters never inflate the "Read on" card. Grouping in SQL
+    // mirrors `group_sources_by_provider`'s fold; a provider with no chapters counts zero.
     let counts_by_provider: HashMap<ProviderId, i32> =
         catalog::count_full_chapters_by_provider(&state.pool, id)
             .await?
@@ -302,9 +286,8 @@ pub async fn detail(
 
     let mut source_dtos = Vec::with_capacity(groups.len());
     for (i, group) in groups.iter().enumerate() {
-        // A source row whose provider has since been deleted has no card to render. The
-        // foreign key makes this unreachable; treating it as "not found" rather than
-        // unwrapping keeps it that way if the constraint ever changes.
+        // Unreachable today (the foreign key guarantees it); treated as "not found" rather
+        // than unwrapped so it stays that way if the constraint ever changes.
         let provider = providers
             .get(&group.provider_id)
             .ok_or(ApiError::NotFound)?;
@@ -345,11 +328,9 @@ pub async fn detail(
     }))
 }
 
-/// One provider's folded presence on a canonical series: all of its (possibly several)
-/// `series_sources` rows collapsed into a single reader-visible "completing" source
-/// (design §10 same-source smart merge). `member_ids` are every underlying source row whose
-/// chapters together form the merged list; `link_id` / `link_source_path` identify the richest
-/// member (most raw chapters) — used as the DTO's representative id and outbound provider link.
+/// One provider's folded presence on a canonical series (design §10): several `series_sources`
+/// rows collapsed into one reader-visible "completing" source. `link_id`/`link_source_path`
+/// identify the richest member — the DTO's representative id and outbound link.
 struct ProviderGroup {
     provider_id: ProviderId,
     link_id: SeriesSourceId,
@@ -357,12 +338,9 @@ struct ProviderGroup {
     member_ids: Vec<SeriesSourceId>,
 }
 
-/// Fold a series' source rows so each provider appears exactly once. Within a canonical
-/// series, every `series_sources` row sharing a provider is the same work split across
-/// provider entries (the canonicalisation merge already decided so, design §10), so the reader
-/// should see the provider once — with the union of its chapters — rather than one card per
-/// split entry. First-seen provider order is preserved (matching `list_sources_for_series`,
-/// which orders by id), and within a provider the richest entry becomes the outbound link.
+/// Fold a series' source rows so each provider appears exactly once (design §10). First-seen
+/// provider order is preserved (matching `list_sources_for_series`, which orders by id); the
+/// richest entry within a provider becomes the outbound link.
 fn group_sources_by_provider(sources: &[SeriesSource]) -> Vec<ProviderGroup> {
     // Parallel `best_counts` tracks each group's richest member's raw chapter_count so the
     // link target only advances to a strictly richer entry.
@@ -436,10 +414,8 @@ pub async fn chapters(
 ) -> ApiResult<Json<Vec<ChapterDto>>> {
     let sources = tankovault_db::repo::catalog::list_sources_for_series(&state.pool, id).await?;
 
-    // Resolve the requested source (explicit `?source=` or the series' first source), then
-    // expand it to every sibling entry of the *same* provider on this series: a provider split
-    // across several `series_sources` rows is one merged "completing" source (§10 smart merge),
-    // so its chapter list is the de-duplicated union of all those entries, not just one.
+    // Resolve the requested source, then expand to every sibling entry of the same provider:
+    // a provider split across rows is one merged "completing" source, so the list is their union.
     let target_id = match params.source {
         Some(s) => s,
         None => sources.first().map(|s| s.id).ok_or(ApiError::NotFound)?,
@@ -461,14 +437,11 @@ pub async fn chapters(
     let chapters =
         tankovault_db::repo::catalog::list_chapters_across(&state.pool, &member_ids).await?;
 
-    // Read-state is opt-in: only when a valid token identifies the user. An authenticated
-    // user with no progress row yet still gets `Some(false)` per chapter (they simply
-    // haven't read anything), so the frontend shows the mark-read control; only anonymous
-    // callers get `None`. This is independent of any external (AniList) link.
+    // Read-state is opt-in: only a valid token gets it; no progress row yet still yields
+    // `Some(false)`, not `None` (which means anonymous).
     //
-    // Both frontiers are needed, not just the whole-chapter one: a part release read ahead of
-    // the whole frontier is recorded solely in `last_read_part_number`, so deciding read-state
-    // from the whole frontier alone reports every such part as unread forever.
+    // Both frontiers are needed — a part read ahead of the whole frontier lives only in
+    // `last_read_part_number`, so checking just the whole frontier reports it unread forever.
     let user = optional_user(&state, &headers);
     let progress = match user {
         Some(user_id) => {

@@ -13,10 +13,8 @@ use progenitor_client::ResponseValue;
 
 /// The provider `<select>`'s options.
 ///
-/// Deliberately **not** routed through `async_block_list`: this fetch decorates a control
-/// rather than being the surface, and both queues fall back to a hardcoded `anilist` option
-/// until it lands. Turning a `<select>`'s option list into a full-width error box would bury
-/// the queue the operator actually came for.
+/// Not routed through `async_block_list`: both queues fall back to a hardcoded `anilist`
+/// option until this lands, rather than showing a full-width error box over the queue itself.
 fn provider_options(resource: &Resource<Result<Vec<ProviderInfo>, String>>) -> Vec<ProviderInfo> {
     match &*resource.read() {
         Some(Ok(list)) => list.clone(),
@@ -24,9 +22,8 @@ fn provider_options(resource: &Resource<Result<Vec<ProviderInfo>, String>>) -> V
     }
 }
 
-/// The assign queue: pick a provider, optionally filter by title, and hand-assign an
-/// external id to any series the automatic matcher left unmapped (or open it in the
-/// inspector).
+/// The assign queue: hand-assign an external id to a series the automatic matcher left
+/// unmapped, or open it in the inspector.
 #[component]
 pub(super) fn AssignQueue(selected: Signal<Option<String>>, reload: Reload) -> Element {
     let api = api::use_api();
@@ -192,8 +189,8 @@ pub(super) fn AssignRow(
     }
 }
 
-/// The reverse assign queue: pick a provider, optionally filter, and match every fetched
-/// remote entry the auto-matcher could not confidently link to a local series.
+/// The reverse assign queue: match a fetched remote entry the auto-matcher could not
+/// confidently link to a local series.
 #[component]
 pub(super) fn UnmatchedRemoteQueue(reload: Reload) -> Element {
     let api = api::use_api();
@@ -275,21 +272,18 @@ pub(super) fn UnmatchedRemoteQueue(reload: Reload) -> Element {
     }
 }
 
-/// The canonical web URL for a fetched remote entry, so an operator can open the original
-/// listing on the provider's site to compare it against local candidates. Only providers with
-/// a known URL scheme return `Some`; `external_id` is the provider's media id.
+/// The canonical web URL for a fetched remote entry, to open the original listing on the
+/// provider's site. Only providers with a known URL scheme return `Some`.
 pub(super) fn provider_entry_url(provider: &str, external_id: &str) -> Option<String> {
     match provider {
-        // AniList media ids resolve under /manga/ for every reading medium (manga/manhwa/
-        // manhua/novel all live there), so a single scheme covers the tracker's content.
+        // AniList media ids resolve under /manga/ for every reading medium.
         "anilist" => Some(format!("https://anilist.co/manga/{external_id}")),
         _ => None,
     }
 }
 
-/// One reverse-queue row: shows the remote entry (with a link to open it on the provider),
-/// automatic ranked match suggestions, and a manual search fallback. Every candidate can be
-/// inspected in place (a full "manga info" card) before matching.
+/// One reverse-queue row: the remote entry, ranked match suggestions, and a manual search
+/// fallback; every candidate can be inspected in place before matching.
 #[component]
 pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Reload) -> Element {
     let api = api::use_api();
@@ -385,9 +379,8 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
         }
     });
 
-    // The manual fallback is deliberately *not* an `async_block_list`: it stays empty until the
-    // operator has typed three characters, and an empty-state box under an untouched search
-    // field reads as a failure rather than as a prompt.
+    // Not an `async_block_list`: stays empty below 3 characters typed, and an empty-state box
+    // under an untouched field would read as a failure rather than a prompt.
     let manual: Vec<SeriesSummary> = match &*results.read() {
         Some(Ok(l)) => l.clone(),
         _ => Vec::new(),
@@ -456,8 +449,7 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
 
 /// A short one-line descriptor for a suggested series (type · year · sources).
 ///
-/// The content type arrives as the matcher's raw token rather than a typed enum, so it is
-/// passed through as-is; the source count is worded from the catalogue.
+/// The content type is the matcher's raw token, passed through as-is rather than a typed enum.
 pub(super) fn suggestion_meta(i18n: Translator, s: &SuggestedMatch) -> String {
     let mut parts = Vec::new();
     if !s.content_type.is_empty() && s.content_type != "unknown" {
@@ -473,9 +465,8 @@ pub(super) fn suggestion_meta(i18n: Translator, s: &SuggestedMatch) -> String {
     parts.join(" · ")
 }
 
-/// One matchable candidate (from suggestions or manual search): shows the series, an optional
-/// confidence score, an "Inspect" toggle that expands the full series info card so the entries
-/// behind the suggested id can actually be reviewed, and a "Match" button that assigns it.
+/// One matchable candidate: the series, an optional confidence score, an "Inspect" toggle
+/// that expands the full series info card, and a "Match" button that assigns it.
 #[component]
 pub(super) fn CandidateMatchRow(
     series_id: SeriesId,
@@ -520,7 +511,6 @@ pub(super) fn CandidateMatchRow(
     };
 
     let score_badge = score.map(|s| {
-        // Clamped to 0..=1 first, so the rounded percentage is always in `i32` range.
         #[expect(
             clippy::cast_possible_truncation,
             reason = "clamped to 0..=1 first, so the rounded percentage is always in i32 range"

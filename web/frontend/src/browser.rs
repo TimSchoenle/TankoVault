@@ -1,28 +1,13 @@
-//! The app's direct browser-API surface: `localStorage`, the root element's attributes, and
-//! full-page navigation.
+//! The app's direct browser-API surface — `localStorage`, `<html>` attributes, full-page
+//! navigation — typed through `web-sys` instead of `document::eval`.
 //!
-//! ## Why this module exists
+//! Dioxus's web `eval` runs as `new Function(code)`: a CSP without `'unsafe-eval'` blocks it,
+//! and because the failure isn't caught, it aborts the WASM instance rather than returning an
+//! error. This app hit exactly that on boot, reading appearance prefs: white page, dead instance.
 //!
-//! Every function here replaces a `document::eval("…js…")` call. Dioxus implements `eval` on
-//! the web target as `new Function(code)` (`dioxus-web`'s `WebEvaluator::create`), which a
-//! Content-Security-Policy without `'unsafe-eval'` blocks outright — and because the
-//! `wasm-bindgen` import is not marked `catch`, the thrown `EvalError` is not returned to Rust
-//! but aborts the WASM instance. The app read its appearance preferences on boot, so the very
-//! first eval killed it: a white page and `RuntimeError: unreachable executed`.
-//!
-//! The alternative was to widen the served policy with `'unsafe-eval'`
-//! (`services/frontend/src/main.rs`), which would hand any injected script the one primitive
-//! the policy exists to deny — for the sake of eight calls that are three lines of `web-sys`
-//! each. Going through the typed bindings is also strictly better on its own terms: no string
-//! interpolation to escape, no JSON round-trip, no promise per read, and the compiler checks
-//! the call instead of the browser discovering the typo at runtime.
-//!
-//! ## Contract
-//!
-//! Nothing here fails loudly. A browser can refuse `localStorage` outright (private mode,
-//! blocked third-party storage) and every caller's fallback — the attribute the boot script
-//! already applied, or the stylesheet default — is a correct answer. A preference that cannot
-//! be persisted is not a reason to interrupt the reader.
+//! Storage can fail silently (private mode, blocked third-party storage); every caller's
+//! fallback — a boot-script attribute or the stylesheet default — is a correct answer, not
+//! a reason to interrupt the reader.
 
 use wasm_bindgen::JsCast as _;
 
@@ -45,10 +30,8 @@ pub(crate) fn local_remove(key: &str) {
     }
 }
 
-/// `window.localStorage`, if this browser exposes it to the document.
-///
-/// `local_storage()` returns `Err` rather than `Ok(None)` when storage is blocked by policy,
-/// which is not a distinction any caller here acts on.
+/// `window.localStorage`, if this browser exposes it to the document; a policy block and
+/// "unset" both collapse to `None` here.
 fn storage() -> Option<web_sys::Storage> {
     web_sys::window()?.local_storage().ok().flatten()
 }
@@ -78,28 +61,21 @@ fn root() -> Option<web_sys::Element> {
     web_sys::window()?.document()?.document_element()
 }
 
-/// Mirror the active language onto `<html lang>`.
-///
-/// Set as an attribute rather than through `HtmlElement::set_lang` so the call needs no
-/// downcast: the two are the same reflected property, and `Element` is already in hand.
+/// Mirror the active language onto `<html lang>`, set directly to avoid an `HtmlElement` downcast.
 pub(crate) fn set_document_language(tag: &str) {
     set_root_attribute("lang", tag);
 }
 
-/// Leave the SPA for `url` — a real navigation, not a router push.
-///
-/// Used only where the destination is another origin (an OAuth consent screen), which the
-/// client-side router cannot route to by definition.
+/// Leave the SPA for `url` — a real navigation, not a router push, for destinations outside
+/// this origin (e.g. an OAuth consent screen).
 pub(crate) fn navigate_to(url: &str) {
     if let Some(window) = web_sys::window() {
         let _ = window.location().set_href(url);
     }
 }
 
-/// Focus the element with the given id and select whatever it already contains.
-///
-/// A no-op unless the element is on screen and is a text field — the caller is a shortcut
-/// button for the top bar's search box, and a screen that does not render one is not an error.
+/// Focus the element with the given id and select its contents; a no-op unless it's an
+/// on-screen text field (not every screen renders the search box this serves).
 pub(crate) fn focus_and_select(id: &str) {
     let Some(field) = web_sys::window()
         .and_then(|window| window.document())

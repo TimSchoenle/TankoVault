@@ -1,10 +1,5 @@
-//! The forgot-password lifecycle (migration 0015) and the password column it writes.
-//!
-//! A reset token is stored as a SHA-256 hash; the plaintext exists only in the email. The
-//! lookup answers "is this token known" and nothing else, so the handler can respond
-//! identically for an unknown, an expired and an already-consumed token — which is what stops
-//! the endpoint disclosing whether a reset was ever requested. Single-use is enforced by
-//! [`consume_password_reset`]'s atomic `used_at` flip, not by the read.
+//! The forgot-password lifecycle and the password column it writes. A reset token is stored as
+//! a SHA-256 hash; single-use is enforced by [`consume_password_reset`]'s atomic `used_at` flip.
 
 use super::CiText;
 use super::credentials::UserRow;
@@ -14,20 +9,12 @@ use tankovault_domain::{AccountStatus, User, UserId};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-/// Look up a user by email address (the forgot-password entry point).
-///
-/// Returns `None` when no account matches, letting the handler respond identically whether
-/// or not the address is registered (avoids account enumeration).
-///
-/// That silence is exactly why the [`CiText`] binding matters here: a case-sensitive match
-/// answers `None` for an address that *is* registered, and the endpoint is designed to say
-/// nothing about the difference — so the user is simply never sent the reset mail and is told
-/// that it was sent.
+/// Look up a user by email address (the forgot-password entry point). `None` lets the handler
+/// respond identically whether or not the address is registered.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only — no other variant is reachable. An unregistered address is
-/// `Ok(None)`; returning [`DbError::NotFound`] here would hand the caller a distinguishable
-/// response and undo the anti-enumeration property described above.
+/// [`DbError::Sqlx`] only. An unregistered address is `Ok(None)`, not [`DbError::NotFound`] —
+/// preserves the anti-enumeration response.
 pub async fn find_by_email<'e, E: PgExecutor<'e>>(exec: E, email: &str) -> DbResult<Option<User>> {
     let row = sqlx::query_as!(
         UserRow,
@@ -51,10 +38,8 @@ pub struct PasswordResetRecord {
 /// Persist a freshly issued password-reset token as its SHA-256 hash.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only — no other variant is reachable. `token_hash` is `UNIQUE`, but a
-/// duplicate stays a driver error rather than [`DbError::Conflict`] for the reason given on
-/// [`super::refresh_tokens::insert_refresh`]: the value is server-generated randomness, so a
-/// collision is a generator fault and belongs in a 500.
+/// [`DbError::Sqlx`] only. A duplicate `token_hash` is a generator fault (500), not a
+/// client-triggerable [`DbError::Conflict`] (409).
 pub async fn insert_password_reset<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -74,13 +59,10 @@ pub async fn insert_password_reset<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Find a password-reset token by its hash, regardless of expiry/use, so the caller can
-/// distinguish an unknown token from an expired or already-consumed one.
+/// Find a password-reset token by its hash, regardless of expiry/use.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only — no other variant is reachable. An unknown token is `Ok(None)`, and
-/// expiry and prior use are fields on the returned record rather than errors, precisely so the
-/// three cases are the caller's to collapse into one identical response.
+/// [`DbError::Sqlx`] only. An unknown token is `Ok(None)`; expiry/use are record fields.
 pub async fn find_password_reset<'e, E: PgExecutor<'e>>(
     exec: E,
     token_hash: &str,
@@ -108,13 +90,10 @@ pub async fn find_password_reset<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Atomically mark a reset token consumed (single-use). Returns the number of rows updated:
-/// `0` means it was already used, which the caller must treat as a failed reset.
+/// Atomically mark a reset token consumed (single-use). `0` rows means already used.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only — no other variant is reachable. Losing the race is `Ok(0)`, not an
-/// error: the `used_at IS NULL` predicate is what makes the token single-use, so the count is
-/// the security-relevant answer and must not be discarded.
+/// [`DbError::Sqlx`] only. Losing the race is `Ok(0)`, not an error.
 pub async fn consume_password_reset<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<u64> {
     let result = sqlx::query!(
         "UPDATE password_reset_tokens SET used_at = now() WHERE id = $1 AND used_at IS NULL",
@@ -128,9 +107,8 @@ pub async fn consume_password_reset<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) ->
 /// Replace a user's password hash (pre-computed argon2id PHC string).
 ///
 /// # Errors
-/// [`DbError::NotFound`] — a 404 — when `id` matches no row. The check is not decoration: a
-/// reset that reported success while storing nothing would leave the old password live and
-/// the user certain it had changed. Otherwise [`DbError::Sqlx`].
+/// [`DbError::NotFound`] — a 404 — when `id` matches no row, so a reset never reports success
+/// while leaving the old password live. Otherwise [`DbError::Sqlx`].
 pub async fn update_password<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,

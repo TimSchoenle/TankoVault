@@ -1,16 +1,6 @@
-//! # render service
-//!
-//! Optional headless-browser rendering for JS-rendered listing pages (design §9), and an
-//! alternate [`tankovault_solver::ChallengeSolver`] back-end for when
-//! `FlareSolverr` is unavailable. It drives a long-lived `chromiumoxide` browser and
-//! exposes:
-//!
-//! - `POST /v1/render { url, wait_selector?, wait_ms? }` → the rendered DOM + session.
-//! - `POST /v1/solve  { url, provider, kind? }` → the `challenge-solver` contract, so the
-//!   fetch pipeline can treat this service as a drop-in bypass back-end.
-//!
-//! The browser is launched lazily on first use, so `/health` and `/ready` come up even
-//! when no Chrome binary is available; a render/solve then fails cleanly with `502`.
+//! Render service: headless-browser rendering for JS-heavy listing pages, and an
+//! alternate [`tankovault_solver::ChallengeSolver`] back-end for when `FlareSolverr` is
+//! unavailable.
 
 mod browser;
 mod config;
@@ -64,10 +54,8 @@ struct RenderResponse {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Before config, telemetry or anything else: this process may have been invoked by
-    // Docker's HEALTHCHECK rather than as the service. `scratch` images have no shell and no
-    // wget, so the binary probing itself is the only probe available. See
-    // `tankovault_service::healthcheck`.
+    // Runs before config/telemetry: `scratch` images have no shell or wget, so the binary
+    // must probe itself for Docker's HEALTHCHECK.
     if tankovault_service::healthcheck::requested() {
         let cfg: Config = tankovault_config::load()?;
         tankovault_service::run_healthcheck_and_exit(&cfg.bind_addr);
@@ -76,9 +64,8 @@ async fn main() -> anyhow::Result<()> {
     let cfg: Config = tankovault_config::load()?;
     tankovault_service::init_tracing(&cfg.telemetry)?;
     let metrics = MetricsRegistry::install(&cfg.metrics)?;
-    // Resolved before anything binds: a service in this tier that starts without a token
-    // silently downgrades to the unauthenticated behaviour the token exists to remove, so
-    // the production profile refuses to boot rather than serving privileged routes openly.
+    // Resolved before anything binds: starting without a token would silently serve
+    // privileged routes unauthenticated, so the production profile refuses to boot instead.
     let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
     let shutdown = tankovault_service::install_shutdown();
 
@@ -97,8 +84,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState { manager, solver };
     let limiter = RateLimiter::from_config(&cfg.rate_limit, RouteClassifier::new(), None);
 
-    // Serve the metrics scrape on its own port when configured, keeping it off the
-    // request-facing listener.
+    // Own port keeps the scrape off the request-facing listener.
     tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
 
     let app = HttpStack::new(&cfg.security, metrics.clone())
@@ -111,9 +97,8 @@ async fn main() -> anyhow::Result<()> {
                 // The solve contract itself is defined once, in `tankovault_solver::http`.
                 .merge(tankovault_solver::http::solver_router(state.solver)),
         )
-        // Readiness is "listening": the browser is launched lazily by design (see the
-        // module docs), so probing it here would report a healthy replica as down until
-        // its first render.
+        // Readiness is "listening": the browser launches lazily, so probing it here would
+        // report a healthy replica as down until its first render.
         .merge(tankovault_service::ops_router(
             Health::builder().build(),
             metrics,
@@ -123,25 +108,20 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Reject a target URL the renderer must not visit.
+/// Rejects a target URL the renderer must not visit.
 ///
-/// Chrome is handed the URL verbatim and returns the DOM *and the cookies it collected*, so
-/// an unvalidated target is a full internal-network read: `file:///etc/passwd`,
-/// `http://169.254.169.254/…` for cloud instance credentials, `http://api:8080/v1/admin/…`.
-/// The same guard the crawler uses applies here — scheme allowlist plus the forbidden-range
-/// table, including IP literals, which the DNS-level check cannot see.
-///
-/// This is a Rust-side check on the address the caller *named*. It does not survive a DNS
-/// rebind, because Chrome resolves independently of this process; constraining that requires
-/// `--host-resolver-rules` or an egress-restricted network namespace around the browser.
+/// Chrome fetches the URL verbatim and returns the DOM and cookies, so an unvalidated
+/// target is a full internal-network read (`file:///`, cloud metadata, internal APIs).
+/// Uses the crawler's scheme allowlist plus the forbidden-range check, including IP
+/// literals. This is a Rust-side check on the address as *named*; it does not survive a
+/// DNS rebind, since Chrome resolves independently of this process.
 fn validate_target(raw: &str) -> Result<(), Box<Response>> {
     tankovault_domain::ssrf::validate_str(raw)
         .map(|_| ())
         .map_err(|e| {
             metrics::counter!("render_requests_total", "result" => "rejected").increment(1);
             tracing::warn!(url = %raw, error = %e, "refused a render target");
-            // The reason is safe to return: it names only the caller's own URL and which policy
-            // rule refused it, which is what makes a misconfigured provider debuggable.
+            // Safe to return: it names only the caller's URL and which rule refused it.
             Box::new(
                 Problem::new(
                     StatusCode::FORBIDDEN,
@@ -185,8 +165,8 @@ async fn render(
         Err(e) => {
             metrics::counter!("render_requests_total", "result" => "error").increment(1);
             tracing::warn!(%url, error = %e, "render failed");
-            // The cause is in the log; the caller gets the shared RFC 9457 shape so the API's
-            // `Upstream` client parses one error format from every internal peer (ARCH-12).
+            // Cause is in the log; caller gets the shared RFC 9457 shape every internal
+            // peer uses.
             Problem::bad_gateway().into_response()
         }
     }

@@ -1,9 +1,5 @@
-//! Headless-browser management for the render service.
-//!
-//! Drives a single, long-lived `chromiumoxide` browser (design §9). The browser is
-//! expensive to start and is reused across requests; it is launched **lazily** on the
-//! first render so the service's `/health`/`/ready` come up even when no Chrome binary
-//! is present — a render then fails cleanly rather than the whole tier refusing to boot.
+//! Manages a single, long-lived `chromiumoxide` browser, launched lazily on first render
+//! so `/health`/`/ready` come up even without a Chrome binary present.
 
 use std::sync::Arc;
 use std::time::Duration;

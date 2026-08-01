@@ -1,10 +1,6 @@
-//! The single-account read model, and the one handler that only reads it.
-//!
-//! [`UserDetailResponse`] is not merely `GET /v1/admin/users/{id}`'s answer: it is what *every*
-//! mutating handler in this module returns, because each answers with the re-read state rather
-//! than echoing its own input, so the client always renders what the database now holds. That
-//! makes the response builder shared infrastructure rather than one handler's, which is why it
-//! sits here instead of alongside the read handler that happens to be simplest.
+//! The single-account read model, shared by every mutating handler in this module: each answers
+//! with the re-read state rather than echoing its input, so the client always renders what the
+//! database now holds.
 
 use crate::error::ApiResult;
 use crate::openapi::ADMIN_USERS_TAG;
@@ -26,11 +22,7 @@ pub struct UserDetailResponse {
     pub permissions: Vec<GrantView>,
 }
 
-/// Read one account's detail panel: the account row plus its grants.
-///
-/// Every mutating handler in this module answers with the *re-read* state rather than echoing
-/// its own input, so the client always renders what the database now holds. That made the same
-/// two queries appear five times; they live here instead.
+/// Account row plus its grants, re-read from the database.
 pub(crate) async fn user_detail_response(
     state: &AppState,
     target: UserId,

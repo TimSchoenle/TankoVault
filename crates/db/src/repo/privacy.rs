@@ -1,54 +1,23 @@
 //! GDPR data-subject operations: portability (Art. 20) and erasure (Art. 17).
 //!
-//! Both are implemented as a single explicit statement rather than as a loop over repo
-//! functions, and that is deliberate: a table added later must force a visible change
-//! *here*, where the reviewer is asking "what personal data do we hold?". A generic
-//! walker would quietly keep working while silently omitting the new table from an export.
+//! Each is one explicit statement, not a loop over repo functions — a table added later must
+//! force a visible change here, or a generic walker would silently omit it from the export.
 
 use crate::error::DbResult;
 use serde_json::Value as Json;
 use sqlx::PgExecutor;
 use tankovault_domain::UserId;
 
-/// Assemble everything the system holds about one user as a portable JSON document.
+/// Assemble everything the system holds about one user as one portable JSON document (one
+/// round trip, so it can't interleave with concurrent writes).
 ///
-/// Built server-side with `json_build_object` so the whole subject access request is one
-/// consistent snapshot from one round trip, rather than a dozen queries that could
-/// interleave with concurrent writes and produce a self-inconsistent export.
-///
-/// Every collection is an empty array rather than `null` for a user with no activity, so
-/// a consumer parses one stable shape.
-///
-/// ## Redaction
-///
-/// Credentials are removed column-by-column in the SQL below, where the exclusion sits
-/// next to the table it applies to:
-///
-/// - `users.password_hash` — an Argon2id verifier; exporting it would hand an offline
-///   cracking target to anyone who later obtains the file.
-/// - `refresh_tokens.token_hash` — a live session credential.
-/// - `external_accounts.access_token` / `.refresh_token` — encrypted third-party OAuth
-///   credentials. The *fact* of the link and its metadata are the user's data and are
-///   exported; the bearer credentials are not, because an export is a commonly-emailed
-///   artefact and these grant access to an entirely different service.
-///
-/// The subject's own `audit_log` entries **are** included: they are records about the
-/// user and so fall within an access request. They are **projected**, not dumped:
-/// `created_at`, `action`, `outcome`, and `target` only when the target is the subject
-/// themselves. `detail` is dropped entirely.
-///
-/// Dumping whole rows leaked third parties. When the exporting user is an operator, their own
-/// audit rows describe actions taken *on other people* — `admin/users.rs` records
-/// `{"username": …, "email": …}` of the edited account, and `admin/privacy.rs` records another
-/// data subject's id. GDPR Art. 15(4) is explicit that an access request must not adversely
-/// affect the rights of others, and this is a file people forward by email. The compliance
-/// goal — showing the subject what was recorded about them — is fully met by the projection.
+/// Credentials (password hash, session/OAuth tokens) are excluded — an export is a
+/// commonly-emailed file. The subject's own `audit_log` rows are projected, not dumped (no
+/// `detail`; `target` only when it names the subject), so an operator's export can't leak
+/// another subject's identity (Art. 15(4)).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `user_id` is
-/// **not** [`crate::DbError::NotFound`]: every collection is a `coalesce(…, '[]')` subquery
-/// and `profile` is `null`, so the export succeeds with an empty document. A caller that
-/// needs to reject an unknown subject must check existence itself.
+/// `Sqlx` only; an unknown `user_id` returns an empty document, not NotFound.
 pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<Json> {
     let export = sqlx::query_scalar!(
         "SELECT json_build_object( \
@@ -92,28 +61,14 @@ pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
     Ok(export)
 }
 
-/// Erase a user and everything owned by them (GDPR Art. 17).
+/// Erase a user and everything owned by them (GDPR Art. 17). Returns `false` when no such
+/// user existed, so callers can distinguish "erased" from "already gone".
 ///
-/// Returns `false` when no such user existed, so a caller can distinguish "erased" from
-/// "was already gone" without a prior existence check that would race.
-///
-/// ## What this deletes, and what it deliberately does not
-///
-/// Every user-owned table declares `REFERENCES users(id) ON DELETE CASCADE`, so one
-/// statement removes the profile, sessions, watchlist, progress, notifications, linked
-/// accounts (including their encrypted tokens), sync state and history.
-///
-/// `audit_log.actor_id` is `ON DELETE SET NULL` instead. That is intentional and is what
-/// makes erasure compatible with keeping an audit trail: the records of *what privileged
-/// actions occurred* survive in pseudonymised form, while the identity linking them to a
-/// person is destroyed. Retaining an unlinkable record of an administrative action rests
-/// on legitimate interest (Art. 6(1)(f)), and once the actor reference is gone the record
-/// is no longer personal data.
+/// `audit_log.actor_id` is `ON DELETE SET NULL`, not cascaded — keeps the audit trail
+/// (pseudonymised, under legitimate interest, Art. 6(1)(f)) once the identity link is gone.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. "No such user" is `Ok(false)`
-/// rather than [`crate::DbError::NotFound`], which is the distinction the return type exists
-/// to make.
+/// `Sqlx` only; "no such user" is `Ok(false)`, not NotFound.
 pub async fn erase_user<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<bool> {
     let deleted = sqlx::query!("DELETE FROM users WHERE id = $1", user_id.as_uuid())
         .execute(exec)

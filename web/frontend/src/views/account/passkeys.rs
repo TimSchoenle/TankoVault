@@ -238,9 +238,8 @@ pub(crate) fn PasskeysCard() -> Element {
 
 /// Report a ceremony outcome and release the busy latch.
 ///
-/// A [`CeremonyError::Cancelled`] clears the error line rather than writing to it: the reader
-/// pressed Escape, and telling them something went wrong when they chose to stop is how a
-/// working feature comes to look broken. Every other outcome is worded from the catalogue.
+/// [`CeremonyError::Cancelled`] clears the error line instead of writing to it — a ceremony the
+/// reader chose to stop isn't a broken feature.
 fn finish_with(
     outcome: &CeremonyError,
     mut error: Signal<Option<String>>,

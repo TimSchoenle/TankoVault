@@ -1,13 +1,6 @@
-//! Self-consistency checks on the published `OpenAPI` document.
-//!
-//! Deliberately **not** behind the `integration` feature: these need no database and no
-//! router, only `full_openapi()`, so they run in the fast CI job where a broken contract is
-//! cheapest to notice.
-//!
-//! `xtask openapi --check` already guarantees the committed `openapi.json` matches what the
-//! code generates. It says nothing about whether that document is *coherent* — and an
-//! incoherent one is worse than a stale one, because `crates/api-client` and the frontend
-//! are generated from it and will happily generate the wrong thing.
+//! Self-consistency checks on the published `OpenAPI` document, not just that it matches the
+//! code (`xtask openapi --check`'s job) but that it is internally coherent. Not behind
+//! `integration`: needs no database or router, so it runs in the fast CI job.
 
 use std::collections::BTreeSet;
 
@@ -19,17 +12,12 @@ fn document() -> Value {
 
 /// Every security requirement names a scheme the document actually defines.
 ///
-/// The bug this pins: `DELETE /v1/me` and `GET /v1/me/export` declared
-/// `security(("bearer" = []))` while the only scheme in `components.securitySchemes` is
-/// `bearer_auth`. `OpenAPI` requires the name to resolve there, so those two operations
-/// referenced a scheme that did not exist — and a generator that resolves the reference reads
-/// the requirement as absent, i.e. publishes two endpoints that delete an account and export
-/// its entire personal record as needing no authentication at all. Both are in fact gated
-/// (`me_access_matrix.rs` proves it against the real router); the *document* was the thing
-/// that lied, which is the half a client author sees.
+/// # The bug this pins
 ///
-/// A typo cannot be caught by the compiler here — `utoipa` takes the scheme name as a string —
-/// so it has to be caught by this.
+/// `DELETE /v1/me` and `GET /v1/me/export` declared `security(("bearer" = []))` while the only
+/// defined scheme is `bearer_auth` — an unresolvable name that a generator reads as no
+/// requirement, publishing two account-destroying endpoints as needing no authentication.
+/// `utoipa` takes the scheme name as a string, so the compiler can't catch this typo.
 #[test]
 fn every_security_requirement_names_a_defined_scheme() {
     let spec = document();
@@ -65,17 +53,10 @@ fn every_security_requirement_names_a_defined_scheme() {
 
 /// Every `/v1/me` and `/v1/admin` operation declares that it needs a session.
 ///
-/// The declaration is what the generated client and the published docs are built from, so an
-/// authenticated route that forgets it is documented as public. That is a different failure
-/// from the route actually being open — `me_access_matrix.rs` covers enforcement — and it is
-/// the one a client author trips over.
-///
-/// There is **no exception any more**. `GET /v1/me/stream` used to be listed here by name as the
-/// one operation whose credential no `security` scheme could express, because it carried a raw
-/// access token in the query string. SEC-8 replaced that with a single-use ticket, and a ticket in
-/// a query parameter is precisely an `apiKey`/`in: query` scheme — so the operation declares its
-/// requirement like every other private route and the carve-out is gone. Do not add another: an
-/// operation that cannot express how it is authenticated is a finding, not a special case.
+/// A route that forgets this is documented as public even where enforcement is fine
+/// (`me_access_matrix.rs` covers that half) — the failure a client author trips over. No
+/// exceptions: an operation that can't express how it's authenticated is a finding, not a
+/// special case.
 #[test]
 fn every_private_operation_declares_a_security_requirement() {
     let spec = document();
@@ -104,17 +85,11 @@ fn every_private_operation_declares_a_security_requirement() {
 
 /// The stream's declared credential is the query parameter the handler actually reads.
 ///
-/// Three artefacts have to agree on the string `ticket`: the `apiKey` scheme in
-/// `components.securitySchemes`, the operation's own query parameter, and — outside this
-/// workspace, so outside any compiler that could check it — `web/frontend/src/api.rs`, which
-/// hand-builds the `EventSource` URL because `EventSource` is created by the browser rather than
-/// by the generated client.
+/// # The bug this pins
 ///
-/// That hand-built URL is where a real, shipped bug lived: the frontend sent
-/// `?token=…` while the handler required `?access_token=…`, so `Query<StreamQuery>` rejected every
-/// connection with `400` and live notifications had never worked. Nothing noticed, because
-/// `live.rs` treats a stream failure as a silent best-effort degradation. The frontend carries the
-/// matching half of this assertion (`the_stream_url_uses_the_parameter_the_published_document_declares`).
+/// `web/frontend/src/api.rs` hand-builds the `EventSource` URL outside any compiler that checks
+/// it against this scheme, and once sent `?token=…` while the handler required `?access_token=…`
+/// — every connection rejected with `400`, unnoticed because a stream failure degrades silently.
 #[test]
 fn the_stream_credential_is_declared_under_the_name_the_handler_reads() {
     let spec = document();

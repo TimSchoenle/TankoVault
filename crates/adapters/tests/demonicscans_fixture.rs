@@ -1,7 +1,5 @@
-//! Fixture tests for the demonicscans.org custom adapter. The checked-in HTML is trimmed
-//! from live markup fetched through the solver pipeline; a provider layout change breaks
-//! these tests, not production data (design §7). No network is touched — the fetch
-//! transport is a fake serving the fixtures.
+//! Fixture tests for the demonicscans.org custom adapter, using trimmed live markup so a
+//! provider layout change breaks a test, not production. No network is touched.
 
 use async_trait::async_trait;
 use std::sync::Arc;

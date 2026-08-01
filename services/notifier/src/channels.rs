@@ -1,10 +1,8 @@
-//! Pluggable external notification channels (design §14).
+//! Pluggable external notification channels.
 //!
-//! In-app `notifications` rows remain the source of truth for the reader UI; these
-//! optional channels fan a genuinely-new-chapter alert out to operator-configured
-//! endpoints (a generic JSON webhook, Discord's webhook format, and SMTP email). Every
-//! back-end is hidden behind the [`NotificationChannel`] trait so adding a new one is a
-//! drop-in, and each is constructed purely from config.
+//! In-app `notifications` rows remain the source of truth; these optional channels fan a
+//! genuinely-new-chapter alert out to operator-configured endpoints (a generic JSON
+//! webhook, Discord's webhook format, and SMTP email) via the [`NotificationChannel`] trait.
 
 use std::fmt::Write as _;
 use std::sync::Arc;
@@ -22,24 +20,20 @@ use tankovault_email::{EmailMessage, EmailService};
 pub(crate) struct ChannelsConfig {
     /// A Discord "Incoming Webhook" URL. Receives the Discord message/embed shape.
     ///
-    /// A [`SecretString`], not a URL: Discord's form is
-    /// `https://discord.com/api/webhooks/{id}/{token}`, so the credential *is* the path.
-    /// Anyone holding it can post to the channel as this integration, and this struct derives
-    /// `Debug`.
+    /// A [`SecretString`], not a URL: Discord's form embeds the token in the path
+    /// (`https://discord.com/api/webhooks/{id}/{token}`), and this struct derives `Debug`.
     #[serde(default)]
     pub discord_webhook_url: Option<SecretString>,
     /// A generic HTTP endpoint. Receives [`webhook_payload`] as a JSON `POST` body.
     ///
     /// Wrapped for the same reason as [`Self::discord_webhook_url`]: an embedded token in the
-    /// path or query is the ordinary way these endpoints authenticate, and the type has to
-    /// assume the credential-bearing form.
+    /// path or query is the ordinary way these endpoints authenticate.
     #[serde(default)]
     pub webhook_url: Option<SecretString>,
     /// Recipients of a new-chapter alert email. Empty disables the email channel.
     ///
-    /// The relay, credentials and `From` address are **not** here: they come from the shared
-    /// `TANKOVAULT_EMAIL__*` config that the API already uses, so one deployment has one SMTP
-    /// configuration rather than two that can disagree.
+    /// The relay, credentials and `From` address come from the shared `TANKOVAULT_EMAIL__*`
+    /// config the API uses, so one deployment has one SMTP configuration.
     #[serde(default)]
     pub email_to: Vec<String>,
     /// Per-request timeout for channel deliveries.
@@ -89,8 +83,6 @@ impl Alert {
 /// Format a chapter number without a trailing `.0` for whole numbers (`12.0` -> `12`,
 /// `12.5` -> `12.5`).
 pub(crate) fn format_number(n: f64) -> String {
-    // Rust's default float `Display` already yields the shortest form, dropping a
-    // trailing `.0` for whole numbers (`12.0` -> `12`, `12.5` -> `12.5`).
     format!("{n}")
 }
 
@@ -153,11 +145,9 @@ pub(crate) trait NotificationChannel: Send + Sync {
 
     /// The feature that governs this channel at runtime.
     ///
-    /// Configuration decides whether a channel *exists* (an SMTP relay was supplied); this
-    /// flag decides whether it currently *delivers*. The two are genuinely different
-    /// questions: an operator silencing outbound email during an incident should not have to
-    /// delete the relay configuration and redeploy to do it, nor lose it when they want the
-    /// channel back an hour later.
+    /// Configuration decides whether a channel *exists*; this flag decides whether it
+    /// currently *delivers* — so an operator can silence a channel during an incident
+    /// without redeploying, and get it back without losing the configuration.
     fn feature(&self) -> Feature;
 
     /// Deliver `alert`. Errors are logged by the caller and never abort fan-out.
@@ -192,8 +182,8 @@ impl NotificationChannel for WebhookChannel {
     async fn deliver(&self, alert: &Alert) -> anyhow::Result<()> {
         let resp = self
             .client
-            // Exposed into the request builder and nowhere else — note in particular that the
-            // error below reports the status, never the endpoint.
+            // Exposed only into the request builder; the error below reports the status,
+            // never the endpoint.
             .post(self.url.expose_secret())
             .json(&webhook_payload(alert))
             .send()
@@ -245,16 +235,9 @@ impl NotificationChannel for DiscordChannel {
 
 /// Email channel: a plain-text new-chapter alert to one or more operator recipients.
 ///
-/// A thin adapter over [`tankovault_email::EmailService`], where it used to be a second,
-/// private SMTP client: its own `AsyncSmtpTransport::from_url`, its own `Mailbox` parsing, its
-/// own `Message` assembly, its own TLS configuration. Two SMTP stacks in one system means two
-/// `From`/envelope policies, and the difference was not cosmetic — `crates/email` resolves the
-/// **envelope sender from the SMTP login** rather than from the `From` header (relays that
-/// enforce "send as", notably OVH Exchange, reject the mismatch with `550 5.7.60`), and this
-/// copy did not. Operator alerts were therefore rejected by the same relay that happily
-/// accepted password-reset mail from the API.
-///
-/// It also means this path inherits `crates/email`'s ten tests, where it had none.
+/// Must stay a thin adapter over [`tankovault_email::EmailService`], not a second SMTP
+/// stack: `crates/email` resolves the envelope sender from the SMTP login, which relays
+/// enforcing "send as" require — a second stack without that gets mail rejected.
 pub(crate) struct EmailChannel {
     mailer: Arc<dyn EmailService>,
     to: Vec<String>,
@@ -289,22 +272,12 @@ impl NotificationChannel for EmailChannel {
     }
 }
 
-/// Say so, once at startup, when a webhook will be delivered in clear.
+/// Warns, once at startup, when a webhook will be delivered in clear.
 ///
-/// A webhook URL is a `SecretString` for a reason: for both Discord and the generic receiver the
-/// token *is* the path (`…/webhooks/{id}/{token}`), so an `http://` endpoint puts a bearer
-/// credential and the alert body on the wire in plain text, readable and replayable by anything
-/// on the path. That is what `CodeQL` `rust/cleartext-transmission` flags at the two `post` calls
-/// above, and it is a fair flag.
-///
-/// It is a warning and not a refusal because `http://` is a legitimate choice for a receiver on
-/// the same private network — an internal bridge, a compose-local collector — and turning that
-/// into a startup failure would be this repository deciding an operator's network topology for
-/// them. What is *not* legitimate is not knowing, so the scheme is stated at the one moment an
-/// operator is reading the log for confirmation their notifier came up.
-///
-/// The URL itself is never logged, only the channel and the scheme: the whole point is that it
-/// carries a credential.
+/// The URL is a `SecretString` because the token *is* the path for Discord/generic
+/// receivers — `http://` puts a bearer credential and the alert body on the wire in plain
+/// text. Warns rather than refuses, since `http://` is legitimate on a private network;
+/// only the channel and scheme are logged, never the URL.
 fn warn_if_cleartext(channel: &str, url: &SecretString) {
     if !url.expose_secret().starts_with("https://") {
         tracing::warn!(
@@ -362,10 +335,8 @@ pub(crate) fn build(
 
 #[cfg(test)]
 mod tests {
-    // Every client below targets the `wiremock` server this module starts on localhost, which
-    // answers immediately or is deliberately made to hang under a test's own timeout. A
-    // production client must carry its own timeouts (`WebhookChannel` builds one that does);
-    // a harness client that cannot outlive the test process does not.
+    // Every client below targets the in-process `wiremock` server; a harness client
+    // doesn't need the timeouts a production client (`WebhookChannel`) carries.
     #![expect(
         clippy::disallowed_methods,
         reason = "clients scoped to the in-process wiremock server, not the network"
@@ -533,8 +504,6 @@ mod tests {
         assert_eq!(built[0].feature(), Feature::NotificationsEmail);
     }
 
-    /// The subject and body are this module's contribution; the transport is
-    /// `crates/email`'s, and is tested there.
     #[test]
     fn the_alert_message_carries_every_recipient_and_the_chapter_subject() {
         let channel = EmailChannel::new(
@@ -552,11 +521,8 @@ mod tests {
         assert!(email_body(&sample()).contains("kunmanga"));
     }
 
-    /// The payload builders above are pure and were already covered; what was not was the step
-    /// that puts one on the wire. Nothing connected [`webhook_payload`] to the body an operator's
-    /// endpoint actually receives, so the delivered document is asserted to *be* the builder's
-    /// output rather than re-spelled here — the failure this catches is `deliver` sending
-    /// something else, not the builder changing shape, which its own test owns (F-09).
+    /// Asserts the delivered document *is* the payload builder's output — this catches
+    /// `deliver` sending something else, not the builder changing shape.
     #[tokio::test]
     async fn the_generic_webhook_posts_the_payload_builder_output_as_json() {
         let server = accepting_server().await;
@@ -582,9 +548,8 @@ mod tests {
         );
     }
 
-    /// The same for Discord, which is a *different* document to the same transport — the two
-    /// channels share `deliver`'s shape and nothing but a test would notice one being handed the
-    /// other's builder.
+    /// Same for Discord — a different document, same transport; only a test would notice
+    /// one channel handed the other's builder.
     #[tokio::test]
     async fn the_discord_webhook_posts_the_discord_document() {
         let server = accepting_server().await;
@@ -601,9 +566,8 @@ mod tests {
         assert_eq!(sole_request_body(&server).await, discord_payload(&alert));
     }
 
-    /// A rejected delivery has to *be* an error, and name the status: the caller logs whatever
-    /// comes back per channel and never aborts fan-out, so this string is the entire diagnostic
-    /// an operator gets for a webhook that has been quietly `401`ing for a week.
+    /// A rejected delivery must be an error naming the status — it's the entire diagnostic
+    /// an operator gets for a webhook that's been quietly failing.
     #[tokio::test]
     async fn a_rejected_delivery_is_an_error_naming_the_channel_and_the_status() {
         let server = MockServer::start().await;
@@ -632,11 +596,9 @@ mod tests {
         assert!(discord.contains("discord"), "no channel in: {discord}");
     }
 
-    /// `timeout_secs` is the only knob on [`ChannelsConfig`] whose effect is invisible in the
-    /// constructed value, and a configuration knob that silently does nothing is worse than an
-    /// absent one — the operator who sets it believes deliveries are bounded. Driven through
-    /// [`build`] rather than by constructing a client here, because the wiring being asserted is
-    /// exactly the line in `build` that could drop it.
+    /// `timeout_secs`'s effect is invisible in the constructed value — a silently-ignored
+    /// knob is worse than no knob. Driven through [`build`], since that's the wiring that
+    /// could drop it.
     #[tokio::test]
     async fn the_configured_timeout_reaches_the_client_that_delivers() {
         let server = MockServer::start().await;

@@ -1,8 +1,6 @@
-//! Strongly-typed UUID v7 identifiers.
-//!
-//! Every aggregate gets its own newtype so a `SeriesId` can never be passed where
-//! a `ProviderId` is expected. All ids are UUID v7 — time-sortable, index-friendly
-//! primary keys generated in-app (see the schema note in `docs/design.md` §6).
+//! Strongly-typed UUID v7 identifiers, one newtype per aggregate, so a `SeriesId` can never
+//! be passed where a `ProviderId` is expected. All ids are UUID v7 — time-sortable and
+//! generated in-app.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;

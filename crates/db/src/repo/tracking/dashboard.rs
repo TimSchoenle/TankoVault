@@ -1,13 +1,10 @@
-//! Read models for the Home surfaces: the unread feed, continue-reading cards, lifetime
-//! stats and tag-overlap recommendations (frontend §9.3).
+//! Read models for the Home surfaces: unread feed, continue-reading cards, lifetime stats and
+//! tag-overlap recommendations (frontend §9.3).
 //!
-//! # The unread predicate is written out four times
-//!
-//! Three statements here and one in [`watchlist`](super::watchlist) each decide "has this user
-//! read this chapter?" in SQL, and [`ReadProgress::covers`](super::ReadProgress::covers) decides
-//! the same thing in Rust. `sqlx`'s checked macros need a string literal and will not expand
-//! `concat!`, so the predicate cannot be factored out; every copy is spelled identically, as the
-//! negation of `covers`:
+//! The unread predicate is spelled out 4× (3 here, 1 in [`watchlist`](super::watchlist)) as the
+//! negation of [`ReadProgress::covers`](super::ReadProgress::covers), because `sqlx` macros need
+//! a string literal and cannot share it via `concat!`; `crates/db/tests/repo_tracking.rs` is what
+//! catches a copy drifting:
 //!
 //! ```text
 //! floor(c.number) > COALESCE(rp.last_read_whole_number, 0)
@@ -15,14 +12,6 @@
 //!            AND rp.last_read_part_number IS NOT NULL
 //!            AND c.number <= rp.last_read_part_number)
 //! ```
-//!
-//! The leading conjunct is the sargable one and comes first on purpose: it is the expression
-//! `chapters_source_floor_idx (series_source_id, (floor(number)))` indexes (PERF-12), and the
-//! part clause is a cheap residual filter over what it returns.
-//!
-//! Nothing but `crates/db/tests/repo_tracking.rs` can notice a copy drifting: three of these
-//! four used to carry only the first conjunct, which reported every part release read ahead of
-//! the whole frontier as unread — see that suite's `TRACK-1` note.
 
 use crate::error::DbResult;
 use crate::repo::catalog::SeriesListItem;
@@ -49,9 +38,7 @@ pub struct FeedItem {
 /// are per source; the caller may group across providers.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. "Nothing unread" and "nothing
-/// watched" are both an empty `Vec`; the feed cannot report [`crate::DbError::NotFound`] for a
-/// user, so an empty response is never evidence the account is gone.
+/// [`crate::DbError::Sqlx`] only; empty is never evidence the account is gone.
 pub async fn feed<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -120,22 +107,14 @@ pub struct ContinueCard {
     pub unread: i64,
 }
 
-/// Continue-reading cards: watched series (`reading`/`planned`/`paused`) that have at least
-/// one unread chapter, freshest activity first. Returns **every** matching series (no cap) so
-/// the rail size is stable across requests; the `unread > 0` requirement is enforced in SQL via
-/// `EXISTS` and ties on activity are broken by `series_id` for a deterministic order. `unread`
-/// counts distinct **whole** chapters (`floor(number)`) — sub-chapter part releases (e.g.
-/// `152.1`..`152.6`) collapse into the one chapter they belong to rather than inflating the badge.
+/// Continue-reading cards: watched series with at least one unread chapter, freshest activity
+/// first (no cap, for a stable rail). `unread` counts distinct whole chapters.
 ///
-/// Both aggregates filter on the module's unread predicate, so a whole chapter that exists only
-/// as parts the user has already read is neither counted nor offered as `next_number`. Filtering
-/// on the whole frontier alone — as this did — left a card that could not be cleared: the badge
-/// claimed one unread, `next_number` pointed at a part already read, and marking that part read
-/// again is a deliberate no-op in [`progress_mark_read`](super::progress_mark_read).
+/// Both aggregates must use the module's unread predicate — filtering on the whole frontier
+/// alone leaves a card that can never be cleared (badge stuck on an already-read part).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A user with nothing left to
-/// read gets an empty `Vec`, which is the rail's empty state rather than an error.
+/// [`crate::DbError::Sqlx`] only; nothing left is an empty `Vec`.
 pub async fn continue_reading<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -149,18 +128,9 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
         next_number: Option<f64>,
         unread: i64,
     }
-    // One lateral aggregate per watchlist row, not four correlated subqueries.
-    //
-    // The previous form re-scanned the same chapter set four times for every card: the next
-    // number, the unread count, the `EXISTS` guard, and the `max(discovered_at)` behind the
-    // ordering. Measured on the development catalogue, for the user with 835 watchlist
-    // entries, that was **1 037 ms**. The lateral computes all four in one pass over each
-    // series' chapters: **104 ms**, same rows in the same order.
-    //
-    // `FILTER` rather than a `WHERE` inside the lateral, deliberately: `last_activity` is the
-    // newest chapter of the series regardless of what the user has read, while the other two
-    // are over unread chapters only. Pushing the unread predicate into the lateral's `WHERE`
-    // would silently redefine the ordering as "newest *unread* chapter".
+    // One lateral pass per row, not four correlated subqueries — must stay one pass, measured
+    // far cheaper at scale. `FILTER`, not `WHERE`: pushing the unread predicate into the
+    // lateral's `WHERE` would silently redefine the ordering as "newest unread chapter".
     let rows = sqlx::query_as!(
         Row,
         "SELECT w.series_id, s.canonical_title AS series_title, s.cover_url, \
@@ -207,10 +177,8 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Lifetime reading stats for the Home/Profile headline (frontend §9.3 `GET /v1/me/stats`).
-/// `chapters_read` is the sum of whole chapters below each series' last-read marker — an
-/// honest proxy over stored progress (there is no per-chapter read-event log, so a daily
-/// "streak" is intentionally omitted rather than fabricated).
+/// Lifetime reading stats for the Home/Profile headline. `chapters_read` is a proxy over stored
+/// progress — there is no per-chapter read-event log, so a "streak" is omitted rather than faked.
 #[derive(Debug, Clone, Default, serde::Serialize, FromRow)]
 pub struct MeStats {
     pub tracking: i64,
@@ -220,19 +188,14 @@ pub struct MeStats {
     pub unread: i64,
 }
 
-/// Compute a user's lifetime tracking stats in a single round trip. Both `chapters_read`
-/// and `unread` are floored to whole chapters — sub-chapter part releases (e.g. `152.6`)
-/// are not "full chapters" for tracking purposes and don't count as extra ones.
+/// Compute a user's lifetime tracking stats in one round trip; both counts are floored to whole
+/// chapters.
 ///
-/// The `unread` subquery keeps its global `DISTINCT` rather than becoming a per-series
-/// lateral like [`continue_reading`]'s. The lateral form was written and measured on the
-/// development catalogue (835 watchlist entries): it forces a nested loop per watchlist row
-/// and came out **slower** — 432 ms against 258 ms for the hash join plus one sort. The same
-/// rewrite is not automatically right in both places; this one was checked.
+/// `unread` stays a global `DISTINCT`, not a per-series lateral like [`continue_reading`]'s —
+/// measured slower here despite being faster there; the rewrite is not universally right.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable; the aggregate always returns
-/// a row, so a user who tracks nothing gets zeros rather than [`crate::DbError::NotFound`].
+/// [`crate::DbError::Sqlx`] only; tracking nothing gets zeros, not [`crate::DbError::NotFound`].
 pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<MeStats> {
     let stats = sqlx::query_as!(
         MeStats,
@@ -261,15 +224,11 @@ pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResu
     Ok(stats)
 }
 
-/// "Because you read" recommendations (frontend §9.3, *Stub*): series that share a tag with
-/// the user's watchlist and are not already tracked, most shared tags first. Returns an
-/// empty vec when the user has no tagged watchlist yet (the API falls back to recent series).
+/// "Because you read" recommendations: untracked series sharing a tag with the watchlist, most
+/// shared tags first. Empty when the watchlist has no tags yet (API falls back to recent series).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. The empty case is a
-/// documented, expected result rather than an error, which is what lets the API substitute its
-/// fallback without having to distinguish "no recommendations" from "the query failed" — so a
-/// caller must not collapse `Err` into that same fallback.
+/// [`crate::DbError::Sqlx`] only; must not be collapsed into the API's empty-case fallback.
 pub async fn recommendations<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

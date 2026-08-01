@@ -44,16 +44,11 @@ impl TryFrom<SourceRow> for SeriesSource {
 
 /// Upsert the (provider, path) source for a series. Idempotent on `(provider_id, source_path)`.
 ///
-/// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `series_id` or
-/// `provider_id` is a foreign-key violation and so a 500. There is no `Option` here and none is
-/// needed: `RETURNING id` fires on both the insert and the update arm, so the row always exists
-/// by the time this returns.
+/// On conflict, the existing row's id comes back (a source keeps its identity across re-scans)
+/// and `series_id` is not updated — an already-attached source is never re-pointed.
 ///
-/// The id it returns is not necessarily the one passed in: on the conflict arm the *existing*
-/// row's id comes back, so a source keeps its identity across re-scans and the freshly generated
-/// [`SeriesSourceId`] is discarded. `series_id` is likewise **not** in the `DO UPDATE` list — a
-/// source that has already been attached to a canonical series is never re-pointed here.
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; unknown `series_id`/`provider_id` is a foreign-key violation.
 pub async fn upsert_source<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -78,25 +73,14 @@ pub async fn upsert_source<'e, E: PgExecutor<'e>>(
     Ok(SeriesSourceId::from_uuid(id))
 }
 
-/// Ensure a series **source** row exists for a catalogue entry, creating a canonical
-/// series from the listing title when the source is new.
-///
-/// This is the breadth-first "collect all series first" step of a full scan (design §12):
-/// the catalogue walk registers every series immediately from its listing title + path, so
-/// the complete series list materialises before any per-series chapter fetch runs. It is a
-/// **no-op when the source already exists**, so it never downgrades metadata that a later
-/// `Series` task (or an earlier scan) has already enriched, and it never touches chapters.
-///
-/// For a genuinely new source it runs the same canonicalisation pipeline as `ingest_series`
-/// ([`resolve_canonical_series`]); the subsequent `Series` task, resolving from the fuller
-/// series-page title, attaches to this same canonical series in the common case where the
-/// titles agree after normalisation.
+/// Ensure a series **source** row exists for a catalogue entry, creating a canonical series
+/// from the listing title when the source is new. No-op if the source already exists, so it
+/// never downgrades metadata a later `Series` task has enriched.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An already-registered source
-/// is `Ok(())` with nothing written and the transaction dropped unsent, which is the no-op the
-/// paragraph above promises; it is indistinguishable from a fresh registration, so a caller that
-/// needs to know whether anything was created must count with [`register_source_stubs`] instead.
+/// [`crate::DbError::Sqlx`] only; an already-registered source is `Ok(())` with nothing
+/// written — indistinguishable from a fresh registration; use [`register_source_stubs`] to
+/// count.
 pub async fn register_source_stub(
     pool: &sqlx::PgPool,
     provider_id: ProviderId,
@@ -127,10 +111,8 @@ pub async fn register_source_stub(
 
 /// Canonicalise a catalogue listing title into a series id, creating one if nothing matches.
 ///
-/// Shared by the single-entry and batched stub registration so both run *identical*
-/// canonicalisation — the listing title carries no description, cover, type, status or year, and
-/// deliberately so: a later `Series` task enriches the row from the fuller series page, and a
-/// stub must never overwrite that with blanks.
+/// Listing title carries no description/cover/type/status/year on purpose — a stub must never
+/// overwrite what a later `Series` task enriched with blanks.
 async fn resolve_stub_series(
     conn: &mut sqlx::PgConnection,
     title: &str,

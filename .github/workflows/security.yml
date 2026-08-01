@@ -1,29 +1,23 @@
 name: Security
 
-# Static analysis of the workflows themselves.
+# Static analysis of the workflows themselves — the one body of code with write access to the
+# repository that nothing else reads. Catches unpinned actions, over-broad `permissions`,
+# credentials persisted into `.git/config`, and `${{ }}` interpolated into a `run:` block, which is
+# a shell injection rather than a template.
 #
-# Everything else in this repository has a gate that reads it — clippy reads the Rust, promtool
-# reads the alert rules, `xtask repo-lint` reads the CSP and the compose file. The workflows were
-# the one body of code with write access to the repository that nothing analysed. zizmor is that
-# reader: unpinned actions, over-broad `permissions`, credentials persisted into `.git/config` by
-# `actions/checkout`, and `${{ }}` interpolated straight into a `run:` block (which is a shell
-# injection, not a template).
-#
-# The `pedantic` persona is deliberate. The default persona reports only what it can prove is
-# exploitable today; pedantic reports the shape that becomes exploitable after one careless edit,
-# which is the standard the rest of this repository's lint configuration already holds.
+# `pedantic` on purpose: the default persona reports only what is provably exploitable today,
+# pedantic reports the shape that becomes exploitable after one careless edit.
 
 on:
   push:
     branches: [main]
   pull_request:
   schedule:
-    # Weekly, alongside CI's full run. zizmor's audit set grows between releases, so a workflow
-    # that passed on the day it was written is not a workflow that passes today.
+    # Weekly, alongside CI's full run: zizmor's audit set grows between releases.
     - cron: "0 4 * * 1"
   workflow_dispatch:
 
-# Nothing is granted at the workflow level; every job asks for what it needs and no more.
+# Nothing granted at the workflow level; every job asks for what it needs and no more.
 permissions: {}
 
 concurrency:

@@ -17,10 +17,7 @@ pub struct SeriesListItem {
 /// Query the browse list with keyset pagination on `(created_at, id)`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A `query` matching nothing and
-/// an empty catalogue are the same empty `Vec`, not [`crate::DbError::NotFound`] — "no results"
-/// is a 200 with an empty list on every browse surface. `limit` is passed through unvalidated;
-/// the clamp lives at the edge (SEC-11).
+/// [`crate::DbError::Sqlx`] only; no match is an empty `Vec`, not [`crate::DbError::NotFound`].
 pub async fn list_series<'e, E: PgExecutor<'e>>(
     exec: E,
     query: Option<&str>,
@@ -43,10 +40,8 @@ pub async fn list_series<'e, E: PgExecutor<'e>>(
     }
 
     let rows = if let Some(q) = query {
-        // Search matches the canonical title, the full-text vector, **and** any alternative
-        // title/synonym (english/native/AniList synonyms recorded in `series_titles`), so a
-        // work found under a non-primary name still surfaces. Ranking takes the best trigram
-        // similarity across the canonical and alternative titles.
+        // Matches canonical title, FTS vector, and alternative titles; ranks by best trigram
+        // similarity across all three.
         sqlx::query_as!(
             ListRow,
             "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
@@ -110,24 +105,19 @@ pub async fn list_series<'e, E: PgExecutor<'e>>(
 
 /// How the Discover grid is ordered.
 ///
-/// A closed enum rather than the `Option<String>` this used to be: an unrecognised token
-/// silently fell back to `updated`, so a typo in a client produced a page that looked right
-/// and was ordered wrong. The handler parses this and answers `400` instead.
+/// A closed enum, not a passed-through string: an unrecognised token must be rejected (400),
+/// not silently fall back to `updated`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SeriesSort {
-    /// Most recently updated first. The default, the overwhelmingly common case, and the
-    /// only one with a dedicated index (`series_updated_idx`).
+    /// Default; the only order with a dedicated index (`series_updated_idx`).
     #[default]
     Updated,
     Title,
     Chapters,
     Sources,
     Year,
-    /// Accepted, and ordered by recency. There is no rating column yet; the token is in the
-    /// design and the frontend's sort control offers it, so refusing it would break a visible
-    /// control for no gain. Ordering by recency is the honest fallback — and it is declared
-    /// here rather than hidden in a `_ =>` arm, so adding the column later is a change to one
-    /// obvious place.
+    /// No rating column yet; falls back to recency rather than refusing a token the frontend
+    /// already offers.
     Rating,
 }
 
@@ -174,11 +164,10 @@ pub struct ParseSeriesSortError(pub String);
 
 /// Server-side filter/sort/paginate criteria for the Discover grid (frontend §9.1).
 ///
-/// Every field is optional; `None`/empty means "no constraint". The enum filters bind as
-/// their native Postgres enum types rather than as text: `s.content_type::text = $2` cast the
-/// column away from any index it could use, and it let an unparseable token through to match
-/// nothing instead of being refused at the edge. `tags` requires the series to carry **all**
-/// listed slugs; `exclude_tags` removes any series carrying **any** listed slug.
+/// Every field is optional; `None`/empty means "no constraint". Enum filters bind as native
+/// Postgres types, not text — text binding both loses the index and lets an unparseable token
+/// match nothing instead of being refused. `tags` requires all listed slugs; `exclude_tags`
+/// excludes any.
 #[derive(Debug, Default, Clone)]
 pub struct SeriesFilter {
     pub query: Option<String>,
@@ -220,51 +209,16 @@ struct FilteredRow {
 /// Query the browse list with server-side filtering, sorting and offset pagination
 /// (frontend §9.1). Returns the page plus the total match count for the pager.
 ///
-/// # Why this is two statements — not five, and not one
-///
-/// It was **five** near-identical `query_as!` blocks differing only in `ORDER BY`, each
-/// repeating the same nine-predicate `WHERE` and eleven binds. Adding a filter meant five
-/// identical edits, and any one of them drifting produced a filter that applied under four
-/// sort orders and not the fifth — on a predicate set that includes provider scoping and tag
-/// exclusion. The shared text cannot be factored into a constant: `sqlx`'s compile-time
-/// macros need a string *literal* and do not expand `concat!` (checked, not assumed).
-///
-/// It is not one statement either. Folding all six orders into bound `CASE` expressions does
-/// work — Postgres constant-folds the inactive branches under a custom plan and still reaches
-/// `series_title_sort_idx` for `title` — but it puts two correlated aggregate subqueries
-/// (`chapters`, `sources`) into the sort key of *every* browse request, and under a generic
-/// plan the default order loses `series_updated_idx` and falls back to a parallel seq scan.
-/// The default order is the unauthenticated, highest-traffic route in the product, so it gets
-/// its own statement and its plan cannot regress. Measured on the 78 850-row development
-/// catalogue: indexed recency 2.9 ms; the `CASE` form under a forced generic plan 79 ms.
-///
-/// So: **one statement for recency, one for everything else.** Two copies of the `WHERE`
-/// clause is a real cost; it is the smallest one available without giving up either
-/// compile-time checking or the index on the hot path.
-///
-/// # Why the total is a separate query
-///
-/// The page query used to carry `count(*) OVER()`. A window function with no `PARTITION BY`
-/// is evaluated over the whole result set, so Postgres materialised *every* matching row —
-/// including the per-row `source_count` subquery — before the `LIMIT` could take 40. On the
-/// development catalogue that meant a full sequential scan, a top-N sort and 66 MB spilled to
-/// disk to return 40 rows: 179 ms. Counting separately lets the page query stop at `LIMIT`
-/// and lets the count run as an index-only scan, and the two are issued concurrently so the
-/// pair costs one round trip. Same catalogue, same filters: 179 ms → ~5 ms.
-///
-/// Takes `&PgPool` rather than a generic executor precisely so the two can overlap.
+/// Two statements, not five (drift risk across near-identical `ORDER BY` copies) or one
+/// (folding every sort key into bound `CASE` expressions loses the default order's index under
+/// a generic plan). The total is counted separately from the page: a `count(*) OVER()` window
+/// forces full materialization before `LIMIT` applies, where a concurrent index-only count does
+/// not. Takes `&PgPool`, not a generic executor, so the two queries can run concurrently.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A filter matching nothing is
-/// `SeriesPage { items: [], total: 0 }`, never [`crate::DbError::NotFound`].
-///
-/// `try_join!` means **either** statement failing fails the pair, and the other's result is
-/// discarded. That is the right trade here: a page without its total, or a total without its
-/// page, is a pager that renders wrong rather than one that renders less, and the two run on
-/// separate connections from the same pool so a pool exhausted by one of them fails both anyway.
-/// Note the consequence for the *count*: page and total are two statements, so a concurrent
-/// insert between them can make `total` disagree with what the page contains. The pager tolerates
-/// that by design; nothing here takes a snapshot to prevent it.
+/// [`crate::DbError::Sqlx`] only; a filter matching nothing is `{items: [], total: 0}`.
+/// `try_join!` fails the pair if either statement fails; the count can drift from the page
+/// under concurrent writes, which the pager tolerates by design.
 pub async fn list_series_filtered(pool: &PgPool, filter: &SeriesFilter) -> DbResult<SeriesPage> {
     let query = filter
         .query
@@ -301,10 +255,8 @@ pub async fn list_series_filtered(pool: &PgPool, filter: &SeriesFilter) -> DbRes
 
 /// One page of matching rows, in the requested order.
 ///
-/// Both statements end with `s.id DESC`. Without a tiebreaker, rows sharing the leading sort
-/// key had no defined order, so two adjacent `OFFSET` pages could repeat one row and skip
-/// another; it is also what makes the recency order match `series_updated_idx
-/// (updated_at DESC, id DESC)` exactly.
+/// Both statements end with `s.id DESC` as a tiebreaker — without it, ties in the sort key
+/// give adjacent `OFFSET` pages no stable order.
 async fn fetch_filtered_page(
     pool: &PgPool,
     filter: &SeriesFilter,
@@ -374,9 +326,8 @@ async fn fetch_page_by_recency(
 
 /// Every other order, selected by the bound sort token.
 ///
-/// Postgres constant-folds the inactive `CASE` branches, so `title` still reaches
-/// `series_title_sort_idx` and the two correlated aggregates are never evaluated unless the
-/// order that needs them was asked for.
+/// Postgres constant-folds inactive `CASE` branches, so only the requested order's aggregates
+/// evaluate.
 async fn fetch_page_by_sort_token(
     pool: &PgPool,
     filter: &SeriesFilter,
@@ -443,8 +394,8 @@ async fn fetch_page_by_sort_token(
 
 /// How many rows match the filter, ignoring `limit`/`offset`.
 ///
-/// The predicate list is [`fetch_filtered_page`]'s and must stay that way — a total that
-/// disagrees with the page is a pager offering a page that comes back empty.
+/// Predicate must mirror [`fetch_filtered_page`]'s exactly, or the pager can offer a page that
+/// comes back empty.
 async fn count_filtered(
     pool: &PgPool,
     filter: &SeriesFilter,
@@ -492,9 +443,7 @@ async fn count_filtered(
 /// Alternative titles of a series (design §9.2 enrichment). Empty when none are recorded.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `series_id` and a
-/// series with no synonyms recorded are the same empty `Vec`, not [`crate::DbError::NotFound`];
-/// the series-detail handler has already established the series exists.
+/// [`crate::DbError::Sqlx`] only; unknown id or no synonyms is the same empty `Vec`.
 pub async fn list_series_titles<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -511,9 +460,7 @@ pub async fn list_series_titles<'e, E: PgExecutor<'e>>(
 /// Author/artist credits attached to a series, alphabetically (mirrors [`list_series_tags`]).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `series_id` and a
-/// series with no credits are the same empty `Vec`, not [`crate::DbError::NotFound`] — an
-/// uncredited series renders without the byline rather than failing the page.
+/// [`crate::DbError::Sqlx`] only; unknown id or no credits is the same empty `Vec`.
 pub async fn list_series_authors<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -545,8 +492,7 @@ pub async fn list_series_authors<'e, E: PgExecutor<'e>>(
 /// Tags attached to a series, alphabetically (design §9.2 enrichment).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `series_id` and an
-/// untagged series are the same empty `Vec`, not [`crate::DbError::NotFound`].
+/// [`crate::DbError::Sqlx`] only; unknown id or untagged is the same empty `Vec`.
 pub async fn list_series_tags<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -578,10 +524,8 @@ pub async fn list_series_tags<'e, E: PgExecutor<'e>>(
 /// List all tags/genres, alphabetically (design §11 `GET /v1/tags`).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A catalogue nothing has been
-/// ingested into yet is an empty `Vec`. This one feeds the discover filter panel, so a failure
-/// defaulted to an empty list would render a filter offering no tags — indistinguishable from a
-/// fresh install, and it would look like the feature works.
+/// [`crate::DbError::Sqlx`] only; must not be defaulted to empty — that reads as "no tags"
+/// rather than a failed fetch.
 pub async fn list_tags<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<tankovault_domain::Tag>> {
     #[derive(FromRow)]
     struct Row {
@@ -606,14 +550,9 @@ mod sort_tests {
     use super::SeriesSort;
     use std::str::FromStr as _;
 
-    /// Every token the API accepts must round-trip, and an unknown one must be an error
-    /// rather than a silent fallback.
-    ///
-    /// The bug this pins: `SeriesFilter::sort` was an `Option<String>` matched with a
-    /// trailing `_ =>` arm, so `?sort=titel` returned a `200` ordered by recency. It also
-    /// pins the token strings themselves, which are bound straight into the `ORDER BY`
-    /// `CASE` expressions — renaming one there without renaming it here would silently
-    /// disable that sort order.
+    /// Pins: `sort` used to be a passed-through string with a `_ =>` fallback, so
+    /// `?sort=titel` silently returned recency order instead of 400. Also pins the token
+    /// strings bound into the `ORDER BY CASE`.
     #[test]
     fn every_sort_token_round_trips_and_unknown_is_refused() {
         for sort in [
@@ -630,9 +569,8 @@ mod sort_tests {
         assert!(SeriesSort::from_str("").is_err());
     }
 
-    /// Only the two orders the dedicated, index-backed recency statement can serve may claim
-    /// it. If `Title` ever answered `true` here it would be ordered by `updated_at` with no
-    /// error anywhere.
+    /// Pins which orders route to the indexed recency statement; a wrong answer here silently
+    /// reorders results with no error.
     #[test]
     fn only_recency_orders_use_the_indexed_statement() {
         assert!(SeriesSort::Updated.is_recency());

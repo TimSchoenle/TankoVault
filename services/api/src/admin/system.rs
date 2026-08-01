@@ -1,9 +1,4 @@
 //! Read-only operator dashboard surfaces: the system overview and the audit trail.
-//!
-//! User administration used to live here alongside them. It now has its own module
-//! ([`crate::admin::users`]) because it grew from one read into a mutating surface with its own
-//! safety rules, and mixing "count the series" with "erase an account" in one file made the
-//! second harder to review than it deserves.
 
 use crate::error::ApiResult;
 use crate::openapi::ADMIN_OVERVIEW_TAG;

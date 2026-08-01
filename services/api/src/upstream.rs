@@ -1,41 +1,7 @@
 //! One typed client for every internal service the API fronts.
 //!
-//! The API proxies to `sync`, `control-plane` and `challenge-solver`. That block used to be
-//! open-coded at nine call sites, each repeating the same `format!` for the URL, the same
-//! `map_err(|_| ApiError::Internal)`, and — crucially — each free to get the error mapping
-//! subtly different. Three consequences of that, all fixed here:
-//!
-//! - **Upstream failures collapsed to `500`.** A `sync` outage was indistinguishable from a
-//!   bug in this process. [`Upstream`] maps transport failure to `502` and keeps upstream
-//!   `404`/`409` intact, so the `409` `OpenAPI` documents is now actually emittable.
-//! - **The internal token had nowhere to live.** Every outbound call must present
-//!   `X-Internal-Token`; a per-call-site convention would be forgotten exactly once, which is
-//!   all it takes. Attaching it here makes it structural.
-//! - **No timeouts.** The client was a bare `reqwest::Client::new()`, which has none, feeding
-//!   an unbounded `tokio::spawn` in `spawn_targeted_push` — a hung `sync` leaked a task and a
-//!   socket per marked chapter.
-//!
-//! # Typed bodies (ARCH-10)
-//!
-//! Every verb is generic in the response body, so a proxy handler declaring
-//! `body = tankovault_contracts::sync::AccountStatus` in its `#[utoipa::path]` can *return*
-//! that type and have the deserialize step enforce the declaration at the edge. Before that,
-//! the handlers all returned `Json<serde_json::Value>` and nothing — not the compiler, not a
-//! test — connected the declaration to what was forwarded, while the generated
-//! `crates/api-client` and the frontend trusted it. Being one place is what made this a
-//! four-line change rather than twenty.
-//!
-//! `T = serde_json::Value` is still the right answer for a genuinely schema-less command
-//! response and costs nothing: [`serde_json::from_value`] into a `Value` is the identity.
-//!
-//! # What this type does *not* check
-//!
-//! [`Upstream::url`] is a `format!` and nothing more: it joins `base` and `path` and trusts the
-//! path. That is the one thing a caller must not hand a raw client-supplied string, because a
-//! `/`, a `..`, a `?` or a `#` in it moves the request to a different endpoint on the internal
-//! service — one this client then presents `X-Internal-Token` on. Path segments that come from
-//! a request are validated *before* they get here, by their type; see [`crate::slug`] for the
-//! bug that was and why it is a type rather than a check at each of the eleven call sites.
+//! Centralizes the internal-token header, timeouts and upstream-status mapping that call
+//! sites used to duplicate, each free to get the error mapping subtly different.
 
 use crate::error::{ApiError, ApiResult};
 use axum::Json;
@@ -162,6 +128,10 @@ impl Upstream {
         self.name
     }
 
+    /// `path` must never be a raw client-supplied string: a `/`, `..`, `?` or `#` in it moves
+    /// the request to a different endpoint on this internal peer, one that still gets
+    /// `X-Internal-Token`. Path segments from a request are validated by their type before
+    /// they reach here; see [`crate::slug`].
     fn url(&self, path: &str) -> String {
         format!("{}/{}", self.base, path.trim_start_matches('/'))
     }
@@ -177,10 +147,7 @@ impl Upstream {
     /// Send, then translate the outcome into this service's error vocabulary.
     ///
     /// # Errors
-    /// [`ApiError::BadGateway`] when the peer is unreachable, answers with a status this
-    /// service cannot represent, or sends a body that is not a `T`; [`ApiError::GatewayTimeout`]
-    /// on a timeout; [`ApiError::NotFound`] and [`ApiError::Conflict`] when the peer said so
-    /// deliberately.
+    /// [`ApiError::BadGateway`] or [`ApiError::GatewayTimeout`] on transport failure; [`ApiError::NotFound`] or [`ApiError::Conflict`] when the peer said so deliberately.
     async fn send<T: DeserializeOwned>(&self, req: reqwest::RequestBuilder) -> ApiResult<Json<T>> {
         let resp = self.authenticate(req).send().await.map_err(|e| {
             tracing::error!(upstream = self.name, error = %e, "internal service unreachable");
@@ -232,11 +199,9 @@ impl Upstream {
 
     /// Map an upstream status onto this service's error vocabulary.
     ///
-    /// `404` and `409` are forwarded because the internal services emit them deliberately
-    /// (unknown provider; account not linked) and the public contract documents both.
-    /// A `401` is *not* forwarded — it means this service failed to authenticate to its own
-    /// peer, which is an operator misconfiguration and must not be reported to the client as
-    /// if their credentials were the problem.
+    /// `404`/`409` are forwarded since internal services emit them deliberately and the
+    /// public contract documents both. `401` is not forwarded — it means this service failed
+    /// to authenticate to its own peer, an operator misconfiguration, not the client's fault.
     fn map_status(&self, status: reqwest::StatusCode, body: &str) -> ApiError {
         match status.as_u16() {
             404 => ApiError::NotFound,
@@ -308,13 +273,11 @@ mod tests {
         ));
     }
 
-    /// The endpoint's declared body is now *enforced* rather than merely documented (ARCH-10).
+    /// The endpoint's declared body is enforced, not merely documented.
     ///
-    /// Twenty proxy handlers used to return `Json<serde_json::Value>` while their
-    /// `#[utoipa::path]` named a concrete `body =`. Nothing connected the two, and the
-    /// generated `crates/api-client` and the frontend believed the declaration. A peer whose
-    /// shape has drifted must now fail at this boundary instead of reaching a client compiled
-    /// against the old one.
+    /// Proxy handlers used to return `Json<serde_json::Value>` while their `#[utoipa::path]`
+    /// named a concrete body; nothing connected the two. A peer whose shape has drifted must
+    /// now fail at this boundary instead of reaching a client compiled against the old one.
     #[test]
     fn a_body_that_is_not_the_declared_shape_is_a_bad_gateway() {
         let up = upstream(None);

@@ -248,23 +248,33 @@ browser emulation, the politeness limiter and the 429/`Retry-After` backoff.
 
 ## 3 Style
 
-### 3.1 Comments say *why*
+### 3.1 Comments are short by default
 
-The single most distinctive convention here, and the one an agent is most likely to get wrong.
-Comments in this repository are long, and they explain **what was wrong before** — because that
-is the part not recoverable from the diff. A comment restating the code is noise; a comment
-recording the defect a line prevents is why the line survives the next refactor.
+**[R]** A comment restating the code is noise. So is a comment narrating the lines below it, and
+so is one recounting how the code got here — the diff holds that. Default to none, and where one
+is needed, to one line.
 
-Match the density of the file you are in. Do not strip existing rationale to "tidy up".
+**[R] Three things earn length, and nothing else does:**
+
+1. **Security rationale** — why a bound, an escape, a CSP directive, an SSRF check or a secret's
+   handling is what it is. An injected script does not care that the reasoning was obvious to
+   whoever wrote it.
+2. **An invariant or ordering constraint the next refactor would silently break** — state the
+   failure mode, not the history. If it can only be caught by a test, it is rule 8's problem too.
+3. **A test doc comment naming the bug it pins** ([§3.6](#36-tests-carry-the-story)).
+
+When you shorten an existing comment, keep the sentence carrying the risk and drop the narration
+around it. Deleting a stated *why* outright still needs the same care it always did — the rule
+changed the budget, not the value of a reason.
 
 ### 3.2 Documentation
 
 **[E]** `# Errors` on every public `fn` returning `Result` (`clippy::missing_errors_doc`), and
-`# Panics` where it can panic. **Name the variants the function can actually produce** — in
-`crates/db` that is usually "`Sqlx` only — no other variant is reachable", which tells a caller
-the answer is always a 500 — then say what it returns *instead of* an error, because most of this
-codebase turns a miss into `Ok(None)`/`Ok(false)`/`Ok(0)` and several of those choices are
-security-relevant. "Returns an error if the query fails" satisfies the lint and documents nothing.
+`# Panics` where it can panic. One line each. **Name the variants the function can actually
+produce** — in `crates/db` that is usually "`Sqlx` only", which tells a caller the answer is
+always a 500 — and say what it returns *instead of* an error where a miss becomes
+`Ok(None)`/`Ok(false)`/`Ok(0)`, because several of those choices are security-relevant.
+"Returns an error if the query fails" satisfies the lint and documents nothing.
 
 **[E]** Intra-doc links are `deny`-level (`rustdoc::broken_intra_doc_links`). A broken link
 renders as literal `[`Foo`]` text, so it is invisible to everyone except whoever generates the

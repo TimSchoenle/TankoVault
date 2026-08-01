@@ -10,15 +10,11 @@ pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations"
 
 /// Build a Postgres connection pool.
 ///
-/// `url` is a [`SecretString`] rather than a `&str` because a Postgres DSN carries the
-/// password inline. This is the single funnel every service and `xtask` goes through, so
-/// typing it here is what forces each of those call sites to hold the DSN in a wrapper of its
-/// own rather than a `String` that reaches a log line on the way to this function.
+/// `url` is a [`SecretString`], not `&str`: a DSN carries the password inline, and this is
+/// the one funnel every service goes through, so it can't reach a log line as a bare `String`.
 ///
 /// # Errors
-/// Returns [`crate::DbError`] if the pool cannot establish an initial connection. Note that
-/// `sqlx` redacts the password from its own connection errors, so a failure here does not
-/// undo the wrapper.
+/// Returns [`crate::DbError`] if the pool cannot establish an initial connection.
 pub async fn connect(
     url: &SecretString,
     max_connections: u32,
@@ -27,12 +23,8 @@ pub async fn connect(
     let pool = PgPoolOptions::new()
         .max_connections(max_connections)
         .acquire_timeout(Duration::from_secs(acquire_timeout_secs))
-        // sqlx defaults this to `true`, which sends a `SELECT 1` liveness probe on **every**
-        // acquisition — an extra network round trip per repository call, and series detail
-        // alone makes about eight. The probe buys very little here: the pool already discards
-        // a connection whose query fails, and a connection dropped between the probe and the
-        // real statement is not covered by it either. Turning it off trades a rare
-        // retryable error for a round trip on every call.
+        // Off trades a rare retryable error for skipping a `SELECT 1` probe per acquisition;
+        // the pool already discards a connection whose query fails.
         .test_before_acquire(false)
         .connect(url.expose_secret())
         .await?;
@@ -49,18 +41,11 @@ pub async fn migrate(pool: &PgPool) -> DbResult<()> {
     Ok(())
 }
 
-/// Drop and recreate the `public` schema, then re-apply every migration from
-/// scratch. Destructive — intended only for local development (`xtask reset`);
-/// there is no code path that calls this from a service.
-///
-/// `DROP SCHEMA public CASCADE` removes all tables (including `_sqlx_migrations`),
-/// enums, indexes, and any extensions installed there; the migration set then
-/// rebuilds the whole schema, so this leaves the database in the same state as a
-/// fresh `migrate` against an empty database.
+/// Drop and recreate the `public` schema, then re-apply every migration. Destructive —
+/// local development only (`xtask reset`); no service calls this.
 ///
 /// # Errors
-/// Returns [`crate::DbError`] if the schema cannot be dropped/recreated or if a
-/// migration fails to apply afterwards.
+/// Returns [`crate::DbError`] if the schema can't be recreated or a migration fails.
 pub async fn reset(pool: &PgPool) -> DbResult<()> {
     sqlx::query("DROP SCHEMA IF EXISTS public CASCADE")
         .execute(pool)

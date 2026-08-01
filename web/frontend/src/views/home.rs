@@ -23,9 +23,8 @@ pub(crate) fn Home() -> Element {
     let api = api::use_api();
     let reload = use_reload();
 
-    // Each resource builds its client from the *live* session token, so the boot-time silent
-    // refresh — which lands a moment after first paint on a reload — automatically refetches
-    // everything instead of leaving the screen stuck on its signed-out result.
+    // Each resource builds its client from the live session token, so the boot-time silent
+    // refresh (landing just after first paint) refetches everything automatically.
     let feed = use_resource(move || {
         reload.track();
         let client = api.client();
@@ -107,10 +106,8 @@ pub(crate) fn Home() -> Element {
         .username()
         .unwrap_or_else(|| i18n.t("common.readerFallback"));
 
-    // Tile values render as an em dash until their call resolves, rather than as a
-    // provisional zero the reader would read as a real figure. The "new chapters" count
-    // comes from the stats endpoint's uncapped `unread` total rather than the feed length,
-    // which is capped at 100 rows and so would plateau at "100" for busy watchlists.
+    // Tile values show an em dash until resolved, not a provisional zero. "New chapters" comes
+    // from stats' uncapped `unread` total, not the feed length, which caps at 100 rows.
     let (new_chapters, reading, chapters_read) = match &*stats.read_unchecked() {
         Some(Ok(Some(stats))) => (
             stats.unread.to_string(),

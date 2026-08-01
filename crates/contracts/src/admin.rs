@@ -1,19 +1,9 @@
-//! Operator-console response bodies.
+//! Operator-console response bodies for `/v1/admin/*`.
 //!
-//! These are the shapes `services/api` publishes on `/v1/admin/*`. They live here rather than
-//! in `tankovault-db` because a repository row is a *query result*, not a promise to a client:
-//! when the admin console read models carried `ToSchema` directly on the row struct, renaming
-//! a column in the `SELECT` silently rewrote the public API and the generated client, with no
-//! compile error anywhere — the handler never named a field, so nothing connected the two.
-//!
-//! The conversion from the row lives in `services/api` (the only crate allowed to know both
-//! layers), which is what turns that class of change back into a compile error at exactly one
-//! call site.
-//!
-//! Every type pins its `OpenAPI` component name with `#[schema(as = ...)]` where the Rust name
-//! differs from the published one. The move is an internal layering fix; it must not rename
-//! anything on the wire, because `crates/api-client` and the frontend are generated from these
-//! names.
+//! Converted from `tankovault-db` rows in `services/api` rather than derived directly from
+//! them, so a `SELECT` column rename is a compile error instead of a silent public-API change.
+//! Types pin their `OpenAPI` component name with `#[schema(as = ...)]` where it differs from the
+//! Rust name, since `crates/api-client` and the frontend are generated from those names.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;

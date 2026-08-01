@@ -1,9 +1,6 @@
-//! Call-site helpers for the audit trail.
-//!
-//! The sink itself lives in `tankovault-service`; this module is the thin, ergonomic
-//! surface handlers use so that recording an action is a single line and impossible to get
-//! wrong. Whether anything is actually written is decided once at boot by which sink was
-//! installed — see [`tankovault_service::audit`].
+//! Call-site helpers for the audit trail — thin wrappers so recording an action is a single
+//! line, over the sink in `tankovault-service` that decides at boot whether anything is
+//! actually written.
 
 use crate::state::{AppState, AuthUser, ClientContext};
 use serde_json::Value;

@@ -1,8 +1,7 @@
-//! Repository layer. Each module owns one aggregate's queries.
+//! Repository layer; each module owns one aggregate's queries.
 //!
-//! Functions that run a single statement are generic over [`sqlx::PgExecutor`], so they
-//! compose with either a pool or a transaction. Functions that run several statements
-//! take `&mut sqlx::PgConnection` and are driven inside a transaction (see
+//! Single-statement functions are generic over [`sqlx::PgExecutor`] and compose with a pool or
+//! transaction; multi-statement ones take `&mut sqlx::PgConnection` and run inside one (see
 //! [`catalog::ingest_series`]).
 
 pub mod audit;

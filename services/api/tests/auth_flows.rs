@@ -1,14 +1,6 @@
-//! End-to-end auth-flow integration tests.
-//!
-//! These drive the real credential endpoints to prove the security-critical session lifecycle:
-//! refresh-token rotation, reuse-detection family revocation, and the narrow grace window that
-//! separates the two — a revoked token is the signature of theft *and* of a rotation an honest
-//! client never took delivery of, so all three branches are pinned here. Because the harness
-//! configures
-//! no SMTP relay, registration activates the account immediately and issues a session (see
-//! `auth::register`), so the flow can be exercised without an email round trip.
-//!
-//! Opt-in: gated behind the `integration` feature because they require Docker.
+//! End-to-end tests for refresh-token rotation and reuse-detection family revocation, run with
+//! no mailer so registration activates immediately. Gated behind the `integration` feature;
+//! requires Docker.
 #![cfg(feature = "integration")]
 
 use axum::body::Body;
@@ -16,20 +8,13 @@ use axum::http::{Request, Response, StatusCode, header};
 use serde_json::json;
 use tankovault_api_test_support::TestApp;
 
-/// The cookie name a deployment that marks cookies `Secure` issues — which the harness now does
-/// by default, matching production (SEC-7). The `__Host-` prefix makes `Secure`, `Path=/` and the
-/// absence of `Domain` browser-enforced instead of merely configured.
+/// The `__Host-` prefix makes `Secure`, `Path=/` and no `Domain` browser-enforced, matching
+/// production.
 const REFRESH_COOKIE: &str = "__Host-refresh_token";
 
-/// Age every already-revoked token well past `auth::session::ROTATION_GRACE` (60 s).
-///
-/// Reuse detection has a *time-bounded* exemption: a token replayed within the grace window of
-/// its own rotation, while its family still holds a live token, is an interrupted or raced
-/// rotation by an honest client, not theft. A test that rotates and immediately replays is
-/// therefore exercising the **grace** path, whatever its name says. Any test that means to
-/// exercise reuse detection has to run this first, or it silently stops testing reuse — which
-/// is exactly what would have happened to
-/// [`refresh_rotates_the_token_and_reuse_revokes_the_family`] when the window was introduced.
+/// Age every already-revoked token past `auth::session::ROTATION_GRACE` (60 s), so a replay
+/// exercises reuse detection rather than the grace-window recovery path. Skipping this silently
+/// turns a reuse test into a grace test instead.
 const AGE_REVOCATIONS_PAST_GRACE: &str = "UPDATE refresh_tokens \
      SET revoked_at = now() - interval '5 minutes' WHERE revoked_at IS NOT NULL";
 
@@ -71,8 +56,6 @@ fn refresh_cookie(resp: &Response<Body>) -> Option<String> {
 async fn refresh_rotates_the_token_and_reuse_revokes_the_family() {
     let app = TestApp::spawn().await;
 
-    // Registration with no configured mailer activates the account and issues a session,
-    // setting the initial refresh cookie.
     let registered = app
         .request(post(
             "/v1/auth/register",
@@ -91,7 +74,6 @@ async fn refresh_rotates_the_token_and_reuse_revokes_the_family() {
     );
     let first = refresh_cookie(&registered).expect("registration issues a refresh cookie");
 
-    // Rotation: presenting the current token mints a *new* one and revokes the old.
     let rotated = app
         .request(post("/v1/auth/refresh", Some(&first), None))
         .await;
@@ -103,14 +85,9 @@ async fn refresh_rotates_the_token_and_reuse_revokes_the_family() {
     let second = refresh_cookie(&rotated).expect("rotation issues a fresh refresh cookie");
     assert_ne!(first, second, "rotation must issue a different token");
 
-    // Put the rotation out of reach of the grace window. Without this the replay below lands
-    // inside it and is (correctly) recovered as a race, so every assertion that follows would
-    // pass for the wrong reason or fail for a reason that has nothing to do with reuse. See
-    // `AGE_REVOCATIONS_PAST_GRACE`.
+    // Put the rotation out of reach of the grace window; see `AGE_REVOCATIONS_PAST_GRACE`.
     app.db.execute(AGE_REVOCATIONS_PAST_GRACE).await;
 
-    // Reuse: replaying the already-rotated first token is the highest-signal theft indicator.
-    // It must be refused and must revoke the whole lineage.
     let replayed = app
         .request(post("/v1/auth/refresh", Some(&first), None))
         .await;
@@ -120,8 +97,7 @@ async fn refresh_rotates_the_token_and_reuse_revokes_the_family() {
         "replaying a rotated token must be rejected"
     );
 
-    // Family revocation: the *second* (previously valid) token is now dead too, because the
-    // reuse revoked its entire family — a stolen lineage cannot outlive detection.
+    // The second (previously valid) token is dead too: reuse revokes the whole family.
     let after_reuse = app
         .request(post("/v1/auth/refresh", Some(&second), None))
         .await;
@@ -131,7 +107,6 @@ async fn refresh_rotates_the_token_and_reuse_revokes_the_family() {
         "the whole family must be revoked once reuse is detected"
     );
 
-    // The reuse must be audited with its cause, so an operator learns a token was stolen.
     let reuse_events: Vec<_> = app
         .audit
         .denials()
@@ -150,20 +125,9 @@ async fn refresh_rotates_the_token_and_reuse_revokes_the_family() {
 ///
 /// # The bug this pins
 ///
-/// Reuse detection used to treat *any* revoked token as theft, which meant it fired on the
-/// commonest non-attack in the system. Rotation is atomic on the server and not from the
-/// client's side: the old token is revoked and the new one issued together, but the client only
-/// holds the new value once the response reaches it. Two tabs share one cookie jar and one
-/// renewal timer schedule, so they fire together and the second request carries a cookie the
-/// first has already rotated away — and a dropped response does the same thing to a single tab,
-/// which then retries within seconds using the only value it has.
-///
-/// The consequence was not a failed request. `revoke_family` ends the *session*, so a 30-day
-/// login died seconds after an API restart, with `token_reuse_detected` in the audit log and no
-/// attacker involved. Observed in production with a **1.35 s** gap between the two requests.
-///
-/// So: the replay must be served, the family must collapse to exactly one live token, and the
-/// event must be audited as itself rather than as theft.
+/// Reuse detection treated any revoked token as theft; two requests racing a rotation (or one
+/// retrying a dropped response) both present the pre-rotation token, and `revoke_family` ended
+/// the whole session instead of recovering.
 #[tokio::test]
 async fn a_raced_rotation_is_recovered_rather_than_ending_the_session() {
     let app = TestApp::spawn().await;
@@ -182,15 +146,13 @@ async fn a_raced_rotation_is_recovered_rather_than_ending_the_session() {
     assert_eq!(registered.status(), StatusCode::OK);
     let first = refresh_cookie(&registered).expect("registration issues a refresh cookie");
 
-    // The request that wins the race rotates normally.
     let rotated = app
         .request(post("/v1/auth/refresh", Some(&first), None))
         .await;
     assert_eq!(rotated.status(), StatusCode::OK);
     let second = refresh_cookie(&rotated).expect("rotation issues a fresh refresh cookie");
 
-    // The request that lost it arrives holding the pre-rotation cookie. No `AGE_REVOCATIONS`
-    // call here — being *inside* the window is the whole point of this test.
+    // No `AGE_REVOCATIONS` call: being inside the window is the whole point of this test.
     let raced = app
         .request(post("/v1/auth/refresh", Some(&first), None))
         .await;
@@ -203,8 +165,7 @@ async fn a_raced_rotation_is_recovered_rather_than_ending_the_session() {
     assert_ne!(third, first, "recovery must not hand back the spent token");
     assert_ne!(third, second, "recovery must issue its own token");
 
-    // Audited as what it is. These assertions come before the reuse probe below, which would
-    // add a denial of its own.
+    // Before the reuse probe below, which would add a denial of its own.
     assert!(
         !app.audit
             .denials()
@@ -221,9 +182,7 @@ async fn a_raced_rotation_is_recovered_rather_than_ending_the_session() {
          apart in the log"
     );
 
-    // The family collapsed: the successor nobody took delivery of died with the recovery, so
-    // the lineage carries exactly one live token rather than two. Ageing the revocations first
-    // is what stops *this* replay being read as a second race.
+    // Ageing the revocations first stops this replay being read as a second race.
     app.db.execute(AGE_REVOCATIONS_PAST_GRACE).await;
     let superseded = app
         .request(post("/v1/auth/refresh", Some(&second), None))
@@ -237,10 +196,9 @@ async fn a_raced_rotation_is_recovered_rather_than_ending_the_session() {
 
 /// The grace window requires a *live* family, not just a recent revocation.
 ///
-/// The time bound alone would let a lineage that has already been deliberately shut down be
-/// re-opened by a token captured just before the shutdown — logging out and then replaying an
-/// older cookie a moment later would hand the session back. Liveness is the second half of the
-/// test for that reason, and it is the half a "simplification" to a pure timeout would drop.
+/// A time bound alone would let a deliberately shut-down lineage be re-opened by a token
+/// captured just before the shutdown — logout, then replay an older cookie, hands the session
+/// back. This is the liveness half of the test, which a timeout-only "simplification" would drop.
 #[tokio::test]
 async fn a_replay_into_a_dead_family_is_reuse_even_inside_the_grace_window() {
     let app = TestApp::spawn().await;
@@ -265,13 +223,12 @@ async fn a_replay_into_a_dead_family_is_reuse_even_inside_the_grace_window() {
     assert_eq!(rotated.status(), StatusCode::OK);
     let second = refresh_cookie(&rotated).expect("rotation issues a fresh refresh cookie");
 
-    // Logout revokes the whole family, so nothing in the lineage is live any more.
     let logged_out = app
         .request(post("/v1/auth/logout", Some(&second), None))
         .await;
     assert_eq!(logged_out.status(), StatusCode::OK);
 
-    // Well inside the grace window — only the liveness half of the test can refuse this.
+    // Well inside the grace window: only the liveness check can refuse this.
     let replayed = app
         .request(post("/v1/auth/refresh", Some(&first), None))
         .await;

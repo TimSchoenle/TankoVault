@@ -9,9 +9,8 @@ use crate::icons::Icon;
 use dioxus::prelude::*;
 use serde_json::Value;
 
-/// The toggles the panel exposes: the key in the open prefs document, and the catalogue key
-/// wording it. Stored as booleans; an absent key means enabled, so a reader who has never
-/// opened this panel gets everything.
+/// Toggle keys (prefs-document key, catalogue key); absent means enabled, so new readers get
+/// everything on.
 const KEYS: [(&str, &str); 3] = [
     ("new_chapters", "account.notifications.newChapters"),
     ("email", "account.notifications.email"),
@@ -30,8 +29,8 @@ pub(crate) fn NotificationsPanel() -> Element {
         spawn(async move {
             let loaded = match client.notification_prefs().send().await {
                 Ok(response) => response.into_inner(),
-                // A failed load must not silently present "everything on" as the reader's
-                // saved state — that would invite them to toggle against a phantom baseline.
+                // Don't silently present "everything on" as saved state on a failed load —
+                // that invites toggling against a phantom baseline.
                 Err(e) => {
                     outcome.set(Some(Err(api::friendly_error(i18n, e))));
                     Value::Object(serde_json::Map::new())

@@ -1,32 +1,7 @@
-//! `xtask ci` — the offline gates, in CI's order, from one command.
-//!
-//! # Why this exists
-//!
-//! The workflow runs eighteen jobs. A contributor wanting to know whether a change will pass had
-//! to read `ci.yml` and replicate them by hand, which is how `BUILD_AND_OPS` §2.1 happened:
-//! `cargo fmt --all --check` was red on `main` and stayed red, because nothing anybody ran
-//! locally included it.
-//!
-//! # What it does and does not cover
-//!
-//! Only the gates that need no Docker, no network and no database — which is most of them, and
-//! all of the ones a change breaks by accident. Named explicitly rather than "everything":
-//!
-//! | Included | Excluded, and why |
-//! | --- | --- |
-//! | `fmt --check` | `integration` — needs Docker and ~15 minutes of migrations |
-//! | `clippy --all-targets --all-features -D warnings` | `sqlx` offline-cache check — needs a live, migrated Postgres |
-//! | `test --workspace` + `--doc` | `coverage` — needs `cargo-llvm-cov` and a full instrumented build |
-//! | `doc --no-deps` (intra-doc links) | `docker`, `css`, `observability`, `secrets` — need Docker, Node, promtool, gitleaks |
-//! | `openapi --check` | `msrv`, `deny`, `audit`, `supply-chain` — need another toolchain or a network fetch |
-//! | the `web/frontend` gates | |
-//!
-//! The excluded set is not a shortfall to fix. A local command that takes twenty minutes and
-//! needs four extra tools is a local command nobody runs, which puts it back where §2.1 found
-//! it. What is here runs on a checkout with nothing but the pinned toolchain.
-//!
-//! Stops at the first failure, deliberately: the gates are ordered as CI orders them, cheapest
-//! and most-likely-to-fail first, so the first red one is almost always the one to fix.
+//! `xtask ci` — every offline gate CI runs, in CI's order, stopping at the first failure. Covers
+//! only what needs no Docker, no network and no database; CI alone still runs `integration`,
+//! the `sqlx` offline-cache check, `coverage`, `deny`/`audit`/`supply-chain`, and the
+//! Docker/Node/promtool/gitleaks jobs.
 
 use std::process::Command;
 
@@ -37,14 +12,9 @@ enum Step {
         dir: &'static str,
         args: &'static [&'static str],
     },
-    /// Called in this process.
-    ///
-    /// The `OpenAPI` check has to be one. `cargo run -p xtask -- openapi --check` is what CI runs,
-    /// and it cannot be a gate *of* `xtask ci`: cargo rebuilds the binary before running it, and
-    /// on Windows the currently-executing `xtask.exe` is locked, so the command dies with
-    /// `failed to remove file … Access is denied` and reports it as a drift failure, which it is
-    /// not. Calling the function directly is also simply better — no rebuild, no subprocess, the
-    /// same code path.
+    /// Called in-process: cargo rebuilds the xtask binary before running it, and on Windows
+    /// the running `xtask.exe` is locked, so a gate that shelled back out to it would die with
+    /// an access-denied error and report it as a drift failure, which it is not.
     InProcess(fn() -> anyhow::Result<()>),
 }
 
@@ -86,8 +56,8 @@ const GATES: &[Gate] = &[
             args: &["test", "--workspace"],
         },
     },
-    // `--all-targets` silently *excludes* doc tests, which is why they ran nowhere for so long
-    // (TESTING F-11). A separate invocation is the only way to run them.
+    // `--all-targets` silently excludes doc tests; a separate invocation is the only way to run
+    // them.
     Gate {
         name: "doc tests",
         step: Step::Cargo {
@@ -95,9 +65,9 @@ const GATES: &[Gate] = &[
             args: &["test", "--workspace", "--doc"],
         },
     },
-    // Intra-doc links. `cargo test --doc` runs the *examples* and says nothing about whether a
-    // `[`Foo`]` resolves; only rustdoc's own pass does, and until the `rustdoc` lint table landed
-    // nothing asked it to fail. `--no-deps` because a dependency's broken link is not ours to fix.
+    // `cargo test --doc` runs the examples and says nothing about whether a `[`Foo`]` link
+    // resolves; only rustdoc's own pass does. `--no-deps` because a dependency's broken link is
+    // not ours to fix.
     Gate {
         name: "rustdoc (intra-doc links)",
         step: Step::Cargo {
@@ -109,9 +79,6 @@ const GATES: &[Gate] = &[
         name: "openapi drift",
         step: Step::InProcess(|| crate::openapi(true)),
     },
-    // The invariants no compiler sees. In-process for the same reason the OpenAPI check is:
-    // cargo cannot rebuild the running `xtask.exe` on Windows. Cheap — it reads text files —
-    // so its position here is about grouping with the other artefact-agreement checks, not cost.
     Gate {
         name: "repo invariants",
         step: Step::InProcess(|| crate::repo_lint::run(crate::workspace_root())),
@@ -145,9 +112,7 @@ const GATES: &[Gate] = &[
 /// # Errors
 /// The first gate that fails, named.
 pub(crate) fn run(workspace_root: &std::path::Path) -> anyhow::Result<()> {
-    // `CARGO` is set when this was itself launched by cargo, which pins the gates to the same
-    // toolchain running us — so `cargo +nightly run -p xtask -- ci` does not silently check half
-    // the tree with a different compiler than the half it reports on.
+    // `CARGO` pins the gates to the toolchain running us, not whatever `cargo` resolves to.
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
 
     for (i, gate) in GATES.iter().enumerate() {
@@ -190,11 +155,8 @@ pub(crate) fn run(workspace_root: &std::path::Path) -> anyhow::Result<()> {
 mod tests {
     use super::{GATES, Step};
 
-    /// The doc-test gate must be its own invocation.
-    ///
-    /// `cargo test --all-targets` silently *excludes* doc tests — the defect TESTING F-11 found,
-    /// where every documented example compiled nowhere. Folding the two into one command to save
-    /// a build would quietly reintroduce it, so this asserts they stay separate.
+    /// `cargo test --all-targets` silently excludes doc tests; folding the two gates into one
+    /// invocation to save a build would reintroduce that silently.
     #[test]
     fn doc_tests_are_a_gate_of_their_own() {
         let doc = GATES
@@ -210,12 +172,9 @@ mod tests {
         );
     }
 
-    /// The rustdoc gate is separate from the doc-test gate, and stays that way.
-    ///
-    /// They look like the same thing and are not: `cargo test --doc` *executes* the examples and
-    /// never resolves a `[`Foo`]`, while `cargo doc` resolves every link and runs no example.
-    /// Neither command subsumes the other, so consolidating them to save a build would silently
-    /// drop one half — which is how the six broken links this gate was added for accumulated.
+    /// `cargo test --doc` executes examples and never resolves a `[`Foo`]` link; `cargo doc`
+    /// resolves links and runs no example. Neither subsumes the other, so merging them would
+    /// silently drop one half.
     #[test]
     fn link_checking_and_doc_tests_are_separate_gates() {
         let doc_gate = GATES.iter().find(|g| match &g.step {
@@ -236,13 +195,9 @@ mod tests {
         );
     }
 
-    /// No gate re-invokes `xtask` as a subprocess.
-    ///
-    /// Not style — it does not work, and it was the first thing running this command found.
-    /// Cargo rebuilds the binary before running it, and on Windows the currently-executing
-    /// `xtask.exe` is locked, so `cargo run -p xtask -- openapi --check` as a gate *of* `xtask
-    /// ci` dies with `failed to remove file … Access is denied` and reports it as an `OpenAPI`
-    /// drift failure, which it is not. The check is a [`Step::InProcess`] for that reason.
+    /// Not style — it doesn't work. Cargo rebuilds the xtask binary before running it, and on
+    /// Windows the running `xtask.exe` is locked, so a gate that shelled back into it would die
+    /// with an access-denied error.
     #[test]
     fn no_gate_re_invokes_this_binary() {
         for gate in GATES {
@@ -256,11 +211,8 @@ mod tests {
         }
     }
 
-    /// Every cargo gate is a subcommand with no shell in it.
-    ///
-    /// This runs on a developer machine whose shell is `PowerShell` and gates a pipeline whose
-    /// shell is `sh`. The one command whose whole purpose is to make the two agree must not
-    /// itself depend on which is running.
+    /// Runs on a developer's `PowerShell` and gates a pipeline's `sh`; a shell metacharacter in
+    /// an arg would make the gate behave differently per platform.
     #[test]
     fn no_gate_smuggles_a_shell() {
         for gate in GATES {
@@ -277,9 +229,8 @@ mod tests {
         }
     }
 
-    /// The frontend gates run in `web/frontend`, because it is excluded from the host workspace
-    /// and `cargo test --workspace` at the root reaches none of it. That exclusion is exactly
-    /// why its 54 tests and its pedantic clippy set once executed nowhere at all (`FRONTEND` F2).
+    /// `web/frontend` is excluded from the host workspace, so `cargo test --workspace` at the
+    /// root reaches none of it — it once ran nowhere at all for exactly that reason.
     #[test]
     fn the_frontend_gates_run_in_the_frontend() {
         let frontend = GATES

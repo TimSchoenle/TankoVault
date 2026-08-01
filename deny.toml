@@ -1,55 +1,38 @@
-# cargo-deny configuration — license, advisory, and supply-chain gates run in CI
-# (design §3 "Workspace lints", §19 CI, §21 DoD). Schema v2 (cargo-deny 0.14+).
+# cargo-deny configuration — license, advisory, and supply-chain gates run in CI. Schema v2.
 #
-# The rule for this file: an exception must be **explicit, dated and justified**. An empty
-# `ignore = []` against a graph containing four unfixable advisories is not a strict policy —
-# it is a permanently red gate that everyone learns to merge past, which is strictly worse
-# than a documented exception, because a genuinely *new* advisory then looks exactly like the
-# old ones and gets merged past too.
+# An exception must be **explicit, dated and justified**: a permanently red gate is one
+# everyone learns to merge past, and then a genuinely new advisory looks just like the old ones.
 
 [advisories]
 version = 2
-# Every entry MUST carry: the crate, why no fix is possible, why it is not exploitable here,
-# and a review date. Re-review quarterly. When an entry's reasoning stops being true, the fix
-# is to delete the entry and let the gate go red — not to extend the date.
+# Every entry: why no fix is possible, why it's not exploitable here, a review date. When the
+# reasoning stops being true, delete the entry and let the gate go red — don't extend the date.
 ignore = [
-    # RUSTSEC-2023-0071 — "Marvin Attack": a timing sidechannel in `rsa` 0.9.x enabling RSA
-    # key recovery. Reaches the graph only via `jsonwebtoken`, whose `rust_crypto` feature
-    # pulls `rsa` unconditionally. Note the audit's suggested fix (`default-features = false`)
-    # is already applied and does not help: `rsa` comes from `rust_crypto` itself, and
-    # jsonwebtoken 10 exposes no HMAC-only feature.
-    #
-    # Not exploitable here: `crates/auth/src/token.rs` pins `Algorithm::HS256` on both the
-    # issuing and the verifying side, with a test that fails if that ever changes, so no RSA
-    # code path is entered. There is no fixed upstream release of `rsa` 0.9.
-    #
-    # Reviewed 2026-07-29. Re-review 2026-10-29, or immediately if HS256 ever stops being the
-    # only accepted algorithm.
+    # RUSTSEC-2023-0071 — timing sidechannel in `rsa` 0.9.x, pulled in transitively by
+    # `jsonwebtoken`'s `rust_crypto` feature with no HMAC-only alternative and no fixed release.
+    # Not exploitable here: `crates/auth/src/token.rs` pins `Algorithm::HS256`, test-enforced,
+    # so no RSA path is ever entered. Reviewed 2026-07-29; re-review 2026-10-29 or if HS256 stops
+    # being the only accepted algorithm.
     "RUSTSEC-2023-0071",
 
-    # RUSTSEC-2024-0436 — `paste` is unmaintained. Transitive and compile-time only (a proc
-    # macro that concatenates identifiers); no runtime surface, no fix available.
-    # Reviewed 2026-07-29. Re-review 2026-10-29.
+    # RUSTSEC-2024-0436 — `paste` unmaintained; compile-time-only proc macro, no runtime
+    # surface, no fix available. Reviewed 2026-07-29; re-review 2026-10-29.
     "RUSTSEC-2024-0436",
 
-    # RUSTSEC-2025-0111 — `rustls-pemfile` is unmaintained. Reaches the graph only through
-    # `bollard` → `testcontainers`, which is a **dev-dependency**: not in any shipped binary,
-    # only in the test harness that talks to the local Docker socket.
-    # Reviewed 2026-07-29. Re-review 2026-10-29, or when testcontainers updates bollard.
+    # RUSTSEC-2025-0111 — `rustls-pemfile` unmaintained; reaches the graph only via
+    # `testcontainers` (dev-dependency, Docker-socket test harness only). Reviewed 2026-07-29;
+    # re-review 2026-10-29 or when testcontainers updates bollard.
     "RUSTSEC-2025-0111",
 
-    # RUSTSEC-2025-0134 — "Tarmageddon": `tokio-tar` mis-parses PAX extended headers, allowing
-    # file smuggling. Same path as above — `testcontainers` only, dev-dependency only — and
-    # the only archives it parses are Docker image layers this repository's own CI builds.
-    # No safe upgrade is published.
-    # Reviewed 2026-07-29. Re-review 2026-10-29.
+    # RUSTSEC-2025-0134 — "Tarmageddon": `tokio-tar` mis-parses PAX headers. Same path as above
+    # (`testcontainers`, dev-dependency only), no safe upgrade published. Reviewed 2026-07-29;
+    # re-review 2026-10-29.
     "RUSTSEC-2025-0134",
 ]
 
 [licenses]
 version = 2
-# SPDX ids permitted across the dependency graph. Deliberately permissive-but-explicit: any
-# dependency introducing a licence outside this set fails CI for review.
+# SPDX ids permitted in the dependency graph; anything outside this set fails CI for review.
 allow = [
     "MIT",
     "Apache-2.0",
@@ -62,87 +45,56 @@ allow = [
     "MPL-2.0",
     "CC0-1.0",
     "BSL-1.0",
-    # `quoted_printable`, via lettre's MIME encoder. Public-domain-equivalent, no attribution
-    # requirement — strictly more permissive than everything above it.
+    # `quoted_printable` (lettre's MIME encoder): public-domain-equivalent, more permissive
+    # than everything above it.
     "0BSD",
-    # `webpki-roots` / `webpki-root-certs`: the Mozilla CA bundle. A data licence with no
-    # copyleft and no attribution requirement, which is the right shape for a trust store
-    # compiled into a binary.
+    # `webpki-roots`/`webpki-root-certs`: the Mozilla CA bundle, no copyleft or attribution.
     "CDLA-Permissive-2.0",
 ]
 
 # ---------------------------------------------------------------------------------
 # GPL-3.0 was here until 2026-08-01, for `wreq-util`. Do not put it back casually.
 # ---------------------------------------------------------------------------------
-# `wreq-util` supplies the browser-emulation profiles `crates/fetch/src/base.rs` builds every
-# provider client from; it is load-bearing for the crawl stack and could not simply be dropped.
-# It entered the tree GPL-3.0 with the reqwest→wreq migration, and because GPL-3.0 obligations
-# attach on **conveying**, that made publishing the Docker images — not running them — a
-# source-offer obligation over the whole combined work. That was OP-6, and it blocked both
-# image publishing and choosing a `LICENSE`.
-#
-# It was resolved by upgrading, not by relicensing anything of ours: upstream moved wreq-util
-# GPL-3.0 → LGPL-3.0 (3.0.0-rc.9) → Apache-2.0 (3.0.0-rc.12), so `wreq-util` 3.0.0-rc.14 and
-# the `wreq` 6.0.0-rc it requires are both Apache-2.0. Note the shape of the fix: the crate we
-# had pinned, 2.2.6, is still GPL-3.0 and always will be — a relicence is not retroactive, so
-# *only moving off that version* changed anything.
-#
-# The consequence for this list: an accidental downgrade to any wreq-util below 3.0.0-rc.12 is
-# a licensing regression, and the thing that catches it is GPL-3.0 and LGPL-3.0 being absent
-# here. Adding either back re-opens OP-6 silently.
+# `wreq-util` (load-bearing browser-emulation profiles for the crawl stack) was GPL-3.0 through
+# 2.x, which made publishing Docker images a source-offer obligation over the whole combined
+# work. Upstream relicensed to Apache-2.0 at 3.0.0-rc.12 (requiring `wreq ^6.0.0-rc`), so an
+# accidental downgrade below that is a licensing regression — caught by GPL-3.0/LGPL-3.0 being
+# absent from the allow list above. Adding either back re-opens it silently.
 
 confidence-threshold = 0.8
-# Every workspace member is `publish = false` and carries no `license` field. Licence-checking
-# our own crates only produces noise about code whose licence is the repository's.
+# Workspace members are `publish = false` with no `license` field; skip the noise of
+# licence-checking our own code.
 private = { ignore = true }
 
 [bans]
-# `warn` on both of these made them invisible: 86 crates at two or more versions produce
-# enough output that nobody reads it, so a genuinely new duplicate — or a wildcard
-# requirement, which is a supply-chain hazard in its own right — arrived silently inside the
-# noise. `deny` plus an explicit skip list inverts that: the current state is written down and
-# reviewable, and anything new fails.
+# `warn` made 86 two-version crates invisible noise, so a genuinely new duplicate (or wildcard
+# requirement) arrived silently inside it. `deny` plus an explicit skip list below fails on
+# anything new instead.
 multiple-versions = "deny"
 wildcards = "deny"
-# Workspace-internal crates are `{ workspace = true }` path dependencies with no version
-# requirement, which reads as a wildcard. The hazard `wildcards` exists to catch is a
-# *registry* dependency that can silently resolve to anything; a path dependency inside this
-# repository cannot.
+# Workspace-internal path deps have no version requirement and read as a wildcard, but can't
+# silently resolve to anything the way a registry dependency could.
 allow-wildcard-paths = true
 
 # Crates that must NEVER enter the graph, whoever pulls them in.
 deny = [
-    # The `scratch` runtime image ships no OpenSSL and no OS CA store, and the crawl stack is
-    # BoringSSL-only (`wreq`). A transitive `openssl-sys` links against a library that is not
-    # in the image, so it fails at **exec** time in production rather than at build time in
-    # CI — the worst failure mode available. Catch it here instead.
+    # The `scratch` runtime ships no OpenSSL/CA store; the crawl stack is BoringSSL-only.
+    # A transitive link here would fail at exec time in production, not build time in CI.
     { crate = "openssl-sys", reason = "the scratch runtime ships no OpenSSL; use rustls, or wreq's BoringSSL" },
     { crate = "openssl", reason = "see openssl-sys" },
-    # `native-tls` is how `openssl-sys` usually arrives.
+    # How `openssl-sys` usually arrives.
     { crate = "native-tls", reason = "pulls openssl-sys; use rustls" },
 ]
 
-# Duplicate versions present as of 2026-07-30, all transitive and all mid-transition upstream.
-# This list is a record of the current state, not an approval: shrinking it is ordinary
-# maintenance, and adding to it should be a conscious note in the pull request that does so.
+# Duplicate versions present as of 2026-07-30, all transitive. A record of the current state,
+# not an approval — CI's `-D unnecessary-skip` fails any entry whose duplicate has resolved, so
+# the PR that collapses one deletes its line here.
 #
-# The list does not have to be trusted, and the date does not have to be believed. CI runs
-# `cargo deny check … -D unnecessary-skip`, which fails on an entry naming a crate that no
-# longer has two versions — so an entry cannot outlive the duplicate it records, and the pull
-# request that collapses one is the pull request that deletes its line. Every entry below was
-# re-verified under `cargo tree --target all -d` on 2026-07-30; none was stale.
-#
-# Two corrections to BUILD_AND_OPS §1.5, both found by checking rather than reading:
-#
-#   * `rand` at three majors is **not** collapsible by bumping our own pin. Our two consumers
-#     (`crates/auth`, `crates/fetch`) are two of *eight* dependents of 0.8 — the others are
-#     `fred`, `jsonwebtoken`, `nkeys`, `nuid`, `num-bigint-dig` and `tokio-websockets` — so
-#     moving ours to 0.10 would relocate two edges and remove no version. Revisit when
-#     `jsonwebtoken` and `fred` move, not before.
-#   * `tower-http` 0.6 is pulled by `reqwest` 0.13, not by anything this workspace chooses.
-#     There is nothing to fix short of dropping `reqwest`.
+#   * `rand` at three majors is not collapsible by bumping our own pin: ours are 2 of 8
+#     dependents of 0.8. Revisit when `jsonwebtoken`/`fred` move, not before.
+#   * `tower-http` 0.6 is pulled by `reqwest` 0.13, nothing to fix short of dropping `reqwest`.
 skip = [
-    # The `rand` 0.8 → 0.9 ecosystem migration, which drags its whole cluster along.
+    # The `rand` 0.8 → 0.9 ecosystem migration, dragging its whole cluster along.
     { crate = "rand" },
     { crate = "rand_chacha" },
     { crate = "rand_core" },
@@ -156,11 +108,6 @@ skip = [
     { crate = "sha2" },
     { crate = "cpufeatures" },
     # Long-tail utility crates where two majors coexist across the graph.
-    # `bitflags`, `etcetera` and `redox_syscall` were in this list until 2026-08-01 and were
-    # already reported as unnecessary before the `wreq` 6 bump — the graph had converged and
-    # nothing removed the entries. They stay out: a skip that covers nothing is a licence to
-    # reintroduce the duplicate silently, which is the failure mode `multiple-versions = deny`
-    # exists to prevent.
     { crate = "hashbrown" },
     { crate = "itertools" },
     { crate = "nom" },
@@ -170,20 +117,12 @@ skip = [
     { crate = "r-efi" },
     # TLS root stores: `webpki-roots` majors, pulled by different clients.
     { crate = "webpki-roots" },
-    # `webpki-root-certs` was here too, for `wreq` 5 pinning 0.26 against the 1.0 the rest of
-    # the graph used. `wreq` 6 moved to `^1.0.7`, so there is now one version and cargo-deny
-    # reports the skip itself as unnecessary.
     # `tower-http` 0.6 arrives transitively; ours is pinned at 0.7.
     { crate = "tower-http" },
-    # ---------------------------------------------------------------------------------
-    # The passkey stack. Added 2026-08-01 with `webauthn-rs` 0.6; every entry below is a
-    # *second, older* copy that arrives through `webauthn-rs-core` and nothing else.
-    # ---------------------------------------------------------------------------------
-    # The AEAD cluster: `crypto-glue` (webauthn-rs-core's RustCrypto facade) pins
-    # `aes-gcm 0.10`, while this workspace's own `crates/auth` uses 0.11 to seal sync tokens.
-    # One `aes-gcm` major drags its whole trait cohort along, which is what the next eight
-    # lines are. Verified with `cargo tree --target all -d`: no other dependent exists, so
-    # there is nothing on our side to move — this collapses when `crypto-glue` bumps.
+    # The passkey stack (added 2026-08-01 with `webauthn-rs` 0.6): every entry below is a
+    # second, older copy arriving only through `webauthn-rs-core`.
+    # AEAD cluster: `crypto-glue` pins `aes-gcm 0.10`; `crates/auth` uses 0.11. Collapses when
+    # `crypto-glue` bumps.
     { crate = "aead" },
     { crate = "aes" },
     { crate = "aes-gcm" },
@@ -193,19 +132,14 @@ skip = [
     { crate = "inout" },
     { crate = "polyval" },
     { crate = "universal-hash" },
-    # `thiserror` 1.x, via `webauthn-rs-core` itself and via `x509-parser`/`asn1-rs`/
-    # `der-parser`, which it uses to parse attestation certificates. This workspace is on 2.
+    # `thiserror` 1.x via `webauthn-rs-core`/`x509-parser`/`asn1-rs`/`der-parser`; we're on 2.
     { crate = "thiserror" },
     { crate = "thiserror-impl" },
-    # `base64`: three copies. 0.23 is ours (`crates/auth`, `services/frontend`,
-    # `services/sync`, plus `email-encoding`), 0.22 is the wide transitive middle (sqlx,
-    # async-nats, chromiumoxide, headers, …), and 0.21 arrives only through
-    # `webauthn-rs-core`/`-proto`. Nothing on our side pins the two older ones, so there is
-    # nothing here to move.
+    # `base64`: three copies — ours (0.23), the wide transitive middle (0.22), and
+    # `webauthn-rs-core`/`-proto` (0.21). Nothing on our side pins the older two.
     { crate = "base64" },
-    # `const-oid`: 0.10 via `digest` 0.11, 0.9 via the passkey stack's older RustCrypto cohort
-    # (`crypto-glue`, `der`, `rsa`, `x509-cert`). Same shape as the AEAD cluster above and it
-    # collapses with the same `crypto-glue` bump.
+    # `const-oid`: 0.10 via `digest` 0.11, 0.9 via the passkey stack's older RustCrypto cohort.
+    # Same shape as the AEAD cluster; collapses with the same `crypto-glue` bump.
     { crate = "const-oid" },
 
     # Platform shims, present on any graph touching Windows or macOS bindings.

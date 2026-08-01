@@ -2,13 +2,12 @@
 //!
 //! # Why the merge happens here
 //!
-//! `GET /v1/series/:id/chapters` answers for **one** source (the first, unless `?source=` says
-//! otherwise). The redesigned chapter list needs the opposite shape: one row per chapter,
-//! carrying *which* sources have it, how fresh each one is, and where each would open. So the
-//! view fetches every source's list concurrently and unions them here.
+//! `GET /v1/series/:id/chapters` answers for one source; this view fetches every source's list
+//! concurrently and unions them here, so a chapter row knows which sources carry it and where
+//! each opens.
 //!
-//! Nothing in this module invents data. A chapter shows the sources that actually returned it;
-//! a source that stops at chapter 151 says so because 151 is the highest number it returned.
+//! Nothing here invents data: a source that stops at chapter 151 says so only because 151 is
+//! the highest number it actually returned.
 
 use crate::models::{ChapterDto, SeriesSourceId, SourceDto};
 
@@ -102,8 +101,7 @@ pub(super) fn rank_sources(
 /// carries a chapter becomes that chapter's resolved target, and contributes its title.
 pub(super) fn merge_chapters(per_source: &[(SourceDto, Vec<ChapterDto>)]) -> Vec<MergedChapter> {
     let mut merged: Vec<MergedChapter> = Vec::new();
-    // Position of each chapter key in `merged`, so a second source appends a carrier to the
-    // existing row instead of scanning the whole list again.
+    // Position of each chapter key in `merged`, to avoid re-scanning the list per source.
     let mut index: std::collections::HashMap<ChapterKey, usize> = std::collections::HashMap::new();
 
     for (source, chapters) in per_source {
@@ -172,10 +170,10 @@ fn non_empty(title: Option<String>) -> Option<String> {
 }
 
 /// One visual row-group, keyed by whole chapter number: the full chapter plus any part
-/// releases that share its integer part.
+/// releases sharing its integer part.
 ///
-/// Until the full chapter appears its parts *are* the reading frontier, so they render
-/// directly; once it lands they collapse behind a toggle rather than crowding the list.
+/// Parts render directly until the full chapter appears (they're the reading frontier until
+/// then), then collapse behind a toggle.
 #[derive(Clone, PartialEq)]
 pub(super) struct ChapterGroup {
     pub(super) full: Option<MergedChapter>,

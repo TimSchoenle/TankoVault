@@ -1,13 +1,11 @@
 //! The GDPR data-subject request queue: what people have asked for, when it is due, and the
-//! actions that answer it.
+//! actions that answer it. Ordered by urgency, with overdue requests marked, since an overdue
+//! request is a compliance breach in progress.
 //!
-//! Ordered by urgency, with overdue requests marked — an overdue request is a compliance breach
-//! in progress, so the queue's job is to make that impossible to scroll past.
-//!
-//! Fulfilment is deliberately two buttons rather than one. "Resolve" records how a request was
-//! answered; "export" and "erase" actually do the thing. Keeping them apart is what lets the
-//! trail distinguish *we said we did it* from *we did it*, and it is why the destructive action
-//! asks for the subject's username back.
+//! Fulfilment is deliberately two buttons rather than one: "resolve" records how a request was
+//! answered, while "export" and "erase" do the thing. Merging them would lose the trail's ability
+//! to distinguish *we said we did it* from *we did it* — also why erasure requires the subject's
+//! username typed back.
 
 use crate::api;
 use crate::components::async_list;
@@ -108,8 +106,7 @@ fn QueueRow(
 
     let id = row.request.id;
     let open = row.request.status.is_open();
-    // Once the subject is gone there is nobody left to serve, which for a completed erasure is
-    // the expected end state rather than a fault.
+    // False here means the subject is already erased — expected end state, not a fault.
     let subject_present = row.user_id.is_some();
     let subject = row
         .username
@@ -288,8 +285,7 @@ fn ActionButton(
                     .send()
                     .await
                     .map(|_| ()),
-                // A rejection must state its reasons (Art. 12(4)) and the server enforces that,
-                // so this sends a standing one rather than offering a button that always fails.
+                // Rejections must state reasons (Art. 12(4)); the server enforces that, so this sends a standing one.
                 QueueAction::Reject => client
                     .resolve_privacy_request()
                     .id(id)
@@ -328,9 +324,8 @@ fn ExportButton(id: uuid::Uuid, busy: Busy, outcome: Signal<crate::hooks::Outcom
         outcome.set(None);
         let client = api.client();
         spawn(async move {
-            // The filename carries the *request* id, not the subject's: the operator is filing
-            // this against a request, and an export named after a person is one careless
-            // forward away from being personal data in someone's downloads folder.
+            // Filename carries the request id, not the subject's: naming it after a person risks
+            // the export becoming personal data in someone's downloads folder.
             let filename = format!("tankovault-export-{id}.json");
             match client.export_subject_data().id(id).send().await {
                 Ok(response) => {

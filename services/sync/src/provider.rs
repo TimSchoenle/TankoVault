@@ -1,10 +1,6 @@
-//! Provider registry contract (design: generalized multi-provider sync).
-//!
-//! Every external tracker (`AniList` today; a second provider is a drop-in later) implements
-//! [`ExternalProvider`] and is registered under its stable [`ExternalProvider::slug`] in
-//! [`crate::engine::SyncEngine`]. Status crosses this boundary as the shared
-//! [`WatchStatus`] — each provider owns translating its own status vocabulary to/from it (see
-//! `AniListStatus` in `crate::mapping`), so the engine never touches provider-specific enums.
+//! Provider registry contract. Every external tracker implements [`ExternalProvider`] and is
+//! registered under its stable slug; status crosses the boundary as the shared [`WatchStatus`],
+//! so the engine never touches a provider-specific status enum.
 
 use async_trait::async_trait;
 use secrecy::SecretString;
@@ -32,13 +28,9 @@ pub(crate) struct Viewer {
 }
 
 /// One remote list entry, normalised for local matching: where the reader is on the list, plus
-/// the catalogue metadata of the work behind it.
-///
-/// The metadata is the *same* [`RemoteMetadata`] the tokenless enrichment path fetches, not a
-/// second, narrower copy of the same fields. A list sync resolves each entry to a local series
-/// anyway, so carrying the full metadata lets it enrich that series on the spot; when this
-/// struct held only what the matcher scored on, everything else `AniList` had said about the
-/// work was parsed and thrown away.
+/// the catalogue metadata of the work behind it. Shares [`RemoteMetadata`] with the tokenless
+/// enrichment path rather than a narrower copy, so a list sync can enrich the matched series on
+/// the spot instead of parsing the extra fields and discarding them.
 #[derive(Debug, Clone)]
 pub(crate) struct RemoteEntry {
     pub(crate) status: WatchStatus,
@@ -74,9 +66,7 @@ pub(crate) struct RemoteMetadata {
 }
 
 /// An external tracker `SyncEngine` can link, pull from and push to. Implementors are stored as
-/// `Box<dyn ExternalProvider>` in the engine's registry (dyn-safe: matches the existing
-/// `SourceAdapter`/`ChallengeSolver` `#[async_trait]` dyn-trait precedent elsewhere in this
-/// workspace).
+/// `Box<dyn ExternalProvider>` in the engine's registry.
 #[async_trait]
 pub(crate) trait ExternalProvider: Send + Sync {
     /// Stable key stored in `external_accounts.provider` / `sync_mappings.provider` (e.g.

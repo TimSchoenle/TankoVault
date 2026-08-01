@@ -1,21 +1,14 @@
-//! The two refusals every account-writing path shares.
-//!
-//! They are in their own module for the same reason [`crate::auth::validate`] is: they are not
-//! one handler's private business. Both protect *properties of the deployment* rather than of a
-//! row — no database constraint can express "somebody other than the caller must still be able
-//! to grant permissions" — so every path that writes the columns involved has to check, and a
-//! path that forgets is exactly the class of defect SEC-9 was. Status, permissions and erasure
-//! all call them today; anything added later that touches the same columns must too.
-//!
-//! Both audit their refusal before returning it. An attempt to erase the last administrator is
-//! precisely the event an operator wants to find afterwards.
+//! The two refusals every account-writing path in this module shares. Neither is expressible
+//! as a database constraint, so every path touching these columns must call them explicitly.
 
 use crate::audit::audit_failure;
 use crate::error::{ApiError, ApiResult};
 use crate::state::{AppState, AuthUser};
 use tankovault_domain::{Permission, UserId};
 
-/// Refuse an administrative action aimed at the caller's own account.
+/// Refuse an administrative action aimed at the caller's own account. `/v1/me` is where someone
+/// acts on themselves; an administrator who can self-grant a capability leaves an audit trail
+/// nobody can rely on.
 pub(crate) async fn guard_not_self(
     state: &AppState,
     user: &AuthUser,
@@ -38,10 +31,11 @@ pub(crate) async fn guard_not_self(
     ))
 }
 
-/// Refuse an action that would leave no active holder of [`Permission::UsersPermissions`].
+/// Refuses an action that would leave no active holder of [`Permission::UsersPermissions`] —
+/// done silently, the deployment could never grant anything again.
 ///
-/// Checked against *other* accounts, so it permits the action whenever anyone else could still
-/// administer the deployment, and refuses only when this really is the last one.
+/// Checked against *other* accounts: permits the action whenever someone else could still
+/// administer the deployment.
 pub(crate) async fn guard_not_last_administrator(
     state: &AppState,
     user: &AuthUser,

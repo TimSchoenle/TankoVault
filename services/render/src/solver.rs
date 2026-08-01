@@ -1,10 +1,5 @@
-//! The render service as an alternate [`ChallengeSolver`] back-end (design §9).
-//!
-//! When `FlareSolverr` is unavailable, the `challenge-solver` tier can be pointed at this
-//! service instead: a real headless browser drives the target through the challenge and
-//! returns the resulting session (cookies + user-agent) and solved HTML. The contract is
-//! identical to the `FlareSolverr` back-end, so the fetch pipeline never learns which one
-//! is in play.
+//! An alternate [`ChallengeSolver`] back-end that solves via a real headless browser instead
+//! of `FlareSolverr`; same contract, so the fetch pipeline can't tell which is in play.
 
 use std::sync::Arc;
 
@@ -30,10 +25,8 @@ impl ChromiumSolver {
     }
 }
 
-/// Turn a rendered page into a reusable solver session.
-///
-/// Kept pure (browser-free) so the session-shaping logic is unit-testable without a
-/// live Chrome.
+/// Turns a rendered page into a reusable solver session; kept pure so it's testable
+/// without a live Chrome.
 pub(crate) fn render_result_into_outcome(result: RenderResult, ttl_secs: u64) -> SolveOutcome {
     SolveOutcome {
         cookies: result.cookies,
@@ -43,9 +36,8 @@ pub(crate) fn render_result_into_outcome(result: RenderResult, ttl_secs: u64) ->
         } else {
             Some(result.html)
         },
-        // A rendered navigation carries no status back from the browser layer, so the fetch
-        // stack falls back to reading the page itself (`is_rate_limit_page`) rather than
-        // being told a throttle notice was a 200.
+        // No status reaches the fetch stack from this path; it must detect a throttle
+        // notice by reading the page (`is_rate_limit_page`) rather than trusting a 200.
         status: None,
         headers: Vec::new(),
         ttl_secs,

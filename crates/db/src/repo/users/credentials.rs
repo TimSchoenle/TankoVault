@@ -1,7 +1,5 @@
 //! The user record itself: creation, the login lookup, and the authorization-relevant state.
-//!
-//! This is the aggregate root of the module — `UserRow` is the shared projection of the
-//! `users` table that [`super::password_reset`] and [`super::profile`] also read back.
+//! `UserRow` is the shared projection [`super::password_reset`] and [`super::profile`] also read.
 
 use super::CiText;
 use crate::error::{DbError, DbResult};
@@ -42,10 +40,8 @@ pub struct Credentials {
 
 /// Create a user. `password_hash` is a pre-computed argon2id PHC string.
 ///
-/// The account is created with **no permissions**, which is the only safe default: a
-/// registration endpoint must not be able to mint privilege. Grants are added afterwards by
-/// someone holding [`Permission::UsersPermissions`](tankovault_domain::Permission), via
-/// [`crate::repo::permissions::replace`].
+/// Created with no permissions — a registration endpoint must not be able to mint privilege.
+/// Grants are added afterwards via [`crate::repo::permissions::replace`].
 ///
 /// # Errors
 /// [`DbError::Conflict`] if the email or username is taken.
@@ -81,24 +77,13 @@ pub async fn create<'e, E: PgExecutor<'e>>(
 
 /// Look up credentials by email or username (login accepts either).
 ///
-/// The identifier is routed to **one** column, chosen by whether it contains `@`, rather than
-/// matched against both. `WHERE email = $1 OR username = $1` was ambiguous: a username
-/// containing `@` — which nothing stopped an operator writing before the validator was applied
-/// to every write path — could collide with a *different* account's address, and which row the
-/// planner returned decided whose password was checked. Routing removes the ambiguity
-/// regardless of what is already stored, because an address always contains `@` and a valid
-/// username never may.
-///
-/// It is also two indexed equality lookups instead of an `OR` the planner cannot serve from
-/// one index.
-///
-/// Both branches bind through [`CiText`], because both columns are `citext` and a bare `&str`
-/// would make this the one query in the system where case matters — see that type for why.
+/// Routed to one column by whether `login` contains `@`, not matched with `OR`: a username
+/// containing `@` could otherwise collide with a different account's email address. Both
+/// branches bind through [`CiText`] since both columns are `citext`.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only — no other variant is reachable. An unknown login is `Ok(None)`, not
-/// [`DbError::NotFound`]: the caller must answer "unknown account" and "wrong password"
-/// identically, and a distinct error variant here is how that distinction leaks back out.
+/// [`DbError::Sqlx`] only. An unknown login is `Ok(None)`, not [`DbError::NotFound`] — callers
+/// must not distinguish "unknown account" from "wrong password".
 pub async fn find_credentials<'e, E: PgExecutor<'e>>(
     exec: E,
     login: &str,
@@ -166,9 +151,7 @@ pub async fn get<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<User> {
 
 /// Record a successful sign-in.
 ///
-/// Separate from the credential lookup so a *failed* attempt cannot advance the timestamp:
-/// "last login" that moves on every guess would be worse than not having it, both for the
-/// operator reading the directory and for a user checking their own account.
+/// Separate from the credential lookup so a failed attempt cannot advance the timestamp.
 ///
 /// # Errors
 /// [`DbError::Sqlx`] only — no other variant is reachable. An `id` matching no row updates
@@ -185,10 +168,6 @@ pub async fn touch_last_login<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbR
 }
 
 /// The account state the authorization layer needs on every authenticated request.
-///
-/// Fetched with the permission grants in one round trip (see
-/// [`crate::repo::permissions::resolve`]) because both are needed together and neither is
-/// useful alone: a grant set without the status would authorize a suspended account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AccountState {
     pub status: AccountStatus,
@@ -197,9 +176,7 @@ pub struct AccountState {
 /// Read just the authorization-relevant account state.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only — no other variant is reachable. A deleted account is `Ok(None)`,
-/// which the authorization layer must treat as "deny", not as "no constraint": this is the
-/// read that stands between a revoked account and a still-valid access token.
+/// [`DbError::Sqlx`] only. A deleted account is `Ok(None)`, which callers must treat as deny.
 pub async fn account_state<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,

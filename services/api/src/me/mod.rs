@@ -1,11 +1,8 @@
-//! Authenticated user endpoints.
+//! Authenticated user endpoints, scoped to the token's `user_id` so one user can never read
+//! another's rows.
 //!
-//! Ownership is enforced implicitly throughout: every query is scoped to the token's
-//! `user_id`, so there is no path by which one user reads another's rows.
-//!
-//! Split by surface (watchlist, progress, dashboard, account, notifications, sync,
-//! privacy). The re-exports are globs because `utoipa`'s `routes!` macro also resolves a
-//! hidden `__path_<handler>` type per handler; see the note in [`crate::admin`].
+//! Re-exports are globs because `utoipa`'s `routes!` macro also resolves a hidden
+//! `__path_<handler>` type per handler; see [`crate::admin`].
 
 mod account;
 mod capabilities;

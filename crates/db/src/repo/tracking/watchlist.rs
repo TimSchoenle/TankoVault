@@ -787,10 +787,9 @@ async fn fetch_page(
 /// user does not track it.
 ///
 /// The Series page needs the same card the list renders (status, notify, progress, sync
-/// exclusion). It used to get it by fetching the *entire* watchlist and scanning it client-side,
-/// which was already an odd way to read one row and became an outright bug once the list
-/// paginated: past the first page the entry simply is not in the response, so the page would
-/// render "not tracked" for a series the user tracks.
+/// exclusion). Fetching the whole watchlist to find one row breaks once the list paginates:
+/// past the first page the entry simply is not in the response, so the page would render
+/// "not tracked" for a series the user tracks.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable. An untracked series is

@@ -1,25 +1,7 @@
-//! What `docs/CONFIGURATION.md` claims, read out of the document.
-//!
-//! # The first column is the contract
-//!
-//! Keys are harvested from the **leftmost cell of a table row** and nowhere else. That is a
-//! deliberate narrowing rather than a parsing convenience: the document mentions keys in prose
-//! constantly — a retired name in a Notes cell, a symptom table keyed by symptom, a `grep` hint
-//! — and treating every backticked token as a claim would make the gate fire on sentences that
-//! are correct. One column carries the contract; the rest is explanation.
-//!
-//! # Two shorthands the document already uses
-//!
-//! A cell may continue with a suffix: `` `…__GLOBAL__PER_MINUTE` / `__BURST` `` documents two
-//! keys, and expanding it is not optional — the alternative is a row per scalar, which is how
-//! the rate-limit block would grow to six rows that say the same thing. A leading-`__` token
-//! replaces the *last* segment of the key before it.
-//!
-//! # §8 is inverted
-//!
-//! Keys under the "Removed keys" heading are recorded separately and asserted **absent** from
-//! the code. A key that comes back under its old name while the document still says it does
-//! nothing is exactly the silence that section exists to prevent.
+//! What `docs/CONFIGURATION.md` claims, read out of the document. Keys are harvested only from
+//! the **leftmost cell of a table row** — the document mentions keys constantly in prose, and
+//! treating every backticked token as a claim would fire on sentences that are correct — and
+//! keys under "Removed keys" (§8) are collected separately and asserted **absent** from the code.
 
 use std::collections::BTreeSet;
 

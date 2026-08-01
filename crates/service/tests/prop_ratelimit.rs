@@ -1,17 +1,8 @@
 //! Properties of [`RouteClassifier`], the map from a matched route pattern to its rate-limit
 //! budget.
 //!
-//! What this decides is which of three budgets a request is charged against, and the tight ones
-//! exist for a reason: `Auth` is what makes credential stuffing expensive, `Expensive` is what
-//! stops one operator kicking off a hundred catalogue scans. A misclassification is not an
-//! error — the request succeeds, on the wrong budget, and the only symptom is that a limit
-//! somebody relies on never fires.
-//!
-//! The in-module tests in `ratelimit/mod.rs` and `flags.rs` each assert longest-prefix-wins for
-//! one hand-built pair. That is an example of the contract, not the contract: the real claim is
-//! that the *rule set* determines the classification and the order it was assembled in does
-//! not, because the classifier is built by chained `.auth(…)`/`.expensive(…)` calls in whatever
-//! sequence a service's `main` happens to read best. These properties are that claim.
+//! These assert that the *rule set* determines the classification, not the order rules were
+//! declared in — the in-module tests only check one hand-built pair.
 
 use axum::http::Method;
 use proptest::prelude::*;
@@ -27,14 +18,8 @@ enum Kind {
     ExpensiveWrite,
 }
 
-/// A rule set keyed by prefix.
-///
-/// A map, not a `Vec`, and that is the structural part. Two rules with the *same* prefix and
-/// different classes are ordered by insertion, so permuting them genuinely does change the
-/// answer — a configuration mistake rather than a classifier bug, but one that would make
-/// [`the_rule_set_decides_the_class_not_the_order_it_was_declared_in`] fail on a schedule.
-/// Prop-b is the standing lesson here: a strategy that cannot generate the excluded case is a
-/// guarantee, where a `prop_assume!` filtering it out afterwards is a hope.
+/// A rule set keyed by prefix: same-prefix rules differ only by insertion order, which is
+/// the case that must be excluded from the order-independence property below.
 fn rule_set() -> impl Strategy<Value = BTreeMap<String, Kind>> {
     prop::collection::btree_map(
         prop_oneof![
@@ -111,17 +96,8 @@ fn route_pattern() -> impl Strategy<Value = String> {
 }
 
 proptest! {
-    // 256 is `proptest`'s default and is left as is: each case builds a classifier of at most
-    // seven rules and does a handful of prefix comparisons, so the whole file runs in
-    // milliseconds and is invisible next to the crate's async tests. Nothing here needs the
-    // input space a larger count would buy.
-
-    /// The rule *set* decides the class; the order the rules were declared in does not.
-    ///
-    /// This is the property the two hand-built example tests approximate. A service assembles
-    /// its classifier as a chain of builder calls, and nobody reads that chain as an ordered
-    /// program — so if order mattered, moving one line while tidying `main` would silently
-    /// re-bucket a route.
+    /// The rule *set* decides the class; the order the rules were declared in does not —
+    /// otherwise moving one line while tidying `main` would silently re-bucket a route.
     #[test]
     fn the_rule_set_decides_the_class_not_the_order_it_was_declared_in(
         rules in rule_set(),
@@ -152,9 +128,8 @@ proptest! {
         }
     }
 
-    /// Totality. `classify` runs inside a middleware layer on every request, so a panic here is
-    /// a `500` on a request that was otherwise fine — and the matched path is whatever axum
-    /// reports, not a value this crate chose.
+    /// Totality: `classify` runs in a middleware layer, so a panic here is a `500` on an
+    /// otherwise-fine request.
     #[test]
     fn classify_is_total(
         rules in rule_set(),

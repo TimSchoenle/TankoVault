@@ -1,9 +1,7 @@
 //! The chapter list — the series page's primary surface.
 //!
-//! Every read source is collapsed behind **one merged open control** per chapter: the main half
-//! opens the highest-ranked source that actually carries that chapter, the caret half opens the
-//! per-chapter source menu. There is deliberately no per-source button anywhere; the monogram
-//! column says *who* has the chapter, and the single button says *where it opens*.
+//! Every read source is collapsed behind one merged open control per chapter: the main half
+//! opens the highest-ranked source, the caret half opens the per-chapter source menu.
 
 use super::model::{
     chapter_key, group_chapters, ChapterGroup, ChapterKey, MergedChapter, RankedSource,
@@ -45,13 +43,11 @@ pub(super) fn ChapterSection(
     let mut shown = use_signal(|| PAGE);
     // At most one source menu is open at a time, keyed by the chapter it belongs to.
     let open_menu = use_signal(|| Option::<ChapterKey>::None);
-    // One shared slot for read-toggle failures: the rows are a table, so an error rendered
-    // per row would reflow the list under the pointer. Held here, above the list, it stays
-    // where the reader is looking after a click.
+    // One shared slot for read-toggle failures: per-row errors would reflow the table under
+    // the pointer.
     let mark_error = use_outcome();
 
-    // Counts describe the whole series, never the current filter: a chip that renamed itself
-    // once you clicked it would make the two numbers impossible to compare.
+    // Counts describe the whole series, never the current filter, so the numbers stay comparable.
     let total = chapters.iter().filter(|c| !c.is_part()).count();
     let read = chapters
         .iter()
@@ -356,13 +352,10 @@ fn ChapterRow(
         i18n.t("series.unread")
     };
 
-    // Per-chapter read toggle, kept on the read indicator itself so the row gains no column.
-    // The endpoint applies the two-scalar rule server-side, so marking a part release advances
-    // the part frontier and never corrupts whole-chapter progress; external services that have
-    // no notion of parts only ever receive the whole-chapter frontier.
+    // Toggle lives on the indicator so the row gains no extra column. The endpoint applies the
+    // two-scalar rule server-side, so a part release advances only the part frontier.
     //
-    // A failure is named rather than swallowed: the row's only feedback is the refetched read
-    // state, so a discarded error is indistinguishable from a button that does nothing.
+    // Failures are surfaced, not swallowed: the row's only feedback is the refetched read state.
     let failed_label = i18n.args("series.markFailed", &[("number", &label_number)]);
     let toggle_read = move |_| {
         if !busy.claim() {
@@ -501,8 +494,8 @@ pub(super) fn OpenControl(
         (false, true) => "ik-split ghost sm",
         (false, false) => "ik-split ghost",
     };
-    // A chapter row's control sits at the right edge of the table, so its menu hangs leftward;
-    // the hero's sits at the left of the action row, so its menu hangs rightward.
+    // A row's control sits at the table's right edge (menu hangs leftward); the hero's sits at
+    // the action row's left (menu hangs rightward).
     let anchor = if compact {
         "ik-openctl"
     } else {

@@ -9,11 +9,8 @@ use uuid::Uuid;
 
 /// One privileged action, as the audit sink hands it to this repository.
 ///
-/// A struct rather than eight positional parameters, which is what this function used to
-/// take behind an `#[allow(clippy::too_many_arguments)]`. The suppression was the smell: five
-/// of those parameters were string-shaped and three of them `Option<&str>`, so transposing an
-/// adjacent pair compiled — and the pairs that transpose most easily are the two that decide
-/// what personal data is retained.
+/// A struct, not positional params: the string-shaped fields are easiest to transpose, and the
+/// pair that would is the one deciding what personal data is retained.
 pub struct AuditRecord<'a> {
     /// `None` for system-originated actions (schedulers, sweeps).
     pub actor_id: Option<UserId>,
@@ -23,23 +20,19 @@ pub struct AuditRecord<'a> {
     pub target: Option<&'a str>,
     /// Action-specific detail; whatever the handler recorded.
     pub detail: &'a Json,
-    /// One of `success` / `failure` / `denied`, enforced by the `audit_log_outcome_check`
-    /// constraint rather than by this type — a bad value is a write error, not a silent row.
+    /// One of `success`/`failure`/`denied`, enforced by a DB check constraint, not this type.
     pub outcome: &'a str,
-    /// Personal data. `None` unless the operator enabled the corresponding privacy toggle;
-    /// the decision is applied in `tankovault_service::PostgresAuditSink`, not here.
+    /// Personal data; `None` unless the operator's privacy toggle enabled it.
     pub client_ip: Option<&'a str>,
-    /// Personal data, on the same terms as [`AuditRecord::client_ip`].
+    /// Personal data, same terms as [`AuditRecord::client_ip`].
     pub user_agent: Option<&'a str>,
 }
 
 /// Append one privileged-action record.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An `outcome` outside
-/// `success`/`failure`/`denied` arrives here as a check-constraint violation rather than as
-/// [`crate::DbError::Conflict`], so it is a 500 and not a 409; that is deliberate, since the
-/// value is chosen by the audit sink and never by a request.
+/// `Sqlx` only; a bad `outcome` fails the check constraint (500), not
+/// [`crate::DbError::Conflict`].
 pub async fn record<'e, E: PgExecutor<'e>>(exec: E, entry: &AuditRecord<'_>) -> DbResult<()> {
     sqlx::query!(
         "INSERT INTO audit_log (id, actor_id, action, target, detail, outcome, actor_ip, user_agent) \
@@ -60,14 +53,11 @@ pub async fn record<'e, E: PgExecutor<'e>>(exec: E, entry: &AuditRecord<'_>) -> 
 
 /// Delete records older than `retention_days`, returning how many were removed.
 ///
-/// Storage limitation (GDPR Art. 5(1)(e)): an audit trail kept forever is a growing
-/// liability, not a stronger control. Deletion is capped per call so a first sweep over a
-/// long-neglected table cannot hold a lock long enough to stall the writers appending to
-/// it.
+/// GDPR Art. 5(1)(e) storage limitation. Capped per call so a first sweep over a
+/// long-neglected table can't hold a lock long enough to stall concurrent writers.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A sweep that deletes nothing
-/// is a success returning `0`, not an error.
+/// `Sqlx` only; deleting nothing returns `Ok(0)`.
 pub async fn prune_older_than<'e, E: PgExecutor<'e>>(
     exec: E,
     retention_days: u32,
@@ -100,12 +90,10 @@ pub struct AuditView {
     pub created_at: OffsetDateTime,
 }
 
-/// The most recent privileged actions, newest first (design §16 audit trail surfaced in the
-/// operator console).
+/// The most recent privileged actions, newest first, for the operator console.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An empty log is an empty
-/// `Vec`, not [`crate::DbError::NotFound`].
+/// `Sqlx` only; an empty log is `Ok(vec![])`, not [`crate::DbError::NotFound`].
 pub async fn list_recent<'e, E: PgExecutor<'e>>(exec: E, limit: i64) -> DbResult<Vec<AuditView>> {
     let rows: Vec<AuditView> = sqlx::query_as!(
         AuditView,

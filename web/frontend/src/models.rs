@@ -1,16 +1,11 @@
 //! Wire DTOs and the presentation-only helpers hung off them.
 //!
-//! **Every** request and response shape is generated at compile time from the API service's
+//! Every request and response shape is generated at compile time from the API service's
 //! `utoipa` schema (`xtask openapi` → `progenitor` → `tankovault-api-client`). This module
-//! re-exports those types under the names the views use and adds the labelling/ordering
-//! helpers that have no business living in generated code.
+//! re-exports those types and adds labelling/ordering helpers that don't belong in generated code.
 //!
-//! Nothing here hand-mirrors a payload. It used to, for the `/v1/me/sync/*` endpoints the API
-//! service proxies verbatim, and those mirrors drifted silently: the settings panel discarded
-//! every persisted value because two fields it required no longer existed, and the connected
-//! display name and last-sync time had been renamed out from under it. Those shapes now live
-//! in `tankovault_contracts::sync`, are returned by the producing service, are declared on the
-//! API's own routes, and arrive here generated — so that class of drift cannot recur.
+//! Nothing here hand-mirrors a payload: a hand-mirrored shape can drift from the server
+//! silently, discarding persisted values or renaming fields out from under a view.
 
 use serde::{Deserialize, Serialize};
 
@@ -30,16 +25,12 @@ pub(crate) use crate::wire::types::{
     WatchlistEntryViewEntry, WatchlistGroup, WatchlistItem, WatchlistUpsert, WatchlistView,
 };
 
-// `BulkResult` is the only generated name in this module that says nothing about what it is a
-// result *of*; the watchlist bulk bar and the group-header mark-read are its only callers.
+// `BulkResult` says nothing about what it is a result *of*; only the watchlist bulk bar and
+// the group-header mark-read call it.
 pub(crate) use crate::wire::types::BulkResult;
 
-// Generated names that read poorly at the call site keep a local alias.
-//
-// `SyncAccountStatus` is the exception that reads *better* generated than aliased: it is the
-// external-tracker link status, and it is qualified precisely because `AccountStatus` is now a
-// different thing — whether a user account is active or suspended. Both are re-exported above
-// and below under names that cannot be confused.
+// `SyncAccountStatus` (external-tracker link status) keeps its generated name so it can't be
+// confused with `AccountStatus` (user account active/suspended).
 pub(crate) use crate::wire::types::SyncAccountStatus;
 
 pub(crate) use crate::wire::types::AdminAccountRow as AdminSyncAccount;
@@ -170,13 +161,9 @@ pub(crate) trait WatchStatusExt {
     /// Every status, in the order the Watchlist's tab strip and its movers offer them:
     /// the shelf a title is on, then the shelves it plausibly moves to.
     ///
-    /// This used to be `columns()`, named for the kanban board's five drag targets. The board
-    /// is gone; the order it defined is still the right one, so only the name changed.
-    ///
-    /// There is deliberately no `parse` beside it. The one that used to live here mapped an
-    /// unrecognised token to `Reading`, which is the wrong answer twice over — it invents a
-    /// status the caller never named, and on the watchlist's status filter it would silently
-    /// hide four fifths of the list. Callers match on `token()` and handle the miss themselves.
+    /// Deliberately no `parse` beside it: mapping an unrecognised token to `Reading` would
+    /// invent a status the caller never named and silently hide most of the watchlist filter.
+    /// Callers match on `token()` and handle the miss themselves.
     fn all() -> &'static [WatchStatus];
 }
 
@@ -240,9 +227,7 @@ impl RequestKindExt for RequestKind {
             Self::Objection => "objection",
         }
     }
-    // `needs_export` used to live here, mirroring `RequestKind::needs_export` on the server.
-    // The admin queue row now carries the answer as a field (`AdminRequestRow.needs_export`),
-    // computed where the definition is, so the console reads it rather than re-deriving it.
+    // `AdminRequestRow.needs_export` carries this answer already; don't re-derive it here.
     fn all() -> &'static [RequestKind] {
         &[
             RequestKind::Access,
@@ -295,8 +280,7 @@ impl AccountStatusExt for AccountStatus {
     fn pill_class(self) -> &'static str {
         match self {
             Self::Active => "ik-pill jade",
-            // Amber, not vermilion: a suspension is a state to notice and reverse, not a
-            // failure — vermilion is the app's destructive/accent role.
+            // Amber, not vermilion: a suspension is reversible, not a failure.
             Self::Suspended => "ik-pill star",
         }
     }
@@ -349,22 +333,12 @@ impl ScanRunExt for ScanRun {
 }
 
 /// Presentation for the generated [`ConflictPolicy`].
-///
-/// The policy used to be a **local** enum here, because the wire carried a bare string and the
-/// sync service validated it at the far end. That made this the frontend's own closed
-/// enumeration of a vocabulary it did not own (FRONTEND F10): a policy added on the server
-/// would simply not have appeared in the picker, and the `_ => NewestWins` parse arm meant a
-/// token this crate did not recognise silently became the one policy that can overwrite local
-/// progress. `tankovault_contracts::sync::ConflictPolicy` is now a published schema, so the
-/// type below is generated from the same document as every other DTO and only the *wording*
-/// is this crate's business.
 pub(crate) trait ConflictPolicyExt: Sized {
     /// Every policy, in the order the picker offers them.
     ///
-    /// Still hand-listed, because the generated client carries no `ALL` — but no longer
-    /// unverifiable: `the_policy_picker_offers_every_published_policy` reads the accepted set
-    /// out of the committed `openapi.json`, which is the artefact the client is generated
-    /// from, so a policy added on the server turns this crate red rather than going unoffered.
+    /// Still hand-listed, because the generated client carries no `ALL`, but kept honest by
+    /// `the_policy_picker_offers_every_published_policy`, which reads the accepted set out of
+    /// the committed `openapi.json`.
     fn all() -> &'static [Self];
     /// The catalogue key of this policy's display name (see [`crate::i18n`]).
     fn label_key(self) -> &'static str;
@@ -413,17 +387,10 @@ mod tests {
 
     /// The policy picker must offer every policy the server accepts.
     ///
-    /// `ConflictPolicy::all()` is the last hand-maintained list in this file, and this is what
-    /// keeps it honest. Read out of the committed `openapi.json` — the artefact
-    /// `crates/api-client` is generated from and the only thing that connects these two
-    /// workspaces — so a policy added to `tankovault_contracts::sync::ConflictPolicy` fails
-    /// here rather than quietly never appearing in the UI.
-    ///
-    /// This replaces two tests that pinned a local enum against its own hand-written tokens:
-    /// they could only ever confirm that this crate agreed with itself, which is precisely the
-    /// gap FRONTEND F10 named. One of them asserted the old `_ => NewestWins` fallback as
-    /// *intended* behaviour; the fallback is gone, because "the token names nothing" and "the
-    /// user wants newest-wins" are not the same answer.
+    /// `ConflictPolicy::all()` is the last hand-maintained list in this file. Read against the
+    /// committed `openapi.json` — the artefact `crates/api-client` is generated from — so a
+    /// policy added to `tankovault_contracts::sync::ConflictPolicy` fails here rather than
+    /// quietly never appearing in the UI.
     #[test]
     fn the_policy_picker_offers_every_published_policy() {
         const SPEC: &str = include_str!("../../../openapi.json");

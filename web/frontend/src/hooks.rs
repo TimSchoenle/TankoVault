@@ -4,12 +4,8 @@ use dioxus::prelude::*;
 
 /// A refetch trigger shared between a `use_resource` and the handlers that invalidate it.
 ///
-/// Every screen previously carried a bare `Signal<u32>` plus the incantation
-/// `let _ = reload.read();` at the top of its resource closure — the load-bearing line that
-/// subscribes the resource so a later `reload += 1` re-runs it. Naming both halves
-/// ([`Reload::track`] / [`Reload::bump`]) makes the dependency legible instead of looking
-/// like a discarded read someone could "tidy away", which would silently stop the screen
-/// refreshing after a mutation.
+/// [`Reload::track`] must be called synchronously at the top of the resource closure — it looks
+/// like a discardable read, but removing it silently stops the screen refreshing after a mutation.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Reload(Signal<u32>);
 
@@ -31,11 +27,8 @@ pub(crate) fn use_reload() -> Reload {
     Reload(use_signal(|| 0u32))
 }
 
-/// A boolean latch for "an action is in flight", with re-entry already handled.
-///
-/// The pattern it replaces — `if *busy.peek() { return; } busy.set(true); … busy.set(false);`
-/// — appeared in a dozen handlers, and a missed `peek` guard means a double click fires the
-/// mutation twice.
+/// A boolean latch for "an action is in flight", with re-entry already handled — a missed guard
+/// here means a double click fires the mutation twice.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Busy(Signal<bool>);
 

@@ -1,11 +1,8 @@
 //! NATS `JetStream` subject and stream naming.
 //!
-//! Two durable streams:
-//! - **tasks** (`scan.tasks.<provider_slug>.<scan_mode>`): one work queue per provider *and
-//!   scan mode*, so workers can both balance between providers and serve fast scans ahead
-//!   of full ones (design §2, §12).
-//! - **events** (`scan.progress`, `chapter.discovered`, ...): domain events relayed to
-//!   the notifier, sync service, and (via SSE) the operator console.
+//! Two durable streams: **tasks** (`scan.tasks.<provider_slug>.<scan_mode>`, one queue per
+//! provider and scan mode) and **events** (`scan.progress`, `chapter.discovered`, ...),
+//! relayed to the notifier, sync service, and (via SSE) the operator console.
 
 use tankovault_domain::ScanMode;
 
@@ -25,11 +22,10 @@ pub const EVENTS_SUBJECT_WILDCARD: &str = "scan.events.>";
 
 /// Subject a scan task is published to: one queue per provider **and scan mode**.
 ///
-/// The mode is part of the subject because it is the priority class. A fast scan is what
-/// surfaces new chapters to readers and costs one task per provider; a full scan is
-/// backfill that fans out into one task per catalogue entry. Splitting them into separate
-/// queues is what lets a worker take the fast task first instead of finding it behind a
-/// six-figure backfill backlog.
+/// The mode is part of the subject because it is the priority class: a fast scan surfaces new
+/// chapters and costs one task per provider, while a full scan fans out into one task per
+/// catalogue entry. Separate queues let a worker take the fast task first instead of finding
+/// it behind a six-figure backfill backlog.
 #[must_use]
 pub fn task_subject(provider_slug: &str, mode: ScanMode) -> String {
     format!("scan.tasks.{provider_slug}.{}", mode.as_str())
@@ -70,16 +66,11 @@ pub fn user_notify_subject(user_id: uuid::Uuid) -> String {
 
 /// Name prefix for the worker pool's durable consumers on the tasks stream.
 ///
-/// The pool binds **one consumer per provider and scan mode** rather than a single consumer
-/// on the `scan.tasks.*` wildcard. A wildcard consumer serves the stream in publish order,
-/// so a full catalogue scan — hundreds of thousands of `series` tasks published back to
-/// back — sits at the head of the queue and everything else waits behind it. Splitting it
-/// gives the workers one queue per provider to round-robin between, and one queue per mode
-/// to prioritise across (design §12).
-///
-/// It is also what a work-queue stream requires: `JetStream` rejects two consumers whose
-/// filter subjects overlap, so narrow per-lane filters are the only way to have more than
-/// one consumer at all.
+/// One consumer per provider and scan mode, not a single consumer on the `scan.tasks.*`
+/// wildcard: a wildcard consumer serves the stream in publish order, so a full catalogue scan
+/// would sit at the head of the queue with everything else waiting behind it. It is also a
+/// hard requirement — `JetStream` rejects two consumers whose filter subjects overlap, so
+/// narrow per-lane filters are the only way to have more than one consumer at all.
 pub const WORKER_CONSUMER_PREFIX: &str = "tankovault-workers";
 
 /// The pre-fairness durable consumer that bound the whole `scan.tasks.*` wildcard.
@@ -102,11 +93,8 @@ pub fn worker_consumer(provider_slug: &str, mode: ScanMode) -> String {
 /// The lane a worker consumer name was built for, or `None` if `name` is not one.
 ///
 /// Lets a worker recover the lanes that already exist on the stream, so tasks belonging to a
-/// provider that has since been renamed or deleted still get consumed instead of sitting in
-/// the stream forever.
-///
-/// The mode sits ahead of the slug for exactly this reason: a provider slug may itself
-/// contain `-`, so a name can only be taken apart from the left.
+/// provider that has since been renamed or deleted still get consumed. The mode sits ahead of
+/// the slug so the name can be taken apart from the left even when the slug itself contains `-`.
 ///
 /// ```
 /// use tankovault_contracts::ScanMode;

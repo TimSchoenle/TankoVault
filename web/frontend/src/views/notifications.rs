@@ -74,9 +74,7 @@ impl Kind {
             "source_added" | "source" => Self::SourceAdded,
             "completed" | "series_completed" => Self::Completed,
             "sync" | "sync_event" => Self::Sync,
-            // A kind we don't know, but with a chapter number in the payload, is a chapter
-            // event under a new name — better to show it correctly than to bucket it as
-            // unknown.
+            // An unknown kind with a chapter number is still a chapter event under a new name.
             _ if payload(notification).get("chapter_number").is_some() => Self::NewChapter,
             _ => Self::Unknown,
         }
@@ -166,8 +164,7 @@ pub(crate) fn Notifications() -> Element {
         }
     });
 
-    // Keep the rail badge honest whenever the list changes: the SSE push is best-effort, so
-    // this navigation-time recount is what guarantees the two agree.
+    // The SSE push is best-effort; this navigation-time recount is what keeps the rail badge honest.
     use_effect(move || {
         let mut count = badge.0;
         if let Some(Ok(list)) = &*notifications.read_unchecked() {
@@ -292,9 +289,8 @@ fn NotifRow(notification: Notification) -> Element {
 
 /// What a row says, before it is worded.
 ///
-/// Kept separate from the wording so the payload-shape logic stays unit-testable on the host
-/// target (resolving a message needs a Dioxus runtime) and so the phrasing is a catalogue
-/// concern rather than something baked into the parser.
+/// Kept separate from the wording so the payload-shape logic stays testable on the host target
+/// (a message needs a Dioxus runtime) rather than baked into the parser.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Line {
     /// A new chapter of a series we know the title of.

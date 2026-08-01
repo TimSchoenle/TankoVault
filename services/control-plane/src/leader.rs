@@ -1,19 +1,7 @@
-//! Redis-backed leader election for the singleton scheduler (design §12).
-//!
-//! The scheduler must run on exactly **one** control-plane replica at a time; otherwise
-//! every replica would fan out duplicate scan runs on each cadence. We express this as a
-//! best-effort distributed lock over Redis:
-//!
-//! - **Acquire:** `SET <key> <token> NX PX <ttl>` — succeeds only when the lock is free.
-//! - **Renew:** a check-and-set Lua script `PEXPIRE`s the key *iff* it still holds our
-//!   token, so a replica never extends another replica's lease.
-//! - **Fail-open on config:** when no `redis` block is configured the process is treated
-//!   as the sole leader (single-instance / local dev). A Redis *error* while leading,
-//!   however, drops leadership so two partitioned replicas cannot both believe they lead.
-//!
-//! The lock TTL comfortably exceeds the renewal interval so brief Redis blips do not flap
-//! leadership. Sweeps are the only leader-gated action; they read the cached flag set by
-//! the background renewal task via [`Leadership::is_leader`].
+//! Redis-backed leader election for the singleton scheduler: it must run on exactly one
+//! control-plane replica, expressed as a best-effort distributed lock over Redis. Fails
+//! open to sole-leader when unconfigured, but drops leadership on a Redis error while
+//! leading, so partitioned replicas cannot both believe they lead.
 
 use fred::prelude::*;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -103,9 +91,9 @@ async fn acquire_or_renew(client: &Client, token: &str) -> Result<bool, Error> {
     if acquired.is_some() {
         return Ok(true);
     }
-    // Lock is taken — extend the lease only if it is still ours. This GET-then-PEXPIRE is
-    // not atomic, but the TTL comfortably exceeds the renewal interval, so the worst case
-    // is a one-cycle-late hand-off; scan planning is idempotent on the DB side regardless.
+    // Extend only if the lease is still ours. GET-then-PEXPIRE isn't atomic, but TTL
+    // comfortably exceeds the renewal interval, so the worst case is a one-cycle-late
+    // hand-off — and scan planning is idempotent regardless.
     let current: Option<String> = client.get(LOCK_KEY).await?;
     if current.as_deref() == Some(token) {
         let _: i64 = client.pexpire(LOCK_KEY, ttl_ms, None).await?;

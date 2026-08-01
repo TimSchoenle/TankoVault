@@ -27,7 +27,6 @@ pub(crate) use tabs::{TabBar, TabKind};
 
 use dioxus::prelude::*;
 
-/// Global unread-notification count, provided at the app root, pushed to by the SSE stream
-/// and recomputed by the Notifications view. A newtype so it is distinct in the context map.
+/// Global unread-notification count, provided at the app root and updated by the SSE stream.
 #[derive(Clone, Copy)]
 pub(crate) struct UnreadBadge(pub Signal<i64>);

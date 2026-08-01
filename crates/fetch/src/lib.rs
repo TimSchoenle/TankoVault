@@ -1,15 +1,7 @@
 //! # tankovault-fetch
 //!
-//! The **only** place network egress to providers happens (design §9). A composition of
-//! decorators over `wreq`, outer → inner:
-//!
-//! ```text
-//! BackoffFetcher     -> honours provider-directed 429/503 + Retry-After
-//! RateLimitedFetcher -> per-provider governor + concurrency cap + crawl delay
-//! SolvingFetcher     -> detects bot-management challenges; delegates to a ChallengeSolver
-//! RetryingFetcher    -> exponential backoff + jitter on transient errors
-//! BaseHttpFetcher    -> wreq with browser emulation + a validating (SSRF-safe) DNS resolver
-//! ```
+//! The **only** place network egress to providers happens (design §9): `wreq` wrapped in
+//! backoff, rate-limiting, challenge-solving and retry decorators, outer to inner.
 //!
 //! Hard invariant: **no image/content fetch path exists**. [`FetchResponse::body`] is
 //! bounded UTF-8 text for HTML/JSON parsing only.

@@ -47,10 +47,8 @@ pub async fn trigger_scan(
 ) -> ApiResult<Json<ScanTriggeredView>> {
     user.require(Permission::ScansRun).await?;
 
-    // `scanning.manual` gates this route in the feature table; `scanning.full` gates a *mode*
-    // within it, which no route-level rule can express — a full catalogue walk is the
-    // expensive one, and an operator throttling a provider needs to stop it without also
-    // stopping the cheap latest-feed pass.
+    // `scanning.full` gates the mode, not the route: an operator must be able to stop full
+    // catalogue walks without also stopping the cheap latest-feed scan.
     if req.mode == ScanMode::Full && !state.features.is_enabled(Feature::ScanningFull) {
         return Err(ApiError::FeatureDisabled(Feature::ScanningFull));
     }

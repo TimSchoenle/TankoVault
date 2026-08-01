@@ -51,17 +51,11 @@ impl From<ChapterRow> for Chapter {
     }
 }
 
-/// Upsert one chapter and report whether it was newly discovered.
-///
-/// The `xmax = 0` predicate distinguishes an inserted row (xmax 0) from an updated
-/// row, giving both idempotent upsert and new-chapter detection in one round trip.
+/// Upsert one chapter and report whether it was newly discovered (`xmax = 0`).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A `source_id` that does not
-/// exist is a foreign-key violation and so a 500. `number` is cast to `numeric(10,4)`, so a value
-/// outside that precision — including a non-finite `f64` — is a driver error rather than a
-/// rounded or dropped chapter; that is deliberate, since silently storing the wrong number would
-/// attach a chapter to the wrong position in someone's reading progress.
+/// [`crate::DbError::Sqlx`] only. A non-finite or out-of-precision `number` errors rather than
+/// rounding — a silently wrong number would misplace a reader's progress.
 pub async fn upsert_chapter<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
@@ -92,30 +86,14 @@ pub async fn upsert_chapter<'e, E: PgExecutor<'e>>(
 
 /// Upsert a whole chapter list in one statement, returning the numbers that were **new**.
 ///
-/// The per-chapter [`upsert_chapter`] is kept for the single-chapter callers, but the ingest
-/// path must not use it: a series with two thousand chapters meant two thousand sequential
-/// round trips, each one holding open the transaction that also holds row locks on the shared
-/// `tags` and `authors` rows — so one slow series blocked every other provider's ingest.
-///
-/// Same `xmax = 0` trick as the single-row version: an inserted row has `xmax` 0, an updated
-/// one does not, so one statement gives both the idempotent upsert and the new-chapter
-/// detection that drives `chapter.discovered`.
-///
-/// `DISTINCT ON` is load-bearing. `ON CONFLICT DO UPDATE` cannot touch the same row twice in
-/// one statement (Postgres raises `21000`), and a provider listing the same chapter number
-/// twice on one page is a real and recurring occurrence — the last spelling wins, matching
-/// the row-at-a-time loop this replaces.
+/// One statement, not a loop over [`upsert_chapter`] — the ingest transaction holds row locks
+/// on shared `tags`/`authors` rows, so per-chapter round trips there stall other ingests.
+/// `DISTINCT ON` avoids `ON CONFLICT DO UPDATE` aborting when a page lists one chapter number
+/// twice.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable, with the same foreign-key and
-/// `numeric(10,4)` shapes as [`upsert_chapter`]; one bad chapter fails the whole statement, so
-/// this is all-or-nothing rather than a partial list. An empty `chapters` returns an empty `Vec`
-/// without issuing a statement.
-///
-/// The empty `Vec` is doing double duty and the caller must not read it as failure: it is also
-/// what a *converged* re-scan returns — every chapter matched the conflict arm, none was new —
-/// which is the ordinary result of the overwhelming majority of scans. Only the `Err` says
-/// nothing was written.
+/// [`crate::DbError::Sqlx`] only; one bad chapter fails the whole batch. An empty `Vec` means
+/// either no input or a fully-converged re-scan — only `Err` means nothing was written.
 pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
@@ -131,8 +109,7 @@ pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
         .collect();
     let numbers: Vec<f64> = chapters.iter().map(|c| c.number).collect();
     let volumes: Vec<Option<i32>> = chapters.iter().map(|c| c.volume).collect();
-    // Borrowed: the arrays are bound for one statement and dropped, so cloning a title and a
-    // path per chapter allocates twice for every chapter of every scanned series (PERF-19).
+    // Borrowed, not cloned: arrays live only for this statement.
     let titles: Vec<Option<&str>> = chapters.iter().map(|c| c.title.as_deref()).collect();
     let paths: Vec<&str> = chapters.iter().map(|c| c.path.as_str()).collect();
     let published: Vec<Option<OffsetDateTime>> = chapters.iter().map(|c| c.published_at).collect();
@@ -170,12 +147,8 @@ pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
 /// The highest chapter number stored for a source (fast-scan comparison key).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A source with no chapters, and
-/// a `source_id` that does not exist, are the same `Ok(None)`: `MAX` over an empty set is `NULL`,
-/// and `fetch_one` still returns a row because the aggregate always produces one. Not
-/// [`crate::DbError::NotFound`], and not `Ok(Some(0.0))` — the caller compares this against the
-/// highest number a listing offers, and a zero would read as "the source has chapter 0", which
-/// would skip every chapter below the first one seen.
+/// [`crate::DbError::Sqlx`] only; no chapters or unknown source is `Ok(None)`, never
+/// `Ok(Some(0.0))` — a zero would be read as chapter 0 existing.
 pub async fn max_chapter_number<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
@@ -189,19 +162,13 @@ pub async fn max_chapter_number<'e, E: PgExecutor<'e>>(
     Ok(max)
 }
 
-/// The number of distinct **whole** chapters a source has — sub-chapter part releases
-/// (e.g. `152.1`..`152.6`, fractional `number`) collapse into the one whole chapter they
-/// belong to instead of each counting as its own chapter (frontend §9.2 "Read on" +
-/// hero stat; mirrors the `floor(number)` tracking-count convention in
-/// `repo::tracking`). Deliberately distinct from `series_sources.chapter_count`, which
-/// stays a raw scanned-row count used for scan/sync bookkeeping.
+/// Distinct **whole** chapters a source has; part releases (`152.1`..`152.6`) collapse into
+/// their whole chapter rather than each counting separately. Distinct from
+/// `series_sources.chapter_count`, a raw scanned-row count.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A source with no chapters and
-/// an unknown `source_id` are both `Ok(0)` — `count` over an empty set is `0` and never `NULL`,
-/// which is what the `count!` override asserts. The `i32::try_from(...).unwrap_or(i32::MAX)` saturates rather than
-/// erroring or wrapping: a count above two billion is not a value any caller can render
-/// meaningfully, and clamping keeps a display path from failing over a number that cannot occur.
+/// [`crate::DbError::Sqlx`] only; no chapters or unknown source is `Ok(0)`. Saturates at
+/// `i32::MAX` rather than erroring or wrapping.
 pub async fn count_full_chapters<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
@@ -219,10 +186,8 @@ pub async fn count_full_chapters<'e, E: PgExecutor<'e>>(
 /// List chapters of a source, newest first (resolved to absolute links by the caller).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `source_id` and a
-/// registered-but-never-scanned source are the same empty `Vec`, not [`crate::DbError::NotFound`]
-/// — a stub registered by the catalogue walk legitimately has no chapters until its `Series`
-/// task runs, so an empty list is a normal intermediate state rather than a miss.
+/// [`crate::DbError::Sqlx`] only; unknown source or a not-yet-scanned stub is the same empty
+/// `Vec`.
 pub async fn list_chapters<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
@@ -239,19 +204,12 @@ pub async fn list_chapters<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(Chapter::from).collect())
 }
 
-/// Distinct whole-chapter counts for a series, one row per provider.
-///
-/// The batched counterpart to [`count_full_chapters_across`]. `services/api`'s series-detail
-/// handler folds a series' sources into one group per provider and needs a count for each; it
-/// used to issue one `count_full_chapters_across` per group, which is an N+1 over a set the
-/// database can group in a single pass.
+/// Distinct whole-chapter counts for a series, one row per provider — the batched counterpart
+/// to [`count_full_chapters_across`].
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A series with no chapters
-/// anywhere is an empty `Vec`, and so is an unknown `series_id`. The join is inner, so a provider
-/// whose sources carry *no* chapters has no row at all rather than a row of `0` — callers
-/// building a per-provider view must treat a missing key as zero rather than as an absent
-/// provider.
+/// [`crate::DbError::Sqlx`] only. Inner join: a provider with no chapters has no row, not a row
+/// of `0` — callers must treat a missing key as zero.
 pub async fn count_full_chapters_by_provider<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -279,19 +237,12 @@ pub async fn count_full_chapters_by_provider<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// The number of distinct **whole** chapters across a *set* of sources — the merge-aware
-/// counterpart to [`count_full_chapters`]. Used when several `series_sources` rows of the
-/// same provider are folded into one reader-visible "completing" source (design §10 same-source
-/// smart merge): counting each entry separately and summing would double-count a whole chapter
-/// two entries happen to share, so the count is taken over the *union* of their chapters.
-/// An empty slice yields `0`.
+/// Distinct **whole** chapters across a *set* of sources (design §10 same-source merge) — the
+/// union-aware counterpart to [`count_full_chapters`]; summing per-source counts would
+/// double-count a chapter two sources share. Empty slice yields `0`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. The empty-slice case still
-/// issues the statement — `= ANY('{}')` matches nothing — so `Ok(0)` there costs a round trip
-/// rather than short-circuiting; it is on a per-series read path that already has a connection,
-/// and the honesty of one code path is worth more than the saving. Saturates at [`i32::MAX`] for
-/// the same reason as [`count_full_chapters`].
+/// [`crate::DbError::Sqlx`] only; saturates at `i32::MAX` like [`count_full_chapters`].
 pub async fn count_full_chapters_across<'e, E: PgExecutor<'e>>(
     exec: E,
     source_ids: &[SeriesSourceId],
@@ -307,23 +258,13 @@ pub async fn count_full_chapters_across<'e, E: PgExecutor<'e>>(
     Ok(i32::try_from(count).unwrap_or(i32::MAX))
 }
 
-/// List the chapters spanning a *set* of sources as a single de-duplicated, newest-first
-/// list — the merge-aware counterpart to [`list_chapters`]. When several `series_sources`
-/// rows of the same provider are folded into one "completing" source, their chapter lists are
-/// complementary (e.g. one entry carries the early chapters, another the later ones); this
-/// unions them and, when two entries expose the *same* chapter number, keeps a single row
-/// (the earliest-discovered) via `DISTINCT ON (number)` so the reader never sees a duplicate.
-/// All rows belong to the same provider, so the caller resolves paths against one `base_url`.
+/// Chapters spanning a *set* of sources, de-duplicated (`DISTINCT ON (number)`,
+/// earliest-discovered wins) and newest-first — the merge-aware counterpart to
+/// [`list_chapters`]. Caller must ensure all sources share one provider; not checked here, and
+/// mixed providers produce links resolved against the wrong `base_url`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An empty `source_ids`, ids that
-/// name nothing, and sources with no chapters are all the same empty `Vec`, not
-/// [`crate::DbError::NotFound`].
-///
-/// The final sentence of the summary is a **precondition this function does not check**: it
-/// unions whatever ids it is given, so passing sources from two different providers returns a
-/// list the caller will then resolve against one `base_url`, producing links that point at the
-/// wrong host. The grouping that guarantees one provider happens in `services/api`.
+/// [`crate::DbError::Sqlx`] only; empty or unknown ids are the same empty `Vec`.
 pub async fn list_chapters_across<'e, E: PgExecutor<'e>>(
     exec: E,
     source_ids: &[SeriesSourceId],

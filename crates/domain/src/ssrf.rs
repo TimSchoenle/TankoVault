@@ -1,15 +1,6 @@
-//! SSRF address policy — which URLs this system will never fetch (design §16).
-//!
-//! Pure and I/O-free, so it lives here rather than in `crates/fetch`: the crawler is not the
-//! only consumer. `services/render` drives a real browser at an operator- or caller-supplied
-//! URL and returns the DOM *and the cookies it collected*; `services/challenge-solver` hands
-//! a URL to `FlareSolverr` and returns the body. Both need this table, and neither should have
-//! to take a dependency on the whole `wreq`/`BoringSSL` fetch stack to get it — which is
-//! exactly why they previously had no check at all.
-//!
-//! The DNS-time half of the guard (resolving a hostname and re-checking every resolved
-//! address, which is what closes DNS rebinding) needs I/O and stays in
-//! `tankovault_fetch::ssrf`, which re-exports everything here.
+//! SSRF address policy — which URLs this system will never fetch. Pure and I/O-free, so
+//! `services/render` and `services/challenge-solver` can use it without the `wreq`/`BoringSSL`
+//! fetch stack; the DNS-resolving half that closes rebinding stays behind the `dns` feature.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use thiserror::Error;
@@ -78,14 +69,12 @@ fn is_forbidden_v6(ip: Ipv6Addr) -> bool {
         || (seg[0] == 0x2001 && seg[1] == 0x0db8) // 2001:db8::/32 documentation
 }
 
-/// Validate the scheme, the presence of a host, and — when the authority is an IP literal
-/// — the address range.
+/// Validate the scheme, host presence, and — for an IP-literal authority — the address range.
 ///
-/// The literal check is load-bearing, not belt-and-braces: `hyper-util`'s `HttpConnector`
-/// short-circuits DNS whenever the authority parses as an IP, so a custom resolver is never
-/// consulted for `http://127.0.0.1/` or `http://169.254.169.254/`. Hostnames are still
-/// checked at connect time by `tankovault_fetch::ssrf::SsrfResolver`, which additionally
-/// covers DNS rebinding.
+/// Load-bearing, not belt-and-braces: `hyper-util`'s `HttpConnector` short-circuits DNS for an
+/// IP-literal authority, so a custom resolver never sees `http://127.0.0.1/`. Hostnames are
+/// still checked at connect time by `tankovault_fetch::ssrf::SsrfResolver`, which also covers
+/// DNS rebinding.
 ///
 /// # Errors
 /// [`SsrfError::Scheme`] / [`SsrfError::NoHost`] / [`SsrfError::ForbiddenAddress`].
@@ -115,20 +104,13 @@ pub fn validate_str(raw: &str) -> Result<Url, SsrfError> {
     Ok(url)
 }
 
-/// The resolving half of the guard, behind the `dns` feature.
+/// The resolving half of the guard, behind the `dns` feature — it needs a DNS lookup, and
+/// `wasm32` (via `crates/api-client`) must never see `tokio`'s networking.
 ///
-/// Everything above is I/O-free and available everywhere, including `wasm32` through
-/// `crates/api-client`. These two need a DNS lookup, so they are gated: enabling `dns` adds
-/// `tokio`'s networking, which the browser build must not see.
-///
-/// They live here rather than in `crates/fetch`, where they used to, for the same reason the
-/// address table does. `services/api` has to validate a `base_url` it is about to **store**,
-/// and depending on `crates/fetch` for that meant linking `wreq` and `BoringSSL` into the API
-/// binary alongside the `rustls` it already had — a whole second TLS stack, compiled from C
-/// and assembly, for one operator-facing check (PERF-18). `crates/fetch` re-exports both, so
-/// its own call sites are unchanged, and keeps the `wreq::dns::Resolve` adapter, which is
-/// genuinely that crate's: it re-checks at connect time and on every redirect hop, which is
-/// what closes DNS rebinding for an *outbound* fetch.
+/// Lives here, not `crates/fetch`, so `services/api` can validate a stored `base_url`
+/// without linking `wreq`/`BoringSSL` — a second TLS stack — into the API binary.
+/// `crates/fetch` re-exports both and keeps its own `wreq::dns::Resolve` adapter, which
+/// re-checks on every redirect hop to close rebinding for outbound fetches.
 #[cfg(feature = "dns")]
 mod resolving {
     use super::{SsrfError, is_forbidden_ip, validate_str};
@@ -153,11 +135,9 @@ mod resolving {
     /// Validate a URL the way an *inbound* handler must: scheme and address-range pre-flight,
     /// then a real DNS resolution whose every answer is re-checked.
     ///
-    /// Used where a URL is about to be **stored** or handed to something this process does not
-    /// control — `admin/providers.rs`'s `base_url`, which the scan workers then hit on a timer.
-    /// For an outbound fetch through `crates/fetch`'s own stack the pre-flight alone is enough,
-    /// because that crate's `SsrfResolver` repeats the address check at connect time and on
-    /// every redirect.
+    /// Used where a URL is about to be **stored**, e.g. a provider's `base_url` that scan
+    /// workers later hit on a timer. An outbound fetch through `crates/fetch` needs only the
+    /// pre-flight, since its `SsrfResolver` repeats the check at connect time and on redirect.
     ///
     /// # Errors
     /// As [`super::validate_url`], plus [`SsrfError::Resolution`] /

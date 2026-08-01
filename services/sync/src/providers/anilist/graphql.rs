@@ -1,8 +1,6 @@
-//! The GraphQL operations this service issues against `AniList`.
-//!
-//! Each query/mutation document sits immediately above the one method that sends it, so a
-//! field added to a document and a field read out of the response are visible together. The
-//! transport underneath is [`super::client`]; the response shaping is [`super::parse`].
+//! The GraphQL operations this service issues against `AniList`. Each query/mutation document
+//! sits immediately above the one method that sends it, so a field added to one and a field read
+//! from the response are visible together.
 
 use anyhow::anyhow;
 use secrecy::SecretString;
@@ -24,12 +22,8 @@ const VIEWER_QUERY: &str = "query { Viewer { id name } }";
 
 /// One page of the viewer's manga list.
 ///
-/// The `media` selection is deliberately the *same* set of fields as [`METADATA_QUERY`] below,
-/// not the narrower "whatever the matcher scores on" set it used to be. A list sync already
-/// resolves each entry to a local series, so with the full selection in hand it can fold the
-/// upstream description, cover, publication status and content type straight into that series —
-/// where before it discarded them and left the row waiting for a catalogue-wide sweep that walks
-/// tens of thousands of series to come round to it. The extra fields cost no extra request.
+/// The `media` selection deliberately matches [`METADATA_QUERY`] below, not a narrower
+/// matcher-only set, so a list sync can fold full metadata into the matched series for free.
 const MEDIA_LIST_QUERY: &str = "\
     query ($userId: Int, $chunk: Int, $perChunk: Int) { \
       MediaListCollection(userId: $userId, type: MANGA, chunk: $chunk, perChunk: $perChunk) { \

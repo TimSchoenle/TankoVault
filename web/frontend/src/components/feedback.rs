@@ -86,14 +86,9 @@ pub(crate) fn SignInGate() -> Element {
 
 /// The whole "you must be signed in" screen: the page title plus [`SignInGate`].
 ///
-/// Five protected views hand-rolled this same two-element body, and the fifth — `/console` —
-/// forgot it entirely and rendered a **permanent loading skeleton** to signed-out visitors
-/// instead. That is the worst failure mode available: it looks like the app is working, so
-/// the reader waits rather than signing in.
-///
-/// Deliberately a guard that callers early-return, not a wrapper taking `children`: every one
-/// of these views computes derived state after the check (a display name, a filtered list),
-/// and a wrapper would have to build that state before deciding not to show it.
+/// Deliberately a guard callers early-return, not a wrapper taking `children`: views compute
+/// derived state after the check, and a wrapper would have to build that state before deciding
+/// not to show it.
 #[component]
 pub(crate) fn AuthRequired(title: String) -> Element {
     rsx! {
@@ -111,9 +106,6 @@ pub(crate) fn Brush() -> Element {
 }
 
 /// An outcome line under a form: green when the action succeeded, accent when it failed.
-///
-/// Every mutating panel used to hand-roll this same two-arm match; sharing it keeps the two
-/// states visually identical everywhere and stops one of them drifting.
 #[component]
 pub(crate) fn OutcomeLine(outcome: Option<Result<String, String>>) -> Element {
     match outcome {
@@ -129,11 +121,6 @@ pub(crate) fn OutcomeLine(outcome: Option<Result<String, String>>) -> Element {
 
 /// Render a fetched `Resource` through the standard three states: `loading` while it is in
 /// flight, an [`ErrorBox`] wired to `reload` when it failed, and `content` once it resolved.
-///
-/// Roughly thirty call sites used to open-code this match, and they had already drifted —
-/// some retried, some dead-ended; some surfaced the error, some swallowed it into an empty
-/// list. Funnelling them through one helper makes "a failed fetch is always visible and
-/// always retryable" a property of the app rather than of each screen.
 pub(crate) fn async_view<T: 'static>(
     resource: &Resource<Result<T, String>>,
     reload: Reload,
@@ -154,10 +141,6 @@ pub(crate) fn async_view<T: 'static>(
 
 /// [`async_view`] with a fixed-height [`SkeletonBlock`] as its loading state — the shape every
 /// console panel and sidebar card wants.
-///
-/// The console panels used to open-code this because they could not name their loading state in
-/// one expression, and open-coding it is how they ended up rendering a failed fetch as muted
-/// grey body text with no retry button. Naming the common case removes the excuse.
 pub(crate) fn async_block<T: 'static>(
     resource: &Resource<Result<T, String>>,
     reload: Reload,
@@ -200,8 +183,7 @@ pub(crate) fn async_block_list<T: 'static>(
 /// [`async_view`] for a list: adds the "loaded, but there is nothing here" state, which is a
 /// different message from an error and must never look like one.
 ///
-/// `empty` is already-resolved text — the caller has a [`crate::i18n::Translator`] to hand and
-/// often needs to interpolate the filter or query the list came up empty for.
+/// `empty` is already-resolved text, so the caller can interpolate the filter or query.
 pub(crate) fn async_list<T: 'static>(
     resource: &Resource<Result<Vec<T>, String>>,
     reload: Reload,

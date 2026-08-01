@@ -20,8 +20,7 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
     let i18n = use_i18n();
     let mut query = use_signal(String::new);
 
-    // All hooks are declared unconditionally (Rules of Hooks) before we branch on whether a
-    // series is currently open in the editor.
+    // Hooks stay unconditional (Rules of Hooks) ahead of the branch on `selected`.
     let results = {
         use_resource(move || {
             let q = query.read().clone();
@@ -63,10 +62,8 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
         };
     }
 
-    // The search results render nothing at all until the operator has typed two characters, so
-    // this cannot use `async_block_list`: a skeleton or an empty-state box under an untouched
-    // field reads as a broken screen. A *failure* still has to be visible and retryable, which
-    // is what the search-specific `ErrorBox` below preserves.
+    // Cannot use `async_block_list`: below 2 characters typed, results stay `None`, and a
+    // skeleton/empty box under an untouched field would read as a broken screen.
     let results_body = match &*results.read() {
         None => rsx! {},
         Some(Err(message)) => {
@@ -181,8 +178,7 @@ pub(super) fn MappingPickRow(
 }
 
 /// The editable per-series "manga info" view: the series card plus one editor row per known
-/// sync provider (prefilled with its current external id), so an operator can add, correct
-/// or clear a mapping by hand.
+/// sync provider, prefilled with its current external id.
 #[component]
 pub(super) fn SeriesSyncEditor(
     series_id: String,
@@ -191,8 +187,8 @@ pub(super) fn SeriesSyncEditor(
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
-    // `selected` (and therefore this component's `series_id` prop) is a plain `String` shared
-    // with the search/pick-row flow above; parse it once here at the boundary.
+    // `series_id` arrives as a plain `String` shared with the search/pick-row flow; parsed
+    // once here at the boundary.
     let Ok(sid) = series_id.parse::<SeriesId>() else {
         return rsx! {
             EmptyBox { message: i18n.t("console.sync.badSeriesId") }
@@ -227,10 +223,8 @@ pub(super) fn SeriesSyncEditor(
         }
     });
 
-    // Both feed one editor grid whose own empty state ("no providers registered") already
-    // covers the not-yet-loaded case, so neither gets its own loading or error chrome. The
-    // editor rows below are what the operator came for; an error box over them would be worse
-    // than a grid that fills in a moment later.
+    // Both feed one editor grid whose own empty state covers the not-yet-loaded case, so
+    // neither gets its own loading or error chrome.
     let map_list: Vec<AdminSyncMapping> = match &*mappings.read() {
         Some(Ok(l)) => l.clone(),
         _ => Vec::new(),

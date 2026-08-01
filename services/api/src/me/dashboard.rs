@@ -10,10 +10,6 @@ use serde::Serialize;
 use tankovault_domain::SeriesId;
 use utoipa::ToSchema;
 
-// ---------------------------------------------------------------------------
-// Reading dashboard (frontend §9.3)
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ContinueItem {
     pub series_id: SeriesId,

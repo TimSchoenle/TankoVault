@@ -1,5 +1,5 @@
-//! The layering machinery itself: reading TOML and environment variables into a service's own
-//! config struct, plus the two helpers every aggregate in this crate shares.
+//! Reads TOML and environment variables into a service's config struct; also the shared
+//! `serde`-default helpers used across this crate.
 
 use figment::{
     Figment,
@@ -9,7 +9,8 @@ use serde::de::DeserializeOwned;
 
 use crate::error::ConfigError;
 
-/// Load a typed config for a service.
+/// Load a typed config for a service: a TOML file (`$TANKOVAULT_CONFIG`, default
+/// `config.toml`) merged under `TANKOVAULT_`-prefixed, `__`-nested environment variables.
 ///
 /// # Errors
 /// Returns [`ConfigError`] if a required value is missing or a value fails to parse.
@@ -23,18 +24,14 @@ pub fn load<T: DeserializeOwned>() -> Result<T, ConfigError> {
 
 /// Shared `serde` default for fields that are on unless explicitly disabled.
 ///
-/// Public so service-local config structs can use the same spelling. A security default that
-/// each service re-derives is a security default that one of them will get wrong — which is
-/// exactly what happened to `cookie_secure`, a `#[serde(default)]` `bool` that therefore
-/// defaulted to *off*.
+/// One spelling so no service re-derives it wrong (`cookie_secure` once defaulted to *off*).
 #[must_use]
 pub fn default_true() -> bool {
     true
 }
 
-/// Whether the process is running under the production profile.
-///
-/// A single spelling of the check, so the guards that key off it cannot drift apart.
+/// Whether the process runs under the production profile; one spelling so guards cannot
+/// drift apart.
 #[must_use]
 pub fn is_production() -> bool {
     std::env::var("TANKOVAULT_PROFILE").is_ok_and(|p| p.eq_ignore_ascii_case("production"))
@@ -67,9 +64,7 @@ mod tests {
             );
             jail.set_env("TANKOVAULT_DATABASE__MAX_CONNECTIONS", "32");
             let cfg: Sample = load().map_err(|e| e.to_string()).unwrap();
-            // The DSN is a `SecretString`, so a plain `assert_eq!` no longer compiles — the
-            // wrapper has no `PartialEq`. That is the type doing its job: comparing a secret
-            // is a deliberate act, and a failing `assert_eq!` would print it.
+            // `SecretString` has no `PartialEq`; comparing requires `expose_secret()`.
             assert_eq!(
                 cfg.database.url.expose_secret(),
                 "postgres://localhost/tankovault"
@@ -77,8 +72,7 @@ mod tests {
             assert_eq!(cfg.database.max_connections, 32);
             // Untouched nested default still applies.
             assert_eq!(cfg.database.acquire_timeout_secs, 10);
-            // A block nothing in the environment mentions at all still materialises with its
-            // own defaults, rather than being absent.
+            // A block untouched by the environment still materialises with its own defaults.
             assert_eq!(cfg.metrics.route, "/metrics");
             Ok(())
         });

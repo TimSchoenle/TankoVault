@@ -4,10 +4,8 @@ use serde::Deserialize;
 
 /// Prometheus metrics facility.
 ///
-/// Disabling this is a real off switch, not a filter: [`Self::enabled`] gates installation
-/// of the process-wide recorder itself, so with metrics off no counter/histogram storage is
-/// allocated and `metrics::counter!` calls compile down to a no-op dispatch against the
-/// default (dropping) recorder.
+/// A real off switch, not a filter: [`Self::enabled`] gates installing the recorder itself,
+/// so `metrics::counter!` calls compile to a no-op rather than merely being filtered.
 #[derive(Debug, Clone, Deserialize)]
 pub struct MetricsConfig {
     /// Install the Prometheus recorder and serve the scrape endpoint. When `false` the
@@ -17,18 +15,12 @@ pub struct MetricsConfig {
     /// Path the scrape endpoint is mounted at.
     #[serde(default = "MetricsConfig::default_route")]
     pub route: String,
-    /// Address the Prometheus scrape endpoint binds to on its **own** listener, isolating
-    /// it from the service's public HTTP port. When `Some`, the scrape route is removed
-    /// from the main app and served only here (defaults to `0.0.0.0:9090`), so metrics can
-    /// be kept on an internal-only interface and never share the request-facing port. When
-    /// `None` the scrape stays merged onto the service's primary port (the historical
-    /// behaviour).
+    /// Address the scrape endpoint binds to on its **own** listener (default `0.0.0.0:9090`),
+    /// isolated from the service's public port. `None` merges it onto the primary port.
     #[serde(default = "MetricsConfig::default_listen")]
     pub listen: Option<String>,
-    /// Also record per-request HTTP metrics (`http_requests_total`,
-    /// `http_request_duration_seconds`) from the middleware stack. Separate from
-    /// [`Self::enabled`] because the request histogram is the expensive part: a service can
-    /// keep cheap domain counters while dropping per-route cardinality.
+    /// Also record per-request HTTP metrics. Separate from [`Self::enabled`]: the request
+    /// histogram is the expensive, high-cardinality part.
     #[serde(default = "crate::default_true")]
     pub http_requests: bool,
 }
@@ -38,9 +30,8 @@ impl MetricsConfig {
         "/metrics".to_owned()
     }
 
-    // The `Option` is not redundant: this is the `#[serde(default = ..)]` provider for an
-    // `Option<String>` field, so its return type must match the field's. Unwrapping it as
-    // clippy suggests would stop it compiling as a serde default.
+    // Must return `Option<String>` to match the field's serde-default signature; unwrapping
+    // as clippy suggests would break that.
     #[expect(
         clippy::unnecessary_wraps,
         reason = "must match the Option<String> field it defaults"

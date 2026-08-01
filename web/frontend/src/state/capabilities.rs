@@ -1,21 +1,8 @@
 //! What the signed-in reader may do, and what this deployment offers.
 //!
-//! # Why this replaced the decoded role claim
-//!
-//! The rail and the console used to be gated on a `role` claim decoded out of the access
-//! token. Two problems, both real:
-//!
-//! 1. **It could not express what the backend enforces.** The server authorizes per capability
-//!    (`providers.delete`), so a three-tier role could only ever approximate which controls to
-//!    show — and it approximated by over-showing, which is how a reader ends up clicking a
-//!    button that 403s.
-//! 2. **It could not change without a new token.** An administrator granting someone a
-//!    permission had no effect on that person's UI until their access token was reissued.
-//!
-//! Capabilities are fetched from `GET /v1/me/capabilities` instead, keyed on the session token
-//! so they refetch across sign-in, the boot-time silent refresh and sign-out. They carry both
-//! the caller's permissions and the deployment's enabled features, because a control needs both
-//! to be shown: the reader must be allowed *and* the feature must exist here.
+//! Capabilities are fetched from `GET /v1/me/capabilities`, keyed on the session token so they
+//! refetch across sign-in, the boot-time silent refresh and sign-out. A control needs both: the
+//! reader must be allowed *and* the feature must exist here.
 //!
 //! **None of this is a security boundary.** Every action is authorized again by the handler
 //! that performs it; hiding a control the server would refuse is a courtesy. The one thing this
@@ -89,11 +76,10 @@ impl CapabilitySet {
 
     /// Whether `feature` is switched on for this deployment.
     ///
-    /// Unlike [`Self::can`], this defaults to **true** while loading. A feature flag describes
-    /// the deployment, not the reader, and virtually every feature is on virtually everywhere;
-    /// defaulting to off would blank out the entire app for one render on every page load. The
-    /// cost of being wrong is a control that briefly appears and then 404s — the same thing
-    /// that happens if an operator switches a feature off while someone is looking at it.
+    /// Unlike [`Self::can`], this defaults to **true** while loading — defaulting to off would
+    /// blank the whole app for one render on every page load. The cost of being wrong is a
+    /// control that briefly appears and then 404s, same as an operator flipping the flag off
+    /// mid-session.
     pub(crate) fn has_feature(&self, feature: Feature) -> bool {
         match &*self.inner.read() {
             CapabilityState::Loading => true,
@@ -111,10 +97,7 @@ impl CapabilitySet {
 
     /// The catalogue key of the word shown next to the reader's name in the rail and on Account.
     ///
-    /// Derived rather than stored. There is no role to display any more, and inventing one from
-    /// a grant set ("this looks like an admin") would re-introduce exactly the fiction the
-    /// permission model removed. Two honest tiers: someone who can reach the console, and
-    /// someone who cannot.
+    /// Derived from capabilities, not stored — there is no role to display.
     pub(crate) fn label_key(&self) -> &'static str {
         if self.is_staff() {
             "enum.tier.staff"
@@ -130,10 +113,8 @@ impl Default for CapabilitySet {
     }
 }
 
-/// Every permission that grants access to *some* console tab.
-///
-/// The union the rail tests to decide whether to show the Console link at all. Kept next to the
-/// per-tab requirements below so adding a tab and making it reachable are one edit.
+/// Every permission that grants access to *some* console tab — kept beside the per-tab
+/// requirements so adding one stays a single edit.
 pub(crate) const CONSOLE_PERMISSIONS: &[Permission] = &[
     Permission::SystemStats,
     Permission::ProvidersRead,

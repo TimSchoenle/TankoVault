@@ -1,33 +1,13 @@
-# Alerts an operator of this stack would actually want to be woken by.
-#
-# Two rules were applied throughout, and are worth stating because they are what keeps this file
-# from becoming decoration:
-#
-# 1. **Every alert is grounded in a metric this workspace emits.** The complete inventory is in
-#    docs/OBSERVABILITY.md. Several failure modes the audit documents — provider `429` backoff,
-#    email delivery failure, scan fan-out truncation, JetStream retry-versus-settle, DB pool
-#    saturation — are **not** instrumented and therefore have no alert here. They are listed under
-#    "What is not measured" rather than approximated by a rule that would look like coverage.
-#
-# 2. **Every threshold has a reason** in the comment above it, and the ones that could not be
-#    grounded in this system's documented behaviour are labelled `grounding: baseline-needed` so
-#    they can be found and re-tuned after a week of real data. There are two.
-#
-# `summary` says what happened. `description` says what to do about it — an alert that only
-# restates its own expression makes the operator do the diagnosis from scratch at 03:00.
+# Alerts an operator would actually want to be woken by, each grounded in a metric this workspace
+# emits (full inventory: docs/OBSERVABILITY.md). Undocumented failure modes get no alert here
+# rather than a misleading approximation; thresholds without a documented basis are labelled
+# `grounding: baseline-needed`.
 
 groups:
-  # ---- Liveness -------------------------------------------------------------------------------
   - name: tankovault-availability
     rules:
-      # The container healthcheck (`interval: 10s`, `retries: 5`, `start_period: 20s`) needs about
-      # 70s to declare a container unhealthy, and Docker then restarts it. 3m is comfortably past
-      # one full detect-and-restart cycle, so this fires only when the restart did not help — which
-      # is the signature of a *boot* failure rather than a crash: a missing or placeholder
-      # `TANKOVAULT_INTERNAL__TOKEN` (SEC-1/OP-4), a refused placeholder secret
-      # (`known_placeholder` in services/api/src/main.rs), an unset `TANKOVAULT_AUTH__JWT_SECRET`,
-      # or an unset `TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY`. All four are deliberate
-      # refuse-to-boot gates and all four look identical from outside: the port never opens.
+      # Container healthcheck+restart takes ~70s; 3m past that means the restart didn't help — the
+      # signature of a boot refusal (missing/placeholder secret) rather than a crash.
       - alert: TankoVaultRequestPathDown
         expr: up{job=~"api|frontend"} == 0
         for: 3m
@@ -60,9 +40,8 @@ groups:
             before assuming a crash. Longer `for` than the request path because none of these is
             in a user's critical path for a read.
 
-      # `worker` is discovered by DNS, so a dead replica *disappears* instead of reporting
-      # `up == 0`. This is the alert that covers that case; `absent()` is only correct because the
-      # compose file always declares at least one replica.
+      # worker is DNS-discovered, so a dead replica disappears instead of reporting up==0; absent()
+      # is correct only because the compose file always declares at least one replica.
       - alert: TankoVaultWorkerTargetsAbsent
         expr: absent(up{job="worker"})
         for: 5m
@@ -78,9 +57,8 @@ groups:
             message on ack, not on consumer loss — but the backlog will take as long to drain as
             it took to accumulate.
 
-      # docker-compose.yml declares `replicas: 2` for the worker. Below that, throughput halves
-      # and the round-robin lane fairness described in OPERATIONS.md §7 has fewer turns to give.
-      # 10m rather than 3m because a rolling restart legitimately drops to one replica briefly.
+      # docker-compose.yml declares replicas: 2; below that throughput halves. 10m not 3m: a
+      # rolling restart legitimately drops to one replica briefly.
       - alert: TankoVaultWorkerFleetIncomplete
         expr: job:replicas:count{job="worker"} < 2
         for: 10m
@@ -93,11 +71,8 @@ groups:
             check `docker compose ps worker` for a replica in a restart loop and its memory limit
             (768m) for an OOM kill during a large catalogue fan-out.
 
-      # Readiness is the only signal that reports on *dependencies*. A `503` here means a
-      # registered check failed: Postgres unreachable or its pool exhausted, NATS unreachable, or
-      # (frontend only) the api upstream gone. 5m because each check is bounded at 2s and reruns
-      # per probe, so a genuine blip clears within one or two intervals, while a pool that has run
-      # out stays out.
+      # Readiness is the only dependency signal. 5m clears a genuine blip (each check bounded at
+      # 2s) while an exhausted pool or unreachable dependency stays down.
       - alert: TankoVaultServiceNotReady
         expr: service:ready:min == 0
         for: 5m
@@ -140,16 +115,11 @@ groups:
             Rules page to see which group. This is the alert that keeps the rest of this file
             from failing quietly.
 
-  # ---- Request-path health --------------------------------------------------------------------
   - name: tankovault-http
     rules:
-      # A 5% floor rather than an error budget. This API models every client-side outcome as a
-      # 4xx — 401, 403 account_suspended, 404 feature_disabled, 409 on a contended claim, 429 from
-      # the limiter — so a healthy deployment's 5xx rate is not "low", it is zero. 5% is chosen to
-      # sit above single-request noise on a low-traffic self-hosted instance, not because 5% of
-      # requests failing is acceptable. The `job:http_requests:rate5m > 0.05` conjunct is what
-      # makes that work: below ~15 requests per 5m window a single 500 is 100% of traffic, and
-      # paging on that would train the operator to ignore this alert.
+      # 5% floor, not an error budget: every client-side outcome here is a 4xx, so a healthy
+      # deployment's 5xx rate is zero. The `rate5m > 0.05` conjunct guards low-traffic instances
+      # where one failed request would otherwise read as 100%.
       - alert: TankoVaultHighServerErrorRatio
         expr: >-
           job:http_requests_server_errors:ratio_rate5m > 0.05
@@ -183,17 +153,10 @@ groups:
             ready service points at something shared: the database, or a config value every
             handler reads.
 
-      # 2.5s is a **histogram bucket boundary** from `LATENCY_BUCKETS` in
-      # `crates/service/src/metrics.rs`. That matters: `histogram_quantile` interpolates within a
-      # bucket, so a threshold set between boundaries alerts on an interpolated number rather than
-      # an observed one. 2.5s is also the right order of magnitude — that module documents the
-      # 10ms-1s band as where handlers actually live, and `security.request_timeout_secs` is 30, so
-      # 2.5s is well clear of both "normal" and "about to be cut off".
-      #
-      # Scoped to the tiers whose handlers are bounded. `frontend` is excluded on purpose: its only
-      # proxy route is `/v1/{*rest}`, so a server-closed SSE stream cannot be separated out by
-      # label the way it can on api, and an api restart would show up here as a latency alert about
-      # the frontend.
+      # 2.5s is a bucket boundary in LATENCY_BUCKETS (crates/service/src/metrics.rs) —
+      # histogram_quantile interpolates within a bucket, so an off-boundary threshold alerts on an
+      # interpolated number rather than an observed one. `frontend` is excluded: its one route
+      # (/v1/{*rest}) can't separate a server-closed SSE stream from real latency.
       - alert: TankoVaultLatencyDegraded
         expr: job:http_request_duration_seconds:p99_5m{job=~"api|control-plane|sync"} > 2.5
         for: 15m
@@ -210,9 +173,8 @@ groups:
             most often AniList itself, which is expected to degrade per-request and is why `sync`
             deliberately does not probe it in `/ready`.
 
-      # 10s is the top finite bucket. Past it every observation lands in `+Inf` and the quantile
-      # stops being informative at all — and at 10s a request is a third of the way to the 30s
-      # timeout, so the next step is `408`s, not slowness.
+      # 10s is the top finite histogram bucket; past it the quantile stops being informative, and
+      # a request is already a third of the way to the 30s timeout.
       - alert: TankoVaultLatencyCritical
         expr: job:http_request_duration_seconds:p99_5m{job=~"api|control-plane|sync"} > 10
         for: 5m
@@ -227,14 +189,10 @@ groups:
             climbing concurrency with flat throughput is queueing, which on this stack means the
             connection pool.
 
-  # ---- Edge policy ----------------------------------------------------------------------------
   - name: tankovault-edge-policy
     rules:
-      # There is no acceptable rate here. The Redis limiter backend **fails open** by design
-      # (`crates/service/src/ratelimit/redis.rs` — "a counter-store outage must not take the edge
-      # down"), so while this is non-zero the `auth` class is not enforcing anything and the
-      # credential-guessing control documented in OPERATIONS.md §2 is off. The 10m window exists
-      # only to avoid paging on a single reconnect.
+      # The Redis limiter fails open by design (crates/service/src/ratelimit/redis.rs) — while
+      # this fires, the auth class is enforcing nothing. 10m avoids paging on a single reconnect.
       - alert: TankoVaultRateLimiterFailingOpen
         expr: increase(rate_limit_store_errors_total[10m]) > 0
         for: 10m
@@ -250,11 +208,8 @@ groups:
             `TANKOVAULT_RATE_LIMIT__BACKEND=memory` to get per-replica limiting back — the
             effective limit then becomes N times the configured one, which is still finite.
 
-      # `rate_limit.auth` is 10/minute with a burst of 5. A signed-in human touches the auth class
-      # a handful of times per session, and the only automated caller is the refresh path, which
-      # runs about once per access-token lifetime (15 minutes). 0.1/s sustained is 6 refusals a
-      # minute for a quarter of an hour, i.e. ~90 credential attempts already past their budget —
-      # no legitimate client produces that.
+      # auth is 10/min burst 5, and the only automated caller (token refresh) runs about once per
+      # 15-minute access-token lifetime — 0.1/s sustained for 15m is far past any legitimate client.
       - alert: TankoVaultAuthRateLimitSurge
         expr: job_class:http_rate_limited:rate5m{class="auth"} > 0.1
         for: 15m
@@ -272,12 +227,8 @@ groups:
             `TANKOVAULT_RATE_LIMIT__TRUST_FORWARDED_FOR` is only set where a proxy really does
             overwrite the header.
 
-      # A feature switched off should stop being called within seconds: other replicas converge
-      # within `features.refresh_secs` (15) and the SPA re-reads `/v1/me/capabilities`. Traffic
-      # still arriving an hour later means a client is not honouring the capability list, which is
-      # a frontend defect rather than an operational one. Informational severity on purpose: it is
-      # worth knowing because these responses are `404`s and would otherwise be invisible among
-      # genuine 404s.
+      # Other replicas converge within features.refresh_secs (15s); traffic an hour later means a
+      # client isn't reading /v1/me/capabilities — a frontend defect, not an operational one.
       - alert: TankoVaultDisabledFeatureStillCalled
         expr: job_feature:http_feature_disabled:rate15m > 0
         for: 1h
@@ -292,22 +243,15 @@ groups:
             `/v1/me/capabilities` before rendering that surface — which is a frontend fix, not a
             flag change.
 
-  # ---- Scan pipeline --------------------------------------------------------------------------
   - name: tankovault-scan
     rules:
-      # This is the documented diagnostic from OPERATIONS.md §7 turned into an alert, and it is
-      # self-gating, which is what makes it trustworthy on an idle deployment: it requires full
-      # tasks to be flowing (so the worker is demonstrably alive and consuming) while no fast task
-      # has been served for 15 minutes. Fast scans have *strict* priority over full ones, and a
-      # fast run enqueues exactly one task per provider, so a fast task can never wait behind a
-      # full backlog. Full-without-fast therefore means the fast lanes did not open — look for
-      # "could not open provider task lane" in the worker log. 30m avoids alerting on the window
-      # between provider creation and the next lane refresh (`worker.provider_refresh_secs`, 60s).
+      # Self-gating: requires full tasks flowing (worker demonstrably alive) while no fast task has
+      # served in 15m. Fast scans have strict priority, so a fast task can never queue behind a
+      # full backlog — full-without-fast means the fast lanes didn't open. 30m clears the window
+      # before the next lane refresh (worker.provider_refresh_secs, 60s).
       - alert: TankoVaultFastScanLanesStarved
-        # `sum()` on both sides is load-bearing, not tidying: `unless` matches on identical label
-        # sets, and these two series differ in exactly the `scan` label being compared — so
-        # without the aggregation the right-hand side could never cancel the left and the alert
-        # would fire whenever any full task was served.
+        # sum() on both sides is load-bearing: `unless` matches identical label sets, and these two
+        # series differ only in `scan` — without the aggregation the alert fires on any full task.
         expr: >-
           sum(scan:scan_tasks_served:rate15m{scan="full"}) > 0
             unless sum(scan:scan_tasks_served:rate15m{scan="fast"}) > 0
@@ -325,16 +269,10 @@ groups:
             `TankoVaultServiceDown` for control-plane would have fired, but a scheduler wedged
             without dying would not.
 
-      # The best-grounded threshold in this file, because it is derived from a documented invariant
-      # rather than chosen. OPERATIONS.md §7: "a fast run enqueues exactly one `latest_feed` task
-      # per provider and processes the feed inline, so the fast lanes hold **at most one task per
-      # provider**" — which is also what makes strict priority safe. `count(...)` over the fast
-      # lanes *is* the provider count, so "total fast backlog exceeds the number of fast lanes"
-      # cannot happen unless fast tasks are being enqueued and not consumed. No number is invented
-      # and the threshold rescales itself as providers are added.
-      #
-      # OPERATIONS.md §7 already warns that if a fast scan is ever changed to fan out, the
-      # invariant lapses. This alert lapses with it — it would then need a real threshold.
+      # Derived from a documented invariant (OPERATIONS.md §7): a fast run enqueues at most one
+      # task per provider, so total fast backlog can't exceed the provider count unless tasks are
+      # enqueued and not consumed. If fast scans are ever changed to fan out, this invariant — and
+      # this alert — lapse; it would need a real threshold.
       - alert: TankoVaultFastScanBacklogImpossible
         expr: >-
           sum(provider_scan:scan_queue_depth:current{scan="fast"})
@@ -353,11 +291,8 @@ groups:
             this alert's premise is gone and it needs a real threshold instead — see OPERATIONS.md
             §7, which warns about exactly that change.
 
-      # `num_redelivered` counts messages redelivered and not yet acked. `MAX_TASK_DELIVERIES` is 3,
-      # so a failing task is retried at most twice and then settled as permanently failed — a lane
-      # cannot hold redelivered messages for half an hour unless work is failing repeatedly and new
-      # work keeps arriving to fail the same way. "More than none, for 30 minutes" is therefore the
-      # threshold; there is no rate at which persistent redelivery is normal.
+      # MAX_TASK_DELIVERIES is 3, so a lane holding redelivered messages for 30m means work is
+      # failing and retrying repeatedly, not hiccupping — no rate of persistent redelivery is normal.
       - alert: TankoVaultScanTaskRetryStorm
         expr: provider_scan:scan_tasks_redelivered:current > 0
         for: 30m
@@ -374,10 +309,8 @@ groups:
             solver being broken — check `TankoVaultChallengeSolvingFailing` first, since one broken
             solver produces this on every challenge-protected provider at once.
 
-      # The notifier acks only after fan-out completes (OPERATIONS.md §6), so a channel that hangs
-      # rather than failing blocks the queue behind it. A backlog that is not shrinking is the
-      # signal, not its size: the notifier consumes continuously, so on a working deployment
-      # `deriv` over half an hour is negative or zero-with-zero-depth. No magic number.
+      # The notifier acks only after fan-out completes (OPERATIONS.md §6), so one hanging channel
+      # blocks the queue behind it; a non-shrinking backlog over 30m is the signal, not its size.
       - alert: TankoVaultNotificationBacklogNotDraining
         expr: >-
           consumer:events_queue_depth:current > 0
@@ -410,12 +343,9 @@ groups:
             port, which is the same one the NATS healthcheck uses, so a healthy NATS implies the
             port is there.
 
-      # A "slow consumer" is NATS disconnecting a client that could not keep up and **dropping its
-      # pending messages**. For the JetStream paths that is recoverable — the durable consumer
-      # redelivers. For the live notification relay it is not: `/v1/me/stream` is published over
-      # core NATS, fire-and-forget and non-durable, so a drop means a signed-in user silently never
-      # received a notification they were watching for. There is no rate at which that is
-      # acceptable, hence "more than none".
+      # A dropped "slow consumer" is recoverable for durable JetStream lanes but not for
+      # /v1/me/stream, published over core NATS as fire-and-forget — a drop there is a silently
+      # lost notification, hence "more than none".
       - alert: TankoVaultNatsSlowConsumers
         expr: increase(gnatsd_varz_slow_consumers[15m]) > 0
         for: 5m
@@ -431,16 +361,10 @@ groups:
             consuming very slowly. If this recurs, the relay's buffer sizing is the thing to look
             at, not NATS.
 
-      # `scan_tasks_served_total` counts tasks *handed out*, and a JetStream redelivery increments
-      # it again (`MAX_TASK_DELIVERIES` is 3), so a lane that is failing and retrying looks busy.
-      # This alert catches the shape that cannot be anything else: a single provider accounting for
-      # essentially all served tasks while other lanes exist. Round-robin fairness predicts the
-      # per-provider counters climb together (OPERATIONS.md §7).
-      #
-      # grounding: baseline-needed. The 0.9 share and the requirement of >= 3 known providers are
-      # judgement, not measurement: a deployment with two providers where one is genuinely much
-      # larger would trip this legitimately. Re-tune after a week against the real provider mix, or
-      # raise the provider-count floor.
+      # scan_tasks_served_total counts hand-outs, and JetStream redelivery (max 3 attempts)
+      # double-counts retries, so a failing/retrying lane can look busy too.
+      # grounding: baseline-needed — the 90% share and >=3 provider floor are judgement, not
+      # measurement; re-tune after a week of real traffic.
       - alert: TankoVaultScanLaneUnfair
         expr: >-
           (
@@ -463,14 +387,10 @@ groups:
             again, so a single failing provider can also produce this shape by retrying — check
             its recent run states before concluding the others are starved.
 
-  # ---- Fetch tier: challenge solving and headless rendering -------------------------------------
   - name: tankovault-fetch-tier
     rules:
-      # A solve either works or the provider it was for cannot be scanned at all, and the usual
-      # cause is the back end being wholly broken — FlareSolverr down, or Chromium failing to
-      # launch in the render tier — which presents as ~100% errors, not as a slow drift. 0.5 is set
-      # to be unreachable by individual provider quirks (one hostile site among several) and easily
-      # reached by a dead back end.
+      # A solve failure is almost always the back end wholly broken (FlareSolverr down / Chromium
+      # failing to launch), which shows as near-100% errors, not drift — 0.5 clears provider quirks.
       - alert: TankoVaultChallengeSolvingFailing
         expr: job:solve_attempts_errors:ratio_rate15m > 0.5
         for: 15m
@@ -499,11 +419,9 @@ groups:
             launching at all. `render` is deliberately not `read_only`, so a full disk is also a
             candidate — it writes a browser profile and cache.
 
-      # `tankovault_domain::ssrf::validate_str` refused a target. Provider URLs are validated when
-      # they are written, so a refusal at fetch time means the address came from somewhere else: a
-      # redirect chain that landed on a private range, a hand-edited row, or a caller that is not
-      # the crawler probing an internal-network read primitive. Any occurrence is worth a look,
-      # which is why the threshold is "more than none".
+      # tankovault_domain::ssrf::validate_str refused a target after write-time validation already
+      # passed — a refusal here means a redirect to a private range, a hand-edited row, or an
+      # internal-network read probe. Any occurrence is worth a look.
       - alert: TankoVaultRefusedFetchTargets
         expr: >-
           job:solve_targets_refused:increase15m > 0
@@ -523,17 +441,11 @@ groups:
             verify `TANKOVAULT_INTERNAL__TOKEN` is set on both the service and its callers and
             that no `ports:` entry publishes them to the host.
 
-  # ---- Concurrency ----------------------------------------------------------------------------
   - name: tankovault-saturation
     rules:
-      # grounding: baseline-needed. There is no configured concurrency limit anywhere in this
-      # stack to derive a threshold from, and on `api` and `frontend` an open SSE stream
-      # (`/v1/me/stream`) is legitimately one request in flight for its entire life — so this gauge
-      # partly counts browsers with the app open, and its normal value scales with the user count
-      # rather than with load. 200 is a placeholder that should catch runaway queueing on a
-      # small self-hosted instance and nothing else. Replace it with a multiple of the observed
-      # steady state after the first week; until then treat a firing as "look at the graph", not
-      # as a diagnosis.
+      # grounding: baseline-needed — no configured concurrency limit exists to derive a threshold
+      # from, and an open SSE stream counts as one in-flight request for its life, so this gauge
+      # scales with user count as much as load. 200 is a placeholder pending a week of real data.
       - alert: TankoVaultConcurrencyUnusuallyHigh
         expr: job:http_requests_in_flight:avg > 200
         for: 15m

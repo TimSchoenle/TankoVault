@@ -304,9 +304,8 @@ pub async fn sync_settings_patch(
         "auto_sync_enabled": body.auto_sync_enabled,
         "conflict_policy": body.conflict_policy,
     });
-    // The upstream body is an implementation detail here; the documented response is a
-    // fixed acknowledgement, so the forwarded value is deliberately discarded. Named
-    // explicitly because nothing else in this call pins the decode type any more (ARCH-10).
+    // Discarded deliberately: the response is a fixed acknowledgement, and the type is named
+    // explicitly since nothing else here pins the decode type.
     let _: Json<serde_json::Value> = state
         .sync
         .patch(
@@ -383,13 +382,9 @@ pub async fn sync_resolve_conflict(
 pub struct HistoryParams {
     #[serde(default)]
     pub series_id: Option<Uuid>,
-    // A `ProviderSlug` rather than a `String` because this one is written into the *query
-    // string* of the upstream URL, unescaped — see `sync_history`. The validation is a
-    // server-side narrowing of a parameter that was always documented as a slug.
-    //
-    // `//` and not `///`: utoipa publishes a doc comment as the parameter's public
-    // `description`, and `value_type = String` is here precisely so `openapi.json` does not
-    // move (rule 9).
+    // Plain `//`, not `///` — a doc comment here would move the published parameter
+    // description via `value_type = String` (rule 9). See `sync_history` for why this field
+    // is `ProviderSlug`, not `String`.
     #[param(value_type = String)]
     #[serde(default)]
     pub provider: Option<ProviderSlug>,
@@ -422,20 +417,16 @@ pub async fn sync_history(
         let _ = write!(path, "series_id={s}&");
     }
     if let Some(p) = &q.provider {
-        // No percent-encoding step, and none is needed: a `ProviderSlug` is `[A-Za-z0-9_-]+`,
-        // which is already `application/x-www-form-urlencoded`-safe. Widening that type back to
-        // `String` re-opens query injection here — `&`, `=` and `#` would all be caller-chosen.
+        // No percent-encoding needed: `ProviderSlug` is `[A-Za-z0-9_-]+`, already URL-safe.
+        // Widening it back to `String` would re-open query injection via `&`, `=`, `#`.
         let _ = write!(path, "provider={p}&");
     }
     let _ = write!(path, "page={}", q.page.unwrap_or(0));
     sync_get(&state, &path).await
 }
 
-/// GET a JSON body from the sync service.
-///
-/// A thin alias over [`crate::upstream::Upstream`], kept so `admin/sync.rs` reads the same
-/// way as this module. Error mapping, the internal token and the timeouts all live in the
-/// client rather than being restated per call site.
+/// GET a JSON body from the sync service; a thin alias over [`crate::upstream::Upstream`] so
+/// `admin/sync.rs` reads the same way as this module.
 pub(crate) async fn sync_get<T: serde::de::DeserializeOwned>(
     state: &AppState,
     path: &str,
@@ -444,7 +435,7 @@ pub(crate) async fn sync_get<T: serde::de::DeserializeOwned>(
 }
 
 /// POST a JSON body to the sync service. `pub(crate)` so `admin/sync.rs` can reuse it for
-/// operator-triggered force pull/push (design: admin Sync console tab).
+/// operator-triggered force pull/push.
 pub(crate) async fn sync_proxy(
     state: &AppState,
     path: &str,

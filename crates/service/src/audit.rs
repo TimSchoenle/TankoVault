@@ -1,24 +1,16 @@
 //! The audit trail for privileged and privacy-relevant actions (design §16).
 //!
-//! Auditing is expressed as a trait object rather than a direct repository call so that
-//! *whether* auditing happens is decided once, at wiring time, and never at a call site.
-//! Turning it off swaps in [`NoopAuditSink`]; handlers are identical either way.
-//!
-//! Recording is **best-effort and non-blocking on the caller's critical path**: a failure
-//! to write the trail is logged at `error` but never fails the audited action. The
-//! alternative — refusing a legitimate privileged action because a logging table is
-//! unavailable — trades an availability incident for a record-keeping one.
+//! Recording is best-effort and non-blocking: a write failure is logged but never fails
+//! the audited action, since refusing a privileged action over a logging outage would trade
+//! an availability incident for a record-keeping one.
 
 use async_trait::async_trait;
 use serde_json::Value as Json;
 use std::borrow::Cow;
 use tankovault_domain::UserId;
 
-/// How the audited action ended.
-///
-/// A denied action is the most interesting record an audit trail holds, and the previous
-/// implementation could not express it at all: handlers returned `403` before reaching the
-/// recording call, so failed privilege escalation left no trace.
+/// How the audited action ended. A denied action must still be recorded — refuse it after
+/// calling `record`, not before, or the attempt leaves no trace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuditOutcome {
     /// The action was permitted and completed.
@@ -41,18 +33,12 @@ impl AuditOutcome {
     }
 }
 
-/// One auditable action.
-///
-/// Built with [`AuditEvent::new`] and refined with the builder methods, so adding a field
-/// later does not break every construction site.
+/// One auditable action. Built with [`AuditEvent::new`] and refined with the builder methods.
 #[derive(Debug, Clone)]
 pub struct AuditEvent {
     /// Who acted. `None` for system-originated actions (schedulers, sweeps).
     pub actor: Option<UserId>,
     /// Dotted action name, e.g. `provider.update`, `account.export`, `auth.login`.
-    ///
-    /// `Cow` because the overwhelming majority are compile-time literals and should not
-    /// allocate; the few dynamic ones still fit.
     pub action: Cow<'static, str>,
     /// The affected entity, as an id or short description.
     pub target: Option<String>,
@@ -232,8 +218,7 @@ mod tests {
 
     #[tokio::test]
     async fn noop_sink_accepts_everything() {
-        // The contract that makes the toggle safe: swapping the sink never changes handler
-        // behaviour, so `record` cannot fail or panic regardless of the event.
+        // Swapping the sink must never change handler behaviour.
         let sink = NoopAuditSink;
         sink.record(AuditEvent::new("provider.delete").denied())
             .await;

@@ -1,14 +1,7 @@
 //! Offset pagination: the arithmetic, and the two chromes built on it.
 //!
-//! Discover and the console's user directory paginated independently. Discover grew a page
-//! window, an ellipsis and a jump box; the directory got two bare buttons and a range sentence,
-//! and re-derived the offset arithmetic on its own — where it derived `has_next` from the
-//! *client-side filtered* row count against a *server-side* total, so an active filter could
-//! disable Next while later pages still existed.
-//!
-//! The chromes stay different, because they are: one sits under a cover grid with room for
-//! twelve controls, the other inside a 328px list footer. What is shared is [`Window`] — the
-//! arithmetic whose failure mode is invisible until someone notices a page they cannot reach.
+//! [`Window`] is the shared arithmetic; its failure mode is invisible until someone notices a
+//! page they cannot reach.
 
 use crate::i18n::use_i18n;
 use dioxus::prelude::*;

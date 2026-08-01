@@ -1,12 +1,6 @@
-//! DB-backed access-control tests for the repository guard rails.
+//! Access-control tests against a real, migrated Postgres.
 //!
-//! These run the real SQL in `tankovault_db::repo` against a freshly-migrated, ephemeral
-//! Postgres (see `tankovault_test_support`). They pin the behaviour the authorization layer
-//! depends on: exact permission resolution, the suspended-status path, the last-active-holder
-//! guard, suspend/reinstate, and `/me/*` ownership scoping.
-//!
-//! Opt-in: gated behind the `integration` feature because they require Docker. The default
-//! `cargo test -p tankovault-db` stays fast and DB-free.
+//! Gated behind the `integration` feature (requires Docker).
 #![cfg(feature = "integration")]
 
 use tankovault_db::repo::{gdpr, permissions, user_admin};
@@ -33,7 +27,6 @@ async fn resolve_returns_exact_live_grants_and_active_status() {
     assert!(principal.status.may_authenticate());
     assert!(principal.permissions.has(Permission::ScansRead));
     assert!(principal.permissions.has(Permission::ScansRun));
-    // Resolution returns *exactly* the live grant set — nothing it was never granted.
     assert!(!principal.permissions.has(Permission::UsersPermissions));
     assert_eq!(principal.permissions.len(), 2);
 }
@@ -55,8 +48,6 @@ async fn resolve_reports_suspension_so_the_extractor_can_reject_it() {
         .expect("principal exists");
 
     assert_eq!(principal.status, AccountStatus::Suspended);
-    // The whole point of resolving status alongside grants: a suspended account is refused
-    // before any capability is consulted, even though it still holds grants.
     assert!(!principal.status.may_authenticate());
     assert!(principal.permissions.has(Permission::ScansRead));
 }
@@ -205,19 +196,9 @@ async fn cancel_own_is_scoped_to_the_owner() {
     assert!(cancelled_by_owner, "the owner may cancel their own request");
 }
 
-/// The admin user directory finds an account regardless of how the operator types its name.
-///
-/// The bug this pins: `username`/`email` are `citext`, but the search predicate was
-/// `u.username LIKE '%' || $1 || '%'`, and the concatenation produces `text` — so the
-/// comparison resolved to a case-*sensitive* `text ~~ text`. Searching for `alice` returned
-/// nothing for a user registered as `Alice`, in the one screen an operator uses to find a
-/// person they have been given a name for. Same root cause as `repo::users::CiText`, but a
-/// parameter wrapper cannot fix it: the concatenation, not the parameter, carries the type,
-/// so the predicate is `ILIKE` now.
-///
-/// The empty-search short-circuit is asserted alongside because it is the branch the
-/// unfiltered console listing takes on every page load, and it must stay a listing rather
-/// than becoming a `LIKE '%%'` scan.
+/// The bug this pins: `LIKE` on a concatenated pattern resolves to case-sensitive `text`
+/// even though `username`/`email` are `citext`, so searching `alice` missed `Alice`. Fixed
+/// with `ILIKE`.
 #[tokio::test]
 async fn the_admin_directory_search_is_case_insensitive_on_both_columns() {
     let db = TestDb::spawn().await;
@@ -250,8 +231,7 @@ async fn the_admin_directory_search_is_case_insensitive_on_both_columns() {
         );
     }
 
-    // The email column is searched too, and `seed_user` derives it from the username — so this
-    // only matches through `email`, which is where the second copy of the predicate lives.
+    // Matches through `email`, the second copy of the predicate.
     let page = found("ALICE@EXAMPLE.TEST").await;
     assert_eq!(
         page.total, 1,

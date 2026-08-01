@@ -1,26 +1,13 @@
 //! The two `navigator.credentials` calls, wrapped so a screen never touches `JsValue`.
 //!
-//! A passkey ceremony cannot be an HTTP call. The private key never leaves the authenticator,
-//! so the browser has to broker it, and the only door is `navigator.credentials.create()` /
-//! `.get()`. That makes this module the counterpart of [`crate::browser`]: a typed boundary
-//! around a web API, so the rest of the app stays in Rust types and no screen has to reason
-//! about a rejected promise.
+//! The private key never leaves the authenticator, so the browser must broker it through
+//! `navigator.credentials.create()` / `.get()` — this is the typed boundary around that, the
+//! counterpart to [`crate::browser`].
 //!
-//! # What is *not* here
-//!
-//! Any JSON-to-`ArrayBuffer` translation. `PublicKeyCredentialCreationOptions` is a nested
-//! structure whose `challenge`, `user.id` and `excludeCredentials[].id` fields are raw bytes
-//! that arrive over the wire as base64url and must be `Uint8Array`s before the browser will
-//! accept them — and the response has to travel back the other way. `webauthn-rs-proto`'s
-//! `wasm` feature already implements all four conversions, and it is the *same crate the API
-//! verifies with*, at the same pinned version. Re-deriving them here would be a second copy of
-//! a specification, maintained against nothing.
-//!
-//! # No `eval`, and none needed
-//!
-//! Every call below is a typed `web-sys` binding. The served CSP carries no `'unsafe-eval'`
-//! (see `web/frontend/clippy.toml`), and nothing here wants it: `js_sys::JSON` is the browser's
-//! own parser, not a code path.
+//! Byte-level conversion (challenge, `user.id`, `excludeCredentials[].id`) is intentionally not
+//! reimplemented here: `webauthn-rs-proto`'s `wasm` feature already does it, at the same pinned
+//! version the API verifies with. Every call below is a typed `web-sys` binding — the served CSP
+//! carries no `'unsafe-eval'`, and none is needed.
 
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen::JsValue;
@@ -126,26 +113,13 @@ pub(crate) async fn get(
 
 /// Drop the `mediation` hint the API's challenge carries, so the ceremony opens a dialog.
 ///
-/// # The bug this exists to prevent
+/// `webauthn-rs` stamps `mediation: Some(Conditional)` onto every discoverable-auth challenge,
+/// and it survives verbatim into `CredentialRequestOptions`. Conditional UI never prompts — it
+/// waits for an autofill pick on a `webauthn` input the sign-in card doesn't have, so the promise
+/// never settles and "Sign in with a passkey" silently does nothing. See the test below.
 ///
-/// `webauthn-rs`'s `start_discoverable_authentication()` unconditionally stamps
-/// `mediation: Some(Conditional)` onto the challenge, and `webauthn-rs-proto`'s `wasm`
-/// conversion serialises the *whole* envelope into the `CredentialRequestOptions` it hands to
-/// the browser — so the field survives all the way to `navigator.credentials.get()`.
-///
-/// `mediation: "conditional"` is **Conditional UI**: the browser must not prompt. It parks the
-/// promise and waits for the reader to pick a passkey out of an autofill dropdown on an
-/// `<input autocomplete="… webauthn">`. There is no such input on the sign-in card, so the
-/// promise never settled — pressing "Sign in with a passkey" showed no dialog, produced no
-/// error, and left the button disabled with the [`crate::hooks::Busy`] guard still claimed.
-/// "Nothing happens" was the whole symptom, and it looks identical to a dead `onclick`.
-///
-/// Mediation is a client-side presentation choice, not part of what the server verifies: the
-/// stored `DiscoverableAuthentication` state, the challenge and the origin binding are all
-/// untouched by this. So the decision belongs on this side of the wire, and stripping it here
-/// covers every screen rather than the one that happens to remember. A future conditional-UI
-/// affordance is a *second* entry point that opts back in — not a reason to leave the default
-/// on a button that has no autofill surface to attach to.
+/// Mediation is a client-side presentation choice, not something the server verifies, so
+/// stripping it here is safe and covers every caller.
 fn for_modal_prompt(mut challenge: RequestChallengeResponse) -> RequestChallengeResponse {
     challenge.mediation = None;
     challenge

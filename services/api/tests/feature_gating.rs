@@ -1,15 +1,7 @@
-//! What a switched-off feature actually does to a real request.
-//!
-//! `crates/service`'s `flags.rs` carries thirteen unit tests on the *resolution* logic — which
-//! rule wins for a path, how the method axis narrows, what happens with no rule at all. None of
-//! them reaches the half that matters operationally: that the layer is **mounted** on this
-//! service's router, that the table in `tankovault_api::route_features` names paths that
-//! actually exist, and that a caller hitting a disabled route gets the documented answer rather
-//! than the handler running anyway.
-//!
-//! Nothing could reach it before, either. `TestApp` hardcoded `FeatureGate::defaults()`, so
-//! every feature was on in every test (TESTING F-09) — `TestConfig::with_features_disabled` is
-//! what opened it, and these are the tests it was opened for.
+//! What a switched-off feature actually does to a real request: that the gate layer is mounted,
+//! that `tankovault_api::route_features` names paths that actually exist, and that a disabled
+//! route gets the documented answer rather than running anyway. `crates/service`'s unit tests
+//! cover only the resolution logic, not this end-to-end path.
 
 #![cfg(feature = "integration")]
 
@@ -19,13 +11,9 @@ use tankovault_domain::{AccountStatus, Feature};
 
 /// A gated route answers `404` with the RFC 9457 body, and the body names the feature.
 ///
-/// `404`, not `403`, is the deliberate part: a disabled feature genuinely is not part of this
-/// deployment's API, while `403` would tell the caller they lack permission — false, and it
-/// sends a user to an administrator who cannot help them.
-///
-/// Naming the feature is not decoration either. An operator debugging "why is the watchlist
-/// 404ing" gets the answer from the response instead of having to correlate it against the
-/// flag page.
+/// `404`, not `403`: a disabled feature is not part of the deployment's API, whereas `403` would
+/// falsely claim a permission problem. Naming the feature lets an operator debug the 404 from the
+/// response alone.
 #[tokio::test]
 async fn a_disabled_feature_answers_404_and_names_itself() {
     let app = TestApp::spawn_with(
@@ -59,10 +47,9 @@ async fn a_disabled_feature_answers_404_and_names_itself() {
 
 /// Switching one feature off leaves every other route alone.
 ///
-/// The failure this rules out is a prefix rule that is wider than it looks. `/v1/me` is the
-/// prefix of the entire signed-in surface, and `route_features` gates it **by exact path** for
-/// exactly that reason. A regression there would switch off the whole application and would
-/// look like a one-word change to a table.
+/// Rules out a prefix rule wider than it looks: `/v1/me` prefixes the entire signed-in surface,
+/// so `route_features` gates by exact path, and a regression there would look like a one-word
+/// table change while taking down the whole application.
 #[tokio::test]
 async fn switching_off_self_erasure_leaves_the_rest_of_the_signed_in_surface_alone() {
     let app = TestApp::spawn_with(
@@ -94,9 +81,9 @@ async fn switching_off_self_erasure_leaves_the_rest_of_the_signed_in_surface_alo
 
 /// With every feature on, the same route behaves normally.
 ///
-/// The inverse leg, and it is not redundant: a gate that answered `404` unconditionally would
-/// pass the two tests above and break the deployment. This is what says the `404` came from the
-/// flag rather than from the route being absent or the layer being mis-mounted.
+/// Not redundant with the tests above: a gate that answered `404` unconditionally would pass
+/// both and break the deployment. This proves the `404` came from the flag, not a mis-mounted
+/// layer.
 #[tokio::test]
 async fn the_same_route_is_reachable_with_the_feature_on() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
@@ -113,27 +100,15 @@ async fn the_same_route_is_reachable_with_the_feature_on() {
     );
 }
 
-/// Every prefix the API's route table gates still matches a published route.
+/// Every prefix the API's route table gates still matches a published route: the anti-rot check
+/// a `crates/service` unit test can't write, since `RouteFeatures` is a table of path strings a
+/// rename can leave stale. Read out of the committed `openapi.json`.
 ///
-/// This is the anti-rot half, and it is the one a unit test in `crates/service` structurally
-/// cannot write: `RouteFeatures` is a table of path *strings*, so a route renamed in a
-/// `#[utoipa::path]` leaves its gate behind — silently ungating the route while leaving a rule
-/// that matches nothing, which is the worst of both. Read out of the committed `openapi.json`,
-/// the same artefact `openapi_contract.rs` uses.
+/// # The bug this pins
 ///
-/// It already found one: `/v1/me/chapter-progress` was gated and no route has ever had that
-/// path. Harmless as it stood — the real route sits under the `/v1/me/progress` prefix, which
-/// is gated too — and deleted rather than left, because a rule that gates nothing while
-/// looking like it gates something is how the next person concludes their new endpoint is
-/// already covered.
-///
-/// The external-sync suffixes are the one exemption, and it is **derived rather than listed**:
-/// ARCH-18 declares them once in `tankovault_contracts::sync` and folds the same set into both
-/// tiers' tables, deliberately, so each tier gates suffixes it does not itself serve. A rule
-/// for an unrouted path never matches, and the alternative — each tier filtering the shared
-/// list to what it happens to mount — is exactly the per-tier judgement that had already
-/// drifted. Taking the exemption from the shared declaration means a suffix added there is
-/// exempted automatically and a suffix added *here* is not.
+/// `/v1/me/chapter-progress` was gated but no route ever had that path. The external-sync
+/// suffixes are exempted by deriving from `tankovault_contracts::sync` rather than listing them,
+/// so a suffix added there is exempted automatically.
 #[tokio::test]
 async fn every_gated_prefix_still_matches_a_published_route() {
     const SPEC: &str = include_str!("../../../openapi.json");
@@ -150,9 +125,7 @@ async fn every_gated_prefix_still_matches_a_published_route() {
         .map(|(suffix, _)| format!("/v1/me/sync{suffix}"))
         .collect();
 
-    // The exemption is only sound while the surface it exempts exists at all. Without this,
-    // `/v1/me/sync/**` disappearing from the document would silently excuse every one of its
-    // gates instead of failing.
+    // The exemption is only sound while the surface it exempts still exists.
     assert!(
         published.iter().any(|path| path.starts_with("/v1/me/sync")),
         "the external-sync surface is exempted from the check below because ARCH-18 gates it \

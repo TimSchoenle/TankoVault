@@ -1,33 +1,17 @@
 //! Localisation of every reader-facing string (`i18nrs`, Dioxus binding).
 //!
-//! Messages live in `locales/<code>.json` and are baked into the bundle with `include_str!`,
-//! so a missing or malformed catalogue is a build failure rather than a blank UI. The catalogue
-//! is a nested object; keys are addressed with dot paths (`"nav.home"`), which keeps the JSON
-//! browsable by area instead of one flat list of a thousand entries.
-//!
-//! Three things `i18nrs` does not do are added here:
-//!
-//! - **Placeholder substitution.** `I18n::t` returns the raw message, so [`Translator::args`]
-//!   fills `{name}` holes. Counts and names are therefore part of the *message*, and a
-//!   translator can move them to wherever the target language needs them.
-//! - **Plural selection.** [`Translator::plural`] picks between a `one` and an `other` form,
-//!   so a count never reads "1 results".
-//! - **A `<html lang>` attribute.** The provider only maintains `dir`; [`HtmlLang`] keeps
-//!   `lang` in step so screen readers and the browser's own hyphenation pick the right rules.
-//!
-//! `I18n::t` falls back to an arbitrary catalogue when a key is missing from the active one
-//! (`i18nrs` picks the first `HashMap` entry, whose order is not defined), so a key present in
-//! only some locales renders unpredictably. `locales_define_the_same_keys` makes that
-//! impossible by asserting the catalogues are structurally identical.
+//! Catalogues live in `locales/<code>.json`, baked in via `include_str!` so a missing or
+//! malformed one is a build failure, not a blank UI. This module adds placeholder substitution,
+//! plural selection and `<html lang>` syncing on top of what `i18nrs` provides.
 
 use dioxus::prelude::*;
 use i18nrs::dioxus::{use_i18n as use_i18n_context, I18nProvider};
 use i18nrs::{I18n, StorageType};
 use std::collections::HashMap;
 
-/// The `localStorage` key the chosen language is persisted under. Shares the `tv-` prefix with
-/// the appearance knobs in [`crate::state::prefs`], and is read by the boot script in
-/// `index.html` so `<html lang>` is right before the WASM bundle has even downloaded.
+/// `localStorage` key the language is persisted under. Shares the `tv-` prefix with
+/// [`crate::state::prefs`], and is read by `index.html`'s boot script before the WASM bundle
+/// downloads.
 const STORAGE_KEY: &str = "tv-lang";
 
 /// The catalogue used when the browser asks for a language we do not ship, and the one every
@@ -156,11 +140,10 @@ impl Translator {
     /// A count-sensitive message: `key.one` for exactly one, `key.other` for anything else,
     /// with `{count}` and `args` substituted into whichever form is picked.
     ///
-    /// Deliberately a two-form rule rather than full CLDR plural categories. Every language
-    /// the app ships uses the one/other split, and the alternative — bundling the CLDR plural
-    /// tables — costs more bundle bytes than the entire catalogue. Adding a language with a
-    /// dual, few or many category means revisiting this, which the assertion below makes
-    /// impossible to forget.
+    /// Deliberately a two-form rule, not full CLDR plural categories — every shipped language
+    /// uses one/other, and CLDR's tables would cost more bundle bytes than the entire
+    /// catalogue. The assertion below forces revisiting this before adding a language with a
+    /// dual/few/many form.
     pub(crate) fn plural(self, key: &str, count: i64, args: &[(&str, &str)]) -> String {
         debug_assert!(
             LOCALES
@@ -236,13 +219,10 @@ fn interpolate(template: &str, args: &[(&str, &str)]) -> String {
 
 /// Whether the default catalogue defines `key`, addressed as a dot path.
 ///
-/// Test-only, and deliberately not part of the runtime API: at runtime a missing key is
-/// already visible as the literal `Key '…' not found`, and nothing should be branching on
-/// whether a message exists. What it is for is the other direction — a module that maps a
-/// closed set of values to catalogue keys (adapter kinds, conflict policies, watch statuses)
-/// can assert that every value it can produce is actually worded, which no amount of catalogue
-/// parity checking covers: `locales_define_the_same_keys` proves the catalogues agree with
-/// *each other*, not that they cover the code.
+/// Test-only: at runtime a missing key already surfaces as `Key '…' not found`. This lets a
+/// module that maps a closed set of values to catalogue keys assert every value it can produce
+/// is actually worded — coverage `locales_define_the_same_keys` doesn't provide, since that only
+/// proves the catalogues agree with each other.
 #[cfg(test)]
 pub(crate) fn has_key(key: &str) -> bool {
     let reference = LOCALES

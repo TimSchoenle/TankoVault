@@ -1,14 +1,5 @@
-//! Totality and algebraic properties of the HTML/text extraction helpers.
-//!
-//! Every function here is called on **provider-controlled** text: anchor labels, attribute
-//! values, status captions, date cells. The existing unit tests are all hand-written ASCII,
-//! which is exactly the blind spot that hid F-01 — `parse_chapter_number` panicked on any
-//! title containing `U+0130`, because a byte offset found in a `to_lowercase` copy was applied
-//! to the original string. That bug lived behind three green tests.
-//!
-//! These properties are the standing version of that check: they run over arbitrary Unicode on
-//! every `cargo test`, on stable, with no extra toolchain. A panic here is a worker task dying
-//! mid-scan on a page a scanlation site can publish at will.
+//! Totality and algebraic properties of the HTML/text extraction helpers, run over arbitrary
+//! Unicode input on every `cargo test`.
 
 use proptest::prelude::*;
 use tankovault_adapters::html::{
@@ -30,10 +21,9 @@ fn scheme_less_href() -> impl Strategy<Value = String> {
 /// Provider text carrying a digit run long enough to exhaust `f64`, optionally behind a chapter
 /// marker so both entry points are reached.
 ///
-/// Generated structurally rather than hoped for. A regex strategy will not produce a 300-digit
-/// run at any realistic size, which is exactly how the infinity defect survived a file already
-/// full of properties over `".*"` — see [`parse_number_is_always_finite`]. Prop-b is the
-/// standing reminder that a strategy which cannot generate the case does not test it.
+/// Generated structurally rather than via regex: a regex strategy won't produce a 300-digit
+/// run at any realistic size, so simplifying this back to a plain `".*"`-style strategy would
+/// silently stop testing the overflow case.
 fn unrepresentable_number_text() -> impl Strategy<Value = String> {
     (
         prop::sample::select(vec![
@@ -53,27 +43,20 @@ fn unrepresentable_number_text() -> impl Strategy<Value = String> {
 }
 
 proptest! {
-    /// The direct, stable-toolchain guard for F-01. `parse_chapter_number` lowercases its
-    /// input and then indexes into a string; `str::to_lowercase` is not length-preserving
-    /// (`"İ"` is two bytes and folds to three), so any offset arithmetic across the two is a
-    /// panic waiting for a Turkish, Vietnamese or combining-mark chapter title.
+    /// Guards against a `to_lowercase`-offset panic: `str::to_lowercase` isn't length-preserving
+    /// (`İ` grows a byte), so indexing across the two panics on some Unicode chapter titles.
     #[test]
     fn parse_chapter_number_never_panics(text in ".*") {
         let _ = parse_chapter_number(&text);
     }
 
-    /// Every number this module yields is **finite**.
+    /// Every number this module yields is finite.
     ///
-    /// Regression, and the reason the strategy above exists. `parse_number` ended in
-    /// `.parse::<f64>().ok()`, and Rust's float parser answers `Ok(inf)` — not `Err` — for a
-    /// decimal outside `f64`'s range. So `"Chapter 999…9"` produced an *infinite* chapter
-    /// number, which stores fine in a `double precision` column, then freezes `latest_chapter`
-    /// forever (nothing exceeds `inf`) and serialises to `null` in the `chapter.discovered`
-    /// message, which the notifier drops as undecodable. `crates/adapters/src/html.rs` carries
-    /// the full note as `an_unrepresentable_digit_run_is_no_number_at_all`.
-    ///
-    /// Asserted over both the ordinary and the overlong generator, because the invariant is
-    /// about every input, not only the pathological one.
+    /// Regression: `parse_number` used `.parse::<f64>().ok()`, and Rust's float parser returns
+    /// `Ok(inf)`, not `Err`, for a decimal outside `f64`'s range — so an overlong digit run
+    /// produced an infinite chapter number that froze `latest_chapter` and serialised to JSON
+    /// `null`. Asserted over both the ordinary and overlong generator, since the invariant
+    /// covers every input.
     #[test]
     fn parse_number_is_always_finite(
         text in prop_oneof![3 => ".*", 1 => unrepresentable_number_text()],
@@ -86,16 +69,12 @@ proptest! {
         }
     }
 
-    /// `parse_number` finds a number exactly when there is an ASCII digit to find. Stated as
-    /// an equivalence because both directions matter: a `None` on text that does have a digit
-    /// silently drops a chapter, and a `Some` on text that has none invents one.
+    /// `parse_number` finds a number exactly when there is an ASCII digit present, stated as
+    /// an equivalence since both directions matter (a false `None` drops a chapter; a false
+    /// `Some` invents one).
     ///
-    /// The bound on the strategy is load-bearing, not cosmetic: the equivalence is only true of
-    /// a *representable* number, and 64 characters cannot hold a digit run that exhausts `f64`
-    /// (~1e64 against a limit near 1e308). Widening it re-admits the case
-    /// [`parse_number_is_always_finite`] owns, and this property would then be the one that
-    /// fails. The bound lives here rather than in `proptest`'s default `".*"` expansion so a
-    /// version bump cannot move it.
+    /// The `.{0,64}` bound is load-bearing: widening it re-admits digit runs that exhaust
+    /// `f64`, which only [`parse_number_is_always_finite`] should own.
     #[test]
     fn parse_number_finds_a_number_exactly_when_one_is_present(text in ".{0,64}") {
         prop_assert_eq!(
@@ -105,9 +84,8 @@ proptest! {
         );
     }
 
-    /// With no chapter/episode marker present there is nothing to prefer, so
-    /// `parse_chapter_number` must degrade to exactly `parse_number`. If these two ever
-    /// diverge on unmarked text, the same listing parses differently depending on wording.
+    /// With no chapter/episode marker, `parse_chapter_number` must degrade to exactly
+    /// `parse_number` — divergence would parse the same listing differently depending on wording.
     #[test]
     fn without_a_marker_the_chapter_parser_is_the_plain_number_parser(text in ".*") {
         let lower = text.to_lowercase();
@@ -119,39 +97,36 @@ proptest! {
         prop_assert_eq!(parse_chapter_number(&text), parse_number(&text));
     }
 
-    /// The value `relativize` returns is stored in `chapters.path` and later resolved against
-    /// the provider's `base_url`. A result that is not rooted would resolve relative to
-    /// whatever path happened to precede it, silently pointing at the wrong page.
+    /// `relativize`'s output is stored in `chapters.path` and resolved later against the
+    /// provider's `base_url`; an unrooted result would resolve against whatever path preceded
+    /// it, silently pointing at the wrong page.
     ///
-    /// The href strategy excludes `:` deliberately: `relativize(page, "mailto:a@b")` returns
-    /// `"a@b"`, unrooted, because `Url::join` honours the foreign scheme. That is a real
-    /// (harmless-today) hole in the contract rather than something this property should
-    /// paper over, so it is named here instead of being generated away silently.
+    /// The href strategy excludes `:` deliberately: a foreign scheme (e.g. `mailto:`) yields
+    /// an unrooted result since `Url::join` honours it — a known, harmless hole named here
+    /// rather than generated away silently.
     #[test]
     fn relativize_yields_a_rooted_path(page in page_url(), href in scheme_less_href()) {
         let path = relativize(&page, &href);
         prop_assert!(path.starts_with('/'), "{path:?} from href {href:?}");
     }
 
-    /// `absolutize` normalises through `Url`, so applying it to its own output must be a
-    /// no-op. Covers are re-absolutized on several paths; a non-idempotent version would
-    /// mangle a CDN URL the second time round.
+    /// `absolutize` normalises through `Url`, so applying it to its own output must be a no-op
+    /// — covers are re-absolutized on several paths, and a non-idempotent version would mangle
+    /// a URL the second time round.
     #[test]
     fn absolutize_is_idempotent(page in page_url(), href in scheme_less_href()) {
         let once = absolutize(&page, &href);
         prop_assert_eq!(absolutize(&page, &once), once.clone());
     }
 
-    /// Unescaping only ever replaces an entity with something shorter, so the output can never
-    /// grow. A version that could grow would be an amplification primitive on a body already
-    /// capped at 8 MiB.
+    /// Unescaping only ever replaces an entity with something shorter, so output can never
+    /// grow — a growing version would be an amplification primitive on an already-capped body.
     #[test]
     fn unescape_entities_never_grows_its_input(text in ".*") {
         prop_assert!(unescape_entities(&text).len() <= text.len());
     }
 
-    /// Totality of the remaining provider-text helpers. None of these may panic, whatever a
-    /// site puts in an attribute or a status caption.
+    /// Totality of the remaining provider-text helpers: none may panic on arbitrary input.
     #[test]
     fn the_text_helpers_are_total(text in ".*") {
         let _ = parse_year(&text);
@@ -161,9 +136,9 @@ proptest! {
         let _ = unescape_entities(&text);
     }
 
-    /// `split_attr` partitions its input: the selector part is always a prefix of the spec, and
-    /// when an attribute is split off it is always the suffix after the final `@`. A split that
-    /// dropped or duplicated characters would silently select the wrong element.
+    /// `split_attr` partitions its input: the selector is always a prefix of the spec, and a
+    /// split-off attribute is always the suffix after the final `@` — a dropped or duplicated
+    /// character here would silently select the wrong element.
     #[test]
     fn split_attr_partitions_the_spec(spec in "[a-zA-Z0-9@.# \\[\\]>-]{0,32}") {
         let (selector, attr) = split_attr(&spec);
@@ -179,8 +154,8 @@ proptest! {
         }
     }
 
-    /// `relativize` and `absolutize` are called with whatever the page said; neither may panic
-    /// on a hostile or malformed `href`, including one carrying a foreign scheme.
+    /// `relativize`/`absolutize` must not panic on a hostile or malformed href, including one
+    /// carrying a foreign scheme.
     #[test]
     fn the_url_helpers_are_total(page in ".*", href in ".*") {
         let _ = relativize(&page, &href);

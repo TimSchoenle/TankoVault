@@ -15,18 +15,9 @@ use uuid::Uuid;
 
 /// Claims embedded in a short-lived access token.
 ///
-/// # What is deliberately *not* here
-///
-/// The token carries **no authorization state**. It used to carry an RBAC role, and the API
-/// authorized against that claim. That is a correctness problem, not a style one: a claim is
-/// fixed when the token is minted, so revoking a privilege left the holder exercising it until
-/// their access token expired, with no in-band way to shorten that window. Authorization now
-/// resolves the caller's permission grants from the database on each request
-/// (`tankovault_db::repo::permissions::resolve`), which is the only way "revoke now" can mean
-/// now.
-///
-/// [`Self::name`] stays because it is cosmetic and the client is welcome to a stale display
-/// name; nothing is decided on its basis.
+/// Carries **no authorization state**: a claim is fixed at minting, so embedding a privilege
+/// would let a revoked grant keep working until expiry. Authorization instead resolves the
+/// caller's permission grants from the database per request. [`Self::name`] is cosmetic only.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessClaims {
     /// Subject — the user id (UUID string).
@@ -53,10 +44,8 @@ impl AccessClaims {
 
 /// Issue a signed HS256 access token valid for `ttl`.
 ///
-/// The result is a [`SecretString`]: a minted access token is a bearer credential for the
-/// whole of the API until it expires, so it is exactly as sensitive as the password that
-/// bought it. Wrapping it here is what stops it reaching a `tracing` field or an error body
-/// on the way out to the client.
+/// Returns a [`SecretString`]: a minted token is a bearer credential as sensitive as the
+/// password that bought it, so wrapping it keeps it out of tracing fields and error bodies.
 ///
 /// # Errors
 /// [`AuthError::TokenIssue`] on encoding failure.
@@ -83,13 +72,11 @@ pub fn issue_access_token(
     .map_err(|_| AuthError::TokenIssue)
 }
 
-/// Verify and decode an access token, enforcing expiry and HS256.
+/// Verify and decode an access token, enforcing expiry and pinned HS256.
 ///
-/// The algorithm is **pinned**, not read from the token's own header. A verifier that trusts
-/// the header is the classic JWT confusion attack: the holder swaps `alg` for `none`, or for
-/// `RS256` so the HMAC secret is treated as an RSA public key, and signs their own claims.
-/// `crates/db` never sees this token — it is the whole of the API's authentication — so there
-/// is no second check behind it.
+/// The algorithm is pinned, not read from the token's header — trusting the header is the
+/// classic JWT confusion attack (swap `alg` to `none` or `RS256`). This is the whole of the
+/// API's authentication; there is no second check behind it.
 ///
 /// ```
 /// use secrecy::{ExposeSecret, SecretSlice};
@@ -97,15 +84,12 @@ pub fn issue_access_token(
 /// use tankovault_domain::UserId;
 /// use time::Duration;
 ///
-/// // The signing key is `SecretSlice<u8>`, not `&[u8]`. Note what that buys at this call
-/// // site: `secret` cannot be printed by a `dbg!`, and every read of it below is a visible
+/// // `SecretSlice<u8>`, not `&[u8]`: it can't be `dbg!`ed, and every read below is a visible
 /// // `expose_secret()`.
 /// let secret = SecretSlice::from(b"a-test-secret-not-a-real-one".to_vec());
 /// let user = UserId::new();
 /// let token = issue_access_token(&secret, user, "alice", Duration::minutes(15))?;
 ///
-/// // The round trip: the subject survives as a typed id, and the display name rides along so
-/// // the client can render it without a round-trip.
 /// let claims = verify_access_token(&secret, token.expose_secret())?;
 /// assert_eq!(claims.user_id(), Some(user));
 /// assert_eq!(claims.name, "alice");
@@ -115,33 +99,27 @@ pub fn issue_access_token(
 /// let other = SecretSlice::from(b"some-other-secret".to_vec());
 /// assert!(verify_access_token(&other, token.expose_secret()).is_err());
 ///
-/// // Expiry is enforced here and nowhere else — issuing an already-expired token is legal,
-/// // because the caller chooses the TTL.
+/// // Expiry is enforced here only — issuing an already-expired token is legal; the caller
+/// // chooses the TTL.
 /// let stale = issue_access_token(&secret, user, "alice", Duration::seconds(-120))?;
 /// assert!(verify_access_token(&secret, stale.expose_secret()).is_err());
 ///
-/// // …but a token one second past `exp` still verifies. This looks like the expiry check
-/// // failing and is `jsonwebtoken`'s 60-second clock-skew leeway, inherited rather than
-/// // chosen: replicas share the signing secret but not a clock, so a token issued by one and
-/// // verified by another must survive a little drift. The practical effect is that every
-/// // access token outlives its stated TTL by up to a minute — acceptable against a 15-minute
-/// // TTL, and the number to revisit before anyone shortens that TTL towards it.
+/// // A token one second past `exp` still verifies: `jsonwebtoken`'s inherited 60s clock-skew
+/// // leeway (replicas share the secret but not a clock). Tokens outlive their TTL by up to a
+/// // minute — revisit before shortening TTL toward that margin.
 /// let barely_stale = issue_access_token(&secret, user, "alice", Duration::seconds(-1))?;
 /// assert!(verify_access_token(&secret, barely_stale.expose_secret()).is_ok());
 ///
-/// // Garbage is a rejection. Note what is *not* rejected: `sub` is a string in the claims, so
-/// // a validly-signed token whose subject is not a UUID verifies and then yields no user —
-/// // which is why `user_id()` returns `Option` rather than panicking, and why every caller
-/// // has to treat an unparseable subject as "no principal".
+/// // Garbage is rejected, but a validly-signed token with a non-UUID `sub` verifies and
+/// // yields no user — hence `user_id()` returns `Option` rather than panicking.
 /// assert!(verify_access_token(&secret, "not.a.token").is_err());
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
-/// `token` is a `&str`, not a [`SecretString`], while the signing key is wrapped. That is not
-/// an oversight: the presented token arrives as a borrowed slice of an `Authorization` header
-/// on every single request, and wrapping it would mean a heap allocation and a copy per
-/// request to protect a value the caller does not own and cannot zeroize anyway. The key is
-/// long-lived process state and is wrapped; the presented token is transient and is not.
+/// `token` is a `&str`, not [`SecretString`]: it arrives borrowed from an `Authorization`
+/// header per request, and the caller neither owns nor can zeroize it, so wrapping would cost
+/// an allocation for no protection. The long-lived signing key is wrapped; the transient
+/// presented token is not.
 ///
 /// # Errors
 /// [`AuthError::InvalidToken`] if the signature, algorithm, or expiry check fails.
@@ -160,12 +138,11 @@ pub fn verify_access_token(
     .map_err(|_| AuthError::InvalidToken)
 }
 
-/// Generate a fresh, high-entropy opaque refresh token (URL-safe base64, no padding).
-/// The raw value is returned to the client (as an httpOnly cookie); only its hash is
-/// persisted.
+/// Generate a fresh, high-entropy opaque refresh token (URL-safe base64, no padding); the raw
+/// value goes to the client (httpOnly cookie), only its hash is persisted.
 ///
-/// A refresh token outlives an access token by weeks, so it is the more valuable of the two
-/// to leak — hence [`SecretString`] rather than `String` on the way out.
+/// Outlives an access token by weeks, so it's the more valuable of the two to leak — hence
+/// [`SecretString`] on the way out.
 #[must_use]
 pub fn generate_refresh_token() -> SecretString {
     let mut bytes = [0u8; 32];
@@ -175,9 +152,8 @@ pub fn generate_refresh_token() -> SecretString {
 
 /// SHA-256 hash (hex) of a refresh token — the only representation stored server-side.
 ///
-/// The digest is *not* wrapped. It is the value written to `refresh_tokens.token_hash` and
-/// compared against on rotation, and it discloses nothing about the raw token; wrapping it
-/// would put an `expose_secret()` on every database call and dilute what the call means.
+/// Not wrapped: the digest discloses nothing about the raw token, and wrapping it would put
+/// `expose_secret()` on every database call.
 #[must_use]
 pub fn hash_refresh_token(raw: &SecretString) -> String {
     let digest = Sha256::digest(raw.expose_secret().as_bytes());
@@ -208,9 +184,8 @@ mod tests {
 
     #[test]
     fn the_token_carries_no_authorization_claim() {
-        // Pins the decision in `AccessClaims`' docs: privileges must not be able to travel in
-        // a token, because a token cannot be un-issued. If a future change adds a role or
-        // permission claim, this fails.
+        // Pins `AccessClaims`' contract: a token can't be un-issued, so no role/permission
+        // claim may ever travel in one.
         let token = issue_access_token(
             &key(b"secret"),
             UserId::new(),
@@ -270,9 +245,8 @@ mod tests {
         assert_eq!(hash_refresh_token(&raw).len(), 64); // 32 bytes hex
     }
 
-    /// The two credential types this module mints must not be printable. `secrecy`'s `Debug`
-    /// renders the *type*, never the value, which is the property a `tracing::info!(?token)`
-    /// in a future handler relies on.
+    /// Neither credential type this module mints may be printable: `secrecy`'s `Debug` renders
+    /// the type, never the value.
     #[test]
     fn minted_credentials_are_redacted_in_debug() {
         let token = issue_access_token(

@@ -1,18 +1,8 @@
 //! Service-to-service authentication for the internal tier.
 //!
-//! `sync`, `control-plane`, `render` and `challenge-solver` are not public services, but
-//! "not public" was previously enforced only by network placement — and the shipped compose
-//! file published every one of them on the host. Anyone who could reach the port could read
-//! any user's sync state, rebind their linked provider account, trigger scans, or use the
-//! renderer as an arbitrary-URL fetcher.
-//!
-//! This layer makes the trust explicit: a caller must present `X-Internal-Token` matching the
-//! configured secret. The comparison is constant-time, so a wrong token leaks nothing about
-//! how wrong it was, and the rejection is a bare `401` with no body — an unauthenticated
-//! caller learns only that the door is shut.
-//!
-//! Health and readiness probes are mounted *outside* the stack this layer belongs to (see
-//! [`crate::ops_router`]), so an orchestrator never needs the secret.
+//! `sync`, `control-plane`, `render` and `challenge-solver` require `X-Internal-Token`,
+//! compared in constant time; a mismatch is a bare `401` with no body. Health and readiness
+//! probes are mounted outside this stack, so an orchestrator never needs the secret.
 
 use axum::extract::{Request, State};
 use axum::http::{HeaderName, StatusCode};
@@ -28,15 +18,9 @@ pub const INTERNAL_TOKEN_HEADER: HeaderName = HeaderName::from_static("x-interna
 
 /// The configured secret, shared by the middleware and the outbound clients that present it.
 ///
-/// `Debug` is redacted: this value ends up inside service `AppState`s, and one
-/// `tracing::debug!(?state)` would otherwise put the key to the whole internal tier in the
-/// log stream. That redaction used to be a hand-written `Debug` impl on this type; it is now
-/// [`secrecy`]'s, which is the same guarantee written once for the whole workspace instead of
-/// once per type that someone remembered to protect.
-///
-/// `Arc<SecretString>` rather than a bare [`SecretString`]: this is cloned into an `AppState`
-/// on every request, and `SecretString`'s `Clone` copies the heap allocation. The `Arc` keeps
-/// exactly one copy of the secret in the process, which is also the copy that gets zeroized.
+/// `Debug` is redacted via [`secrecy`], so a stray `tracing::debug!(?state)` cannot leak the
+/// key to the whole internal tier. `Arc<SecretString>` because this value is cloned into an
+/// `AppState` per request; the `Arc` keeps exactly one heap copy, which is the copy zeroized.
 #[derive(Clone, Debug)]
 pub struct InternalToken(Arc<SecretString>);
 
@@ -50,19 +34,16 @@ impl InternalToken {
     /// Constant-time equality against a presented value.
     #[must_use]
     pub fn matches(&self, presented: &str) -> bool {
-        // Lengths are compared in constant time too: `ct_eq` on unequal-length slices is
-        // false, but `as_bytes()` lengths are public, so an early length check would leak
-        // the secret's length. `subtle` handles the mismatch without branching on content.
+        // The plain `len()` check is safe pre-filtering, not a leak: lengths are already
+        // public, and `ct_eq` would reject a length mismatch anyway.
         let expected = self.0.expose_secret().as_bytes();
         let got = presented.as_bytes();
         expected.len() == got.len() && bool::from(expected.ct_eq(got))
     }
 }
 
-/// Reading the token is [`ExposeSecret`], not an inherent `expose()` method, so that every
-/// read of a secret anywhere in the workspace is the same greppable call — the outbound
-/// clients that attach `X-Internal-Token` look identical to the ones exposing a DSN or a
-/// pepper.
+/// Reading the token is [`ExposeSecret`], not a bespoke method, so every secret read in the
+/// workspace is the same greppable call.
 impl ExposeSecret<str> for InternalToken {
     fn expose_secret(&self) -> &str {
         self.0.expose_secret()
@@ -71,20 +52,12 @@ impl ExposeSecret<str> for InternalToken {
 
 /// Resolve the configured token for a service in the internal tier.
 ///
-/// Absent outside the production profile is allowed — local `docker compose up` and the test
-/// harness stay frictionless — but it is logged at `warn`, because a tier running open is a
-/// fact an operator should see in the first ten lines of the log rather than discover later.
-/// In the production profile, and for any token that is present but too short,
+/// Absent outside the production profile is allowed (local dev, tests) but logged at `warn`.
+/// In production, or for any token that is present but too short,
 /// [`tankovault_config::InternalAuthConfig::resolve`] refuses and the service does not boot.
 ///
-/// A **published placeholder is refused in every profile**, not only production. That is the
-/// reasoning `services/api/src/main.rs::validate_auth_secrets` already records for the JWT
-/// secret: a check a deployment can skip by forgetting one environment variable is not a
-/// check. The placeholder this rejects was the compose file's silent default, so it is exactly
-/// what an operator who never created `deploy/local.env` was running with — on the credential
-/// that authorizes "read or rewrite any user's sync state" between tiers. The comment above
-/// that default claimed production already refused it; production refused a *missing* token,
-/// not a well-known one, and nothing connected the two files until `xtask repo-lint`.
+/// A **published placeholder is refused in every profile**, not only production: a check a
+/// deployment can skip by forgetting one environment variable is not a check.
 ///
 /// # Errors
 /// [`tankovault_config::ConfigError::Invalid`] when the token is missing in production, fails
@@ -114,13 +87,9 @@ pub fn resolve(
 
 /// Placeholder tokens published in this repository, refused wherever they appear.
 ///
-/// The counterpart of `services/api/src/main.rs::KNOWN_PLACEHOLDERS`, which does the same job
-/// for the auth secrets. Kept next to the resolver every internal service calls, so all five
-/// tiers get the refusal from one place rather than each remembering to check.
-///
-/// `xtask repo-lint` derives the required contents of this list from the defaults in
-/// `deploy/docker-compose.yml` and fails if a published secret is missing from it — the entry
-/// below was, for exactly as long as nothing connected the two files.
+/// Counterpart of `services/api/src/main.rs::KNOWN_PLACEHOLDERS`. `xtask repo-lint` derives
+/// this list's required contents from `deploy/docker-compose.yml` defaults and fails if a
+/// published secret is missing from it.
 const KNOWN_PLACEHOLDERS: [(&str, &str); 1] = [(
     "dev-internal-token-not-for-production-use",
     "development internal-tier token",
@@ -150,10 +119,9 @@ pub async fn enforce(State(token): State<InternalToken>, req: Request, next: Nex
         return next.run(req).await;
     }
 
-    // Deliberately terse and identical for "absent" and "wrong": the caller is not a human
-    // debugging their integration, it is a service with a static config. The path is logged
-    // but never the query string — `/v1/me/stream` carries a token there, and this must not
-    // be the place that starts recording them.
+    // Terse and identical for "absent" and "wrong": the caller is a service with a static
+    // config, not a human debugging. Only the path is logged, never the query string —
+    // `/v1/me/stream` carries a token there.
     tracing::warn!(
         path = %req.uri().path(),
         "rejected an internal request with a missing or invalid token"
@@ -165,14 +133,8 @@ pub async fn enforce(State(token): State<InternalToken>, req: Request, next: Nex
 mod tests {
     use super::*;
 
-    /// The internal token authorizes "read or rewrite any user's sync state" between tiers.
-    /// `deploy/docker-compose.yml` published a default for it, and the comment above that
-    /// default claimed production refused it — production refused a *missing* token, so a
-    /// deployment inheriting the file booted with a credential printed in this repository.
-    ///
-    /// Refused in **every** profile, not only production, for the reason
-    /// `services/api/src/main.rs::validate_auth_secrets` records for the JWT secret: a check a
-    /// deployment can skip by forgetting one environment variable is not a check.
+    /// `deploy/docker-compose.yml` published a default token that production only refused
+    /// when *missing*, not when equal to this one — refused in every profile now.
     #[test]
     fn the_published_placeholder_is_refused_in_every_profile() {
         for (placeholder, _) in KNOWN_PLACEHOLDERS {
@@ -196,12 +158,8 @@ mod tests {
         assert!(!token.matches(""));
     }
 
-    /// The whole point of the type is that it cannot be printed by accident.
-    ///
-    /// Asserted as "the secret does not appear" rather than against an exact rendering: the
-    /// redaction is now `secrecy`'s rather than a hand-written `Debug` impl, and pinning its
-    /// exact wording would turn a dependency's cosmetic change into a failing test while
-    /// saying nothing about the property that matters.
+    /// Asserted as "the secret does not appear" rather than an exact rendering, so a
+    /// cosmetic change in `secrecy`'s redaction format doesn't fail a test that shouldn't care.
     #[test]
     fn debug_is_redacted() {
         let token = InternalToken::new("do-not-print-me-do-not-print-me-1");

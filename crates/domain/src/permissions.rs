@@ -1,38 +1,6 @@
-//! Fine-grained permissions — the system's *only* authorization primitive.
-//!
-//! # Why permissions and not roles
-//!
-//! This system previously authorized with a three-tier ordered role
-//! (`user` < `operator` < `admin`) and a `require(at_least(role))` check. That shape has two
-//! defects no amount of care at the call site can fix:
-//!
-//! 1. **It cannot express least privilege.** Letting someone triage the merge queue meant
-//!    handing them provider editing, scan triggering, the audit trail and every user's
-//!    linked-account state, because all of it sat behind the same tier. The only way to
-//!    narrow a grant was to invent another tier, and tiers do not compose.
-//! 2. **The requirement is invisible in the model.** `at_least(Operator)` says how
-//!    privileged the caller must be, not *what they are allowed to do*, so nothing in the
-//!    type system connects an endpoint to the capability it exercises. Reviewing "who can
-//!    delete a provider" meant reading every handler.
-//!
-//! A [`Permission`] is a single, named capability. A principal holds a set of them, granted
-//! individually and stored per user (`user_permissions`); there is no tier, no ordering and
-//! no implication between permissions — holding `users.write` does not imply `users.read`,
-//! because a grant that silently widens is exactly the bug this replaces. Endpoints that
-//! need two capabilities ask for both.
-//!
-//! # Presets are a UI convenience, not a stored role
-//!
-//! Granting twenty permissions one at a time is hostile, so [`PermissionPreset`] names a few
-//! common bundles ("Operator", "Administrator"). A preset is *expanded at the moment an
-//! administrator applies it* and never persisted: nothing in the database or in an
-//! authorization decision knows presets exist. That is the distinction from a role — a role
-//! is a stored indirection that keeps applying, a preset is a starting point you then edit.
-//!
-//! # Naming
-//!
-//! `<surface>.<action>`, lowercase, dot-separated, stable forever: these strings are
-//! persisted grants and appear in audit records, so renaming one is a migration.
+//! Fine-grained permission capabilities — the system's only authorization primitive. A
+//! principal holds an unordered set of them, with no implication between grants; see
+//! [`Permission`] for the invariant that protects.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -51,7 +19,6 @@ use utoipa::ToSchema;
 )]
 #[non_exhaustive]
 pub enum Permission {
-    // --- provider administration ---
     /// Read the provider list, per-provider statistics and health.
     #[serde(rename = "providers.read")]
     ProvidersRead,
@@ -71,7 +38,6 @@ pub enum Permission {
     #[serde(rename = "providers.test")]
     ProvidersTest,
 
-    // --- scanning ---
     /// Read scan runs, queue state and task failures.
     #[serde(rename = "scans.read")]
     ScansRead,
@@ -79,7 +45,6 @@ pub enum Permission {
     #[serde(rename = "scans.run")]
     ScansRun,
 
-    // --- canonicalisation ---
     /// Read the merge-candidate review queue.
     #[serde(rename = "merge.read")]
     MergeRead,
@@ -87,7 +52,6 @@ pub enum Permission {
     #[serde(rename = "merge.write")]
     MergeWrite,
 
-    // --- external sync administration ---
     /// Read any user's linked accounts, series mappings and matching backlogs.
     #[serde(rename = "sync.admin.read")]
     SyncAdminRead,
@@ -95,7 +59,6 @@ pub enum Permission {
     #[serde(rename = "sync.admin.write")]
     SyncAdminWrite,
 
-    // --- user administration ---
     /// Read the user directory and individual user detail.
     #[serde(rename = "users.read")]
     UsersRead,
@@ -114,7 +77,6 @@ pub enum Permission {
     #[serde(rename = "users.sessions")]
     UsersSessions,
 
-    // --- privacy / data protection ---
     /// Read the data-subject request queue.
     #[serde(rename = "privacy.read")]
     PrivacyRead,
@@ -127,7 +89,6 @@ pub enum Permission {
     #[serde(rename = "privacy.export")]
     PrivacyExport,
 
-    // --- observability ---
     /// Read the system-wide statistics rollup.
     #[serde(rename = "system.stats")]
     SystemStats,
@@ -135,7 +96,6 @@ pub enum Permission {
     #[serde(rename = "audit.read")]
     AuditRead,
 
-    // --- feature flags ---
     /// Read the feature-flag catalogue and its resolved state.
     #[serde(rename = "flags.read")]
     FlagsRead,
@@ -176,7 +136,8 @@ impl Permission {
         ]
     }
 
-    /// The persisted, wire-level token. Stable forever; see the module docs.
+    /// The persisted wire token (`<surface>.<action>`), stable forever — renaming one
+    /// orphans every stored grant that used the old string.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -233,10 +194,8 @@ impl Permission {
         }
     }
 
-    /// One-line description of what the capability allows, shown next to the toggle in the
-    /// permission editor. Lives here rather than in the frontend so the authoritative
-    /// wording sits with the definition and cannot describe a capability the backend no
-    /// longer has.
+    /// Shown next to the toggle in the permission editor. Lives here, not in the frontend,
+    /// so it can never describe a capability the backend no longer has.
     #[must_use]
     pub const fn description(self) -> &'static str {
         match self {
@@ -280,11 +239,8 @@ impl fmt::Display for Permission {
     }
 }
 
-/// Error raised when a stored or submitted permission token is not a known capability.
-///
-/// Reaching this means a grant row names a permission this build does not have — after a
-/// rollback that removed a capability, most likely. Callers treat it as "not held" rather
-/// than failing the request, so an unknown grant can never *widen* access.
+/// A stored or submitted token names no known capability — most likely a grant surviving a
+/// rollback. Treated as "not held" rather than a failure, so it can only narrow access.
 #[derive(Debug, Clone, thiserror::Error)]
 #[error("unknown permission: {token:?}")]
 pub struct ParsePermissionError {
@@ -395,9 +351,8 @@ impl PermissionPreset {
                 Permission::AuditRead,
                 Permission::FlagsRead,
             ],
-            // Spelled as "everything" rather than an enumerated list: a new capability must
-            // be reachable by an administrator the moment it exists, and a hand-maintained
-            // list would silently omit it.
+            // "Everything", not an enumerated list — a hand-maintained one would silently
+            // exclude a new capability from the administrator preset.
             Self::Administrator => Permission::all().to_vec(),
         }
     }
@@ -425,9 +380,8 @@ impl FromStr for PermissionPreset {
 
 /// The set of permissions a principal holds.
 ///
-/// A `BTreeSet` rather than a `Vec`: membership is the only question ever asked of it, and
-/// the ordering makes the serialised form (audit records, the capabilities endpoint)
-/// deterministic, so two equal grant sets compare equal as JSON too.
+/// A `BTreeSet`, not a `Vec`: membership is the only question ever asked of it, and the
+/// ordering makes the serialised form (audit records, capabilities endpoint) deterministic.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PermissionSet(BTreeSet<Permission>);
 
@@ -437,11 +391,9 @@ impl PermissionSet {
         Self(BTreeSet::new())
     }
 
-    /// Build from stored tokens, **silently dropping** any token this build does not know.
-    ///
-    /// Dropping rather than failing is the safe direction: an unrecognised grant becomes no
-    /// grant, so a stale row can only ever narrow access. Each drop is reported through
-    /// `on_unknown` so the caller can log it instead of it vanishing.
+    /// Build from stored tokens, silently dropping any this build does not recognise — a
+    /// stale row can only narrow access, never grant something unknown. Each drop is
+    /// reported via `on_unknown` for logging.
     pub fn from_tokens<I, S>(tokens: I, mut on_unknown: impl FnMut(&str)) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -471,8 +423,7 @@ impl PermissionSet {
         permissions.iter().all(|p| self.has(*p))
     }
 
-    /// Whether this principal holds *any* listed permission. Used for the "may this account
-    /// see the operator console at all?" question, which is a union, not a specific right.
+    /// Whether this principal holds *any* listed permission — a union check, not a specific right.
     #[must_use]
     pub fn has_any(&self, permissions: &[Permission]) -> bool {
         permissions.iter().any(|p| self.has(*p))
@@ -538,9 +489,8 @@ mod tests {
 
     #[test]
     fn all_lists_every_variant() {
-        // `all()` is hand-written, so it can fall behind the enum. Serialising each entry
-        // proves the token table is complete for everything `all()` knows about; this
-        // assertion pins the count so adding a variant without listing it fails here.
+        // `all()` is hand-written and can drift from the enum; bump this count when adding
+        // a variant, or a forgotten one slips through unnoticed.
         assert_eq!(Permission::all().len(), 24);
     }
 

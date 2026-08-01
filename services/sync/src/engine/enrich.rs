@@ -1,11 +1,6 @@
-//! Tokenless metadata enrichment (design: worker queue syncing every existing entry to
-//! `AniList` **without** a stored user token).
-//!
-//! The one part of the engine that needs no user token at all — it talks only to providers that
-//! expose a public API (`ExternalProvider::supports_public_metadata`). Keeping it a separate
-//! collaborator is what stops it from being welded to token-bearing reconciliation, which is
-//! how ARCH-6 described the old arrangement. The *writing* half is shared with reconciliation
-//! all the same: see [`super::metadata::MetadataWriter`].
+//! Tokenless metadata enrichment: the only part of the engine that needs no user token, talking
+//! only to providers exposing a public API. The writing half is shared with reconciliation via
+//! [`super::metadata::MetadataWriter`].
 
 use std::sync::Arc;
 
@@ -51,13 +46,9 @@ impl Enricher {
         }
     }
 
-    /// Walk the catalogue in batches of `batch_size`, up to `max_series` series, and for each
-    /// one ask every provider that exposes a public API (`AniList`'s unauthenticated GraphQL)
-    /// for its catalogue metadata — by an already-cached external id where one exists, else by
-    /// canonical title. Resolved metadata is folded in under the configured per-field priority,
-    /// and every alternative title/synonym is persisted for merge detection and search.
-    ///
-    /// Never fails the whole sweep on a single series' error — those are logged and skipped.
+    /// Walk the catalogue in batches of `batch_size`, up to `max_series` series, asking every
+    /// public-metadata provider for each one's catalogue metadata by cached external id, else
+    /// by canonical title. Never fails the whole sweep on a single series' error.
     pub(crate) async fn enrich_all(
         &self,
         batch_size: i64,
@@ -67,15 +58,10 @@ impl Enricher {
         if !self.registry.any_public_metadata() {
             return Ok(report);
         }
-        // The work list is "least recently attempted first" and every series this loop touches
-        // is stamped `metadata_checked_at = now()` — including the ones nothing resolved and the
-        // ones that errored. That stamp is the whole paging mechanism: `started_at` fences the
-        // run, so a stamped row fails the next page's predicate and cannot come back around.
-        //
-        // It is also why there is no cursor here any more. Paging used to key on `updated_at`,
-        // which only a *successful* enrichment writes, so a series no provider could resolve
-        // stayed at the head of the ordering and was retried at the front of every sweep. A
-        // catalogue with more unresolvable series than `max_series` never advanced past them.
+        // Every row touched is stamped `metadata_checked_at = now()`, success or not, and
+        // `started_at` fences the run — that stamp is the whole paging mechanism. Paging on
+        // `updated_at` instead (only a success writes it) let unresolvable series stay at the
+        // head forever, starving pages once they outnumbered `max_series`.
         let started_at = OffsetDateTime::now_utc();
         while report.scanned < max_series {
             let rows =

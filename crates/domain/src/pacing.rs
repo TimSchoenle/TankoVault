@@ -1,28 +1,6 @@
 //! Outbound request pacing: a minimum gap plus an adaptive penalty for provider push-back.
-//!
-//! # Why this lives in `domain`
-//!
-//! Politeness policy is the thing most likely to get a deployment blocked, and it used to be
-//! implemented three times at three different capability levels (ARCH-20): the crawler's
-//! `Throttle` (governor-backed, with a decaying 429 penalty), the crawler's `BackoffFetcher`
-//! (`Retry-After` aware), and a private minimum-gap mutex in the `AniList` client. The last had no
-//! persistent penalty at all — it retried a `429` once and then went straight back to full rate,
-//! which is the behaviour a provider reads as ignoring them.
-//!
-//! It is here rather than in `tankovault-fetch` for the same reason [`crate::ssrf`] is: a consumer
-//! must be able to pace its own outbound calls without pulling in the whole wreq/BoringSSL crawl
-//! stack. `services/sync` talks to `AniList` over plain `reqwest` and has no business linking a
-//! browser-emulating TLS stack to do it.
-//!
-//! # Transport-agnostic by construction
-//!
-//! [`Pacer`] never sleeps and never touches a clock of its own: [`Pacer::reserve`] takes `now`,
-//! claims the next slot, and returns how long the caller must wait. The caller does the sleeping
-//! with whatever runtime it has.
-//!
-//! Reserving rather than holding a lock across the wait matters: the `AniList` client's private
-//! version held its mutex for the whole sleep, so N concurrent callers serialised into a queue N
-//! gaps long instead of each taking the next free slot.
+//! Lives in `domain`, not `tankovault-fetch`, so callers like `services/sync` can pace
+//! requests without linking the browser-emulating crawl stack.
 
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -49,9 +27,8 @@ impl Default for PacingPolicy {
             // A half-second of extra spacing is a large correction at crawl rates of a few rps,
             // and small enough that a single stray 429 costs almost nothing.
             step: Duration::from_millis(500),
-            // 8s spacing is ~0.125 rps: slow, but still progressing. Past this the provider is
-            // not rate-limiting us, it is refusing us, and that is the backoff layer's and the
-            // scheduler's problem, not the pacer's.
+            // 8s (~0.125 rps) is the ceiling: past this the provider is refusing us, not
+            // rate-limiting us — the backoff layer's problem, not the pacer's.
             max: Duration::from_secs(8),
             recovery: Duration::from_secs(60),
         }
@@ -68,6 +45,9 @@ struct State {
 }
 
 /// A minimum gap between outbound requests, widened while a provider is pushing back.
+///
+/// Never sleeps or touches its own clock: [`Self::reserve`] takes `now` and returns how long
+/// the caller must wait, so any runtime can do the actual sleeping.
 pub struct Pacer {
     min_interval: Duration,
     policy: PacingPolicy,
@@ -134,11 +114,9 @@ impl Pacer {
 
     /// Record a throttle signal, widening the spacing.
     ///
-    /// `retry_after` is the provider's own instruction when it sent a usable one. It is honoured
-    /// as a floor rather than taken verbatim: a provider asking for less than the penalty we have
-    /// already accumulated is not evidence that the earlier signals were wrong. It is still
-    /// clamped to [`PacingPolicy::max`], because a hostile or mistyped header must not be able to
-    /// park a worker for hours.
+    /// `retry_after` is honoured as a floor, not taken verbatim — a smaller value doesn't undo
+    /// an already-larger penalty — and clamped to [`PacingPolicy::max`] so a hostile or
+    /// mistyped header cannot park a worker for hours.
     pub fn penalise(&self, now: Instant, retry_after: Option<Duration>) {
         let mut state = self.state();
         let grown = if state.penalty.is_zero() {
@@ -183,9 +161,8 @@ mod tests {
         assert_eq!(pacer.reserve(Instant::now()), Duration::ZERO);
     }
 
-    /// Two callers arriving at the same instant must get *consecutive* slots. The `AniList`
-    /// client's private pacer held its mutex across the sleep to achieve this, which serialised
-    /// every caller behind the whole queue; reserving does it without holding anything.
+    /// Two callers at the same instant get *consecutive* slots — a mutex held across the
+    /// sleep would instead serialise every caller behind the whole queue.
     #[test]
     fn concurrent_callers_get_consecutive_slots() {
         let pacer = Pacer::new(Duration::from_secs(1), policy());

@@ -1,34 +1,7 @@
 //! The runtime feature gate: resolving [`Feature`] state and enforcing it on HTTP routes.
 //!
-//! # How this differs from the other toggles in this crate
-//!
-//! Metrics, audit and rate limiting are *wiring* decisions, fixed at boot (see the crate
-//! docs). A feature flag is the opposite by requirement: an operator flips it in the control
-//! plane and the running fleet has to follow, so it is necessarily consulted per request.
-//!
-//! What keeps that from becoming `if flag { }` sprinkled through handlers is that the
-//! consultation is **declarative**. [`RouteFeatures`] is a table, sitting next to the route
-//! registration, that says which feature each route family belongs to; [`enforce`] is the one
-//! place that reads it. A handler contains no flag logic at all. Background loops, which have
-//! no route to declare against, call [`FeatureGate::is_enabled`] once per iteration — there the
-//! loop *is* the feature, so the check is the same declaration in a different shape.
-//!
-//! # Snapshot, not a query per request
-//!
-//! [`FeatureGate`] holds an immutable snapshot behind an `RwLock` and refreshes it on a timer
-//! ([`FeatureGate::spawn_refresh`]). Reads take the lock for long enough to test set membership
-//! and nothing else. The service that *serves* a flag change refreshes immediately
-//! ([`FeatureGate::refresh`]), so an operator sees their own change take effect at once; other
-//! replicas converge within one refresh interval. That staleness window is the deliberate cost
-//! of not putting a database round trip in front of every request, and it is bounded by
-//! [`FeaturesConfig::refresh_secs`](tankovault_config::FeaturesConfig::refresh_secs).
-//!
-//! # Failure behaviour
-//!
-//! A refresh that cannot reach the database keeps the previous snapshot and logs. It does not
-//! fall back to the compiled defaults, because that would silently *re-enable* whatever an
-//! operator had switched off — a database blip must not undo a deliberate decision. The only
-//! time defaults apply is at construction, before any successful load.
+//! A failed refresh keeps the previous snapshot rather than reverting to compiled defaults,
+//! which would silently re-enable anything an operator had switched off.
 
 use axum::extract::{MatchedPath, Request, State};
 use axum::http::{Method, StatusCode};
@@ -41,9 +14,6 @@ use tankovault_domain::Feature;
 use tokio_util::sync::CancellationToken;
 
 /// The resolved set of enabled features, cheap to test and cheap to replace wholesale.
-///
-/// Stores the *enabled* set rather than the overrides, so a lookup is one hash probe with no
-/// default-resolution logic on the hot path. Resolution happens once, at refresh.
 #[derive(Debug, Clone, Default)]
 struct Snapshot {
     enabled: HashSet<Feature>,
@@ -63,11 +33,8 @@ impl Snapshot {
 
     /// Apply stored overrides on top of the compiled defaults.
     ///
-    /// An override naming a feature this build does not have is ignored with a warning: the
-    /// schema and the binary disagree, which happens across a rollback and must not be fatal.
-    /// A **locked** feature's override is also ignored — the API refuses to write one, but a
-    /// row could exist from a hand-edited database or an older build, and honouring it would
-    /// remove the deployment's only recovery path.
+    /// An unknown key is ignored, not fatal (schema/binary can disagree across a rollback).
+    /// A locked feature's override is also ignored: it must not remove the only recovery path.
     fn resolve(overrides: &[(String, bool)]) -> Self {
         let mut snapshot = Self::from_defaults();
         for (key, enabled) in overrides {
@@ -93,10 +60,6 @@ impl Snapshot {
 }
 
 /// Where a [`FeatureGate`] reads overrides from.
-///
-/// A trait rather than a `PgPool` so the gate is constructible in a test and in a service
-/// without a database, and so `tankovault-service` does not need the `db` feature just to
-/// enforce flags. The API service supplies the Postgres-backed implementation.
 #[async_trait::async_trait]
 pub trait FlagSource: Send + Sync + 'static {
     /// The currently stored `(feature_key, enabled)` overrides.
@@ -155,9 +118,8 @@ pub struct FeatureGate {
 impl FeatureGate {
     /// A gate at the compiled defaults, reading from `source` on each [`Self::refresh`].
     ///
-    /// Does not load: construction is synchronous and infallible so a service can build its
-    /// state before it has an async context, and a boot-time database hiccup cannot prevent
-    /// the process from starting with a sane (defaults) view.
+    /// Does not load: construction is synchronous and infallible, so a boot-time database
+    /// hiccup cannot prevent the process from starting with a sane (defaults) view.
     #[must_use]
     pub fn new(source: Arc<dyn FlagSource>) -> Self {
         Self {
@@ -187,9 +149,8 @@ impl FeatureGate {
 
     /// Whether `feature` is currently enabled.
     ///
-    /// A poisoned lock means a previous holder panicked while replacing the snapshot. Rather
-    /// than propagate that, this recovers the inner value: the snapshot is plain data with no
-    /// invariant a panic could have broken half-way, and refusing to answer would take the
+    /// Recovers from a poisoned lock rather than propagating it: the snapshot is plain data
+    /// with no invariant a panic could break half-way, and refusing to answer would take the
     /// whole service down over a bookkeeping detail.
     #[must_use]
     pub fn is_enabled(&self, feature: Feature) -> bool {
@@ -223,9 +184,8 @@ impl FeatureGate {
 
     /// Reload the snapshot from the source now.
     ///
-    /// Called by the flag-write endpoint so the operator's own change is live before their
-    /// request returns, and by the refresh loop. On failure the previous snapshot stands — see
-    /// the module docs on why a database outage must not revert to defaults.
+    /// Called by the flag-write endpoint so the operator's own change is live immediately,
+    /// and by the refresh loop. On failure the previous snapshot stands (see module docs).
     pub async fn refresh(&self) {
         match self.source.overrides().await {
             Ok(overrides) => {
@@ -250,9 +210,8 @@ impl FeatureGate {
 
     /// Load once, then refresh on `interval` until `shutdown`.
     ///
-    /// The initial load is awaited so the caller can be sure the gate reflects stored overrides
-    /// before the listener starts accepting traffic — otherwise the first requests after a
-    /// deploy would be served against the defaults, briefly re-enabling anything switched off.
+    /// The initial load is awaited so the listener never accepts traffic against the
+    /// compiled defaults, briefly re-enabling anything an operator had switched off.
     pub async fn spawn_refresh(&self, interval: std::time::Duration, shutdown: CancellationToken) {
         self.refresh().await;
 
@@ -281,30 +240,20 @@ struct Rule {
     prefix: String,
     feature: Feature,
     /// When set, only mutating methods (`POST`/`PUT`/`PATCH`/`DELETE`) are gated; safe reads
-    /// under the same prefix fall through. This is what lets a surface stay *readable* while
-    /// its write side is switched off — an operator disabling manual scans should still be able
-    /// to look at the scan history.
+    /// under the same prefix fall through, so a surface stays readable while its write side
+    /// is switched off.
     writes_only: bool,
-    /// When set, the route pattern must equal `prefix` rather than start with it.
-    ///
-    /// Needed wherever a route's own path is a prefix of an unrelated family: `DELETE /v1/me`
-    /// (self-service erasure) sits above `/v1/me/watchlist`, `/v1/me/feed` and a dozen others,
-    /// so a prefix rule there would take the entire user surface down with it.
+    /// When set, the route pattern must equal `prefix` rather than start with it. Needed
+    /// where a route's own path is a prefix of an unrelated family (e.g. `DELETE /v1/me`
+    /// above `/v1/me/watchlist`), or a prefix rule would gate the whole family with it.
     exact: bool,
 }
 
-/// Maps matched route patterns to the [`Feature`] they belong to, by longest-prefix match.
+/// Maps matched route patterns to the [`Feature`] they belong to, by longest-prefix match on
+/// axum's [`MatchedPath`], so a gate cannot be dodged by varying a path parameter.
 ///
-/// Matching is on axum's [`MatchedPath`] — the route *pattern*, `/v1/series/{id}` — so a gate
-/// cannot be dodged by varying a path parameter. Mirrors
-/// [`RouteClassifier`](crate::RouteClassifier) deliberately: two tables with the same matching
-/// semantics are two tables a reader only has to learn once.
-///
-/// A route with no rule is **ungated**. That is the opposite default from the rate limiter, and
-/// it is the right one here: an unlisted route being unlimited is a security gap, whereas an
-/// unlisted route being un-flaggable is merely a missing feature. Making the default
-/// "disabled unless declared" would take the whole API down the moment someone added an
-/// endpoint.
+/// A route with no rule is **ungated** — the opposite default from the rate limiter, since
+/// here an unlisted route is a missing feature, not a security gap.
 #[derive(Debug, Clone, Default)]
 pub struct RouteFeatures {
     /// Sorted longest-prefix-first, so the first match is the most specific.
@@ -383,9 +332,8 @@ impl RouteFeatures {
 
     /// Every feature named by at least one rule.
     ///
-    /// Exists so a service can assert at start-up that its route table and the feature registry
-    /// have not drifted — a feature nobody gates is a switch that does nothing, which is worse
-    /// than no switch at all because an operator will believe it worked.
+    /// Lets a service assert at start-up that its route table and feature registry have not
+    /// drifted — a feature nobody gates is a switch that silently does nothing.
     #[must_use]
     pub fn declared_features(&self) -> HashSet<Feature> {
         self.rules.iter().map(|r| r.feature).collect()
@@ -393,13 +341,10 @@ impl RouteFeatures {
 
     /// Every rule as a `(prefix, feature)` pair, longest prefix first.
     ///
-    /// The companion to [`Self::declared_features`], and for the drift in the other direction:
-    /// that answers "is this feature gating anything?", this answers "does this rule still
-    /// match anything?". The table is keyed on path *strings*, so a route renamed in a handler
-    /// annotation leaves its rule behind — silently ungating the route while leaving a rule
-    /// that matches nothing, which is the worse of the two failures because the gate looks
-    /// present. `services/api/tests/feature_gating.rs` checks the pairs against the published
-    /// document; nothing inside this crate can, since the paths are the consumer's.
+    /// Companion to [`Self::declared_features`] for drift in the other direction: rules are
+    /// keyed on path strings, so a route renamed elsewhere leaves a stale rule behind that
+    /// silently ungates the route while looking present. `services/api/tests/feature_gating.rs`
+    /// checks the pairs against the published document.
     pub fn rules(&self) -> impl Iterator<Item = (&str, Feature)> {
         self.rules.iter().map(|r| (r.prefix.as_str(), r.feature))
     }
@@ -426,10 +371,8 @@ impl FeatureLayer {
 /// `axum::middleware::from_fn_with_state(layer, tankovault_service::flags::enforce)`.
 ///
 /// A disabled feature answers **`404 Not Found`**, not `403`: the resource genuinely is not
-/// part of this deployment's API, and `403` would tell the caller they lack permission — which
-/// is false and would send a user to an administrator who cannot help them. The body names the
-/// feature so an operator debugging "why is this 404ing" gets the answer from the response
-/// rather than from the flag page.
+/// part of this deployment's API, and `403` would falsely imply the caller lacks permission.
+/// The body names the feature so "why is this 404ing" has an answer in the response.
 pub async fn enforce(State(layer): State<FeatureLayer>, req: Request, next: Next) -> Response {
     let method = req.method().clone();
     let required = req
@@ -634,33 +577,16 @@ mod tests {
         assert!(!gate.is_enabled(Feature::TrackingStats));
     }
 
-    // --- what this crate had left to another crate's tests (TESTING F-10) -----------------
-    //
-    // `cargo mutants` reported the middleware itself, both `RouteFeatures` accessors and
-    // `DefaultsOnly` as survivors: nothing in `tankovault-service` asserted on any of them.
-    // They *were* covered — by `services/api/tests/feature_gating.rs` — but that suite proves
-    // the layer is **mounted on the API's router**, which is a different claim from "the layer
-    // does what this module documents". The gap showed up the moment mutation testing ran the
-    // crate's own tests against the crate's own code.
-
-    /// The source used by every service without a database handle must contribute nothing, so
-    /// those deployments sit at the compiled defaults.
-    ///
-    /// Trivial, and the reason it is worth writing is what the alternative looks like: a
-    /// `DefaultsOnly` that returned one override would silently move the whole fleet off its
-    /// defaults, and no test anywhere would have noticed.
+    /// A `DefaultsOnly` that returned one override would silently move the whole fleet off
+    /// its defaults, with nothing to notice.
     #[tokio::test]
     async fn defaults_only_contributes_no_overrides() {
         assert_eq!(DefaultsOnly.overrides().await, Ok(Vec::new()));
     }
 
-    /// `spawn_refresh` **awaits** the first load before returning.
-    ///
-    /// The module docs give the reason — otherwise the first requests after a deploy are served
-    /// against the compiled defaults, briefly re-enabling whatever an operator had switched off
-    /// — and it is the kind of ordering that is invisible in review and in production until the
-    /// window happens to matter. The shutdown token is cancelled up front so only the initial
-    /// load can have run by the time the assertion executes.
+    /// `spawn_refresh` awaits the first load before returning — otherwise the first requests
+    /// after a deploy would be served against compiled defaults. Shutdown is cancelled up
+    /// front so only the initial load can have run by the time the assertion executes.
     #[tokio::test]
     async fn spawn_refresh_loads_once_before_it_returns() {
         let gate = FeatureGate::new(Arc::new(Fixed(vec![("tracking.stats".to_owned(), false)])));
@@ -672,12 +598,6 @@ mod tests {
     }
 
     /// The two drift accessors answer opposite questions and both must report the real table.
-    ///
-    /// `declared_features` is "is this feature gating anything?"; `rules` is "does this rule
-    /// still match anything?". Each is consumed by a start-up assertion in another crate, so an
-    /// accessor that quietly returned nothing would make *those* assertions vacuous — the
-    /// failure mode F-01b already produced once, where a property passed because its generator
-    /// could not reach the case.
     #[test]
     fn the_drift_accessors_report_the_whole_table() {
         let routes = RouteFeatures::new()
@@ -706,14 +626,9 @@ mod tests {
         );
     }
 
-    /// The middleware's own contract, asserted in the crate that defines it: a gated route
-    /// whose feature is off answers `404` with the RFC 9457 body naming the feature, an enabled
-    /// one reaches the handler, and an ungated one is never consulted.
-    ///
-    /// The `404`-not-`403` choice is the load-bearing part and is argued at [`enforce`]: `403`
-    /// would tell the caller they lack permission, which is false, and sends a user to an
-    /// administrator who cannot help them. The `feature` member is what turns "why is this
-    /// 404ing" into an answer read off the response.
+    /// The middleware's own contract: a disabled route answers `404` (see [`enforce`] for why
+    /// not `403`) with an RFC 9457 body naming the feature; an enabled or ungated route reaches
+    /// its handler.
     #[tokio::test]
     async fn a_disabled_route_answers_404_naming_the_feature() {
         use axum::Router;

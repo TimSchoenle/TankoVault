@@ -1,9 +1,6 @@
 //! What the account may do: the grant editor's write path and the catalogue it renders from.
-//!
-//! The catalogue is here rather than in a module of its own because it is the *vocabulary* of
-//! the edit below — both are served from the same compiled registry, so the list an operator
-//! sees and the set the write path accepts cannot disagree. Splitting them would put the two
-//! halves of that guarantee in different files.
+//! Both are served from the same compiled registry, so the list an operator sees and the set
+//! the write path accepts cannot disagree.
 
 use crate::audit::audit;
 use crate::error::{ApiError, ApiResult};

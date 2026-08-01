@@ -19,9 +19,7 @@ pub struct SyncSnapshot {
 /// Fetch the stored three-way-merge snapshot for a mapped series, if any.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unmapped series is
-/// `Ok(None)`, not [`crate::DbError::NotFound`], because "never reconciled" is the first-sync
-/// case the engine handles rather than a failure.
+/// [`crate::DbError::Sqlx`] only; unmapped is `Ok(None)`, never [`crate::DbError::NotFound`].
 pub async fn get_snapshot<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -42,10 +40,7 @@ pub async fn get_snapshot<'e, E: PgExecutor<'e>>(
 
 /// The state both sides are known to agree on after a reconciliation.
 ///
-/// A parameter struct rather than seven positional arguments: the old signature carried
-/// `#[allow(clippy::too_many_arguments)]`, and two adjacent `f64`s followed by two adjacent
-/// `&str`s is exactly the shape a caller can transpose without the compiler noticing
-/// (ARCH-5b — the suppression was the smell, not the lint).
+/// A struct, not positional args: two adjacent `f64`s then two adjacent `&str`s transpose silently.
 #[derive(Debug, Clone, Copy)]
 pub struct AgreedSnapshot<'a> {
     pub series_id: SeriesId,
@@ -56,14 +51,12 @@ pub struct AgreedSnapshot<'a> {
     pub remote_status: &'a str,
 }
 
-/// Record the agreed values as the new three-way-merge snapshot after a reconciliation
-/// (design v2 §B.3). The `sync_mappings` row must already exist.
+/// Record the agreed values as the new three-way-merge snapshot (design v2 §B.3). The
+/// `sync_mappings` row must already exist.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Note the consequence of the
-/// precondition above: if the `sync_mappings` row does *not* exist the `UPDATE` matches nothing
-/// and this still returns `Ok(())`, so a missing mapping is silent here and surfaces later as a
-/// reconciliation that keeps re-deciding from no ancestor.
+/// [`crate::DbError::Sqlx`] only; a missing row matches nothing and is silently `Ok(())`, so
+/// reconciliation keeps re-deciding from no ancestor.
 pub async fn record_snapshot<'e, E: PgExecutor<'e>>(
     exec: E,
     agreed: &AgreedSnapshot<'_>,

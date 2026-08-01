@@ -1,31 +1,5 @@
-//! Prioritised, fair scan-task scheduling.
-//!
-//! The tasks stream is partitioned by subject (`scan.tasks.<provider_slug>.<scan_mode>`),
-//! but a single consumer bound to a wildcard flattens that partitioning back into one FIFO
-//! queue served in publish order. That is what let one provider take the queue over: a full
-//! catalogue scan fans out into one `series` task per catalogue entry — hundreds of
-//! thousands for a large site — and every one of them is published before any other
-//! provider's next task. Until that run drains, nothing else is scanned at all.
-//!
-//! [`FairQueue`] restores the partitioning as a grid of *lanes*, one durable consumer per
-//! provider per scan mode, and picks between them on two rules:
-//!
-//! 1. **Fast scans before full scans.** A fast scan is what surfaces new chapters to
-//!    readers; a full scan is backfill. Every fast lane is offered a turn before any full
-//!    lane is looked at, so a chapter release is never queued behind a catalogue walk.
-//! 2. **Round-robin between providers**, within a mode. A provider's share is set by how
-//!    many providers have work, not by how many tasks it enqueued, so a backlog of half a
-//!    million tasks delays another provider by one task rather than by the whole backlog.
-//!
-//! Strict priority is safe here because the fast tier is bounded by construction: a fast
-//! run enqueues exactly one `latest_feed` task per provider and processes the feed inline,
-//! so the fast lanes cannot hold more than one task per provider and can never starve the
-//! full tier. Were a fast scan ever to fan out the way a full one does, that reasoning would
-//! lapse and the tiers would need a weighted split instead.
-//!
-//! Every worker replica applies these rules independently, which makes the aggregate service
-//! fair too: no coordination between replicas is needed, because the behaviour is a property
-//! of each one's choice of lane rather than of a shared cursor.
+//! Prioritised, fair scan-task scheduling: restores per-provider fairness that a single
+//! wildcard consumer's FIFO order would let one large catalogue scan monopolize.
 
 use futures::StreamExt;
 use std::collections::HashSet;

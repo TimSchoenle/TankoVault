@@ -9,9 +9,7 @@ use crate::icons::{Ic, Icon};
 use crate::models::*;
 use dioxus::prelude::*;
 
-// No `too_many_arguments` suppression: `#[component]` turns these props into a struct, so the
-// lint never fires. The `#[allow]` that used to be here was dead, which converting it to an
-// `#[expect]` revealed (BUILD_AND_OPS §2.3).
+// `#[component]` turns these props into a struct, so `too_many_arguments` never fires here.
 #[component]
 pub(super) fn FilterPanel(
     types: Signal<Vec<ContentType>>,
@@ -138,9 +136,8 @@ pub(super) fn FilterPanel(
                         id: "tv-year-min",
                         class: "ik-range",
                         r#type: "range",
-                        // The constants, not literals: the bounds used to be duplicated here
-                        // as strings, so narrowing the declared range would have left two
-                        // sliders offering years the query no longer sends.
+                        // Constants, not literals — duplicating these as strings previously
+                        // let the sliders drift out of sync with the declared range.
                         min: "{YEAR_MIN}",
                         max: "{YEAR_MAX}",
                         "aria-label": i18n.t("discover.releaseYearFrom"),
@@ -275,16 +272,13 @@ pub(super) fn TagChip(
                 let mut inc = inc;
                 let mut exc = exc;
                 if is_inc {
-                    // include -> exclude
                     let pos = inc.read().iter().position(|x| x == &slug);
                     if let Some(i) = pos { inc.write().remove(i); }
                     exc.write().push(slug.clone());
                 } else if is_exc {
-                    // exclude -> neutral
                     let pos = exc.read().iter().position(|x| x == &slug);
                     if let Some(i) = pos { exc.write().remove(i); }
                 } else {
-                    // neutral -> include
                     inc.write().push(slug.clone());
                 }
                 page.set(0);

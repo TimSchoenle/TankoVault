@@ -6,9 +6,8 @@
 //!   whole rotation family, not the token on screen, which would sign them out for exactly one
 //!   request cycle.
 //!
-//! Each is behind its own feature flag, so either can be absent; the tab shows whichever the
-//! deployment offers. Password change still has no screen, and the panel says so rather than
-//! showing a control that would do nothing.
+//! Each is behind its own feature flag; the tab shows whichever the deployment offers. Password
+//! change still has no screen.
 
 use crate::api;
 use crate::components::{async_list, PanelCard};
@@ -30,9 +29,8 @@ pub(crate) fn SecurityPanel() -> Element {
     let caps = use_capabilities();
     let reload = use_reload();
 
-    // Read once, above the resource: the fetch is skipped entirely when the deployment does not
-    // offer session management, because the route does not exist there and the panel would
-    // render an error box for a feature it has already decided not to show.
+    // Read once, above the resource: skips a fetch to a route that doesn't exist here, which
+    // would otherwise render an error box for a feature already decided not to show.
     let sessions_enabled = caps.has_feature(Feature::AccountsSessions);
 
     let sessions = use_resource(move || {
@@ -53,8 +51,7 @@ pub(crate) fn SecurityPanel() -> Element {
     });
 
     rsx! {
-        // Passkeys first: it is the credential a reader came here to add, while the session list
-        // is something they came here to audit.
+        // Passkeys first: the credential a reader came to add, not audit.
         if caps.has_feature(Feature::AccountsPasskeys) {
             super::passkeys::PasskeysCard {}
         }

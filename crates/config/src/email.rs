@@ -3,21 +3,15 @@
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
-/// Transport security for an SMTP relay.
-///
-/// Chosen explicitly rather than inferred from the port so an operator's intent is always
-/// unambiguous. For an OVH-hosted Exchange mailbox the usual choices are
-/// [`Self::Tls`] on port `465` (`ssl0.ovh.net`) or [`Self::StartTls`] on port `587`
-/// (`pro*.mail.ovh.net`).
+/// Transport security for an SMTP relay, chosen explicitly rather than inferred from the port.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EmailSecurity {
     /// Implicit TLS from the first byte (SMTPS, typically port 465).
     Tls,
-    /// Plain connection upgraded via the `STARTTLS` command (typically port 587).
+    /// Plain connection upgraded via `STARTTLS` (typically port 587).
     ///
-    /// The default: STARTTLS on 587 is the most broadly compatible option and matches OVH's
-    /// documented Exchange submission endpoint (`pro*.mail.ovh.net:587`).
+    /// The default: broadly compatible, and OVH's documented Exchange endpoint.
     #[default]
     StartTls,
     /// No transport security (plaintext; only for a trusted local relay / tests).
@@ -26,22 +20,15 @@ pub enum EmailSecurity {
 
 /// Outgoing-email settings for transactional messages (welcome, password reset).
 ///
-/// Two mutually exclusive ways to point at a relay:
-/// 1. A single [`Self::url`] in lettre's `AsyncSmtpTransport::from_url` format
-///    (e.g. `smtps://user:pass@ssl0.ovh.net:465`), which encodes host, port, TLS and
-///    credentials at once and takes precedence when set.
-/// 2. The explicit [`Self::host`]/[`Self::port`]/[`Self::username`]/[`Self::password`]/
-///    [`Self::security`] fields, which read more naturally for an OVH Exchange mailbox.
-///
-/// The channel is only enabled when a relay (`url` or `host`) and a [`Self::from`] address
-/// are both present; otherwise the app falls back to a no-op mailer that logs and drops.
+/// Either a single [`Self::url`] (lettre relay URL, takes precedence when set) or the explicit
+/// host/port/credentials/security fields. Enabled only when a relay and [`Self::from`] are
+/// both present; otherwise falls back to a no-op mailer.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct EmailConfig {
     /// Full lettre relay URL; takes precedence over the explicit fields below when set.
     ///
-    /// [`SecretString`]: the documented form embeds the mailbox password
-    /// (`smtps://user:pass@ssl0.ovh.net:465`), so this field is a credential even though the
-    /// two neighbouring host/port fields are not.
+    /// [`SecretString`]: the documented form embeds the mailbox password, unlike the
+    /// neighbouring host/port fields.
     #[serde(default)]
     pub url: Option<SecretString>,
     /// SMTP host (OVH Exchange: `pro3.mail.ovh.net` for STARTTLS or `ssl0.ovh.net` for TLS).
@@ -62,15 +49,11 @@ pub struct EmailConfig {
     /// Default `From` mailbox, e.g. `TankoVault <no-reply@example.com>`. Required to send.
     #[serde(default)]
     pub from: Option<String>,
-    /// SMTP envelope sender (the `MAIL FROM` / `Return-Path`) used at the protocol level,
-    /// which can differ from the visible [`Self::from`] header.
+    /// SMTP envelope sender (`MAIL FROM`), which can differ from the visible [`Self::from`]
+    /// header.
     ///
-    /// Providers that enforce "send as" checks — notably **OVH-hosted Exchange** — reject a
-    /// message whose envelope sender is not the authenticated mailbox (SMTP `550 5.7.60
-    /// Client does not have permissions to send as this sender`). Leave this unset to default
-    /// to [`Self::username`] (the authenticated login), which is what those providers require
-    /// while still letting the `From:` header show a different address; set it explicitly only
-    /// to override that reverse-path.
+    /// Providers enforcing "send as" checks (notably OVH Exchange) reject a mismatched
+    /// envelope sender; unset defaults to [`Self::username`] to satisfy that.
     #[serde(default)]
     pub envelope_from: Option<String>,
     /// Public base URL of the web app, used to build absolute links inside emails
@@ -101,9 +84,8 @@ impl EmailConfig {
         })
     }
 
-    /// The SMTP envelope sender (`MAIL FROM`), preferring an explicit [`Self::envelope_from`]
-    /// and otherwise falling back to the authenticated [`Self::username`]. Returns `None` when
-    /// neither is set, in which case the mailer uses the `From:` header address.
+    /// The effective envelope sender: explicit override, else the authenticated username, else
+    /// `None` (the mailer then uses the `From:` header).
     #[must_use]
     pub fn effective_envelope_from(&self) -> Option<&str> {
         self.envelope_from

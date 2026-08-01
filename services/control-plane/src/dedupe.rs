@@ -1,37 +1,6 @@
-//! The standing duplicate sweep: find series the catalogue holds twice, merge the certain ones
-//! and queue the rest.
-//!
-//! # Why this exists at all
-//!
-//! Canonicalisation used to happen in exactly one place — `resolve_canonical_series`, while a
-//! scanned source was being filed — and that place is the worst-informed moment in a series'
-//! life. The row being scored has no tags, no authors, no release year and no alternative
-//! titles yet; all of those arrive from a later enrichment pass, by which time the decision has
-//! been taken and nothing revisits it. A merge candidate recorded then is a *floor* on the
-//! score, not a verdict, and a duplicate missed then is missed forever.
-//!
-//! On a 26 418-series catalogue that produced 2 676 open candidates that nothing would ever
-//! re-judge, and 59 pairs with byte-identical whitespace-stripped titles that had never been
-//! queued at all because their trigram similarity (0.37–0.58) never reached the review floor.
-//!
-//! This sweep is the second look. It blocks the catalogue on the compact title key — an
-//! equality, so an index lookup rather than a similarity scan — re-scores every shortlisted
-//! pair with everything now known about both sides, and acts:
-//!
-//! - **[`MergeVerdict::Auto`]** — merge, without asking. Requires a *structural* identity signal
-//!   (the two titles are the same string modulo whitespace, or one side answers to the other's
-//!   name exactly) **and** a score at or above `matching.auto_merge`. A high score alone is not
-//!   enough, and never will be: the pairs that reach 0.97 on fuzzy similarity alone are exactly
-//!   the ones an operator needs to look at.
-//! - **[`MergeVerdict::Review`]** — record or refresh a queue row.
-//! - **[`MergeVerdict::Distinct`]** — withdraw an open queue row, if there is one.
-//!
-//! # Convergence
-//!
-//! A merge invalidates the facts the sweep loaded, so any further pair naming the absorbed
-//! series is skipped for the rest of the run. Chains (A ≡ B ≡ C where A and C do not collide
-//! directly) therefore resolve one link per sweep — and they *do* resolve, because merging B
-//! into A gives A the title B was found by, so the next sweep's alias blocking finds (A, C).
+//! The standing duplicate sweep: finds series the catalogue holds twice, merges the
+//! certain ones, and queues the rest for review, using richer signals than were available
+//! when the series were first ingested.
 
 use std::collections::{HashMap, HashSet};
 
@@ -43,13 +12,8 @@ use tankovault_domain::matching::MergeVerdict;
 use tankovault_domain::{SeriesId, UserId};
 use tankovault_matcher::{Assessment, Candidate, Query, adjudicate, assess};
 
-/// How much work one sweep may do.
-///
-/// Every field is a bound on a *background* action, and the last one is a bound on a background
-/// action that deletes rows. A sweep with no automatic-merge ceiling would let a mistaken
-/// threshold change collapse the whole catalogue between two scheduler ticks, with nothing
-/// between the mistake and the damage; with one, the blast radius of any single bad run is a
-/// number an operator chose.
+/// How much work one sweep may do. `max_auto_merges` bounds a background action that deletes
+/// rows — without it, a bad threshold change could collapse the whole catalogue in one run.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SweepBudget {
     /// Newly-blocked pairs to shortlist.
@@ -62,18 +26,12 @@ pub(crate) struct SweepBudget {
 
 /// Run one sweep.
 ///
-/// `actor` is the operator who triggered it, or `None` for the scheduled run — it lands in
-/// `merge_candidates.resolved_by`, so an automatic merge is attributable to the schedule rather
-/// than being silently unattributed.
+/// `actor` is the operator who triggered it, or `None` for the scheduled run — recorded
+/// in `merge_candidates.resolved_by` for attribution.
 ///
 /// # Errors
 ///
-/// Propagates database failures. A failure part-way through leaves the merges already committed
-/// — each is its own transaction — which is the correct granularity: they are independent
-/// decisions, and rolling back a merge that was right because a later one failed would be worse
-/// than stopping. The report describes what was done before the failure only when the call
-/// succeeds; on error the caller should assume partial progress and re-run, which is safe
-/// because every action the sweep takes is idempotent.
+/// Database failures; merges already committed stay committed (idempotent, safe to re-run).
 pub(crate) async fn sweep(
     pool: &PgPool,
     policy: &MatchingConfig,
@@ -88,10 +46,8 @@ pub(crate) async fn sweep(
         return Ok(MergeSweepView::default());
     }
 
-    // Two batched reads for the whole shortlist rather than two per pair. `pair_similarities`
-    // is the trigram term, which is a property of the pair and not of either series — without it
-    // an open queue row whose score came from a trigram match would be re-scored lower on no new
-    // evidence, and withdrawn.
+    // Batched reads for the whole shortlist. `pair_similarities` is per-pair, not
+    // per-series — omitting it would re-score a trigram-matched row lower on no new evidence.
     let facts = load_facts(pool, &pairs).await?;
     let similarity: HashMap<DuplicatePair, f32> = matching::pair_similarities(pool, &pairs)
         .await?
@@ -104,8 +60,8 @@ pub(crate) async fn sweep(
 
     for pair in pairs {
         let (a, b) = pair;
-        // A series merged earlier in this run no longer exists, and the facts loaded for it are
-        // stale. See the module docs on convergence.
+        // Facts loaded for an already-merged series are stale; skip it for the rest of the
+        // run — chains resolve one link per sweep.
         if absorbed.contains(&a) || absorbed.contains(&b) {
             continue;
         }
@@ -126,10 +82,8 @@ pub(crate) async fn sweep(
                     report.deferred += 1;
                     continue;
                 }
-                // The survivor is the series carrying more of the catalogue. Both sides' data is
-                // preserved either way — the merge unions everything — but the absorbed id stops
-                // existing, and every bookmark, notification and tracker mapping naming it
-                // breaks.
+                // Survivor keeps more of the catalogue. The absorbed id stops existing,
+                // breaking any bookmark, notification or tracker mapping that named it directly.
                 let (keep, drop) = if left.weight() >= right.weight() {
                     (left, right)
                 } else {
@@ -139,9 +93,8 @@ pub(crate) async fn sweep(
                     .await?;
                 absorbed.insert(drop.series_id);
                 report.auto_merged += 1;
-                // Logged at info, with both titles and the deciding signals: this is a
-                // destructive action taken without a human, so the log line has to be enough to
-                // audit the decision after the fact.
+                // Info-level with both titles and signals: this is a destructive, human-free
+                // action, so the log line must be enough to audit the decision after the fact.
                 tracing::info!(
                     keep = %keep.series_id,
                     keep_title = %keep.canonical_title,
@@ -201,11 +154,9 @@ async fn load_facts(
 
 /// Score the pair in **both** directions and keep the better answer.
 ///
-/// The scorer is not symmetric: [`Query`] carries no alternative titles, so
-/// `assess(left, right)` can see the *right* side's synonyms and not the left's. For a scan
-/// resolving an incoming source that asymmetry is correct — the incoming source genuinely has
-/// one title. Here both sides are established series with their own synonym lists, and scoring
-/// one direction only would miss every duplicate whose evidence happens to sit on the left.
+/// `Query` carries no alternative titles, so `assess(left, right)` sees only the right side's
+/// synonyms. Correct for a scan (the incoming source genuinely has one title), but here both
+/// sides have synonym lists, so scoring one direction only would miss duplicates.
 fn symmetric_assessment(
     left: &SeriesMatchFacts,
     right: &SeriesMatchFacts,

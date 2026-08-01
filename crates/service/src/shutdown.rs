@@ -1,20 +1,15 @@
 //! Cooperative shutdown.
 //!
-//! Every service previously ran `axum::serve(..).await` with no shutdown handling at all,
-//! so a container stop killed in-flight requests and background loops mid-write. A single
-//! [`CancellationToken`] fans one OS signal out to the HTTP server *and* to every spawned
-//! loop (schedulers, consumers, sweeps), letting each finish its current unit of work.
+//! A single [`CancellationToken`] fans one OS signal out to the HTTP server and to every
+//! spawned loop (schedulers, consumers, sweeps), letting each finish its current unit of work.
 
 use tokio_util::sync::CancellationToken;
 
 /// Install the OS-signal listener and return the token it cancels.
 ///
-/// Listens for `SIGINT` (Ctrl-C) everywhere and `SIGTERM` on Unix, which is what a
-/// container runtime sends first on stop. The listener task ends after the first signal;
-/// a second signal reaches the default handler and terminates the process immediately,
-/// which is the conventional escape hatch when a drain hangs.
-///
-/// Clone the returned token freely — cancellation is observed by every clone.
+/// Listens for `SIGINT` everywhere and `SIGTERM` on Unix. A second signal reaches the
+/// default handler and terminates the process immediately — the escape hatch for a hung
+/// drain. Clone the returned token freely.
 #[must_use]
 pub fn install_shutdown() -> CancellationToken {
     let token = CancellationToken::new();
@@ -56,13 +51,9 @@ async fn wait_for_signal() -> &'static str {
 
 /// Run `task` on `interval`, stopping promptly when `shutdown` is cancelled.
 ///
-/// The shared shape of every background loop in the system (scheduler sweeps, reconcile
-/// passes, retention sweeps). Written once here so none of them re-implement the
-/// select-on-cancel dance — the previous hand-rolled loops had no cancellation at all and
-/// could be killed part-way through a database write.
-///
-/// The first tick fires immediately after `interval` elapses, not at start-up, so a
-/// rolling restart does not stampede every replica's sweep at once.
+/// Shared shape for every background loop, so none re-implements the select-on-cancel
+/// dance. The first tick fires after `interval` elapses, not at start-up, so a rolling
+/// restart does not stampede every replica's sweep at once.
 pub async fn every<F, Fut>(
     interval: std::time::Duration,
     shutdown: CancellationToken,

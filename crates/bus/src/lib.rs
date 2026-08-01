@@ -1,9 +1,6 @@
-//! # tankovault-bus
-//!
-//! Thin `JetStream` helpers shared by the control-plane (producer), workers (task
-//! consumer), and notifier (event consumer): connect, provision the durable streams,
-//! publish tasks/events, and open a durable pull consumer. Subject/stream naming comes
-//! from [`tankovault_contracts::subjects`] so producers and consumers cannot drift.
+//! Thin `JetStream` helpers shared by the control-plane, workers, and notifier: connect,
+//! provision streams, publish tasks/events, and open pull consumers, all keyed off subject
+//! names in [`tankovault_contracts::subjects`].
 
 use async_nats::jetstream::{self, AckKind, consumer::PullConsumer, consumer::pull, stream};
 use futures::StreamExt;
@@ -18,44 +15,29 @@ use thiserror::Error;
 use uuid::Uuid;
 
 /// A message as it arrives from the broker: the envelope carrying a serialized
-/// [`ScanTaskMessage`] payload plus its ack handle.
-///
-/// Re-exported so services can name it without taking their own `async-nats` dependency —
-/// this crate stays the single place the broker client is pinned.
+/// [`ScanTaskMessage`] plus its ack handle. Re-exported so services need no direct
+/// `async-nats` dependency.
 pub use async_nats::jetstream::Message as BrokerMessage;
 
-/// A durable pull consumer on one subject, re-exported for the same reason as
+/// A durable pull consumer on one subject; re-exported for the same reason as
 /// [`BrokerMessage`].
 pub use async_nats::jetstream::consumer::PullConsumer as BrokerConsumer;
 
-/// Redelivery deadline for a claimed scan task.
-///
-/// This bounds how long a worker may go **silent**, not how long a task may take: a task
-/// that outlives it calls [`with_ack_heartbeat`] to keep extending the deadline. Keeping it
-/// modest is deliberate — a worker that crashes mid-task is redelivered within this window
-/// rather than after an hour of dead air.
+/// Redelivery deadline for a claimed scan task: bounds how long a worker may go **silent**,
+/// not how long a task may take (see [`with_ack_heartbeat`]). Kept modest so a crashed worker
+/// is redelivered quickly rather than after an hour of dead air.
 pub const TASK_ACK_WAIT: Duration = Duration::from_secs(300);
 
-/// How often an in-flight task reports progress, as a fraction of [`TASK_ACK_WAIT`].
-///
-/// Derived rather than written out so the two cannot drift apart: raising the deadline
-/// without widening the heartbeat would be harmless, but tightening it without tightening
-/// the heartbeat would silently reintroduce mid-task redelivery.
+/// How often an in-flight task reports progress, as a fraction of [`TASK_ACK_WAIT`]; derived
+/// so tightening one without the other can't silently reintroduce mid-task redelivery.
 pub const TASK_ACK_HEARTBEAT: Duration = Duration::from_secs(TASK_ACK_WAIT.as_secs() / 5);
 
 /// Run `work` while holding off redelivery of `msg`.
 ///
-/// `JetStream` redelivers any message not acked within the consumer's `ack_wait`. For work
-/// that legitimately runs longer than that — a catalogue page that registers twenty thousand
-/// series, a series with thousands of chapters — the fix is not a larger deadline (which
-/// also delays recovery from a genuine crash) but to say "still working": an
-/// [`AckKind::Progress`] resets the timer without settling the message.
-///
-/// This is the reason a slow task no longer means a *duplicated* task. Idempotent writes
-/// remain the correctness backstop; this keeps the duplication from happening at all.
-///
-/// A failed heartbeat is logged, not fatal: the work continues, and the worst case is the
-/// redelivery this exists to avoid — which the idempotency layer already tolerates.
+/// `JetStream` redelivers unacked messages after `ack_wait`; for work that legitimately runs
+/// longer, an [`AckKind::Progress`] resets the timer instead of raising the deadline (which
+/// would also delay crash recovery). A failed heartbeat is logged, not fatal — idempotent
+/// writes are the correctness backstop.
 pub async fn with_ack_heartbeat<F>(msg: &jetstream::Message, every: Duration, work: F) -> F::Output
 where
     F: std::future::Future,
@@ -544,11 +526,10 @@ impl Default for ConsumePolicy {
 
 /// Drive a durable pull consumer until `shutdown` is cancelled or the stream ends.
 ///
-/// This exists because the same loop was hand-rolled three times with three different
-/// meanings, and one of them was wrong: the notifier acked a message whose fan-out had
-/// **failed**, which is at-most-once delivery — a notification lost with a `warn!` as its only
-/// trace — while the control-plane's aggregator had no shutdown arm at all and could not drain
-/// on `SIGTERM`. Delivery semantics are not something three call sites should each decide.
+/// Consolidates a loop that used to be hand-rolled at three call sites with three different
+/// meanings — the notifier once acked a message whose fan-out had **failed** (a silently lost
+/// notification), and the control-plane's aggregator had no shutdown arm and could not drain on
+/// `SIGTERM`. Delivery semantics belong here, not at each call site.
 ///
 /// The contract:
 /// - Cancellation is checked only *between* messages, never mid-handler. Being killed between

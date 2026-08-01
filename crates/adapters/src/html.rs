@@ -1,8 +1,5 @@
-//! HTML extraction helpers shared by the config-driven adapters.
-//!
-//! Selector syntax: a plain CSS selector takes the element's inner text; a `sel@attr`
-//! suffix takes an attribute instead (design §7). All parsing here is deterministic and
-//! unit-tested so a provider markup change fails a fixture test, not production silently.
+//! HTML extraction helpers shared by the config-driven adapters. Selector syntax: a plain CSS
+//! selector takes the element's inner text; a `sel@attr` suffix takes an attribute instead.
 
 use crate::error::AdapterError;
 use scraper::{ElementRef, Selector};
@@ -14,31 +11,22 @@ use time::OffsetDateTime;
 use time::macros::format_description;
 use url::Url;
 
-/// Compiled selectors, keyed by their source text.
+/// Compiled selectors, keyed by source text.
 ///
-/// Selectors come from `providers.config`, not from constants, so `LazyLock<Selector>` cannot
-/// be used — but the *set* of them is tiny and fixed for a deployment (a handful per provider
-/// row), which is exactly the shape a memo fits.
-///
-/// Without this, `Selector::parse` ran on every call of every extractor, and the extractors
-/// are called inside per-item loops: a 100-item catalogue page cost 200 re-parses of two
-/// constant strings, and a sitemap-shard page — kunmanga yields up to 20 000 entries in one
-/// page — cost 40 000, which is tens to hundreds of milliseconds of pure re-tokenising per
-/// page, on every page of every scan.
+/// Selectors come from `providers.config`, not constants, so `LazyLock<Selector>` alone can't
+/// memoise them; without this cache, `Selector::parse` re-runs inside every per-item extractor
+/// loop, costing tens of milliseconds of re-tokenising per catalogue/sitemap page.
 static SELECTOR_CACHE: LazyLock<RwLock<HashMap<String, Arc<Selector>>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
-/// Upper bound on distinct cached selectors.
-///
-/// The legitimate population is bounded by the provider table, so this is not a working-set
-/// limit but a guard against a pathological config turning a memo into a leak. On overflow the
-/// cache stops growing and later selectors are simply parsed each time — slower, never wrong.
+/// Upper bound on distinct cached selectors — a guard against a pathological config turning
+/// the memo into a leak, not a working-set limit. Past this, later selectors are parsed each
+/// time instead of cached: slower, never wrong.
 const SELECTOR_CACHE_CAP: usize = 4096;
 
 /// Parse a CSS selector, mapping failures to a typed error. Memoised — see [`SELECTOR_CACHE`].
 ///
-/// Returns an `Arc` rather than a `Selector` so a cache hit is a refcount bump. Call sites are
-/// unchanged: `root.select(&sel)` coerces through the `Arc`.
+/// Returns an `Arc` so a cache hit is a refcount bump; call sites are unchanged.
 ///
 /// # Errors
 /// [`AdapterError::Selector`] if `spec` is not a valid selector.
@@ -64,18 +52,11 @@ pub fn parse_selector(spec: &str) -> Result<Arc<Selector>, AdapterError> {
 
 /// Parse a response body as HTML and run `extract` over it on the blocking thread pool.
 ///
-/// `Html::parse_document` is html5ever's full tokenise + tree-build: 5-50 ms of
-/// **uninterruptible** CPU for a 500 KB-2 MB catalogue page. Run inline on a Tokio worker
-/// thread, as every adapter did, that thread serves no other task for the whole window — and
-/// with several large pages parsing concurrently on a runtime sized to core count, *every*
-/// async task stalls, including the `JetStream` ack heartbeats the queue module is careful to
-/// keep on time.
-///
-/// The whole parse-and-extract phase has to move together, because `scraper::Html` and
-/// `ElementRef` are not `Send`: nothing borrowed from the document may cross back out, so the
-/// closure returns owned data. It also receives the [`FetchResponse`] — the diagnostics in
-/// [`AdapterError::missing`] and the challenge detectors need the envelope, and it is right
-/// there.
+/// `Html::parse_document` is uninterruptible CPU (5-50 ms for a large page); run inline on a
+/// Tokio worker it stalls every other async task on that thread, including queue heartbeats.
+/// The parse-and-extract phase must move together since `scraper::Html`/`ElementRef` are not
+/// `Send` — the closure returns owned data, and gets the [`FetchResponse`] since
+/// [`AdapterError::missing`] needs the envelope.
 ///
 /// # Errors
 /// Whatever `extract` returns, or [`AdapterError::Parse`] if the blocking task panicked.
@@ -89,10 +70,8 @@ where
         extract(doc.root_element(), &resp)
     })
     .await
-    // A join error here means the blocking task panicked (or the runtime is shutting down).
-    // `Parse` rather than a new variant: from the caller's point of view the document could
-    // not be turned into data, which is what `Parse` means, and it is correctly classified as
-    // non-retryable — a panic will reproduce on replay.
+    // Join error means the task panicked; classified as `Parse` (non-retryable) since a panic
+    // reproduces identically on replay.
     .map_err(|e| AdapterError::Parse(format!("HTML parse task failed: {e}")))?
 }
 
@@ -114,9 +93,8 @@ fn value_of(el: ElementRef<'_>, attr: Option<&str>) -> String {
 
 /// Split a label/value cell (`Alternative`, `Author(s)`, …) into its entries on `,`/`;`.
 ///
-/// Themes render these rows as one joined string, so splitting is the only way to get
-/// individual values out. A value that legitimately contains a comma is split too — accepted,
-/// because the alternative is storing `"A, B, C"` as a single title that matches nothing.
+/// Themes render these as one joined string; a value that legitimately contains a comma also
+/// splits, which is accepted.
 #[must_use]
 pub fn split_list(value: &str) -> Vec<String> {
     value
@@ -167,10 +145,8 @@ pub fn extract_all(root: ElementRef<'_>, spec: &str) -> Result<Vec<String>, Adap
 
 /// Parse the first numeric run in `text` (e.g. `"10.5"` from `"Chapter 10.5"`).
 ///
-/// Only ever yields a **finite** value. A digit run too long for `f64` parses to `inf` rather
-/// than failing, and an infinite chapter number is not a large chapter number — it is a value
-/// that cannot be compared, ordered or serialised. See the regression test
-/// `an_unrepresentable_digit_run_is_no_number_at_all`.
+/// Only ever yields a **finite** value: a digit run too long for `f64` parses to `inf` rather
+/// than failing, and an infinite value cannot be compared, ordered or serialised.
 #[must_use]
 pub fn parse_number(text: &str) -> Option<f64> {
     let mut num = String::new();
@@ -200,10 +176,8 @@ pub fn parse_number(text: &str) -> Option<f64> {
 )]
 pub fn parse_year(text: &str) -> Option<i32> {
     let y = parse_number(text)?;
-    // `is_finite` is kept although [`parse_number`] now guarantees it: this range check is
-    // what makes the cast below sound, and reading the guard next to the cast is the point.
-    // It was *also* the only finiteness check in this module for a while, which is how
-    // `parse_chapter_number` came to return `inf` — see that function's regression note.
+    // Redundant with `parse_number`'s guarantee, but this is what makes the cast below sound —
+    // removing it silently reopens the bug `parse_chapter_number`'s regression test pins.
     if y.is_finite() && y >= f64::from(i32::MIN) && y <= f64::from(i32::MAX) {
         Some(y as i32)
     } else {
@@ -214,44 +188,27 @@ pub fn parse_year(text: &str) -> Option<i32> {
 /// Parse a chapter number from listing text, preferring the number after a
 /// chapter/episode marker so `"Volume 2 Chapter 10.5"` yields `10.5`, not `2`.
 ///
-/// The marker search and the tail slice both run against the lowercased copy. Indexing the
-/// *original* with an offset found in the lowercased string is a panic: `to_lowercase` is not
-/// length-preserving (`"İ"` is 2 bytes and lowercases to 3), so the offset can land inside a
-/// multi-byte character. Only ASCII digits are read afterwards, so the case folding is
-/// immaterial to the result.
-///
-/// The return value becomes `chapters.number` and, through it, every reading-progress
-/// comparison and the `chapter.discovered` fan-out. Each case below is a label a real listing
-/// prints, and each is the reason a rule exists:
+/// Marker search and slicing both use the lowercased copy: indexing the original with an
+/// offset from `to_lowercase` can panic, since case folding is not length-preserving (e.g.
+/// `İ` grows by a byte). Only ASCII digits are read after the marker, so folding cannot
+/// corrupt the result.
 ///
 /// ```
 /// use tankovault_adapters::html::parse_chapter_number;
 ///
-/// // The marker wins over an earlier number, which is what makes volume-prefixed listings
-/// // parse at all.
 /// assert_eq!(parse_chapter_number("Volume 2 Chapter 10.5"), Some(10.5));
 /// assert_eq!(parse_chapter_number("CHAPTER 8"), Some(8.0));
 /// assert_eq!(parse_chapter_number("Ch. 99"), Some(99.0));
 /// assert_eq!(parse_chapter_number("#7 - The End"), Some(7.0));
-///
-/// // With no marker there is nothing to prefer, so the first number wins. This is the
-/// // fallback, not a special case.
 /// assert_eq!(parse_chapter_number("1024.1 - The End"), Some(1024.1));
 ///
-/// // The markers are searched in a fixed order, and `"chapter"` is found before `"ch "`.
-/// // So a label carrying both reads the *chapter* number, not the volume's.
+/// // Markers are searched in a fixed order: "chapter" before "ch ".
 /// assert_eq!(parse_chapter_number("Ch 3 (Chapter 40)"), Some(40.0));
 ///
-/// // A digit run too long for f64 is **no number at all**, not a very large one. This looks
-/// // like a lost chapter and is the only correct answer: `"9".repeat(320).parse::<f64>()` is
-/// // `Ok(inf)`, and an infinite chapter number freezes `latest_chapter` forever and
-/// // serialises to JSON `null`. See `an_unrepresentable_digit_run_is_no_number_at_all`.
+/// // A digit run too long for f64 is no number at all, not a very large one.
 /// assert_eq!(parse_chapter_number(&format!("Chapter {}", "9".repeat(320))), None);
 ///
-/// // Non-ASCII in the label is not an error — it is Tuesday. This is F-01's input.
 /// assert_eq!(parse_chapter_number("İİİ Chapter 12"), Some(12.0));
-///
-/// // Only the absence of any digit is `None`.
 /// assert_eq!(parse_chapter_number("Prologue"), None);
 /// ```
 #[must_use]
@@ -272,39 +229,30 @@ pub fn parse_chapter_number(text: &str) -> Option<f64> {
 /// (`/path?query`) suitable for storage. Handles absolute, root-relative, and
 /// document-relative hrefs.
 ///
-/// What comes back is what is stored in `chapters.path` / `sources.path` and later resolved
-/// against the provider's configured `base_url`, which is why the host is dropped: a provider
-/// that changes domain must not require a data migration.
+/// The host is dropped since this is stored in `chapters.path`/`sources.path` and resolved
+/// later against the provider's `base_url` — a provider that changes domain must not require
+/// a data migration.
 ///
 /// ```
 /// use tankovault_adapters::html::relativize;
 ///
 /// const PAGE: &str = "https://provider.test/manga/solo-leveling/";
 ///
-/// // All three href shapes a listing uses reduce to the same stored value.
 /// assert_eq!(relativize(PAGE, "chapter-10/"), "/manga/solo-leveling/chapter-10/");
 /// assert_eq!(relativize(PAGE, "/manga/solo-leveling/chapter-10/"), "/manga/solo-leveling/chapter-10/");
 /// assert_eq!(
 ///     relativize(PAGE, "https://provider.test/manga/solo-leveling/chapter-10/"),
 ///     "/manga/solo-leveling/chapter-10/"
 /// );
-///
-/// // The query survives, because paginated listings carry their page there.
 /// assert_eq!(relativize(PAGE, "?page=2"), "/manga/solo-leveling/?page=2");
-///
-/// // The fragment does not. Two anchors into one document are one page.
 /// assert_eq!(relativize(PAGE, "chapter-10/#top"), "/manga/solo-leveling/chapter-10/");
 ///
-/// // A *different* host is silently flattened to its path. This looks like a bug and is the
-/// // deliberate contract: the caller has already decided which provider it is talking to, and
-/// // a cross-host link on a scanlation listing is a mirror of the same work far more often
-/// // than it is a link somewhere else. Cover images take the opposite view and keep their host
-/// // — that is what `absolutize` is for.
+/// // Deliberate: a different host is flattened to its path, since the caller already knows
+/// // which provider it's talking to. Covers keep their host instead; see `absolutize`.
 /// assert_eq!(relativize(PAGE, "https://mirror.other.test/x/1/"), "/x/1/");
 ///
-/// // A foreign scheme is NOT rooted, because `Url::join` honours it and the path is all that
-/// // is left. Named here rather than papered over; see `relativize_yields_a_rooted_path` in
-/// // `tests/prop_html.rs`, whose strategy excludes `:` for exactly this reason.
+/// // A foreign scheme is not rooted: `Url::join` honours it, so only the path remains (see
+/// // `relativize_yields_a_rooted_path` in tests/prop_html.rs).
 /// assert_eq!(relativize(PAGE, "mailto:staff@provider.test"), "staff@provider.test");
 /// ```
 #[must_use]
@@ -328,10 +276,9 @@ pub fn relativize(page_url: &str, href: &str) -> String {
 
 /// Resolve `href` against the absolute `page_url` into an **absolute** URL string.
 ///
-/// Unlike [`relativize`], this preserves the host: an already-absolute href (e.g. a cover
-/// hosted on a separate CDN) passes through unchanged, while a relative one resolves
-/// against the page. Falls back to the trimmed `href` if `page_url` is unparseable. Used
-/// for values consumed directly by clients (covers), not for stored links.
+/// Unlike [`relativize`], preserves the host: an already-absolute href (e.g. a CDN-hosted
+/// cover) passes through unchanged. Falls back to trimmed `href` if `page_url` is
+/// unparseable. Used for values consumed directly by clients (covers), not stored links.
 #[must_use]
 pub fn absolutize(page_url: &str, href: &str) -> String {
     Url::parse(page_url)
@@ -374,9 +321,8 @@ pub fn parse_ymd_date(text: &str) -> Option<OffsetDateTime> {
 /// Unescape the five predefined XML/HTML entities (`&amp;` resolved last so a
 /// double-encoded `&amp;lt;` decodes one level, not two).
 ///
-/// Enough for text that a challenge solver or an XML viewer re-encoded on its way through a
-/// DOM — JSON or XML wrapped in rendered markup — which is the only place adapters need it;
-/// real page text is unescaped by the HTML parser itself.
+/// Only needed for markup re-encoded by a challenge solver or XML viewer; real page text is
+/// already unescaped by the HTML parser.
 #[must_use]
 pub fn unescape_entities(s: &str) -> String {
     s.replace("&lt;", "<")
@@ -392,10 +338,9 @@ mod tests {
     use super::*;
     use scraper::Html;
 
-    /// Regression: `to_lowercase` is not length-preserving, so a byte offset found in the
-    /// lowercased copy must never be applied to the original. `"İ"` (U+0130, 2 bytes) folds
-    /// to `"i̇"` (3 bytes), which shifted every later offset and split a multi-byte character.
-    /// Reachable from any provider's chapter-anchor text.
+    /// Regression: a byte offset found in the lowercased copy must never index the original —
+    /// `to_lowercase` isn't length-preserving (`İ` grows a byte), which used to split a
+    /// multi-byte character.
     #[test]
     fn parse_chapter_number_survives_non_length_preserving_case_folding() {
         assert_eq!(parse_chapter_number("İİİİ Chapter 12"), Some(12.0));
@@ -406,32 +351,13 @@ mod tests {
         assert_eq!(parse_chapter_number("İİİ"), None);
     }
 
-    /// **Regression: a long enough digit run used to become an *infinite* chapter number.**
+    /// Regression: a digit run too long for `f64` used to parse as infinity
+    /// (`"9".repeat(320).parse::<f64>()` is `Ok(inf)`) — a non-finite chapter number never
+    /// compares greater than anything and serialises to JSON `null`, so `latest_chapter` froze
+    /// and the chapter-discovered notification silently stopped firing. Fixed in
+    /// `parse_number`, guarded by `parse_number_is_always_finite` in `tests/prop_html.rs`.
     ///
-    /// `parse_number` ended in `.parse::<f64>().ok()`, and Rust's float parser does not fail on
-    /// a decimal outside `f64`'s range — `"9".repeat(320).parse::<f64>()` is `Ok(inf)`. So a
-    /// listing whose anchor read `Chapter 999…9` yielded `Some(f64::INFINITY)`.
-    ///
-    /// `parse_year` had guarded against exactly this since it was written (`y.is_finite()`);
-    /// `parse_chapter_number` never did, and it is the one whose value is persisted. The
-    /// consequences are all silent:
-    ///
-    /// - `chapters.number` is `double precision`, which accepts `Infinity`, so it stores.
-    /// - `latest_chapter` then never advances again — nothing is greater than `inf` — so every
-    ///   genuinely new chapter of that series stops being reported as new.
-    /// - `floor(number)` is `inf`, so the read-progress predicates (PERF-12) match nothing.
-    /// - **`serde_json` serialises a non-finite float as `null`.** `chapter.discovered` carries
-    ///   `Vec<f64>`, so the message goes onto the bus with a `null` where a number belongs,
-    ///   fails to deserialise in the notifier, and is dropped as undecodable (ARCH-14) — taking
-    ///   the whole scan's notification fan-out with it.
-    ///
-    /// Found while writing the oracle for the `adapters_generic_series_page` fuzz target, which
-    /// needed an answer to "what may a `ChapterMeta.number` be?". Fixed in `parse_number` rather
-    /// than in `parse_chapter_number`, so every present and future caller inherits it; the
-    /// property `parse_number_is_always_finite` in `tests/prop_html.rs` is the standing guard.
-    ///
-    /// A rejected number is *skipped*, not clamped: `GenericConfigAdapter` drops a chapter whose
-    /// number will not parse, which is the right answer for a label no ordering can place.
+    /// A rejected number is skipped, not clamped — correct for a label no ordering can place.
     #[test]
     fn an_unrepresentable_digit_run_is_no_number_at_all() {
         let overlong = "9".repeat(320);
@@ -445,8 +371,7 @@ mod tests {
         assert_eq!(parse_chapter_number(&format!("Chapter {overlong}")), None);
         assert_eq!(parse_year(&overlong), None);
 
-        // The boundary stays usable: a value f64 can represent is still a number, however
-        // absurd, because the guard is about representability and not about plausibility.
+        // Still usable at the boundary: the guard is about representability, not plausibility.
         assert_eq!(
             parse_number(&"9".repeat(308)).map(f64::is_finite),
             Some(true)
@@ -460,8 +385,7 @@ mod tests {
         assert_eq!(parse_chapter_number("Ch. 99"), Some(99.0));
     }
 
-    /// The point of the memo is that the second parse of the same spec is free. Pinned by
-    /// identity rather than by timing, which is the fact that actually matters and does not
+    /// The memo means a repeat parse is free; pinned by identity, not timing, so it doesn't
     /// flake on a loaded machine.
     #[test]
     fn selectors_are_parsed_once_and_reused() {

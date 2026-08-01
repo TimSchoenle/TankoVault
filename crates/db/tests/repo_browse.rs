@@ -1,18 +1,7 @@
-//! The browse/discover read model (`crates/db/src/repo/catalog/browse.rs`, TEST F-05).
+//! Discover/browse read-model tests: the recency page, sort-token page and count statements
+//! duplicate one predicate (`sqlx` needs a string literal per query) and must stay in agreement.
 //!
-//! This is the unauthenticated, highest-traffic route in the product, and PERF-2 left it with
-//! **three copies of the same nine-predicate `WHERE` clause** — one in the recency page
-//! statement, one in the sort-token page statement, one in the count. `sqlx`'s compile-time
-//! macros need a string literal, so the duplication cannot be factored away; the only thing
-//! that can catch a predicate drifting in one copy and not the others is a test that asserts
-//! the three agree. That is what [`the_three_copies_of_the_where_clause_agree`] does, and it
-//! is the reason this file exists.
-//!
-//! The failure it guards against is quiet: a filter that applies under four sort orders and
-//! not the fifth returns a plausible page, and a total that disagrees with the page gives the
-//! pager a page number that comes back empty.
-//!
-//! Opt-in: gated behind the `integration` feature because it requires Docker.
+//! Gated behind the `integration` feature (requires Docker).
 #![cfg(feature = "integration")]
 
 use tankovault_db::repo::catalog::{
@@ -22,9 +11,7 @@ use tankovault_db::repo::catalog::{
 use tankovault_domain::{ContentType, ProviderId, SeriesId, SeriesStatus};
 use tankovault_test_support::{TestDb, seed};
 
-// ---------------------------------------------------------------------------
 // Fixture
-// ---------------------------------------------------------------------------
 
 /// One series to ingest. Titles are deliberately unlike one another so the canonicalisation
 /// pipeline cannot collapse two of them into one and quietly shrink the corpus.
@@ -94,12 +81,8 @@ const CORPUS: &[Seed] = &[
     },
 ];
 
-/// Pin every series' `updated_at` to a known instant.
-///
-/// Two tests need this rather than the ingest order: the recency order must be predictable,
-/// and `sources`/`year` order tie-breaks on `updated_at DESC` so the expected sequence is only
-/// well defined once the timestamps are. Ingesting the same series from a second provider
-/// re-touches its row, so the natural order is not the seeding order.
+/// Pins each series' `updated_at` so recency order and `updated_at DESC` tie-breaks are
+/// deterministic regardless of ingest order.
 const PIN_UPDATED_AT: &str = "UPDATE series SET updated_at = timestamptz '2024-01-01 00:00:00Z' \
      + CASE canonical_title \
          WHEN 'Berserk' THEN interval '1 day' \
@@ -108,9 +91,7 @@ const PIN_UPDATED_AT: &str = "UPDATE series SET updated_at = timestamptz '2024-0
          WHEN 'Frieren' THEN interval '4 days' \
          ELSE interval '5 days' END";
 
-/// The parameter is `fixture`, not `seed`: a binding called `seed` would shadow the
-/// `tankovault_test_support::seed` module inside this function, and the next person to reach for
-/// a builder here would get a baffling resolution error.
+/// Named `fixture`, not `seed`, to avoid shadowing the `seed` module.
 async fn ingest(db: &TestDb, provider_id: ProviderId, fixture: &Seed, chapters: usize) -> SeriesId {
     let numbers: Vec<f64> = (1..=chapters)
         .map(|n| {
@@ -134,9 +115,8 @@ async fn ingest(db: &TestDb, provider_id: ProviderId, fixture: &Seed, chapters: 
         .await
 }
 
-/// Seed the whole corpus on provider `alpha`, plus a second source for `Solo Leveling` on
-/// `beta` so `source_count`, the `sources` order and the `provider_slug` filter all have
-/// something to distinguish.
+/// Seeds the corpus on provider `alpha`, plus a second `beta` source for Solo Leveling so
+/// `source_count`, `sources` order and `provider_slug` all have something to distinguish.
 async fn seed_corpus(db: &TestDb) {
     let alpha = seed::provider(db, "alpha").create().await;
     let beta = seed::provider(db, "beta").create().await;
@@ -257,19 +237,10 @@ fn filter_matrix() -> Vec<(&'static str, SeriesFilter)> {
     ]
 }
 
-// ---------------------------------------------------------------------------
-// The differential test — the reason this file exists
-// ---------------------------------------------------------------------------
+// The differential test
 
-/// The recency page, the sort-token page and the count must select the same rows.
-///
-/// The `WHERE` clause is written out three times because `sqlx::query_as!` needs a string
-/// literal and will not expand `concat!`. Nothing but this test notices when one copy gains a
-/// predicate the others do not: the page still renders, the pager still counts, and a filter
-/// silently applies under some sort orders and not others.
-///
-/// Asserted as a set, not a sequence — ordering is [`every_sort_order_orders_by_its_own_key`]'s
-/// job, and mixing the two would make an ordering bug look like a filtering bug.
+/// The recency page, sort-token page and count must select the same rows. Asserted as a set,
+/// not a sequence — ordering is [`every_sort_order_orders_by_its_own_key`]'s job.
 #[tokio::test]
 async fn the_three_copies_of_the_where_clause_agree() {
     let db = TestDb::spawn().await;
@@ -313,15 +284,10 @@ async fn the_three_copies_of_the_where_clause_agree() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Filtering
-// ---------------------------------------------------------------------------
 
-/// Each filter narrows to exactly the rows it names.
-///
-/// The differential test above only proves the three statements agree — they could agree on
-/// the wrong answer, which is what a dropped `AND` looks like. These expectations are written
-/// out so a predicate that stops constraining anything fails here.
+/// Each filter narrows to exactly its rows — the differential test above only proves the
+/// three statements agree, not that they're right.
 #[tokio::test]
 async fn each_filter_narrows_to_exactly_its_rows() {
     let db = TestDb::spawn().await;
@@ -369,11 +335,8 @@ async fn each_filter_narrows_to_exactly_its_rows() {
     }
 }
 
-/// `year_max` must not swallow the series that has no year at all.
-///
-/// `release_year <= $5` is NULL for `Oyasumi Punpun`, so it drops out — correct, and worth
-/// pinning because the obvious "fix" of `COALESCE(release_year, 0)` would make an unknown year
-/// sort and filter as 1 BC.
+/// A year bound must not swallow a series with no year: `release_year <= $5` is NULL for it,
+/// so it drops out — `COALESCE(release_year, 0)` would wrongly make it sort as 1 BC.
 #[tokio::test]
 async fn a_series_without_a_year_is_outside_every_year_bound() {
     let db = TestDb::spawn().await;
@@ -436,16 +399,10 @@ async fn tags_require_all_and_exclude_tags_remove_any() {
     assert_eq!(sorted_titles(&excluded), vec!["Oyasumi Punpun"]);
 }
 
-// ---------------------------------------------------------------------------
 // Ordering
-// ---------------------------------------------------------------------------
 
-/// Every sort order produces its own sequence.
-///
-/// Four of the six are bound `CASE` expressions keyed on the token string, so a renamed token
-/// disables that order and falls through to the trailing `updated_at DESC` — a page that looks
-/// sorted by *something* and is not sorted by what was asked for. The corpus is chosen so no
-/// two of these expected sequences coincide, which is what makes the assertion discriminating.
+/// Every sort order produces its own sequence; a renamed `CASE` token would silently fall
+/// through to `updated_at DESC` instead of erroring.
 #[tokio::test]
 async fn every_sort_order_orders_by_its_own_key() {
     let db = TestDb::spawn().await;
@@ -505,9 +462,8 @@ async fn every_sort_order_orders_by_its_own_key() {
             ],
         ),
         (
-            // No rating column exists; the token is accepted and served by recency. If this
-            // ever diverges from the `Updated` sequence above, someone added a column and
-            // forgot that `is_recency` still routes this order to the recency statement.
+            // No rating column yet; served by recency — diverging from Updated above means
+            // `is_recency` no longer routes this here.
             SeriesSort::Rating,
             &[
                 "Oyasumi Punpun",
@@ -533,12 +489,8 @@ async fn every_sort_order_orders_by_its_own_key() {
     }
 }
 
-/// Adjacent pages must neither repeat a row nor skip one when the leading sort key ties.
-///
-/// Both page statements end with `s.id DESC` for exactly this reason. Without it, rows sharing
-/// `updated_at` have no defined order between two `OFFSET` queries, so page 2 can re-serve a
-/// row from page 1 and lose another entirely — and the pager's total still looks right, which
-/// is why nobody notices.
+/// Adjacent pages must neither repeat nor skip a row when the leading sort key ties. Both page
+/// statements end with `s.id DESC` for exactly this reason.
 #[tokio::test]
 async fn paging_a_tied_sort_key_neither_repeats_nor_skips() {
     let db = TestDb::spawn().await;
@@ -579,16 +531,10 @@ async fn paging_a_tied_sort_key_neither_repeats_nor_skips() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Search
-// ---------------------------------------------------------------------------
 
-/// A work searched for under a non-primary name must be found.
-///
-/// The alternative-title branch (`EXISTS … series_titles st WHERE st.normalized % $1`) is the
-/// only reason a Korean romanisation finds the English release. `Solo Leveling`'s own
-/// normalized title is nothing like the query, so this row can only come back through
-/// `series_titles` — dropping that branch fails here and nowhere else.
+/// A work searched under a non-primary name must be found — only the `series_titles`
+/// alternative-title branch can return this row, so dropping that branch fails only here.
 #[tokio::test]
 async fn search_finds_a_series_by_its_alternative_title() {
     let db = TestDb::spawn().await;
@@ -618,11 +564,8 @@ async fn search_finds_a_series_by_its_alternative_title() {
     );
 }
 
-/// A blank or whitespace-only query is *no* search, not a search for nothing.
-///
-/// `list_series_filtered` trims and discards an empty query before binding it. If it bound
-/// `''` instead, the trigram predicate would match no row and Discover would render empty for
-/// a user who cleared the search box.
+/// A blank/whitespace query is no search, not a search for nothing — binding `''` would match
+/// no row via the trigram predicate and render Discover empty.
 #[tokio::test]
 async fn a_blank_query_is_not_a_filter() {
     let db = TestDb::spawn().await;
@@ -642,9 +585,7 @@ async fn a_blank_query_is_not_a_filter() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Per-series reads
-// ---------------------------------------------------------------------------
 
 /// The per-series enrichment reads return what was ingested, alphabetically, and an empty
 /// vector — never an error — for a series that has none.

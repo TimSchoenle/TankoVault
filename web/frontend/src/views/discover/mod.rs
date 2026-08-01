@@ -1,22 +1,5 @@
-//! Discover (`DESIGN_SPEC` §7.2) — a two-pane screen: a collapsible **filter panel**
-//! (content-type / status / tags / providers / release-year / min-chapters / presets) and a
-//! **results** pane with a sort select, removable active-filter chips, a count line, the
-//! cover-card grid, and pagination.
-//!
-//! **Data.** Every control now filters/sorts/paginates **server-side** via
-//! `GET /v1/series` (§9.1): content-type, status, provider slug, include/exclude tags,
-//! release-year range, minimum chapters, sort, and offset pagination. The match total +
-//! next page ride on the `X-Total-Count` / `X-Next-Cursor` headers (surfaced as
-//! [`SeriesPage`](crate::models::SeriesPage)). The provider facet is populated from the
-//! public `GET /v1/providers` list (§9.3).
-//!
-//! Search (§7.6) shares the cover grid with a larger query echo and a result count, and lives
-//! in [`crate::views::search`] — it is a different route that happened to be declared in this
-//! file.
-//!
-//! The panel and the chip bar live in [`filters`] and [`active`]: three chip components and a
-//! fourteen-prop panel are a screen of their own, and keeping them here made this module the
-//! third-largest in the crate.
+//! Discover (`DESIGN_SPEC` §7.2): filter panel plus results grid, filtered/sorted/paginated
+//! server-side via `GET /v1/series` (§9.1); the panel and chip bar live in [`filters`] and [`active`].
 
 mod active;
 mod filters;
@@ -111,9 +94,8 @@ pub(crate) fn Discover() -> Element {
     let i18n = use_i18n();
     let api = api::use_api();
 
-    // Facet data. A failure degrades to an empty facet rather than an error state: the grid
-    // is still usable without the tag or provider filter, and blocking the whole screen on a
-    // secondary list would be worse than offering fewer controls.
+    // Degrades to an empty facet on failure rather than blocking the screen — a missing
+    // tag/provider filter is cheaper than an error state.
     let tags_res = use_resource(move || {
         let client = api.client();
         async move {
@@ -256,9 +238,8 @@ pub(crate) fn Discover() -> Element {
                 };
             }
             rsx! {
-                // One interpolated sentence rather than span-wrapped fragments: splitting a
-                // sentence around markup fixes its word order to English and leaves the
-                // translator with unorderable scraps.
+                // One interpolated sentence, not span-wrapped fragments — splitting around
+                // markup fixes word order to English, unorderable in other languages.
                 div { class: "ik-count-line",
                     {
                         i18n.args(

@@ -1,13 +1,7 @@
-//! Chapter ingest against a real, migrated schema.
+//! Chapter ingest against a real, migrated schema — pins the batching semantics
+//! `chapter.discovered` depends on.
 //!
-//! `ingest_series` used to upsert chapters one row at a time inside a single transaction that
-//! also holds row locks on the shared `tags` and `authors` rows — so a series with two
-//! thousand chapters meant two thousand sequential round trips, and every other provider's
-//! ingest queued behind it. Batching it into one statement is a meaningful change to a path
-//! whose output drives `chapter.discovered` notifications, so the semantics it has to preserve
-//! are pinned here rather than assumed.
-//!
-//! Opt-in: gated behind the `integration` feature because it requires Docker.
+//! Gated behind the `integration` feature (requires Docker).
 #![cfg(feature = "integration")]
 
 use tankovault_config::MatchingConfig;
@@ -52,9 +46,8 @@ fn scanned(
     }
 }
 
-/// The contract `chapter.discovered` rests on: a first ingest reports every chapter as new,
-/// and re-ingesting the identical listing reports none. Getting the second half wrong would
-/// re-notify every watcher on every scan cycle.
+/// A first ingest reports every chapter as new; re-ingesting the identical listing must report
+/// none, or every watcher is re-notified on every scan cycle.
 #[tokio::test]
 async fn a_rescan_of_an_unchanged_listing_discovers_nothing() {
     let db = TestDb::spawn().await;
@@ -147,13 +140,8 @@ async fn only_added_chapters_are_reported_and_edits_are_applied_quietly() {
     assert_eq!(path, "/c/1-fixed");
 }
 
-/// The reason the batch uses `DISTINCT ON`.
-///
-/// `ON CONFLICT DO UPDATE` cannot touch the same row twice within one statement — Postgres
-/// raises SQLSTATE 21000, "ON CONFLICT DO UPDATE command cannot affect row a second time".
-/// A provider listing the same chapter number twice on one page is real and recurring, and
-/// the row-at-a-time loop this replaced simply applied the last one. So must the batch, and
-/// it must not error.
+/// A provider listing the same chapter number twice is real and recurring; `ON CONFLICT DO
+/// UPDATE` aborts on a repeated row, so `DISTINCT ON` must keep the last spelling instead.
 #[tokio::test]
 async fn a_listing_that_repeats_a_chapter_number_does_not_abort_the_batch() {
     let db = TestDb::spawn().await;

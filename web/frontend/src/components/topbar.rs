@@ -23,10 +23,7 @@ pub(crate) fn TopBar() -> Element {
 
     let signed_in = session.is_authenticated();
 
-    // AniList link state for the pill. This reads the endpoint's real `linked` flag: it used
-    // to treat *any* successful response as "synced", because the endpoint was untyped and
-    // the flag was invisible — so the pill claimed a connection that did not exist. The
-    // response body is now part of the generated client, so the claim is checkable.
+    // Reads the endpoint's real `linked` flag rather than treating any success as synced.
     let status = use_resource(move || {
         let client = api.client();
         async move {
@@ -92,10 +89,7 @@ pub(crate) fn TopBar() -> Element {
                         },
                         Ic { icon: Icon::Notifications, size: 18 }
                         if unread > 0 {
-                            // Polite, not assertive: a chapter landing while the reader is
-                            // mid-sentence elsewhere should not interrupt them. The count is
-                            // pushed by the SSE stream, so without a live region the change
-                            // is silent.
+                            // Polite, not assertive: an SSE-pushed count should not interrupt the reader.
                             span { class: "dot", "aria-live": "polite", "{unread}" }
                         }
                     }

@@ -1,18 +1,6 @@
-//! # tankovault-domain
-//!
 //! Pure domain types for the `TankoVault` manga aggregator: entities, typed ids, enums, the
-//! [`Permission`] and [`Feature`] registries, the migration-safe [`resolve_link`] resolver,
-//! crawl [`Politeness`], and title [`normalize_title`]. No I/O, no async, no persistence —
-//! this crate is the shared vocabulary every other crate speaks.
-//!
-//! Authorization is **permission-based**, not role-based: see [`permissions`] for why the
-//! ordered `user < operator < admin` tier was removed rather than extended. Every product
-//! capability is switchable at runtime from the control plane; the registry of what is
-//! switchable lives in [`features`].
-//!
-//! Key invariants (design Appendix A):
-//! 1. Store relative paths, resolve at read time via the single [`resolve_link`] fn.
-//! 2. Links and metadata only — there is no image/content type anywhere in this crate.
+//! [`Permission`] and [`Feature`] registries, the [`resolve_link`] resolver, crawl
+//! [`Politeness`], and title [`normalize_title`]. No I/O, no async, no persistence.
 
 pub mod entities;
 pub mod enums;

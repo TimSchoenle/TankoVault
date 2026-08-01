@@ -1,36 +1,6 @@
 //! Watchlist — one filtered, sorted, virtualized list (design turn 4, option `4a`; the cover
-//! grid is `4b` and lives in [`grid`]).
-//!
-//! # What replaced what
-//!
-//! This screen used to be a five-column drag-and-drop kanban. At the size a real account
-//! reaches — 598 tracked titles, 564 of them `Reading` — that layout has no chance: a column is
-//! a 500-card scroll, drag cannot retarget forty titles, and every card is a fixed block so
-//! nothing is scannable. **Status is now a filter, not a layout.** One list, ordered by newest
-//! release and banded Today / This week / Earlier, puts the triage queue at the top of the page
-//! where the reader's actual question ("what do I read next?") is answered.
-//!
-//! Drag-and-drop is deleted outright rather than kept alongside. It was never the accessible
-//! path — the per-card `<select>` was — and keeping a second, worse mover would have meant two
-//! code paths for every status change. `J`/`K`/`X`/`↵` replace it, and the row menu is now the
-//! keyboard-operable mover the quality floor (§11) requires.
-//!
-//! # Where the work happens
-//!
-//! Filtering, sorting, grouping and paging are **server-side** (`GET /v1/me/watchlist`, §4.2).
-//! The client never holds 598 rows in order to sort them; that is the entire point of the
-//! redesign, and it is why this module has no comparator in it. The tab counts and the group
-//! aggregates come from the same response, so a header cannot disagree with the rows under it.
-//!
-//! # Layout of this module
-//!
-//! | module | owns |
-//! |---|---|
-//! | [`query`] | the URL-mirrored view state and its encoding |
-//! | [`toolbar`] | the status tabs and the filter/sort toolbar |
-//! | [`row`] | the 54px row, its overflow menu and the group header |
-//! | [`bulk`] | the multi-select bulk bar |
-//! | [`grid`] | the cover-grid alternate (`4b`) |
+//! grid is `4b`, in [`grid`]). Filtering, sorting, grouping and paging are server-side
+//! (`GET /v1/me/watchlist`, §4.2), so this module holds no comparator over the rows.
 
 mod bulk;
 mod grid;
@@ -70,11 +40,9 @@ const SYNC_PROVIDER: &str = "anilist";
 
 /// Which release-recency band a row renders under.
 ///
-/// **Rolling windows, matching the server's** (`ReleaseBucket` in
-/// `crates/db/src/repo/tracking/watchlist.rs`): "Today" is the last 24 hours, not the current
-/// calendar day. The server has no idea what timezone this browser is in, so a calendar-day
-/// bucket would be wrong by up to a day for anyone off UTC — and the aggregates in the group
-/// headers come from the server, so the two rules have to be the same one.
+/// Must match the server's `ReleaseBucket` rolling windows — "Today" is the last 24 hours, not
+/// the calendar day, since the server doesn't know this browser's timezone and the group
+/// header aggregates come from the server too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum Bucket {
     Today,
@@ -104,10 +72,8 @@ impl Bucket {
 
 /// Band a release timestamp, given its age in milliseconds.
 ///
-/// Split from the clock so the boundaries stay unit-testable on the host target, the way
-/// [`crate::util`]'s freshness rule is. A *negative* age — this browser's clock behind the
-/// server's — bands as `Today` rather than falling through to `Earlier`: it is a chapter that
-/// just landed, and the alternative is a fresh release hiding at the bottom of the page.
+/// Split from the clock for host-target testability. A negative age (clock behind the
+/// server's) bands as `Today` rather than `Earlier`, so a skewed clock can't bury a fresh release.
 fn bucket_of_age(age_ms: f64) -> Bucket {
     const DAY: f64 = 24.0 * 3_600_000.0;
     if age_ms < DAY {
@@ -134,9 +100,8 @@ fn bucket_of(ts: Option<&str>) -> Bucket {
 
 /// What the list renders, in order: band headings interleaved with the rows under them.
 ///
-/// Precomputed rather than decided inside the `for` loop, because a heading has to be emitted
-/// *between* two rows and `rsx!` has nowhere to keep the "what band was the last row in?" state
-/// that would need.
+/// Precomputed rather than decided in the `for` loop — `rsx!` has nowhere to keep "what band
+/// was the last row in" state between iterations.
 enum Entry {
     Band(Bucket),
     Row(usize),
@@ -144,9 +109,8 @@ enum Entry {
 
 /// Interleave band headings into the row order.
 ///
-/// Relies on the rows arriving grouped, which they do: the server orders by release instant,
-/// so rows of one band are contiguous. Under any other sort the bands describe nothing and
-/// [`Sort::groups_by_release`] switches them off entirely.
+/// Relies on rows arriving already grouped (the server sorts by release instant); under any
+/// other sort the bands are meaningless, so [`Sort::groups_by_release`] disables them.
 fn layout(items: &[WatchlistItem], grouped: bool) -> Vec<Entry> {
     let mut out = Vec::with_capacity(items.len() + 3);
     let mut current: Option<Bucket> = None;
@@ -166,10 +130,8 @@ fn layout(items: &[WatchlistItem], grouped: bool) -> Vec<Entry> {
 /// One fetch's worth of state: the view the URL describes, plus how many pages deep the reader
 /// has scrolled.
 ///
-/// The two live in **one** signal rather than two so they can only ever change together. Kept
-/// apart, a filter change and the page-depth reset that must accompany it are two separate
-/// invalidations, and the resource fires once against the stale depth in between — refetching
-/// six hundred rows for a list the reader has already navigated away from.
+/// Kept in one signal so a filter change and its page-depth reset can't land as two separate
+/// invalidations — split, the resource would fire once against the stale depth first.
 #[derive(Clone, PartialEq)]
 struct Request {
     query: WatchlistQuery,
@@ -177,11 +139,9 @@ struct Request {
 }
 
 impl Request {
-    /// Rows to ask for. Every page the reader has reached is refetched, not just the newest
-    /// one: the response is then always the complete prefix of the list, which removes the
-    /// entire class of accumulate-and-deduplicate bugs that an append-only cache has (a filter
-    /// change racing an in-flight page, a `reload` at depth appending a second copy of
-    /// everything). The server walks the same indexed set either way.
+    /// Rows to ask for: every page reached so far, refetched as one complete prefix rather than
+    /// appended — this avoids the accumulate-and-dedupe bugs an append-only cache has (a filter
+    /// change racing an in-flight page, a `reload` appending a duplicate).
     fn limit(&self) -> i64 {
         PAGE_SIZE.saturating_mul(self.pages)
     }
@@ -206,8 +166,8 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
     let syncing = use_busy();
     let mut outcome = use_outcome();
     let nav = navigator();
-    // Provided once instead of threaded through the row, its menu and the bulk bar as six
-    // separate props. Every handle in it is `Copy`, so this is a context lookup, not a clone.
+    // Context, not six threaded props — every handle in `RowCtx` is `Copy`, so this is a
+    // lookup, not a clone.
     let ctx = use_context_provider(|| RowCtx {
         api,
         i18n,
@@ -225,10 +185,8 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
     let mut focus = use_signal(|| 0usize);
     let menu_for = use_signal(|| Option::<SeriesId>::None);
 
-    // The route is the source of truth for the view state; this is what makes a route change
-    // (a tab click, the back button, a pasted link) restart paging from the top. Guarded on
-    // inequality because `Signal::set` invalidates unconditionally — without the guard the
-    // first render would schedule a second, identical fetch.
+    // Route is the source of truth for view state, so a route change restarts paging. Guarded
+    // on inequality, or `Signal::set`'s unconditional invalidation double-fetches on first render.
     use_effect(use_reactive!(|query| {
         if request.peek().query != query {
             request.set(Request { query, pages: 1 });
@@ -284,9 +242,8 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
         }
     });
 
-    // Mirror the response into local state. The list renders from `board`, not from the
-    // resource, so an optimistic mutation has somewhere to write — and so a refetch does not
-    // blank the list while it is in flight.
+    // Renders from `board`, not the resource directly, so an optimistic mutation has somewhere
+    // to write and a refetch doesn't blank the list mid-flight.
     use_effect(move || {
         if let Some(Ok(view)) = &*page.read() {
             board.set(Board {
@@ -299,8 +256,7 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
         }
     });
 
-    // Best-effort: the sync chip is a nicety, and a sync service that is down must not take the
-    // watchlist with it. Mirrors how Discover treats its facet lists.
+    // Best-effort — a down sync service must not take the watchlist with it (same as Discover's facets).
     let sync_status = use_resource(move || {
         reload.track();
         let client = api.client();
@@ -326,8 +282,8 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
     let go = move |next: WatchlistQuery| {
         nav.push(Route::Watchlist { query: next });
     };
-    // The filter box commits on a 200ms debounce, so it would otherwise push one history entry
-    // per keystroke and make the back button useless for the whole screen.
+    // Replace, not push — the filter box debounces at 200ms, so push would spam one history
+    // entry per keystroke.
     let go_replace = move |next: WatchlistQuery| {
         nav.replace(Route::Watchlist { query: next });
     };
@@ -342,8 +298,7 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
             let opts = SyncOpts {
                 policy: Some(ConflictPolicy::NewestWins.into()),
             };
-            // Pull first, then push: importing the remote list before reflecting local state
-            // means a title added on the other side is not immediately overwritten.
+            // Pull before push, or a title just added on the other side gets overwritten.
             let result = match client
                 .sync_pull()
                 .provider(SYNC_PROVIDER)
@@ -376,11 +331,8 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
     let grouped = query.sort.groups_by_release();
     let entries = layout(&snapshot.items, grouped);
 
-    // Both halves describe *this* view, under the identical predicate set: `total` is the rows
-    // the filter matches and the band aggregates sum the unread across exactly those rows.
-    // Mixing in `counts.all` here would have read "598 titles · 1,684 chapters" over a list of
-    // 40 — the tab counts deliberately drop the status filter, and the group aggregates
-    // deliberately keep it, so the two are not interchangeable.
+    // `total` and the unread sum both come from the filtered view; `counts.all` ignores the
+    // status filter, so mixing it in here would show e.g. "598 titles" over a list of 40.
     let headline = if counts.is_some() {
         i18n.args(
             "watchlist.headline",
@@ -444,9 +396,8 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
                 role: "grid",
                 tabindex: "0",
                 "aria-label": i18n.t("nav.watchlist"),
-                // The container holds focus and `J`/`K` move a cursor within it, so the row
-                // under that cursor has to be named for a screen reader — otherwise the whole
-                // keyboard contract is silent to anyone not looking at the highlight.
+                // Names the focused row for a screen reader — without it the keyboard contract
+                // is silent to anyone not looking at the highlight.
                 "aria-activedescendant": snapshot
                     .items
                     .get(*focus.read())
@@ -463,9 +414,8 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
                                     title_count: stats.map_or(0, |g| g.title_count),
                                     chapter_count: stats.map_or(0, |g| g.chapter_count),
                                     ids: band_ids(&snapshot.items, band),
-                                    // `try_from` on the count rather than `as i64` on the
-                                    // length: the cast is the one direction that can wrap, and
-                                    // a wrapped comparison would mark a band complete.
+                                    // `try_from`, not `as i64` on the length — that cast direction
+                                    // can wrap, which would silently mark an incomplete band as complete.
                                     complete: stats.is_some_and(|g| {
                                         usize::try_from(g.title_count)
                                             .is_ok_and(|n| band_ids(&snapshot.items, band).len() == n)
@@ -494,9 +444,8 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
         }
 
         if *settled.read() && !snapshot.items.is_empty() {
-            // The sentinel: one empty div below the last row that asks for the next page when
-            // it scrolls into view. `onvisible` is an `IntersectionObserver` under the hood, so
-            // this costs no scroll handler and no polling.
+            // Sentinel div: `onvisible` (`IntersectionObserver`) fetches the next page with no
+            // scroll handler or polling.
             if has_more {
                 div {
                     class: "ik-wl-sentinel",
@@ -519,10 +468,9 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
                         )
                     }
                 }
-                // The sentinel is a scroll trigger, and scrolling is not a keyboard gesture
-                // anyone should have to perform 30 times. This is the same action, reachable by
-                // `Tab`, and it is also the fallback if the observer never re-fires because the
-                // sentinel stayed in view (a viewport taller than a whole page of rows).
+                // Keyboard-reachable equivalent of the scroll sentinel, and the fallback when
+                // the observer never re-fires because the sentinel stayed in view (a viewport
+                // taller than a page).
                 if has_more {
                     button {
                         class: "ik-wl-more-btn",
@@ -578,8 +526,7 @@ fn sort_header(
             onclick: move |_| {
                 let mut next = query.clone();
                 if active {
-                    // Clicking the active column flips it; clicking an inactive one adopts its
-                    // natural direction rather than whatever the previous column was using.
+                    // Flips the active column; an inactive one adopts its natural default instead.
                     next.order = Some(order.flip());
                 } else {
                     next.sort = Sort::Released;
@@ -611,10 +558,8 @@ fn sync_chip(i18n: Translator, status: &Resource<Option<SyncAccountStatus>>) -> 
     }
 }
 
-/// Nothing matched. Which advice to give depends on *why* there is nothing: an account with no
-/// tracked titles needs a pointer to Discover, while a filtered-to-nothing list needs the
-/// filter widened — and offering "reset your filters" to someone with an empty watchlist is
-/// worse than saying nothing.
+/// Nothing matched: an empty account needs a pointer to Discover, a filtered-to-nothing list
+/// needs "reset filters" — offering the reset to an empty account would be worse than nothing.
 fn empty_state(
     i18n: Translator,
     query: &WatchlistQuery,
@@ -647,11 +592,10 @@ fn empty_state(
     }
 }
 
-/// The list's keyboard contract (§3.5), which is what replaced drag-and-drop.
+/// The list's keyboard contract (§3.5).
 ///
-/// `J`/`K` rather than only the arrow keys because the reader's hands are on the home row while
-/// triaging, and both are bound so neither habit is punished. Every key here is inert while a
-/// modifier other than `Shift` is held, so the browser's own `⌘K`/`Ctrl+F` keep working.
+/// `J`/`K` alongside the arrow keys (hands stay on the home row while triaging). Every key is
+/// inert under any modifier but `Shift`, so the browser's own `⌘K`/`Ctrl+F` keep working.
 #[expect(
     clippy::large_types_passed_by_value,
     reason = "`RowCtx` reaches a spawned future through the actions this dispatches to; see \
@@ -695,8 +639,7 @@ fn on_key(
 
     let mut step = |to: usize, selected: &mut Signal<HashSet<SeriesId>>| {
         if extend {
-            // Shift-stepping selects the row it lands on, so holding it sweeps a range without
-            // needing an anchor to be tracked separately.
+            // Shift-stepping selects the landing row, sweeping a range without tracking an anchor.
             selected.write().insert(items[to].series_id);
         }
         focus.set(to);
@@ -761,9 +704,8 @@ fn on_key(
 mod tests {
     use super::*;
 
-    /// The bands must match the server's, or a group header counts rows that are not under it.
-    /// The server's rule is `>= now() - 24 hours` and `>= now() - 7 days`; these are the same
-    /// two boundaries from the other side.
+    /// Bands must match the server's rule (`>= now() - 24h`, `>= now() - 7d`), or a group
+    /// header counts rows that aren't under it.
     #[test]
     fn bands_match_the_servers_rolling_windows() {
         const HOUR: f64 = 3_600_000.0;
@@ -774,9 +716,8 @@ mod tests {
         assert_eq!(bucket_of_age(7.0 * 24.0 * HOUR), Bucket::Earlier);
     }
 
-    /// A browser clock behind the server's produces a negative age. Banding that as `Earlier`
-    /// would drop a just-released chapter to the bottom of the page — the one place the reader
-    /// will not look for it.
+    /// A negative age (browser clock behind the server's) must band as `Today`, not `Earlier` —
+    /// which would bury a just-released chapter at the bottom of the page.
     #[test]
     fn a_skewed_clock_does_not_bury_a_fresh_release() {
         assert_eq!(bucket_of_age(-60_000.0), Bucket::Today);

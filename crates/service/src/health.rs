@@ -1,23 +1,14 @@
 //! Liveness and readiness probes.
 //!
-//! The distinction matters operationally and was previously collapsed: every service
-//! answered both `/health` and `/ready` with a literal `"ok"`, so an orchestrator kept
-//! routing traffic to a replica whose database had gone away, and a wedged replica was
-//! never restarted.
-//!
-//! - **`/health` (liveness)** — the process is running and its executor is responsive.
-//!   Deliberately checks nothing external: a failing dependency must not cause a restart
-//!   loop that makes the outage worse.
-//! - **`/ready` (readiness)** — every registered dependency is reachable *right now*.
-//!   Failing here removes the replica from the load balancer without killing it.
+//! `/health` checks nothing external, so a failing dependency cannot trigger a restart
+//! loop; `/ready` checks every dependency and removes the replica from the load balancer
+//! without killing it.
 
 use async_trait::async_trait;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// How long a single dependency check may take before it is treated as failed. A probe
-/// that hangs is indistinguishable from one that fails, and the orchestrator's own probe
-/// timeout is the only thing that would otherwise bound it.
+/// How long a single dependency check may take before it is treated as failed.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// One readiness dependency.
@@ -171,11 +162,8 @@ where
     }
 }
 
-/// Readiness check for the Postgres pool.
-///
-/// Runs `SELECT 1` rather than inspecting pool counters: an idle pool reports healthy
-/// even when the server behind it is gone, which is precisely the failure this exists to
-/// catch. Acquiring a connection also exercises the pool's own timeout.
+/// Readiness check for the Postgres pool. Runs `SELECT 1` rather than inspecting pool
+/// counters: an idle pool reports healthy even when the server behind it is gone.
 #[cfg(feature = "db")]
 pub struct PostgresCheck {
     pool: tankovault_db::PgPool,

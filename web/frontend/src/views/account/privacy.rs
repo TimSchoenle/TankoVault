@@ -1,9 +1,8 @@
 //! Privacy & data — the reader's own GDPR controls: download everything, file a formal
 //! request, and delete the account.
 //!
-//! Three sections in deliberate order of severity, and each is shown only when the deployment
-//! has that feature switched on. When self-service deletion is off, the erasure *right* is not
-//! gone — it moves into the request queue below, which is exactly why the request form lists
+//! Each section shows only when its feature is on. When self-service deletion is off, the
+//! erasure *right* isn't gone — it moves into the request queue, which is why requests list
 //! erasure as a kind an operator can act on.
 
 use crate::api;
@@ -314,9 +313,8 @@ fn DeleteAccountCard() -> Element {
         spawn(async move {
             match client.delete_account().body(body).send().await {
                 Ok(_) => {
-                    // The account is gone; there is nothing left to be signed in to. Clearing
-                    // locally is what turns the app back into its signed-out shape immediately
-                    // rather than leaving a shell whose every request now 401s.
+                    // The account is gone; clear locally now rather than leaving a shell whose
+                    // every request 401s.
                     session.clear();
                     caps.clear();
                 }

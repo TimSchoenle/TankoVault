@@ -1,13 +1,5 @@
-//! Whether the account may act at all, and whether it is acting right now.
-//!
-//! Suspension decides the first, session revocation the second, and the two are one subject
-//! rather than two: `set_user_status` revokes by default precisely because a suspension that
-//! leaves the account working for the next quarter of an hour is not what anyone means by
-//! suspending it. The standalone revoke endpoint is the same operation without the status
-//! change — signing someone out is not a sanction — so having them in one file is what makes
-//! that distinction readable.
-//!
-//! Neither is a capability edit; those are [`super::permissions`].
+//! Whether the account may act at all (suspension), and whether it is acting right now (session
+//! revocation). Neither is a capability edit; those are [`super::permissions`].
 
 use crate::audit::audit;
 use crate::error::ApiResult;

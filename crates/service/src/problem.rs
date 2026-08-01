@@ -1,29 +1,8 @@
-//! One RFC 9457 `application/problem+json` error shape for every service (ARCH-12).
+//! One RFC 9457 `application/problem+json` error shape for every service.
 //!
-//! # Why this is shared
-//!
-//! The eight services used to encode failures four different ways: the API produced
-//! problem+json, `sync` a plain-text `Display` of an `anyhow::Error` routed by substring match,
-//! `control-plane` bare `(StatusCode, String)` tuples, and `render` / `challenge-solver` inline
-//! `format!` strings. `services/api` proxies three of those, so its upstream client had to parse
-//! four encodings — which is to say there was no way to write one correct upstream error mapper.
-//!
-//! Each service still owns its own `thiserror` enum, because which failures carry HTTP meaning is
-//! a per-service contract. What is shared is the *wire shape*: a service maps its enum to
-//! [`Problem`] via [`IntoProblem`], and the single [`IntoResponse`] implementation below decides
-//! how that reaches the network.
-//!
-//! # What callers can rely on
-//!
-//! - `Content-Type: application/problem+json`.
-//! - `type` is `about:blank#<kind>`, `title` is `<kind>`, `status` matches the HTTP status line,
-//!   and `detail` is a human-readable sentence.
-//! - [`Problem::kind`] is `&'static str` deliberately: it is a machine-readable discriminator a
-//!   client may branch on, so it must come from a fixed vocabulary in the code rather than from a
-//!   formatted message that a reworded log line could change.
-//!
-//! Detail strings are for humans and may be reworded. Do not put anything a caller must parse
-//! anywhere but `kind` and `status`.
+//! Each service keeps its own `thiserror` enum; the wire shape is shared via [`IntoProblem`].
+//! [`Problem::kind`] is a fixed, machine-readable discriminator — only it and `status` are a
+//! stable contract; `detail` is for humans and may be reworded.
 
 use axum::Json;
 use axum::http::StatusCode;
@@ -37,9 +16,8 @@ pub const PROBLEM_JSON: &str = "application/problem+json";
 /// The serialized RFC 9457 body. Built by [`Problem::into_response`]; services do not construct
 /// it directly.
 ///
-/// `services/api` re-declares this shape with `utoipa::ToSchema` for its `OpenAPI` document —
-/// this crate deliberately does not depend on `utoipa`, since only the documented service needs
-/// it. If the two ever disagree, the API's schema is the one that is wrong.
+/// `services/api` re-declares this shape with `utoipa::ToSchema` for its `OpenAPI` document,
+/// since this crate does not depend on `utoipa`. If the two disagree, the API's schema is wrong.
 #[derive(Debug, Serialize)]
 pub struct ProblemBody {
     pub r#type: String,
@@ -71,11 +49,8 @@ impl Problem {
         }
     }
 
-    /// A `500` that says nothing.
-    ///
-    /// The caller is expected to have logged the cause already. Internal failures must not put
-    /// their `Display` on the wire: it routinely carries connection strings, SQL and file paths,
-    /// and a caller can do nothing useful with any of it.
+    /// A `500` that says nothing. Internal failures must not put their `Display` on the
+    /// wire: it routinely carries connection strings, SQL and file paths.
     #[must_use]
     pub fn internal() -> Self {
         Self::new(
@@ -117,10 +92,9 @@ impl IntoResponse for Problem {
 
 /// A service error that knows its place in the HTTP contract.
 ///
-/// Implement this on the service's own `thiserror` enum rather than implementing `IntoResponse`
-/// directly: that keeps the status/kind decision next to the variants (exhaustive by
-/// construction, so adding a variant without deciding its status is a compile error) while the
-/// wire encoding stays in one place.
+/// Implement on the service's own `thiserror` enum rather than `IntoResponse` directly: adding
+/// a variant without deciding its status becomes a compile error, while the wire encoding
+/// stays in one place.
 pub trait IntoProblem {
     /// The status, kind and human-readable detail this failure presents as.
     fn into_problem(self) -> Problem;

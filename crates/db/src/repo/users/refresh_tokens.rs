@@ -1,15 +1,5 @@
-//! Rotating refresh tokens and the reuse-detection primitives over them.
-//!
-//! Only hashes are stored. A *family* is one rotation lineage: normal rotation revokes a
-//! single token, and presenting an already-revoked one is the signature of a compromised
-//! lineage, so [`revoke_family`] takes the whole family out. It is only the *signature*, not
-//! proof — an interrupted rotation looks identical from here — which is why
-//! [`family_has_live_token`] exists and why the judgement is made at the call site
-//! (`services/api/src/auth/session.rs`) with a time bound this layer knows nothing about. The
-//! lookups deliberately do **not** filter
-//! revoked or expired rows — that judgement belongs to the caller, and hiding a revoked token
-//! would make a replayed one indistinguishable from an unknown one, which is precisely the
-//! case reuse detection exists to catch.
+//! Rotating refresh tokens (hash only) and the reuse-detection primitives over them. Lookups
+//! deliberately do not filter revoked/expired rows — that judgement is the caller's.
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
@@ -29,11 +19,8 @@ pub struct RefreshRecord {
 /// Persist a freshly issued refresh token (as its SHA-256 hash).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A `token_hash` that already
-/// exists is a unique violation left as a driver error rather than translated to
-/// [`crate::DbError::Conflict`]: the value is 256 bits of server-generated randomness, so a
-/// collision is a fault in the generator and must surface as a 500, never as a 409 a client
-/// could learn to trigger.
+/// [`crate::DbError::Sqlx`] only. A duplicate `token_hash` is a generator fault (500), not a
+/// client-triggerable [`crate::DbError::Conflict`] (409).
 pub async fn insert_refresh<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -58,9 +45,8 @@ pub async fn insert_refresh<'e, E: PgExecutor<'e>>(
 /// Find a refresh token by its hash (regardless of revocation, for reuse detection).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown hash is
-/// `Ok(None)`, and it must stay indistinguishable from a revoked or expired one at this layer;
-/// see the module docs for why the filtering is the caller's job.
+/// [`crate::DbError::Sqlx`] only. Unknown, revoked and expired all return the same `Ok`/`None`
+/// shape — filtering is the caller's job.
 pub async fn find_refresh<'e, E: PgExecutor<'e>>(
     exec: E,
     token_hash: &str,
@@ -93,8 +79,7 @@ pub async fn find_refresh<'e, E: PgExecutor<'e>>(
 /// Revoke a single token by id (normal rotation).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown or
-/// already-revoked id is `Ok(())`, which makes rotation idempotent under a retry.
+/// [`crate::DbError::Sqlx`] only. Unknown/already-revoked is `Ok(())` (idempotent retry).
 pub async fn revoke_token<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<()> {
     sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL",
@@ -105,23 +90,14 @@ pub async fn revoke_token<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<
     Ok(())
 }
 
-/// Does `family_id` still hold a token that is usable right now — unrevoked and unexpired?
+/// Does `family_id` still hold a token that is usable right now (unrevoked, unexpired)?
 ///
-/// This is the second half of the test that separates an *interrupted* rotation from token
-/// theft (`services/api/src/auth/session.rs::refresh`). On its own, "the presented token is
-/// revoked" cannot tell the two apart: rotation revokes the old token and issues the new one
-/// server-side, but the client only learns the new value if the response reaches it. A lost
-/// response, or a second request that raced the first, leaves a perfectly honest client
-/// holding a value the server has already retired.
-///
-/// A live sibling is what makes the difference. It means the lineage is still running — some
-/// party successfully took delivery of the successor — so the presenter is racing that
-/// rotation rather than replaying a lineage that has already been shut down. Paired with a
-/// tight time bound at the call site, that is a *narrow* window, and it is deliberately not a
-/// substitute for reuse detection: see the caller for what happens after.
+/// Distinguishes an interrupted rotation from token theft: "presented token is revoked" alone
+/// can't tell a lost-response retry from replay, but a live sibling means the lineage is still
+/// running. Caller (`session.rs::refresh`) pairs this with a tight time bound.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn family_has_live_token<'e, E: PgExecutor<'e>>(
     exec: E,
     family_id: Uuid,
@@ -141,9 +117,8 @@ pub async fn family_has_live_token<'e, E: PgExecutor<'e>>(
 /// Revoke an entire token family (reuse detected → invalidate the lineage).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `family_id` is
-/// `Ok(())`. Callers **must** propagate: this is the response to detected token reuse, and a
-/// swallowed failure leaves a compromised lineage usable.
+/// [`crate::DbError::Sqlx`] only. Callers must propagate — swallowing it leaves a compromised
+/// lineage usable.
 pub async fn revoke_family<'e, E: PgExecutor<'e>>(exec: E, family_id: Uuid) -> DbResult<()> {
     sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() WHERE family_id = $1 AND revoked_at IS NULL",

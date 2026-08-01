@@ -1,8 +1,5 @@
-//! Sealed OAuth token storage — the only place in this service that holds the encryption key.
-//!
-//! Tokens are sealed with [`Sealer`] before they reach the database and are opened only
-//! here, so no other collaborator needs the key in its state. Expiry-driven refresh lives here
-//! too, because a refresh writes new sealed tokens and would otherwise duplicate the sealing.
+//! Sealed OAuth token storage — the only place in this service holding the encryption key.
+//! Expiry-driven refresh lives here too, since a refresh re-seals and re-persists tokens.
 
 use secrecy::SecretString;
 use time::OffsetDateTime;

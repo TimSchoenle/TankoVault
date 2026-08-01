@@ -1,18 +1,13 @@
 //! Series detail — the chapter list leads, tracking rides the sidebar.
 //!
-//! A hero band (cover, identity, stat row and one split primary action) over a `1fr 340px`
-//! body grid: synopsis and the chapter table on the left, the Tracking card and the related
-//! slot on the right.
-//!
 //! # The one thing this screen does differently
 //!
-//! `GET /v1/series/:id/chapters` answers for a single source. This view fetches **every**
-//! source's list concurrently and merges them ([`model`]), so a chapter is one row that knows
-//! which sources carry it and where each would open. That is what lets the per-source panel
-//! collapse into a single open control per row.
+//! `GET /v1/series/:id/chapters` answers for a single source. This view fetches every source's
+//! list concurrently and merges them ([`model`]), so each chapter row knows which sources carry
+//! it and where each would open.
 //!
-//! Fields the API does not expose are omitted rather than fabricated: there is no rating, and
-//! related series stay an honest placeholder pending `/v1/series/:id/related`.
+//! Fields the API does not expose are omitted rather than fabricated (no rating; related series
+//! is a placeholder pending `/v1/series/:id/related`).
 
 mod chapters;
 mod model;
@@ -61,14 +56,12 @@ pub(crate) fn Series(id: String) -> Element {
     let api = api::use_api();
     let reload_detail = use_reload();
     let reload_wl = use_reload();
-    // One signal for read state, shared by both surfaces that write it. The chapter list's
-    // per-chapter toggles and the sidebar's progress stepper move the *same* server state, so
-    // they must invalidate the *same* fetches: the two used to own a `Reload` each, and a read
-    // toggle left the sidebar's progress frontier showing a stale number until a full reload.
+    // One signal for read state, shared by the chapter list's toggles and the sidebar's
+    // stepper — they move the same server state, so must invalidate the same fetches. Two
+    // separate `Reload`s here left the sidebar showing a stale frontier until a full reload.
     let reload_progress = use_reload();
-    // The pin is read once on mount and written back whenever it changes. Reading it is a
-    // plain `localStorage` lookup (`crate::browser`), so the signal can be seeded with the
-    // stored value outright rather than rendering unpinned and correcting itself.
+    // The pin is read once on mount; a plain synchronous `localStorage` lookup lets the signal
+    // seed with the stored value instead of rendering unpinned and correcting itself.
     let pinned = use_signal(|| {
         crate::browser::local_get(&pin_key(id))
             .and_then(|stored| stored.parse::<SeriesSourceId>().ok())
@@ -94,8 +87,7 @@ pub(crate) fn Series(id: String) -> Element {
     });
 
     // One request per source, issued together. Reading `detail` here subscribes this resource
-    // to it, so the fan-out starts the moment the series lands and re-runs after a progress
-    // write bumps `reload_progress`.
+    // to it, so the fan-out starts once the series lands and re-runs on `reload_progress`.
     let per_source = use_resource(move || {
         reload_progress.track();
         let sources: Vec<SourceDto> = match &*detail.read() {
@@ -125,13 +117,9 @@ pub(crate) fn Series(id: String) -> Element {
         }
     });
 
-    // One entry, not the whole watchlist.
-    //
-    // This used to fetch every tracked title and scan the array for this series. That was
-    // already an odd way to read one row — a 598-entry payload to answer a yes/no — and it
-    // became a *bug* when the list started paginating: past the first page the entry simply is
-    // not in the response, and the page would offer "Add to watchlist" for a title the reader
-    // is already tracking.
+    // One entry, not the whole watchlist — fetching everything and scanning for this series
+    // broke once the list started paginating: past the first page the entry isn't in the
+    // response, and the page would falsely offer "Add to watchlist" for a tracked title.
     let watchlist = use_resource(move || {
         reload_wl.track();
         let client = api.client();
@@ -517,9 +505,8 @@ fn WatchControls(
 
 /// This series' watchlist entry, once the lookup has landed.
 ///
-/// A failed or in-flight lookup is `None`, i.e. "not tracked as far as this page knows" — the
-/// watch button then offers to add the title, and adding one already tracked is an upsert, so
-/// the worst case is a no-op rather than a wrong write.
+/// A failed or in-flight lookup is `None` ("not tracked as far as this page knows"); adding an
+/// already-tracked title is an upsert, so the worst case is a no-op, not a wrong write.
 fn current_entry(
     watchlist: &Resource<Result<Option<WatchlistItem>, String>>,
 ) -> Option<WatchlistItem> {

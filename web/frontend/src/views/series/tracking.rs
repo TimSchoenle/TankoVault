@@ -46,18 +46,16 @@ pub(super) fn TrackingCard(
     total_chapters: i64,
     /// Bumped after a watchlist write.
     reload_wl: Reload,
-    /// The screen's read-state signal, owned by [`super::Series`] and shared with the chapter
-    /// list: tracked here so a per-chapter toggle refetches the frontier, bumped here so the
-    /// stepper refetches the list. A `Reload` private to this card would only ever hear its
-    /// own writes.
+    /// The screen's shared read-state signal (owned by [`super::Series`]): a private `Reload`
+    /// here would only ever hear this card's own writes, not the chapter list's toggles.
     reload_progress: Reload,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let reload_sync = use_reload();
 
-    // Tracks the shared read-state signal, so the frontier refetches after a per-chapter
-    // toggle in the list as well as after the stepper's own write.
+    // Tracks the shared read-state signal so the frontier refetches after a chapter-list
+    // toggle too, not just the stepper's own write.
     let progress = use_resource(move || {
         reload_progress.track();
         let client = api.client();
@@ -188,11 +186,8 @@ pub(super) fn TrackingCard(
                         reload_progress,
                         || rsx! { SkeletonBlock { height: 76 } },
                         |value| rsx! {
-                            // Keyed on the fetched frontier so a value that moved elsewhere —
-                            // a read toggle in the chapter list — remounts the editor and
-                            // discards its draft. Without the key the draft, which outlives
-                            // its own write to keep the stepper from flickering, would go on
-                            // masking every later server value.
+                            // Keyed on the fetched frontier — see `ProgressEditor`'s `draft`
+                            // comment for why.
                             ProgressEditor {
                                 key: "{value.last_read_whole_number}",
                                 series_id,
@@ -420,11 +415,10 @@ fn ProgressEditor(
     let api = api::use_api();
     let i18n = use_i18n();
     let busy = use_busy();
-    // `None` means "show whatever the server last said"; `Some` is an unconfirmed local edit.
-    // It survives its own write on purpose — clearing it there would snap the stepper back to
-    // the pre-write number for the length of the refetch. What ends it is the refetched value:
-    // the caller keys this component on it, so a frontier that moved (here, or by a toggle in
-    // the chapter list) remounts the editor and takes the draft with it.
+    // `None` shows the server's last value; `Some` is an unconfirmed local edit that survives
+    // its own write on purpose (clearing it would snap the stepper back for the refetch's
+    // duration). The caller keys this component on the fetched value, so a frontier that moves
+    // elsewhere remounts the editor and drops the draft.
     let mut draft = use_signal(|| Option::<f64>::None);
     let mut error = use_signal(|| Option::<String>::None);
 

@@ -1,37 +1,16 @@
-# Full end-to-end local stack (design §19): Postgres + Redis + NATS(JetStream) +
-# FlareSolverr, a one-shot migrate/seed step, every TankoVault backend service, and the Dioxus
-# web frontend. **Every image here is built from the one deploy/docker/Dockerfile** (build
-# context = repo root), selected by `target` and `BIN`; the frontend used to have a file of its
-# own, which meant compiling a second copy of the same musl dependency graph for a binary the
-# backend workspace already builds.
+# Full end-to-end local stack (design §19): Postgres, Redis, NATS, FlareSolverr, a migrate/seed
+# step, every TankoVault backend service, and the frontend, all built from deploy/docker/Dockerfile.
+# Run: docker compose -f deploy/docker-compose.yml up --build, then open http://localhost:3000.
 #
-#   docker compose -f deploy/docker-compose.yml up --build
+# Secrets here are DEV-ONLY placeholders, refused at boot when TANKOVAULT_PROFILE=production. Copy
+# deploy/local.env.example to deploy/local.env, fill it in, and pass `--env-file deploy/local.env`.
 #
-# That single Dockerfile compiles all nine binaries in one `cargo` invocation, so the nine
-# service images share one build vertex and BuildKit runs it once. Passing `BIN` no longer
-# selects what gets compiled, only which already-built binary the runtime layer copies in.
-#
-# Then open the app at http://localhost:3000 (the frontend server serves the SPA and proxies
-# /v1/* to api).
-#
-# Secrets here are DEV-ONLY placeholders and are refused at boot when
-# TANKOVAULT_PROFILE=production. Copy deploy/local.env.example to deploy/local.env, fill it
-# in, and pass `--env-file deploy/local.env` before any non-local use.
-#
-# ---- Exposure ----------------------------------------------------------------------------
-# **Only `frontend` (3000) is published on the host.** Everything else talks over the compose
-# network by service name. This is not tidiness: `sync`, `control-plane`, `render` and
+# **Only `frontend` (3000) is published on the host.** `sync`, `control-plane`, `render` and
 # `challenge-solver` expose privileged, formerly unauthenticated contracts, and Docker's port
-# publishing bypasses the host firewall via DOCKER-USER/iptables — so `ports:` on any of them
-# put "read or rewrite any user's sync state" and "fetch any URL and return the body" on every
-# interface the host has. Postgres and Redis carry documented default credentials.
-#
-# To debug one of them, bind loopback explicitly and temporarily:
-#     ports: ["127.0.0.1:8083:8083"]
-#
-# Defence in depth on top of placement: every internal service requires
-# TANKOVAULT_INTERNAL__TOKEN (see x-internal below). Port hygiene alone is one
-# misconfiguration away from failing.
+# publishing bypasses the host firewall via DOCKER-USER/iptables — `ports:` on any of them puts
+# those contracts on every interface the host has. To debug one, bind loopback temporarily:
+# `ports: ["127.0.0.1:8083:8083"]`. Defence in depth: every internal service also requires
+# TANKOVAULT_INTERNAL__TOKEN (x-internal below).
 name: tankovault
 
 x-build: &build
@@ -42,35 +21,16 @@ x-telemetry: &telemetry
   TANKOVAULT_TELEMETRY__JSON_LOGS: "true"
   TANKOVAULT_TELEMETRY__LOG_FILTER: "info,tankovault=debug"
 
-# Shared secret for service-to-service calls, identical on every service in the internal tier.
-#
-# Required, with no fallback, for the same reason `TANKOVAULT_AUTH__JWT_SECRET` below is. The
-# previous default `dev-internal-token-not-for-production-use` is published in this repository,
-# and the comment here used to claim production refused it — production refused a *missing*
-# token, not a well-known one, so a deployment that inherited this file's default authorized
-# every privileged inter-tier call with a string anyone can read. `internal_auth::resolve` now
-# refuses it in every profile, and `xtask repo-lint` fails if a published default like it is
-# reintroduced without a matching refusal.
+# Required, no fallback: the previous published default was refused only when missing, not when
+# present and well-known, so an inherited default authorized every inter-tier call. `xtask
+# repo-lint` fails if a working default reappears here without a matching refusal in code.
 x-internal: &internal
   TANKOVAULT_INTERNAL__TOKEN: "${TANKOVAULT_INTERNAL__TOKEN:?set it in deploy/local.env — see deploy/local.env.example; generate with `openssl rand -hex 32`}"
 
 x-db-url: &db-url "postgres://tankovault:tankovault@postgres:5432/tankovault"
 
-# ---- Container healthcheck for the scratch services ----------------------------------------
-# These images have no shell, no `wget` and no `curl`, so a `CMD-SHELL` probe is impossible —
-# which is why the eight app services carried no healthcheck at all and `depends_on` could only
-# ever say `service_started`. The one executable that is always present is the service binary,
-# so it probes itself: `--healthcheck` is an argv branch handled at the top of every `main`
-# before config or telemetry (`crates/service/src/healthcheck.rs`).
-#
-# The probe is a TCP connect to the service's *own* `bind_addr`, read from the same config the
-# server binds — so a rebind (the worker's `TANKOVAULT_BIND_ADDR: 0.0.0.0:8085`, say) is
-# followed automatically and nothing here names a port. It is liveness, not readiness:
-# "the listener is accepting" is what should trigger a restart, while "Postgres is reachable"
-# is a routing decision that `/ready` already answers over HTTP.
-#
-# `timeout: 3s` sits just above the probe's own 2s connect timeout, so the process exits with
-# a verdict rather than being killed without one.
+# scratch images have no shell/wget/curl, so the service binary probes its own bind_addr instead
+# (`--healthcheck`, crates/service/src/healthcheck.rs). Liveness only, not readiness.
 x-healthcheck: &healthcheck
   test: ["CMD", "/usr/local/bin/tankovault-service", "--healthcheck"]
   interval: 10s
@@ -78,16 +38,7 @@ x-healthcheck: &healthcheck
   retries: 5
   start_period: 20s
 
-# ---- Runtime hardening for the scratch services --------------------------------------------
-# The images are already `scratch` + non-root, so the marginal gain is small — but all three of
-# these are free here and remove whole classes of escalation.
-#
-# `read_only` is safe by construction rather than by inspection: a `scratch` image *is* four
-# baked-in files (the binary, the musl loader, `libgcc_s`, the CA bundle) and nothing else, so
-# there is no writable path for a service to have quietly depended on. `render` is read-only
-# too, but sets it inline rather than merging this anchor: it is the one tier whose writable
-# set had to be measured rather than reasoned about, and it needs two `tmpfs` mounts the
-# scratch services must not have. See the note there.
+# scratch + non-root already limits blast radius; these are free additions on top.
 x-hardening: &hardening
   read_only: true
   cap_drop: [ALL]
@@ -96,9 +47,8 @@ x-hardening: &hardening
 services:
   # ---- Infrastructure ---------------------------------------------------------------
   postgres:
-    # Pinned to a stable major. This was `19beta2-alpine`: the 187-entry `.sqlx` offline
-    # cache and every migration are validated against whatever runs here, so a beta catalog
-    # meant CI was type-checking queries against a moving target.
+    # Stable major only (was `19beta2-alpine`): a beta catalog meant CI type-checked queries
+    # against a moving target.
     image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
     deploy: { resources: { limits: { memory: 1g } } }
     environment:
@@ -132,8 +82,7 @@ services:
       retries: 12
 
   flaresolverr:
-    # Pinned: `latest` silently changes the bot-management behaviour the adapters are tuned
-    # against, and an unpinned image is an unreviewed code change on every `docker compose pull`.
+    # Pinned: `latest` silently changes bot-management behaviour the adapters are tuned against.
     image: ghcr.io/flaresolverr/flaresolverr:v3.5.0@sha256:139dfee1c6f89249c8d665d1333a42e8ec74ec0a86bc6bb1c8461e10d3a66a47
     environment:
       LOG_LEVEL: info
@@ -146,8 +95,6 @@ services:
       <<: *build
       args: { BIN: xtask }
     command: ["migrate"]
-    # One-shot: it runs, exits 0 and is gated on by `service_completed_successfully`, so a
-    # healthcheck would have nothing to report. Hardening still applies.
     <<: *hardening
     environment:
       DATABASE_URL: *db-url
@@ -182,78 +129,44 @@ services:
       <<: [*telemetry, *internal]
       TANKOVAULT_TELEMETRY__SERVICE_NAME: api
       TANKOVAULT_DATABASE__URL: *db-url
-      # Required, with no fallback: the previous default `dev-jwt-secret-change-me` is
-      # published in this repository, so every session signed with it is forgeable by anyone
-      # who has read this file. `validate_auth_secrets` now refuses it in every profile, not
-      # only production, so a working default here would only move the failure later.
+      # Required, no fallback: the previous published default made every session forgeable.
+      # `validate_auth_secrets` refuses it in every profile.
       TANKOVAULT_AUTH__JWT_SECRET: "${TANKOVAULT_AUTH__JWT_SECRET:?set it in deploy/local.env — see deploy/local.env.example; generate with `openssl rand -hex 32`}"
-      # Refresh cookies are Secure by default now. Kept off here because this stack is plain
-      # HTTP on localhost, where a Secure cookie is simply never sent. Do not copy this line
-      # into a deployment that terminates TLS.
+      # Plain HTTP on localhost never sends a Secure cookie anyway; do not copy into a TLS deployment.
       TANKOVAULT_AUTH__COOKIE_SECURE: "false"
       TANKOVAULT_AUTH__PASSWORD_PEPPER: "${TANKOVAULT_AUTH__PASSWORD_PEPPER:-}"
-      # Passkeys are bound to an origin by the browser, so it has to be stated rather than
-      # inferred from a request. This stack serves the SPA on :3000, which is what
-      # `TANKOVAULT_EMAIL__BASE_URL` below already says — the two must agree, and the API falls
-      # back to that one when this is unset. Stated explicitly here because the relationship is
-      # not obvious from either line alone.
-      #
-      # `localhost` is a secure context even over plain HTTP, which is the one exception
-      # browsers make; on any other host, passkeys need HTTPS. A credential registered here is
-      # bound to `localhost:3000` and will not work against a deployed origin.
+      # Must agree with TANKOVAULT_EMAIL__BASE_URL (the API falls back to it): passkeys are bound
+      # to this origin by the browser. `localhost` is a secure context over plain HTTP; no other
+      # host gets that exception.
       TANKOVAULT_AUTH__WEBAUTHN_ORIGIN: http://localhost:3000
       TANKOVAULT_CONTROL_PLANE_URL: http://control-plane:8081
       TANKOVAULT_SYNC_URL: http://sync:8083
-      # The "Test adapter" dry-run is proxied to the worker, which is the tier that carries the
-      # adapter + crawl stack; the API no longer links it (PERF-18). Two replicas answer behind
-      # this one name, which is fine for a stateless dry run.
       TANKOVAULT_WORKER_URL: http://worker:8085
       TANKOVAULT_NATS__URL: nats://nats:4222 # live per-user notification SSE relay (/v1/me/stream)
-      # ---- Transactional email (welcome on sign-up, password reset) -------------------
-      # Optional: when unset, the API uses a no-op mailer (logs + drops) and these flows
-      # simply skip sending. `base_url` is the public web origin used to build reset links.
+      # Optional: unset uses a no-op mailer and these flows skip sending.
       TANKOVAULT_EMAIL__BASE_URL: http://localhost:3000
-      # Example: OVH-hosted Exchange over STARTTLS on 587 (or use security=tls + port 465
-      # with host ssl0.ovh.net). `username` is the full mailbox address.
       TANKOVAULT_EMAIL__HOST: "${TANKOVAULT_EMAIL__HOST:-pro3.mail.ovh.net}"
       TANKOVAULT_EMAIL__PORT:  "${TANKOVAULT_EMAIL__PORT:-587}"
       TANKOVAULT_EMAIL__SECURITY: "${TANKOVAULT_EMAIL__SECURITY:-starttls}"
       TANKOVAULT_EMAIL__USERNAME: "${TANKOVAULT_EMAIL__USERNAME:-no-reply@your-domain.com}"
       TANKOVAULT_EMAIL__PASSWORD: "${TANKOVAULT_EMAIL__PASSWORD:-}"
       TANKOVAULT_EMAIL__FROM:  "${TANKOVAULT_EMAIL__FROM:-TankoVault <no-reply@your-domain.com>}"
-      # The SMTP envelope sender (MAIL FROM) defaults to `username` above, which is what OVH
-      # Exchange authorises "send as" against — so `from` may differ from the login without
-      # tripping `550 5.7.60`. Override only if bounces must go to a different mailbox:
+      # Defaults to `username`; override only if bounces must go elsewhere.
       TANKOVAULT_EMAIL__ENVELOPE_FROM: "${TANKOVAULT_EMAIL__ENVELOPE_FROM:-}"
       # Alternatively point at any relay with a single lettre URL (takes precedence):
       # TANKOVAULT_EMAIL__URL: smtps://no-reply%40your-domain.com:change-me@ssl0.ovh.net:465
-      #
-      # ---- Rate limiting ---------------------------------------------------------------
-      # Redis lets the limit hold across replicas instead of being multiplied by their
-      # count. Without it the limiter silently falls back to per-replica counters.
+      # Redis holds the rate limit across replicas; without it the limiter falls back per-replica.
       TANKOVAULT_REDIS__URL: redis://redis:6379
       TANKOVAULT_RATE_LIMIT__BACKEND: redis
-      # The frontend server fronts the API here and *appends* the peer address to
-      # X-Forwarded-For (nginx's $proxy_add_x_forwarded_for convention); the limiter reads the
-      # right-most entry, which is therefore the one our own proxy wrote. Everything to its
-      # left is client-supplied and ignored.
-      #
-      # Do NOT enable this where the API is reachable without going through that proxy — the
-      # right-most entry would then be attacker-chosen too. The API no longer publishes a
-      # host port, which is what makes this safe in this file.
+      # Safe only because the API publishes no host port: the frontend proxy appends to
+      # X-Forwarded-For and the limiter trusts the right-most entry. Enabling this where the API
+      # is directly reachable would let an attacker forge that entry.
       TANKOVAULT_RATE_LIMIT__TRUST_FORWARDED_FOR: "true"
-      #
-      # ---- Security --------------------------------------------------------------------
-      # The frontend is served from the same origin as the proxied API, so no cross-origin hop
-      # exists and the CORS allowlist stays empty (same-origin only). A split-origin deployment
-      # must name its origins:
+      # Same-origin here, so CORS stays empty. Split-origin needs:
       # TANKOVAULT_SECURITY__CORS__ALLOWED_ORIGINS: '["https://app.example.com"]'
-      # Enable once the edge actually terminates TLS; over plain HTTP it is misleading.
+      # Enable once the edge terminates TLS; over plain HTTP it is misleading.
       TANKOVAULT_SECURITY__HSTS: "false"
-      #
-      # ---- Audit + privacy -------------------------------------------------------------
-      # IP and User-Agent are personal data (GDPR Art. 4(1)), so retaining them is an
-      # explicit opt-in rather than a default.
+      # IP/User-Agent are personal data (GDPR Art. 4(1)); retaining them is opt-in, not default.
       TANKOVAULT_AUDIT__RECORD_IP: "false"
       TANKOVAULT_AUDIT__RECORD_USER_AGENT: "false"
       TANKOVAULT_AUDIT__RETENTION_DAYS: "365"
@@ -280,9 +193,6 @@ services:
       redis: { condition: service_healthy }
 
   worker:
-    # The probe reads the same `bind_addr` the server binds, so it follows the ops listener
-    # rebound below to 8085 with nothing here naming a port — which also means it works
-    # unchanged across both replicas, neither of which publishes a host port.
     healthcheck: *healthcheck
     <<: *hardening
     build:
@@ -294,16 +204,13 @@ services:
       TANKOVAULT_DATABASE__URL: *db-url
       TANKOVAULT_NATS__URL: nats://nats:4222
       TANKOVAULT_WORKER__CHALLENGE_SOLVER_ENDPOINT: http://challenge-solver:8090
-      # Ops listener (liveness/readiness) on 8085; the Prometheus scrape is served on the
-      # isolated metrics port (TANKOVAULT_METRICS__LISTEN, default 0.0.0.0:9090). Neither is
-      # published to the host: the worker runs 2 replicas and compose cannot map one host port
-      # to both. Both are reachable on the compose network (`worker:8085`, `worker:9090`).
+      # Ops listener on 8085; Prometheus scrape on the isolated metrics port (default :9090).
+      # Neither is published: compose can't map one host port to 2 replicas.
       TANKOVAULT_BIND_ADDR: 0.0.0.0:8085
     depends_on:
       migrate: { condition: service_completed_successfully }
       nats: { condition: service_healthy }
-      # Was `service_started`. The worker's first scan can hit the solver immediately, so
-      # "the process exists" was not the guarantee this dependency needed.
+      # service_healthy, not service_started: the first scan can hit the solver immediately.
       challenge-solver: { condition: service_healthy }
     deploy:
       replicas: 2 # JetStream consumer group → free horizontal scale
@@ -321,16 +228,14 @@ services:
       TANKOVAULT_TELEMETRY__SERVICE_NAME: notifier
       TANKOVAULT_DATABASE__URL: *db-url
       TANKOVAULT_NATS__URL: nats://nats:4222
-      # The notifier's email channel shares the API's relay configuration rather than
-      # carrying its own SMTP URL, so both send with the same envelope-sender policy — the
-      # one relays that enforce "send as" actually accept. Name the recipients to enable it.
+      # Shares the API's relay config so both send under the same envelope-sender policy.
       TANKOVAULT_EMAIL__HOST: "${TANKOVAULT_EMAIL__HOST:-}"
       TANKOVAULT_EMAIL__PORT: "${TANKOVAULT_EMAIL__PORT:-587}"
       TANKOVAULT_EMAIL__SECURITY: "${TANKOVAULT_EMAIL__SECURITY:-starttls}"
       TANKOVAULT_EMAIL__USERNAME: "${TANKOVAULT_EMAIL__USERNAME:-}"
       TANKOVAULT_EMAIL__PASSWORD: "${TANKOVAULT_EMAIL__PASSWORD:-}"
       TANKOVAULT_EMAIL__FROM: "${TANKOVAULT_EMAIL__FROM:-}"
-      # Comma-free JSON array, e.g. '["ops@example.com"]'. Empty disables the channel.
+      # JSON array, e.g. '["ops@example.com"]'. Empty disables the channel.
       TANKOVAULT_CHANNELS__EMAIL_TO: "${TANKOVAULT_NOTIFIER_EMAIL_TO:-[]}"
     depends_on:
       migrate: { condition: service_completed_successfully }
@@ -349,12 +254,10 @@ services:
       TANKOVAULT_DATABASE__URL: *db-url
       TANKOVAULT_ANILIST__CLIENT_ID: "${TANKOVAULT_ANILIST__CLIENT_ID:-}"
       TANKOVAULT_ANILIST__CLIENT_SECRET: "${TANKOVAULT_ANILIST__CLIENT_SECRET:-}"
-      # OAuth returns the browser to the frontend origin, which proxies /v1/* to the api.
-      # Must point at the frontend's callback route, not the API: the API's callback needs the
-      # SPA's in-memory Bearer token, which a raw browser OAuth redirect cannot carry.
+      # Must point at the frontend's callback, not the API: the API callback needs the SPA's
+      # in-memory Bearer token, which a raw browser redirect can't carry.
       TANKOVAULT_ANILIST__REDIRECT_URI: http://localhost:3000/account/anilist-callback
-      # Required: this key seals every user's AniList access/refresh token at rest, and the
-      # previous fallback was 32 zero bytes. `openssl rand -base64 32`.
+      # Required: seals every user's AniList token at rest; the previous fallback was 32 zero bytes.
       TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY: "${TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY:?set it in deploy/local.env — see deploy/local.env.example}"
     depends_on:
       migrate: { condition: service_completed_successfully }
@@ -373,39 +276,16 @@ services:
     depends_on:
       flaresolverr: { condition: service_started }
 
-  # Optional headless-render tier (design §9). Uses the Chromium-provisioned runtime
-  # (the scratch image has no browser); doubles as a ChallengeSolver back-end on /v1/solve.
+  # Optional headless-render tier (design §9); doubles as a ChallengeSolver back-end on /v1/solve.
   render:
     deploy: { resources: { limits: { memory: 2g } } }
     shm_size: 1gb
     healthcheck: *healthcheck
-    # Hardening matters most on this tier: it is the only one running a real browser against
-    # untrusted remote content, and Chromium here is already `--no-sandbox` (no user namespaces
-    # in the container), so nothing it does needs a capability.
-    #
-    # `read_only` is set here rather than merged from `*hardening`, because unlike the scratch
-    # services — which are safe by construction, having no writable path to depend on — this is
-    # a full Debian base under a browser, so the writable set had to be *measured*. It was:
-    # `docker diff` over a headless render in an image mirroring `runtime-browser` shows every
-    # write landing under exactly two prefixes, and nowhere else.
-    #
-    #   /tmp            chromiumoxide's per-launch `--user-data-dir` (a `tempfile` directory,
-    #                   which is why no fixed profile path appears here) plus Chromium's own
-    #                   scratch files.
-    #   /home/nonroot   $HOME: `.cache/fontconfig`, `.config/chromium/Crash Reports` and
-    #                   `.local/share/pki/nssdb`, all created on first launch.
-    #
-    # `/dev/shm` is the third writable path and needs no entry: Docker mounts it as tmpfs
-    # regardless of `read_only`, and `shm_size` above is what sizes it.
-    #
-    # **`uid`/`gid` on the `$HOME` mount are load-bearing.** A bare `tmpfs: [/home/nonroot]`
-    # mounts root-owned mode 755 over the account's own home, so the process cannot write to it
-    # — and the failure is not a permission error but `chrome_crashpad_handler: --database is
-    # required` followed by a SIGTRAP, which reads like a Chromium bug rather than a mount
-    # option. `/tmp` needs no ownership: tmpfs defaults to 1777 there.
-    #
-    # Verified end to end at both extremes: a `data:` URL and a live HTTPS page both render with
-    # a read-only root and these two mounts, with no crashpad or NSS failure.
+    # Already --no-sandbox (no user namespaces in the container). `read_only` set inline, not
+    # merged from `*hardening`: this is a full Debian base, so the writable set had to be measured
+    # (docker diff), not assumed like the scratch services'. uid/gid on the $HOME mount are
+    # load-bearing — a root-owned mount there makes Chromium crash with a misleading
+    # `chrome_crashpad_handler: --database is required` instead of a permission error.
     read_only: true
     tmpfs:
       - /tmp:rw,nosuid,nodev,noexec,size=256m
@@ -419,16 +299,11 @@ services:
     environment:
       <<: [*telemetry, *internal]
       TANKOVAULT_TELEMETRY__SERVICE_NAME: render
-      # CHROME_PATH + NO_SANDBOX are baked into the runtime-browser image.
 
   # ---- Frontend (Dioxus WASM SPA served by the axum `frontend` server) ---------------
-  # The `frontend` server serves the built SPA and reverse-proxies /v1/* (REST + SSE) to `api`,
-  # giving the single origin the client's same-origin API calls (API_BASE = "") require. This is
-  # the front door for the E2E stack: open http://localhost:3000.
   frontend:
     deploy: { resources: { limits: { memory: 256m } } }
-    # Same self-probe as the backends, but this image's entrypoint has its own name
-    # (`tankovault-frontend`), so the anchor above cannot be reused verbatim.
+    # Own entrypoint name, so the shared healthcheck anchor doesn't apply verbatim.
     healthcheck:
       test: ["CMD", "/usr/local/bin/tankovault-frontend", "--healthcheck"]
       interval: 10s
@@ -438,19 +313,14 @@ services:
     <<: *hardening
     build:
       <<: *build
-      # No `BIN`: this image carries the WASM bundle alongside the server binary, so it has a
-      # stage of its own rather than a `BIN` value on the shared runtime stage.
       target: frontend
     environment:
       <<: *telemetry
       TANKOVAULT_TELEMETRY__SERVICE_NAME: frontend
-      # Same-origin front door: proxy /v1/* (REST + SSE) to the api service.
       TANKOVAULT_FRONTEND__API_UPSTREAM: http://api:8080
     ports: ["3000:3000"]
     depends_on:
-      # Was `service_started`, which only means the API *process* exists — so every
-      # `compose up` raced the frontend against an API that was not yet listening. The API's
-      # healthcheck makes the ordering real.
+      # service_healthy, not service_started: don't race the frontend against a listening API.
       api: { condition: service_healthy }
 
 volumes:

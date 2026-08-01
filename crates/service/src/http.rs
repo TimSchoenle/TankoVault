@@ -23,29 +23,20 @@ use tower_http::trace::TraceLayer;
 /// Header carrying the per-request correlation id.
 const REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
 
-/// How long to let in-flight requests finish after the shutdown signal before the process
-/// exits anyway. Comfortably above the default request timeout so a normal request drains,
-/// while still bounded — a container runtime will `SIGKILL` after its own grace period and
-/// exiting cleanly first produces better logs.
+/// How long in-flight requests get to finish after the shutdown signal before exit anyway.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Assembles the middleware every HTTP service shares.
 ///
-/// Order matters and is fixed here so no service can get it subtly wrong. Outermost first:
-///
-/// 1. **Request id** — minted before anything else so every log line, including a
-///    rejection, carries one.
-/// 2. **Tracing** — the span that subsequent layers log into.
-/// 3. **Metrics** — measures everything below it, so time spent waiting on the rate
-///    limiter counts against the request the client actually experienced.
-/// 4. **Security headers / CORS** — applied to *every* response, including the `429` from
-///    the limiter and the `408` from the timeout.
-/// 5. **Rate limit** — sheds load before any real work, but after the cheap layers above.
-/// 6. **Principal** — identifies the caller so the limiter below can bucket per account
-///    rather than per IP. Above the limiter because the limiter reads what it inserts.
-/// 7. **Internal auth** (internal tier only) — an unauthenticated caller is refused before
-///    it can spend the timeout or the body budget, but after the headers above are set.
-/// 8. **Timeout**, **body limit**, **compression** — the per-request work bounds.
+/// Order is fixed and is a security property. Outermost first:
+/// 1. Request id — so every log line, including a rejection, carries one.
+/// 2. Tracing.
+/// 3. Metrics — includes time spent waiting on the rate limiter.
+/// 4. Security headers / CORS — applied to every response, including the 429 and 408.
+/// 5. Rate limit — after the cheap layers, before real work.
+/// 6. Principal — above the limiter, which reads what it inserts.
+/// 7. Internal auth (internal tier only) — after headers, before timeout/body budget.
+/// 8. Timeout, body limit, compression — the per-request work bounds.
 pub struct HttpStack {
     security: SecurityConfig,
     metrics: MetricsRegistry,
@@ -57,13 +48,9 @@ pub struct HttpStack {
 /// Turns request headers into a **verified** caller identity, or `None` for an anonymous
 /// request.
 ///
-/// A function rather than a trait: there is exactly one implementation per service and it is
-/// three lines. Supplied by the service so this crate need not know how tokens are signed.
-///
-/// The contract is that the returned identity is *verified* — the limiter treats it as
-/// trusted, so a resolver that reads an unauthenticated header would hand every caller a
-/// free bucket per value they choose, which is the bug this whole mechanism exists to
-/// prevent on the IP path.
+/// Supplied by the service, which knows how tokens are signed; this crate does not. The
+/// returned identity must be verified — the limiter trusts it, so an unverified resolver
+/// would let a caller choose their own rate-limit bucket.
 pub type PrincipalResolver =
     std::sync::Arc<dyn Fn(&axum::http::HeaderMap) -> Option<String> + Send + Sync>;
 
@@ -90,18 +77,9 @@ impl HttpStack {
 
     /// Identify the caller for per-account rate limiting.
     ///
-    /// [`crate::ratelimit::Principal`] was read by the limiter and **inserted by nobody**, so
-    /// the per-user budget documented in that module was dead code and every request —
-    /// authenticated or not — was bucketed by IP alone. That matters because an IP bucket is
-    /// the wrong unit for a signed-in user: they share it with a household, an office NAT or
-    /// a mobile carrier, and an attacker with one account and many addresses evades it
-    /// entirely.
-    ///
-    /// The resolver is supplied by the service rather than implemented here, so this crate
-    /// does not need to know how tokens are signed — and, more importantly, so the limiter
-    /// can never be handed a principal derived from unverified client input. It must verify.
-    ///
-    /// Mounted *outside* the rate limiter, because the limiter reads what it inserts.
+    /// Without this, every caller is bucketed by IP, which an attacker with many addresses
+    /// evades. Must verify identity: the limiter trusts whatever it reads. Mounted outside
+    /// the rate limiter, which reads what this inserts.
     #[must_use]
     pub fn with_principal(mut self, resolver: Option<PrincipalResolver>) -> Self {
         self.principal = resolver;
@@ -110,14 +88,9 @@ impl HttpStack {
 
     /// Require [`crate::internal_auth::INTERNAL_TOKEN_HEADER`] on every routed request.
     ///
-    /// For services in the internal tier (`sync`, `control-plane`, `render`,
-    /// `challenge-solver`), whose contract is privileged and whose only legitimate callers
-    /// are other services. Pass `None` to leave the tier unauthenticated, which
-    /// [`tankovault_config::InternalAuthConfig::resolve`] permits outside the production
-    /// profile so local development stays frictionless.
-    ///
-    /// Health and readiness stay reachable: [`ops_router`] is merged *outside* [`Self::apply`],
-    /// so an orchestrator never needs the secret.
+    /// For internal-tier services only; `None` leaves the tier unauthenticated outside
+    /// production. Health/readiness stay reachable regardless: [`ops_router`] is merged
+    /// outside [`Self::apply`].
     #[must_use]
     pub fn with_internal_auth(
         mut self,
@@ -146,8 +119,7 @@ impl HttpStack {
             .records_http_requests()
             .then(|| axum::middleware::from_fn(service_metrics::track_request));
         // Innermost of the auth-ish layers but outside the work bounds: an unauthenticated
-        // caller must not be able to spend the body limit or the request timeout, and must
-        // still receive the security headers and a request id on the way out.
+        // caller must not spend the body limit or the request timeout.
         let internal_auth = internal_token.map(|token| {
             axum::middleware::from_fn_with_state(token, crate::internal_auth::enforce)
         });
@@ -158,15 +130,12 @@ impl HttpStack {
             axum::middleware::from_fn_with_state(security.clone(), apply_security_headers)
         });
 
-        // Applied as separate `Router::layer` calls rather than one `ServiceBuilder`:
-        // `CompressionLayer` changes the response body type, and axum's `from_fn`
-        // middleware requires the plain `Response<Body>` that only `Router::layer`
-        // normalises back to. Each call wraps the previous one, so the **last** layer
-        // listed is the outermost.
+        // Separate `Router::layer` calls, not one `ServiceBuilder`: `CompressionLayer`
+        // changes the response body type, and `from_fn` needs the plain `Response<Body>`
+        // that only `Router::layer` normalises back to. Last layer listed is outermost.
         router
-            // Innermost, so it wraps the handler itself. A panic becomes a 500 for the one
-            // request that caused it instead of taking down the replica — which is what
-            // happened while the release profile used `panic = "abort"` (see the note there).
+            // Innermost: turns a handler panic into a 500 for that request instead of
+            // taking down the replica (previously the release profile used `panic = "abort"`).
             .layer(tower_http::catch_panic::CatchPanicLayer::new())
             .layer(CompressionLayer::new())
             .layer(DefaultBodyLimit::max(security.max_body_bytes))
@@ -187,14 +156,10 @@ impl HttpStack {
     }
 }
 
-/// A CORS layer restricted to the configured origins.
+/// A CORS layer restricted to the configured origins, replacing `CorsLayer::permissive()`
+/// (which reflected any origin, exposing authenticated user data to any site).
 ///
-/// Replaces `CorsLayer::permissive()`, which reflected any origin and allowed any method
-/// and header — on an API that serves authenticated user data, that let any site on the
-/// internet read a signed-in user's watchlist, progress and account settings.
-///
-/// Origins that fail to parse as header values are dropped with a warning rather than
-/// silently widening the policy.
+/// An origin that fails to parse is dropped with a warning, not left to widen the policy.
 fn build_cors(security: &SecurityConfig) -> CorsLayer {
     let origins: Vec<HeaderValue> = security
         .cors
@@ -288,13 +253,8 @@ async fn apply_security_headers(
         HeaderName::from_static("cross-origin-resource-policy"),
         HeaderValue::from_static("same-origin"),
     );
-    // A JSON API needs to load nothing and be framed by nobody. `frame-ancestors` is the
-    // modern, CSP-level statement of the `X-Frame-Options` above; both are sent because the
-    // two are honoured by different browser generations.
-    //
-    // Deliberately not configurable: unlike CORS, there is no deployment shape in which an
-    // API response should be allowed to pull a script or be embedded in a frame, and a knob
-    // here would only be a way to turn the protection off.
+    // Both `frame-ancestors` and `X-Frame-Options` are sent since browsers honour one or
+    // the other. Not configurable: no deployment shape needs a script or frame here.
     headers.insert(
         header::CONTENT_SECURITY_POLICY,
         HeaderValue::from_static("default-src 'none'; frame-ancestors 'none'; base-uri 'none'"),
@@ -320,13 +280,11 @@ struct OpsState {
 /// The undocumented operational endpoints: `/health`, `/ready`, and — unless it has been
 /// isolated to its own port — the metrics scrape.
 ///
-/// Deliberately excluded from the `OpenAPI` document — an orchestrator probe is not part of
-/// the product's API contract — and mounted *outside* the middleware stack by convention,
-/// so a rate limit or a body cap can never make a replica look unhealthy.
+/// Excluded from the `OpenAPI` document and mounted outside the middleware stack, so a
+/// rate limit or a body cap can never make a replica look unhealthy.
 ///
-/// When [`MetricsRegistry::listen`] is set the scrape route is **not** mounted here; it is
-/// served on its own listener instead (see [`spawn_metrics_server`]), keeping metrics off
-/// the request-facing port entirely.
+/// When [`MetricsRegistry::listen`] is set the scrape route is not mounted here; it is
+/// served on its own listener instead (see [`spawn_metrics_server`]).
 pub fn ops_router(health: Health, metrics: MetricsRegistry) -> Router {
     let mut router = Router::new()
         .route("/health", get(liveness))
@@ -341,9 +299,8 @@ pub fn ops_router(health: Health, metrics: MetricsRegistry) -> Router {
     router.with_state(OpsState { health, metrics })
 }
 
-/// A standalone router serving only the Prometheus scrape endpoint, for the isolated
-/// metrics port. Carries none of the request middleware and none of the health probes —
-/// it exists purely so a scrape can reach a port that the public API traffic never touches.
+/// A standalone router serving only the Prometheus scrape, for the isolated metrics port —
+/// no request middleware, no health probes.
 pub fn metrics_router(metrics: MetricsRegistry) -> Router {
     let scrape_route = metrics.route().to_owned();
     Router::new()
@@ -354,12 +311,8 @@ pub fn metrics_router(metrics: MetricsRegistry) -> Router {
         })
 }
 
-/// Spawn a dedicated server for the metrics scrape when it has been isolated to its own
-/// port via [`MetricsRegistry::listen`].
-///
-/// A no-op when metrics are disabled or no separate address is configured, so services can
-/// call it unconditionally. The spawned server shares the same `shutdown` token as the
-/// primary listener, so both drain together on a container stop.
+/// Spawn a dedicated server for the metrics scrape when isolated to its own port via
+/// [`MetricsRegistry::listen`]. A no-op otherwise, so services can call it unconditionally.
 pub fn spawn_metrics_server(metrics: MetricsRegistry, shutdown: CancellationToken) {
     if !metrics.is_enabled() {
         return;
@@ -377,8 +330,7 @@ pub fn spawn_metrics_server(metrics: MetricsRegistry, shutdown: CancellationToke
     });
 }
 
-/// Liveness: the process is up and its executor is scheduling. Never consults a dependency
-/// — see the [`crate::health`] module docs.
+/// Liveness: the process is up. Never consults a dependency (see [`crate::health`]).
 async fn liveness() -> impl IntoResponse {
     (StatusCode::OK, "ok")
 }
@@ -455,8 +407,7 @@ mod tests {
 
     #[test]
     fn cors_is_off_until_an_origin_is_named() {
-        // The safe default: a deployment that never configures CORS gets same-origin only,
-        // rather than the previous reflect-any-origin behaviour.
+        // Safe default: no configured CORS means same-origin only.
         assert!(!SecurityConfig::default().cors.is_enabled());
     }
 
@@ -521,10 +472,8 @@ mod tests {
     use axum::http::Request;
     use tower::ServiceExt as _;
 
-    /// The scrape handler is reached (as opposed to the route being absent) when the
-    /// response body is the handler's own "metrics are disabled" message. An unrouted path
-    /// yields axum's own empty 404 body instead, which lets these tests tell "mounted" from
-    /// "not mounted" even though both surface as `404` here.
+    /// Distinguishes "handler reached" from "route absent" — both surface as `404` here,
+    /// but only the former returns this body.
     async fn body_string(response: Response) -> String {
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await

@@ -1,38 +1,6 @@
-//! The feature registry — every switchable capability in the product, declared once.
-//!
-//! # The two kinds of switch, and why this is not the other one
-//!
-//! `tankovault-service` already has *configuration* toggles (metrics, audit, rate limiting).
-//! Those are resolved once at wiring time: audit off installs a no-op sink, rate limiting off
-//! leaves the layer unmounted. That contract is deliberate and must not be broken.
-//!
-//! A **feature flag** is a different thing and needs the opposite property: an operator turns
-//! it on or off from the control plane while the process is running, and the change must take
-//! effect without a redeploy. So a flag *is* consulted at request time. What keeps that from
-//! degenerating into `if cfg.x` scattered through handlers is that the consultation is
-//! **declarative**: an HTTP route names the feature it belongs to in one table next to the
-//! route registration, and one middleware enforces every entry. Background loops, which have
-//! no route to hang a declaration on, check their own flag at the top of each iteration —
-//! the loop *is* the feature there, so that check is the same declaration in a different
-//! shape.
-//!
-//! # Defaults live in code, overrides live in the database
-//!
-//! Each [`Feature`] carries a compiled default. The database stores only *overrides*, so:
-//!
-//! - adding a feature needs no migration and no seed step — it appears in the control plane
-//!   immediately, at its declared default;
-//! - deleting the override row is a meaningful operation ("go back to the shipped default"),
-//!   distinct from explicitly setting the same value;
-//! - an empty `feature_flag_overrides` table is a fully working deployment.
-//!
-//! # Locked features
-//!
-//! A few features cannot be switched off, and the registry says so rather than relying on an
-//! operator's judgement. Disabling the feature-flag surface itself, or the user
-//! administration that could re-enable it, would lock every administrator out of the
-//! deployment with no in-band recovery. [`Feature::is_locked`] refuses those, and the API
-//! rejects the write.
+//! The feature registry — every switchable capability in the product, its compiled default,
+//! and its control-plane grouping. The database stores only overrides, so an empty override
+//! table is a fully working deployment; see [`Feature::is_locked`] for the two that refuse off.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -45,7 +13,6 @@ use utoipa::ToSchema;
 )]
 #[non_exhaustive]
 pub enum Feature {
-    // --- catalogue ---
     /// Public catalogue browsing: series list, detail, chapters, tags, provider facet.
     #[serde(rename = "catalogue.browse")]
     CatalogueBrowse,
@@ -56,7 +23,6 @@ pub enum Feature {
     #[serde(rename = "catalogue.recommendations")]
     CatalogueRecommendations,
 
-    // --- accounts ---
     /// Self-service registration. Off makes the deployment invite-only: existing accounts
     /// keep working, new ones can only be created by an administrator.
     #[serde(rename = "accounts.registration")]
@@ -79,7 +45,6 @@ pub enum Feature {
     #[serde(rename = "accounts.passkeys")]
     AccountsPasskeys,
 
-    // --- privacy / data protection ---
     /// Self-service personal-data export (GDPR Art. 20).
     #[serde(rename = "privacy.self_export")]
     PrivacySelfExport,
@@ -91,7 +56,6 @@ pub enum Feature {
     #[serde(rename = "privacy.requests")]
     PrivacyRequests,
 
-    // --- tracking ---
     /// The watchlist.
     #[serde(rename = "tracking.watchlist")]
     TrackingWatchlist,
@@ -105,7 +69,6 @@ pub enum Feature {
     #[serde(rename = "tracking.stats")]
     TrackingStats,
 
-    // --- notifications ---
     /// In-app notification rows and the unread badge.
     #[serde(rename = "notifications.in_app")]
     NotificationsInApp,
@@ -125,7 +88,6 @@ pub enum Feature {
     #[serde(rename = "notifications.discord")]
     NotificationsDiscord,
 
-    // --- external sync ---
     /// External tracker sync as a whole (`AniList` and any future provider). Off hides the
     /// entire surface; the finer flags below shape *how* it syncs.
     #[serde(rename = "sync.external")]
@@ -143,7 +105,6 @@ pub enum Feature {
     #[serde(rename = "sync.history")]
     SyncHistory,
 
-    // --- scanning ---
     /// The periodic scheduler sweeps. Off means scans only ever run on demand.
     #[serde(rename = "scanning.scheduler")]
     ScanningScheduler,
@@ -156,17 +117,13 @@ pub enum Feature {
     /// Automatic canonicalisation merge-candidate recording and the review queue.
     #[serde(rename = "scanning.merge_queue")]
     ScanningMergeQueue,
-    /// The standing duplicate sweep, and the automatic merges it performs.
+    /// The standing duplicate sweep and the automatic, destructive merges it performs.
     ///
-    /// Separate from [`Self::ScanningMergeQueue`] because it is the only flag in this registry
-    /// that gates a **destructive** background action: a sweep merges two series and the
-    /// absorbed row is deleted. An operator who suspects the matcher is over-merging needs to
-    /// stop that without also blinding themselves to the review queue that would show them the
-    /// evidence, which is exactly what switching off the queue as a whole would do.
+    /// Separate from [`Self::ScanningMergeQueue`]: an operator stopping a suspected
+    /// over-merge must not also lose the review queue that shows the evidence.
     #[serde(rename = "scanning.auto_merge")]
     ScanningAutoMerge,
 
-    // --- operator surfaces ---
     /// The operator console's provider lifecycle surface.
     #[serde(rename = "admin.providers")]
     AdminProviders,
@@ -182,10 +139,10 @@ pub enum Feature {
     /// The system statistics surface.
     #[serde(rename = "admin.stats")]
     AdminStats,
-    /// User administration. **Locked** — see the module docs.
+    /// User administration; see [`Feature::is_locked`].
     #[serde(rename = "admin.users")]
     AdminUsers,
-    /// The feature-flag control plane itself. **Locked** — see the module docs.
+    /// The feature-flag control plane itself; see [`Feature::is_locked`].
     #[serde(rename = "admin.feature_flags")]
     AdminFeatureFlags,
 }
@@ -300,11 +257,10 @@ impl Feature {
 
     /// Whether this feature may never be switched off.
     ///
-    /// Both locked features are recovery paths. Turning off the flag surface removes the only
-    /// way to turn anything back on; turning off user administration removes the only way to
-    /// grant someone the permission to reach the flag surface. Either would brick the
-    /// deployment from the operator's side, recoverable only by editing the database
-    /// directly, so the registry refuses instead of trusting a confirmation dialog.
+    /// Both are recovery paths: disabling the flag surface removes the only way to switch
+    /// anything back on, and disabling user administration removes the only way to grant
+    /// access to it. Either would brick the deployment, recoverable only via a direct
+    /// database edit, so the registry refuses rather than trusting a confirmation dialog.
     #[must_use]
     pub const fn is_locked(self) -> bool {
         matches!(self, Self::AdminFeatureFlags | Self::AdminUsers)

@@ -9,8 +9,7 @@ use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
 
-/// Per-provider statistics table (read-only, auto-refreshing): catalogue footprint,
-/// content freshness, and last-scan health for every provider at a glance.
+/// Per-provider statistics table: catalogue footprint, freshness, and last-scan health.
 #[component]
 pub(super) fn ProviderStatsTable(tick: RefreshTick) -> Element {
     let api = api::use_api();

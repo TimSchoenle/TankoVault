@@ -17,21 +17,13 @@ use webauthn_rs_proto::RequestChallengeResponse;
 
 /// How a failed sign-in should be worded, and whether to offer "resend confirmation".
 ///
-/// Returns the catalogue key plus the resend flag, or `None` when the status has nothing
-/// sign-in-specific to say and [`api::friendly_error`]'s generic wording is right.
+/// Returns the catalogue key plus the resend flag, or `None` when [`api::friendly_error`]'s
+/// generic wording is right. Split out from the submit callback so the mapping is testable
+/// without a Dioxus runtime.
 ///
-/// Split out from the submit callback for the reason `api::error::status_key` is split out
-/// from `status_message`: the mapping is the part worth testing, and testing it must not
-/// require a Dioxus runtime.
-///
-/// `401` is worded here rather than left to [`api::friendly_error`] because the shared
-/// catalogue entry for 401 is "You need to sign in to do that." That is right on every other
-/// screen and nonsense on this one: it tells the reader to do the thing they are already
-/// doing, and names nothing they could correct. On the sign-in form a 401 has exactly one
-/// meaning — the identifier and password did not match an account.
-///
-/// `403` is the neighbouring case: the password *was* right, the address just isn't confirmed
-/// yet, which is why it is the only status that offers the resend action.
+/// `401` here is "bad credentials", not the shared catalogue's generic 401 wording, which would
+/// tell the reader to do the thing they're already doing. `403` means the password was right but
+/// the address isn't confirmed, so it's the only status that offers the resend action.
 fn sign_in_failure(status: Option<u16>) -> Option<(&'static str, bool)> {
     match status? {
         401 => Some(("auth.badCredentials", false)),
@@ -54,8 +46,7 @@ pub(crate) fn Login() -> Element {
     let mut error = use_signal(|| Option::<String>::None);
     // A neutral, non-error status line (e.g. "check your inbox to confirm your email").
     let mut info = use_signal(|| Option::<String>::None);
-    // Set when a sign-in was refused because the address isn't confirmed yet, so we can
-    // surface a "resend confirmation email" action.
+    // Set when refused for an unconfirmed address, to surface "resend confirmation".
     let mut needs_verification = use_signal(|| false);
     let busy = use_busy();
     // `Api` is `Copy`, so every callback below captures the same handle without cloning, and
@@ -132,9 +123,8 @@ pub(crate) fn Login() -> Element {
         });
     });
 
-    // Sign in with a passkey: no identifier, no password. The account is resolved from the
-    // credential the authenticator returns, which is why this callback sends nothing the reader
-    // typed — see `services/api/src/auth/passkey.rs`.
+    // Sign in with a passkey: the account is resolved from the credential, not anything typed —
+    // see `services/api/src/auth/passkey.rs`.
     let passkey_sign_in = use_callback(move |()| {
         if !busy.claim() {
             return;
@@ -362,11 +352,10 @@ pub(crate) fn Login() -> Element {
 
 /// Word a failed passkey ceremony, or say nothing when the reader simply cancelled.
 ///
-/// Shared with `views::account::passkeys` in intent but not in code: the two screens hold
-/// different signals, and threading them through one function would be more indirection than
-/// the four lines it saves. What must not diverge is the rule — a `Cancelled` outcome clears
-/// the error line rather than writing to it, because the reader pressed Escape and telling them
-/// something went wrong is how a working feature comes to look broken.
+/// Not shared with `views::account::passkeys`: same rule, different signals, and threading
+/// them through one function costs more indirection than it saves.
+/// [`CeremonyError::Cancelled`] clears the error line instead of writing to it — a ceremony the
+/// reader chose to stop isn't a broken feature.
 fn report(
     outcome: &CeremonyError,
     mut error: Signal<Option<String>>,
@@ -411,8 +400,7 @@ pub(crate) fn VerifyEmail(token: String) -> Element {
     let nav = use_navigator();
     let api = api::use_api();
 
-    // Fire the confirmation once for this token; `use_resource` re-runs only if `token`
-    // changes, so a stale link isn't retried on every render.
+    // `use_resource` re-runs only if `token` changes, so a stale link isn't retried every render.
     let token_for_call = token.clone();
     let resource = use_resource(move || {
         let client = api.client();

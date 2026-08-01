@@ -1,10 +1,5 @@
-//! Built-in provider presets: ready-to-seed configurations for the sites this build
-//! ships support for. `xtask seed` inserts these, and the admin console can copy them.
-//!
-//! Each Madara preset carries only the selector overrides where the site deviates from
-//! [`madara_default_config`](crate::madara_default_config) — onboarding a Madara site is
-//! data, not code (design §7). A site with a bespoke layout instead ships a custom Rust
-//! adapter and an empty config. See `docs/PROVIDERS.md` for the config-vs-code split.
+//! Built-in provider presets, ready to seed (`xtask seed`). Each Madara preset stores only the
+//! selector overrides where the site deviates from [`madara_default_config`](crate::madara_default_config).
 
 use serde_json::{Value, json};
 use tankovault_domain::{AdapterKind, Politeness};
@@ -28,17 +23,13 @@ pub struct ProviderPreset {
     pub politeness: Politeness,
 }
 
-/// The provider presets bundled with this build.
-///
-/// - `demonicscans` — **custom Rust adapter** (bespoke PHP layout); no selector config.
-/// - `kunmanga` — **custom adapter**: Madara-shaped series HTML, a JSON chapter API, and a
-///   sitemap-driven catalogue (its HTML listing is clamped at page 100 server-side).
-/// - `manhuaus` — the shared **Madara** adapter plus the handful of selector overrides
-///   where the site deviates from the Madara defaults.
+/// The provider presets bundled with this build: `demonicscans` and `kunmanga` are custom Rust
+/// adapters (bespoke layout / hybrid JSON+HTML), `manhuaus` is the shared Madara adapter with a
+/// few selector overrides.
 #[must_use]
 pub fn builtin() -> Vec<ProviderPreset> {
     vec![
-        // Bespoke PHP layout — driven by `DemonicScansAdapter`, dispatched on this slug.
+        // Bespoke PHP layout, driven by `DemonicScansAdapter`, dispatched on this slug.
         ProviderPreset {
             slug: "demonicscans",
             name: "Demonic Scans",
@@ -57,22 +48,12 @@ pub fn builtin() -> Vec<ProviderPreset> {
                 "catalog": {
                     // Paginates as `/manga/page/{n}/` (page 1 redirects to `/manga/`).
                     "path": "/manga/page/{page}/",
-                    // No has-next marker exists on this theme, so the Madara default
-                    // `a.nextpostslink` is explicitly *cleared* rather than overridden.
-                    //
-                    // This install replaced the numeric paginator with Madara's AJAX
-                    // "LOAD MORE" button (`nav.navigation-ajax a.load-ajax`, driven by
-                    // `admin-ajax.php`). That button is not a marker: it is rendered on
-                    // every non-empty listing including the final one, so keying `has_next`
-                    // on it would walk forever. There is no `<head>` rel=next link either —
-                    // an earlier revision claimed there was and selected `link[rel=next]`,
-                    // which matches nothing, so the walk stopped after page 1 and a full
-                    // scan registered 12 of ~1300 series.
-                    //
-                    // With no selector, `GenericConfigAdapter::list_catalog` falls back to
-                    // "another page exists while this one yielded items", which is exact
-                    // here: WordPress serves a `body.error404` shell with zero
-                    // `div.page-item-detail` for any page past the last.
+                    // `next` is null on purpose: this theme's paginator is an always-rendered
+                    // AJAX button, not a page marker, so any selector here either loops forever
+                    // or (as a stale `link[rel=next]` once did) matches nothing and silently
+                    // truncates the scan. `list_catalog` falls back instead to "another page
+                    // exists while this one yielded items", exact here since the 404 shell past
+                    // the last page renders zero items.
                     "next": null
                 },
                 "series": {
@@ -82,34 +63,27 @@ pub fn builtin() -> Vec<ProviderPreset> {
             }),
             politeness: Politeness::default(),
         },
-        // Hybrid: Madara-shaped catalogue/series HTML, but chapters come from a JSON API
-        // (`/api/comics/{slug}/chapters`), so it ships a **custom adapter** that reuses the
-        // Madara selectors below for HTML parsing and overrides chapter fetching.
+        // Hybrid: Madara HTML for catalogue/series, JSON API for chapters; a custom adapter
+        // reuses the Madara selectors below and overrides only chapter fetching.
         ProviderPreset {
             slug: "kunmanga",
             name: "KunManga",
             base_url: "https://www.kunmanga.co.uk",
             adapter: AdapterKind::Custom,
             config: json!({
-                // No `catalog` block: this site's HTML listing is unusable for enumeration
-                // (server-clamped at page 100, with an always-rendered "Next"), so
-                // `KunMangaAdapter::list_catalog` walks the sitemap shards instead and reads
-                // no catalogue selectors at all. See that method for the full reasoning.
+                // No `catalog` block: HTML listing is server-clamped at page 100 with an
+                // always-rendered "Next", so `list_catalog` walks the sitemap shards instead.
                 "series": {
-                    // The only reliable release-year signal found on this site: a single
-                    // link per series page into the year archive.
+                    // Only reliable release-year signal on this site: one link into the year
+                    // archive.
                     "release": "a[href*=\"manga-release\"]"
                 }
             }),
-            // Sized for the catalogue, not for a typical site. KunManga carries ~88k series
-            // (~175k requests for a full pass, versus ~1.3k series at manhuaus), so the
-            // default 1 rps would put a full scan in the two-day range. These are the
-            // highest values that still respect the policy ceilings — `rps` and
-            // `concurrency` are enforced **per worker process**, so at the shipped two
-            // replicas this is 4 rps / 8 in flight aggregate, exactly
-            // `Politeness::MAX_RPS` / `MAX_CONCURRENCY`. Raise replica count and these must
-            // come down. `crawl_delay_ms` stays 0: the site's robots.txt sets no
-            // Crawl-delay, and the site's own 429/`Retry-After` now drives backoff.
+            // Sized for KunManga's much larger catalogue. `rps`/`concurrency` are enforced per
+            // worker process, so at the shipped two replicas this is 4 rps / 8 in flight
+            // aggregate — exactly `MAX_RPS`/`MAX_CONCURRENCY`. Raising replica count without
+            // lowering these silently exceeds the policy ceiling. `crawl_delay_ms` stays 0:
+            // robots.txt sets no Crawl-delay, and 429/`Retry-After` now drives backoff.
             politeness: Politeness {
                 rps: 2.0,
                 concurrency: 4,
@@ -126,8 +100,7 @@ mod tests {
 
     #[test]
     fn every_preset_crawl_budget_is_within_policy() {
-        // A preset ships a crawl budget; shipping one the policy ceilings would silently
-        // clamp is a packaging bug, and shipping a non-positive one would stall the crawler.
+        // A shipped budget outside policy ceilings would be silently clamped; catch it here.
         for p in builtin() {
             assert!(
                 p.politeness.rps > 0.0

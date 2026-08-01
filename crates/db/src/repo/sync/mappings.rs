@@ -9,10 +9,7 @@ use uuid::Uuid;
 /// `provider`. Idempotent on `(series_id, provider)`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A `series_id` that does not
-/// exist is a foreign-key violation and therefore a 500, not [`crate::DbError::NotFound`]. The
-/// idempotence has a consequence worth stating: a first mapping and a re-pointed one are both
-/// `Ok(())`, so a caller cannot learn from this function whether the external id changed.
+/// [`crate::DbError::Sqlx`] only; a first mapping and a re-point are indistinguishably `Ok(())`.
 pub async fn upsert_mapping<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -37,9 +34,7 @@ pub async fn upsert_mapping<'e, E: PgExecutor<'e>>(
 /// short-circuit title re-matching on subsequent syncs.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unmapped external id is
-/// `Ok(None)`, not [`crate::DbError::NotFound`]: that is the ordinary first-encounter case, and
-/// it is what sends the caller down the title-matching path.
+/// [`crate::DbError::Sqlx`] only; unmapped is `Ok(None)`, sending the caller to title-matching.
 pub async fn mapping_series_for_external<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: &str,
@@ -59,9 +54,7 @@ pub async fn mapping_series_for_external<'e, E: PgExecutor<'e>>(
 /// to target the correct remote entry.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unmapped series is
-/// `Ok(None)`, which push reads as "nothing to target yet" and resolves by searching the
-/// provider; it must not be treated as a failure, since every series starts out unmapped.
+/// [`crate::DbError::Sqlx`] only; unmapped is `Ok(None)` — every series starts out unmapped.
 pub async fn mapping_external_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -77,14 +70,10 @@ pub async fn mapping_external_for_series<'e, E: PgExecutor<'e>>(
     Ok(ext)
 }
 
-/// List the provider slugs a user has linked an account for. Used by the targeted single-series
-/// sync push to fan out only to providers the user actually has, without probing the whole
-/// provider registry.
+/// List the provider slugs a user has linked an account for.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A user who has linked no
-/// account, and an unknown `user_id`, are both an empty `Vec` — the caller fans out to nothing
-/// and the sync is a no-op, which is the correct answer for both.
+/// [`crate::DbError::Sqlx`] only; no accounts is an empty `Vec` — the sync is a no-op.
 pub async fn list_linked_providers<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -102,9 +91,8 @@ pub async fn list_linked_providers<'e, E: PgExecutor<'e>>(
 /// The next pull/push re-resolves the series from scratch (title match or search).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A mapping that was not there
-/// is `Ok(false)`, not [`crate::DbError::NotFound`]; the caller decides whether that is a 404 or
-/// an idempotent success, because the desired end state has been reached either way.
+/// [`crate::DbError::Sqlx`] only; nothing to remove is `Ok(false)`, not
+/// [`crate::DbError::NotFound`].
 pub async fn delete_mapping<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -120,20 +108,13 @@ pub async fn delete_mapping<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected() > 0)
 }
 
-/// Record (or refresh) the mapping for several series in one statement.
-///
-/// The batched form of [`upsert_mapping`] (PERF-13). `DISTINCT ON (series_id) … ORDER BY
-/// series_id, ord DESC` reproduces the sequential loop's semantics precisely: `sync_mappings` is
-/// keyed on `(series_id, provider)`, so when two remote ids resolve to one series the *last* one
-/// wins, just as repeated `upsert_mapping` calls would have left it — and without it Postgres
-/// would abort the statement for touching the same row twice.
+/// Record (or refresh) the mapping for several series in one statement — the batched form of
+/// [`upsert_mapping`]. `DISTINCT ON (series_id) … ORDER BY ord DESC` is required: two remote ids
+/// resolving to one series would otherwise abort the statement instead of letting the last win.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable, and the foreign-key note on
-/// [`upsert_mapping`] applies to the whole batch: one unknown `series_id` fails the statement,
-/// so this is all-or-nothing rather than a partial write. An empty `pairs` returns `Ok(())`
-/// without touching the database — `UNNEST` of empty arrays would insert nothing anyway, but the
-/// early return keeps a no-op sync off the connection entirely.
+/// [`crate::DbError::Sqlx`] only; one unknown `series_id` fails the whole batch. An empty
+/// `pairs` is `Ok(())` with no round trip.
 pub async fn upsert_mappings<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: &str,

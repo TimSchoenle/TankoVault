@@ -1,30 +1,8 @@
 //! Passwordless sign-in with a passkey.
 //!
-//! Two legs. `start` issues a challenge to nobody in particular; `finish` receives a signed
-//! assertion, learns *from it* which account is signing in, verifies the signature against the
-//! challenge it issued, and mints the same session [`login`](super::login::login) would.
-//!
-//! # Why the challenge names no account
-//!
-//! This is a **discoverable** (also "resident", also "usernameless") credential flow. The
-//! server does not ask who you are before challenging you, because asking would reintroduce
-//! the thing passkeys remove: an identifier the user has to remember and an oracle an attacker
-//! can enumerate. `super::login` has to spend an argon2 hash on every unknown identifier to
-//! avoid disclosing which accounts exist (SEC-10); this flow has no such branch to hide,
-//! because the request contains no identifier at all.
-//!
-//! The account arrives in the response instead: the authenticator returns the **user handle**
-//! it stored at registration alongside the credential id. Both are attacker-controllable
-//! claims on their own, which is why [`passkey_login_finish`] treats them as claims — it
-//! resolves the credential from the database, checks the handle agrees with the row's owner,
-//! and only then hands the assertion to the verifier that checks the signature.
-//!
-//! # What a successful assertion actually proves
-//!
-//! That the holder possessed a private key bound to this origin, and that the authenticator
-//! performed **user verification** (a PIN, a fingerprint, a face) — the relying party is built
-//! with `UserVerificationPolicy::Required`, so a passkey sign-in is two factors in one gesture
-//! rather than a password replacement that trades security for convenience.
+//! `start` issues a discoverable-credential challenge to nobody in particular; `finish` learns
+//! the account from the signed assertion, verifies it, and mints the same session
+//! [`login`](super::login::login) would.
 
 use axum::Json;
 use axum::extract::State;
@@ -162,11 +140,9 @@ pub async fn passkey_login_finish(
             .await?
             .ok_or(ApiError::Unauthorized)?;
 
-    // The two claims must agree with each other *and* with the database. An authenticator that
-    // returns a user handle pointing at one account while presenting a credential registered to
-    // another is either broken or lying, and the interesting case is the second: without this
-    // check, an attacker holding their own valid credential could name the victim's handle and
-    // have the session issued against whichever of the two the code happened to trust.
+    // The two claims must agree with each other and with the database, or an attacker holding
+    // their own valid credential could name the victim's handle and have the session issued
+    // against whichever of the two the code happened to trust.
     if record.user_id.as_uuid() != claimed_user {
         tracing::warn!(
             credential_owner = %record.user_id.as_uuid(),
@@ -215,10 +191,8 @@ pub async fn passkey_login_finish(
     let user = tankovault_db::repo::users::get(&state.pool, record.user_id).await?;
     ensure_may_sign_in(&state, &client, &user).await?;
 
-    // Best-effort bookkeeping, in this order because none of it is worth failing an
-    // already-successful authentication over. `update_credential` advances the signature
-    // counter and the backup flags; `needs_update` is false for most passkeys, which have no
-    // counter at all because they synchronise between devices.
+    // Best-effort — none of it is worth failing an already-successful sign-in over.
+    // `needs_update` is false for most passkeys, which sync between devices and have no counter.
     if result.needs_update() {
         passkey.update_credential(&result);
     }
@@ -250,16 +224,12 @@ pub async fn passkey_login_finish(
     issue_session(&state, jar, &user, Uuid::now_v7()).await
 }
 
-/// The two account gates a password sign-in passes, applied to a passkey sign-in.
-///
-/// They are not optional here just because the credential is stronger. Refusing at the door is
-/// what makes a refusal legible — the alternative is signing the user in successfully and then
-/// failing every subsequent request — and the email gate in particular is load-bearing: without
-/// it, registering a passkey would be a way *around* email confirmation, which is the one thing
-/// confirmation exists to prevent.
+/// The two account gates a password sign-in passes, applied here too — refusing at the door
+/// keeps a suspended or unconfirmed account from signing in and failing every request after,
+/// and closes off passkeys as a bypass for email confirmation.
 ///
 /// # Errors
-/// [`ApiError::Suspended`] or [`ApiError::EmailNotVerified`], each audited before it returns.
+/// [`ApiError::Suspended`] or [`ApiError::EmailNotVerified`], audited before returning.
 async fn ensure_may_sign_in(
     state: &AppState,
     client: &ClientContext,
@@ -299,16 +269,10 @@ async fn ensure_may_sign_in(
     Ok(())
 }
 
-/// Record one passkey sign-in attempt under `auth.passkey_login`.
-///
-/// Every exit from [`passkey_login_finish`] past the point the account is known goes through
-/// here, which is the property that matters: the handler has six of them — a handle mismatch, a
-/// rejected assertion, a suspension, an unconfirmed address, and success — and an audit trail
-/// that covers five of six is one that cannot be trusted to answer what happened.
-///
-/// The action name and the target are fixed here rather than passed in for the same reason.
-/// They were repeated at every call site, and a target that is the user id at five of them and
-/// something else at the sixth is a log nobody can filter.
+/// Records one passkey sign-in attempt under `auth.passkey_login`. Centralised because
+/// [`passkey_login_finish`] has six exit points past the point the account is known, and an
+/// audit trail missing one of them can't be trusted; the action name and target are fixed here
+/// so every call site logs the same target.
 async fn record_attempt(
     state: &AppState,
     client: &ClientContext,

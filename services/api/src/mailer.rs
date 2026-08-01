@@ -1,21 +1,15 @@
 //! Transactional-email composition and out-of-band delivery for the auth flows.
 //!
-//! Message *bodies* are built here (kept out of the handlers so the wording lives in one
-//! place); the actual send goes through the [`tankovault_email::EmailService`] on
-//! [`AppState`]. All sends are fire-and-forget: a mail outage must never fail — or slow —
-//! a user-facing request like sign-up or a reset request.
+//! All sends are fire-and-forget, so a mail outage never fails or slows a user-facing request.
 
 use crate::state::AppState;
 use tankovault_email::EmailMessage;
 
 /// HTML-escape an interpolated value.
 ///
-/// `username` is user-controlled and reaches the HTML bodies below. Unescaped, a username of
-/// `x</p><a href="https://evil.tld/reset">Click here to reset your password</a><p>` produced
-/// an attacker-chosen link inside a message that is genuinely from this service, carrying a
-/// valid DKIM signature — a high-credibility phishing primitive. The blast radius is small
-/// today (the message only goes to the address on that same account) and becomes large the
-/// moment any admin-facing or shared template includes a username.
+/// `username` is user-controlled and reaches the HTML bodies below. Unescaped, it can inject
+/// an attacker-chosen link into a DKIM-signed message genuinely from this service — a
+/// high-credibility phishing primitive.
 ///
 /// `&` first, or the escapes escape each other.
 fn esc(s: &str) -> String {
@@ -101,10 +95,9 @@ pub fn password_reset(email: &str, link: &str) -> EmailMessage {
 
 /// Compose the notice sent to the **old** address when the account's email is changed.
 ///
-/// Sent to the address being replaced, which is the only address that can tell the legitimate
-/// owner an attacker is walking off with their account. Deliberately carries no action link:
-/// its whole job is to be a tripwire, and a link in a "something changed" email is exactly the
-/// shape of the phishing message it warns about.
+/// Sent to the address being replaced — the only inbox that can warn the legitimate owner an
+/// attacker is walking off with their account. Deliberately carries no action link, since a
+/// link in a "something changed" email is exactly the phishing shape it warns about.
 #[must_use]
 pub fn email_changed(old_email: &str, username: &str, new_email: &str) -> EmailMessage {
     let username_html = esc(username);

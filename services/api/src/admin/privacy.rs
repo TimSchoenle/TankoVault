@@ -1,18 +1,6 @@
 //! The operator side of the data-subject request queue: triage, fulfilment and the record of
-//! how each request was answered.
-//!
-//! # Separate endpoints from the subject's own
-//!
-//! Everything here duplicates something a user can do for themselves —
-//! [`crate::me::privacy`] exports and erases on the caller's own behalf. The duplication is
-//! deliberate: these run against *another* person's account, need different permissions, and
-//! write different audit actions. Sharing one handler between "I exported my data" and "an
-//! operator exported someone's data" would produce a trail that cannot tell them apart, which
-//! is precisely the question a supervisory authority asks.
-//!
-//! Disclosure is its own capability. [`Permission::PrivacyWrite`] administers the queue;
-//! [`Permission::PrivacyExport`] is what lets someone actually read another person's record,
-//! because that is the action with consequences if it is misused.
+//! how each request was answered. Duplicates [`crate::me::privacy`] deliberately, since these
+//! act on another person's account under separately audited permissions.
 
 use crate::audit::audit;
 use crate::error::{ApiError, ApiResult};
@@ -415,10 +403,8 @@ pub async fn fulfil_erasure(
         ));
     }
 
-    // Resolve first. The erasure nulls the request's `user_id` on its way through, and a
-    // resolution written afterwards would be recording an outcome for a row whose subject link
-    // has already gone — harmless, but it reads as if the order of events were the other way
-    // round. Completing first leaves the record in the order it happened.
+    // Resolve before erasing: erasure nulls the request's `user_id`, so resolving afterward
+    // would record the outcome against a row whose subject link is already gone.
     tankovault_db::repo::gdpr::resolve(
         &state.pool,
         id,

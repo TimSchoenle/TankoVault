@@ -27,9 +27,8 @@ pub(crate) fn username(token: &str) -> Option<String> {
     ["username", "name", "sub"]
         .iter()
         .find_map(|key| {
-            // The blank check belongs *inside* the search, not after it. Applied afterwards
-            // it makes a present-but-empty `username` claim swallow the whole lookup, so the
-            // reader is greeted as nothing at all rather than falling through to `sub`.
+            // Must filter blanks inside the search: after it, an empty `username` claim would
+            // swallow the lookup instead of falling through to `sub`.
             claims
                 .get(*key)
                 .and_then(Value::as_str)

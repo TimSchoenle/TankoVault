@@ -1,11 +1,4 @@
-# Default rustfmt settings, deliberately.
-#
-# `crates/api-client/src/lib.rs` is emitted by `xtask openapi` (progenitor codegen) and
-# carries a "DO NOT EDIT" header. It used to be excluded here via `ignore`, but that key is
-# nightly-only: on the stable toolchain CI runs, rustfmt warned and formatted the file
-# regardless, so `cargo fmt --check` was permanently red and gated the three jobs that
-# depend on it. The generator now pipes its output through rustfmt itself
-# (`xtask/src/main.rs::rustfmt`), so the on-disk form already *is* rustfmt's output and both
-# `cargo fmt --check` and `xtask openapi --check` agree on it.
-#
-# Do not reintroduce `ignore` unless CI moves to nightly.
+# Default rustfmt settings, deliberately. `ignore` (to exclude the generated
+# `crates/api-client/src/lib.rs`) is nightly-only; on stable it warned and reformatted the file
+# anyway, so `xtask openapi` now pipes its output through rustfmt itself instead. Do not
+# reintroduce `ignore` unless CI moves to nightly.

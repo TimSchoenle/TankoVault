@@ -1,28 +1,9 @@
-//! Repository row → wire view conversions.
+//! Repository row → wire view conversions: the one seam allowed to know both the
+//! `tankovault-db` and `tankovault_contracts` layers, so a renamed or dropped column is a
+//! compile error here rather than a silent drift in the published API.
 //!
-//! # Why this module exists
-//!
-//! `tankovault-db` used to derive `utoipa::ToSchema` on 23 repository row structs, and 11
-//! handlers returned those rows verbatim. The persistence layer was therefore the public HTTP
-//! schema: renaming a column in a `SELECT` rewrote the published API and the generated
-//! `crates/api-client` with **no compile error anywhere**, because no handler ever named a
-//! field. That is a breaking change that could not be caught by reviewing this crate.
-//!
-//! The wire shapes now live in `tankovault_contracts::{admin, catalogue, me}` and the rows are
-//! plain query results again. This module is the seam: `services/api` is the only crate
-//! permitted to know both layers, so every mapping is written out exactly once, here. A
-//! renamed or dropped column is now a compile error in this file and nowhere else.
-//!
-//! # Why a trait rather than `From`
-//!
-//! Both sides are foreign types, so `impl From<db::Row> for contracts::View` is barred by the
-//! orphan rule. [`IntoView`] and [`IntoStored`] are local traits, which is what makes the
-//! conversions legal here — and they carry their direction in the name, which `From` would
-//! not.
-//!
-//! Keep the conversions exhaustive and literal — no `..Default::default()`, no struct-update
-//! syntax. The point is that adding a column to a row must force a decision about whether it
-//! is published.
+//! Keep conversions exhaustive and literal — no `..Default::default()`, no struct-update
+//! syntax — so a new column forces a decision about whether it is published.
 
 use tankovault_contracts::{admin, catalogue, me};
 use tankovault_db::repo;

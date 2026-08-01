@@ -26,108 +26,48 @@ members = [
     "services/frontend",
     "xtask",
 ]
-# Two members are deliberately outside the host workspace, each because it needs a
-# toolchain this one does not have:
-#
-# - `web/frontend` — the Dioxus SPA, built with the `dx` CLI against `wasm32`.
-# - `fuzz` — the `cargo-fuzz` targets. `libfuzzer-sys` needs `-Z sanitizer`, i.e. **nightly**,
-#   while `rust-toolchain.toml` pins 1.94.0 and the `msrv` CI job builds at 1.94. As a member
-#   it would drag nightly into `cargo fmt --all`, `cargo clippy --workspace --all-targets`,
-#   `cargo deny` (a `libfuzzer-sys`/`arbitrary` duplicate would land in the `bans` budget) and
-#   the `--locked` resolution the `msrv` and `supply-chain` jobs measure — for a crate no gate
-#   runs. It carries its own `rust-toolchain.toml` and its own lockfile instead. See
-#   `fuzz/README.md`.
+# `web/frontend` (Dioxus SPA, built via `dx` against `wasm32`) and `fuzz` (needs nightly, while
+# `rust-toolchain.toml` pins stable) each need a toolchain this workspace doesn't have; `fuzz`
+# carries its own toolchain file and lockfile.
 exclude = ["web/frontend", "fuzz"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 authors = ["TankoVault contributors"]
-# The minimum this workspace actually builds on, verified by the `msrv` CI job rather than
-# asserted. It was "1.85" and had stopped being true: `sqlx 0.9` declares `rust-version =
-# "1.94.0"`, and `time`, `webauthn-rs`, `progenitor` and `testcontainers` all sit above 1.85 as
-# well, so the job could only fail. Raising it is the honest half of the fix — the number is a
-# consequence of the dependency set, and lowering it again means moving those pins, not editing
-# this line. It equals the `rust-toolchain.toml` channel today; that is a coincidence of `sqlx`
-# tracking the newest stable, not a rule.
+# Verified by the `msrv` CI job, not asserted: `sqlx 0.9` alone requires 1.94.0.
 rust-version = "1.94"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
 unreachable_pub = "warn"
-# A lint *group* must sit at a lower priority than individual lints so specific
-# overrides win; without this, `cargo clippy` refuses to run (equal-priority error).
+# A lint group must sit at a lower priority than individual lints, or `cargo clippy` refuses to
+# run (equal-priority error).
 rust_2018_idioms = { level = "warn", priority = -1 }
 
 [workspace.lints.clippy]
-# `pedantic` on as a warn-level group; individual noisy lints relaxed workspace-wide.
 pedantic = { level = "warn", priority = -1 }
-# The `cargo` group, which nothing enforced at compile time. It catches
-# `wildcard_dependencies` and the feature-naming lints at `cargo clippy` rather than only in
-# `cargo deny`, which runs as a separate job and is therefore skipped by anyone iterating
-# locally.
+# Catches `wildcard_dependencies` and feature-naming lints at `cargo clippy` time instead of
+# only in the separate, easy-to-skip `cargo deny` job.
 cargo = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
-# A suppression must be `#[expect(…, reason = "…")]`, never a bare `#[allow(…)]`.
-#
-# The difference is what happens when the suppression stops being necessary: an `allow` goes on
-# silently forever, an `expect` warns. Every one of the ~45 suppressions in this workspace is a
-# claim about the code beneath it — "this cast cannot truncate because the value is bounded by
-# a LIMIT", "these arguments cannot be transposed because they are differently typed" — and a
-# claim nothing re-checks is exactly the shape of defect this codebase keeps finding. Making
-# the compiler re-check them costs one attribute keyword.
-#
-# `reason` is convention rather than enforcement: `allow_attributes_without_reason` covers
-# `allow`, and clippy has no counterpart for `expect`. Write one anyway — the lint name says
-# what is suppressed, and only the reason says why that is sound.
+# `#[expect(…, reason = "…")]`, never a bare `#[allow(…)]`: an `allow` goes on silently
+# forever, an `expect` warns the moment its claim stops holding.
 allow_attributes = "warn"
 allow_attributes_without_reason = "warn"
-# Duplicate transitive versions are tracked as a *budget* in `deny.toml`, which denies them
-# against an explicit, dated skip list naming each in-flight upstream transition. This lint
-# would report the same 30-odd duplicates with no way to record why any of them is acceptable,
-# so the two would immediately disagree. One owner per policy.
+# Duplicate transitive versions are tracked as a budget in `deny.toml` instead, against a
+# dated skip list; this lint has no way to record why a duplicate is acceptable.
 multiple_crate_versions = "allow"
-# `missing_panics_doc` is **on** (OPS-2.2). The audit's premise — that the codebase already
-# writes these by hand, so the allow was weaker than the practice — held: the whole workspace
-# had three undocumented panicking functions, all `.expect(…)` at construction. Writing the
-# third section found a live panic (`Politeness::clamped` mapped `rps: 0` to `f64::MIN_POSITIVE`,
-# whose reciprocal `Duration::from_secs_f64` cannot represent), which is the argument for the
-# lint in one example. The two `*-test-support` crates carry a crate-level `#![expect(…)]` with
-# their reasoning: a harness helper panics by design, and `expect` means the compiler withdraws
-# the exemption if that ever stops being true.
-#
-# `missing_errors_doc` is **on**, and the 172-warning backlog that kept it allowed is gone. All
-# 172 were in `crates/db`; every other member was already clean. The sections were written module
-# by module against the function bodies rather than generated, because the only one worth writing
-# says *which* variants a function can produce — `DbError` carries `NotFound` and `Conflict`
-# alongside the driver error, and the API maps those to 404 and 409 (ARCH-4/ARCH-11), so "returns
-# an error if the query fails" would satisfy the lint while documenting the wrong thing. The
-# convention the sections settled on: name the reachable variants (and say "`Sqlx` only — no
-# other variant is reachable" when that is the answer, because it tells a caller the result is
-# always a 500), then say what the function returns *instead of* an error, since nearly all of
-# them turn a miss into `Ok(None)`/`Ok(false)`/`Ok(0)` and several are security-relevant in that
-# choice. Writing them found four defects: OPS-2.2c, OPS-2.2d, OPS-2.2e and OPS-2.2f.
+# Convention for `missing_errors_doc`: name the reachable error variants, then say what the
+# function returns *instead of* an error — most of this codebase turns a miss into
+# `Ok(None)`/`Ok(false)`/`Ok(0)`, and several of those choices are security-relevant.
 missing_errors_doc = "warn"
 missing_panics_doc = "warn"
 must_use_candidate = "allow"
 
-# Intra-doc links, denied. Not in the audit; found while writing the `missing_errors_doc`
-# sections above, when a `cargo doc` run over the new links reported six pre-existing broken ones
-# nothing had ever checked (OPS-2.2f). It is the same shape this remediation keeps meeting — two
-# artefacts that must agree with nothing connecting them — and the cheapest possible fix, because
-# rustdoc already resolves every link and was simply not being asked to fail.
-#
-# `deny` rather than `warn`: a broken link renders as literal `[`Foo`]` text, so it is invisible
-# to anyone reading the source and only visible to whoever generates the documentation, which is
-# nobody by habit. `private_intra_doc_links` stays a warning — linking to a `pub(super)` helper
-# from a module doc is a reasonable thing to do while the item is being described, and the link
-# simply does not render.
-#
-# `crates/api-client` is exempt **by construction** rather than by an entry here: it declares its
-# own `[lints]` table (OPS-2.4) and so inherits nothing from this one. That is the right outcome —
-# 780 KB of `progenitor` output carries the `OpenAPI` descriptions' own `[`…`]` spans into Rust
-# doc comments, where they resolve against a module tree that does not exist, and fixing them
-# would mean editing a generated file.
+# A broken intra-doc link renders as literal `[`Foo`]` text — invisible to anyone reading the
+# source. `crates/api-client` is exempt by construction (its own `[lints]` table): the
+# generated code carries OpenAPI descriptions' `[`…`]` spans that can't resolve.
 [workspace.lints.rustdoc]
 broken_intra_doc_links = "deny"
 private_intra_doc_links = "warn"
@@ -146,28 +86,18 @@ tankovault-auth = { path = "crates/auth" }
 tankovault-email = { path = "crates/email" }
 tankovault-matcher = { path = "crates/matcher" }
 tankovault-bus = { path = "crates/bus" }
-# Not referenced by any workspace member — `web/frontend` is excluded from the workspace
-# and uses its own path dep. Kept as the single place the crate is named, so a future
-# host-side consumer inherits the same path rather than inventing one.
+# Unused by any member today — `web/frontend` is excluded and uses its own path dep — but kept
+# as the one place the crate is named, for a future host-side consumer.
 tankovault-api-client = { path = "crates/api-client" }
 
 # --- OpenAPI: schema derivation from handlers + browsable API docs ---
-# The derived spec is exported by `xtask openapi` and fed to `progenitor` (an xtask dep) to
-# regenerate the typed `crates/api-client`, which the frontend consumes; `utoipa-scalar`
-# serves the same spec as a browsable UI at `/scalar`.
-# `progenitor` generates `crates/api-client` from that spec. The two halves are pinned here
-# rather than in their own manifests because they **must** stay in lockstep — `progenitor-impl`
-# (in `xtask`) emits code against `progenitor-client`'s (in `crates/api-client`) runtime types,
-# and bumping only one produces a generated crate that does not compile, or worse compiles
-# against a changed `ResponseValue`. They were two hand-maintained `"0.14.0"` literals in two
-# manifests (BUILD_AND_OPS §1.7).
+# `progenitor-impl` (xtask) emits code against `progenitor-client`'s (crates/api-client)
+# runtime types, so the two must stay in lockstep — pinned together, since bumping only one
+# produces a generated crate that doesn't compile.
 progenitor-client = "0.14.0"
 progenitor-impl = "0.14.0"
-# `xtask config-docs` reads the configuration surface out of the config structs themselves
-# rather than out of a hand-kept list, so it needs a real Rust parser. Pinned to the major
-# version already in the tree via the proc-macro crates, so it adds no `multiple-versions`
-# entry to `deny.toml`'s budget. `full` is what `syn::parse_file` needs; the derive-only
-# default feature set parses attributes and items but not whole files.
+# `full` is what `syn::parse_file` needs (the config surface walker in `xtask`); pinned to the
+# major already in the tree, so it adds no `deny.toml` duplicate-version entry.
 syn = { version = "3", features = ["full"] }
 utoipa = { version = "5", features = ["uuid", "axum_extras"] }
 utoipa-axum = "0.2"

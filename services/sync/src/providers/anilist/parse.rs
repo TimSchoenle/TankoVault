@@ -1,9 +1,6 @@
-//! `AniList`-shaped response types and the pure functions that build them from GraphQL JSON.
-//!
-//! Nothing here touches the network, so the response shaping that is easy to get wrong is
-//! directly testable — which is why the whole of this module's test coverage is at the bottom
-//! of this file rather than behind a client. Both types convert into the provider-agnostic
-//! `RemoteEntry`/`RemoteMetadata` via `From`, so `crate::engine` never sees an `AniList` type.
+//! `AniList`-shaped response types and the pure functions that build them from GraphQL JSON, kept
+//! free of the network so the response shaping is directly testable. Both types convert into the
+//! provider-agnostic `RemoteEntry`/`RemoteMetadata` via `From`.
 
 use time::OffsetDateTime;
 
@@ -13,12 +10,8 @@ use crate::mapping::{AniListStatus, content_type_from_origin, series_status_from
 use crate::provider::{RemoteEntry, RemoteMetadata};
 
 /// One entry from a user's `AniList` manga list: the reader's own position on the list, plus
-/// the catalogue metadata of the work it points at.
-///
-/// `media` is the same [`MediaMetadata`] the tokenless public lookup returns, parsed by the same
-/// function from the same GraphQL selection — so a series reached through a user's list is
-/// enriched with exactly the fields it would have got from a sweep, and the two paths cannot
-/// drift into disagreeing about what `AniList` said.
+/// the catalogue metadata of the work it points at. `media` is parsed by the same function as
+/// the tokenless public lookup, so the two paths can't drift into disagreeing about it.
 #[derive(Debug, Clone)]
 pub(crate) struct AniListEntry {
     pub(crate) status: AniListStatus,
@@ -53,8 +46,7 @@ pub(crate) struct MediaMetadata {
     pub(crate) content_type: ContentType,
     /// The work's *publication* status, not the reader's list status.
     pub(crate) series_status: SeriesStatus,
-    /// Genres, used as an extra local-matching signal alongside title (design: make `AniList`
-    /// matching use the metadata adapters now capture) and persisted as series tags.
+    /// Genres, used as an extra local-matching signal alongside title, and persisted as tags.
     pub(crate) tags: Vec<String>,
     /// Staff names (story/art credits), matched against locally-scraped authors.
     pub(crate) authors: Vec<String>,
@@ -141,12 +133,9 @@ pub(crate) fn parse_media_metadata(data: &serde_json::Value) -> Option<MediaMeta
     parse_media(data.get("Media")?)
 }
 
-/// Read one `media` node — the single place a GraphQL media selection becomes local values.
-///
-/// Both the list parser and the public-metadata parser go through here because both queries
-/// request the same selection; splitting them was how a list sync ended up knowing less about a
-/// work than a sweep did. Returns `None` for a node with no id or no usable title: an entry we
-/// cannot name is one we cannot match, and dropping it beats failing the whole run.
+/// Read one `media` node — the single place a GraphQL media selection becomes local values,
+/// shared by the list and public-metadata parsers so neither can drift from the other. Returns
+/// `None` for a node with no id or usable title: an entry we can't name, we can't match.
 fn parse_media(media: &serde_json::Value) -> Option<MediaMetadata> {
     let media_id = media.get("id").and_then(serde_json::Value::as_i64)?;
     let titles = titles_from_media(media);
@@ -184,10 +173,8 @@ fn parse_media(media: &serde_json::Value) -> Option<MediaMetadata> {
     })
 }
 
-/// Candidate titles for a `media` object: the non-blank romaji/english/native trio first
-/// (so `titles[0]` is a stable "primary"), then every non-blank synonym `AniList` tracks
-/// (abbreviations, fan-translation names, other-language releases). Shared by the list
-/// parser and the public-metadata parser so both capture the full alternative-name set.
+/// Candidate titles for a `media` object: the non-blank romaji/english/native trio first (so
+/// `titles[0]` is a stable "primary"), then every non-blank synonym `AniList` tracks.
 fn titles_from_media(media: &serde_json::Value) -> Vec<String> {
     let mut titles = Vec::new();
     if let Some(title) = media.get("title") {
@@ -347,10 +334,7 @@ mod tests {
         );
         assert_eq!(solo.media.tags, vec!["Action", "Fantasy"]);
         assert_eq!(solo.media.authors, vec!["Chugong", "Redice Studio"]);
-        // A list entry carries the *full* media metadata, not just the fields the local
-        // matcher scores on. Description, cover and publication status used to be absent from
-        // the list query, so a series in a user's library kept its scraped description and an
-        // `unknown` status until a catalogue-wide sweep reached it.
+        // A list entry carries the full media metadata, not just matcher-scored fields.
         assert_eq!(solo.media.description.as_deref(), Some("A hunter rises."));
         assert_eq!(solo.media.cover_url.as_deref(), Some("https://img/xl.jpg"));
         assert_eq!(solo.media.series_status, SeriesStatus::Completed);
@@ -364,9 +348,7 @@ mod tests {
         // No genres/staff in the fixture: both default to empty, not a parse failure.
         assert!(berserk.media.tags.is_empty());
         assert!(berserk.media.authors.is_empty());
-        // Nor is a missing publication status: `Unknown` is what stops the enrichment write
-        // from claiming to know something, so it must survive parsing rather than default to
-        // a real state.
+        // A missing publication status must stay `Unknown`, not default to a real state.
         assert_eq!(berserk.media.series_status, SeriesStatus::Unknown);
         assert_eq!(berserk.media.description, None);
         assert_eq!(berserk.media.cover_url, None);

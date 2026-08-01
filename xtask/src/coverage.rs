@@ -1,34 +1,7 @@
-//! `xtask coverage-ratchet` — the gate on `.github/coverage-floor.txt`.
-//!
-//! # Why a ratchet and not a target
-//!
-//! TESTING F-10's finding is that coverage is unevenly *distributed*, not that it is low: the
-//! ten largest modules held eleven tests between them. A single target percentage answers the
-//! wrong question and invites the wrong fix — tests written to move a number. A floor answers
-//! the question that matters, which is "did this change make it worse", and it is the only
-//! form that can be enforced honestly on a codebase whose baseline is what it is.
-//!
-//! # What the number measures, and what it does not
-//!
-//! The `coverage` CI job runs `cargo llvm-cov --workspace --all-targets` **without**
-//! `--features integration`, which is the same set every other fast job builds. So the floor is
-//! a floor on what the *offline* suite reaches. It deliberately excludes the 118 `crates/db`,
-//! 86 `services/api` and 55 `services/sync` integration tests, which need Docker and about
-//! fifteen minutes of migrations.
-//!
-//! That has one consequence worth stating plainly, because it is the failure mode that would
-//! otherwise train people to bump the floor thoughtlessly: **moving logic into a module that is
-//! covered by an integration suite lowers this number**, even though the code is no less
-//! tested. When that happens the floor should be lowered, in the same commit, with the reason
-//! in the message. The file is a record of a decision, not a score.
-//!
-//! # Tolerance
-//!
-//! None, beyond what the floor itself carries. `llvm-cov` is deterministic for a fixed
-//! toolchain and test set — with one exception: `proptest` seeds from entropy unless told
-//! otherwise, so a property suite can reach slightly different code between runs. The floor is
-//! therefore set a little below the measured value rather than at it, and
-//! [`FLOOR_HEADROOM_PCT`] documents how much.
+//! `xtask coverage-ratchet` — the gate on `.github/coverage-floor.txt`. A floor, not a target:
+//! moving logic into a module the (excluded) integration suites cover lowers the measured line
+//! coverage even though nothing got less tested, so lower the floor in that same commit rather
+//! than treat the drop as a regression.
 
 use std::path::{Path, PathBuf};
 
@@ -42,11 +15,8 @@ pub(crate) const FLOOR_HEADROOM_PCT: f64 = 1.0;
 /// The committed floor, relative to the workspace root.
 const FLOOR_FILE: &str = ".github/coverage-floor.txt";
 
-/// Read the floor out of `contents`.
-///
-/// The file is one number. Blank lines and `#` comments are skipped so the file can explain
-/// itself to the person who has to change it — which is the whole point of it being a file
-/// rather than a literal in the workflow.
+/// Read the floor out of `contents`. Blank lines and `#` comments are skipped, so the file can
+/// explain itself to whoever changes it.
 ///
 /// # Errors
 /// If no numeric line is present, or the first one does not parse.
@@ -63,12 +33,9 @@ pub(crate) fn parse_floor(contents: &str) -> anyhow::Result<f64> {
     anyhow::bail!("{FLOOR_FILE} contains no floor; expected a line like `24.0`")
 }
 
-/// Pull the total line-coverage percentage out of `cargo llvm-cov report --json`.
-///
-/// Line coverage rather than region or function coverage, and the choice is load-bearing:
-/// region coverage moves when a `match` gains an arm that nothing exercises, which makes it
-/// noisy under refactoring, and function coverage counts a one-line getter the same as a
-/// merge engine. Lines is the least misleading of the three at this granularity.
+/// Pull the total line-coverage percentage out of `cargo llvm-cov report --json`. Line coverage,
+/// not region or function coverage: region coverage is noisy under refactoring (moves when a
+/// `match` gains an unexercised arm) and function coverage weights a getter like a merge engine.
 ///
 /// # Errors
 /// If the document is not the shape `llvm-cov` produces.

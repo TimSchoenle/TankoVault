@@ -1,23 +1,13 @@
-# `promtool test rules` cases for the two expressions whose label semantics are easy to get wrong
-# and impossible to eyeball. Run from the repository root:
+# `promtool test rules` cases for the two expressions whose label semantics are easy to get wrong.
+# Run: docker run --rm --entrypoint /bin/promtool
+#   -v "$PWD/deploy/observability/prometheus:/etc/prometheus:ro" prom/prometheus:v3.5.0
+#   test rules /etc/prometheus/rules/tests/alerts.test.yml
 #
-#   docker run --rm --entrypoint /bin/promtool \
-#     -v "$PWD/deploy/observability/prometheus:/etc/prometheus:ro" prom/prometheus:v3.5.0 \
-#     test rules /etc/prometheus/rules/tests/alerts.test.yml
-#
-# `promtool check rules` only proves the PromQL parses. These cases prove it *means* what the
-# comments in the rule file claim, which is where both of the bugs found while writing this file
-# lived:
-#
-#   1. `TankoVaultHighServerErrorRatio` has a minimum-traffic conjunct so that a single `500` on a
-#      near-idle instance is not "100% of requests failing". Without it the alert is untrustworthy
-#      on exactly the deployment shape this project targets.
-#   2. `TankoVaultFastScanLanesStarved` uses `unless` between two series that differ only in the
-#      `scan` label being compared. `unless` matches on identical label sets, so without the
-#      `sum()` on both sides the right-hand side can never cancel the left and the alert fires
-#      whenever any full-scan task is served.
-#
-# These are also the two rules a future edit is most likely to "simplify" back into being wrong.
+# `promtool check rules` only proves the PromQL parses; these cases prove it means what the alert
+# comments claim. Both are rules a future edit is likely to "simplify" back into being wrong:
+# `TankoVaultHighServerErrorRatio`'s minimum-traffic conjunct, and `TankoVaultFastScanLanesStarved`'s
+# `sum()` before `unless` (it matches identical label sets; without the sum the right-hand side can
+# never cancel the left).
 
 rule_files:
   - ../tankovault-recording.rules.yml
@@ -26,9 +16,7 @@ rule_files:
 evaluation_interval: 1m
 
 tests:
-  # ---- Error ratio: real traffic, real failure rate --------------------------------------------
-  # 60 requests/min succeeding and 6/min failing is a ~9% 5xx ratio at 1.1 req/s, which is over
-  # both the 5% floor and the 0.05 req/s traffic gate.
+  # ~9% 5xx at 1.1 req/s: over both the 5% floor and the 0.05 req/s traffic gate.
   - interval: 1m
     name: a genuine 5xx ratio on real traffic fires
     input_series:
@@ -53,10 +41,8 @@ tests:
                 `/v1/me/sync/*` path the failure is probably downstream in `sync`; check that job's
                 own error ratio before reading api code.
 
-  # ---- Error ratio: the low-traffic guard ------------------------------------------------------
-  # One request per minute, and every one of them a `500`. The ratio is 100% but the rate is
-  # 0.017 req/s, well under the 0.05 gate — so this must stay silent. A self-hosted instance with
-  # one user idles here, and paging on it would train the operator to ignore the alert.
+  # 100% error ratio but 0.017 req/s, under the 0.05 gate — must stay silent or it trains the
+  # operator to ignore the alert on a self-hosted single-user instance.
   - interval: 1m
     name: a 100% error ratio on negligible traffic stays silent
     input_series:
@@ -70,10 +56,7 @@ tests:
         alertname: TankoVaultServerErrorsCritical
         exp_alerts: []
 
-  # ---- Fast-lane starvation: the case the alert exists for --------------------------------------
-  # Full-scan tasks are being served, so the worker is demonstrably alive and consuming, while the
-  # fast lane has served nothing. Strict priority means a fast task cannot be queued behind a full
-  # backlog, so this can only be a lane that failed to open.
+  # The case the alert exists for: full tasks flowing, fast lane serving nothing.
   - interval: 1m
     name: full tasks flowing with no fast tasks fires
     input_series:
@@ -96,9 +79,8 @@ tests:
                 at all — `TankoVaultServiceDown` for control-plane would have fired, but a
                 scheduler wedged without dying would not.
 
-  # ---- Fast-lane starvation: both tiers healthy -------------------------------------------------
-  # The regression case. Both lanes are serving, so the alert must be silent — which it only is
-  # because both sides of the `unless` are aggregated away from the `scan` label.
+  # The regression case: both lanes serving, alert must stay silent — proves both sides of the
+  # `unless` are aggregated away from the `scan` label.
   - interval: 1m
     name: both scan tiers serving stays silent
     input_series:

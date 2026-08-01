@@ -134,8 +134,7 @@ pub struct StreamQuery {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct StreamTicket {
     /// The opaque value to pass as `?ticket=` when opening the stream.
-    // Handing it to the client is the endpoint's purpose, so it opts into serialisation
-    // explicitly — see `crate::secret` for why that opt-in is per field rather than blanket.
+    // Opts into serialisation explicitly, per crate::secret's per-field convention.
     #[serde(serialize_with = "crate::secret::expose_onto_wire")]
     #[schema(value_type = String)]
     pub ticket: SecretString,
@@ -212,11 +211,8 @@ pub async fn stream(
         })?
         .ok_or(ApiError::Unauthorized)?;
 
-    // The same check the `AuthUser` extractor makes for every other route, which this one
-    // skipped because it does not use the extractor. A redeemed ticket proves the holder had a
-    // session 30 seconds ago; it does not prove the account still exists or is still permitted
-    // to act. Without this, a suspended or deleted user kept receiving their feed for the
-    // token's remaining lifetime — the one route where "revoke now" did not mean now.
+    // Same check `AuthUser` makes elsewhere, done manually since this route skips it: a
+    // redeemed ticket only proves a session existed 30s ago, not that the account may still act.
     let principal = tankovault_db::repo::permissions::resolve(&state.pool, user_id)
         .await?
         .ok_or(ApiError::Unauthorized)?;
@@ -244,12 +240,8 @@ pub async fn stream(
         Ok(event)
     });
 
-    // Cap the stream so the checks above re-run. Without this they happen only at connect time
-    // and one long-lived connection keeps delivering forever, which is the half of SEC-8 that
-    // made a suspension take up to 15 minutes to bite. The bound is the access-token lifetime —
-    // the same cadence it was when the token's own `exp` capped the stream, deliberately, so
-    // replacing the credential with a ticket did not quietly extend the window. When the stream
-    // ends the client re-mints and reconnects, and the mint call is itself an `AuthUser` check.
+    // Capped to the access-token lifetime so these checks re-run periodically, not just at
+    // connect — a ticket must not quietly extend the window the token used to bound.
     let deadline = tokio::time::sleep(state.access_ttl.unsigned_abs());
     let events = futures::StreamExt::take_until(events, deadline);
 

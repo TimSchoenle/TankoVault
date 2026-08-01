@@ -1,19 +1,13 @@
-//! Which upstream source has the final say on each piece of series metadata.
-//!
-//! This is *domain policy* — "a linked `AniList` sync is authoritative over scraped adapter
-//! data" is a statement about the catalogue, not about how TOML and environment variables are
-//! layered. It used to live in `tankovault-config`, which has no dependency on this crate and
-//! therefore had to spell every source as a `&'static str` (ARCH-8). Here the sources are a
-//! closed enum, so a typo in a deployment's priority list fails at load rather than silently
-//! degrading to "no listed source matched".
+//! Which upstream source has the final say on each piece of series metadata — domain policy,
+//! not deployment wiring. Sources are a closed enum, so a typo in a priority list fails at
+//! load instead of silently degrading to "no listed source matched".
 
 use serde::Deserialize;
 
 /// An upstream that can supply series metadata.
 ///
-/// Closed by design: adding a source is a code change anyway (something has to fetch it), so
-/// there is no value in accepting arbitrary strings here — only the risk of a typo that reads
-/// as a deliberate de-prioritisation.
+/// Closed by design: adding a source is a code change anyway, so there's no value in accepting
+/// arbitrary strings — only the risk of a typo read as deliberate de-prioritisation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MetadataSource {
@@ -50,10 +44,7 @@ pub enum MetadataField {
 }
 
 /// Per-field source authority: an ordered preference list, highest priority first. The first
-/// source in the list that supplies a non-blank value wins.
-///
-/// The out-of-the-box order is **`AniList` before the adapters**, matching the design intent
-/// that a linked `AniList` sync is authoritative over scraped data.
+/// source that supplies a non-blank value wins; ships with `AniList` before the adapters.
 #[derive(Debug, Clone, Deserialize)]
 pub struct MetadataPriority {
     /// Priority order for the long-form series description.
@@ -77,8 +68,8 @@ impl MetadataPriority {
         vec![MetadataSource::AniList, MetadataSource::Adapter]
     }
 
-    /// The configured priority order for `field`, falling back to [`Self::default`] when that
-    /// field's own list was explicitly emptied.
+    /// Priority order for `field`, falling back to [`Self::default`] when its own list was
+    /// explicitly emptied.
     #[must_use]
     pub fn order_for(&self, field: MetadataField) -> &[MetadataSource] {
         let list = match field {
@@ -89,12 +80,12 @@ impl MetadataPriority {
         if list.is_empty() { &self.default } else { list }
     }
 
-    /// Pick the winning value for `field`.
+    /// Pick the winning value for `field`: the first source in its priority order supplying
+    /// a non-blank value wins.
     ///
-    /// `candidates` maps a source to the value it offers. The first source in the field's
-    /// priority order that supplies a non-blank value wins. If no prioritised source matches,
-    /// any present candidate is used as a last resort — so configuring a partial order (say,
-    /// `[adapter]`) de-prioritises the other sources rather than discarding their data.
+    /// If no prioritised source matches, any present candidate is used as a last resort, so
+    /// a partial order (say `[adapter]`) de-prioritises other sources rather than discarding
+    /// them.
     #[must_use]
     pub fn resolve(
         &self,
@@ -217,8 +208,8 @@ mod tests {
         );
     }
 
-    /// The whole point of the enum (ARCH-8): a misspelled source is a load-time error rather
-    /// than a silent de-prioritisation of the source the operator meant to name.
+    /// A misspelled source is a load-time error, not a silent de-prioritisation of the
+    /// source the operator meant to name.
     #[test]
     fn an_unknown_source_is_rejected_at_load_rather_than_ignored() {
         let ok: Result<MetadataPriority, _> =

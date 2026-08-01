@@ -1,29 +1,9 @@
 //! # tankovault-service
 //!
 //! The production runtime every `TankoVault` service shares: process bootstrap, graceful
-//! shutdown, health probes, the HTTP middleware stack, inbound rate limiting, the audit
-//! trail, and metrics.
-//!
-//! ## Why this crate exists
-//!
-//! Each service used to open-code the same boot sequence (load config → init telemetry →
-//! connect the pool → bind → `axum::serve`) and each drifted: some installed a metrics
-//! recorder and some did not, none had graceful shutdown, and every `/ready` probe was a
-//! literal `"ok"` that reported healthy while its database was unreachable. Cross-cutting
-//! concerns belong in one place where they can be reviewed once and are correct everywhere.
-//!
-//! ## Toggles
-//!
-//! Auditing, metrics and rate limiting are each switchable from configuration, and each
-//! switch is a *wiring* decision rather than a branch at the call site:
-//!
-//! - **Metrics off** ([`tankovault_config::MetricsConfig::enabled`]) means the Prometheus
-//!   recorder is never installed, so no measurement is retained and the scrape route
-//!   answers `404`. Domain code still calls `metrics::counter!` unchanged.
-//! - **Audit off** ([`tankovault_config::AuditConfig::enabled`]) installs [`NoopAuditSink`]
-//!   behind the same [`AuditSink`] trait object, so handlers never test a flag.
-//! - **Rate limiting off** ([`tankovault_config::RateLimitConfig::enabled`]) leaves the
-//!   layer unmounted entirely, costing nothing per request.
+//! shutdown, health probes, the HTTP middleware stack, rate limiting, the audit trail, and
+//! metrics. Each of auditing, metrics and rate limiting is switchable from configuration as
+//! a wiring decision, not a call-site branch.
 //!
 //! ## Composition
 //!
@@ -75,12 +55,8 @@ pub use audit::PostgresAuditSink;
 #[cfg(feature = "db")]
 pub use flags::PostgresFlagSource;
 
-/// Failures that prevent a service from starting.
-///
-/// Every variant is fatal by construction: a service that cannot install its telemetry or
-/// bind its listener has no degraded mode worth running in. Runtime failures of *optional*
-/// dependencies (an unreachable Redis, a down NATS) are deliberately not modelled here —
-/// those are handled by the component that owns them and degrade rather than abort.
+/// Failures that prevent a service from starting. Every variant is fatal by construction;
+/// runtime failures of *optional* dependencies degrade elsewhere rather than abort here.
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
     /// The global `tracing` subscriber could not be installed (usually: called twice).

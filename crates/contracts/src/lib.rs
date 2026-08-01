@@ -1,19 +1,12 @@
 //! # tankovault-contracts
 //!
 //! The wire contract shared between services: task dispatch messages, progress and domain
-//! events, the subject/stream/consumer naming every service agrees on, and the HTTP response
-//! bodies one service publishes on another's behalf — or on its own.
-//! Keeping these in one crate means a schema change is a single, reviewable diff that
-//! the producer and all consumers compile against.
+//! events, subject/stream/consumer naming, and the HTTP response bodies one service publishes
+//! on another's behalf — or on its own.
 //!
-//! [`admin`], [`me`] and [`catalogue`] hold the HTTP view types `services/api` returns. They
-//! were previously repository row structs in `tankovault-db` carrying `ToSchema`, which meant
-//! the persistence layer *was* the public schema: renaming a column in a `SELECT` rewrote the
-//! published API and the generated client with no compile error at the API boundary, because
-//! no handler ever named a field. The row → view conversions now live in `services/api`, the
-//! one crate permitted to know both layers, so that change is a compile error in exactly one
-//! place. `tankovault-db` no longer depends on `utoipa` at all, which
-//! `tests/db_has_no_wire_schema.rs` enforces.
+//! [`admin`], [`me`] and [`catalogue`] hold the HTTP view types `services/api` returns, kept out
+//! of `tankovault-db` so a repository row's `ToSchema` can't become the public schema by
+//! accident (see the test below).
 
 pub mod admin;
 pub mod catalogue;
@@ -22,9 +15,7 @@ pub mod messages;
 pub mod subjects;
 pub mod sync;
 
-/// Re-exported because it is part of the contract's own surface: a task's subject and its
-/// worker consumer are both named after the scan mode, so a service that speaks to the bus
-/// needs the type without reaching past this crate.
+/// Re-exported: a task's subject and worker consumer are both named after the scan mode.
 pub use tankovault_domain::ScanMode;
 
 pub use messages::{

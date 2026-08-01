@@ -1,26 +1,15 @@
-# Derived series worth precomputing, over the metrics the services actually emit.
+# Derived series over the metrics the services emit, named `level:metric:operations`
+# (Prometheus convention): `job` is the aggregation level since metrics carry no service label.
 #
-# Naming follows the Prometheus convention `level:metric:operations`, where `level` is the label
-# set the series is aggregated to. `job` is the service (see the note in prometheus.yml — the
-# metrics carry no service label of their own), so `job:...` means "one series per service".
+# Buckets, not quantiles: `http_request_duration_seconds` uses explicit bucket boundaries so these
+# rules can `sum by (job, le)` across replicas before taking the quantile — quantiles can't be
+# averaged, buckets can. Keep `sum by (..., le)` inside every `histogram_quantile` below.
 #
-# Why buckets and not quantiles: `crates/service/src/metrics.rs` registers
-# `http_request_duration_seconds` with **explicit bucket boundaries** rather than the exporter's
-# default summary behaviour, precisely so these rules can `sum by (job, le)` across replicas
-# first and take the quantile afterwards. Quantiles cannot be averaged; buckets can. Keep the
-# `sum by (..., le)` inside `histogram_quantile` in every rule below.
-#
-# Group names carry a `-recording` suffix. Prometheus permits the same group name in two files and
-# loads both, so `tankovault-http` here and `tankovault-http` in the alerts file would appear twice
-# on Status -> Rules with nothing to tell them apart — which is exactly the page
-# `TankoVaultPrometheusRuleEvaluationFailing` sends the operator to.
-#
-# Ratio rules divide two rates and are NaN while the denominator is zero — an idle service
-# records a gap rather than a fabricated 0. This is deliberate: every comparison against NaN is
-# false, so an idle service cannot trip a threshold alert, and Grafana draws the gap honestly.
+# Ratio rules divide two rates and are NaN while the denominator is zero, so an idle service
+# records a gap rather than a fabricated 0 — every comparison against NaN is false, so an idle
+# service cannot trip a threshold alert.
 
 groups:
-  # ---- HTTP, from `crates/service/src/metrics.rs` ----------------------------------------------
   - name: tankovault-http-recording
     interval: 30s
     rules:
@@ -30,8 +19,7 @@ groups:
       - record: job_route:http_requests:rate5m
         expr: sum by (job, route) (rate(http_requests_total[5m]))
 
-      # `status` is the exact numeric code, not a class (the middleware records
-      # `response.status().as_u16()`), so the class split has to happen here.
+      # `status` is the exact numeric code, not a class, so the class split happens here.
       - record: job:http_requests_server_errors:rate5m
         expr: sum by (job) (rate(http_requests_total{status=~"5.."}[5m]))
 
@@ -44,9 +32,8 @@ groups:
       - record: job_route:http_requests_server_errors:rate5m
         expr: sum by (job, route) (rate(http_requests_total{status=~"5.."}[5m]))
 
-      # `429` comes from the rate limiter and `404` from the feature gate; both are *policy*
-      # answers, not defects. Kept as their own series so the client-error panel can be read
-      # without mistaking a switched-off feature for a broken client.
+      # 429 (rate limiter) and 404 (feature gate) are policy answers, not defects; kept as their
+      # own series so the client-error panel doesn't read a switched-off feature as a broken client.
       - record: job:http_requests_throttled:rate5m
         expr: sum by (job) (rate(http_requests_total{status="429"}[5m]))
 
@@ -65,42 +52,35 @@ groups:
           histogram_quantile(0.99,
             sum by (job, le) (rate(http_request_duration_seconds_bucket[5m])))
 
-      # Per-route p95, excluding the live-notification stream. `/v1/me/stream` is a long-lived
-      # SSE response: when the *client* closes it the middleware future is dropped and nothing is
-      # recorded, but when the *server* closes it (api restart, NATS loss) a multi-minute duration
-      # lands in the `+Inf` bucket and poisons every quantile for the api job. Excluded here so
-      # the series means "how long a request takes".
+      # /v1/me/stream excluded: a server-closed SSE stream (api restart, NATS loss) records a
+      # multi-minute duration in the +Inf bucket and poisons every quantile for the api job.
       - record: job_route:http_request_duration_seconds:p95_5m
         expr: >-
           histogram_quantile(0.95,
             sum by (job, route, le) (
               rate(http_request_duration_seconds_bucket{route!="/v1/me/stream"}[5m])))
 
-      # Mean concurrency. See docs/OBSERVABILITY.md on why this is not alerted on: on the api and
-      # frontend jobs an open SSE stream is legitimately one request in flight for its whole life,
-      # so the gauge tracks "browsers with the app open" as much as it tracks load.
+      # Not alerted on: an open SSE stream is one request in flight for its whole life, so this
+      # tracks "browsers with the app open" as much as load (see docs/OBSERVABILITY.md).
       - record: job:http_requests_in_flight:avg
         expr: avg by (job) (http_requests_in_flight)
 
-  # ---- Edge policy: rate limiting and feature gating -------------------------------------------
   - name: tankovault-edge-policy-recording
     interval: 30s
     rules:
       - record: job_class:http_rate_limited:rate5m
         expr: sum by (job, class) (rate(http_rate_limited_total[5m]))
 
-      # The Redis limiter backend **fails open** by design (`crates/service/src/ratelimit/redis.rs`):
-      # while this is non-zero the configured limits are not being enforced at all.
+      # The Redis limiter backend fails open by design: while this is non-zero, configured limits
+      # are not being enforced at all.
       - record: job_backend:rate_limit_store_errors:rate5m
         expr: sum by (job, backend) (rate(rate_limit_store_errors_total[5m]))
 
       - record: job_feature:http_feature_disabled:rate15m
         expr: sum by (job, feature) (rate(http_feature_disabled_total[15m]))
 
-  # ---- Scan fan-out and worker lane fairness ---------------------------------------------------
-  # `scan_tasks_served_total{provider,scan}` is the only metric the worker emits. It counts tasks
-  # *handed out*, so a redelivered task counts again — see the retry caveat in
-  # docs/OBSERVABILITY.md.
+  # scan_tasks_served_total{provider,scan} counts tasks handed out, so a redelivered task counts
+  # again — see the retry caveat in docs/OBSERVABILITY.md.
   - name: tankovault-scan-recording
     interval: 30s
     rules:
@@ -113,10 +93,8 @@ groups:
       - record: provider:scan_tasks_served:increase1h
         expr: sum by (provider) (increase(scan_tasks_served_total[1h]))
 
-      # ---- Queue depth, from JetStream via prometheus-nats-exporter ----------------------------
-      # `jetstream_consumer_num_pending` is the number of messages a durable consumer has not yet
-      # been delivered — i.e. the lane's backlog. Split into `provider`/`scan` by the relabelling in
-      # prometheus.yml, so these sit next to the throughput series above on one graph.
+      # jetstream_consumer_num_pending is a durable consumer's undelivered backlog; the relabelling
+      # in prometheus.yml splits it into provider/scan to sit next to the throughput series above.
       - record: provider_scan:scan_queue_depth:current
         expr: >-
           sum by (provider, scan) (
@@ -125,33 +103,27 @@ groups:
       - record: scan:scan_queue_depth:sum
         expr: sum by (scan) (provider_scan:scan_queue_depth:current)
 
-      # Messages redelivered and not yet acked. `MAX_TASK_DELIVERIES` is 3, so a task is retried at
-      # most twice before being settled as permanently failed; a lane holding redelivered messages
-      # continuously is failing rather than hiccupping. This is the closest thing available to the
-      # retry-versus-settle signal ARCH-14 describes, and it comes from the broker rather than from
-      # the worker — see docs/OBSERVABILITY.md for what it still cannot tell you.
+      # MAX_TASK_DELIVERIES is 3, so a lane holding redelivered messages continuously is failing,
+      # not hiccupping. Closest available signal to broker-side retry-versus-settle.
       - record: provider_scan:scan_tasks_redelivered:current
         expr: >-
           sum by (provider, scan) (
             jetstream_consumer_num_redelivered{stream_name="TANKOVAULT_TASKS", scan!=""})
 
-      # The notifier's own backlog on the events stream. It acks only *after* fan-out, so a channel
-      # that hangs (an SMTP relay that accepts the connection and never answers) shows up here as a
-      # queue that stops draining.
+      # The notifier acks only after fan-out, so a hanging channel shows up here as a queue that
+      # stops draining.
       - record: consumer:events_queue_depth:current
         expr: >-
           sum by (consumer_name) (
             jetstream_consumer_num_pending{stream_name="TANKOVAULT_EVENTS"})
 
-      # How many provider lanes served at least one task in the last 30 minutes. Round-robin
-      # fairness (OPERATIONS.md §7) predicts this tracks the number of providers with work; one
-      # lane climbing alone is the documented signature of lanes that failed to open.
+      # Round-robin fairness (OPERATIONS.md §7) predicts this tracks the number of providers with
+      # work; one lane climbing alone is the signature of lanes that failed to open.
       - record: scan:active_provider_lanes:count30m
         expr: count by (scan) (sum by (provider, scan) (increase(scan_tasks_served_total[30m])) > 0)
 
-  # ---- The fetch tier: challenge solving and headless rendering ---------------------------------
-  # `solve_attempts_total` is emitted by the shared handler in `crates/solver/src/http.rs`, which
-  # both `challenge-solver` and `render` mount — hence the `job` dimension on every rule here.
+  # solve_attempts_total is emitted by the shared handler (crates/solver/src/http.rs) that both
+  # challenge-solver and render mount — hence the job dimension on every rule here.
   - name: tankovault-fetch-tier-recording
     interval: 30s
     rules:
@@ -171,22 +143,18 @@ groups:
           sum by (job) (rate(render_requests_total{result="error"}[15m]))
             / sum by (job) (rate(render_requests_total[15m]))
 
-      # SSRF refusals from `tankovault_domain::ssrf::validate_str`, on both endpoints that fetch a
-      # caller-supplied URL. Kept as two series rather than one summed series: `render` mounts
-      # *both* handlers, so any `or`/`+` combination would either drop one side or produce no
-      # result for `challenge-solver`, which emits only the first. The alert covers both.
+      # Kept as two series, not one summed: render mounts both handlers, but challenge-solver
+      # emits only the first, so any or/+ combination would drop one side.
       - record: job:solve_targets_refused:increase15m
         expr: sum by (job) (increase(solve_attempts_total{result="rejected"}[15m]))
 
       - record: job:render_targets_refused:increase15m
         expr: sum by (job) (increase(render_requests_total{result="rejected"}[15m]))
 
-  # ---- Fleet shape ------------------------------------------------------------------------------
   - name: tankovault-fleet-recording
     interval: 30s
     rules:
-      # Replicas answering a scrape, per service. `worker` is the only tier where this is
-      # expected to exceed 1 (docker-compose.yml declares `replicas: 2`).
+      # worker is the only tier expected to exceed 1 (docker-compose.yml declares replicas: 2).
       - record: job:replicas:count
         expr: count by (job) (up{job!~"prometheus|readiness|blackbox-exporter"} == 1)
 

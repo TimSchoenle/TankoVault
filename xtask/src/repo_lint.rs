@@ -1,29 +1,8 @@
-//! `xtask repo-lint` — the invariants no compiler and no linter can see.
-//!
-//! # Why this exists
-//!
-//! `clippy.toml` covers everything expressible as "this path must not be called". What is left
-//! is the shape of defect this repository keeps finding: **two artefacts that must agree, with
-//! nothing connecting them.** A Content-Security-Policy in a Rust string and the HTML it
-//! governs. A secret published in a compose file and the code that is supposed to refuse it.
-//! Both halves are individually correct, review reads them on different days, and the
-//! disagreement is invisible to every other gate.
-//!
-//! Each rule below exists because its invariant was already broken once, or because breaking it
-//! is silent. A rule that only restates what `clippy` or a unit test already enforces does not
-//! belong here — see the enforcement table in `docs/ENGINEERING_GUIDE.md` for which mechanism
-//! owns which rule.
-//!
-//! # Scanning, and its limits
-//!
-//! These are text scans, not parsers. The two mitigations that make that honest:
-//!
-//! - **Comment lines are skipped** ([`is_comment`]). Without it every rule below would fire on
-//!   the prose *describing* it — this module included — and the usual repair for that is to
-//!   stop writing the prose, which is the wrong trade.
-//! - **Every allowance is an explicit path, listed in the rule.** There is no "ignore" comment
-//!   an author can sprinkle, because a suppression mechanism that is cheap to reach for stops
-//!   recording anything.
+//! `xtask repo-lint` — invariants no compiler or linter can see: two artefacts that must agree
+//! with nothing connecting them (a CSP and the HTML it governs, a secret published in a compose
+//! file and the code meant to refuse it). These are text scans, not parsers: comment lines are
+//! skipped ([`is_comment`]) so a rule can't fire on the prose describing it, and every allowance
+//! is an explicit path listed in the rule rather than a sprinklable "ignore" comment.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -43,10 +22,8 @@ struct Finding {
 /// so one invocation reports the whole set.
 pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     let mut findings = Vec::new();
-    // The two scanning rules cannot fail to *run*: an unreadable path simply holds nothing to
-    // judge. The three below read one specific, required artefact each, and a missing app
-    // shell, compose file or Dockerfile is a broken checkout rather than a clean bill of
-    // health — so those three return `Result` and this function stops.
+    // The three below read one specific, required artefact each; a missing one is a broken
+    // checkout, not a clean bill of health, so those three return `Result` and stop the run.
     findings.extend(no_unsafe_eval(root));
     findings.extend(no_dangerous_inner_html(root));
     findings.extend(shell_loads_nothing_off_origin(root)?);
@@ -115,11 +92,9 @@ fn grants_unsafe_eval(line: &str) -> bool {
 }
 
 fn no_dangerous_inner_html(root: &Path) -> Vec<Finding> {
-    // The one legitimate use in the tree. `icons::Ic` interpolates `path_for(icon)`, which
-    // returns `&'static str` from a closed `match` over an enum — the markup is a compile-time
-    // constant and no caller-supplied value reaches it. Allowed as a *budget of one* rather
-    // than a blanket exemption for the file: a second occurrence here is a new claim, and a new
-    // claim should be argued in review rather than inherited from this one.
+    // The one legitimate use: `icons::Ic` renders a compile-time-constant path, not
+    // caller-supplied data. Budget of one, not a blanket exemption — a second use must be
+    // argued in review, not inherited from this one.
     const ALLOWED: [(&str, usize); 1] = [("web/frontend/src/icons.rs", 1)];
 
     let mut findings = Vec::new();
@@ -166,15 +141,10 @@ fn no_dangerous_inner_html(root: &Path) -> Vec<Finding> {
     findings
 }
 
-/// **The app shell loads nothing off-origin.**
-///
-/// `services/frontend` serves the SPA under `default-src 'self'`, so a CDN `<script>` or
-/// `<link>` added to `web/frontend/index.html` is refused by the browser at runtime and by
-/// nothing at build time. The symptom is a missing font or a dead feature in production only.
-///
-/// This also protects the CSP's inline-script hashes: the server hashes exactly the `<script>`
-/// elements that carry no `src` (`services/frontend/src/main.rs::inline_script_hashes`), so an
-/// author who "externalises" a boot script to a CDN silently loses both the hash and the load.
+/// **The app shell loads nothing off-origin.** `default-src 'self'` refuses a CDN `<script>` or
+/// `<link>` in `web/frontend/index.html` at browser runtime and nothing at build time — the
+/// symptom is a missing font or dead feature in production only, and CDN-loading a boot script
+/// would also silently drop it from the CSP's inline-script hashes.
 fn shell_loads_nothing_off_origin(root: &Path) -> anyhow::Result<Vec<Finding>> {
     let shell = root.join("web/frontend/index.html");
     let Ok(html) = std::fs::read_to_string(&shell) else {
@@ -208,21 +178,13 @@ fn shell_loads_nothing_off_origin(root: &Path) -> anyhow::Result<Vec<Finding>> {
     Ok(findings)
 }
 
-/// **A secret published in this repository must be refused by the code that reads it.**
-///
-/// `deploy/docker-compose.yml` supplies defaults with `${VAR:-value}`. For an ordinary setting
-/// that is convenience; for a credential it means the value an operator runs with, when they
-/// never created `deploy/local.env`, is one anybody can read here. The established repair is
-/// two-sided — make the compose variable required (`:?`) *and* have the service refuse the
-/// string in every profile — because either half alone leaves a path that boots with it.
-///
-/// This rule enforces the second half against the first: every credential-shaped default in
-/// the compose file must appear literally in the Rust sources, which is where the refuse-lists
-/// live (`services/api/src/main.rs::KNOWN_PLACEHOLDERS`,
-/// `tankovault_service::internal_auth::KNOWN_PLACEHOLDERS`).
-///
-/// It was written against a tree where `TANKOVAULT_INTERNAL__TOKEN` had the prose and not the
-/// refusal, on the credential authorizing every privileged inter-tier call.
+/// **A secret published in this repository must be refused by the code that reads it.** A
+/// `${VAR:-value}` compose default is convenience for an ordinary setting but, for a
+/// credential, a value anybody can read that an operator boots with unless they made
+/// `deploy/local.env`. Every credential-shaped default must therefore appear literally in the
+/// Rust refuse-lists (`services/api/src/main.rs::KNOWN_PLACEHOLDERS`,
+/// `tankovault_service::internal_auth::KNOWN_PLACEHOLDERS`) — one half of the fix without the
+/// other still boots with the published value.
 fn published_secrets_are_refused(root: &Path) -> anyhow::Result<Vec<Finding>> {
     let compose = root.join("deploy/docker-compose.yml");
     let Ok(yaml) = std::fs::read_to_string(&compose) else {
@@ -264,24 +226,13 @@ fn published_secrets_are_refused(root: &Path) -> anyhow::Result<Vec<Finding>> {
     Ok(findings)
 }
 
-/// **Every workspace binary must be listed in the Dockerfile's `SERVICE_BINS`.**
-///
-/// `deploy/docker/Dockerfile` compiles all nine binaries in one `cargo` invocation and copies
-/// them into `/out`; each runtime stage then does `COPY --from=builder /out/${BIN}`. That is
-/// what collapsed nine serialised per-binary compiles into one, but it costs the property the
-/// old shape had for free: `--build-arg BIN=x` used to *be* `cargo build --bin x`, so an
-/// unknown binary failed at the compile with cargo's own error. Now the list is a literal, and
-/// a `[[bin]]` added to the workspace without touching the Dockerfile produces an image that
-/// fails at the final `COPY` — for the one service nobody was building, and only once someone
-/// tries to build it.
-///
-/// So: the two lists must agree. This reads `SERVICE_BINS` out of the Dockerfile and the
-/// `[[bin]] name = …` entries out of every workspace manifest, and reports each direction of
-/// disagreement separately, because they are different mistakes with different repairs.
-///
-/// `web/frontend` is deliberately not counted. It is excluded from the host workspace (root
-/// `Cargo.toml` → `exclude`) and its `app` binary is a `wasm32` artefact built by `dx`, not a
-/// binary any runtime stage copies.
+/// **Every workspace binary must be listed in the Dockerfile's `SERVICE_BINS`.** The Dockerfile
+/// compiles all binaries in one `cargo` invocation from a literal list, so a `[[bin]]` added to
+/// the workspace without updating it produces an image that fails at the final `COPY` — only
+/// once someone tries to build the service nobody knew was missing. This reads `SERVICE_BINS`
+/// and every manifest's `[[bin]] name = …` and reports each direction of disagreement.
+/// (`web/frontend` doesn't count: it's outside the host workspace and its `app` binary is a
+/// `wasm32` artefact `dx` builds, not one any runtime stage copies.)
 fn dockerfile_ships_every_workspace_binary(root: &Path) -> anyhow::Result<Vec<Finding>> {
     let dockerfile = root.join("deploy/docker/Dockerfile");
     let Ok(text) = std::fs::read_to_string(&dockerfile) else {
@@ -363,11 +314,8 @@ fn service_bins(dockerfile: &str) -> Option<(usize, Vec<String>)> {
     None
 }
 
-/// The `name` of every `[[bin]]` target declared in one `Cargo.toml`.
-///
-/// A text scan, like every rule in this module. `[[bin]]` sections are terminated by the next
-/// table header, so tracking whether the current section is one is enough — and it is what keeps
-/// `[package] name = …` out of the result, which is the only real ambiguity here.
+/// The `name` of every `[[bin]]` target declared in one `Cargo.toml`. Tracking whether the
+/// current section is `[[bin]]` is enough to keep `[package] name = …` out of the result.
 fn bin_targets(manifest: &str) -> Vec<String> {
     let mut names = Vec::new();
     let mut in_bin_section = false;
@@ -548,16 +496,11 @@ mod tests {
         assert!(!is_credential("TANKOVAULT_FRONTEND__STATIC_DIR"));
     }
 
-    /// The half of a rule that is easy to get wrong is the half that has to *fire*. A rule
-    /// only ever seen green is indistinguishable from one whose pattern never matches
-    /// anything — which is precisely how a mistyped `clippy.toml` path behaves, and why that
-    /// hazard is called out in both `clippy.toml` files.
+    /// A rule only ever seen green is indistinguishable from one whose pattern never fires —
+    /// exactly how a mistyped `clippy.toml` path behaves.
     #[test]
     fn the_csp_rule_fires_on_a_policy_and_not_on_prose_about_one() {
-        // Assembled rather than written out, so this file does not contain the very string it
-        // forbids. That is not a trick to dodge the rule — it is the rule working: this test
-        // failed on its own first run, which is the evidence that the pattern matches a real
-        // policy. Keeping an exemption for this file instead would have removed that evidence.
+        // Assembled rather than written out, so this file doesn't contain the string it forbids.
         let granted = format!("script-src 'self' '{}'", "unsafe-eval");
         assert!(grants_unsafe_eval(&granted));
         assert!(grants_unsafe_eval(&format!(

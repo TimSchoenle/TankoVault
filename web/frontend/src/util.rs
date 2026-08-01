@@ -20,11 +20,7 @@ use crate::i18n::Translator;
 /// memory until they navigate away.
 ///
 /// # Errors
-/// A **catalogue key**, not a sentence. Every failure here means the browser is missing
-/// something ordinary, so there is one generic message rather than one per DOM call — but it
-/// used to be baked in as English and handed verbatim to the reader by both callers, in
-/// contradiction of this module's own contract (see the module docs). Callers hold a
-/// [`Translator`]; resolving there is the same pattern `politeness_json` uses.
+/// A **catalogue key**, not a sentence — resolved through the caller's [`Translator`].
 pub(crate) fn save_text_file(
     filename: &str,
     mime: &str,

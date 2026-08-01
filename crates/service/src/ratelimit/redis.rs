@@ -14,13 +14,9 @@ use tankovault_config::{RateLimitConfig, RateLimitPolicy};
 
 /// Token-bucket check-and-consume, evaluated atomically inside Redis.
 ///
-/// Two properties matter here:
-///
-/// 1. **Atomicity.** Read-modify-write across three round trips would let concurrent
-///    requests from the same client each observe the pre-decrement token count and all be
-///    allowed. A script runs to completion without interleaving.
-/// 2. **Replication safety.** Wall-clock time is passed in as an argument rather than read
-///    via `redis.call('TIME')`, so the script is deterministic and safe to replicate.
+/// Atomic: separate round trips would let concurrent requests each observe the
+/// pre-decrement count and all be allowed. Time is passed in as an argument rather than
+/// read via `redis.call('TIME')`, keeping the script deterministic and safe to replicate.
 ///
 /// Returns `{allowed, remaining, retry_after_ms}`.
 const TOKEN_BUCKET: &str = r"

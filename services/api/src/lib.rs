@@ -1,18 +1,7 @@
-//! Library surface for the `api` service.
-//!
-//! Everything the binary needs (the route table, shared [`AppState`], and the
-//! [`openapi`] schema export that `xtask openapi` serialises and hands to `progenitor`
-//! to regenerate the typed API client `crates/api-client` the frontend consumes) lives
-//! here; `main.rs` is a thin entrypoint that loads config, wires up infra (DB pool, NATS,
-//! audit sink, metrics), and calls [`build_router`].
-//!
-//! Cross-cutting concerns — rate limiting, security headers, CORS, request ids, metrics,
-//! timeouts, body caps, graceful shutdown, health probes — are not implemented here. They
-//! come from `tankovault-service`, which every service in the workspace shares.
+//! Library surface for the `api` service: the route table, shared [`AppState`], and the
+//! [`openapi`] schema export. `main.rs` is the thin entrypoint.
 
-// Handlers are `pub` so the router (and `openapi::ApiDoc`) can name them, but their
-// containing modules stay private — this crate's only real external surface is
-// `openapi` and the few items re-exported below, so the lint is noise everywhere else.
+// Handlers are `pub` for the router and `openapi::ApiDoc`; containing modules stay private.
 #![expect(
     unreachable_pub,
     reason = "a service crate with a thin lib target for its tests; handlers are `pub` for \
@@ -57,22 +46,16 @@ pub fn full_openapi() -> utoipa::openapi::OpenApi {
 
 /// Which rate-limit budget each route family draws from.
 ///
-/// Kept next to the route table so adding an endpoint and classifying it are one edit.
-/// Anything unlisted falls back to the global budget, which is the safe default: a new
-/// route is limited from the moment it exists rather than being unlimited until someone
-/// remembers to add it here.
+/// Anything unlisted falls back to the global budget: a new route is limited from the
+/// moment it exists rather than unlimited until someone classifies it.
 #[must_use]
 pub fn route_classifier() -> RouteClassifier {
     RouteClassifier::new()
-        // Credential handling — the online-guessing surface. Covers `/v1/auth/passkey/*` by
-        // prefix, which is where it is needed most: `login/start` is unauthenticated and mints
-        // a database row per call, so an unclassified passkey surface would be a free way to
-        // fill `webauthn_ceremonies`.
+        // Online-guessing surface: `login/start` is unauthenticated and mints a row per call,
+        // so leaving passkeys unclassified would let it fill `webauthn_ceremonies` freely.
         .auth("/v1/auth")
-        // Adding a passkey verifies an argon2id hash before it issues a challenge, which puts
-        // it on the same online-guessing surface as `/v1/auth` despite living under `/v1/me`.
-        // Without this it would draw from the ordinary authenticated budget, and a stolen
-        // access token would buy an attacker a password oracle at that far looser rate.
+        // Verifies an argon2id hash before issuing a challenge — same guessing surface as
+        // `/v1/auth`, so a stolen access token must not buy a looser-rate password oracle.
         .auth("/v1/me/passkeys/register/start")
         // Cheap to ask for, expensive to serve — genuinely heavy however they are called.
         .expensive("/v1/me/export")
@@ -80,16 +63,12 @@ pub fn route_classifier() -> RouteClassifier {
         .expensive("/v1/me/sync/{provider}/pull")
         .expensive("/v1/admin/providers/{id}/test")
         .expensive("/v1/admin/series/merge")
-        // A sweep re-blocks the whole catalogue and may perform hundreds of merge
-        // transactions; a key rebuild rewrites every normalized title in `series` and
-        // `series_titles`. Both are the heaviest calls the console can make.
+        // A sweep re-blocks the whole catalogue; a key rebuild rewrites every normalized
+        // title — the heaviest calls the console can make.
         .expensive("/v1/admin/merge-candidates/sweep")
         .expensive("/v1/admin/matching/rebuild-keys")
-        // Admin surfaces the console polls to paint itself: only the mutating calls draw
-        // from the tight budget, so the read-heavy console and account pages are not
-        // throttled for merely loading. `GET /v1/admin/scans` (scan-queue overview) and
-        // the `/v1/admin/sync/*` listings stay on the ordinary budget; the `POST`s that
-        // trigger real work do not.
+        // Only mutating admin calls draw from the tight budget, so read-heavy console pages
+        // aren't throttled for merely loading.
         .expensive_write("/v1/admin/scans")
         .expensive_write("/v1/admin/sync")
         // Disclosing another person's whole record, and the erasure that follows an erasure
@@ -101,22 +80,13 @@ pub fn route_classifier() -> RouteClassifier {
 
 /// Which [`Feature`] each route family belongs to.
 ///
-/// The other half of the flag system: [`tankovault_domain::features`] declares *what* is
-/// switchable and this table declares *where*. Kept next to the route registration below so
-/// adding an endpoint and placing it under a feature are one edit, and enforced by a single
-/// middleware ([`tankovault_service::flags::enforce`]) rather than by checks inside handlers.
-///
-/// Deliberately **not** exhaustive. A route with no entry is ungated, which is right for the
-/// substrate — credential endpoints, the capabilities probe, the ops router — because those are
-/// what a deployment needs in order to be administered at all. Switching off sign-in is not a
-/// feature flag; it is turning the service off, which the orchestrator already does better.
+/// Deliberately not exhaustive: an unlisted route is ungated. That's right for the substrate
+/// — credential endpoints, the capabilities probe, the ops router — since switching those off
+/// would be turning the service off, not a feature decision.
 #[must_use]
 pub fn route_features() -> RouteFeatures {
-    // The external-sync surface's gates come from the single declaration in
-    // `tankovault_contracts::sync`, prefixed with this tier's mount point, so the API and the
-    // sync service cannot drift apart on which routes are gated (ARCH-18). The finer sync flags
-    // that govern *behaviour* rather than routes (scheduled pull) are still checked where that
-    // behaviour happens.
+    // Gates come from the single declaration in `tankovault_contracts::sync`, so the API
+    // and sync service cannot drift apart on which routes are gated.
     let sync = tankovault_contracts::sync::sync_route_features()
         .iter()
         .fold(RouteFeatures::new(), |table, (suffix, feature)| {
@@ -134,11 +104,8 @@ pub fn route_features() -> RouteFeatures {
         .gate("/v1/auth/verify-email", Feature::AccountsEmailVerification)
         .gate("/v1/me/profile", Feature::AccountsProfile)
         .gate("/v1/me/sessions", Feature::AccountsSessions)
-        // Both halves of passkeys under one flag: the sign-in ceremony and the management
-        // surface. Switching it off must take the *sign-in* path with it — leaving
-        // `/v1/auth/passkey` reachable while the account page can no longer show or revoke a
-        // key is the worst of both, since the credential still works and the owner has no way
-        // to remove it. Registered credentials are kept, so switching it back on restores them.
+        // Both halves of passkeys share one flag: switching off sign-in without also
+        // disabling management would leave a live credential the owner can't revoke.
         .gate("/v1/auth/passkey", Feature::AccountsPasskeys)
         .gate("/v1/me/passkeys", Feature::AccountsPasskeys)
         // --- privacy ---
@@ -150,17 +117,8 @@ pub fn route_features() -> RouteFeatures {
         .gate("/v1/admin/privacy", Feature::PrivacyRequests)
         // --- tracking ---
         .gate("/v1/me/watchlist", Feature::TrackingWatchlist)
-        // One rule, covering the whole progress family — the per-chapter write
-        // (`PUT /v1/me/progress/{series_id}/chapters/{number}`) and the bulk mark-read
-        // (`POST /v1/me/progress/{series_id}/mark-read-to`) both sit under this prefix.
-        //
-        // **Two further rules used to sit here**, `/v1/me/chapter-progress` and
-        // `/v1/me/mark-read-to`, and neither has ever been a route: both are the *tails* of the
-        // paths above, written as if they were top-level. They are deleted rather than left,
-        // because a rule that gates nothing while looking like it gates something is how the
-        // next person concludes their endpoint is already covered. Nothing was ungated — this
-        // prefix already covered both — and nothing in the build could have said so, which is
-        // why `feature_gating.rs::every_gated_prefix_still_matches_a_published_route` exists.
+        // One rule covers the whole progress family, including the bulk mark-read-to write.
+        // `feature_gating.rs` checks every gated prefix matches a published route.
         .gate("/v1/me/progress", Feature::TrackingProgress)
         .gate("/v1/me/feed", Feature::TrackingFeed)
         .gate("/v1/me/continue", Feature::TrackingFeed)
@@ -185,12 +143,8 @@ pub fn route_features() -> RouteFeatures {
         .gate_writes("/v1/admin/scans", Feature::ScanningManual)
         .gate("/v1/admin/merge-candidates", Feature::ScanningMergeQueue)
         .gate("/v1/admin/series/merge", Feature::ScanningMergeQueue)
-        // Longest prefix wins, so this overrides the rule above for the sweep specifically. The
-        // sweep is the one route here that *deletes* series, and `scanning.auto_merge` exists to
-        // stop exactly that without also hiding the review queue an operator would use to see
-        // why they wanted it stopped. The control-plane re-checks the same flag — a switch an
-        // operator has thrown must hold at the component doing the work, not only at the one in
-        // front of it.
+        // Longest prefix overrides the rule above for the sweep — the one route here that
+        // deletes series. The control plane re-checks the same flag independently.
         .gate(
             "/v1/admin/merge-candidates/sweep",
             Feature::ScanningAutoMerge,
@@ -206,13 +160,8 @@ pub fn route_features() -> RouteFeatures {
 
 /// Assemble the full route table and the shared middleware stack.
 ///
-/// The documented endpoints come from [`documented_router`]; `split_for_parts` hands back
-/// the plain `axum::Router` alongside the collected `OpenApi` document, which is served
-/// (with a browsable UI) via Scalar at `/scalar`.
-///
-/// The ops probes (`/health`, `/ready`, the metrics scrape) are merged in **outside** the
-/// middleware stack: a rate limit or a body cap must never be able to make a healthy
-/// replica look unhealthy to its orchestrator.
+/// The ops probes (`/health`, `/ready`, metrics) are merged in **outside** the middleware
+/// stack: a rate limit or body cap must never make a healthy replica look unhealthy.
 pub fn build_router(
     state: AppState,
     security: &SecurityConfig,
@@ -226,15 +175,11 @@ pub fn build_router(
     let limiter = RateLimiter::from_config(rate_limit, route_classifier(), redis);
     let features = FeatureLayer::new(state.features.clone(), route_features());
 
-    // Mounted *inside* the shared stack and closest to the handlers: a request refused for a
-    // disabled feature should still have been rate limited, tagged with a request id and
-    // measured, so the middleware above it must run first. Applied here rather than in
-    // `HttpStack` because the feature table is the API's own, not something every service has.
-    // `/scalar` publishes every admin path, the permission vocabulary and exact request
-    // bodies to anyone who asks, with no auth gate and no entry in `route_features()`. Off in
-    // the production profile by default (`SecurityConfig::expose_api_docs`), on in
-    // development where it is genuinely useful. Note this also removes a per-request
-    // re-serialization of the 253 KB document.
+    // Feature enforcement runs inside the shared stack: a refused request must still count
+    // against the rate limit and get a request id.
+    //
+    // `/scalar` publishes every admin path and exact request bodies with no auth gate; off
+    // by default in production.
     let router = if security.expose_api_docs {
         router.merge(Scalar::with_url("/scalar", api))
     } else {
@@ -260,15 +205,9 @@ pub fn build_router(
 
 /// Identify the caller from a `Bearer` access token, for per-account rate limiting.
 ///
-/// The signature is **verified** before the subject is returned, which is the whole
-/// requirement: `tankovault_service::ratelimit::Principal` is trusted by the limiter, so a
-/// resolver that read an unverified header would let any caller mint themselves an unlimited
-/// supply of fresh buckets — worse than the IP bucketing it replaces, not better.
-///
-/// Deliberately cheaper than [`crate::state::AuthUser`]: no database round trip, no suspension
-/// or permission check. This runs on *every* request including anonymous ones, and its only
-/// job is to name a bucket. A suspended account still gets rate limited under its own id; the
-/// handler is what refuses it.
+/// The signature is verified first: an unverified header would let any caller mint unlimited
+/// fresh buckets. Cheaper than [`crate::state::AuthUser`] — no DB round trip or permission
+/// check — since this only needs to name a bucket; the handler refuses a suspended account.
 fn bearer_principal_resolver(
     jwt_secret: std::sync::Arc<secrecy::SecretSlice<u8>>,
 ) -> tankovault_service::http::PrincipalResolver {
@@ -285,9 +224,8 @@ fn bearer_principal_resolver(
 
 /// Load the deployment's flag overrides and keep them fresh for the lifetime of the process.
 ///
-/// Awaited before the listener binds so the first request after a deploy is served against the
-/// operator's stored decisions rather than the compiled defaults — otherwise a restart would
-/// briefly re-enable everything that had been switched off.
+/// Awaited before the listener binds, so the first request after a deploy sees the operator's
+/// stored decisions rather than briefly reverting to compiled defaults.
 pub async fn install_feature_gate(
     pool: tankovault_db::PgPool,
     cfg: &tankovault_config::FeaturesConfig,
@@ -300,11 +238,8 @@ pub async fn install_feature_gate(
     gate
 }
 
-/// The single, authoritative registration of every documented endpoint, shared by
-/// [`full_openapi`] (the spec export consumed by `xtask openapi`) and [`build_router`] (the
-/// live server) so the two can never drift apart. Each handler carries a
-/// `#[utoipa::path(..)]` attribute that `utoipa_axum`'s `routes!` macro reads to build both
-/// the `axum` route and its `OpenApi` path entry.
+/// Registers every documented endpoint, shared by [`full_openapi`] and [`build_router`] so
+/// the two can never drift apart.
 #[expect(
     clippy::too_many_lines,
     reason = "a route table: one line per endpoint, and splitting it would mean the \
@@ -321,8 +256,7 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(auth::reset_password))
         .routes(routes!(auth::verify_email))
         .routes(routes!(auth::resend_verification))
-        // auth — passwordless sign-in with a passkey. Two legs: an identifier-free challenge,
-        // then the signed assertion the account is resolved from.
+        // auth — passkey login (two legs: challenge, then signed assertion)
         .routes(routes!(auth::passkey_login_start))
         .routes(routes!(auth::passkey_login_finish))
         // public series
@@ -356,8 +290,7 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(me::continue_reading))
         .routes(routes!(me::recommendations))
         .routes(routes!(me::stats))
-        // what this caller may do and what this deployment offers — the one read the client
-        // gates its whole UI on
+        // capability probe the client gates its whole UI on
         .routes(routes!(me::capabilities))
         // account settings (§9.4)
         .routes(routes!(me::patch_profile))
@@ -381,11 +314,10 @@ fn documented_router() -> OpenApiRouter<AppState> {
             me::create_privacy_request
         ))
         .routes(routes!(me::cancel_privacy_request))
-        // live SSE stream + the mint for its query credential (a single-use ticket since SEC-8,
-        // not the access token). Both gated by the one `/v1/me/stream` prefix rule below.
+        // live SSE stream + the mint for its query credential (a single-use ticket, not the
+        // access token). Both gated by the one `/v1/me/stream` prefix rule below.
         .routes(routes!(me::stream, me::stream_ticket))
-        // me — external sync, provider-keyed (proxied to the sync service; design: generalized
-        // multi-provider sync)
+        // me — external sync, provider-keyed (proxied to the sync service)
         .routes(routes!(me::sync_providers))
         .routes(routes!(me::sync_authorize_url))
         .routes(routes!(me::sync_status))
@@ -393,12 +325,12 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(me::sync_callback))
         .routes(routes!(me::sync_push))
         .routes(routes!(me::sync_pull))
-        // me — automatic-sync policy, conflicts and history (design v2 §B.6)
+        // me — automatic-sync policy, conflicts and history
         .routes(routes!(me::sync_settings, me::sync_settings_patch))
         .routes(routes!(me::sync_conflicts))
         .routes(routes!(me::sync_resolve_conflict))
         .routes(routes!(me::sync_history))
-        // admin — sync visibility + operator actions (design: admin Sync console tab)
+        // admin — sync visibility + operator actions
         .routes(routes!(admin::list_sync_accounts))
         .routes(routes!(
             admin::list_sync_mappings,
@@ -456,9 +388,8 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::rebuild_matching_keys))
 }
 
-/// Best-effort connection to NATS for the live notification relay. Returns `None` (with a
-/// log line) when NATS is unconfigured or unreachable, so `/v1/me/stream` degrades to `503`
-/// while the rest of the edge keeps serving.
+/// Best-effort connection to NATS for the live notification relay. Returns `None` when
+/// unconfigured or unreachable, so `/v1/me/stream` degrades to `503` while the edge keeps serving.
 pub async fn connect_bus(
     nats: Option<&tankovault_config::NatsConfig>,
 ) -> Option<tankovault_bus::Bus> {
@@ -503,8 +434,7 @@ mod tests {
 
     #[test]
     fn the_data_export_is_expensive_not_ordinary() {
-        // `/v1/me/export` sits under `/v1/me`, which is otherwise unclassified; the
-        // longest-prefix rule is what keeps it in the tighter budget.
+        // `/v1/me` is otherwise unclassified; longest-prefix is what keeps this in budget.
         assert_eq!(
             route_classifier().classify(&Method::GET, "/v1/me/export"),
             RouteClass::Expensive
@@ -539,9 +469,8 @@ mod tests {
 
     #[test]
     fn the_substrate_is_never_behind_a_flag() {
-        // Turning off sign-in, the capabilities probe or the ops surface is not a product
-        // decision — it is turning the service off, and it would leave no way to switch
-        // anything back on. These must have no rule at all.
+        // Turning off sign-in, the capabilities probe or ops is turning the service off,
+        // not a product decision — these must have no rule at all.
         let features = route_features();
         for path in [
             "/v1/auth/login",
@@ -588,10 +517,9 @@ mod tests {
 
     /// Every suffix in the shared declaration is actually gated under this tier's prefix.
     ///
-    /// The two tiers used to keep independent tables and had already drifted — the API gated
-    /// `/conflicts` and `/history` but not `/push-series` — with nothing asserting they agreed
-    /// (ARCH-18). `services/sync` carries the mirror of this test, so adding a suffix to the
-    /// shared list and forgetting one tier's prefix now fails the build on that tier.
+    /// The two tiers used to keep independent tables and had drifted — gated `/conflicts` and
+    /// `/history` but not `/push-series` — with nothing asserting they agreed. `services/sync`
+    /// carries the mirror of this test.
     #[test]
     fn the_shared_sync_declaration_is_applied_under_this_tier_s_prefix() {
         let features = route_features();
@@ -621,10 +549,8 @@ mod tests {
 
     #[test]
     fn every_route_backed_feature_is_actually_reachable() {
-        // A feature nobody gates is a switch that does nothing, which is worse than no switch
-        // because an operator will believe it worked. The features listed here are the ones
-        // deliberately enforced somewhere other than the route table — background loops,
-        // outbound channels, and behaviour decided inside a handler.
+        // A feature nobody gates is a switch that does nothing. These are enforced elsewhere
+        // — background loops, outbound channels, behaviour decided inside a handler.
         let declared = route_features().declared_features();
         let enforced_elsewhere = [
             Feature::CatalogueSearch,

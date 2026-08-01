@@ -31,8 +31,7 @@ pub struct ForgotPasswordRequest {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ResetPasswordRequest {
     /// The opaque token from the emailed reset link.
-    // A bearer credential for "set this account's password", so it is wrapped exactly like the
-    // password beside it.
+    // A bearer credential, wrapped the same as the password beside it.
     #[schema(value_type = String)]
     pub token: SecretString,
     /// The new password (same policy as registration: at least 8 characters).
@@ -77,10 +76,8 @@ pub async fn forgot_password(
 
 /// Mint, store and send a reset link for `email`, if it belongs to an account.
 ///
-/// Runs detached, so nothing here may be reported to the caller — a failure is logged and
-/// dropped, which is the same thing the caller is told about a success. The send is `await`ed
-/// rather than handed to `mailer::send_in_background`: this task *is* the background, and a
-/// nested spawn would only hide how long the work takes from the test that measures it.
+/// Runs detached: a failure here is logged and dropped, same as a success looks to the
+/// caller. Awaited rather than backgrounded again — this task already is the background.
 async fn deliver_reset_link(state: AppState, email: String) {
     let found = tankovault_db::repo::users::find_by_email(&state.pool, &email).await;
     let user = match found {
@@ -111,9 +108,8 @@ async fn deliver_reset_link(state: AppState, email: String) {
     if !state.mailer.is_enabled() {
         return;
     }
-    // The token has to appear in the emailed link — that is what makes the link work — so
-    // this is a deliberate unwrapping. Note what it is *not* used for: the link is never
-    // logged, and the failure branch below records only the error.
+    // Deliberate unwrapping — the token must appear in the link for it to work. Never logged;
+    // the failure branch below records only the error.
     let link = format!(
         "{}/reset-password?token={}",
         state.email_base_url.trim_end_matches('/'),
@@ -158,8 +154,7 @@ pub async fn reset_password(
         ));
     }
 
-    // Single-use guard: the atomic `used_at` flip also closes the race between two
-    // concurrent resets presenting the same token — the loser sees `0` rows and fails.
+    // Atomic `used_at` flip closes the race between concurrent resets; the loser sees 0 rows.
     let consumed =
         tankovault_db::repo::users::consume_password_reset(&state.pool, record.id).await?;
     if consumed == 0 {

@@ -44,18 +44,12 @@ pub struct LatestCfg {
 
 /// How a multi-valued text field is located on a page.
 ///
-/// Almost every field is a plain CSS selector. Madara's summary block is the exception it
-/// exists for: `Alternative`, `Author(s)`, `Artist(s)` and `Genre(s)` render as *structurally
-/// identical* `div.post-content_item` rows that differ only in the text of their heading, and
-/// CSS has no way to select on text. The Madara default for `alt` was `div.summary-heading`
-/// until that was found out — it matched every row's **label**, so every series ingested from
-/// a Madara provider carried "Alternative", "Author(s)", "Genre(s)" and "Status" as its
-/// alternative titles. Those rows land in `series_titles`, which the trigram matcher and the
-/// catalogue search both read, so this was never merely cosmetic.
+/// Most fields are a plain CSS selector; Madara's summary block is not, because Alternative,
+/// Author(s), Artist(s) and Genre(s) render as identical rows differing only in the label text —
+/// matching by label alone silently mislabels those rows into `series_titles`.
 ///
-/// Deserialisation is `untagged`: a JSON string is a [`Self::Selector`], a JSON object is a
-/// [`Self::LabelledRow`]. The cost of untagged is a useless serde error on a malformed object
-/// ("data did not match any variant"), so check the field names below before the selector.
+/// `untagged`: a JSON string is [`Self::Selector`], an object is [`Self::LabelledRow`]; a
+/// malformed object gives an opaque serde error, so check field names before the selector.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum TextSource {
@@ -76,10 +70,8 @@ pub struct LabelledRowCfg {
     /// and a trailing `:` — themes are inconsistent about both.
     #[serde(rename = "match")]
     pub match_label: String,
-    /// Selector (relative to the row) for the value cell; `@attr` supported. The cell's text
-    /// is split on `,`/`;` into separate values, as these rows are always a joined list. A
-    /// value that legitimately contains a comma is split too; that trade is deliberate and
-    /// matches what `DemonicScansAdapter` has always done with its own label/value rows.
+    /// Selector (relative to the row) for the value cell; text is split on `,`/`;` into values
+    /// (a literal comma in a value also splits, matching `DemonicScansAdapter`).
     pub value: String,
 }
 

@@ -90,10 +90,8 @@ impl RelyingParty {
     /// subdomain and credentials should be usable across the parent domain.
     ///
     /// # Errors
-    /// Returns an error when `origin` is not a URL, carries no host, or is not covered by
-    /// `rp_id`. All three are configuration mistakes that would otherwise surface as a browser
-    /// refusing every ceremony with an opaque `SecurityError`, so they are worth reporting at
-    /// boot in the operator's own terms.
+    /// When `origin` is not a URL, has no host, or `rp_id` does not cover it — reported at
+    /// boot rather than left to a browser's opaque `SecurityError`.
     pub fn from_config(
         origin: Option<&str>,
         rp_id: Option<&str>,
@@ -178,9 +176,7 @@ pub(crate) fn relying_party(state: &AppState) -> ApiResult<&Webauthn> {
 /// nothing to keep it opaque.
 ///
 /// # Errors
-/// [`ApiError::Internal`] if the library's own state will not serialise (it always does; the
-/// branch exists because silently dropping the state would produce a challenge that can never
-/// be completed), or if the insert fails.
+/// [`ApiError::Internal`] if serialising the ceremony state or the insert fails.
 pub(crate) async fn begin_ceremony<S: serde::Serialize>(
     state: &AppState,
     user_id: Option<tankovault_domain::UserId>,
@@ -210,12 +206,8 @@ pub(crate) async fn begin_ceremony<S: serde::Serialize>(
 /// used twice however this function returns.
 ///
 /// # Errors
-/// [`ApiError::Unauthorized`] when the ceremony is unknown, already consumed, expired, or of
-/// the wrong kind — four distinct facts deliberately given one answer, because telling them
-/// apart lets a client probe which ceremony ids exist. Also `Unauthorized` when the stored
-/// state will not deserialise, which in practice means a `webauthn-rs` upgrade changed the
-/// representation while challenges were in flight: those ceremonies are unusable and the
-/// client's correct response is to start a new one.
+/// [`ApiError::Unauthorized`] for any lookup or deserialisation failure — collapsed into one
+/// answer so a client cannot enumerate ceremony state by the failure mode.
 pub(crate) async fn take_ceremony<S: serde::de::DeserializeOwned>(
     state: &AppState,
     id: Uuid,

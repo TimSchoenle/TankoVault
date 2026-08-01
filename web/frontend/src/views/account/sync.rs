@@ -101,11 +101,9 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
         }
     });
 
-    // The account's persisted automatic-sync settings (design v2 §B.6/§B.8). These used to be
-    // decoded through a hand-written struct whose field set no longer matched the service, so
-    // every response failed to parse and the panel silently fell back to hardcoded defaults —
-    // showing "auto sync on, newest wins" no matter what was actually stored. The body is now
-    // generated from the producer's own type.
+    // The account's persisted automatic-sync settings (design v2 §B.6/§B.8). Must stay generated
+    // from the producer's own type — a hand-written struct drifts from the service and silently
+    // falls back to hardcoded defaults.
     let settings = use_resource({
         let slug = slug.clone();
         move || {
@@ -302,9 +300,6 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                 };
             }
 
-            // Both of these now carry real values. They were invisible to the old
-            // hand-written DTO, whose field names had drifted from the service's, so the
-            // panel always showed a fabricated "<provider> reader" and a blank last sync.
             let username = status.username.clone().unwrap_or_else(|| {
                 i18n.args("account.sync.anonymousUser", &[("provider", &card_name)])
             });

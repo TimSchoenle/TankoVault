@@ -26,9 +26,8 @@ use crate::state::AppState;
 pub struct RegisterRequest {
     pub email: String,
     pub username: String,
-    // Wrapped so the derived `Debug` on this struct cannot print it. See
-    // `super::login::LoginRequest::password` for why `value_type = String` keeps the generated
-    // schema unchanged, and why this rationale is not a doc comment.
+    // Wrapped so the derived `Debug` can't print it; see `LoginRequest::password` for why
+    // `value_type = String` keeps the schema unchanged.
     #[schema(value_type = String)]
     pub password: SecretString,
 }
@@ -49,8 +48,7 @@ pub struct RegisterResponse {
     pub verification_required: bool,
     /// The issued bearer access token — present only when the account was activated
     /// immediately (email delivery not configured). Mirrors [`TokenResponse::access_token`].
-    // Including its `expose_option_onto_wire` opt-in, which is what lets a secret reach the
-    // client at all.
+    // Includes the `expose_option_onto_wire` opt-in that lets this secret reach the client.
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "crate::secret::expose_option_onto_wire"
@@ -96,17 +94,15 @@ pub async fn register(
     )
     .await?;
 
-    // Confirmation needs both a way to deliver the link *and* an operator who wants the step.
-    // Turning `accounts.email_verification` off is how a deployment with working mail
-    // deliberately skips it; a missing mailer is the involuntary version of the same thing.
+    // Confirmation needs both a mailer and an operator who wants the step — a missing mailer
+    // is the involuntary version of switching it off.
     if state.mailer.is_enabled()
         && state
             .features
             .is_enabled(Feature::AccountsEmailVerification)
     {
-        // Email delivery is available: require confirmation before the account can sign in.
-        // Send the confirmation link out of band and issue no session — the welcome email is
-        // deferred until the address is actually confirmed (see [`verify_email`]).
+        // Send the link out of band and issue no session; the welcome email waits until
+        // confirmed (see [`verify_email`]).
         send_verification_email(&state, &user).await?;
         return Ok((
             jar,
@@ -118,9 +114,8 @@ pub async fn register(
         ));
     }
 
-    // Confirmation is not in play: activate the account immediately and log the user straight
-    // in, preserving the pre-confirmation sign-up experience for dev/CI and for deployments
-    // that have switched the step off.
+    // Confirmation isn't in play: activate and sign in immediately, preserving the
+    // pre-confirmation experience for dev/CI and switched-off deployments.
     tankovault_db::repo::users::mark_email_verified(&state.pool, user.id).await?;
     mailer::send_in_background(&state, mailer::welcome(&user.email, &user.username));
     let (jar, token) = issue_session_tokens(&state, jar, &user, Uuid::now_v7()).await?;

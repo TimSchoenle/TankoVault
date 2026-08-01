@@ -1,8 +1,5 @@
-//! Full three-way reconciliation of a linked account (design v2 §B.3/§B.4).
-//!
-//! This module owns the *I/O* half: fetching the remote list, resolving entries to series,
-//! persisting snapshots and mappings, and applying whatever [`super::plan`] decided. Every
-//! merge rule itself lives over there, with no database behind it.
+//! Full three-way reconciliation of a linked account. Owns the *I/O* half — fetching, resolving,
+//! persisting, applying — while every merge rule itself lives in [`super::plan`].
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -48,9 +45,8 @@ pub(crate) struct PushReport {
     pub(crate) unmapped: usize,
 }
 
-/// Aggregate counters accumulated over one full account reconciliation (design v2 §B.3/§B.4).
-/// Both the manual `PullReport`/`PushReport` and the scheduled loop's logging are derived from
-/// these.
+/// Aggregate counters accumulated over one full account reconciliation. Both the manual
+/// `PullReport`/`PushReport` and the scheduled loop's logging are derived from these.
 #[derive(Debug, Default)]
 pub(crate) struct ReconcileCounts {
     pub(crate) fetched: usize,
@@ -66,33 +62,23 @@ pub(crate) struct ReconcileCounts {
     pub(crate) unmapped: usize,
     /// Genuine conflicts queued for the user under `AskMe`.
     pub(crate) conflicts: usize,
-    /// Series skipped because they are excluded from sync (§A.5).
+    /// Series skipped because they are excluded from sync.
     pub(crate) skipped: usize,
     /// Series whose catalogue metadata was refreshed from the entries just fetched.
     pub(crate) enriched: usize,
 }
 
 /// How long a series' catalogue metadata is left alone after an enrichment attempt before a
-/// list reconciliation will refresh it again.
-///
-/// Reconciliation runs every few minutes per linked account; catalogue metadata changes on the
-/// scale of a work's publication status, not a reader's progress. A week keeps the first sync of
-/// an account filling in everything it matched — the point of the pass — while later runs do one
-/// query and stop. The tokenless sweep is what keeps metadata current between times.
+/// list reconciliation refreshes it again. The tokenless sweep, not this pass, keeps metadata
+/// current in between.
 const METADATA_REFRESH_INTERVAL: time::Duration = time::Duration::WEEK;
 
-/// One user's local sync-relevant state for one provider, read once per reconciliation run.
-///
-/// The merge used to open with three per-series lookups — the exclusion check, the read frontier
-/// and the watchlist status — every one of them against a table keyed on `user_id`, so a
-/// 500-entry library cost 1 500 sequential round trips before any merge decision was made
-/// (PERF-13).
-///
-/// Reading them once is sound because a run reconciles each series **at most once**
+/// One user's local sync-relevant state for one provider, read once per reconciliation run
+/// instead of per series. Sound only because a run reconciles each series **at most once**
 /// (`handled_series`/`handled_ids` in [`Reconciler::reconcile_account`] guarantee it), so no
-/// series is ever read here after that same run has written to it.
+/// series is read here after that same run has written to it.
 struct LocalState {
-    /// Series excluded from syncing with this provider (design v2 §A.5).
+    /// Series excluded from syncing with this provider.
     excluded: HashSet<SeriesId>,
     /// Whole-chapter frontier and when it last changed.
     progress: HashMap<SeriesId, (f64, OffsetDateTime)>,
@@ -121,9 +107,8 @@ impl LocalState {
     }
 }
 
-/// What every series in one reconciliation run shares: the provider being reconciled, the
-/// token in hand, the subject and the policy in force. Gathered so the per-series steps take
-/// one argument for the lot instead of the five the old method threaded through by hand.
+/// What every series in one reconciliation run shares, bundled so per-series steps take one
+/// argument instead of five.
 struct RunContext<'a> {
     provider: &'a dyn ExternalProvider,
     slug: &'a str,
@@ -133,14 +118,8 @@ struct RunContext<'a> {
 }
 
 /// Collapse a fetched remote list to at most one entry per `external_id`, keeping the most
-/// recently updated occurrence.
-///
-/// A provider's list can legitimately contain the *same* remote work more than once — `AniList`,
-/// for instance, occasionally returns duplicate `MediaList` rows for one media (a fresh entry
-/// and a stale leftover) that carry divergent `progress`/`updatedAt`. Reconciling every
-/// occurrence would let the older duplicate clobber the newer one, so the same series flip-flops
-/// between two values on every run. Deduplicating here — freshest `updated_at` wins — makes each
-/// remote work reconcile exactly once, against its latest known state.
+/// recently updated occurrence. A provider list can legitimately carry the same remote work
+/// twice with divergent progress; reconciling both would flip-flop the series every run.
 fn dedupe_latest_by_external_id(entries: Vec<RemoteEntry>) -> Vec<RemoteEntry> {
     let mut by_id: HashMap<String, RemoteEntry> = HashMap::with_capacity(entries.len());
     for entry in entries {
@@ -183,8 +162,8 @@ impl Reconciler {
         }
     }
 
-    /// Manual "pull" (design v2 §B.6): runs the full three-way reconciliation and reports it
-    /// in the historical `PullReport` shape (`pull` and `push` now do the same reconcile).
+    /// Manual "pull": runs the full three-way reconciliation and reports it in the historical
+    /// `PullReport` shape (`pull` and `push` now do the same reconcile).
     pub(crate) async fn pull(
         &self,
         slug: &str,
@@ -202,8 +181,7 @@ impl Reconciler {
         })
     }
 
-    /// Manual "push" (design v2 §B.6): identical full reconciliation, reported in the
-    /// historical `PushReport` shape.
+    /// Manual "push": identical full reconciliation, reported in the historical `PushReport` shape.
     pub(crate) async fn push(
         &self,
         slug: &str,
@@ -220,8 +198,8 @@ impl Reconciler {
         })
     }
 
-    /// Scheduled reconciliation of every account with automatic sync enabled (design v2 §B.4).
-    /// Best-effort: a failure on one account is logged and does not abort the tick.
+    /// Scheduled reconciliation of every account with automatic sync enabled. Best-effort: a
+    /// failure on one account is logged and does not abort the tick.
     pub(crate) async fn reconcile_all_accounts(&self) {
         let accounts = match sync::list_auto_sync_accounts(&self.pool).await {
             Ok(a) => a,
@@ -260,10 +238,8 @@ impl Reconciler {
     /// reconciled, then every mapped local watchlist entry not seen on the remote is created
     /// there. Excluded series are skipped; `AskMe` conflicts are queued.
     ///
-    /// Runs in phases so the bulk writes can be set-based (PERF-13): every entry is resolved
-    /// and its snapshot collected first, then the remote-entry rows and mappings go in one
-    /// statement each, then the merges run. The merge phase needs the mappings already in place,
-    /// because `record_snapshot` writes into the `sync_mappings` row.
+    /// Runs in phases so writes are set-based: mappings must be persisted before the merge
+    /// phase, since `record_snapshot` writes into the `sync_mappings` row.
     async fn reconcile_account(
         &self,
         slug: &str,
@@ -277,9 +253,6 @@ impl Reconciler {
             .await;
         let access = self.tokens.access(slug, provider, user_id).await?;
         let viewer = provider.viewer(&access).await?;
-        // Collapse duplicate remote rows (same `external_id`) to their freshest occurrence
-        // before reconciling — a provider list can carry the same work twice with divergent
-        // progress, and processing both would let a stale duplicate clobber the fresh one.
         let entries = dedupe_latest_by_external_id(provider.fetch_list(&access, &viewer).await?);
 
         let run = RunContext {
@@ -294,9 +267,6 @@ impl Reconciler {
             fetched: entries.len(),
             ..Default::default()
         };
-        // The user's whole local state for this provider, read once. These tables are all keyed
-        // on `user_id`, and no series is reconciled twice in a run, so a per-series read inside
-        // the merge loop bought nothing but a round trip each (PERF-13).
         let local = LocalState::load(&self.pool, user_id, slug).await?;
 
         // Phase 1: resolve every entry to a canonical series (or to nothing).
@@ -325,8 +295,7 @@ impl Reconciler {
         Ok(counts)
     }
 
-    /// Phase 2: persist every fetched snapshot and every resolved mapping — two statements for
-    /// the whole list rather than two per entry (PERF-13).
+    /// Persist every fetched snapshot and every resolved mapping in two set-based statements.
     async fn persist_fetched(
         &self,
         run: &RunContext<'_>,
@@ -355,23 +324,10 @@ impl Reconciler {
         Ok(())
     }
 
-    /// Phase 2b: fold each matched entry's upstream metadata into its local series.
-    ///
-    /// The provider already told us everything it knows about these works when it returned the
-    /// list — description, cover, alternative titles, content type, publication status, genres,
-    /// credits — and this pass is the reason the list query asks for all of it. Before, that
-    /// metadata was parsed, scored for matching and dropped; a series a user actively tracks then
-    /// waited for a catalogue-wide sweep running a few hundred series an hour to reach it, which
-    /// on a catalogue of tens of thousands is days, and looked to the user like the configured
-    /// metadata priority simply not working.
-    ///
-    /// No extra provider call: the metadata is already in hand. The one query asks which of the
-    /// matched series are actually due (see [`METADATA_REFRESH_INTERVAL`]), so a settled
-    /// catalogue costs one statement and nothing else, and the sweep stays the thing that keeps
-    /// metadata *fresh* rather than this running on every tick.
-    ///
-    /// Best-effort: metadata is not what a reconciliation is for, so a failure is logged and the
-    /// progress/status merge proceeds.
+    /// Fold each matched entry's upstream metadata into its local series, reusing the metadata
+    /// already returned by the list fetch — no extra provider call. Only series due per
+    /// [`METADATA_REFRESH_INTERVAL`] are written, so a settled catalogue costs one query.
+    /// Best-effort: a failure is logged and the progress/status merge proceeds regardless.
     async fn enrich_matched(
         &self,
         run: &RunContext<'_>,
@@ -417,10 +373,8 @@ impl Reconciler {
         counts: &mut ReconcileCounts,
     ) -> anyhow::Result<HashSet<String>> {
         let mut handled_ids: HashSet<String> = HashSet::new();
-        // Series already reconciled this run. Two *distinct* remote ids can still resolve to one
-        // local series (an ambiguous title match, or genuine duplicate remote works); reconciling
-        // it more than once would replay the same clobbering flip-flop, so each series is
-        // reconciled at most once per run.
+        // Two distinct remote ids can resolve to one local series; each series is reconciled
+        // at most once per run or the clobbering flip-flop from dupes would repeat here too.
         let mut handled_series: HashSet<SeriesId> = HashSet::new();
 
         for (entry, matched) in resolved {
@@ -476,11 +430,8 @@ impl Reconciler {
     }
 
     /// Reconcile one mapped series against the remote. `remote` is `None` when the series is not
-    /// present on the remote yet (it must be created there).
-    ///
-    /// Every decision below is [`super::plan`]'s; this method only performs them and counts what
-    /// it did. The common-ancestor snapshot is read here rather than in the planner because it
-    /// is the one query the merge needs and neither other outcome does.
+    /// present on the remote yet (it must be created there). Every decision is [`super::plan`]'s;
+    /// this method only performs them and counts what it did.
     async fn reconcile_series(
         &self,
         run: &RunContext<'_>,
@@ -678,7 +629,6 @@ impl Reconciler {
             &sync::AgreedSnapshot {
                 series_id,
                 provider: run.slug,
-                // Both sides get the same value: that is what agreement means here.
                 local_progress: progress,
                 remote_progress: progress,
                 local_status: status.as_str(),
@@ -736,10 +686,9 @@ mod tests {
         }
     }
 
+    /// Pins an AniList anomaly: the same media returned twice, a stale row and a fresh one.
     #[test]
     fn dedupe_keeps_freshest_occurrence_per_external_id() {
-        // The AniList-observed anomaly: media 143056 returned twice, a stale 2022 row at
-        // progress 23 and a fresh 2026 row at progress 182. Only the fresh one must survive.
         let stale = entry("143056", 23.0, 1_654_724_356); // 2022-06-08
         let fresh = entry("143056", 182.0, 1_784_801_432); // 2026-...
         let other = entry("129918", 182.0, 1_750_314_982);

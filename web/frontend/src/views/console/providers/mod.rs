@@ -1,23 +1,7 @@
-//! Console · Providers — the fetch pipeline's control surface, as a list and an inspector.
+//! Console · Providers — the provider list and inspector.
 //!
-//! The list is health at a glance; the inspector is where a provider is actually changed.
-//! Two rules the design makes explicit and this module enforces:
-//!
-//! 1. **A config edit cannot be saved until a dry-run passes.** Editing the adapter config
-//!    clears the gate; a successful `POST /v1/admin/providers/:id/test` re-arms it. Name and
-//!    base-URL edits are not gated — they cannot break parsing.
-//! 2. **Reversible and irreversible destructive actions look different.** Pause and blocklist
-//!    act inline. Delete is type-to-confirm and names the exact blast radius with real counts.
-//!
-//! Deliberately absent, because the API has no field for them: the adapter kind is fixed at
-//! registration (`UpdateProvider` carries no `adapter`), so it is shown rather than offered as
-//! a segmented control, and there is no per-provider `language`.
-//!
-//! This module keeps the list pane, the inspector shell and the two tabs that edit the provider
-//! itself (Config and Politeness) — those share the dry-run gate and the save path, so splitting
-//! them would only move the coupling. Everything that is self-contained has its own file:
-//! [`row`], [`config`] (the dry-run verdict and its `parsed_count` rule, with its tests),
-//! [`coverage`], [`runs`], [`danger`], [`create`] and [`test`].
+//! Saving a config edit is gated on a passing dry-run; name and base-URL edits are not, since
+//! they cannot break parsing.
 
 mod config;
 mod coverage;
@@ -108,9 +92,8 @@ pub(super) fn ProvidersEntity() -> Element {
         }
     });
 
-    // Health and volume for the list rows, from the aggregate endpoint rather than a per-row
-    // fetch. It is permission-gated separately, so a reader with `providers.read` alone still
-    // gets a list — just without the meter under each name.
+    // Aggregate endpoint, permission-gated separately: `providers.read` alone still gets a
+    // list, just without the meter under each name.
     let stats = use_resource(move || {
         reload.track();
         let client = api.client();
@@ -124,9 +107,7 @@ pub(super) fn ProvidersEntity() -> Element {
         }
     });
 
-    // Memoised: this clones the provider list, lower-cases the needle and every candidate, and
-    // clones each survivor — on every render, which on this screen means every keystroke in the
-    // filter box *and* every row selection.
+    // Memoised: filtering reclones the list on every keystroke and every row selection.
     let filtered = use_memo(move || {
         let needle = query.read().trim().to_lowercase();
         match &*providers.read() {
@@ -145,8 +126,7 @@ pub(super) fn ProvidersEntity() -> Element {
     let stat_rows = stats.read().clone().unwrap_or_default();
     let rows = filtered.read().clone();
 
-    // Land on the first row rather than an empty inspector: the console is read far more often
-    // than it is edited, and an empty right pane wastes the first look.
+    // Falls back to the first row so the inspector is never empty.
     let current = selected.read().or_else(|| rows.first().map(|p| p.id));
     let chosen = current.and_then(|id| rows.iter().find(|p| p.id == id).cloned());
 
@@ -250,8 +230,7 @@ fn ProviderInspector(
     let api = api::use_api();
     let i18n = use_i18n();
     let caps = use_capabilities();
-    // One control per capability, rather than one tier unlocking all of them: each appears
-    // exactly when the server would accept the call behind it.
+    // One control per capability: each appears exactly when the server would accept the call.
     let can_edit = caps.can(Permission::ProvidersWrite);
     let can_change_state = caps.can(Permission::ProvidersState);
     let can_scan = caps.can(Permission::ScansRun);
@@ -264,8 +243,7 @@ fn ProviderInspector(
     let is_disabled = provider.state == ProviderState::Disabled;
 
     let tab = use_signal(|| Tab::Config);
-    // A fast scan walks what changed; a full one re-reads the catalogue. Per provider, because
-    // re-reading every provider to re-check one is what operators were doing without it.
+    // Fast scan checks deltas; full re-reads the catalogue for this provider only.
     let mut scan_mode = use_signal(|| ScanMode::Fast);
     let busy = use_busy();
     let mut outcome = use_outcome();
@@ -279,16 +257,14 @@ fn ProviderInspector(
 
     let mut rps = use_signal(|| provider.politeness.rps.unwrap_or(1.0));
     let mut concurrency = use_signal(|| f64::from(provider.politeness.concurrency.unwrap_or(2)));
-    // Crawl delays are milliseconds and always well inside `f64`'s exact integer range.
     #[expect(
         clippy::cast_precision_loss,
         reason = "crawl delays are milliseconds, well inside f64's exact integer range"
     )]
     let mut crawl_delay = use_signal(|| provider.politeness.crawl_delay_ms.unwrap_or(0) as f64);
     let mut user_agent = use_signal(|| provider.politeness.user_agent.clone().unwrap_or_default());
-    // Empty string is the "no emulation" sentinel, matching `politeness_json`. The generated
-    // client models a nullable `$ref` as an untagged two-variant enum; `Variant0` is the raw
-    // JSON fallback.
+    // Empty string is the "no emulation" sentinel, matching `politeness_json`. `Variant0` is
+    // the generated client's raw-JSON fallback for the untagged nullable `$ref`.
     let mut emulation = use_signal(|| match &provider.politeness.emulation {
         Some(PolitenessEmulation::Variant1(e)) => e.to_string(),
         Some(PolitenessEmulation::Variant0(v)) => v.as_str().unwrap_or_default().to_owned(),

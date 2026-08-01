@@ -1,23 +1,13 @@
 //! Serde round-trip properties for the shared wire contracts.
 //!
-//! # Why this suite exists
-//!
-//! `crates/contracts` is the one place where a type is *both* the producer's return value and
-//! the consumer's parse target. Everything in it therefore has exactly one job: survive the
-//! trip. The project has already paid for that not being checked — the sync DTOs were
-//! hand-mirrored on the frontend and silently dropped the connected display name, the
-//! last-sync time and every persisted auto-sync setting before they were hoisted here.
-//!
-//! # Value equality, not `PartialEq`
+//! `crates/contracts` types are both the producer's return value and the consumer's parse
+//! target, so every one belongs in this file — nothing else proves it survives the trip.
 //!
 //! These types deliberately do not derive `PartialEq` (several carry `serde_json::Value`), so
 //! the round trip is asserted on the serialized form: `to_value(x) == to_value(from_value(…))`.
-//! That is not a weaker check — it is the *right* check, because it is the serialized form
-//! that crosses the wire. It catches a field that serializes but does not deserialize, a
-//! `rename` applied on only one side, and a `skip_serializing_if` whose default does not
-//! survive a decode.
-//!
-//! A new contract type belongs in this file. If it is not here, nothing proves it round-trips.
+//! That is the right check, since it is the serialized form that crosses the wire — it catches
+//! a field that serializes but does not deserialize, a one-sided `rename`, or a
+//! `skip_serializing_if` whose default does not survive a decode.
 
 use proptest::prelude::*;
 use serde::Serialize;

@@ -1,32 +1,9 @@
-//! Inbound HTTP rate limiting.
+//! Inbound HTTP rate limiting, distinct from the *outbound* crawl politeness in
+//! `tankovault-fetch`.
 //!
-//! Distinct from the *outbound* crawl politeness in `tankovault-fetch`, which paces the
-//! requests this system makes to third-party providers. Nothing previously limited what
-//! callers could do to us: an unauthenticated client could hammer `/v1/auth/login`
-//! without bound, which is the online password-guessing control this closes.
-//!
-//! ## Shape
-//!
-//! - A [`RouteClassifier`] maps each matched route to a [`RouteClass`], so credential
-//!   endpoints get a far tighter budget than reads without every route needing its own
-//!   configuration entry.
-//! - A [`RateLimitStore`] holds the counters. [`memory::MemoryStore`] is process-local and
-//!   correct for one replica; [`redis::RedisStore`] shares them so the limit holds across
-//!   a fleet.
-//! - [`RateLimiter`] binds the two together and is mounted as an axum middleware.
-//!
-//! ## Client identity
-//!
-//! Buckets are keyed by **client IP**, deliberately not by anything the client supplies.
-//! Keying on a bearer token would let an attacker mint a fresh bucket per request by
-//! sending a different (even invalid) token, and keying on any header is only safe behind
-//! a proxy that overwrites it — hence
-//! [`RateLimitConfig::trust_forwarded_for`](tankovault_config::RateLimitConfig::trust_forwarded_for)
-//! defaulting to `false`.
-//!
-//! A service that has already *verified* a principal in an outer layer can insert a
-//! [`Principal`] request extension; the limiter prefers it, giving per-user rather than
-//! per-IP accounting for authenticated traffic behind shared NAT.
+//! Buckets are keyed by **client IP**, never by anything the client supplies — a bearer
+//! token or an untrusted header would let an attacker mint a fresh bucket per request —
+//! unless a verified [`Principal`] extension is present, which the limiter prefers.
 
 pub mod memory;
 #[cfg(feature = "redis")]
@@ -100,22 +77,16 @@ impl RouteClass {
     const ALL: [Self; Self::COUNT] = [Self::Global, Self::Auth, Self::Expensive];
 }
 
-/// Maps matched routes to their [`RouteClass`] by longest-prefix match.
-///
-/// Matching is done on axum's [`MatchedPath`] (the route *pattern*, `/v1/series/{id}`) so
-/// a classification cannot be dodged by varying a path parameter.
-/// One classification rule: a route-pattern prefix, the class it grants, and whether it
-/// is restricted to mutating requests.
+/// Maps matched routes to their [`RouteClass`] by longest-prefix match on axum's
+/// [`MatchedPath`], so a classification cannot be dodged by varying a path parameter.
 #[derive(Debug, Clone)]
 struct Rule {
     prefix: String,
     class: RouteClass,
-    /// When set, the rule only applies to mutating methods (POST/PUT/PATCH/DELETE). Safe
-    /// reads under the same prefix fall through to a broader class. This is what lets one
-    /// path serve both a cheap console read and an expensive operator action: `GET
-    /// /v1/admin/scans` (the console's scan-queue overview) and `POST /v1/admin/scans`
-    /// (triggering a run) share one route pattern, so classifying the path alone would
-    /// drag the read into the tight expensive budget.
+    /// When set, the rule only applies to mutating methods (POST/PUT/PATCH/DELETE); safe
+    /// reads under the same prefix fall through to a broader class. Lets one route pattern
+    /// serve both a cheap read and an expensive action without dragging the read into the
+    /// tight budget.
     writes_only: bool,
 }
 
@@ -147,12 +118,8 @@ impl RouteClassifier {
         self.rule(prefix, RouteClass::Expensive, false)
     }
 
-    /// Classify only *mutating* requests under `prefix` as expensive; leave reads on the
-    /// broader budget.
-    ///
-    /// Use where a heavy action shares its route pattern with a cheap read the UI polls —
-    /// notably the operator console's admin listings, whose `GET`s must not be throttled
-    /// alongside the `POST`s that kick off real work.
+    /// Classify only *mutating* requests under `prefix` as expensive, leaving reads on the
+    /// broader budget — for a route pattern shared with a cheap read the UI polls.
     #[must_use]
     pub fn expensive_write(self, prefix: impl Into<String>) -> Self {
         self.rule(prefix, RouteClass::Expensive, true)
@@ -262,21 +229,11 @@ impl RateLimiter {
         }
     }
 
-    /// Build the limiter described by `cfg`, returning `None` when limiting is disabled so
-    /// the caller can skip mounting the layer entirely.
+    /// Build the limiter described by `cfg`, returning `None` when limiting is disabled.
     ///
-    /// `redis` is consulted only for [`RateLimitBackend::Redis`](tankovault_config::RateLimitBackend::Redis).
-    /// When that backend is selected but no client could be built, this falls back to the
-    /// in-memory store with a warning rather than starting with no limiting at all.
-    /// The `redis` parameter is unused when the `redis` feature is off — the signature stays
-    /// identical across feature sets on purpose, so a caller does not have to `cfg` its own
-    /// call site. Both lint allowances are therefore feature-conditional rather than blanket:
-    /// with the feature on, the argument genuinely is consumed and both lints should apply.
-    ///
-    /// Without this, `cargo clippy -p tankovault-service` (no default features) failed on
-    /// `needless_pass_by_value` while the unified workspace build — which always enables the
-    /// feature via some other member — passed. Exactly the class of breakage the CI feature
-    /// matrix exists to surface.
+    /// If [`RateLimitBackend::Redis`](tankovault_config::RateLimitBackend::Redis) is selected
+    /// but unavailable (no client, or the feature is off), falls back to in-memory with a
+    /// warning rather than starting with no limiting at all.
     #[must_use]
     // On the function, not the parameter: a `cfg_attr` allow attached to an argument is
     // accepted by the parser but does not reach the lint, so the parameter-level form
@@ -346,8 +303,7 @@ impl RateLimiter {
     /// Derive the bucket key for a request.
     ///
     /// Prefers a verified [`Principal`] extension, then the proxy-supplied client IP when
-    /// the operator has said a trustworthy proxy is in front, then the peer address.
-    /// Falls back to a single shared `unknown` bucket rather than to no limit at all: an
+    /// trusted, then the peer address, then a single shared `unknown` bucket — an
     /// unidentifiable caller is exactly the one that should not get a free pass.
     fn key(&self, req: &Request) -> String {
         if let Some(Principal(id)) = req.extensions().get::<Principal>() {
@@ -367,21 +323,12 @@ impl RateLimiter {
     }
 }
 
-/// The **right-most** entry of `X-Forwarded-For`, or `X-Real-IP`.
+/// The **right-most** entry of `X-Forwarded-For`, or `X-Real-IP`. Only consulted when
+/// `trust_forwarded_for` is enabled — otherwise these headers are client-controlled.
 ///
-/// Only consulted when the operator has enabled `trust_forwarded_for`; otherwise these
-/// headers are entirely client-controlled and would defeat the limiter.
-///
-/// Right-most, not left-most: the reverse proxy in front of us *appends* the peer it
-/// actually accepted the connection from (`services/frontend`, mirroring nginx's
-/// `$proxy_add_x_forwarded_for`), so every entry to the left of that one was supplied by
-/// the client and is forgeable. Reading the left-most entry handed any caller a fresh
-/// bucket per request, which removed the auth limiter entirely — unlimited online password
-/// guessing and reset-mail flooding.
-///
-/// This assumes exactly one trusted hop in front of the service. That is what
-/// `deploy/docker-compose.yml` deploys; if another proxy is added, it must also append, and
-/// `trust_forwarded_for` must stay off wherever the service is reachable directly.
+/// Right-most, not left-most: the reverse proxy appends the peer it accepted the connection
+/// from, so entries to its left are client-supplied and forgeable. Assumes exactly one
+/// trusted hop (what `deploy/docker-compose.yml` deploys).
 fn forwarded_client_ip(headers: &HeaderMap) -> Option<String> {
     if let Some(forwarded) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok())
         && let Some(last) = forwarded.rsplit(',').next()
@@ -399,12 +346,8 @@ fn forwarded_client_ip(headers: &HeaderMap) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Collapse an address to the unit an attacker cannot cheaply multiply.
-///
-/// IPv6 is masked to its /64 prefix: the standard residential and VPS allocation is a routed
-/// /64, so bucketing on the full address gave one attacker 2^64 distinct budgets — and, with
-/// the Redis store, 2^64 distinct keys to grow the counter store with. IPv4 keeps its full
-/// address, where an extra address costs real money.
+/// Collapse an address to the unit an attacker cannot cheaply multiply: IPv6 masked to its
+/// routed /64 (else one attacker gets 2^64 budgets), IPv4 kept exact.
 fn canonicalise(ip: IpAddr) -> String {
     match ip {
         IpAddr::V4(v4) => v4.to_string(),
@@ -534,8 +477,7 @@ mod tests {
 
     #[test]
     fn the_longest_matching_prefix_wins() {
-        // Registration order must not matter; the more specific rule has to win or a
-        // broad rule added later would silently downgrade a tight one.
+        // Registration order must not matter; the more specific rule has to win.
         let classifier = RouteClassifier::new()
             .expensive("/v1/me/export")
             .auth("/v1/me");
@@ -552,9 +494,7 @@ mod tests {
 
     #[test]
     fn writes_only_rules_spare_reads_on_a_shared_path() {
-        // The operator console paints itself with `GET /v1/admin/scans`; only the `POST`
-        // that triggers a run is genuinely expensive. A method-blind rule would throttle
-        // the console's reads alongside the trigger.
+        // A method-blind rule would throttle the console's reads alongside the trigger.
         let classifier = RouteClassifier::new().expensive_write("/v1/admin/scans");
         assert_eq!(
             classifier.classify(&Method::GET, "/v1/admin/scans"),
@@ -573,13 +513,8 @@ mod tests {
         );
     }
 
-    /// `Principal` used to be read here and inserted by nobody, so every request —
-    /// authenticated or not — was bucketed by IP. An IP bucket is the wrong unit for a
-    /// signed-in user: they share it with a household, an office NAT or a mobile carrier,
-    /// while an attacker with one account and many addresses evades it entirely.
-    ///
-    /// `HttpStack::with_principal` now inserts it. This pins that the limiter prefers it,
-    /// and that two callers behind one address get separate budgets once identified.
+    /// Pins that the limiter prefers a [`Principal`] over IP, and that two callers behind
+    /// one address get separate budgets once identified.
     #[test]
     fn an_identified_caller_is_bucketed_per_account_not_per_address() {
         let cfg = RateLimitConfig::default();

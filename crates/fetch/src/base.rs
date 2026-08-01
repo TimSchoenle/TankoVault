@@ -1,19 +1,11 @@
 //! The innermost fetcher: `wreq` with a browser emulation profile, a validating
 //! (SSRF-safe) DNS resolver, per-hop redirect scheme validation, and a bounded text body.
 //!
-//! ## Why emulation lives here
-//!
-//! Providers sit behind Cloudflare/DDoS-Guard, which fingerprint the TLS `ClientHello` (JA3/
-//! JA4) and the HTTP/2 SETTINGS + priority frames, then cross-check the result against the
-//! `User-Agent` header. A generic rustls client is identifiable no matter what headers it
-//! sends, and a browser user-agent over a non-browser handshake is a *stronger* bot signal
-//! than no disguise at all. `wreq` reproduces a real browser's handshake, and the emulation
-//! profile supplies the matching header set — user-agent, `Accept*`, the `sec-ch-ua`/
-//! `sec-fetch-*` family, in the browser's own order and casing.
-//!
-//! The consequence is that this layer must **not** hand-set the headers a profile owns.
-//! The only per-request override is the user-agent carried by a solved challenge session,
-//! whose clearance cookies are bound to the user-agent the solver's browser used.
+//! Emulation exists because providers fingerprint the TLS `ClientHello` and HTTP/2 frames and
+//! cross-check them against `User-Agent` — a browser UA over a non-browser handshake is a
+//! *stronger* bot signal than no disguise. `wreq`'s profile owns the matching header set, so
+//! this layer must never hand-set a header a profile owns; the only exception is the
+//! user-agent of a solved challenge session, whose clearance cookies are bound to it.
 
 use crate::error::FetchError;
 use crate::fetcher::Fetcher;
@@ -38,12 +30,6 @@ const MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
 /// releases are themselves anomalous. Bumping `wreq-util` moves every provider forward
 /// without a database migration — which is why [`BrowserEmulation`] names families, not
 /// versions.
-///
-/// `wreq-util` 3 renamed both halves of this API and *swapped* one of the names, so the old
-/// spelling still compiles in the reader's head while meaning something else: the enum of
-/// concrete builds went `Emulation` → [`Profile`], the OS selector went `EmulationOS` →
-/// [`Platform`], and the settings struct went `EmulationOption` → [`Emulation`]. Anything
-/// written against the 2.x docs has to be re-read, not translated.
 fn profile_for(browser: BrowserEmulation) -> Emulation {
     let (profile, platform) = match browser {
         BrowserEmulation::Chrome => (Profile::Chrome149, Platform::Windows),
@@ -136,9 +122,9 @@ impl Fetcher for BaseHttpFetcher {
             builder = builder.header(wreq::header::USER_AGENT, ua);
         }
         if self.bot_user_agent.is_some() {
-            // Not emulating: no profile owns the content-negotiation headers, so supply the
-            // plausible defaults the old reqwest client sent. Under emulation these come
-            // from the profile, in its own order and casing, and must not be overwritten.
+            // Not emulating: no profile owns the content-negotiation headers, so supply
+            // plausible defaults. Under emulation these come from the profile and must not
+            // be overwritten.
             builder = builder
                 .header(
                     wreq::header::ACCEPT,
@@ -154,15 +140,9 @@ impl Fetcher for BaseHttpFetcher {
 
         let status = resp.status().as_u16();
         let final_url = resp.uri().to_string();
-        // Every header is materialised, not just the four the workspace ever reads
-        // (`content-type`, `retry-after`, `cf-mitigated`, `server`). PERF-19 proposed narrowing
-        // this and it is **declined**, deliberately: `FetchResponse::headers` is a public field
-        // documented as "response headers", and an allowlist would make it a lie whose failure
-        // mode is silent — a future reader of some new header finds it absent and has no reason
-        // to suspect this function. That is the exact defect class the rest of this remediation
-        // exists to remove, and it would be worth trading for far more than ~40 small
-        // allocations against a fetch that also does a TLS handshake, a network round trip and
-        // up to 8 MiB of body. Pre-sizing the vector is the part that *is* free.
+        // Every header is materialised, deliberately not an allowlist of the few call sites
+        // happen to read: `FetchResponse::headers` is documented as "response headers", and
+        // narrowing it would make that a silent lie for whatever a future reader adds.
         let mut headers = Vec::with_capacity(resp.headers().len());
         headers.extend(resp.headers().iter().map(|(k, v)| {
             (
@@ -171,12 +151,11 @@ impl Fetcher for BaseHttpFetcher {
             )
         }));
 
-        // Pre-size from `Content-Length` when the server declares one, clamped to the cap so a
-        // hostile header cannot make us allocate 8 MiB for a 200-byte body. Growing from
-        // `Vec::new()` reallocated and copied about log2(n) times per fetch.
+        // Pre-size from `Content-Length` when declared, clamped to the cap so a hostile header
+        // cannot force an 8 MiB allocation for a 200-byte body.
         //
         // The header is a hint, never a bound: the streaming check below is what actually
-        // enforces `MAX_BODY_BYTES`, because a server is free to send more than it announced.
+        // enforces `MAX_BODY_BYTES`, since a server is free to send more than it announced.
         let declared = resp
             .content_length()
             .and_then(|n| usize::try_from(n).ok())
@@ -192,10 +171,8 @@ impl Fetcher for BaseHttpFetcher {
             }
             buf.extend_from_slice(&chunk);
         }
-        // `from_utf8` first: provider bodies are overwhelmingly valid UTF-8, and the happy path
-        // then *moves* the buffer instead of copying up to 8 MiB into a second allocation.
-        // `from_utf8_lossy` is kept for the rest, because a body with one bad byte is still
-        // worth parsing.
+        // `from_utf8` first so the happy path *moves* the buffer instead of copying up to
+        // 8 MiB; `from_utf8_lossy` handles the rare body with a bad byte.
         let body = String::from_utf8(buf)
             .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
 

@@ -1,7 +1,7 @@
 //! Sign-in.
 //!
 //! Both branches — known and unknown identifier — verify a password hash, so the response
-//! time does not disclose whether an account exists (SEC-10).
+//! time does not disclose whether an account exists.
 
 use axum::Json;
 use axum::extract::State;
@@ -20,13 +20,11 @@ use crate::error::{ApiError, ApiResult};
 use crate::openapi::AUTH_TAG;
 use crate::state::{AppState, ClientContext};
 
-/// A real argon2id hash, verified against on the unknown-identifier branch of [`login`] so
-/// both branches cost the same.
+/// A real argon2id hash used on the unknown-identifier branch of [`login`] so both branches
+/// cost the same.
 ///
-/// It must carry the *same* parameters the live hasher uses (`m=19456,t=2,p=1` —
-/// `crates/auth::password`'s `Params::default()`), or the constant-time property is lost to
-/// a parameter mismatch. The plaintext is irrelevant and no account has it; only the work
-/// factor matters. Pinned by a test that fails if the two ever drift.
+/// Must carry the same parameters as the live hasher (`m=19456,t=2,p=1`), or the
+/// constant-time property breaks silently. Pinned by a test that fails if the two drift.
 const DUMMY_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$\
     c29tZXNhbHRzb21lc2FsdA$YQNhOkeeqk3xJHTvR0mCFcRXA3vsSPT/9ObTNfMlLKw";
 
@@ -34,25 +32,15 @@ const DUMMY_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$\
 pub struct LoginRequest {
     /// Email or username.
     pub login: String,
-    // A `SecretString`, so the derived `Debug` on this struct renders `[REDACTED]` here. The
-    // login path already audits every outcome and records the *identifier*; the submitted
-    // password must never join it, and the wrapper is what makes a future `?req` safe rather
-    // than merely absent today.
-    //
-    // `value_type = String` keeps the generated schema — and therefore `openapi.json` and
-    // `crates/api-client` — byte-identical: this is a server-side representation change, not
-    // a contract change. Deliberately a `//` comment and not a `///` one: utoipa publishes doc
-    // comments as the field's `description`, and how this server holds the value in memory is
-    // not something to tell every API consumer.
+    // `SecretString` so `Debug`/logs can't leak it. `value_type = String` keeps the schema
+    // unchanged; kept as `//` not `///` since utoipa would publish this as the field description.
     #[schema(value_type = String)]
     pub password: SecretString,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct TokenResponse {
-    // Wrapped in transit through the handler and unwrapped exactly once, by
-    // `crate::secret::expose_onto_wire`, at the boundary where it is handed to the client —
-    // which is the one place doing so is the entire point of the response.
+    // Unwrapped exactly once, by `expose_onto_wire`, at the boundary handing it to the client.
     #[serde(serialize_with = "crate::secret::expose_onto_wire")]
     #[schema(value_type = String)]
     pub access_token: SecretString,
@@ -88,16 +76,12 @@ pub async fn login(
 ) -> ApiResult<(CookieJar, Json<TokenResponse>)> {
     let login = req.login.trim();
 
-    // The identifier is recorded on failures so a brute-force campaign can be attributed
-    // to the account it targets. That is the point of an authentication log, and the
-    // identifier is already stored in `users`; the *IP* is the field gated behind the
-    // operator's privacy toggle, and the sink applies that.
+    // The identifier is recorded on failures so a brute-force campaign can be attributed to
+    // its target; the IP is separately gated behind the operator's privacy toggle.
     let Some(creds) = tankovault_db::repo::users::find_credentials(&state.pool, login).await?
     else {
-        // Pay the argon2 cost anyway. Returning here directly took ~1 ms against ~30-60 ms
-        // for a known identifier — two orders of magnitude, readable without statistics, so
-        // an attacker could enumerate the whole user base by timing a breach corpus. The
-        // result is discarded; only the elapsed time matters.
+        // Pay the argon2 cost anyway, or the timing gap between known and unknown identifiers
+        // lets an attacker enumerate accounts. Result discarded; only elapsed time matters.
         let _ = verify_password(&req.password, DUMMY_PASSWORD_HASH, &state.password_pepper);
         audit_anonymous(
             &state,
@@ -128,10 +112,8 @@ pub async fn login(
         return Err(ApiError::Unauthorized);
     }
 
-    // The credential is valid, but the account may not be permitted to act. Checked here as
-    // well as in the `AuthUser` extractor: refusing at the door is what makes the refusal
-    // *legible* — the user is told they are suspended instead of signing in successfully and
-    // then having every subsequent request fail.
+    // Checked here too (not just the `AuthUser` extractor), so a suspended account is told
+    // so at sign-in rather than signing in and failing every request after.
     if !creds.user.status.may_authenticate() {
         audit_anonymous(
             &state,
@@ -146,12 +128,9 @@ pub async fn login(
         return Err(ApiError::Suspended);
     }
 
-    // Password is correct, but an unconfirmed address may not sign in. Distinct from a bad
-    // password (401) so the client can offer to resend the confirmation link. Accounts created
-    // before confirmation existed, and those registered without a mailer, are already verified.
-    //
-    // Skipped entirely when the operator has switched confirmation off: leaving it enforced
-    // would strand every account that registered while it was on, with no way to confirm.
+    // Distinct from a bad password so the client can offer to resend the confirmation link.
+    // Skipped when the operator has switched confirmation off, or existing accounts would be
+    // stranded with no way to confirm.
     if !creds.email_verified
         && state
             .features

@@ -1,17 +1,6 @@
-//! Authenticated symmetric encryption for secrets at rest (design §16).
-//!
-//! [`Sealer`] wraps AES-256-GCM. External-provider credentials — `AniList` OAuth
-//! access/refresh tokens — are sealed before they touch the database, so a database
-//! compromise alone does not disclose them. A fresh random 96-bit nonce is generated per
-//! message and prepended to the ciphertext, and the data-encryption key is supplied by the
-//! caller from a secret store / KMS — never hard-coded and never persisted alongside the
-//! ciphertext.
-//!
-//! The type was called `SecretBox` until `secrecy` was adopted workspace-wide, where
-//! [`secrecy::SecretBox`] is the *container* for a secret value. Two types a use statement
-//! apart, one meaning "this value is secret" and the other "this key seals other values", is
-//! how an import gets written against the wrong one. Sealing is what this does, so `Sealer`
-//! is what it is called.
+//! Authenticated symmetric encryption (AES-256-GCM) for secrets at rest (design §16): OAuth
+//! tokens are sealed before they touch the database, so a database compromise alone cannot
+//! disclose them. Named `Sealer`, not `SecretBox`, to avoid confusion with [`secrecy::SecretBox`].
 
 use aes_gcm::aead::{Aead, KeyInit, Nonce};
 use aes_gcm::{Aes256Gcm, Key};
@@ -36,12 +25,9 @@ pub struct Sealer {
 }
 
 impl Sealer {
-    /// Build from a raw 32-byte data-encryption key.
-    ///
-    /// The array is the caller's to zeroize; prefer [`from_key_bytes`](Self::from_key_bytes)
-    /// or [`from_base64_key`](Self::from_base64_key), which keep the key inside a
-    /// zeroize-on-drop wrapper for its whole life. This entry point stays for tests and for
-    /// callers that already hold a fixed-size key from a KMS SDK.
+    /// Build from a raw 32-byte key. Prefer [`from_key_bytes`](Self::from_key_bytes) or
+    /// [`from_base64_key`](Self::from_base64_key), which zeroize the key; this entry point
+    /// stays for tests and fixed-size KMS callers.
     #[must_use]
     pub fn new(key: &[u8; KEY_LEN]) -> Self {
         let key = Key::<Aes256Gcm>::from(*key);
@@ -62,12 +48,10 @@ impl Sealer {
         Ok(Self::new(key))
     }
 
-    /// Build from a base64 (standard alphabet) encoded 32-byte key, as delivered by a
-    /// secret store or environment variable.
+    /// Build from a base64 (standard alphabet) encoded 32-byte key.
     ///
-    /// The decoded bytes land in a [`SecretSlice`] rather than a bare `Vec<u8>`, so the
-    /// intermediate copy of the key is wiped when this function returns rather than being
-    /// left in a freed allocation.
+    /// Decodes into a [`SecretSlice`], not a bare `Vec<u8>`, so the intermediate copy is
+    /// wiped rather than left in a freed allocation.
     ///
     /// # Errors
     /// [`AuthError::InvalidKey`] if the value is not valid base64 or does not decode to
@@ -80,11 +64,9 @@ impl Sealer {
         Self::from_key_bytes(&decoded)
     }
 
-    /// Seal `plaintext`, returning `nonce (12 bytes) || ciphertext-with-tag`. The output
-    /// is self-describing: [`open`](Self::open) needs only the sealing key.
-    ///
-    /// The result is ciphertext, so it is deliberately *not* wrapped — it is what gets
-    /// written to a database column and logged as a length.
+    /// Seal `plaintext`, returning `nonce (12 bytes) || ciphertext-with-tag` — self-describing,
+    /// so [`open`](Self::open) needs only the key. Not wrapped: this is ciphertext, headed for
+    /// a database column and logged only as a length.
     ///
     /// # Errors
     /// [`AuthError::Crypto`] if the AEAD provider fails (e.g. allocation).
@@ -102,9 +84,8 @@ impl Sealer {
         Ok(out)
     }
 
-    /// Seal the UTF-8 bytes of a secret string. The convenience half of [`seal`](Self::seal),
-    /// which is what every caller in this workspace actually wants: the things sealed here are
-    /// OAuth tokens, and a token is a [`SecretString`].
+    /// Seal the UTF-8 bytes of a secret string — the convenience most callers want, since
+    /// what gets sealed here is an OAuth token.
     ///
     /// # Errors
     /// [`AuthError::Crypto`] if the AEAD provider fails.
@@ -112,11 +93,9 @@ impl Sealer {
         self.seal(plaintext.expose_secret().as_bytes())
     }
 
-    /// Open a value produced by [`seal`](Self::seal).
-    ///
-    /// The plaintext comes back in a [`SecretSlice`] because that is what it is: whatever was
-    /// worth encrypting at rest is worth not leaving in a `Vec<u8>` afterwards. Callers that
-    /// need text want [`open_string`](Self::open_string).
+    /// Open a value produced by [`seal`](Self::seal). Returns a [`SecretSlice`], not a
+    /// `Vec<u8>` — worth encrypting means worth not leaving unwrapped. Callers that need
+    /// text want [`open_string`](Self::open_string).
     ///
     /// # Errors
     /// [`AuthError::Crypto`] if the input is shorter than the nonce or authentication
@@ -136,10 +115,8 @@ impl Sealer {
     /// Open a value produced by [`seal_string`](Self::seal_string) and decode it as UTF-8.
     ///
     /// # Errors
-    /// [`AuthError::Crypto`] if authentication fails **or** the plaintext is not valid UTF-8.
-    /// The two are one variant on purpose: both mean "this ciphertext was not written by this
-    /// key against this schema", and distinguishing them for a caller only produces an error
-    /// message that describes the shape of a secret.
+    /// [`AuthError::Crypto`] if authentication fails **or** the plaintext isn't valid UTF-8 —
+    /// one variant, so an error message can't describe a secret's byte shape.
     pub fn open_string(&self, sealed: &[u8]) -> Result<SecretString, AuthError> {
         let opened = self.open(sealed)?;
         let text = core::str::from_utf8(opened.expose_secret()).map_err(|_| AuthError::Crypto)?;
@@ -149,9 +126,8 @@ impl Sealer {
 
 impl std::fmt::Debug for Sealer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Never render key material. Hand-written rather than delegated to `secrecy`: what is
-        // held is an `Aes256Gcm` key *schedule*, not the key bytes, so there is no
-        // `SecretBox` to put it in — the redaction has to be written here.
+        // Hand-written, not delegated to `secrecy`: this holds a key *schedule*, not key
+        // bytes, so there's no `SecretBox` to redact instead.
         f.write_str("Sealer(<redacted>)")
     }
 }
@@ -241,10 +217,8 @@ mod tests {
         );
     }
 
-    /// `open_string` folds "not valid UTF-8" into [`AuthError::Crypto`] rather than reporting
-    /// it separately. Both answers mean the same thing operationally — this ciphertext does
-    /// not belong to this key and schema — and a distinct variant would let an error message
-    /// describe the byte shape of a decrypted secret.
+    /// `open_string` folds invalid UTF-8 into [`AuthError::Crypto`] rather than a distinct
+    /// variant, so an error can't describe a decrypted secret's byte shape.
     #[test]
     fn non_utf8_plaintext_is_a_crypto_error_not_a_decoding_one() {
         let s = sealer();

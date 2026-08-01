@@ -1,18 +1,6 @@
-//! Reading JSON API responses that do not always arrive as JSON.
-//!
-//! A provider's XHR endpoint is fetched through the same stack as its pages, so one of three
-//! things comes back:
-//!
-//! 1. **Raw JSON** — a plain fetch that was not challenged.
-//! 2. **JSON re-serialised inside rendered markup** — a challenge solver returns what the
-//!    headless browser *displayed*, so the payload arrives inside a `<pre>` block, possibly
-//!    entity-escaped, possibly interleaved with a browser JSON viewer's own markup.
-//! 3. **Somebody else's page** — an interstitial the fetch stack could not solve away.
-//!
-//! [`parse_json_body`] recovers (1) and (2), and names (3) for what it is instead of
-//! reporting it as malformed JSON. When it does fail, the error carries the response
-//! envelope — status, content type, size, and a bounded prefix of the body — because
-//! "could not parse" without the thing that could not be parsed is not a diagnosis.
+//! Reading JSON API responses that may arrive as raw JSON, JSON re-serialised inside
+//! solver-rendered markup, or an unsolved interstitial; [`parse_json_body`] recovers the first
+//! two and names the third instead of reporting it as malformed JSON.
 
 use crate::diagnostics::describe;
 use crate::error::AdapterError;
@@ -37,8 +25,7 @@ pub(crate) fn parse_json_body<T: DeserializeOwned>(
     what: &str,
     resp: &FetchResponse,
 ) -> Result<T, AdapterError> {
-    // The first failure is the one worth reporting: candidates are ordered best-first, so a
-    // later one failing says less about what the provider actually sent.
+    // Best-first order: report the first failure, since a later one says less about what arrived.
     let mut cause: Option<serde_json::Error> = None;
 
     // Fast path: an unwrapped JSON body, parsed without copying it first.
@@ -66,11 +53,9 @@ pub(crate) fn parse_json_body<T: DeserializeOwned>(
 
 /// JSON objects embedded in rendered markup, best candidate first.
 ///
-/// `<pre>` blocks come first because that is where a browser puts a document it had no
-/// renderer for — the payload there is the original text, not a re-rendering of it. Failing
-/// that the scan widens to the document as received, and finally to its text content with
-/// entities decoded, which is what recovers a payload a JSON viewer pretty-printed into
-/// per-token elements.
+/// `<pre>` blocks are tried first since that is the original text, not a re-rendering; the scan
+/// then widens to the raw document and finally to entity-decoded text content, which recovers a
+/// payload a JSON viewer pretty-printed into per-token elements.
 fn wrapped_candidates(body: &str) -> Vec<String> {
     let mut out = Vec::new();
 
@@ -118,14 +103,11 @@ fn strip_tags(s: &str) -> String {
 /// Append every balanced JSON object found in `doc` (outermost first) to `out`, stopping at
 /// [`MAX_CANDIDATES`].
 ///
-/// Single-pass and therefore linear in the body length. The previous shape — re-scanning to
-/// the end of the document from every `{` — was quadratic and remotely triggerable: a 600 KB
-/// body of nested braces took ~30 s, and the fetch stack's 8 MiB cap admits bodies three
-/// orders of magnitude worse.
+/// Single-pass and linear in body length — re-scanning to the end of the document from every
+/// `{` is a remotely triggerable quadratic DoS given the fetch stack's multi-MiB body cap.
 fn collect_objects(doc: &str, out: &mut Vec<String>) {
-    /// How many candidate openings to track at once. Bounds the working set for a hostile
-    /// body while staying comfortably above [`MAX_CANDIDATES`], so a handful of tracked
-    /// braces that never close cannot starve the result.
+    /// How many candidate openings to track at once — bounds the working set against a
+    /// hostile body while staying above [`MAX_CANDIDATES`].
     const TRACKED_OPENS: usize = MAX_CANDIDATES * 8;
 
     let bytes = doc.as_bytes();
@@ -152,9 +134,8 @@ fn collect_objects(doc: &str, out: &mut Vec<String>) {
             b'"' => in_string = true,
             b'{' => {
                 depth += 1;
-                // Only braces that open an object with a key (or an empty object) are
-                // plausible API payloads; this is what keeps the scan off every JavaScript
-                // block and CSS rule in a rendered page.
+                // Only object-opening braces (key or empty object next) count as candidates —
+                // keeps the scan off JS blocks and CSS rules in the rendered page.
                 if pending.len() < TRACKED_OPENS && opens_object(bytes, i) {
                     pending.push((depth, i));
                 }
@@ -203,10 +184,8 @@ fn failure(what: &str, resp: &FetchResponse, cause: Option<&serde_json::Error>) 
             kind,
         };
     }
-    // Defence in depth: the fetch stack turns a rate-limit notice into a `429` before it gets
-    // here, but only if *something* upstream reported a status honestly. When nothing did,
-    // the page is still the page, and calling it malformed JSON would be a third layer
-    // repeating the same mistake.
+    // Defence in depth: only reached when nothing upstream reported the rate limit honestly;
+    // calling the page malformed JSON here would repeat that same misclassification.
     if is_rate_limit_page(&resp.body) {
         return AdapterError::Throttled {
             url: resp.url.clone(),
@@ -246,9 +225,8 @@ mod tests {
         }
     }
 
-    /// Regression: `collect_objects` used to re-scan to end-of-document from every `{`,
-    /// which is quadratic. A 600 KB nested body took ~30 s and the fetch stack admits 8 MiB.
-    /// Linear now, so a deeply nested hostile body finishes immediately.
+    /// Regression: `collect_objects` used to re-scan to end-of-document from every `{`, which
+    /// is quadratic and remotely triggerable given the fetch stack's body-size cap.
     #[test]
     fn collect_objects_is_linear_in_body_length() {
         let depth = 60_000;
@@ -324,8 +302,7 @@ mod tests {
 
     #[test]
     fn parses_json_split_across_viewer_markup() {
-        // A browser JSON viewer pretty-prints the payload into spans; the text content still
-        // reconstructs the document, so stripping the markup recovers it.
+        // A JSON viewer pretty-prints the payload into spans; stripping markup recovers it.
         let body = concat!(
             "<div class=\"json-formatter\"><span class=\"brace\">{</span>",
             "<span class=\"key\">&quot;data&quot;</span>:<span class=\"brace\">{</span>",
@@ -368,8 +345,7 @@ mod tests {
 
     #[test]
     fn a_rate_limit_page_is_reported_as_throttling_not_a_parse_failure() {
-        // The exact shape that reached production: a rendered "Too Many Requests" notice
-        // carrying a success status, because everything upstream of here had been told 200.
+        // A rendered "Too Many Requests" notice under a success status.
         let body = "<html lang=\"en\"><head> <meta charset=\"utf-8\"> \
                     <title>Too Many Requests</title> </head><body></body></html>";
         let err = parse_json_body::<Envelope>("api", &resp(body)).unwrap_err();

@@ -114,11 +114,9 @@ pub struct Chapter {
 
 /// A user account. The password hash lives only in the `db`/`auth` layers, never here.
 ///
-/// Carries no authorization state. What the account may *do* is a set of
-/// [`Permission`](crate::Permission) grants stored separately (`user_permissions`) and
-/// resolved per request, so an identity record cannot go stale with respect to a grant that
-/// was revoked a moment ago. [`AccountStatus`] is here because it is identity, not
-/// authorization: a suspended account may not act at all.
+/// Carries no authorization state — permissions are resolved per request from a separate
+/// grant store, so an identity record cannot go stale against a revoked grant.
+/// [`AccountStatus`] lives here because it is identity, not authorization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     pub id: UserId,

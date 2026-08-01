@@ -1,43 +1,7 @@
-//! Short-lived, single-use tickets for opening the SSE notification stream (SEC-8).
+//! Short-lived, single-use tickets for opening the SSE notification stream.
 //!
-//! # Why this exists
-//!
-//! `GET /v1/me/stream` cannot authenticate with a header: the browser's `EventSource` API
-//! offers no way to set one, which is why the route took its access token in the query string.
-//! A query string is the wrong place for a 15-minute bearer credential — `TraceLayer` records
-//! the URI as a span field, `services/frontend`'s proxy preserves it verbatim for the upstream,
-//! any reverse proxy or CDN in front writes it to an access log, and the browser keeps it in
-//! history. Anyone who can read a log line can replay the token against `Authorization: Bearer`
-//! on every other `/v1/me/*` route.
-//!
-//! A ticket removes the *value* of that disclosure rather than the disclosure itself. It is an
-//! opaque 32-byte random string, valid for [`TICKET_TTL`], usable exactly once, and it grants
-//! nothing but the stream. A leaked log line names a credential that was already spent by the
-//! request that produced the log line.
-//!
-//! # Shape
-//!
-//! [`StreamTicketStore`] is the seam, with two implementations for the same reason the rate
-//! limiter has two ([`crate::AppState`] holds whichever the deployment got):
-//!
-//! - [`RedisStreamTickets`] — the real one. Tickets have to be redeemable by whichever replica
-//!   the stream request lands on, which is a shared-state problem, and Redis is where this
-//!   system already keeps shared short-lived state (`tankovault_service::ratelimit::redis`).
-//!   The same client serves both; see `main::connect_redis`.
-//! - [`MemoryStreamTickets`] — the fallback when Redis is unconfigured or unreachable, and what
-//!   the test harness uses. Correct for a single replica and *incorrect* across several, so it
-//!   warns at boot rather than failing silently. That mirrors the rate limiter's existing
-//!   degradation exactly: with two replicas behind a round-robin balancer a ticket minted on one
-//!   is unknown to the other, and the stream fails to open until a retry lands on the right one.
-//!   The alternative — refusing to boot without Redis — would take the whole edge down for a
-//!   feature that is already best-effort.
-//!
-//! # What is stored
-//!
-//! The key is the **SHA-256 hash** of the ticket, never the ticket itself, so a Redis dump,
-//! `MONITOR` session or slowlog entry does not hand over a usable credential. The value is the
-//! user id. Redemption is one atomic `GETDEL`, which is what makes "single use" true under
-//! concurrency rather than a read-then-delete race.
+//! They replace a bearer token that would otherwise sit in the query string, where proxy
+//! logs, `Referer` headers and browser history could retain it long after use.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -69,11 +33,9 @@ const KEY_PREFIX: &str = "tankovault:stream-ticket:";
 pub trait StreamTicketStore: Send + Sync + 'static {
     /// Mint a fresh single-use ticket for `user`, returning the value to hand the client.
     ///
-    /// A [`SecretString`]: a ticket is a bearer credential for one user's private event
-    /// stream. It is short-lived and single-use, but between minting and redemption it is
-    /// exactly as good as the access token it replaced in that route's query string (SEC-8) —
-    /// and query strings are the thing most likely to end up in a proxy log, which is why the
-    /// value must not be printable on the way there.
+    /// A [`SecretString`]: between minting and redemption a ticket is exactly as good as the
+    /// access token it replaced, and query strings are the thing most likely to end up in a
+    /// proxy log.
     ///
     /// # Errors
     /// A message describing the store failure, for the caller to log.
@@ -173,7 +135,8 @@ impl StreamTicketStore for RedisStreamTickets {
 
 /// Tickets in this process only.
 ///
-/// Correct for one replica; see the module docs for what it costs across several.
+/// Correct for one replica; wrong across several — a ticket minted on one is invisible to
+/// another replica until a retry happens to land on it.
 #[derive(Default)]
 pub struct MemoryStreamTickets {
     /// Ticket key → (user, expiry). Expired entries are dropped lazily on the next write, which
@@ -219,11 +182,9 @@ mod tests {
 
     /// A ticket is redeemable exactly once.
     ///
-    /// The whole point of the scheme (SEC-8): the query string still ends up in access logs,
-    /// `Referer` headers and browser history, and what makes that harmless is that the value
-    /// recorded there is already spent. A store that returned the user twice would put a
-    /// 30-second replayable stream credential in every log line instead of an access token —
-    /// smaller, but the same class of finding.
+    /// The query string still ends up in access logs, `Referer` headers and browser history;
+    /// what makes that harmless is that the value recorded there is already spent. Returning
+    /// the user twice would put a replayable stream credential in every log line instead.
     #[tokio::test]
     async fn a_ticket_cannot_be_redeemed_twice() {
         let store = MemoryStreamTickets::new();

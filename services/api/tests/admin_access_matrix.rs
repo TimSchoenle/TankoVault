@@ -1,27 +1,7 @@
-//! The complete admin access-control matrix.
-//!
-//! Every permission-gated endpoint under `/v1/admin` is driven through the *real* router —
-//! the `AuthUser` extractor, the feature-flag middleware and the handler's own `require` — in
-//! three legs:
-//!
-//! 1. **anonymous** → `401`, so no admin surface is ever reachable without a session;
-//! 2. **authenticated holding every permission *except* the required one(s)** → `403`, which is
-//!    the leg that matters. "No permission at all" only proves the route is gated by
-//!    *something*; withholding exactly the declared capability and granting all 23 others
-//!    proves it is gated by the *right* thing. A handler that asked for `ProvidersRead` where
-//!    the table says `ProvidersWrite` passes the weak form and fails this one;
-//! 3. **authenticated holding exactly the required capability** → anything but `401`/`403`,
-//!    which proves the grant actually unlocks the route rather than the route being
-//!    unreachable for everyone.
-//!
-//! Leg 2 also asserts the refusal was audited and named the missing capability, because a
-//! silent `403` tells an incident responder nothing.
-//!
-//! [`the_matrix_covers_every_admin_endpoint_in_the_openapi_document`] is what keeps this file
-//! honest as the API grows: a new admin route that nobody adds here fails the build rather
-//! than quietly shipping unverified.
-//!
-//! Opt-in: gated behind the `integration` feature because it requires Docker.
+//! The complete admin access-control matrix: every `/v1/admin` endpoint driven anonymous, holding
+//! every permission but the required one(s) (403, audited), and holding exactly it (not
+//! 401/403), reconciled against the published OpenAPI document. Gated behind the `integration`
+//! feature; requires Docker.
 #![cfg(feature = "integration")]
 
 use std::collections::{BTreeSet, HashMap};
@@ -32,9 +12,8 @@ use serde_json::{Value, json};
 use tankovault_api_test_support::{TestApp, TestConfig};
 use tankovault_domain::{AccountStatus, Permission};
 
-/// A syntactically valid UUID that names nothing. Every path parameter in the matrix uses one
-/// of these: authorization is decided before the row is looked up, so the leg-3 outcome is a
-/// clean `404` rather than a mutation of seeded state.
+/// A syntactically valid UUID that names nothing, so the leg-3 outcome is a clean `404` rather
+/// than a mutation of seeded state.
 const ABSENT_A: &str = "00000000-0000-7000-8000-00000000000a";
 const ABSENT_B: &str = "00000000-0000-7000-8000-00000000000b";
 
@@ -45,16 +24,12 @@ struct Gate {
     /// The `OpenAPI` path template (`/v1/admin/users/{id}`), used to reconcile the matrix
     /// against the published document.
     template: &'static str,
-    /// The concrete path actually requested, with path parameters and any *mandatory* query
-    /// parameters filled in. Mandatory query parameters must be present even on the `403`
-    /// legs: `Query` extraction runs before the handler body, so a missing one would produce a
-    /// `400` and mask the authorization result.
+    /// Concrete path with parameters filled in. Mandatory query parameters must be present even
+    /// on the `403` legs, or `Query` extraction would 400 before the authorization check runs.
     path: &'static str,
     /// The capability set the handler declares. More than one where it calls `require_all`.
     required: &'static [Permission],
-    /// A body that *deserializes*. Same reasoning as the query parameters: `Json` extraction
-    /// runs before the handler, so a malformed body would return `422` and never reach the
-    /// permission check.
+    /// A body that *deserializes*, so `Json` extraction doesn't 422 before the permission check.
     body: fn() -> Option<Value>,
 }
 
@@ -65,12 +40,8 @@ fn empty() -> Option<Value> {
 
 /// Every permission-gated endpoint under `/v1/admin`, with the capability it declares.
 ///
-/// Kept as data rather than as one test per route so the three legs are applied uniformly —
-/// a route that only ever gets its happy path tested is exactly how an authorization hole
-/// survives review.
-///
-/// One long table by design: splitting it per module would make it possible for a whole module
-/// to fall out of the matrix without anything noticing.
+/// Kept as one data table rather than one test per route, and not split per module, so every
+/// route gets all three legs and none can fall out of the matrix unnoticed.
 #[expect(
     clippy::too_many_lines,
     reason = "the matrix is one endpoint per line; splitting it would hide what it covers"
@@ -90,8 +61,7 @@ fn admin_gates() -> Vec<Gate> {
             template: "/v1/admin/feature-flags/{key}",
             path: "/v1/admin/feature-flags/catalogue.browse",
             required: &[Permission::FlagsWrite],
-            // `enabled: true` is the shipped default, so the authorized leg writes an override
-            // that changes nothing observable for the rest of the matrix.
+            // The shipped default, so this write changes nothing observable elsewhere.
             body: || Some(json!({ "enabled": true })),
         },
         Gate {
@@ -161,8 +131,7 @@ fn admin_gates() -> Vec<Gate> {
             method: "GET",
             template: "/v1/admin/privacy/requests/{id}/export",
             path: "/v1/admin/privacy/requests/00000000-0000-7000-8000-00000000000a/export",
-            // Disclosing another person's whole record is deliberately a *separate* capability
-            // from working the queue. If this ever collapses into `privacy.write`, leg 2 fails.
+            // Deliberately a separate capability from `privacy.write`; leg 2 fails if it collapses.
             required: &[Permission::PrivacyExport],
             body: empty,
         },
@@ -170,8 +139,7 @@ fn admin_gates() -> Vec<Gate> {
             method: "POST",
             template: "/v1/admin/privacy/requests/{id}/fulfil-erasure",
             path: "/v1/admin/privacy/requests/00000000-0000-7000-8000-00000000000a/fulfil-erasure",
-            // The one action needing two authorities: working the queue *and* being able to
-            // destroy an account. Leg 2 runs twice here, once per withheld capability.
+            // The one action needing two authorities; leg 2 runs once per withheld capability.
             required: &[Permission::PrivacyWrite, Permission::UsersDelete],
             body: || Some(json!({ "confirm_username": "nobody" })),
         },
@@ -188,9 +156,8 @@ fn admin_gates() -> Vec<Gate> {
             template: "/v1/admin/providers",
             path: "/v1/admin/providers",
             required: &[Permission::ProvidersCreate],
-            // A loopback literal: the SSRF guard rejects it from its range table without a DNS
-            // lookup, so the authorized leg reaches a deterministic `400` and the suite makes
-            // no network call.
+            // Loopback literal: the SSRF guard rejects it without a DNS lookup, so this is a
+            // deterministic `400` and the suite makes no network call.
             body: || {
                 Some(json!({
                     "slug": "matrix-probe",
@@ -435,8 +402,8 @@ fn admin_gates() -> Vec<Gate> {
         Gate {
             method: "PUT",
             template: "/v1/admin/users/{id}/permissions",
-            // The meta-capability: a holder can escalate anyone, including themselves. It must
-            // never be implied by `users.write`, which leg 2 is what proves.
+            // The meta-capability, letting a holder escalate anyone; must never be implied by
+            // `users.write`, which leg 2 proves.
             path: "/v1/admin/users/00000000-0000-7000-8000-00000000000a/permissions",
             required: &[Permission::UsersPermissions],
             body: || Some(json!({ "permissions": [] })),
@@ -512,11 +479,8 @@ impl<'a> Callers<'a> {
     }
 }
 
-/// Drive one request and return its status **without draining the body**.
-///
-/// `/v1/admin/scans/stream` answers with an open Server-Sent-Events stream that never ends;
-/// reading its body to completion — which `TestApp::call` does — would hang the suite forever.
-/// The matrix only ever asserts on the status line, so the body is dropped unread.
+/// Drive one request and return its status **without draining the body** — `/v1/admin/scans/stream`
+/// is an open SSE stream that never ends, and `TestApp::call` drains fully, which would hang.
 async fn status_of(
     app: &TestApp,
     method: &str,
@@ -560,9 +524,8 @@ async fn every_admin_endpoint_refuses_a_caller_missing_exactly_its_own_capabilit
     let mut callers = Callers::new(&app);
 
     for gate in admin_gates() {
-        // One pass per declared capability: for a two-capability handler, withholding either
-        // one alone must still refuse. Withholding both at once would not distinguish a
-        // handler that checks only the first.
+        // One pass per declared capability: withholding both at once wouldn't catch a handler
+        // that only checks the first.
         for withheld in gate.required {
             let bearer = callers.holding_all_but(&[*withheld]).await;
             let before = app.audit.denials().len();
@@ -577,8 +540,6 @@ async fn every_admin_endpoint_refuses_a_caller_missing_exactly_its_own_capabilit
                 gate.template
             );
 
-            // A refusal that leaves no trace is half a control: the audit record is what tells
-            // an incident responder which capability was reached for.
             let denials = app.audit.denials();
             assert_eq!(
                 denials.len(),
@@ -612,10 +573,8 @@ async fn every_admin_endpoint_admits_a_caller_holding_exactly_its_capability() {
         let bearer = callers.holding(gate.required).await;
         let status = status_of(&app, gate.method, gate.path, Some(&bearer), (gate.body)()).await;
 
-        // Deliberately not `is_success()`: these requests name absent rows and unreachable
-        // upstreams on purpose, so `404`/`409`/`502` are correct outcomes. What must never
-        // happen is the authorization layer refusing a caller that holds precisely what the
-        // handler declares — that would mean the declared capability is not the one enforced.
+        // Deliberately not `is_success()`: these requests name absent rows on purpose, so
+        // `404`/`409`/`502` are correct. Only 401/403 would mean the wrong capability is enforced.
         assert!(
             status != StatusCode::UNAUTHORIZED && status != StatusCode::FORBIDDEN,
             "{} {} must admit a caller holding {:?}, got {status}",
@@ -628,9 +587,8 @@ async fn every_admin_endpoint_admits_a_caller_holding_exactly_its_capability() {
 
 #[tokio::test]
 async fn the_matrix_covers_every_admin_endpoint_in_the_openapi_document() {
-    // The published document is the authority on what the service exposes. Reconciling against
-    // it — rather than against a hand-maintained list — is what stops this file rotting: adding
-    // an admin route without a matrix row turns the build red on the pull request that adds it.
+    // Reconciling against the published document, not a hand-maintained list, is what stops
+    // this file rotting as routes are added.
     let spec = serde_json::to_value(tankovault_api::full_openapi()).expect("serialize openapi");
     let paths = spec["paths"].as_object().expect("openapi has paths");
 
@@ -640,7 +598,6 @@ async fn the_matrix_covers_every_admin_endpoint_in_the_openapi_document() {
             continue;
         }
         for method in item.as_object().expect("path item is an object").keys() {
-            // `parameters`/`summary` and friends sit alongside the operations.
             let upper = method.to_uppercase();
             if matches!(
                 upper.as_str(),

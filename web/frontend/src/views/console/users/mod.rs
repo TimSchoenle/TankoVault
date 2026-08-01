@@ -1,28 +1,10 @@
 //! Console · Users — the account directory and a full inspector per account.
 //!
-//! Deliberately **off** the shared auto-refresh tick. This is a work surface: someone is
-//! holding a permission checklist half-edited or typing in an address field, and a background
-//! refetch landing mid-edit would discard it. It reloads after its own writes, and offers a
-//! manual reload for everything else.
+//! Off the shared auto-refresh tick: a background refetch mid-edit would discard whatever the
+//! operator is typing. Reloads only after its own writes, or a manual reload.
 //!
-//! One `Save changes` applies whatever the reader is actually allowed to change — identity,
-//! account status, grants — each behind its own capability, so an operator with `users.read`
-//! alone gets a directory and no buttons. The server checks every call regardless; this only
-//! avoids offering work that would be refused.
-//!
-//! Two blocks the design draws have no endpoint and are therefore absent rather than stubbed:
-//!
-//! - *Per-device sessions* (device, location, per-row revoke) — the admin API exposes a live
-//!   session **count** and a revoke-all, not the rows.
-//!   TODO(api): needs `GET /v1/admin/users/:id/sessions`.
-//! - *Export everything* — subject export is reachable only through a filed privacy request
-//!   (`GET /v1/admin/privacy/requests/:id/export`), not per account.
-//!   TODO(api): needs `GET /v1/admin/users/:id/export`.
-//!
-//! This module keeps the list pane, the inspector shell and the Identity/Sessions/Library tabs
-//! — they all read and write the one `UserEditor` draft and its single Save, so splitting them
-//! would move the coupling rather than remove it. The self-contained pieces have their own
-//! files: [`row`], [`grants`], [`sync`], [`activity`] and [`actions`].
+//! Per-device session rows and per-account export are absent — no endpoint exists for either.
+//! TODO(api): `GET /v1/admin/users/:id/sessions`, `GET /v1/admin/users/:id/export`.
 
 mod actions;
 mod activity;
@@ -126,9 +108,8 @@ impl StatusFilter {
 
 /// The permissions in `grants` this build recognises, as a set.
 ///
-/// Grants arrive as wire tokens. One this build does not know is *not* dropped silently — it is
-/// surfaced separately as an "unknown grant" — but it must stay out of the editable set, or
-/// saving would re-submit an inert token as if it were current.
+/// Unknown tokens are surfaced separately as "unknown grant" rather than dropped, but must stay
+/// out of this set — including one would re-submit an inert token as current on save.
 fn known_permissions(grants: &[GrantRow]) -> BTreeSet<Permission> {
     grants
         .iter()
@@ -169,19 +150,14 @@ pub(super) fn UsersEntity() -> Element {
         }
     });
 
-    // Memoised, not a plain `let`: this clones the whole directory page and then clones every
-    // surviving row again, and it used to re-run on every render of this component — including
-    // each of the 25 rows' hover-state changes and every keystroke in the search box. As a
-    // `use_memo` it re-runs only when the fetch, the status chip or the staff chip changes.
+    // Memoised: without it, this reclones the whole page and every row on every render,
+    // including hover-state changes and search keystrokes.
     //
-    // Three separate counts, deliberately, because conflating two of them was a bug: `rows`
-    // is what this client *shows* after the status and staff filters, `page_len` is what the
-    // server actually returned for this window, and `total` is the whole directory.
-    //
-    // Pagination arithmetic must use `page_len`. It used `rows.len()`, so any active filter
-    // made the page look shorter than it was: `has_next` went false while later pages still
-    // existed (filtering to a single staff member on page 1 hid every other page), and the
-    // "1-N of TOTAL" line reported a client-side count against a server-side total.
+    // Three separate counts, deliberately: `rows` is what shows after the status/staff
+    // filters, `page_len` is what the server returned for this window, `total` is the whole
+    // directory. Pagination arithmetic must use `page_len`, not `rows.len()` — `rows.len()`
+    // made `has_next` go false while later pages still existed, and the "1-N of TOTAL" line
+    // compared a client-side count to a server-side total.
     let page_state = use_memo(move || match &*directory.read() {
         Some(Ok(page_data)) => {
             let status = *status.read();
@@ -300,8 +276,8 @@ pub(super) fn UsersEntity() -> Element {
     }
 }
 
-/// Fetches one account, then hands it to the editor keyed on its id so the editor's fields are
-/// seeded from real values rather than from empty defaults it has to reconcile later.
+/// Fetches one account, then hands it to the editor keyed on its id so its fields seed from
+/// real values.
 #[component]
 fn UserInspector(user_id: String, reload: Reload, on_erased: EventHandler<()>) -> Element {
     let api = api::use_api();
@@ -372,8 +348,8 @@ fn UserEditor(
 
     let user = data.user.clone();
     let id = user.id.clone();
-    // The server refuses an administrator acting on their own account; saying so explains why
-    // the controls are absent instead of leaving an inspector that looks broken.
+    // The server refuses an administrator acting on their own account, hence the notice below
+    // rather than an inspector that looks broken.
     let is_self = session.username().is_some_and(|name| name == user.username);
 
     let mut name_field = use_signal(|| user.username.clone());
@@ -382,16 +358,12 @@ fn UserEditor(
     let mut suspend_reason = use_signal(String::new);
     // Recorded in the audit trail, which is the only place it can survive the erasure.
     let mut erase_reason = use_signal(String::new);
-    // Seeded from the server's answer and edited locally. Only tokens this build recognises are
-    // seeded: an inert grant left over from another version is shown separately rather than
-    // silently re-submitted as if it were current.
+    // Seeded from the server's answer and edited locally; only recognised tokens are seeded.
     //
-    // Built once and used for *both* the editor's seed and the dirty comparison. The same set
-    // used to be constructed twice in consecutive statements — each doing a `serde_json`
-    // round-trip per grant — and two independently-computed sets that are then compared for
-    // dirtiness is exactly the shape where editing one and not the other yields a phantom
-    // "unsaved changes" state. Deliberately not a `use_memo`: `data` is a prop that changes
-    // when the detail refetches, and a memo would freeze the comparison at the first render.
+    // `granted_now` is built once and used for both the seed and the dirty comparison —
+    // computing it twice independently is the shape that produces a phantom "unsaved changes"
+    // state when the two copies drift. Not a `use_memo`: `data` changes when the detail
+    // refetches, and a memo would freeze the comparison at the first render.
     let granted_now = known_permissions(&data.permissions);
     let chosen = use_signal({
         let seed = granted_now.clone();
@@ -403,9 +375,8 @@ fn UserEditor(
     let grants_dirty = *chosen.read() != granted_now;
     let dirty = (can_write && (identity_dirty || status_dirty)) || (can_grant && grants_dirty);
 
-    // One control, up to three calls — each only when the reader may make it and something
-    // actually changed. They run in order and stop at the first failure, so a rejected rename
-    // never silently applies a grant change alongside it.
+    // Up to three calls, run in order, stopping at the first failure — a rejected rename never
+    // silently applies a grant change alongside it.
     let save = {
         let user = user.clone();
         move |_| {

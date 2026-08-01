@@ -1,10 +1,8 @@
 //! The OAuth landing page for an external tracker's consent redirect.
 //!
-//! The provider redirects here after the reader approves (or declines). That full-page round
-//! trip wipes the SPA's in-memory session, so this waits for the boot-time silent refresh in
-//! [`crate::components::Shell`] to restore an access token before calling the
-//! bearer-authenticated link endpoint — otherwise the exchange would always 401 on a cold
-//! return from the provider.
+//! The full-page round trip wipes the SPA's in-memory session, so this waits for the boot-time
+//! silent refresh in [`crate::components::Shell`] to restore a token before calling the
+//! bearer-authenticated link endpoint — otherwise the exchange always 401s on a cold return.
 
 use crate::api;
 use crate::components::EmptyBox;
@@ -13,8 +11,7 @@ use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
 
-/// The provider this callback route is registered for. The sync service's `redirect_uri` is
-/// configured per provider; only `AniList` is registered today.
+/// Provider this callback route is registered for; only `AniList` today.
 const PROVIDER: &str = "anilist";
 
 #[component]
@@ -53,8 +50,7 @@ pub(crate) fn AnilistCallback(code: String) -> Element {
         });
     });
 
-    // Bind before the `rsx!` so the signal borrow is released at the end of this statement
-    // rather than living until the function's temporaries drop.
+    // Bind before `rsx!` so the borrow drops here, not at function end.
     let failure = match &*outcome.read() {
         Some(Err(message)) => Some(message.clone()),
         _ => None,

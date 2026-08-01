@@ -1,24 +1,6 @@
-//! Series canonicalisation: the vocabulary two layers exchange when deciding whether a
-//! scanned or imported series is one the catalogue already holds, and the port through which
-//! the persistence layer asks.
-//!
-//! # Why the port lives here and not in `crates/db` (ARCH-16 step 3)
-//!
-//! Canonicalisation is a *policy* — how similar is similar enough, and what happens in the
-//! band where nothing is certain — but it has to run **inside** the ingest transaction,
-//! because each entry of a catalogue page resolves against the series its predecessors created
-//! in that same transaction (PERF-15). Those two facts pull in opposite directions: the
-//! transaction belongs to the repository layer, the decision does not.
-//!
-//! So the repository reads the candidates and performs the outcome, and asks a
-//! [`Canonicaliser`] supplied by its caller what the outcome *is*. `crates/db` therefore links
-//! no scorer and knows no threshold; `tankovault_matcher` scores, and
-//! `tankovault_config::MatchingConfig` is the configured policy that implements this trait.
-//!
-//! The types are here rather than in `tankovault_matcher` for one reason: they are the seam,
-//! and a seam whose types live above the crate that has to name them is not a seam. Keeping
-//! [`Candidate`] as the *only* candidate type also deletes the hand-written row-to-scorer
-//! conversion that ARCH-16 step 1 had merely deduplicated — there is nothing left to convert.
+//! Series canonicalisation: the vocabulary two layers exchange when deciding whether a scanned
+//! or imported series is one the catalogue already holds. `crates/db` owns the transaction and
+//! calls a [`Canonicaliser`] it is handed; it links no scorer and knows no threshold.
 
 use crate::{ContentType, SeriesId};
 
@@ -31,12 +13,8 @@ pub struct Candidate {
     pub similarity: f32,
     /// The candidate's **alternative** normalized titles (`series_titles.normalized`).
     ///
-    /// The trigram lookup that produced this candidate already searches alternative titles, so
-    /// a series can be returned entirely on the strength of a synonym — but the scorer used to
-    /// see only `normalized_title` and would then re-score that same candidate against a title
-    /// it does not have. Carrying the alternatives makes the scoring symmetric with the
-    /// retrieval: an exact or whitespace-insensitive hit on a synonym counts for as much as one
-    /// on the canonical title, which is what it is worth.
+    /// Retrieval can match on a synonym alone; without these the scorer re-scores against a
+    /// title the candidate wasn't actually found by, understating an exact alias hit.
     pub alt_normalized_titles: Vec<String>,
     pub content_type: ContentType,
     pub release_year: Option<i32>,
@@ -59,18 +37,12 @@ pub struct Query {
 
 /// Which scoring rules fired for one query/candidate pair.
 ///
-/// # Why the scorer reports this and not only a number
+/// A bare score cannot tell the merge queue *why* two titles matched, and the destructive
+/// automatic merge must not fire on a high fuzzy score alone — only on [`Self::is_structural`],
+/// which means the titles are the same string under a conservative rule.
 ///
-/// A score of 0.86 says nothing about *why*, and two things downstream need to know. The merge
-/// queue's `reason` column was the constant string `"ambiguous title match"` for every row, so
-/// an operator triaging 2 600 candidates had the two titles and a percentage and nothing else.
-/// And the automatic merge — which deletes a series — must not fire on a score alone: a high
-/// number produced entirely by fuzzy similarity is exactly the case a human should look at,
-/// whereas [`Self::is_structural`] means the two titles are *the same string* under a rule
-/// whose whole job is to be conservative.
-///
-/// Deliberately a flat struct of `bool`s rather than a bitflag set: it is `Copy`, it appears in
-/// [`Decision`], and each field is named where it is read.
+/// A flat struct of `bool`s rather than a bitflag set: it is `Copy` and each field is named
+/// where it is read.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[expect(
     clippy::struct_excessive_bools,
@@ -111,13 +83,11 @@ pub struct MatchSignals {
 }
 
 impl MatchSignals {
-    /// Whether the two titles are the *same string* under one of the identity rules, as opposed
-    /// to merely scoring highly.
+    /// Whether the two titles are the *same string* under an identity rule, not merely a high
+    /// score — the precondition for an automatic, destructive merge.
     ///
-    /// This is the precondition for an automatic, destructive merge. A fuzzy score can reach
-    /// 0.95 on two genuinely different works with similar names; an identity rule reaching the
-    /// same score means the titles differ only in whitespace, punctuation or which of the
-    /// series' recorded names was compared.
+    /// A fuzzy score can reach 0.95 on two genuinely different works with similar names; an
+    /// identity rule at the same score means the titles differ only in whitespace or punctuation.
     #[must_use]
     pub const fn is_structural(self) -> bool {
         self.exact_title || self.compact_identity || self.alias_identity
@@ -160,9 +130,8 @@ pub enum Decision {
     Attach(SeriesId),
     /// Ambiguous: create the series but flag a merge candidate for operator review.
     ///
-    /// Carries the signals as well as the score, because the queue row is written from this and
-    /// a row that records only a number cannot be triaged, re-scored or safely auto-resolved
-    /// later.
+    /// Carries signals as well as score — a queue row with only a number cannot be triaged,
+    /// re-scored, or safely auto-resolved later.
     Ambiguous {
         candidate: SeriesId,
         score: f32,
@@ -190,10 +159,9 @@ pub enum MergeVerdict {
 
 /// The canonicalisation policy the ingest paths defer to.
 ///
-/// Both methods are **pure**: the same query and candidates give the same answer, with no I/O.
-/// That is what lets the repository call [`Self::canonicalise`] once per entry from inside a
-/// transaction it owns, preserving the per-entry resolution PERF-15 depends on, without the
-/// policy needing a connection or the repository needing a scorer.
+/// Both methods are **pure** — same query and candidates give the same answer, no I/O — so the
+/// repository can call [`Self::canonicalise`] once per entry inside a transaction it owns,
+/// without the policy needing a connection or the repository needing a scorer.
 pub trait Canonicaliser: Send + Sync {
     /// How many trigram candidates the repository should fetch and hand over.
     ///

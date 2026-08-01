@@ -33,10 +33,7 @@ async fn the_live_stream_degrades_to_503_when_the_bus_is_unreachable() {
     let app = TestApp::spawn().await;
     let user = app.seed_user("streamer", &[], AccountStatus::Active).await;
 
-    // `EventSource` cannot set an Authorization header, so the stream authenticates via a query
-    // parameter — a single-use ticket rather than the access token it used to carry (SEC-8). The
-    // ticket is genuinely valid, which is what proves the 503 is a *degradation* and not an auth
-    // failure: a rejected credential answers 401, so the two outcomes are distinguishable.
+    // A genuinely valid ticket, so the 503 is a degradation rather than an auth failure (401).
     let ticket = app.stream_ticket(user).await;
     let (status, _) = app
         .call("GET", &format!("/v1/me/stream?ticket={ticket}"), None, None)

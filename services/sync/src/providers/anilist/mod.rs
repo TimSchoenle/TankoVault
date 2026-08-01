@@ -1,14 +1,6 @@
-//! `AniList` `OAuth2` + GraphQL provider (design §15).
-//!
-//! | module | owns |
-//! |---|---|
-//! | [`client`] | the HTTP client, `OAuth2`, and the paced + `429`-retried GraphQL round trip |
-//! | [`graphql`] | the query/mutation documents and the typed operations that send them |
-//! | [`parse`] | the `AniList`-shaped types and the pure JSON → type functions, with the tests |
-//!
-//! This file holds only the endpoint defaults and the [`ExternalProvider`] impl — the boundary
-//! at which `AniList`'s numeric ids and its own status vocabulary become the shared
-//! `RemoteEntry`/`WatchStatus` types the engine sees.
+//! `AniList` `OAuth2` + GraphQL provider. This file holds only the endpoint defaults and the
+//! [`ExternalProvider`] impl — the boundary where `AniList`'s own ids/status vocabulary become
+//! the shared `RemoteEntry`/`WatchStatus` types the engine sees.
 
 mod client;
 mod graphql;

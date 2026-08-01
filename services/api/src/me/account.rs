@@ -11,10 +11,6 @@ use time::OffsetDateTime;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-// ---------------------------------------------------------------------------
-// Account settings (frontend §9.4)
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ProfileUpdate {
     #[serde(default)]
@@ -91,8 +87,7 @@ pub async fn patch_profile(
     }
 
     let before = tankovault_db::repo::users::get(&state.pool, user.user_id).await?;
-    // `citext`, so the stored comparison is case-insensitive; match it here rather than
-    // treating a change of case as a change of address.
+    // `citext` is case-insensitive; match that so a case-only change isn't treated as an address change.
     let email_changing = email.is_some_and(|e| !e.eq_ignore_ascii_case(&before.email));
 
     if email_changing {
@@ -119,14 +114,13 @@ pub async fn patch_profile(
             .await?;
 
     if email_changing {
-        // The old address is the only inbox that can tell the legitimate owner this happened.
+        // Only the old address can warn the legitimate owner this happened.
         crate::mailer::send_in_background(
             &state,
             crate::mailer::email_changed(&before.email, &updated.username, &updated.email),
         );
         crate::auth::send_verification_email(&state, &updated).await?;
-        // The credential the address protects has effectively changed hands, so the same
-        // rule as a password reset applies: every existing session dies.
+        // The credential the address protects has changed hands: same rule as a password reset, every session dies.
         tankovault_db::repo::users::revoke_all_for_user(&state.pool, user.user_id).await?;
     }
 

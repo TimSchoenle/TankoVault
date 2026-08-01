@@ -1,20 +1,5 @@
 //! Form primitives: the labelled text input, the segmented control, the slider row and the
 //! list-pane search field.
-//!
-//! The last three were `pub(super)` inside `views/console/shell.rs` and so unreachable from any
-//! other view tree. They are ordinary form controls; nothing about them is console-specific.
-//!
-//! The console screens already paired every `<label>` with a matching `r#for`/`id`; the auth
-//! screens — the one surface every single user must pass through — did not. Seven inputs
-//! across sign-in, registration and password reset had a label that was a *sibling* rather
-//! than an ancestor and carried no `for`, so there was not even an implicit association to
-//! fall back on: a screen reader announced them as "edit text, blank".
-//!
-//! Nor was there any `autocomplete`, so password managers could not reliably fill or offer to
-//! save credentials, and Enter-to-submit was hand-wired per input.
-//!
-//! Extracting the component that implicitly existed makes all of that structural rather than
-//! per-site discipline.
 
 use crate::icons::{Ic, Icon};
 use dioxus::prelude::*;

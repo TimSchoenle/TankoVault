@@ -20,10 +20,8 @@ use time::OffsetDateTime;
 
 /// Children enqueued per statement when fanning out a catalogue page.
 ///
-/// A catalogue "page" is whatever the adapter chooses to return: for most providers that is
-/// a dozen entries, but a sitemap-driven adapter (kunmanga) yields up to 20k in one page.
-/// Chunking keeps any single INSERT bounded and lets `total_tasks` advance while a large
-/// page is still fanning out, instead of in one jump at the end.
+/// A catalogue "page" can be up to 20k entries (a sitemap-driven adapter like kunmanga).
+/// Chunking bounds any single INSERT and lets `total_tasks` advance incrementally.
 const FANOUT_CHUNK: usize = 1_000;
 
 /// Shared dependencies handed to the engine.
@@ -38,31 +36,22 @@ pub(crate) struct Engine {
     pub(crate) max_catalog_pages: u32,
     /// The confidence policy for canonicalising a scanned series onto an existing one.
     ///
-    /// Held here rather than defaulted inside the repository so this path and external sync's
-    /// remote-entry resolution answer "is this the same series?" the same way (ARCH-16).
+    /// Held here, not defaulted in the repository, so this path and external sync answer
+    /// "is this the same series?" the same way.
     pub(crate) matching: MatchingConfig,
     /// One fetch stack per provider, keyed by the politeness settings it was built from.
     ///
-    /// This cache is load-bearing for **correctness**, not only speed. `RateLimitedFetcher`
-    /// owns the governor cell and the semaphore, and `Throttle` owns the adaptive 429
-    /// penalty — so a fetcher built per task made the configured `rps` and `concurrency` a
-    /// *per-task* budget. N concurrent tasks therefore offered N × rps to the provider, which
-    /// is what produced the 429 storms the backoff layer then spent wall-clock absorbing, and
-    /// the accumulated penalty was thrown away every task. The comment at
-    /// `crates/fetch/src/ratelimit.rs` claiming a per-provider limiter was simply false.
-    ///
-    /// The speed half: each rebuild also meant a fresh `wreq::Client` with its own connection
-    /// pool, so every task paid a TCP + TLS 1.3 handshake before its first byte — roughly
-    /// 500k handshakes on a full scan that should have needed about `concurrency` of them.
+    /// Load-bearing for correctness, not just speed: the rate limiter and adaptive 429
+    /// penalty live on the fetcher, so building one per task turns `rps`/`concurrency`
+    /// into a per-task budget instead of per-provider, and N concurrent tasks offer N ×
+    /// rps to the provider.
     fetchers: Arc<Mutex<HashMap<ProviderId, CachedFetcher>>>,
 }
 
 /// Hash the provider settings a fetch stack is built from.
 ///
-/// Only the inputs to `build_provider_fetcher`, so a change to an unrelated column (a display
-/// name, an adapter config key) does not throw away a warm connection pool and a rate limiter
-/// mid-run — while an operator lowering `rps` or switching emulation profile does take effect
-/// on the next task rather than at the next restart.
+/// Only the inputs to `build_provider_fetcher`, so an unrelated column change doesn't
+/// discard a warm connection pool, while lowering `rps` takes effect on the next task.
 fn politeness_fingerprint(provider: &Provider) -> u64 {
     let p = &provider.politeness;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -76,22 +65,13 @@ fn politeness_fingerprint(provider: &Provider) -> u64 {
     hasher.finish()
 }
 
-/// The lookup key for a chapter number, used to pair a newly-inserted number reported by the
-/// database back to the parsed chapter it came from.
+/// The lookup key for a chapter number, pairing a newly-inserted number back to the parsed
+/// chapter it came from.
 ///
-/// Keyed on the bit pattern rather than compared with a tolerance, so the pairing is a hash
-/// lookup instead of a scan of the whole chapter list per new chapter (PERF-19). That is the
-/// *same* predicate, not a looser one: the previous test was
-/// `(a - b).abs() < f64::EPSILON`, and `f64::EPSILON` is `2.2e-16` while two adjacent `f64`
-/// near a chapter number like `152.5` are `2.8e-14` apart — four orders of magnitude wider —
-/// so for every value a chapter number can actually take, that comparison already *was* exact
-/// equality.
-///
-/// The one input where the two disagree is `-0.0`, which the tolerance matched against `0.0`
-/// and a bit pattern does not. Chapter 0 is real (prologues), so it is normalised here rather
-/// than leaving a notification to depend on a sign bit. `NaN` cannot arrive: `parse_number`
-/// rejects any non-finite value (TESTING F-01b), which is what makes a bitwise key sound at
-/// all.
+/// Keyed on the bit pattern, not a tolerance comparison, matching the old
+/// `(a - b).abs() < f64::EPSILON` test for every value a chapter number can take. The one
+/// disagreement is `-0.0`, normalised here since chapter 0 (prologues) is real. `NaN`
+/// cannot arrive: `parse_number` rejects non-finite values.
 fn chapter_key(number: f64) -> u64 {
     if number == 0.0 { 0.0_f64 } else { number }.to_bits()
 }
@@ -108,9 +88,8 @@ struct CachedFetcher {
 impl Engine {
     /// Assemble the engine with an empty fetcher cache.
     ///
-    /// A constructor rather than a struct literal so [`Engine::fetchers`] stays an
-    /// implementation detail — callers have no reason to know the cache exists, and one that
-    /// could be constructed pre-populated would be a way to get the sharing wrong.
+    /// A constructor, not a struct literal, so [`Engine::fetchers`] stays an
+    /// implementation detail callers can't construct pre-populated.
     pub(crate) fn new(
         pool: PgPool,
         bus: Option<Bus>,
@@ -137,9 +116,8 @@ impl Engine {
     fn fetcher_for(&self, provider: &Provider) -> anyhow::Result<Arc<dyn Fetcher>> {
         let fingerprint = politeness_fingerprint(provider);
 
-        // A short critical section around a `HashMap`, held across no await point: a `std`
-        // mutex is the right primitive, and using `tokio::sync::RwLock` here would make
-        // `provider_context` async for no benefit.
+        // No await point held here, so a `std` mutex is right; `tokio::sync::RwLock`
+        // would make `provider_context` async for no benefit.
         {
             let cache = self.fetchers.lock().expect("fetcher cache mutex poisoned");
             if let Some(entry) = cache.get(&provider.id)
@@ -163,9 +141,8 @@ impl Engine {
         let fetcher = build_provider_fetcher(fetch_cfg)?;
 
         let mut cache = self.fetchers.lock().expect("fetcher cache mutex poisoned");
-        // Another task may have built one while this one was constructing. Either is
-        // correct, but keeping the stored entry means both callers share one limiter, which
-        // is the entire point — so only insert if it is still absent or stale.
+        // Another task may have built one concurrently. Either is correct, but the stored
+        // entry must be shared, so only insert if it's still absent or stale.
         let entry = cache
             .entry(provider.id)
             .and_modify(|existing| {
@@ -185,10 +162,9 @@ impl Engine {
 
     /// Build the per-provider adapter + injected fetch stack + context.
     ///
-    /// The adapter is rebuilt per call and the fetch stack is not: `build_adapter` is cheap
-    /// and stateless, while the fetch stack carries the rate limiter, the connection pool and
-    /// the accumulated throttle penalty, all of which must be shared across a provider's
-    /// tasks to mean anything.
+    /// The adapter is rebuilt per call (cheap, stateless); the fetch stack is not — it
+    /// carries the rate limiter and throttle penalty, which must be shared across a
+    /// provider's tasks to mean anything.
     pub(crate) fn provider_context(
         &self,
         provider: &Provider,
@@ -215,11 +191,9 @@ impl Engine {
         let chapters = adapter.fetch_chapters(ctx, path).await?;
         let hash = content_hash(&meta, &chapters);
 
-        // `meta` and `chapters` are moved into `scanned` from here on, not copied into it.
-        // Both are owned locals whose only later use is the `chapter.discovered` fan-out
-        // below, which now reads them back out of `scanned` — so a series with two thousand
-        // chapters no longer allocates a second copy of every title and path (PERF-19).
-        // `content_hash` is computed above, while both are still borrowable.
+        // `meta`/`chapters` move into `scanned`, not copy: the fan-out below reads them
+        // back out of `scanned`, so a 2,000-chapter series doesn't allocate a second copy
+        // of every title and path.
         let normalized_title = normalize_title(&meta.title);
         let scanned = ScannedSeries {
             provider_id: provider.id,
@@ -264,9 +238,9 @@ impl Engine {
                 .await?;
 
         if let Some(bus) = &self.bus {
-            // One pass to index, then a lookup per new chapter. The previous form scanned the
-            // whole chapter list for each new number, so a 2,000-chapter series with 50 new
-            // chapters did 100,000 comparisons on the notification path (PERF-19).
+            // One indexing pass, then a lookup per new chapter — an O(n) scan per new
+            // number would cost a 2,000-chapter series with 50 new chapters 100,000
+            // comparisons.
             let by_number: HashMap<u64, &ChapterUpsert> = scanned
                 .chapters
                 .iter()
@@ -298,10 +272,8 @@ impl Engine {
 
     /// One-shot full scan of a provider without the broker (the CLI `worker scan` path).
     ///
-    /// Two phases, matching the broker fan-out (design §12, §20): **first** walk the entire
-    /// catalogue, registering every series from its listing so the complete series list
-    /// materialises up front; **then** fetch chapters + full metadata per series. A single
-    /// series' malformed markup fails only that series, never the whole run.
+    /// Two phases: walk the entire catalogue registering every series, then fetch
+    /// chapters + metadata per series. A malformed series fails only that series.
     pub(crate) async fn run_full_scan_inline(
         &self,
         provider: &Provider,
@@ -336,9 +308,8 @@ impl Engine {
                 truncated_by_page_cap = false;
                 break;
             }
-            // Skip duplicates a paginator may repeat across pages, then register what is
-            // left in one batch — the same batched path the broker fan-out uses, so a
-            // sitemap-shard page of 20k entries costs one existence query, not 20k.
+            // Skip cross-page duplicates, then register the rest in one batch — a
+            // 20k-entry sitemap page costs one existence query, not 20k.
             let fresh: Vec<(&str, &str)> = catalog
                 .items
                 .iter()
@@ -410,8 +381,7 @@ impl Engine {
         Ok(summary)
     }
 
-    /// One-shot fast scan: read the latest feed and ingest only series whose newest
-    /// chapter exceeds what we have stored.
+    /// One-shot fast scan: read the latest feed and re-ingest each updated series.
     pub(crate) async fn run_fast_scan_inline(
         &self,
         provider: &Provider,
@@ -422,10 +392,8 @@ impl Engine {
         let updates = adapter.list_latest(&ctx).await?;
         for update in &updates {
             summary.series_seen += 1;
-            // Ingest is idempotent and only reports genuinely new chapters (via the
-            // `xmax = 0` predicate), so re-ingesting an unchanged series is cheap and
-            // emits no false-new events. A stored-max/content-hash pre-gate is a
-            // documented optimisation.
+            // Ingest is idempotent and reports only genuinely new chapters (via
+            // `xmax = 0`), so re-ingesting an unchanged series emits no false-new events.
             match self
                 .process_series(provider, adapter.as_ref(), &ctx, &update.path)
                 .await
@@ -447,14 +415,9 @@ impl Engine {
         Ok(summary)
     }
 
-    /// Dispatch a single task received from `JetStream` (design §12).
-    ///
-    /// - `CatalogPage` **fans out**: it registers every series on the page immediately
-    ///   (breadth-first "collect all series first"), enqueues a `Series` task per series,
-    ///   and chains the next `CatalogPage` while the catalogue has more pages. This is what
-    ///   makes a full scan walk the *whole* catalogue instead of only page 1.
-    /// - `Series` fetches metadata + chapters and upserts (idempotent).
-    /// - `LatestFeed` (fast scan) ingests each updated series inline.
+    /// Dispatch a single task received from `JetStream`: `CatalogPage` registers every
+    /// series on the page, enqueues a `Series` task per series, and chains the next page;
+    /// `Series` fetches and upserts one series; `LatestFeed` ingests updates inline.
     pub(crate) async fn dispatch_task(
         &self,
         provider: &Provider,
@@ -479,10 +442,9 @@ impl Engine {
                     .and_then(|p| u32::try_from(p).ok())
                     .unwrap_or(1);
                 let catalog = adapter.list_catalog(&ctx, page).await?;
-                // Breadth-first: register every series on the page now so the full list is
-                // available before any chapters are fetched. Both halves are batched — a
-                // sitemap-shard page can carry 20k entries, and a per-entry round-trip there
-                // would outrun the consumer's ack deadline.
+                // Breadth-first: register every series before fetching chapters. Batched —
+                // a per-entry round trip on a 20k-entry sitemap page would outrun the
+                // consumer's ack deadline.
                 let entries: Vec<(&str, &str)> = catalog
                     .items
                     .iter()
@@ -496,10 +458,8 @@ impl Engine {
                 )
                 .await
                 {
-                    // Logged per page so a catalogue that walks but yields nothing new is
-                    // visible immediately: a clamped or looping paginator shows up here as
-                    // page after page of `registered = 0`, which is otherwise
-                    // indistinguishable from a healthy re-scan until the run totals land.
+                    // Logged per page so a looping paginator is visible immediately as
+                    // page after page of `registered = 0`.
                     Ok(registered) => tracing::info!(
                         provider = %provider.slug,
                         page,
@@ -573,12 +533,9 @@ impl Engine {
     /// Fan out one child task of `parent`'s run: persist it, bump the run's task total, and
     /// publish it to the provider's `JetStream` subject.
     ///
-    /// Task creation is idempotent on `(run_id, kind, target)`: if an identical child already
-    /// exists — e.g. this `catalog_page` was redelivered and re-processed — `create_task`
-    /// returns `None` and this is a no-op, so a redelivered page does not re-enqueue every
-    /// series. The total is incremented **before** the parent completes (the caller completes
-    /// it only after `dispatch_task` returns), so `done + failed` can never reach `total`
-    /// while fan-out is in flight — the run cannot finalise early.
+    /// Idempotent on `(run_id, kind, target)`: a redelivered parent re-enqueues nothing.
+    /// The total is incremented before the parent completes, so `done + failed` can never
+    /// reach `total` mid-fan-out — the run cannot finalise early.
     async fn enqueue_child(
         &self,
         parent: &ScanTaskMessage,
@@ -611,18 +568,13 @@ impl Engine {
         Ok(())
     }
 
-    /// Fan out many children of the same `kind` at once — the batched counterpart to
-    /// [`enqueue_child`](Self::enqueue_child), used for catalogue pages that carry thousands
-    /// of entries (a sitemap-shard page can hold 20k).
+    /// Batched counterpart to [`enqueue_child`](Self::enqueue_child), for catalogue pages
+    /// carrying thousands of entries.
     ///
-    /// Preserves both fan-out invariants exactly: creation stays idempotent on
-    /// `(run_id, kind, target)` (only rows actually inserted come back, so a redelivered
-    /// parent republishes nothing), and `total_tasks` is bumped **before** any child is
-    /// published — and before the parent completes — so `done + failed` cannot reach `total`
-    /// mid-fan-out and finalise the run early.
-    ///
-    /// Targets are processed in chunks so one page never becomes a single multi-megabyte
-    /// statement, and so progress is visible while a large page is still fanning out.
+    /// Preserves both fan-out invariants: idempotent creation on `(run_id, kind, target)`,
+    /// and `total_tasks` bumped before any child is published and before the parent
+    /// completes, so the run cannot finalise mid-fan-out. Chunked so one page never
+    /// becomes a single multi-megabyte statement.
     async fn enqueue_children(
         &self,
         parent: &ScanTaskMessage,
@@ -663,11 +615,10 @@ impl Engine {
         Ok(())
     }
 
-    /// Publish a compact [`tankovault_contracts::ProgressEvent`] for `run_id` by reading the
-    /// authoritative counters from `scan_runs`. Called after each task settles so the
-    /// control-plane aggregator can finalise the run and the console SSE can relay live
-    /// progress over NATS instead of DB-polling (design §12). Best-effort: a broker or DB
-    /// hiccup is logged, never fatal to task processing.
+    /// Publish a compact [`tankovault_contracts::ProgressEvent`] for `run_id`, read from
+    /// `scan_runs`, so the control-plane aggregator can finalise the run and the console
+    /// SSE gets live progress over NATS. Best-effort: a broker or DB hiccup is logged,
+    /// never fatal.
     pub(crate) async fn report_progress(&self, run_id: tankovault_domain::ScanRunId) {
         let Some(bus) = &self.bus else { return };
         let run = match tankovault_db::repo::scans::get_run(&self.pool, run_id).await {
@@ -811,10 +762,9 @@ mod tests {
         }
     }
 
-    /// Determinism is the entire contract. `content_hash` gates whether a scan reports "no
-    /// change"; a hash that varied for identical input would make every scan look like a
-    /// change (harmless but wasteful), and one that is *stable* across a real change stops all
-    /// updates for that series silently, which is the failure nobody notices.
+    /// Determinism is the entire contract: a hash that varies for identical input makes
+    /// every scan look changed (wasteful); one that's stable across a real change stops
+    /// updates for that series silently — the failure nobody notices.
     #[test]
     fn the_content_hash_is_deterministic_for_identical_input() {
         let chapters = vec![
@@ -867,19 +817,12 @@ mod tests {
         );
     }
 
-    /// Two things the hash deliberately does *not* cover, pinned so a future reader does not
-    /// assume either.
+    /// Two things the hash deliberately does *not* cover.
     ///
-    /// 1. **Chapter titles are not hashed.** The doc comment says "title + chapter (number,
-    ///    path) pairs" and means the *series* title. A chapter retitled in place therefore
-    ///    reports "no change". That is a deliberate trade — scanlation sites edit chapter
-    ///    labels constantly and the link is what the reader follows — but it is invisible from
-    ///    the call site, so it is asserted here rather than left to be rediscovered.
-    /// 2. **Order is significant.** Permuting the chapter list changes the hash, so a provider
-    ///    that reorders its listing reports a change and the scan re-ingests. That costs work
-    ///    but is never *wrong*; the opposite (an order-insensitive hash) would be cheaper and
-    ///    is what a future refactor is likely to reach for, so the current behaviour is pinned
-    ///    rather than left ambiguous.
+    /// 1. Chapter titles aren't hashed — a chapter retitled in place reports "no change",
+    ///    intentional since scanlation sites edit labels constantly.
+    /// 2. Chapter order is significant — a reordered listing reports a change, costing
+    ///    work but never wrong; an order-insensitive hash would be a behaviour change.
     #[test]
     fn the_content_hash_ignores_chapter_titles_and_respects_chapter_order() {
         let series = meta("Solo Leveling", None);
@@ -907,12 +850,9 @@ mod tests {
         );
     }
 
-    /// A chapter path cannot be made to look like a different chapter list by embedding the
-    /// framing bytes the hash uses to separate entries.
-    ///
-    /// The hash writes `number | path \n` per chapter with no length prefix, so a path
-    /// containing those bytes is the classic way two distinct inputs collide. Providers
-    /// control this string.
+    /// A chapter path can't be made to look like a different chapter list by embedding the
+    /// framing bytes (`number | path \n`) the hash uses to separate entries — a classic
+    /// collision providers could otherwise force.
     #[test]
     fn a_chapter_path_carrying_the_separator_bytes_does_not_forge_another_chapter() {
         let series = meta("X", None);
@@ -925,13 +865,8 @@ mod tests {
         );
     }
 
-    /// The fan-out pairing key must agree with the tolerance comparison it replaced, on every
-    /// number a chapter can carry.
-    ///
-    /// The pairing decides which chapters get a `chapter.discovered` message, so a key that
-    /// disagrees with the old predicate loses notifications silently — which is the failure
-    /// mode TRACK-1 was made of. Driven from the sub-chapter numbering the tracking code cares
-    /// about (152 and 152.5 are different chapters) and from the boundaries.
+    /// The pairing key must agree with the tolerance comparison it replaced, on every
+    /// number a chapter can carry — disagreement loses notifications silently.
     #[test]
     fn the_pairing_key_agrees_with_the_tolerance_it_replaced() {
         let numbers = [

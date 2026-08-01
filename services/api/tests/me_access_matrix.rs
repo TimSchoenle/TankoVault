@@ -1,27 +1,7 @@
 //! The authenticated-tier access-control matrix — the other half of
-//! [`admin_access_matrix`](../admin_access_matrix.rs).
-//!
-//! That file proves every `/v1/admin` route is gated by the *right capability*. Nothing
-//! proved the far larger `/v1/me` surface is gated at all. The properties are different:
-//! `/v1/me` routes carry no capability requirement — they are scoped to the caller — so what
-//! has to hold for every one of them is:
-//!
-//! 1. **anonymous → `401`**. A `/v1/me` route added without the `AuthUser` extractor is
-//!    world-readable personal data. This is the leg that matters, and until now the only thing
-//!    standing behind it was that every author remembered.
-//! 2. **suspended → `403 account_suspended`**. Suspension is enforced inside the extractor, so
-//!    a route reaching for the claims another way — which `GET /v1/me/stream` genuinely does,
-//!    and which SEC-8 found unenforced there — silently keeps a banned account working until
-//!    its access token expires.
-//! 3. **an ordinary active account → neither `401` nor `403`**. The inverse error: a `/v1/me`
-//!    route that accidentally requires a capability is dead for every real user, and no
-//!    happy-path test written by someone with an admin token would notice.
-//!
-//! [`every_published_endpoint_is_covered_by_one_of_these_matrices`] reconciles all three legs
-//! against the published `OpenAPI` document, so a new route must be classified by a human
-//! rather than quietly shipping unverified.
-//!
-//! Opt-in: gated behind the `integration` feature because it requires Docker.
+//! [`admin_access_matrix`](../admin_access_matrix.rs): every `/v1/me` route driven anonymous
+//! (401), suspended (403), and as an ordinary account (neither), reconciled against the
+//! published OpenAPI document. Gated behind the `integration` feature; requires Docker.
 #![cfg(feature = "integration")]
 
 use std::collections::BTreeSet;
@@ -37,15 +17,9 @@ use tankovault_domain::{AccountStatus, UserId};
 enum Credential {
     /// The `Authorization: Bearer …` header, like every other route.
     Header,
-    /// A single-use `ticket` query parameter. `EventSource` cannot set headers, so
-    /// `/v1/me/stream` takes its credential in the URL — a short-lived ticket rather than the
-    /// access token it used to be (SEC-8). All three legs still apply; they are just driven
-    /// through the query string, with a ticket minted per request because redeeming spends it.
-    ///
-    /// The ticket is minted **through the store**, not through `POST /v1/me/stream-ticket`: that
-    /// endpoint is gated by `AuthUser`, which refuses a suspended account, so going through it
-    /// would make the suspended leg assert the mint endpoint's check instead of the stream's own
-    /// — which is the exact check SEC-8 found missing here.
+    /// A single-use `ticket` query parameter, since `EventSource` cannot set headers. Minted
+    /// through the store, not `POST /v1/me/stream-ticket`, whose own `AuthUser` gate would mask
+    /// the check under test on the stream itself.
     StreamTicket,
 }
 
@@ -54,9 +28,8 @@ struct Gate {
     method: &'static str,
     /// The `OpenAPI` path template, used to reconcile against the published document.
     template: &'static str,
-    /// The concrete path requested, with path parameters and any *mandatory* query parameters
-    /// filled in — extraction runs before the handler, so a missing one would answer `400` and
-    /// mask the authorization result.
+    /// Concrete path with parameters filled in; mandatory query parameters must be present or
+    /// extraction would 400 before the authorization check runs.
     path: &'static str,
     credential: Credential,
     /// A body that deserializes, for the same reason.
@@ -96,8 +69,8 @@ const fn gate(method: &'static str, template: &'static str, path: &'static str) 
 
 /// Every endpoint under `/v1/me`.
 ///
-/// One long table by design, exactly as in the admin matrix: split per module and a whole
-/// module can fall out of the matrix without anything noticing.
+/// One long table by design, as in the admin matrix: split per module and a whole module could
+/// fall out of the matrix unnoticed.
 #[expect(
     clippy::too_many_lines,
     reason = "the matrix is one endpoint per line; splitting it would hide what it covers"
@@ -106,16 +79,14 @@ fn me_gates() -> Vec<Gate> {
     vec![
         // --- account ---
         Gate {
-            // A deliberately wrong confirmation, so the admitted leg reaches a `400` rather
-            // than deleting the caller mid-matrix.
+            // Deliberately wrong, so the admitted leg reaches a `400` rather than deleting the caller.
             body: || Some(json!({ "confirm_username": "not-the-caller" })),
             ..gate("DELETE", "/v1/me", "/v1/me")
         },
         get("/v1/me/capabilities", "/v1/me/capabilities"),
         get("/v1/me/export", "/v1/me/export"),
         Gate {
-            // Every field is optional and an empty patch changes nothing, so this is the one
-            // shape that cannot disturb the account the later legs reuse.
+            // Every field is optional, so an empty patch cannot disturb the account later legs reuse.
             body: || Some(json!({})),
             ..gate("PATCH", "/v1/me/profile", "/v1/me/profile")
         },
@@ -150,8 +121,7 @@ fn me_gates() -> Vec<Gate> {
         },
         get("/v1/me/notification-prefs", "/v1/me/notification-prefs"),
         Gate {
-            // Free-form by design (`request_body = serde_json::Value`), so an empty object is
-            // a valid document rather than a body the handler will reject.
+            // Free-form by design (`request_body = serde_json::Value`); an empty object is valid.
             body: || Some(json!({})),
             ..gate(
                 "PUT",
@@ -223,10 +193,8 @@ fn me_gates() -> Vec<Gate> {
             "/v1/me/watchlist/{series_id}",
             "/v1/me/watchlist/00000000-0000-7000-8000-00000000000a",
         ),
-        // The bulk pair sits at a *static* segment under the same prefix as
-        // `/v1/me/watchlist/{series_id}`. Driving both here is also what proves the router
-        // resolves `bulk` to the bulk handler rather than to the parameterised one — which
-        // would answer `400` on the uuid parse and never reach the authorization leg.
+        // The bulk pair is a static segment under the same prefix as `{series_id}`; driving both
+        // proves the router resolves `bulk` to the bulk handler, not the parameterised one.
         Gate {
             body: || {
                 Some(json!({
@@ -322,9 +290,8 @@ fn me_gates() -> Vec<Gate> {
 
 /// The catalogue tier: reachable with no session at all, by design.
 ///
-/// Asserted because the failure is silent in the other direction — putting `AuthUser` on a
-/// browse route makes the product's front page require an account, and every developer who is
-/// signed in while testing sees it working.
+/// Asserted because the failure is silent otherwise — an `AuthUser` on a browse route breaks
+/// the front page for everyone, but a developer testing while signed in wouldn't notice.
 fn public_gates() -> Vec<(&'static str, &'static str)> {
     vec![
         ("/v1/providers", "/v1/providers"),
@@ -346,9 +313,8 @@ fn public_gates() -> Vec<(&'static str, &'static str)> {
 /// The reconciliation test consults this list, so "not in the matrix" is always a decision
 /// somebody wrote down rather than an omission.
 fn covered_elsewhere() -> Vec<(&'static str, &'static str)> {
-    // The credential tier. A status-only leg cannot distinguish "no session" from "wrong
-    // password" here — both are 401 by design — so these are driven with real credentials in
-    // `auth_flows.rs` and `auth_lifecycle.rs` instead.
+    // A status-only leg can't distinguish "no session" from "wrong password" here (both 401),
+    // so these are driven with real credentials elsewhere instead.
     let auth = [
         "POST /v1/auth/login",
         "POST /v1/auth/logout",
@@ -378,9 +344,8 @@ struct Caller {
 /// Build the URI and `Authorization` header for one leg of one gate.
 ///
 /// `caller` is `None` for the anonymous leg. A `StreamTicket` route still needs *a* ticket in the
-/// URL there, because `Query` extraction runs before the handler and a missing parameter would
-/// answer `400` and never reach the check under test — so the anonymous leg presents a value that
-/// cannot redeem.
+/// URL there, since a missing parameter would 400 before reaching the check under test — so the
+/// anonymous leg presents a value that cannot redeem.
 async fn credential_for(
     app: &TestApp,
     gate: &Gate,
@@ -417,10 +382,8 @@ fn build(gate: &Gate, uri: String, bearer: Option<String>) -> Request<Body> {
     }
 }
 
-/// Drive one request and return its status **without draining the body**.
-///
-/// `/v1/me/stream` answers with a Server-Sent-Events stream that does not end; reading it to
-/// completion would hang the suite. The matrix asserts on the status line only.
+/// Drive one request and return its status **without draining the body** — `/v1/me/stream` is an
+/// SSE stream that never ends, and draining it would hang the suite.
 async fn status_of(app: &TestApp, gate: &Gate, caller: Option<&Caller>) -> StatusCode {
     let (uri, bearer) = credential_for(app, gate, caller).await;
     app.request(build(gate, uri, bearer)).await.status()
@@ -452,9 +415,8 @@ async fn a_user(app: &TestApp, username: &str, status: AccountStatus) -> Caller 
 
 /// No `/v1/me` endpoint answers without a session.
 ///
-/// The whole point of the file. A route added without the `AuthUser` extractor serves one
-/// person's reading history, sessions or GDPR export to anybody who guesses the path, and
-/// every other test in the suite — all of which authenticate — passes.
+/// A route added without the `AuthUser` extractor serves one person's private data to anybody
+/// who guesses the path, while every other (authenticated) test in the suite passes.
 #[tokio::test]
 async fn no_me_endpoint_answers_without_a_session() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
@@ -473,12 +435,9 @@ async fn no_me_endpoint_answers_without_a_session() {
 
 /// A suspended account is refused everywhere, and told why.
 ///
-/// Suspension is enforced inside the `AuthUser` extractor, so this holds for free — right up
-/// until a handler resolves the claims some other way. `/v1/me/stream` did exactly that
-/// (SEC-8): it verified the token and never asked whether the account was still allowed to
-/// authenticate, so a banned user kept receiving live notifications until the token expired.
-/// Asserting the *body* as well as the status is deliberate — `403` alone cannot distinguish
-/// "suspended" from "insufficient privileges", and only the former should ever occur here.
+/// Suspension is enforced inside `AuthUser`, so this holds for free until a handler resolves
+/// claims some other way, as `/v1/me/stream` once did. The body is asserted too, since `403`
+/// alone can't distinguish "suspended" from "insufficient privileges".
 #[tokio::test]
 async fn every_me_endpoint_refuses_a_suspended_account() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
@@ -503,10 +462,9 @@ async fn every_me_endpoint_refuses_a_suspended_account() {
 
 /// An ordinary active account with no capabilities reaches every `/v1/me` endpoint.
 ///
-/// The inverse failure: a `/v1/me` route that requires a capability is dead for every real
-/// user, and nobody testing with an admin token would ever see it. Not `is_success()` — these
-/// requests name absent rows and an unreachable sync service on purpose, so `404`/`400`/`502`
-/// are correct. What must not happen is the authorization layer refusing the caller.
+/// The inverse failure: a route that requires a capability is dead for every real user, and
+/// nobody testing with an admin token would notice. Not `is_success()` — these requests name
+/// absent rows and an unreachable sync service on purpose, so `404`/`400`/`502` are correct.
 #[tokio::test]
 async fn every_me_endpoint_admits_an_ordinary_account() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
@@ -546,14 +504,9 @@ async fn the_public_catalogue_is_reachable_without_a_session() {
 
 /// Every published endpoint is covered by one of the access-control matrices.
 ///
-/// The published document is the authority on what the service exposes, so reconciling
-/// against it — rather than against a hand-maintained list — is what stops these files
-/// rotting. Adding a route without classifying it turns the build red on the pull request
-/// that adds it, which is the only moment anyone can cheaply decide what its access rule
-/// should be.
-///
-/// `/v1/admin` is `admin_access_matrix.rs`'s half and is reconciled there against the same
-/// document; splitting the two files does not leave a gap between them.
+/// Reconciled against the published document rather than a hand-maintained list, so adding a
+/// route without classifying it turns the build red on the pull request that adds it.
+/// `/v1/admin` is `admin_access_matrix.rs`'s half, reconciled there against the same document.
 #[tokio::test]
 async fn every_published_endpoint_is_covered_by_one_of_these_matrices() {
     let spec = serde_json::to_value(tankovault_api::full_openapi()).expect("serialize openapi");
@@ -599,15 +552,9 @@ async fn every_published_endpoint_is_covered_by_one_of_these_matrices() {
 
 /// A stream ticket opens the stream exactly once.
 ///
-/// The credential still travels in the query string, where `TraceLayer`, the frontend proxy, every
-/// reverse-proxy access log and the browser's own history record it (SEC-8). What makes that
-/// acceptable is that the recorded value is already spent by the time the log line exists — so
-/// "single use" is the whole security property, and it is enforced across the real router here
-/// rather than only in the store's unit tests.
-///
-/// `503` is the success signal: this harness wires no NATS, so a ticket the handler *accepted*
-/// lands on "the live stream is unavailable". A rejected one is `401`. The pair is what makes the
-/// two outcomes distinguishable without an SSE stream that never ends.
+/// The credential travels in the query string, so single-use is what makes a recorded log line
+/// harmless. `503` is the success signal: this harness wires no NATS, so an accepted ticket
+/// lands there while a rejected one is `401`.
 #[tokio::test]
 async fn a_stream_ticket_cannot_open_the_stream_twice() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
@@ -648,11 +595,12 @@ async fn a_stream_ticket_cannot_open_the_stream_twice() {
 
 /// The mint endpoint hands out a ticket the stream accepts.
 ///
-/// The two halves are wired through separate state, so they can drift: a mint that stored under a
-/// different key, or a stream that read a different query parameter, would leave the endpoint
-/// answering `200` and the stream answering `401` forever. That is exactly the shape of the bug
-/// this work found on the frontend side (`?token=` against `?access_token=`), where nothing
-/// connected the producer of the URL to the reader of it.
+/// # The bug this pins
+///
+/// The two halves are wired through separate state, so they can drift silently: a mint storing
+/// under a different key, or a stream reading a different query parameter, leaves the endpoint
+/// answering `200` and the stream `401` forever — the shape of a bug once found on the frontend
+/// (`?token=` against `?access_token=`), where nothing connected producer to reader.
 #[tokio::test]
 async fn the_minted_ticket_is_the_one_the_stream_accepts() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;

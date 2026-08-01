@@ -22,18 +22,12 @@ fn merge(base: &mut Value, over: &Value) {
     }
 }
 
-/// Build the adapter for a provider.
-///
-/// - `Madara`: Madara defaults with the provider `config` merged on top (provider wins).
-/// - `GenericConfig`: the provider `config` used as-is.
-/// - `Custom`: dispatched by slug to a registered struct, otherwise
-///   [`AdapterError::UnknownCustom`]. A custom adapter may still consume `config` — e.g.
-///   `kunmanga` reuses the Madara selectors (merged as for [`AdapterKind::Madara`]) for its
-///   HTML catalogue/series parsing and overrides only chapter fetching.
+/// Build the adapter for a provider: `Madara` merges provider `config` onto Madara defaults,
+/// `GenericConfig` uses `config` as-is, `Custom` dispatches by slug (`kunmanga` reuses the
+/// Madara HTML selectors and overrides only chapter fetching).
 ///
 /// # Errors
-/// [`AdapterError::Config`] if the effective config is malformed, or
-/// [`AdapterError::UnknownCustom`] for an unregistered custom provider.
+/// Malformed effective config, or an unregistered custom provider slug.
 pub fn build_adapter(
     adapter: AdapterKind,
     slug: &str,
@@ -67,7 +61,6 @@ mod tests {
 
     #[test]
     fn madara_defaults_allow_empty_provider_config() {
-        // A brand-new Madara provider needs no selectors of its own.
         let adapter = build_adapter(AdapterKind::Madara, "kunmanga", &serde_json::json!({}));
         assert!(adapter.is_ok());
     }
@@ -78,7 +71,6 @@ mod tests {
         let mut base = madara_default_config();
         merge(&mut base, &over);
         assert_eq!(base["catalog"]["path"], "/series/?p={page}");
-        // Untouched defaults survive the merge.
         assert_eq!(base["catalog"]["item"], "div.page-item-detail");
     }
 

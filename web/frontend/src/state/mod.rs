@@ -93,8 +93,6 @@ impl Session {
     pub(crate) fn expires_in_ms(&self) -> Option<f64> {
         let token = self.token.read().clone()?;
         let exp = jwt::expires_at(&token)?;
-        // `exp` is a unix-second timestamp; the precision `f64` loses at that magnitude is
-        // far below the minute-scale granularity this scheduling hint is used at.
         #[expect(
             clippy::cast_precision_loss,
             reason = "a unix-second timestamp; the precision f64 loses there is far below the \

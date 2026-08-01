@@ -1,8 +1,5 @@
-//! Pure mapping and reconciliation logic for `AniList` sync (design §15).
-//!
-//! Kept free of I/O so the tricky parts — status translation and the user-selectable
-//! conflict policy — are exhaustively unit-tested. The engine layer wires these to the
-//! database and the `AniList` GraphQL client.
+//! Pure mapping and reconciliation logic for `AniList` sync, kept free of I/O so status
+//! translation and the conflict policy are exhaustively unit-tested.
 
 use tankovault_domain::{ContentType, SeriesStatus, WatchStatus};
 
@@ -73,15 +70,11 @@ impl AniListStatus {
 
 /// `AniList` `countryOfOrigin`/`format` → our [`ContentType`].
 ///
-/// Country is the primary signal: `AniList` models manga, manhwa and manhua as one `MANGA`
-/// format distinguished only by where the work was published.
-///
-/// `format` is the fallback for the countries this catalogue does not model — an OEL comic
-/// published in the US, a French *manfra*. Those used to land on `Unknown` even though `AniList`
-/// had said plainly that the work is manga-format, which is one of the ways a series that
-/// `AniList` knew perfectly well still displayed as "Unknown" locally. `NOVEL` is deliberately
-/// absent from the fallback: a light novel is not a content type this catalogue models, and
-/// calling it `Manga` would be worse than admitting we do not know.
+/// Country is the primary signal, since `AniList` models manga/manhwa/manhua as one `MANGA`
+/// format distinguished only by origin. `format` is the fallback for countries this catalogue
+/// doesn't model (a US-published OEL comic, a French *manfra*). `NOVEL` is deliberately excluded
+/// from the fallback: a light novel isn't a content type this catalogue models, and calling it
+/// `Manga` would be worse than `Unknown`.
 #[must_use]
 pub(crate) fn content_type_from_origin(country: Option<&str>, format: Option<&str>) -> ContentType {
     match country {
@@ -97,14 +90,10 @@ pub(crate) fn content_type_from_origin(country: Option<&str>, format: Option<&st
 
 /// `AniList` `MediaStatus` → our [`SeriesStatus`].
 ///
-/// This is the *publication* status of the work, not the reader's own `MediaListStatus` — two
-/// different `AniList` enums, and only this one belongs on a catalogue row. [`AniListStatus`]
-/// above covers the other.
-///
-/// `NOT_YET_RELEASED` has no local counterpart and maps to `Unknown`: the catalogue models four
-/// publication states, and inventing a fifth to carry one upstream token would ripple through
-/// the Postgres enum, the API contract and every locale file for a state no source adapter can
-/// produce.
+/// This is the work's *publication* status, not the reader's `MediaListStatus` ([`AniListStatus`]
+/// covers that). `NOT_YET_RELEASED` has no local counterpart and maps to `Unknown` — inventing a
+/// fifth publication state for it would ripple through the Postgres enum, the API contract and
+/// every locale file.
 #[must_use]
 pub(crate) fn series_status_from_media(status: Option<&str>) -> SeriesStatus {
     match status {
@@ -116,11 +105,8 @@ pub(crate) fn series_status_from_media(status: Option<&str>) -> SeriesStatus {
     }
 }
 
-/// Round a fractional local progress to the whole-chapter count a provider expects.
-///
-/// Lives here rather than in the provider module because this file owns every other unit
-/// conversion across the boundary (ARCH-7), and the rounding rule is not `AniList`-specific:
-/// remote trackers count whole chapters, local progress does not.
+/// Round a fractional local progress to the whole-chapter count a provider expects. Lives here,
+/// not the provider module, since remote trackers all count whole chapters, not just `AniList`.
 #[expect(
     clippy::cast_possible_truncation,
     reason = "the target is signed and `max(0.0)` rules out a negative, and Rust's \
@@ -132,14 +118,11 @@ pub(crate) fn progress_to_int(progress: f64) -> i64 {
     progress.max(0.0).round() as i64
 }
 
-/// The user-selectable reconciliation policy when a series exists on both sides (§15).
+/// The user-selectable reconciliation policy when a series exists on both sides.
 ///
-/// Re-exported rather than defined here. This was a private enum plus a bare `String` on the
-/// wire, so the vocabulary lived in three unconnected places — this service, the `OpenAPI` prose
-/// and a closed enumeration the frontend maintained by hand — and both parsers had a
-/// `_ => NewestWins` arm, which turned a misspelled token into a silent policy change rather
-/// than an error. It is now declared once in [`tankovault_contracts::sync::ConflictPolicy`],
-/// which is what the schema publishes and the generated client carries.
+/// Re-exported, not defined here: it used to be a private enum plus a bare wire `String` with a
+/// `_ => NewestWins` fallback parser, turning a misspelled token into a silent policy change.
+/// Now declared once in [`tankovault_contracts::sync::ConflictPolicy`].
 pub(crate) use tankovault_contracts::sync::ConflictPolicy;
 
 /// Which side a reconciliation deemed authoritative.
@@ -170,13 +153,12 @@ pub(crate) struct MergeDecision {
     pub(crate) winner: Side,
 }
 
-/// Three-way merge for one field of one series (design v2 §B.3).
+/// Three-way merge for one field of one series.
 ///
-/// `last_*` is the value that side held at the last successful reconciliation (the common
-/// ancestor); `None` means "no snapshot yet" (first reconciliation), in which case there is no
-/// memory of what changed, so equal values converge silently and unequal values are treated as
-/// a real conflict resolved by `policy`. `newer` names the side whose *own* last-modified time
-/// is later, consulted only by `NewestWins`.
+/// `last_*` is the value each side held at the last successful reconciliation; `None` means no
+/// snapshot yet, in which case equal values converge silently and unequal values are a real
+/// conflict resolved by `policy`. `newer` names the side more recently touched, consulted only
+/// by `NewestWins`.
 #[must_use]
 pub(crate) fn three_way<T: PartialEq + Copy>(
     current_local: T,
@@ -492,18 +474,10 @@ mod tests {
         assert_eq!(d.action, MergeAction::Conflict);
     }
 
-    /// **Half** a snapshot is not a common ancestor.
-    ///
-    /// The four snapshot fields are independent `Option`s, so a row can carry the local value
-    /// and not the remote one — a partially written snapshot, or one from before a field was
-    /// added. Treating that as an ancestor makes the missing side look *changed*, so the
-    /// absent half wins: with `last_remote` empty and both sides sitting on the same value,
-    /// this returns `Noop`, while reading `have_ancestor` as "either side has one" turns it
-    /// into a `PullRemote` that overwrites the user's progress with the value it already had —
-    /// invisible when the values agree, and a silent rollback the moment they do not.
-    ///
-    /// `cargo mutants` found this: flipping the `&&` in `have_ancestor` to `||` survived the
-    /// whole suite, because every earlier test supplied either both halves or neither.
+    /// Pins a mutation `cargo mutants` found alive: flipping `have_ancestor`'s `&&` to `||`
+    /// survived the suite because every earlier test supplied both halves or neither. With only
+    /// `last_local` or only `last_remote` set, `||` would read it as a full ancestor and turn an
+    /// agreed value into a silent `PullRemote` rollback.
     #[test]
     fn one_half_of_a_snapshot_is_not_an_ancestor() {
         for (last_local, last_remote) in [(Some(5.0), None), (None, Some(5.0))] {
@@ -539,17 +513,9 @@ mod tests {
         }
     }
 
-    /// Local progress is fractional (a part release is `152.5`); every remote tracker counts
-    /// whole chapters. The rounding rule is the whole of this function and nothing asserted on
-    /// it — `cargo mutants` replaced the body with `0`, `1` and `-1` in turn and the suite
-    /// stayed green, which for a *push* means writing the wrong chapter count to somebody's
-    /// public list.
-    ///
-    /// Three properties, each with a way to get it wrong: it **rounds** rather than truncating,
-    /// so a reader on `152.5` is pushed as having finished 153 rather than 152; it clamps at
-    /// zero, because a negative chapter count is a value no tracker accepts; and the cast
-    /// saturates rather than wrapping, so the `f64::INFINITY` that `parse_number` used to be
-    /// able to produce (F-01b) becomes `i64::MAX` instead of a negative count.
+    /// Pins three properties `cargo mutants` found untested (replacing the body with `0`, `1`,
+    /// `-1` stayed green): rounds rather than truncates, clamps negative to zero, and the cast
+    /// saturates so `f64::INFINITY` becomes `i64::MAX` rather than a negative count.
     #[test]
     fn progress_rounds_to_whole_chapters_and_never_goes_negative() {
         assert_eq!(progress_to_int(0.0), 0);
@@ -560,9 +526,6 @@ mod tests {
         assert_eq!(progress_to_int(f64::INFINITY), i64::MAX);
     }
 
-    // The policy token round trip used to be pinned here, against this module's own copy of
-    // the enum. Both moved: the vocabulary is `tankovault_contracts::sync::ConflictPolicy` and
-    // its round trip is pinned there, while the tolerance for an unreadable *persisted* token
-    // — the part that was this service's own judgement, not the wire's — is pinned by
-    // `engine::accounts::tests`.
+    // The policy round trip moved to `tankovault_contracts::sync::ConflictPolicy`'s own tests;
+    // the persisted-token fallback is pinned by `engine::accounts::tests`.
 }

@@ -11,9 +11,7 @@ use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
 
-/// Live scan queue: trigger a global run, watch every active run's progress, browse recent
-/// run history, and triage the most recent task failures with their errors. Auto-refreshes
-/// on the shared console tick.
+/// Live scan queue: trigger runs, watch active-run progress, browse history, and triage failures.
 #[component]
 pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
     let api = api::use_api();
@@ -65,9 +63,7 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
                     .map(ResponseValue::into_inner)
                     .map_err(|e| api::friendly_error(i18n, e))
                 {
-                    // The body is the planner's `{ "run_ids": [...] }`, which this view does
-                    // not render; it was `()` only because the endpoint used to declare no
-                    // response body at all (ARCH-10).
+                    // Body carries the planner's run_ids, which this view doesn't render.
                     Ok(_) => {
                         message.set(Some(i18n.t("console.scans.queued")));
                         tick.bump();
@@ -102,10 +98,9 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
                 p { class: "ik-muted", style: "margin:8px 0 0;", "{m}" }
             }
 
-            // One fetch drives both the active-run strip and the history table, so both go
-            // through the helper once. A failed `list_scans` used to fall through
-            // `_ => Vec::new()` and render as "no runs" — indistinguishable from a quiet
-            // system, which on this screen is the exact wrong conclusion to invite.
+            // One fetch drives both the active-run strip and the history table: a failed
+            // `list_scans` must surface as an error, not render as "no runs" — indistinguishable
+            // from a quiet system, the exact wrong conclusion on this screen.
             {
                 async_block(
                     &runs,

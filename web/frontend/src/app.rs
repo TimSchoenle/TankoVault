@@ -25,10 +25,8 @@ pub(crate) enum Route {
         Series { id: String },
         // The old Reading feed folded into Home; the path stays alive for bookmarks and links.
         #[redirect("/reading", || Route::Home {})]
-        // The whole view state — status tab, sort, filter text, recency window, list/grid —
-        // rides in the query string so a filtered watchlist is shareable and the back button
-        // steps through it. One catch-all field rather than seven named ones; see
-        // `views::watchlist::query`.
+        // View state (tab/sort/filter/etc.) rides in the query string so a filtered watchlist
+        // is shareable and back-button-able; see `views::watchlist::query`.
         #[route("/watchlist?:..query")]
         Watchlist { query: WatchlistQuery },
         #[route("/notifications")]
@@ -62,9 +60,8 @@ pub(crate) fn App() -> Element {
     // Order matters: the API handle reads the session for the live bearer token, so the
     // session context has to exist first.
     use_context_provider(Session::new);
-    // Starts empty and is filled by `Shell`'s capability sync once a token exists. Provided
-    // here rather than inside the router so a view can read it without every screen having to
-    // thread it down.
+    // Starts empty and is filled once `Shell` syncs capabilities; provided outside the router
+    // so views don't need it threaded down.
     use_context_provider(CapabilitySet::new);
     use_context_provider(|| UnreadBadge(Signal::new(0)));
     crate::api::provide_api();
@@ -72,8 +69,7 @@ pub(crate) fn App() -> Element {
     rsx! {
         document::Stylesheet { href: asset!("/assets/main.css") }
         FontFaces {}
-        // Above the router: every screen resolves its text through this context, so a language
-        // change has to be able to re-render all of them.
+        // Above the router so a language change can re-render every screen.
         I18nRoot {
             Router::<Route> {}
         }
@@ -83,11 +79,8 @@ pub(crate) fn App() -> Element {
 /// Self-hosted font subsets (`DESIGN_SPEC` §3.3), wired through the Dioxus asset system so the
 /// `.woff2` files are bundled and content-hashed in the release build.
 ///
-/// The `@font-face` rules have to be emitted from Rust rather than written into `input.css`:
-/// manganis does not rewrite `url()` references inside the Tailwind-built stylesheet, so a
-/// plain `url(fonts/…)` there resolves in `dx serve` and then 404s in the hashed release
-/// bundle. `font-display: swap` keeps text visible while a subset loads, with the system
-/// stacks from the `@theme` block as the fallback.
+/// Emitted from Rust rather than `input.css`: manganis doesn't rewrite `url()` inside the
+/// Tailwind-built stylesheet, so a plain `url(fonts/…)` there 404s in the hashed release build.
 #[component]
 fn FontFaces() -> Element {
     const BRICOLAGE: Asset = asset!("/assets/fonts/bricolage-grotesque-latin-variable-wght.woff2");

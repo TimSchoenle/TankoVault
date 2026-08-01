@@ -1,28 +1,9 @@
 //! Entity builders for the `crates/db` suites (TEST F-09).
 //!
-//! # Why these exist
-//!
-//! Seven of the ten `crates/db` suites defined their own `a_provider`, and **six
-//! were byte-identical**. Three defined their own `a_user`; four their own `a_series`. That is
-//! the duplication the audit's `test-support` finding is about, and it has the failure mode
-//! every other duplication in this codebase has had: `repo_ingest.rs`'s copy had diverged — a
-//! `Madara` adapter and a fixed `base_url` rather than the shared `GenericConfig` and
-//! `https://{slug}.invalid` — and nothing said whether that was deliberate or drift.
-//!
-//! It was drift. Nothing in that file reads either field: its subject is the ingest transaction,
-//! and the suite passes unchanged on the shared defaults, which is how the question got answered
-//! rather than argued. So the divergence is **collapsed**, not preserved — but the builder is why
-//! that is safe to do again: a future test that genuinely needs a `Madara` provider writes
-//! `.adapter(AdapterKind::Madara)` at the call site, where the next reader can see the claim and
-//! the assertion that depends on it in the same screen.
-//!
-//! # Why builders rather than functions with more parameters
-//!
-//! The alternative was `a_provider(db, slug, adapter, base_url, config, politeness)`, which is
-//! six arguments at every call site to vary one of them — and four of the six are `&str`, which
-//! is the transposable shape this remediation has already had to undo twice (`repo::audit::record`,
-//! `AgreedSnapshot`). A builder keeps the common case one line and makes the uncommon case say
-//! what is uncommon about it:
+//! Use these instead of writing another one-off `a_provider`/`a_user`/`a_series` fixture:
+//! duplicated fixtures drift silently (`repo_ingest.rs`'s copy once diverged on adapter and base
+//! URL with nothing to say whether that was deliberate), and a builder keeps the common case one
+//! line while making the uncommon case explicit at the call site:
 //!
 //! ```ignore
 //! let provider = seed::provider(&db, "alpha").create().await;
@@ -30,17 +11,10 @@
 //! let series = seed::series(&db, provider, "Berserk").chapters(&[1.0, 2.0]).create().await;
 //! ```
 //!
-//! # What these deliberately do not do
-//!
-//! They do not hide which repository function performs the write. Each terminal `create` calls
-//! exactly the same `repo::` entry point the suite would have called by hand, so a test that
-//! seeds through a builder still exercises the real write path — a fixture that inserted rows
-//! with its own SQL would pass while the repository was broken, which is the one thing a
-//! database suite must not do.
-//!
-//! They also do not panic-free: every failure here is a broken fixture rather than a behaviour
-//! under test, so each `expect` names the step. A `Result` would push that judgement to hundreds
-//! of call sites that all have the same answer.
+//! Each terminal `create` calls the same `repo::` entry point the suite would call by hand, so
+//! seeding through a builder still exercises the real write path rather than a hand-rolled
+//! insert that could pass while the repository is broken. Every failure here panics — it is a
+//! broken fixture, not a behaviour under test.
 
 use crate::TestDb;
 use tankovault_config::MatchingConfig;
@@ -56,10 +30,10 @@ use tankovault_domain::{
 
 /// Start building a provider identified by `slug`.
 ///
-/// The defaults are the ones six of the seven hand-rolled copies used: the slug doubles as the
-/// display name, the base URL is `https://{slug}.invalid` — a reserved TLD, so a fixture that
-/// leaks into a real fetch fails to resolve rather than reaching somebody's site — the adapter is
-/// [`AdapterKind::GenericConfig`], and the politeness is the default.
+/// Defaults: the slug doubles as the display name, the base URL is `https://{slug}.invalid` —
+/// a reserved TLD, so a fixture that leaks into a real fetch fails to resolve rather than
+/// reaching somebody's site — the adapter is [`AdapterKind::GenericConfig`], and the politeness
+/// is the default.
 #[must_use]
 pub fn provider<'a>(db: &'a TestDb, slug: &'a str) -> ProviderBuilder<'a> {
     ProviderBuilder {

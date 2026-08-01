@@ -1,11 +1,5 @@
-//! The two-tier rule for destructive actions, as two components rather than as a convention
-//! each panel re-implements:
-//!
-//! - [`InlineConfirm`] — *reversible* (pause, blocklist, unlink, revoke): a second click, on
-//!   the spot, with the consequence stated.
-//! - [`TypeToConfirm`] — *irreversible* (delete a provider, erase an account): the operator
-//!   types the exact slug or username, and the action stays disabled until it matches. The
-//!   copy names the concrete blast radius with real counts; never "are you sure".
+//! Two-tier confirmation for destructive actions: [`InlineConfirm`] for reversible ones, and
+//! [`TypeToConfirm`] for irreversible ones requiring an exact-match retype.
 
 use crate::i18n::use_i18n;
 use dioxus::prelude::*;

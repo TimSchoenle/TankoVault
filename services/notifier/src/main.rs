@@ -1,9 +1,6 @@
-//! # notifier service
-//!
-//! Consumes `chapter.discovered` events and fans them out to watchers (design §14):
-//! - only users watching the series with `notify = true`,
-//! - skipping chapters at or below a user's read progress (no spam on rescans),
-//! - deduplicated per `(user, series, chapter)` so overlapping providers never double-fire.
+//! Consumes `chapter.discovered` events and fans them out to watchers: only users with
+//! `notify = true`, skipping already-read chapters, deduplicated per `(user, series,
+//! chapter)` so overlapping providers never double-fire.
 
 mod channels;
 
@@ -27,9 +24,8 @@ struct Config {
     telemetry: tankovault_config::TelemetryConfig,
     #[serde(default)]
     channels: channels::ChannelsConfig,
-    /// The shared `TANKOVAULT_EMAIL__*` relay configuration, identical to the API's. The
-    /// notifier used to carry its own SMTP URL and `From` address, which is how it ended up
-    /// with a different envelope-sender policy than the mail the API sends.
+    /// The shared `TANKOVAULT_EMAIL__*` relay configuration, identical to the API's — must
+    /// stay shared, or the envelope-sender policy silently diverges from the API's mail.
     #[serde(default)]
     email: tankovault_config::EmailConfig,
     #[serde(default = "default_bind")]
@@ -51,10 +47,8 @@ fn default_bind() -> String {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Before config, telemetry or anything else: this process may have been invoked by
-    // Docker's HEALTHCHECK rather than as the service. `scratch` images have no shell and no
-    // wget, so the binary probing itself is the only probe available. See
-    // `tankovault_service::healthcheck`.
+    // Runs before config/telemetry: `scratch` images have no shell or wget, so the binary
+    // must probe itself for Docker's HEALTHCHECK.
     if tankovault_service::healthcheck::requested() {
         let cfg: Config = tankovault_config::load()?;
         tankovault_service::run_healthcheck_and_exit(&cfg.bind_addr);
@@ -74,9 +68,8 @@ async fn main() -> anyhow::Result<()> {
     let bus = Bus::connect(&cfg.nats.url).await?;
     bus.ensure_streams().await?;
 
-    // Ops listener for orchestrator probes and the metrics scrape, alongside the consumer.
-    // Readiness names both dependencies: a notifier that cannot reach Postgres or NATS
-    // cannot deliver anything, and previously reported itself healthy regardless.
+    // Readiness names both dependencies: a notifier that can't reach Postgres or NATS
+    // can't deliver anything.
     let ready_pool = pool.clone();
     let ready_bus = bus.clone();
     let health = Health::builder()
@@ -87,8 +80,7 @@ async fn main() -> anyhow::Result<()> {
         })
         .build();
 
-    // Serve the metrics scrape on its own port when configured, keeping it off the
-    // request-facing listener.
+    // Own port keeps the scrape off the request-facing listener.
     tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
 
     let ops = HttpStack::new(&cfg.security, metrics.clone())
@@ -110,9 +102,8 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!(?names, "external notification channels configured");
     }
 
-    // Configuration says which channels *exist*; the flags say which currently deliver. Loaded
-    // before the consumer starts so the first event after a restart already respects the
-    // operator's decisions.
+    // Configuration says which channels exist; flags say which currently deliver. Loaded
+    // before the consumer starts so the first post-restart event respects them.
     let features = FeatureGate::new(Arc::new(PostgresFlagSource::new(pool.clone())));
     features
         .spawn_refresh(cfg.features.refresh_interval(), shutdown.clone())
@@ -135,11 +126,8 @@ async fn run_consumer(
         )
         .await?;
 
-    // Retries on failure, where this loop previously acked. A fan-out error was logged and
-    // then the message was settled unconditionally, which is at-most-once delivery: a
-    // transient database blip or a Discord webhook timeout lost that chapter's notifications
-    // permanently, with one `warn!` as the only trace. The dedup claim inside `fan_out` is
-    // what makes redelivery safe — a re-run announces nothing that was already announced.
+    // Must retry on failure: acking unconditionally is at-most-once delivery and could
+    // lose notifications permanently. The dedup claim inside `fan_out` makes redelivery safe.
     let policy = tankovault_bus::ConsumePolicy {
         max_deliveries: 4,
         // Minutes, not seconds: the failures worth retrying here are a busy database or a
@@ -180,24 +168,18 @@ async fn fan_out(
     features: &FeatureGate,
     event: &ChapterDiscovered,
 ) -> anyhow::Result<()> {
-    // With in-app notifications off, no rows are written and no live push is sent — but the
-    // per-watcher walk and the dedup claim still run. The claim is this system's record that a
-    // chapter has been *announced*, and it is what keeps the external channels firing once per
-    // genuinely-new chapter instead of on every rescan; skipping it would turn a Discord
-    // webhook into a duplicate every scan cycle for as long as the flag stayed off.
+    // In-app off still runs the dedup claim: it's the system's announcement record, and
+    // skipping it would make external channels re-fire every rescan.
     let in_app = features.is_enabled(Feature::NotificationsInApp);
 
-    // Three set-based statements for the whole fan-out, not three per watcher (PERF-3). At ten
-    // thousand watchers the per-watcher version cost ~30 000 sequential round trips for one
-    // chapter, and the worker publishes one `chapter.discovered` per new chapter — so a series
-    // dropping six parts at once multiplied it.
+    // Three set-based statements for the whole fan-out, not one per watcher — at ten
+    // thousand watchers, per-watcher cost ~30 000 round trips for one chapter.
     let watchers =
         tankovault_db::repo::tracking::watchers_for_series(pool, event.series_id).await?;
 
-    // Don't notify for a chapter the user has already read (rescan safety). The judgement is
-    // `ReadProgress::covers`, never a comparison against one frontier: a part release belongs to
-    // the whole chapter it floors to, so `152.5` is already read once `152` is, and the previous
-    // `chapter_number > last_read_number` form announced every such part as new.
+    // Rescan safety: never notify an already-read chapter. Must use `ReadProgress::covers`,
+    // not `chapter_number > last_read_number` — a part release (`152.5`) belongs to the
+    // chapter it floors to, so a direct comparison would announce it as new again.
     let unread_by: Vec<tankovault_domain::UserId> = watchers
         .into_iter()
         .filter(|w| {
@@ -207,8 +189,8 @@ async fn fan_out(
         .map(|w| w.user_id)
         .collect();
 
-    // Dedup across overlapping providers. The claimed subset is exactly the set of users this
-    // chapter is genuinely new to, whatever happens next.
+    // Dedup across overlapping providers: `claimed` is exactly the users this chapter is
+    // genuinely new to.
     let claimed = tankovault_db::repo::tracking::dedup_claim_many(
         pool,
         &unread_by,
@@ -257,14 +239,12 @@ async fn fan_out(
     Ok(())
 }
 
-/// Best-effort live push of freshly-created in-app notifications to their users' SSE streams
-/// (design §14, §17.4). Each carries that user's current unread count so the client can set its
-/// badge without a round-trip. A failure here never affects the durable notification rows.
+/// Best-effort live push of freshly-created in-app notifications to users' SSE streams,
+/// each carrying the user's current unread count. Never affects the durable notification
+/// rows on failure.
 ///
-/// The counts come from one grouped query for the whole batch rather than one per user
-/// (PERF-3). A user missing from the result has no unread rows, which cannot happen right after
-/// inserting one — but treating a miss as `0` keeps the push best-effort rather than panicking
-/// on a race with a concurrent "mark all read".
+/// Counts come from one grouped query for the batch. A miss (a race with a concurrent
+/// "mark all read") is treated as `0` rather than panicking.
 async fn push_live(
     pool: &PgPool,
     bus: &Bus,
@@ -281,12 +261,9 @@ async fn push_live(
             }
         };
     let created_at = OffsetDateTime::now_utc();
-    // The per-watcher `payload.clone()` below is the one PERF-19 named that survives, and it
-    // survives on purpose. The expensive half — rebuilding the `json!` document per watcher —
-    // is gone (PERF-3 hoisted it); what is left is one shallow-ish clone of a five-field object
-    // per *network publish*, and the publish itself serialises that same document. Removing it
-    // means either an `Arc` inside a wire DTO or a borrowed field with a lifetime, both of
-    // which complicate a published contract type to save less than the send costs.
+    // This per-watcher `payload.clone()` is intentional: removing it would need an `Arc`
+    // or borrowed field in a published wire DTO — not worth it against a publish that
+    // re-serialises the same document anyway.
     for &(user_id, notification_id) in created {
         let live = UserNotification {
             user_id,
@@ -305,9 +282,8 @@ async fn push_live(
 /// Best-effort delivery to every *currently enabled* external channel; failures are logged,
 /// never fatal.
 ///
-/// A channel switched off is skipped silently at `debug` rather than logged as a problem: it is
-/// a deliberate operator decision, and warning about it every chapter would bury the delivery
-/// failures this log line exists to surface.
+/// A disabled channel is skipped at `debug`, not `warn`: it's a deliberate operator
+/// decision, and warning on it would bury genuine delivery failures.
 async fn dispatch_external(
     channels: &[Box<dyn NotificationChannel>],
     features: &FeatureGate,

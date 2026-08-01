@@ -1,6 +1,5 @@
-//! Fixture tests for the Madara config-driven adapter. A provider markup change breaks
-//! these tests, not production data (design §7). The fetch transport is a fake that
-//! serves checked-in HTML fixtures, so no network is touched.
+//! Fixture tests for the Madara config-driven adapter, using checked-in HTML so a provider
+//! markup change breaks a test, not production. No network is touched.
 
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -57,11 +56,8 @@ async fn parses_series_metadata() {
     assert_eq!(meta.status, SeriesStatus::Ongoing);
     assert!(meta.tags.iter().any(|t| t == "Action"));
     assert!(meta.tags.iter().any(|t| t == "Fantasy"));
-    // Alternative titles come from the summary row *labelled* "Alternative", split on the
-    // comma the theme joins them with. The bug this pins: `alt` was the plain selector
-    // `div.summary-heading`, which matched the label cell of every row — so every series on
-    // every Madara provider was ingested with "Alternative"/"Author(s)"/"Genre(s)"/"Status"
-    // as alternative titles, and `series_titles` feeds the trigram matcher and the search.
+    // Bug this pins: `alt` was the plain selector `div.summary-heading`, which matched every
+    // row's label, mislabelling Author(s)/Genre(s)/Status into `series_titles` too.
     assert_eq!(
         meta.alt_titles,
         vec!["Only I Level Up".to_owned(), "나 혼자만 레벨업".to_owned()]

@@ -1,12 +1,6 @@
-//! Custom adapter for demonicscans.org.
-//!
-//! demonicscans runs a bespoke PHP layout (not Madara), so its markup cannot be expressed
-//! by [`GenericConfigAdapter`](crate::GenericConfigAdapter) selectors alone: the synopsis
-//! is embedded after a boilerplate SEO sentence, and series metadata lives in
-//! label/value row pairs rather than discrete elements. This struct encodes those shapes
-//! directly. Every selector below was derived from live markup fetched through the
-//! project's solver pipeline, and is pinned by the `demonicscans` fixture tests so a
-//! layout change fails a test rather than production data (design §7).
+//! Custom adapter for demonicscans.org's bespoke PHP layout, which
+//! [`GenericConfigAdapter`](crate::GenericConfigAdapter) selectors can't express (SEO-prefixed
+//! synopsis, label/value metadata rows). Selectors are pinned by the `demonicscans` fixtures.
 
 use crate::error::AdapterError;
 use crate::html::{
@@ -47,8 +41,7 @@ fn stat_value(root: ElementRef<'_>, label: &str) -> Option<String> {
         let mut cells = row.select(&li_sel);
         let key = cells.next().map(text_of).unwrap_or_default();
         if key.eq_ignore_ascii_case(label) {
-            // `text_of` collapses `&nbsp;` (Unicode whitespace) to empty, so an unset
-            // value naturally filters out here.
+            // `text_of` collapses `&nbsp;` to empty, so an unset value filters out here.
             return cells.next().map(text_of).filter(|v| !v.is_empty());
         }
     }
@@ -249,7 +242,6 @@ mod tests {
             split_list("Shibuya Noir, 시부야 느와르; Shibuya Nowaru"),
             vec!["Shibuya Noir", "시부야 느와르", "Shibuya Nowaru"]
         );
-        // An empty / whitespace-only cell yields no alternatives.
         assert!(split_list("   ").is_empty());
         assert!(split_list("").is_empty());
     }

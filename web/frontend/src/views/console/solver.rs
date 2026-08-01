@@ -12,10 +12,7 @@ use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
 
-/// Challenge & solver (`DESIGN_SPEC` §7.8.4). The challenge back-end (`FlareSolverr`) is shown as
-/// an informational card; per-provider solve-success metrics need a dedicated endpoint
-/// (TODO(api) §9.5), so this lists provider health with a **Re-solve** (fast re-scan) action
-/// and a **Re-enable** toggle for blocked/disabled providers.
+/// Challenge & solver panel: provider health with re-solve and re-enable actions.
 #[component]
 pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
     let api = api::use_api();
@@ -132,8 +129,7 @@ pub(super) fn SolverRow(provider: Provider, reload: Reload) -> Element {
     }
 }
 
-/// Standalone Adapter-test tab (`DESIGN_SPEC` §7.8.5): pick a provider, then dry-run its
-/// adapter against the live site and inspect the parsed sample (reuses `AdapterTestPanel`).
+/// Standalone adapter-test tab: pick a provider, then dry-run its adapter.
 #[component]
 pub(super) fn AdapterTestTab() -> Element {
     let api = api::use_api();

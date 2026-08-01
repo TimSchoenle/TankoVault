@@ -1,18 +1,6 @@
-//! The credential lifecycle that only exists when a mailer is configured.
-//!
-//! # What this covers that nothing did
-//!
-//! `auth::register` forks on `state.mailer.is_enabled()`. Until [`RecordingMailer`] existed,
-//! `TestApp` wired the disabled default, so **every test took the "no mailer, activate
-//! immediately" branch** — the email-confirmation half of registration, the confirmation
-//! resend, and the whole password-reset flow had never been executed by any test at all.
-//! These drive the other side of that fork end to end, the way a user does: read the link out
-//! of the delivered message, then present it.
-//!
-//! `auth_flows.rs` remains the specification for refresh-token rotation and reuse detection
-//! and is deliberately not duplicated here.
-//!
-//! Opt-in: gated behind the `integration` feature because it requires Docker.
+//! The credential lifecycle that only runs when a mailer is configured: email confirmation,
+//! resend, and password reset, driven end to end via [`RecordingMailer`]. Gated behind the
+//! `integration` feature; requires Docker.
 #![cfg(feature = "integration")]
 
 use std::sync::Arc;
@@ -23,8 +11,7 @@ use serde_json::{Value, json};
 use tankovault_api_test_support::{TestApp, TestConfig};
 use tankovault_test_support::RecordingMailer;
 
-/// The cookie name a deployment that marks cookies `Secure` issues — which the harness now does
-/// by default, matching production (SEC-7).
+/// The `__Host-` cookie a deployment marking cookies `Secure` issues, matching production.
 const REFRESH_COOKIE: &str = "__Host-refresh_token";
 
 /// The unprefixed name the local-HTTP development opt-out keeps, at the narrow path.
@@ -32,9 +19,8 @@ const DEV_REFRESH_COOKIE: &str = "refresh_token";
 
 /// Stand up a router whose mailer is configured, plus the recorder to read messages from.
 ///
-/// Rate limiting is off: `/v1/auth` draws from the tightest budget in the service (10/min,
-/// burst 5) and a single lifecycle here — register, confirm, reset, sign in — spends more than
-/// that. Leaving it on would report a throttle as an authentication failure.
+/// Rate limiting is off: `/v1/auth`'s budget (10/min, burst 5) is smaller than one full
+/// register/confirm/reset/sign-in lifecycle, and a throttle would otherwise read as an auth failure.
 async fn app_with_mail() -> (TestApp, Arc<RecordingMailer>) {
     let mailer = Arc::new(RecordingMailer::enabled());
     let app = TestApp::spawn_with(
@@ -161,8 +147,7 @@ async fn registering_with_a_mailer_configured_requires_confirmation_and_issues_n
         "an unconfirmed registration must not issue an access token, got {body}"
     );
 
-    // The confirmation must actually be sent, and to the address that registered. A branch
-    // that sets `verification_required` without delivering anything strands the account.
+    // A branch that sets `verification_required` without delivering anything strands the account.
     let message = mailer.next_message().await;
     assert_eq!(message.to, vec!["unconfirmed@example.test".to_owned()]);
     assert!(
@@ -185,8 +170,7 @@ async fn an_unconfirmed_account_cannot_log_in_and_is_told_why() {
         ))
         .await;
 
-    // 403 rather than 401, and named: the client offers "resend the link" off this, so
-    // collapsing it into a generic bad-credentials 401 would leave the user with no way out.
+    // 403 and named, not a generic 401: the client offers "resend the link" off this.
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     assert_eq!(json_body(resp).await["title"], "email_not_verified");
 }
@@ -214,7 +198,6 @@ async fn confirming_the_emailed_link_verifies_the_address_and_signs_the_user_in(
         "confirming the link must issue an access token"
     );
 
-    // And the account is now usable by the ordinary route.
     let resp = app
         .request(post(
             "/v1/auth/login",
@@ -231,8 +214,8 @@ async fn confirming_the_emailed_link_verifies_the_address_and_signs_the_user_in(
 
 #[tokio::test]
 async fn a_confirmation_token_is_single_use() {
-    // The `used_at` flip is what closes the race between two concurrent confirmations. A
-    // replayable link would also mean a link leaked from an inbox stays usable forever.
+    // The `used_at` flip closes the race between concurrent confirmations and stops a leaked
+    // link staying usable forever.
     let (app, mailer) = app_with_mail().await;
     register(&app, "replayer").await;
     let token = next_link_token(&mailer, "/verify-email").await;
@@ -258,9 +241,8 @@ async fn a_confirmation_token_is_single_use() {
 
 #[tokio::test]
 async fn a_confirmation_token_past_its_ttl_is_refused() {
-    // VERIFY_TOKEN_TTL is 24 hours. Nothing can advance the clock from a test, so the row is
-    // aged instead — which exercises the same `expires_at <= now()` comparison the handler
-    // makes, and would catch that comparison being dropped or inverted.
+    // VERIFY_TOKEN_TTL is 24h; the row is aged instead of the clock, exercising the same
+    // `expires_at <= now()` comparison the handler makes.
     let (app, mailer) = app_with_mail().await;
     register(&app, "latecomer").await;
     let token = next_link_token(&mailer, "/verify-email").await;
@@ -297,8 +279,7 @@ async fn resending_the_confirmation_issues_a_second_working_link() {
     let second = next_link_token(&mailer, "/verify-email").await;
     assert_ne!(first, second, "a resend must mint a fresh token");
 
-    // Both links belong to the same account and neither has been consumed, so the newest one
-    // must work — a resend that invalidated nothing but also confirmed nothing is a dead end.
+    // A resend that invalidated nothing but also confirmed nothing would be a dead end.
     let resp = app
         .request(post(
             "/v1/auth/verify-email",
@@ -311,8 +292,7 @@ async fn resending_the_confirmation_issues_a_second_working_link() {
 
 #[tokio::test]
 async fn resending_for_an_unknown_address_reveals_nothing() {
-    // Both branches must be indistinguishable to the caller, or the endpoint becomes an
-    // account-existence oracle that needs no credentials at all.
+    // Must be indistinguishable, or the endpoint becomes a credential-free existence oracle.
     let (app, _mailer) = app_with_mail().await;
     let resp = app
         .request(post(
@@ -357,8 +337,7 @@ async fn a_reset_link_changes_the_password_and_kills_every_live_session() {
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // The point of the reset is that a stolen credential stops working. A refresh cookie
-    // minted under the old password must die with it, or the attacker keeps their session.
+    // A refresh cookie minted under the old password must die with it.
     let resp = app
         .request(post("/v1/auth/refresh", Some(&live_session), None))
         .await;
@@ -429,9 +408,8 @@ async fn a_reset_token_is_single_use() {
 
 #[tokio::test]
 async fn a_reset_token_past_its_ttl_is_refused() {
-    // RESET_TOKEN_TTL is one hour, and the short window is the whole point: it bounds the
-    // blast radius of a leaked inbox. Age the row rather than the clock; see the confirmation
-    // TTL test for why.
+    // RESET_TOKEN_TTL is one hour, bounding the blast radius of a leaked inbox. Age the row
+    // rather than the clock; see the confirmation TTL test for why.
     let (app, mailer) = app_with_mail().await;
     register(&app, "sluggish").await;
 
@@ -476,18 +454,9 @@ async fn a_reset_request_for_an_unknown_address_reveals_nothing_and_sends_nothin
 
 #[tokio::test]
 async fn the_refresh_cookie_carries_every_attribute_the_host_prefix_requires() {
-    // These attributes are the whole containment story for a 30-day credential. Previously this
-    // test asserted `Path=/v1/auth` and treated a widening to `/` as the regression; SEC-7's
-    // review reversed that judgement — nothing outside `auth/` reads a cookie, `SameSite=Strict`
-    // already blocks every cross-site send, and the narrow path did nothing against the one
-    // attack it looked like it was for (a sibling subdomain *writing* this cookie, which the
-    // `__Host-` prefix is what actually prevents).
-    //
-    // So the assertion is now the prefix's own contract, and it is the load-bearing one: the
-    // browser refuses a `__Host-` cookie that lacks `Secure`, carries a `Domain`, or is set at
-    // any path but `/`, and it refuses it *silently*. Drop any one of the three and every
-    // server-side test still passes while no real browser keeps the cookie — sign-in appears to
-    // work and every reload lands signed out.
+    // The `__Host-` prefix's own contract: the browser silently refuses a cookie lacking
+    // `Secure`, carrying a `Domain`, or set at any path but `/`. Drop any one and every
+    // server-side test still passes while no real browser keeps the cookie.
     let app = app_without_mail().await;
     let resp = register(&app, "cookiewatcher").await;
     let line = refresh_set_cookie(&resp).expect("registration sets the refresh cookie");
@@ -511,11 +480,8 @@ async fn the_refresh_cookie_carries_every_attribute_the_host_prefix_requires() {
 
 #[tokio::test]
 async fn the_local_http_opt_out_keeps_the_unprefixed_cookie_at_the_narrow_path() {
-    // `cookie_secure = false` exists for plain-HTTP development, where a `Secure` cookie is never
-    // sent at all. A `__Host-` name without `Secure` is *refused* rather than downgraded, so that
-    // configuration has to keep the old spelling — and the read side must accept only the name
-    // this deployment issues, never both, or a sibling subdomain could plant the unprefixed one
-    // and have it honoured in production.
+    // A `__Host-` name without `Secure` is refused rather than downgraded, so dev keeps the old
+    // spelling; the read side must accept only the name this deployment issues, never both.
     let app = TestApp::spawn_with(
         TestConfig::new()
             .without_rate_limiting()
@@ -550,15 +516,12 @@ async fn logging_out_clears_the_cookie_and_revokes_the_whole_family() {
         cleared.starts_with(&format!("{REFRESH_COOKIE}=;")),
         "logout must clear the cookie value, got {cleared}"
     );
-    // The removal has to match the path the cookie was set at, or the browser keeps its copy and
-    // "log out" only means "forget server-side".
+    // Must match the path the cookie was set at, or the browser keeps its copy.
     assert!(
         cleared.contains("Path=/;") || cleared.ends_with("Path=/"),
         "the clearing cookie must name the same path, got {cleared}"
     );
 
-    // Clearing the browser's copy is cosmetic; revoking the family server-side is what makes
-    // logging out mean anything to someone who kept the value.
     let resp = app
         .request(post("/v1/auth/refresh", Some(&session), None))
         .await;
@@ -577,9 +540,7 @@ async fn a_suspended_account_is_refused_at_the_door_and_told_so() {
         .execute("UPDATE users SET status = 'suspended' WHERE username = 'banished'")
         .await;
 
-    // Suspension must be reported *as* suspension, with correct credentials, rather than as a
-    // bad password: a user told "wrong password" retries forever against an account that will
-    // never work, and support cannot see why.
+    // Must be reported as suspension, not a bad password, or the user retries forever.
     let resp = app
         .request(post(
             "/v1/auth/login",
@@ -593,10 +554,7 @@ async fn a_suspended_account_is_refused_at_the_door_and_told_so() {
 
 #[tokio::test]
 async fn an_unknown_identifier_is_indistinguishable_from_a_wrong_password() {
-    // SEC-10: the unknown-identifier branch verifies a dummy argon2 hash so both branches
-    // cost the same. This pins the *observable* half of that contract — same status, same
-    // body — which is what an attacker actually reads. The timing half is pinned by
-    // `auth.rs::the_dummy_hash_is_a_real_argon2id_hash_with_the_live_parameters`.
+    // Pins the observable half (same status, same body); the timing half is pinned in `auth.rs`.
     let app = app_without_mail().await;
     register(&app, "genuine").await;
 
@@ -620,19 +578,13 @@ async fn an_unknown_identifier_is_indistinguishable_from_a_wrong_password() {
     assert_eq!(json_body(unknown).await, json_body(wrong).await);
 }
 
-/// A reset request answers before doing any of the work only a known address triggers (SEC-10).
+/// A reset request answers before doing any of the work only a known address triggers.
 ///
-/// The bug: `forgot_password` returned a uniform `202` but the known-address branch minted a
-/// token, hashed it and performed an `INSERT` — a write, so a WAL flush — before answering, while
-/// the unknown branch returned straight after the lookup. The response time was the oracle the
-/// uniform status was supposed to hide, and reading it needs no credentials and no statistics.
+/// # The bug this pins
 ///
-/// Timed against a **deliberately slow mailer** rather than against the `INSERT`, which is the
-/// only way to make this reliable: one database write is a millisecond or two and would flap, but
-/// a two-second relay against a sub-second assertion cannot. If someone reverts the handler to
-/// `deliver_reset_link(...).await` instead of spawning it, the known-address response waits for
-/// that relay and this fails; the unknown-address one never would, which is exactly the asymmetry
-/// under test.
+/// `forgot_password` returned a uniform `202`, but the known-address branch did a DB insert
+/// before answering while the unknown branch returned right after the lookup — response time
+/// was the oracle the uniform status was meant to hide.
 #[tokio::test]
 async fn a_reset_request_answers_without_waiting_for_the_known_branch_work() {
     let mailer =
@@ -645,15 +597,12 @@ async fn a_reset_request_answers_without_waiting_for_the_known_branch_work() {
     .await;
     let registered = register(&app, "timedout").await;
     assert_eq!(registered.status(), StatusCode::OK);
-    // Registration also sends a confirmation; drain it so the reset mail is the next message.
+    // Drain the registration confirmation so the reset mail is the next message.
     mailer.next_message().await;
 
     let known = timed_forgot(&app, "timedout@example.test").await;
-    // Drained here, between the two requests, rather than at the end. Two detached tasks in flight
-    // at once made this suite's shared test Postgres open a third pooled connection, which blocks
-    // when that container is near its own `max_connections` — see the note in `TestDb` (ARCH-6b) on
-    // the container being reused across every test binary. Sequencing the requests keeps the test
-    // measuring the handler rather than the harness.
+    // Drained here, between requests, not at the end: two detached tasks at once can exhaust
+    // the shared test Postgres's connection limit.
     let message = mailer.next_message().await;
     let unknown = timed_forgot(&app, "nobody-at-all@example.test").await;
 
@@ -670,21 +619,16 @@ async fn a_reset_request_answers_without_waiting_for_the_known_branch_work() {
         unknown.1
     );
 
-    // And the work still happens: the detached task must actually deliver, or "fast" would only
-    // mean "broken".
+    // The detached task must still deliver, or "fast" would only mean "broken".
     assert!(
         RecordingMailer::first_link(&message.text).is_some_and(|l| l.contains("/reset-password")),
         "the spawned task must still send the reset link"
     );
 }
 
-/// The confirmation resend has the same shape, and had the same channel — worse, in fact.
-///
-/// The audit named `forgot_password`; `resend_verification` performed the token `INSERT` only for
-/// an address that exists **and is still unconfirmed**, while both "no such address" and "already
-/// confirmed" returned straight after the lookup. So its timing separated three states rather than
-/// two, and "this address exists and has not been confirmed yet" is the more useful of the pair to
-/// an attacker. Both handlers are spawned in full now.
+/// The confirmation resend had the same timing-oracle channel, worse: `resend_verification`
+/// inserted a token only for an address that exists *and is still unconfirmed*, so its timing
+/// separated three states rather than two. Both handlers are now spawned in full.
 #[tokio::test]
 async fn a_confirmation_resend_answers_without_waiting_for_the_known_branch_work() {
     let mailer =

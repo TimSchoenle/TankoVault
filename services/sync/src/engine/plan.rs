@@ -1,15 +1,5 @@
-//! The pure half of one series' reconciliation (design v2 §B.3).
-//!
-//! [`plan_series`] and [`plan_merge`] decide *what* must happen — which side is written, whether
-//! a conflict is left pending, what the refreshed common ancestor becomes — from values alone:
-//! no pool, no provider, no I/O. [`super::reconcile::Reconciler`] owns the half that performs
-//! it.
-//!
-//! Before ARCH-6 both halves were one 216-line method, so the merge rules could only be
-//! exercised with a live pool and a provider behind them. Splitting them is what makes the
-//! rules directly testable, which is the point — the tests at the bottom of this file pin the
-//! two invariants that are easiest to break by accident and hardest to see in an integration
-//! run: a conflict must *not* advance the snapshot, and one remote write must cover both fields.
+//! The pure half of one series' reconciliation: [`plan_series`] and [`plan_merge`] decide *what*
+//! must happen from values alone, no pool or provider. [`super::reconcile::Reconciler`] performs it.
 
 use time::OffsetDateTime;
 
@@ -27,7 +17,7 @@ pub(crate) struct LocalSide {
     pub(crate) updated_at: OffsetDateTime,
     /// Watchlist status, `None` when the series is not on the watchlist at all.
     pub(crate) status: Option<WatchStatus>,
-    /// Excluded from syncing with this provider (design v2 §A.5).
+    /// Excluded from syncing with this provider.
     pub(crate) excluded: bool,
 }
 
@@ -52,12 +42,12 @@ pub(crate) struct FieldPlan<T> {
 
 /// The part of a series' plan that can be decided without reading the common ancestor.
 ///
-/// Deliberately separate from [`MergePlan`]: the snapshot read is the one query the merge needs
-/// and neither other outcome does, so folding both steps into a single function would have cost
-/// a round trip per excluded and per first-push series (PERF-13 removed exactly such reads).
+/// Deliberately separate from [`MergePlan`]: the ancestor snapshot read is the one query the
+/// merge needs and neither other outcome does, so folding this in would cost a round trip per
+/// excluded and per first-push series.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum SeriesPlan {
-    /// Excluded from sync (§A.5): touch neither side.
+    /// Excluded from sync: touch neither side.
     Skip,
     /// Not present on the remote yet: create it there. Local is authoritative for a first push.
     CreateRemote { status: WatchStatus, progress: f64 },
@@ -262,10 +252,8 @@ mod tests {
         );
     }
 
-    /// The invariant that matters most: an unresolved conflict must leave the common ancestor
-    /// where it was. Advancing it would make the two sides look converged on the next run, so
-    /// the queued conflict could never be re-detected — it would become unresolvable while
-    /// still sitting in the user's queue.
+    /// An unresolved conflict must not advance the ancestor snapshot: doing so would make the
+    /// two sides look converged, and the queued conflict would never be re-detected.
     #[test]
     fn a_conflict_does_not_advance_the_snapshot() {
         // Both sides moved away from a shared ancestor, to different values.
@@ -288,8 +276,8 @@ mod tests {
         );
     }
 
-    /// Progress and status both wanting to push must produce **one** remote write, not two —
-    /// a provider charges rate-limit budget per call, and two writes race each other.
+    /// Both fields wanting to push must produce one remote write, not two — separate writes
+    /// would race each other and cost double rate-limit budget.
     #[test]
     fn one_remote_write_covers_both_fields() {
         let l = local(20.0, Some(WatchStatus::Completed), 300);
@@ -313,8 +301,8 @@ mod tests {
         assert_eq!(plan.snapshot, Some((20.0, WatchStatus::Completed)));
     }
 
-    /// When only one field moved, the untouched field still has to travel in the write — the
-    /// provider's `save_entry` sets both, so sending a stale value would clobber the remote.
+    /// The untouched field still has to travel in the write — `save_entry` sets both, so a
+    /// stale value would clobber the remote.
     #[test]
     fn a_one_sided_push_carries_the_other_field_unchanged() {
         let l = local(20.0, Some(WatchStatus::Reading), 300);
@@ -332,8 +320,8 @@ mod tests {
         assert_eq!(plan.remote_write, Some((WatchStatus::Reading, 20.0)));
     }
 
-    /// A series absent from the local watchlist is imported rather than treated as a status
-    /// disagreement — otherwise every first sync would queue a status conflict per series.
+    /// A series absent locally is imported rather than treated as a status disagreement, or
+    /// every first sync would queue a conflict per series.
     #[test]
     fn a_series_missing_locally_is_imported_instead_of_conflicting() {
         // Progress agrees, so only the status half is under test here.
@@ -352,10 +340,8 @@ mod tests {
         assert_eq!(plan.snapshot, Some((7.0, WatchStatus::Completed)));
     }
 
-    /// With no common ancestor there is no way to tell which side moved, so unequal values are
-    /// a genuine disagreement and the policy — not the merge — decides. `AskMe` queues it;
-    /// every other policy picks a side. This is what a first sync against an already-populated
-    /// remote library does, so it is worth stating rather than discovering.
+    /// With no ancestor, unequal values are a genuine disagreement decided by policy, not the
+    /// merge — this is what a first sync against a populated remote library hits.
     #[test]
     fn a_first_sync_disagreement_is_decided_by_policy_alone() {
         let l = local(0.0, None, 0);

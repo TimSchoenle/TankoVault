@@ -1,24 +1,6 @@
-//! The failures this service's HTTP contract is defined in terms of.
-//!
-//! Previously the status code was chosen by **substring-matching the error message**:
-//!
-//! ```ignore
-//! let status = if message.contains("unknown sync provider") { NOT_FOUND }
-//!              else if message.contains("account linked")   { CONFLICT }
-//!              else                                         { BAD_GATEWAY };
-//! ```
-//!
-//! Two things were wrong with that. Rewording a log line silently changed an HTTP status
-//! contract, with no compile error and no test that could catch it. And the `"account linked"`
-//! needle matched the *negated* message it was derived from — `"no anilist account linked for
-//! user"` — so any future message containing the phrase, `"account linked successfully"` for
-//! instance, would have been served as a `409`.
-//!
-//! [`SyncError`] names the failures that carry HTTP meaning. Everything else stays
-//! `anyhow::Error`: a provider 500, a sealed-token decode failure and a database outage are
-//! all "something went wrong upstream of the caller" and genuinely share one status. Typing
-//! only the contractual cases keeps the change proportionate — this is an error *contract*,
-//! not an exhaustive taxonomy of everything that can go wrong.
+//! Failures this service's HTTP contract is defined in terms of.
+//! [`SyncError`] carries status/kind explicitly so rewording a message can never silently change
+//! what's served; everything untyped is `anyhow::Error` and maps to a 502.
 
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -37,9 +19,8 @@ pub(crate) enum SyncError {
 }
 
 impl SyncError {
-    /// The status this variant maps to. Exhaustive by construction: adding a variant without
-    /// deciding its status is a compile error, which is the property the substring match
-    /// could never have.
+    /// The status this variant maps to. Exhaustive by construction: a new variant with no
+    /// status decided is a compile error.
     fn status(&self) -> StatusCode {
         match self {
             Self::UnknownProvider(_) => StatusCode::NOT_FOUND,
@@ -67,13 +48,11 @@ impl<E: Into<anyhow::Error>> From<E> for AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        // Downcast rather than match on the text. `anyhow` preserves the concrete type, so a
-        // `SyncError` raised anywhere down the call stack still arrives typed here — including
-        // through the `?` chains that add context along the way.
+        // Downcast rather than match on text: `anyhow` preserves the concrete type through
+        // `?`-added context, so a `SyncError` raised anywhere below still arrives typed.
         let (status, kind, detail) = match self.0.downcast_ref::<SyncError>() {
             Some(err) => (err.status(), err.kind(), err.to_string()),
-            // Most failures here genuinely originate at a third-party provider, so the caller
-            // is looking at a bad *gateway*, not a bad request.
+            // Untyped failures are treated as upstream provider errors, hence bad gateway.
             None => (
                 StatusCode::BAD_GATEWAY,
                 "upstream_failure",
@@ -102,8 +81,8 @@ mod tests {
         );
     }
 
-    /// The regression the substring match invited: a *successful* message containing the same
-    /// phrase used to be served as a `409`.
+    /// Pins a bug where substring-matching messages misrouted a success message containing
+    /// the same phrase as the error to a `409`.
     #[test]
     fn an_unrelated_message_mentioning_the_old_needles_is_not_misrouted() {
         for message in [

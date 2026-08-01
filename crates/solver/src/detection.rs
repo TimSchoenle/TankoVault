@@ -52,11 +52,8 @@ pub fn detect_challenge<R: ResponseView>(resp: &R) -> Option<ChallengeKind> {
     }
 
     // A rendered rate-limit notice is the origin answering, not an interstitial in front of
-    // it — and two of the three challenge statuses are also the rate-limit statuses. Without
-    // this, every `429` from a Cloudflare-fronted origin fell through to the managed-challenge
-    // fallback below and bought an expensive solve, whose only possible result was fetching
-    // the same notice again through a browser: the provider's `Retry-After` was replaced by a
-    // solver-invented `200`, and the layers that exist to slow the crawl down never fired.
+    // it. Without this check, every 429 from a Cloudflare-fronted origin fell through to the
+    // managed-challenge fallback below and bought an expensive, pointless solve.
     if is_rate_limit_page(body) {
         return None;
     }

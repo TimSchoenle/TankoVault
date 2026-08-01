@@ -1,21 +1,9 @@
-//! Permission grants — the persistence behind [`tankovault_domain::Permission`].
+//! Permission grants — the persistence behind [`tankovault_domain::Permission`]. Resolved from
+//! here on every authenticated request rather than cached in an access token, so a revocation
+//! takes effect immediately.
 //!
-//! # Why this is read on every authenticated request
-//!
-//! The obvious alternative is to stamp the grant set into the access token at sign-in. That
-//! is one fewer query per request, and it is wrong for the operation this system needs to
-//! support: an administrator who has just discovered a compromised account revokes its
-//! permissions and expects them gone. With claims in the token they persist for the whole
-//! remaining access-token lifetime, and there is no in-band way to shorten that — revoking
-//! the refresh family does not invalidate an access token already issued.
-//!
-//! So authorization resolves from here, every time. The cost is one index lookup on the
-//! `user_permissions` primary key, joined to the owning account's status ([`resolve`] fetches
-//! both in a single round trip). In exchange, revocation is immediate and there is exactly one
-//! authority on what a principal may do.
-//!
-//! Unrecognised stored tokens are dropped rather than rejected — see
-//! [`tankovault_domain::PermissionSet::from_tokens`] for why that direction is the safe one.
+//! Unrecognised stored tokens are dropped, not rejected — see
+//! [`tankovault_domain::PermissionSet::from_tokens`].
 
 use crate::error::DbResult;
 use sqlx::{Connection as _, FromRow, PgExecutor};
@@ -30,21 +18,12 @@ pub struct Principal {
     pub permissions: PermissionSet,
 }
 
-/// Resolve a principal's account status and permission grants.
-///
-/// Returns `None` when the user no longer exists — a token outliving its account, which must
-/// be treated as unauthenticated rather than as a principal with no permissions (the latter
-/// would let a deleted account keep reading its own now-nonexistent data).
-///
-/// The two facts come back together from one statement: `LEFT JOIN`, so an account with no
-/// grants still yields a row and is distinguishable from an account that is gone.
+/// Resolve a principal's account status and permission grants in one round trip (`LEFT JOIN`,
+/// so a no-grants account still yields a row).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A deleted account is
-/// `Ok(None)`, never [`crate::DbError::NotFound`], and an unrecognised stored token is dropped
-/// with a warning rather than raised: this read runs on every authenticated request, so any
-/// error it can return is an outage of the whole authenticated surface. Callers must fail
-/// closed on both `Err` and `Ok(None)`.
+/// `Sqlx` only. `Ok(None)` means the account is gone — callers must fail closed on both `Err`
+/// and `Ok(None)`, not treat a deleted account as a principal with no permissions.
 pub async fn resolve<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -71,8 +50,7 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(
     Ok(row.map(|r| Principal {
         status: r.status,
         permissions: PermissionSet::from_tokens(&r.permissions, |token| {
-            // A grant this build cannot interpret. Logged rather than silently ignored: it
-            // means the schema and the binary disagree, which an operator should know about.
+            // Logged, not silently dropped — surfaces schema/binary drift.
             tracing::warn!(%token, user_id = %user_id.as_uuid(), "ignoring unknown permission grant");
         }),
     }))
@@ -81,25 +59,22 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(
 /// A single grant, with its provenance, for the user-detail view.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct GrantRow {
-    /// The permission token. A string rather than the enum because a row surviving from a
-    /// build that had a capability this one does not must still be *visible* to an
-    /// administrator — that is precisely when they need to see and remove it.
+    /// String, not the enum — a grant from a build with a capability this one lacks must stay
+    /// visible to an admin.
     pub permission: String,
     /// Whether this build recognises the token. `false` means the grant is inert.
     pub known: bool,
     #[serde(with = "time::serde::rfc3339")]
     pub granted_at: OffsetDateTime,
-    /// Who granted it, or `None` for a grant made by the migration from the old role model
-    /// or by an administrator since erased.
+    /// `None` for a migration-era grant or an erased administrator.
     pub granted_by: Option<String>,
 }
 
 /// List a user's grants with provenance, newest first.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown user and a user
-/// with no grants both give an empty `Vec`; a token this build cannot parse comes back with
-/// `known: false` rather than as an error, which is the whole point of the field.
+/// `Sqlx` only; unknown user or no grants is `Ok(vec![])`. An unparseable token comes back
+/// `known: false`, not an error.
 pub async fn list_for_user<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -133,24 +108,14 @@ pub async fn list_for_user<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Replace a user's entire grant set, returning what changed.
+/// Replace a user's entire grant set in one transaction, returning what changed.
 ///
-/// Whole-set replacement rather than add/remove calls: the admin UI edits a checklist and
-/// submits it, and a diff computed here from one authoritative "after" state cannot produce
-/// the interleaving that two concurrent add/remove sequences can. Runs in one transaction so
-/// a principal is never observed mid-edit with neither the old nor the new set.
-///
-/// Deleting *all* rows for the user and re-inserting would lose `granted_at` provenance on
-/// every unchanged grant, so unchanged rows are left in place: only the genuine additions and
-/// removals are written.
+/// Whole-set diff, not add/remove calls, so a UI checklist submit can't interleave with
+/// itself. Unchanged grants keep their `granted_at`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable, from any of the four
-/// statements or the commit. The transaction rolls back on the first failure, so a partial
-/// grant set is never committed; `ON CONFLICT DO NOTHING` means a concurrent identical grant
-/// is absorbed rather than raised as [`crate::DbError::Conflict`]. A `user_id` that does not
-/// exist is **not** [`crate::DbError::NotFound`]: with an empty desired set it commits an
-/// empty diff, and otherwise it fails the insert's foreign key as a 500.
+/// `Sqlx` only; rolls back on first failure. A concurrent identical grant is absorbed
+/// (`ON CONFLICT DO NOTHING`), not Conflict; an unknown `user_id` fails the insert's FK (500).
 pub async fn replace(
     conn: &mut sqlx::PgConnection,
     user_id: UserId,
@@ -168,9 +133,8 @@ pub async fn replace(
 
     let desired_tokens: Vec<&str> = desired.tokens();
 
-    // Any stored token the desired set does not contain is removed — including tokens this
-    // build does not recognise, which is how an inert grant left over from another version
-    // gets cleaned up rather than accumulating forever.
+    // Removes stored tokens the desired set lacks, including unrecognised ones — clears
+    // inert grants instead of letting them accumulate.
     let removed: Vec<String> = existing
         .iter()
         .filter(|token| !desired_tokens.contains(&token.as_str()))
@@ -209,8 +173,8 @@ pub async fn replace(
     Ok(GrantDiff { added, removed })
 }
 
-/// What [`replace`] actually changed. Recorded in the audit trail: "set permissions to X" is
-/// far less useful after an incident than "added `users.delete`, removed nothing".
+/// What [`replace`] changed, for the audit trail (more useful post-incident than "set
+/// permissions to X").
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct GrantDiff {
     pub added: Vec<String>,
@@ -224,13 +188,12 @@ impl GrantDiff {
     }
 }
 
-/// Grant a single permission, idempotently. Used by seeding and bootstrap paths, where the
-/// caller knows exactly one capability is being added and a whole-set replace would need to
-/// read the current set first.
+/// Grant a single permission idempotently — for seeding/bootstrap, where [`replace`]'s
+/// read-current-set-first cost is unneeded.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Re-granting is `Ok(())` via
-/// `ON CONFLICT DO NOTHING`, which is what makes seeding safe to re-run.
+/// `Sqlx` only; re-granting is `Ok(())` (`ON CONFLICT DO NOTHING`), so seeding is safe to
+/// re-run.
 pub async fn grant<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -249,22 +212,14 @@ pub async fn grant<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// How many **active** accounts hold `permission`, excluding `ignoring`.
-///
-/// The guard behind every "you cannot do that" refusal in user administration: revoking the
-/// last `users.permissions` grant, suspending its last holder or erasing them would leave the
-/// deployment with no way to grant anything, recoverable only by editing the database. The
-/// `ignoring` parameter is the account about to be changed, so the caller asks "would anyone
-/// else still hold it?" in one query rather than counting and subtracting.
-///
-/// Suspended accounts are not counted: a suspended administrator cannot sign in, so they are
-/// not a recovery path.
+/// How many **active** accounts hold `permission`, excluding `ignoring` — the lockout guard
+/// behind every "you cannot do that" refusal: revoking/suspending/erasing the last holder of a
+/// capability would leave no way to grant anything back except editing the database directly.
+/// Suspended accounts don't count; they can't sign in.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable; the `count(*)` always returns
-/// a row, so "nobody else holds it" is `Ok(0)`. Callers **must** propagate rather than
-/// defaulting to zero on failure: this is the lockout guard, and treating an unavailable
-/// database as "no other holders" would permit exactly the revocation it exists to refuse.
+/// `Sqlx` only; `count(*)` always returns a row, so `Ok(0)` means nobody else holds it. Must
+/// propagate, not default to zero — that would permit the exact revocation this guards against.
 pub async fn other_active_holders<'e, E: PgExecutor<'e>>(
     exec: E,
     permission: Permission,
@@ -282,15 +237,12 @@ pub async fn other_active_holders<'e, E: PgExecutor<'e>>(
     Ok(count)
 }
 
-/// The grant counts for a batch of users, for the directory listing's "permissions" column.
-///
-/// A batch read rather than a count per row: the directory lists up to a page of users and a
-/// per-row subquery is the N+1 this repository has removed elsewhere.
+/// Grant counts for a batch of users (avoids an N+1 per-row subquery), for the directory's
+/// "permissions" column.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Users with no grants are
-/// **absent** from the result rather than present with `0`, so callers must default a missing
-/// id to zero instead of assuming one row per input.
+/// `Sqlx` only; users with no grants are absent from the result, not `0` — callers must
+/// default a missing id themselves.
 pub async fn counts_for<'e, E: PgExecutor<'e>>(
     exec: E,
     user_ids: &[Uuid],

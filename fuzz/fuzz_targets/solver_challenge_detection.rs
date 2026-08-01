@@ -1,42 +1,22 @@
-//! **F-T4** — `tankovault_solver`'s in-band challenge classifier, which runs on **every**
-//! response the crawler receives.
-//!
-//! Its input is entirely provider- or solver-controlled and is frequently not markup at all:
-//! a truncated body, a binary payload that decoded as UTF-8, a rendered interstitial from a
-//! headless browser. Two things it does are worth coverage-guided attention rather than
-//! example tests.
-//!
-//! `is_rate_limit_page` cuts a 4096-byte prefix by **byte** offset and walks backwards with
-//! `is_char_boundary` to avoid splitting a character. That is correct today and it is exactly
-//! the shape of the audit's first verified defect (F-01), where a byte offset taken from one
-//! string was applied to another. `detect_challenge` then scans that same body for markers
-//! whose presence decides whether the crawl pays for a solve.
+//! Fuzzes `tankovault_solver`'s in-band challenge classifier, which runs on every response the
+//! crawler receives and is entirely provider/solver-controlled (truncated bodies, binary
+//! payloads decoded as UTF-8, rendered interstitials).
 //!
 //! # Oracle
+//! (1) is shared with the stable properties in `crates/solver/tests/prop_detection.rs`:
+//! 1. No panic, over arbitrary UTF-8 of arbitrary length.
+//! 2. The narrow classifier (`detect_challenge_body`) never accepts what the broad one
+//!    (`detect_challenge`) rejects — disagreement here means an inscrutable parse failure
+//!    downstream instead of "still challenged".
+//! 3. A rate-limit notice never buys a solve: two of the three challenge statuses are also
+//!    rate-limit statuses, which is how this regressed once — a `429` fell through to the
+//!    solver fallback and the backoff layer never fired.
 //!
-//! Three, and only the first is shared with the stable properties in
-//! `crates/solver/tests/prop_detection.rs`:
-//!
-//! 1. **No panic**, over arbitrary UTF-8 of arbitrary length.
-//! 2. **The narrow classifier never accepts what the broad one rejects.** `detect_challenge_body`
-//!    is used where there is no status or header envelope to corroborate the markers — chiefly
-//!    the HTML a solver hands back. If it could fire on a body `detect_challenge` calls clean,
-//!    the fetch stack and the adapter layer would disagree about the same bytes, and the symptom
-//!    downstream is an inscrutable parse failure rather than "still challenged".
-//! 3. **A rate-limit notice never buys a solve.** Two of the three challenge statuses are also
-//!    the rate-limit statuses, which is how this regressed before: every `429` from a
-//!    Cloudflare-fronted origin fell through to the managed-challenge fallback, the provider's
-//!    `Retry-After` was replaced by a solver-invented `200`, and the backoff layer never fired.
-//!
-//! # Why this exists when `prop_detection.rs` already asserts (2) and (3)
-//!
-//! Reach. Proptest's `".*"` expands to roughly 32 characters, so the stable suite cannot
-//! generate a body long enough to exercise the `TITLE_SCAN_BYTES` cut at all — it needs a
-//! hand-written `"€".repeat(1350)` case to touch it, which pins one length rather than the
-//! boundary. It also generates marker-bearing bodies by concatenating a **fixed list** of
-//! fragments, so it can only ever find a disagreement assembled from fragments somebody already
-//! thought of. A coverage-guided mutator working from the seeds below reaches neither of those
-//! limits, and the assertions are the same ones, so a hit here is reproducible there.
+//! # Why fuzz when the property tests already assert (2) and (3)
+//! Reach: `prop_detection.rs`'s `".*"` strategy tops out around 32 characters, too short to
+//! exercise the `TITLE_SCAN_BYTES` cut, and its marker bodies are built from a fixed fragment
+//! list, so it can only find disagreements assembled from fragments already considered. A
+//! coverage-guided mutator hits neither limit, against the same assertions.
 
 #![no_main]
 
@@ -47,10 +27,9 @@ use tankovault_solver::{
 
 /// The minimal envelope the classifier needs, under our control.
 ///
-/// `403` + `server: cloudflare` is deliberately the most *permissive* envelope there is: it
-/// satisfies every early return in `detect_challenge`, so the body is guaranteed to be read.
-/// Any other envelope would let the classifier short-circuit before the comparison this target
-/// is making, and the differential would pass vacuously.
+/// `403` + `server: cloudflare` is the most permissive envelope: it satisfies every early
+/// return in `detect_challenge`, so the body is guaranteed to be read and the differential
+/// below isn't vacuous.
 struct Resp<'a> {
     status: u16,
     body: &'a str,
@@ -74,12 +53,9 @@ fuzz_target!(|data: &str| {
     let body_kind = detect_challenge_body(data);
     let throttled = is_rate_limit_page(data);
 
-    // (2) Whatever the narrow classifier accepts, the broad one accepts too.
-    //
-    // This holds by construction today — `detect_challenge` consults `detect_challenge_body`
-    // first — and that is the point: the ordering *is* the invariant. Moving the
-    // `is_rate_limit_page` check above it would break this for any body that is both, which is
-    // a body the mutator can build and a reviewer would not think to.
+    // (2) Whatever the narrow classifier accepts, the broad one accepts too — by construction,
+    // since `detect_challenge` consults `detect_challenge_body` first. Moving the rate-limit
+    // check above it would break this for a body that is both.
     if body_kind.is_some() {
         assert!(
             detect_challenge(&Resp {
@@ -92,10 +68,7 @@ fuzz_target!(|data: &str| {
     }
 
     // (3) A throttle notice is the origin answering, not an interstitial in front of it.
-    //
-    // Guarded on the body carrying no genuine challenge markup: a page that is both is
-    // legitimately a challenge, and the same guard is why `prop_detection.rs` uses a
-    // `prop_assume!` here.
+    // Guarded on no genuine challenge markup: a body that is both is legitimately a challenge.
     if throttled && body_kind.is_none() {
         for status in [403u16, 429, 503] {
             assert_eq!(

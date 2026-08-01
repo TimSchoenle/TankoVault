@@ -1,22 +1,5 @@
 //! The app's API access point (design §17.4) — a thin, `Copy` handle over the generated
 //! `tankovault-api-client`, provided once at the router root.
-//!
-//! # Why a handle rather than a client
-//!
-//! The obvious shape — a hook returning a ready `Client` — bakes the bearer token in at
-//! *render* time. That is subtly wrong for this app: on a page reload the SPA boots signed
-//! out and adopts a token from the httpOnly refresh cookie a moment later
-//! ([`crate::components::Shell`]). Anything holding a client built during that gap keeps
-//! sending unauthenticated requests and 401s forever, even though the user is signed in.
-//!
-//! [`Api`] instead resolves the token on every [`Api::client`] call, so a request always
-//! carries whatever the session holds *now*. Reading the token also subscribes the calling
-//! reactive scope, which means a `use_resource` that builds its client in the synchronous
-//! prologue automatically re-runs when the token changes — the boot-time refresh, a silent
-//! renewal, a sign-in and a sign-out all refetch without any per-view wiring.
-//!
-//! [`Api`] is `Copy` (via [`CopyValue`]), so views capture it into any number of closures
-//! without the clone-per-handler noise that a reference-counted client would force.
 
 mod error;
 
@@ -27,6 +10,10 @@ use dioxus::prelude::*;
 use tankovault_api_client::Client;
 
 /// A `Copy` handle that mints authenticated clients against the current session.
+///
+/// Resolves the token fresh on every [`Api::client`] call rather than caching a built `Client`:
+/// on boot the SPA starts signed out and adopts a token from the refresh cookie moments later
+/// ([`crate::components::Shell`]), so a cached client from that gap would 401 forever.
 #[derive(Clone, Copy)]
 pub(crate) struct Api {
     /// Absolute origin the API is served from — see [`origin`].
@@ -39,11 +26,7 @@ pub(crate) struct Api {
 
 /// The single cached `reqwest` client, plus the token it was built with.
 ///
-/// [`Api::client`] runs on virtually every render across dozens of components; rebuilding a
-/// client and its header map each time is pure waste. A built `reqwest::Client` is an `Arc`
-/// internally and the browser owns the connection pool behind it, so handing out clones is
-/// cheap and every clone shares the same keep-alive connections. We rebuild only when the
-/// token actually changes — sign-in, silent refresh, sign-out.
+/// Rebuilt only when the token changes; `Client` clones are cheap, rebuilding isn't.
 struct HttpCache {
     token: Option<String>,
     client: reqwest::Client,
@@ -52,10 +35,7 @@ struct HttpCache {
 impl Api {
     /// A client carrying the session's **current** access token.
     ///
-    /// Call this wherever the request is actually issued rather than caching the result:
-    /// in a render body, in a `use_resource` prologue, or inside a spawned handler. Reading
-    /// the token subscribes the calling reactive scope (if there is one), which is what makes
-    /// dependent resources refetch across a sign-in or a silent refresh.
+    /// Call at the point the request is issued, not cached — see the struct-level doc.
     pub(crate) fn client(&self) -> Client {
         let token = self.session.token.read();
         self.client_for(token.as_deref())
@@ -70,9 +50,7 @@ impl Api {
     /// A client carrying an explicit token — for the rare call that must pin one.
     fn client_for(&self, token: Option<&str>) -> Client {
         let http = {
-            // `CopyValue` is `Copy`, so a local rebind is all that's needed to write through
-            // a shared `&self` — no interior-mutability ceremony, and no `&mut self` leaking
-            // into every call site.
+            // `CopyValue` is `Copy`; rebinding it locally is enough to write through `&self`.
             let mut slot = self.http;
             let mut cache = slot.write();
             if cache.token.as_deref() != token {
@@ -122,11 +100,9 @@ fn build_http_client(token: Option<&str>) -> reqwest::Client {
         .expect("wasm reqwest client build is infallible")
 }
 
-/// Absolute base URL for API calls.
+/// Absolute base URL for API calls (design §19: same origin as the API).
 ///
-/// The SPA is served from the same origin as the API (design §19), so we target that
-/// origin's `/v1/...` paths. Unlike the browser's own `fetch`, reqwest parses the request URL
-/// up front and rejects a relative path such as `/v1/auth/login` with a builder error, so it
+/// Unlike the browser's `fetch`, reqwest rejects a relative URL with a builder error, so this
 /// needs the concrete origin. Falls back to an empty base outside a browser.
 fn origin() -> String {
     web_sys::window()
@@ -136,32 +112,22 @@ fn origin() -> String {
 
 /// URL of the per-user SSE notification stream, for a ticket from `POST /v1/me/stream-ticket`.
 ///
-/// The credential rides in the query string because the browser's `EventSource` cannot set an
-/// `Authorization` header. It is a single-use, 30-second **ticket** rather than the access token
-/// (SEC-8): a query string ends up in access logs, `Referer` headers and browser history, so the
-/// value that travels there has to be worthless by the time anyone reads it back.
+/// The credential rides in the query string because `EventSource` cannot set an `Authorization`
+/// header, so it's a single-use, 30-second ticket rather than the access token — a query string
+/// ends up in access logs and browser history, so it must be worthless once read back.
 ///
-/// This URL is hand-built — `EventSource` is created by the browser, not by the generated client —
-/// which is why [`tests::the_stream_url_uses_the_parameter_the_published_document_declares`]
-/// exists. That is not defensive decoration: this function sent `?token=` while the API required
-/// `?access_token=`, so every connection was rejected with `400` and live notifications had never
-/// worked. `live::run` treats a stream failure as silent best-effort degradation, so nothing
-/// surfaced it — and no compiler connects a `format!` here to a `Deserialize` field there.
+/// Hand-built since `EventSource` bypasses the generated client, so no compiler checks this
+/// against the API; see [`tests::the_stream_url_uses_the_parameter_the_published_document_declares`].
 pub(crate) fn stream_url(ticket: &str) -> String {
     format!("/v1/me/stream?ticket={ticket}")
 }
 
 #[cfg(test)]
 mod tests {
-    /// The SSE query parameter this crate builds must be the one the API publishes.
+    /// Pins the bug where this sent `?token=` while the API read `access_token=`, silently
+    /// breaking live notifications since a failed stream degrades silently by design.
     ///
-    /// Read out of the committed `openapi.json` — the same artefact `crates/api-client` is
-    /// generated from, and the only thing that connects these two workspaces. `xtask openapi
-    /// --check` keeps that file in step with the server, so agreeing with it is agreeing with the
-    /// handler.
-    ///
-    /// The bug this pins shipped: `?token=` against a handler reading `access_token`, silent
-    /// because a failed stream is a deliberately silent degradation here.
+    /// Checked against the committed `openapi.json`, the same artefact the API client generates from.
     #[test]
     fn the_stream_url_uses_the_parameter_the_published_document_declares() {
         const SPEC: &str = include_str!("../../../../openapi.json");
@@ -184,8 +150,7 @@ mod tests {
             "the API reads `{name}`, this crate sends `{url}`"
         );
 
-        // And the mint endpoint the ticket comes from has to exist in the same document, or the
-        // generated client has no `stream_ticket()` for `live::run` to call.
+        // The mint endpoint must exist too, or `live::run` has nothing to call.
         assert!(
             spec["paths"]["/v1/me/stream-ticket"]["post"].is_object(),
             "the published document must offer the endpoint that mints the ticket"

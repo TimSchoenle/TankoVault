@@ -66,15 +66,13 @@ pub(super) fn ProviderRow(
 
 /// Share of this provider's source links that are in a serving state.
 ///
-/// This is what the API actually measures. The design calls the meter "solve %"; there is no
-/// challenge-solve ratio on the wire, and inventing one would put a number on the screen that
-/// nothing computes.
+/// The UI calls this meter "solve %", but no challenge-solve ratio exists on the wire — this is
+/// what the API actually measures.
 pub(super) fn healthy_percent(stat: &ProviderStat) -> Option<f64> {
     if stat.source_count <= 0 {
         return None;
     }
     let serving = (stat.source_count - stat.blocked_sources).max(0);
-    // Both counts are row totals, far inside `f64`'s exact integer range.
     #[expect(
         clippy::cast_precision_loss,
         reason = "both counts are row totals, far inside f64's exact integer range"

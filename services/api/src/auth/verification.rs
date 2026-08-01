@@ -26,8 +26,7 @@ const VERIFY_TOKEN_TTL: Duration = Duration::hours(24);
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct VerifyEmailRequest {
     /// The opaque token from the emailed confirmation link.
-    // A bearer credential for "confirm this address and sign me in", so it is wrapped like
-    // every other one.
+    // A bearer credential, wrapped like every other one.
     #[schema(value_type = String)]
     pub token: SecretString,
 }
@@ -69,8 +68,7 @@ pub async fn verify_email(
         ));
     }
 
-    // Single-use guard: the atomic `used_at` flip closes the race between two concurrent
-    // confirmations presenting the same token — the loser sees `0` rows and fails.
+    // Single-use guard: atomic `used_at` flip closes the race; the loser sees 0 rows.
     let consumed =
         tankovault_db::repo::users::consume_email_verification(&state.pool, record.id).await?;
     if consumed == 0 {
@@ -127,8 +125,7 @@ async fn deliver_verification_resend(state: AppState, email: String) {
         tankovault_db::repo::users::find_by_email_with_verification(&state.pool, &email).await;
     let user = match found {
         Ok(Some((user, false))) => user,
-        // No such address, or already confirmed — the two states the caller must not be able
-        // to tell apart from this one.
+        // No such address, or already confirmed — indistinguishable from here.
         Ok(_) => return,
         Err(e) => {
             tracing::warn!(error = %e, "confirmation-resend lookup failed");
@@ -154,8 +151,8 @@ async fn deliver_verification_resend(state: AppState, email: String) {
 
 /// Issue and email a fresh single-use confirmation link for `user`, off the request path.
 ///
-/// For the callers that answer a request the user is waiting on — [`super::register`] and the
-/// address change in `me::account` — where a slow relay must not be visible in the response.
+/// For callers where a slow relay must not show up in the response: [`super::register`] and
+/// the address change in `me::account`.
 pub(crate) async fn send_verification_email(state: &AppState, user: &User) -> ApiResult<()> {
     let link = issue_verification_link(state, user).await?;
     mailer::send_in_background(
@@ -167,9 +164,8 @@ pub(crate) async fn send_verification_email(state: &AppState, user: &User) -> Ap
 
 /// Mint a confirmation token for `user`, store its hash, and return the link to send.
 ///
-/// Split out from [`send_verification_email`] so the delivery decision belongs to the caller:
-/// the resend path is *already* detached (SEC-10) and awaits the send itself, where a second
-/// spawn would only hide the work from the test that measures it.
+/// Split from [`send_verification_email`] so the delivery decision belongs to the caller —
+/// the resend path is already detached and awaits the send itself.
 ///
 /// Reuses the high-entropy opaque-token generator; only the SHA-256 hash is stored.
 async fn issue_verification_link(state: &AppState, user: &User) -> ApiResult<String> {

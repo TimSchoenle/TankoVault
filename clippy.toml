@@ -1,28 +1,13 @@
-# Workspace clippy configuration — the bans that are *specific to this codebase*.
+# Workspace clippy configuration: the three lints that take a configured list
+# (`disallowed_methods`, `disallowed_macros`, `disallowed_types`). Lint levels live in
+# `Cargo.toml`'s `[workspace.lints]`; `web/frontend` is a separate workspace root and does not
+# inherit this file (see `web/frontend/clippy.toml`).
 #
-# The lint *levels* live in `Cargo.toml`'s `[workspace.lints]`; this file holds the three
-# lints that take a configured list (`disallowed_methods`, `disallowed_macros`,
-# `disallowed_types`). Both halves are enforced by the same `clippy --all-targets
-# --all-features -- -D warnings` gate, in CI and in `xtask ci`.
-#
-# `web/frontend` is a *separate workspace root* (see the root `Cargo.toml` `exclude`), so it
-# does not inherit this file. Its own `web/frontend/clippy.toml` carries the WASM-side bans.
-#
-# ## Adding an entry
-#
-# **A path clippy cannot resolve is silently ignored.** There is no "unknown path" diagnostic:
-# a typo produces a rule that never fires and a gate that looks green, which is the exact
-# failure shape the entries below exist to prevent. So every entry here has been *proved* to
-# fire by temporarily writing the call it forbids and watching clippy reject it. Do the same
-# for anything you add — see `docs/ENGINEERING_GUIDE.md` §6, "Proving a ban fires".
-#
-# The path is the one clippy prints in the diagnostic, which is the *use* path, not
-# necessarily the defining crate's path.
+# A path clippy cannot resolve is silently ignored — no diagnostic, just a rule that never
+# fires. So every entry here has been proved to fire by temporarily writing the banned call and
+# watching clippy reject it; do the same for anything you add.
 
-# Macros that must not reach a commit.
-#
-# None of these has ever appeared in this workspace; the entries are here so that stays true
-# without anyone having to notice in review.
+# Macros that must never reach a commit.
 disallowed-macros = [
     { path = "std::dbg", reason = "debugging leftover: writes to stderr outside `tracing`, so it is invisible to the JSON log pipeline and never gets a request id. Use `tracing::debug!`" },
     { path = "std::todo", reason = "a `todo!()` reaching a service is a panic in production. Return an error, or do not merge the path" },
@@ -30,18 +15,10 @@ disallowed-macros = [
 ]
 
 disallowed-methods = [
-    # Every service is a tokio application. A blocking sleep parks the whole worker thread,
-    # not the task — with the default multi-threaded runtime that is one Nth of the process's
-    # entire capacity, for the duration, and it does not show up as latency anywhere obvious.
+    # A blocking sleep parks the whole tokio worker thread, not just the task.
     { path = "std::thread::sleep", reason = "blocks a tokio worker thread. Use `tokio::time::sleep`, or `spawn_blocking` if the surrounding work is genuinely synchronous" },
 
-    # A client with no timeouts is how `services/api/src/upstream.rs` describes its own worst
-    # bug: a hung upstream held connections open until the pool starved, feeding an unbounded
-    # `tokio::spawn`. `Client::new()` has no connect timeout, no request timeout and no pool
-    # limit, and nothing about the call site says so.
-    #
-    # Test code that talks to a `wiremock` on localhost is the legitimate exception, and it is
-    # spelled `#[expect(clippy::disallowed_methods, reason = "…")]` at the call site so the
-    # claim "this client never leaves the harness" is written down rather than assumed.
+    # No timeouts, no pool bound — a hung upstream starves the whole pool. Exempt test code
+    # talking to a local `wiremock` via `#[expect(clippy::disallowed_methods, reason = "…")]`.
     { path = "reqwest::Client::new", reason = "no timeouts, no pool bound. Build it with `reqwest::Client::builder()` and set `connect_timeout` + `timeout`; see `services/api/src/upstream.rs`" },
 ]

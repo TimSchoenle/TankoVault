@@ -54,17 +54,8 @@ fn empty_object() -> serde_json::Value {
     serde_json::json!({})
 }
 
-/// Refuse a `base_url` that points anywhere the crawler must not go.
-///
-/// This is the *supplying* side of the SSRF guard, and it was missing: a stored provider row
-/// is not a one-off fetch. `ProvidersCreate` + `ProvidersTest` — a role well short of full
-/// admin — could point a provider at `http://169.254.169.254` and read the dry-run's parsed
-/// output or, on a parse failure, the error text containing it. Worse, the scheduled scan
-/// workers then keep hitting the target on a timer, long after the operator's grant is gone.
-///
-/// Resolution is performed here, not only scheme and IP-literal checks, because the value is
-/// being *persisted*: refusing to store a host that resolves internally is cheaper than
-/// rediscovering it on every scan.
+/// Refuses a `base_url` the crawler must not reach — persisted, so a limited role could
+/// otherwise point the scheduled scanner at internal hosts indefinitely, not just once.
 async fn validate_base_url(base_url: &str) -> ApiResult<()> {
     tankovault_domain::ssrf::validate_and_resolve(base_url)
         .await
@@ -97,10 +88,8 @@ pub async fn create_provider(
     Json(req): Json<CreateProvider>,
 ) -> ApiResult<Json<Provider>> {
     user.require(Permission::ProvidersCreate).await?;
-    // The slug is not just a label: it becomes the provider's NATS task subject and the
-    // name of the worker consumer that drains it. A slug NATS will not accept there yields
-    // a provider whose scans are planned, published into nothing, and never run — so it is
-    // rejected here rather than discovered as a run that never progresses.
+    // The slug becomes the NATS task subject; one NATS rejects yields a provider whose scans
+    // are planned but never run.
     if !tankovault_contracts::is_valid_provider_slug(&req.slug) {
         return Err(ApiError::BadRequest(format!(
             "provider slug {:?} must be non-empty and contain only letters, digits, '-' or '_'",
@@ -389,16 +378,10 @@ pub async fn test_adapter(
     user.require(Permission::ProvidersTest).await?;
     let req = body.map(|b| b.0).unwrap_or_default();
 
-    // Proxied to the worker rather than run here (PERF-18). The dry run needs
-    // `tankovault-adapters` and `tankovault-fetch`, and `tankovault-fetch` is built on
-    // `wreq`/BoringSSL — so hosting it in this binary meant compiling a whole second TLS
-    // stack, from C and assembly, into the API image for one operator-facing endpoint. The
-    // worker already carries the stack because it is the tier that crawls.
-    //
-    // The authorization decision and the audit record stay here, which is the point of the
-    // split: the worker's endpoint is gated only by the internal token, so "may this operator
-    // dry-run this provider?" is answered by the tier that knows about operators, and the
-    // trail is written where every other privileged action's is.
+    // Proxied to the worker: it already carries the fetch stack, so hosting the dry-run here
+    // would double the TLS stack in the API image. Authorization and the audit record stay
+    // here — the worker trusts only the internal token, so this tier still answers "may this
+    // operator dry-run this provider?".
     let Json(sample): Json<serde_json::Value> = state
         .worker
         .post(&format!("/internal/providers/{id}/test"), &req)

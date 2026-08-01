@@ -1,14 +1,8 @@
-//! Rendering a fetch response into a log line.
-//!
-//! Adapter failures are read from a console, usually long after the scan that produced them,
-//! so an error has to carry the response it was raised about: which URL, answered with what,
-//! and what the body actually looked like. Everything here is bounded — one failure is one
-//! line, never a page dumped into the logs.
+//! Rendering a fetch response into a bounded, single-line log entry for adapter errors.
 
 use tankovault_fetch::FetchResponse;
 
-/// Characters of the body quoted back in an error. Enough to recognise what arrived — a
-/// doctype, a WAF banner, an error envelope — without spilling a page into the logs.
+/// Characters of the body quoted back in an error — enough to recognise what arrived.
 const DIAGNOSTIC_CHARS: usize = 240;
 
 /// The response envelope *minus* its URL and status, for errors that already name both.

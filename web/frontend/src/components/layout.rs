@@ -1,10 +1,5 @@
 //! Card, section and list chrome shared across the console, the account panels and the series
 //! screens.
-//!
-//! These lived in `views/console/shell.rs` as `pub(super)` items, which made them unreachable
-//! from `views/account/` and `views/series/` — so those trees re-derived card and confirm
-//! chrome from scratch, and `views/console/{stats,solver}.rs` reached *sideways* into a sibling
-//! view to borrow one. `views/` may depend on `components/`; it must never depend on itself.
 
 use crate::components::EmptyBox;
 use crate::icons::{Ic, Icon};
@@ -55,9 +50,6 @@ pub(crate) fn NoSelection(message: String) -> Element {
 }
 
 /// The sidebar-card chrome an account or series panel sits in: an icon + title header, a body.
-///
-/// `title` arrives already resolved — a panel has its [`crate::i18n::Translator`] to hand and
-/// this keeps the chrome free of any opinion about where the words came from.
 #[component]
 pub(crate) fn PanelCard(icon: Icon, title: String, children: Element) -> Element {
     rsx! {

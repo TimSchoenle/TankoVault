@@ -15,14 +15,12 @@ use tankovault_domain::{SeriesId, WatchStatus};
 use time::{Duration, OffsetDateTime};
 use utoipa::{IntoParams, ToSchema};
 
-/// Largest page the list will serve. The list renders 54px rows and pages on a scroll
-/// sentinel, so 60 is the working size; the ceiling exists so a hand-written `limit=100000`
-/// cannot ask one request to aggregate every chapter of every tracked series.
+/// Largest page size; bounds a hand-written `limit=100000` from aggregating every chapter of
+/// every tracked series in one request.
 const MAX_LIMIT: i64 = 200;
 
-/// Highest accepted offset. At the maximum page size that is 20 million rows deep — past any
-/// real watchlist, and short of the `i64` overflow an unbounded value allowed on `/v1/series`
-/// before it was clamped there for the same reason.
+/// Highest accepted offset, short of the `i64` overflow an unbounded value allowed on
+/// `/v1/series` before it was clamped there for the same reason.
 const MAX_OFFSET: i64 = 100_000;
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -218,8 +216,8 @@ pub async fn watchlist(
     user: AuthUser,
     Query(params): Query<WatchlistParams>,
 ) -> ApiResult<Json<WatchlistView>> {
-    // Parsed at the edge rather than passed through as text, so an unrecognised token is a
-    // `400` instead of a page that looks plausible and is ordered or filtered wrong.
+    // Parsed at the edge so an unrecognised token is a `400`, not a plausible-looking page
+    // that's ordered or filtered wrong.
     let sort: WatchlistSort = parse_param(params.sort.as_deref(), "sort")?.unwrap_or_default();
     let order: WatchlistOrder =
         parse_param(params.order.as_deref(), "order")?.unwrap_or_else(|| sort.natural_order());
@@ -367,10 +365,6 @@ pub async fn delete_watchlist(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-// ---------------------------------------------------------------------------
-// Bulk operations (frontend §9.4 — the multi-select bulk bar)
-// ---------------------------------------------------------------------------
-
 /// The ids a bulk operation should act on, plus what to change.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct WatchlistBulkUpdate {
@@ -423,9 +417,8 @@ impl BulkResult {
 
 /// Reject an oversized or empty id list, and hand back the raw uuids the repo binds.
 ///
-/// The cap is [`BULK_ID_LIMIT`], refused rather than truncated: silently acting on the first
-/// 200 of 400 ids and answering `200` would leave the other half in whatever state the user was
-/// trying to change them out of, with nothing in the response to say so.
+/// Refused at [`BULK_ID_LIMIT`] rather than truncated: silently acting on only the first N ids
+/// would leave the rest unchanged with nothing in the response to say so.
 pub(super) fn bulk_ids(series_ids: &[SeriesId]) -> ApiResult<Vec<uuid::Uuid>> {
     if series_ids.is_empty() {
         return Err(ApiError::BadRequest("series_ids must not be empty".into()));

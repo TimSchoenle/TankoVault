@@ -75,8 +75,8 @@ pub struct ChapterDiscovered {
 
 /// A live per-user notification push, relayed over **core NATS** (best-effort, non-durable)
 /// to the API's `/v1/me/stream` SSE endpoint so a connected client updates its unread badge
-/// and feed in real time (design §14, §17.4). The durable copy is the `notifications` row;
-/// an offline client misses the push and reconciles via [`Self::unread_count`] on reconnect.
+/// and feed in real time. The durable copy is the `notifications` row; an offline client
+/// misses the push and reconciles via [`Self::unread_count`] on reconnect.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserNotification {
     /// Recipient; also determines the [`crate::subjects::user_notify_subject`] routing.

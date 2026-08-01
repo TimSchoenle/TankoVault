@@ -1,23 +1,10 @@
-//! The tab strip, once.
-//!
-//! Four screens — Account, Notifications, Console · Providers and Console · Users — carried
-//! byte-for-byte equivalent markup and four independent `const ALL` + `fn label_key` blocks.
-//! None of them carried `role="tablist"`, `role="tab"` or `aria-selected`, so twenty controls
-//! announced as plain buttons with no indication of which was current or what group they
-//! belonged to, and there was no keyboard path between them beyond Tab-through-everything.
-//!
-//! Doing it in one place also means the arrow-key behaviour is written once. A tablist is
-//! expected to move selection with Left/Right and to jump to the ends with Home/End; each of
-//! the four hand-rolled strips would otherwise have needed that separately, which is why none
-//! of them had it.
+//! Shared tab strip with ARIA tablist semantics (roving tabindex, arrow-key navigation) used by
+//! Account, Notifications and Console screens.
 
 use crate::i18n::use_i18n;
 use dioxus::prelude::*;
 
 /// A closed set of tabs: what they are, and the catalogue key wording each one.
-///
-/// The four enums already implemented exactly this shape informally; naming it lets one
-/// component consume all of them.
 pub(crate) trait TabKind: Copy + PartialEq + 'static {
     /// Every tab this kind defines, in strip order.
     fn all() -> &'static [Self]
@@ -64,8 +51,7 @@ pub(crate) fn TabBar<T: TabKind + Clone + PartialEq + 'static>(
                     Key::End => last,
                     _ => return,
                 };
-                // Otherwise Left/Right also scroll the pane the strip sits in, and Home/End
-                // jump the page to its ends.
+                // Suppress the browser's own scroll-by-arrow-key behavior.
                 event.prevent_default();
                 selected.set(keyed[next]);
             },
@@ -76,8 +62,7 @@ pub(crate) fn TabBar<T: TabKind + Clone + PartialEq + 'static>(
                     r#type: "button",
                     role: "tab",
                     "aria-selected": if entry == current { "true" } else { "false" },
-                    // Roving tabindex: Tab reaches the strip once and lands on the current tab,
-                    // then the arrow keys move within it. Ten sequential stops is not a strip.
+                    // Roving tabindex: only the current tab is a Tab stop.
                     tabindex: if entry == current { "0" } else { "-1" },
                     onclick: move |_| selected.set(entry),
                     {i18n.t(entry.label_key())}

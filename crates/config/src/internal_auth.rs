@@ -7,15 +7,10 @@ use crate::error::ConfigError;
 
 /// Authentication for service-to-service calls on the internal network.
 ///
-/// `sync`, `control-plane`, `render` and `challenge-solver` expose privileged operations —
-/// reading any user's sync state, triggering scans, fetching an arbitrary URL — and are
-/// reachable by service name from anywhere on the compose/cluster network. Network
-/// placement alone is one misconfiguration away from exposing them, so the calls carry a
-/// shared secret in `X-Internal-Token`.
-///
-/// The token is deliberately **required** in the production profile: a service that starts
-/// happily without one silently downgrades to the unauthenticated behaviour this exists to
-/// remove. See [`InternalAuthConfig::resolve`].
+/// Privileged internal routes (sync state, scan triggers, arbitrary-URL fetch) are reachable
+/// by service name from anywhere on the network, so calls carry a shared secret in
+/// `X-Internal-Token`, required in the production profile. See
+/// [`InternalAuthConfig::resolve`].
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct InternalAuthConfig {
     /// Shared secret presented by internal callers. Generate with `openssl rand -hex 32`.
@@ -28,12 +23,9 @@ pub struct InternalAuthConfig {
 pub const MIN_INTERNAL_TOKEN_LEN: usize = 32;
 
 impl InternalAuthConfig {
-    /// The configured token, or an error explaining why the service must not start.
+    /// The configured token, or an error the service must refuse to start on.
     ///
-    /// Outside the production profile a missing token is allowed and reported as `None`, so
-    /// `docker compose up` and the test harness stay frictionless. A token that is *present*
-    /// is always length-checked, in every profile — a weak-secret check a deployment can skip
-    /// by forgetting one variable is not a check.
+    /// Missing is allowed outside production; a present token is always length-checked.
     ///
     /// # Errors
     /// When the token is absent in the production profile, or shorter than

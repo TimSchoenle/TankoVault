@@ -1,42 +1,15 @@
 //! # tankovault-matcher
 //!
-//! Series canonicalisation scoring (design §10, steps 3–4). Pure and DB-free: the `db`
-//! layer supplies trigram [`Candidate`]s, this crate scores them and returns a
-//! [`Decision`]. Automation is aggressive where safe and human-reviewed where ambiguous.
-//!
-//! The nouns ([`Candidate`], [`Query`], [`Decision`], [`MatchSignals`], [`MergeVerdict`]) and
-//! the [`Canonicaliser`] port they are exchanged over live in [`tankovault_domain::matching`]
-//! and are re-exported here; this crate owns the *scoring*. `crates/db` names the port, not this
-//! crate, so the repository layer can ask for a decision without linking a scorer (ARCH-16).
-//!
-//! # The shape of the score
-//!
-//! The base is the strongest of three views of the two titles, because each one is blind to a
-//! failure the others catch:
-//!
-//! - the database's **trigram** similarity, which is what found the candidate at all;
-//! - a **token-set ratio**, which survives word reordering (romaji vs. english order);
-//! - a **compact** comparison — the titles with all whitespace removed — which is the only one
-//!   that sees `Spy X Family` and `Spyxfamily` as the same string.
-//!
-//! That base is then moved by corroborating evidence (medium, release year, shared authors,
-//! shared tags) and by one veto: [`MatchSignals::numeric_conflict`], which is what stands
-//! between an aggressive matcher and merging `Overlord` into `Overlord 2`.
-//!
-//! Three bands:
-//! - `>= high` → [`Decision::Attach`] (attach the new source to the existing series),
-//! - `[low, high)` → [`Decision::Ambiguous`] (create the source, flag for operator review),
-//! - `< low` → [`Decision::Create`] (a new canonical series).
-//!
-//! [`adjudicate`] answers the separate question of what to do about two series that *already*
-//! exist, which is the one the merge queue and the automatic-merge sweep ask.
+//! Series canonicalisation scoring (design §10, steps 3–4): pure and DB-free, this crate scores
+//! [`Candidate`]s against a [`Query`] and returns a [`Decision`] via the [`Canonicaliser`] port
+//! defined in [`tankovault_domain::matching`], so `crates/db` can ask for a decision without
+//! linking a scorer (ARCH-16). [`adjudicate`] answers the separate question of merging two
+//! series that already exist.
 
 use tankovault_domain::{ContentType, SeriesId, compact_key};
 
-// The scorer's input and output vocabulary lives in `tankovault_domain::matching`, because it
-// is the seam `crates/db` has to name in order to *ask* for a decision rather than make one
-// (ARCH-16 step 3). Re-exported here so `tankovault_matcher::Candidate` and friends still
-// resolve — the scoring is what this crate owns, not the nouns.
+// Re-exported from tankovault_domain::matching (the ARCH-16 seam `crates/db` names) so
+// `tankovault_matcher::Candidate` and friends still resolve.
 pub use tankovault_domain::matching::{
     Candidate, Canonicaliser, Decision, MatchSignals, MergeVerdict, Query,
 };
@@ -122,9 +95,8 @@ pub fn assess(query: &Query, candidate: &Candidate) -> Assessment {
     // penalised for its canonical title omitting it.
     signals.numeric_conflict = !numeric_signatures_agree(&query_compact, candidate);
 
-    // Base similarity: the strongest of the three views described in the module docs. The
-    // trigram score comes from the database and already covers the candidate's alternative
-    // titles; the other two are computed here.
+    // Base similarity: the strongest of the trigram score (from the db), the token-set ratio
+    // and the compact comparison — each catches a failure the others miss.
     let mut s = candidate.similarity.max(title_match.ratio);
 
     // Content-type agreement is a strong signal (a manhwa vs. manga split matters).
@@ -395,18 +367,9 @@ fn shares_a_name(a: &[String], b: &[String]) -> bool {
     reason = "word-set sizes are title token counts, orders of magnitude below f32's exact range"
 )]
 pub fn token_set_ratio(a: &str, b: &str) -> f32 {
-    // Three guards used to stand in front of this — `a.is_empty() || b.is_empty()`, an `a == b`
-    // fast path, and `sa.is_empty() || sb.is_empty()` — and `cargo mutants` showed all three to
-    // be dead: every input they answered, the Jaccard below answers identically, so a mutation
-    // of any of them survived the whole suite. The one remaining guard is not dead: two
-    // whitespace-only titles produce two empty sets, and `0 / 0` is `NaN`, which would then
-    // propagate through every later term in `score` and compare false against both thresholds.
-    //
-    // The `a == b` path was the one worth thinking about, since it was also an allocation
-    // shortcut for the common exact-title case. It went anyway: two `BTreeSet`s of a handful of
-    // tokens cost nothing beside the trigram query that produced the candidate, and it was not
-    // in fact behaviour-preserving — it answered `1.0` for two *whitespace-only* titles, i.e. a
-    // perfect match between two series with no title at all.
+    // Guards against `0 / 0`: two whitespace-only titles produce two empty token sets, and the
+    // resulting `NaN` would propagate through every later term in `score` and compare false
+    // against both thresholds.
     let sa: std::collections::BTreeSet<&str> = a.split_whitespace().collect();
     let sb: std::collections::BTreeSet<&str> = b.split_whitespace().collect();
     let union = sa.union(&sb).count();

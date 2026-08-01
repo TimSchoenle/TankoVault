@@ -1,7 +1,7 @@
-//! Managing one's own passkeys: register, list, rename, revoke.
+//! Managing one's own passkeys: register, list, rename, revoke; sign-in lives in
+//! [`crate::auth::passkey`].
 //!
-//! The sign-in half lives in [`crate::auth::passkey`]. This module is the account page's
-//! surface, and its one non-obvious rule is the password check on registration — see
+//! Its one non-obvious rule is the password check on registration — see
 //! [`passkey_register_start`].
 
 use axum::Json;
@@ -22,11 +22,7 @@ use crate::passkey::{
 use crate::state::{AppState, AuthUser};
 use tankovault_db::repo::users::passkeys::CeremonyKind;
 
-/// Longest accepted passkey label.
-///
-/// The label is free text the owner chooses and nothing interprets, so the only thing a limit
-/// protects is the row and the list view. 64 characters is more than "`YubiKey` 5C NFC (work
-/// laptop)" needs.
+/// Longest accepted passkey label, in characters; bounds the row and the list view only.
 const MAX_LABEL_LEN: usize = 64;
 
 /// The label applied when the client sends none.
@@ -195,12 +191,9 @@ pub async fn passkey_register_start(
         tankovault_db::repo::users::passkeys::credential_ids_for_user(&state.pool, user.user_id)
             .await?;
 
-    // `user_unique_id` is the account's own id. It is the **user handle** the authenticator
-    // stores and hands back at sign-in, so it must be stable for the life of the account and
-    // must resolve to exactly one row — which is what a primary key is. It is not a secret
-    // being leaked to the device: the owner already reads it from `GET /v1/me/profile`, and it
-    // is disclosed to no one else, because the handle only ever travels between this server and
-    // an authenticator the owner controls.
+    // `user_unique_id` is the account's own id: the stable, one-row-per-account handle the
+    // authenticator stores. Not a secret leaked to the device — the owner already reads it via
+    // `GET /v1/me/profile`, and it travels nowhere else.
     let (challenge, ceremony) = webauthn
         .start_passkey_registration(
             account.id.as_uuid(),
@@ -210,9 +203,8 @@ pub async fn passkey_register_start(
         )
         .map_err(|e| ceremony_start_failed(&e))?;
 
-    // The label is decided *now*, at the request that carries it, and travels with the ceremony
-    // — not sent again at `finish`. Two requests each naming a label is two chances for them to
-    // differ, and nothing on the finish leg could tell which one the user meant.
+    // The label is decided now and travels with the ceremony rather than being resent at
+    // `finish`, so the two requests can't disagree on what it was.
     let ceremony_id = begin_ceremony(
         &state,
         Some(user.user_id),
@@ -271,11 +263,9 @@ pub async fn passkey_register_finish(
     let (owner, stored): (_, StoredRegistration) =
         take_ceremony(&state, body.ceremony_id, CeremonyKind::Register).await?;
 
-    // A registration ceremony belongs to the account that started it. Without this, a leaked
-    // ceremony id would be an instruction to install a credential on *someone else's* account —
-    // the caller would sign the challenge with their own authenticator and the row would be
-    // written against the ceremony's owner. `Unauthorized` rather than `Forbidden`: the caller
-    // is not being told that the ceremony exists and belongs to another account.
+    // A registration ceremony belongs to the account that started it — otherwise a leaked
+    // ceremony id lets an attacker install their own authenticator on someone else's account.
+    // `Unauthorized` rather than `Forbidden` so the caller isn't told the ceremony exists.
     if owner != Some(user.user_id) {
         tracing::warn!(
             caller = %user.user_id.as_uuid(),
@@ -293,9 +283,8 @@ pub async fn passkey_register_finish(
         ApiError::Internal
     })?;
 
-    // A `409` here is the global uniqueness constraint firing: this credential id is already
-    // registered, to this account or another. See `0022_passkeys.up.sql` for why that is a
-    // conflict rather than an upsert.
+    // A `409` here is the global uniqueness constraint firing on an already-registered
+    // credential id; see `0022_passkeys.up.sql` for why that's a conflict, not an upsert.
     let record = tankovault_db::repo::users::passkeys::insert(
         &state.pool,
         user.user_id,
@@ -402,9 +391,8 @@ pub async fn delete_passkey(
 /// Trim a caller-supplied label, substitute the default for an empty one, and bound its length.
 ///
 /// # Errors
-/// [`ApiError::BadRequest`] when the label exceeds [`MAX_LABEL_LEN`] characters. Counted in
-/// `chars`, not bytes: the limit exists so the revoke list stays readable, and truncating an
-/// emoji or a Japanese key name at a byte boundary would be both wrong and unhelpful.
+/// [`ApiError::BadRequest`] when the label exceeds [`MAX_LABEL_LEN`] **characters** (not bytes —
+/// truncating a multi-byte label at a byte boundary would be wrong).
 fn normalise_label(label: Option<&str>) -> ApiResult<String> {
     let label = label.unwrap_or("").trim();
     if label.chars().count() > MAX_LABEL_LEN {

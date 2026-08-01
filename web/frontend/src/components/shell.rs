@@ -33,9 +33,7 @@ pub(crate) fn Shell() -> Element {
     let i18n = crate::i18n::use_i18n();
     rsx! {
         div { class: "ik-app",
-            // First focusable element on every route. The rail is ~10 stops deep and sits
-            // ahead of the content in the DOM, so without this a keyboard reader tabs the
-            // whole navigation again on every single page.
+            // Skip link: without it, a keyboard reader re-tabs the ~10-stop rail on every route.
             a { class: "ik-skip", href: "#ik-content", {i18n.t("nav.skipToContent")} }
             Rail {}
             main { class: "ik-main",
@@ -85,18 +83,13 @@ fn use_token_refresh() {
                 Some(ms) if ms > REFRESH_BUFFER_MS => ms - REFRESH_BUFFER_MS,
                 // Already inside the buffer (or past expiry): refresh immediately.
                 Some(_) => 0.0,
-                // No token and we have already booted: either signed out and waiting for a
-                // sign-in, or a transient boot failure left us tokenless. Poll so a later
-                // sign-in — or a recovered server — is picked up, without hammering.
+                // Signed out, or a transient boot failure left us tokenless: poll without hammering.
                 None if booted => {
                     TimeoutFuture::new(SIGNED_OUT_POLL_MS).await;
                     continue;
                 }
                 None => 0.0,
             };
-            // The wait is bounded by the token's TTL (minutes), so it always fits `u32`;
-            // a negative value only arises for an already-expired token, where clamping to
-            // zero is exactly the wanted behaviour.
             #[expect(
                 clippy::cast_possible_truncation,
                 clippy::cast_sign_loss,

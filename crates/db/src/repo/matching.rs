@@ -7,11 +7,10 @@
 //! it is unit-testable without a database and this crate links no scorer.
 //!
 //! The candidate type is [`tankovault_domain::matching::Candidate`] itself rather than a row
-//! struct plus a `From` impl. That conversion used to be written out by hand, field for field,
-//! in **two** places — the worker's ingest canonicalisation and `services/sync`'s remote-entry
-//! resolution — so adding a field to it silently dropped that signal from one of the two paths
-//! that decide whether two series are the same. ARCH-16 step 1 deduplicated the conversion;
-//! step 3 removed the need for one at all.
+//! struct plus a `From` impl: a hand-written conversion duplicated across the worker's ingest
+//! canonicalisation and `services/sync`'s remote-entry resolution would let adding a field
+//! silently drop that signal from one of the two paths deciding whether two series are the
+//! same.
 //!
 //! # Two ways a duplicate is found
 //!
@@ -198,12 +197,10 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
 ///
 /// # Idempotent, and durably dismissed
 ///
-/// This was a bare `INSERT`, which had two consequences worth naming because they are opposite
-/// failures of the same missing constraint. The same ambiguity observed twice inserted two rows,
-/// and `(A,B)` and `(B,A)` were two rows for one pair — so a queue of 2 676 rows could not be
-/// trusted to be 2 676 *pairs*. And, worse, an operator's dismissal was not durable: nothing
-/// stopped a later scan inserting the same pair again as a fresh open row, so "these are
-/// different works" was a judgement the system could quietly discard.
+/// A bare `INSERT` would create two failure modes from the same missing constraint: the same
+/// ambiguity observed twice would insert two rows, with `(A,B)`/`(B,A)` counted as different
+/// pairs, and an operator's dismissal would not be durable — a later scan could re-insert a
+/// dismissed pair as a fresh open row.
 ///
 /// The pair is stored in canonical id order and upserted against
 /// `merge_candidates_pair_key`, with the update guarded by `NOT resolved`. Storage order is
@@ -288,10 +285,10 @@ pub struct MergeCandidateView {
 
 /// List the open (unresolved) merge candidates, **highest confidence first**.
 ///
-/// The ordering is the point. This was `created_at DESC`, which on a queue of 2 676 rows puts
-/// whatever the last scan happened to observe at the top and buries the certain duplicates
-/// wherever they were found. `min_score` narrows it further, so an operator can work the queue
-/// in confidence bands rather than as one undifferentiated list.
+/// The ordering is the point: `created_at DESC` would put whatever the last scan happened to
+/// observe at the top and bury certain duplicates in a queue of thousands of rows. `min_score`
+/// narrows it further, so an operator can work the queue in confidence bands rather than as one
+/// undifferentiated list.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable. An empty queue is an empty
@@ -878,23 +875,16 @@ pub async fn rebuild_normalized_keys(
 /// [`progress_mark_read`](crate::repo::tracking::progress_mark_read) apply (`floor(part) <=
 /// whole`), so all three write paths uphold §A.1 identically.
 ///
-/// The condition used to be `whole >= floor(part) **AND** part = 0`, which only ever cleared the
-/// frontier when there was no part frontier at all — and the `>= floor(part)` half, the actual
-/// staleness test, could therefore never fire. Merging a user who was at whole `6` on the survivor
-/// with their own row at part `4.5` on the absorbed series produced `(6, 4.5)`, which §A.1 forbids.
-/// It changed no answer (`covers` and every read model already treat `4.5` as read at `floor(4.5)
-/// <= 6`) and the next `progress_set` cleared it, which is why it was invisible; the invariant is
-/// documented, so a read model is entitled to trust it.
+/// Getting this wrong produces a `(whole, part)` pair §A.1 forbids (e.g. `(6, 4.5)`) that every
+/// read model is entitled to assume cannot occur.
 ///
-/// # The four tables that used to be lost
+/// # Tables that must move with the merge
 ///
 /// `series_sync_overrides`, `sync_history`, `sync_remote_entries` and `notification_dedup` all
-/// reference `series` and none of them was moved, so a merge silently destroyed a user's
-/// per-series sync exclusions and their visible sync history, and orphaned every remote tracker
-/// entry that had been matched to the absorbed series (the FK is `ON DELETE SET NULL`, so those
-/// rows came back as *unmatched* and were re-resolved from scratch on the next pull). That was
-/// survivable while every merge was an operator pressing a button on a queue nobody worked; it
-/// is not survivable now that the sweep merges automatically, so all four move with the rest.
+/// reference `series`; omitting any of them silently destroys a user's per-series sync
+/// exclusions and visible sync history, and orphans remote tracker entries matched to the
+/// absorbed series (`ON DELETE SET NULL` turns them *unmatched*, re-resolved from scratch on
+/// the next pull).
 ///
 /// # Merge candidates
 ///

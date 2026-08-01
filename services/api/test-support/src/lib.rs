@@ -1,24 +1,12 @@
-//! In-process HTTP harness for the API service.
-//!
-//! [`TestApp`] wires the **real** Axum router — extractors, middleware and authorization
-//! included — to an isolated, freshly-migrated database from
-//! [`tankovault_test_support::TestDb`], and answers requests through `tower`'s `oneshot`. No
-//! socket is bound and no network is touched.
-//!
-//! # Why this is a separate crate
-//!
-//! Only the router harness needs `tankovault-api`. Keeping it here rather than in
-//! `crates/test-support` means the repository-layer suites (`cargo test -p tankovault-db`) no
-//! longer compile the API service and its transitive stack to run SQL tests, and the lowest
-//! layer of the workspace no longer has a dev-time dependency on the highest (ARCH-17).
+//! In-process HTTP harness for the API service: wires the real Axum router to an isolated,
+//! migrated database and answers requests via `tower`'s `oneshot`, with no socket bound. Kept
+//! separate from `crates/test-support` so repository-layer suites don't compile the full API
+//! stack to run SQL tests.
 //!
 //! # On `# Panics`
 //!
-//! This crate is exempt from `clippy::missing_panics_doc`, declared as an `expect` at the crate
-//! root so the compiler withdraws the exemption if the last panicking helper ever goes away. A
-//! harness helper panics *by design*: a failure here is a failed test, which is the outcome the
-//! caller wants, and `Result` would only move the `unwrap` into every test in the workspace.
-//! Documenting each site would restate that contract once per function.
+//! Exempt from `clippy::missing_panics_doc`: a harness helper panicking is its contract — a
+//! failed test — so documenting each site would only restate that once per function.
 #![expect(
     clippy::missing_panics_doc,
     reason = "a test-harness helper's failure mode is a panicking test, which is its contract"
@@ -56,10 +44,7 @@ impl Default for TestConfig {
         Self {
             mailer: tankovault_email::build(&tankovault_config::EmailConfig::default()),
             rate_limit: RateLimitConfig::default(),
-            // Matches the production default, which is what makes the suite exercise the
-            // `__Host-refresh_token` / `Path=/` shape a real deployment issues (SEC-7). The
-            // previous `false` meant every cookie assertion in the suite was checking the
-            // local-HTTP development spelling.
+            // Matches production, so the suite exercises the real `__Host-refresh_token` shape.
             cookie_secure: true,
             features: FeatureGate::defaults(),
             webauthn: Some(Arc::new(
@@ -87,10 +72,8 @@ impl TestConfig {
 
     /// Do not mount the rate limiter.
     ///
-    /// For suites that issue more requests than a real client would in a minute — the
-    /// access-control matrix drives every admin route three times over. Without this the
-    /// limiter answers `429` part-way through and the suite reports an authorization failure
-    /// that is really a throttle.
+    /// The access-control matrix alone drives every admin route three times over; left on, a
+    /// throttle would be misread as an authorization failure.
     #[must_use]
     pub fn without_rate_limiting(mut self) -> Self {
         self.rate_limit.enabled = false;
@@ -100,10 +83,8 @@ impl TestConfig {
     /// Wire the deployment that configured no `WebAuthn` origin, so every passkey route answers
     /// `503`.
     ///
-    /// The distinction this exists to test is `503` versus `404`: an *unconfigured* relying
-    /// party is an operator problem the route reports, while a *switched-off*
-    /// `accounts.passkeys` flag makes the route not exist at all. Collapsing them would tell an
-    /// operator who forgot one environment variable that the endpoint is not part of this build.
+    /// Distinct from a switched-off `accounts.passkeys` flag (`404`): this is an operator
+    /// misconfiguration, not an absent feature.
     #[must_use]
     pub fn without_passkeys(mut self) -> Self {
         self.webauthn = None;
@@ -111,8 +92,7 @@ impl TestConfig {
     }
 
     /// Wire the local-HTTP development cookie shape: no `Secure`, no `__Host-` prefix, and the
-    /// narrow `Path=/v1/auth` (SEC-7). For the test that pins that opt-out; everything else
-    /// should stay on the production default.
+    /// narrow `Path=/v1/auth`.
     #[must_use]
     pub fn with_insecure_cookies(mut self) -> Self {
         self.cookie_secure = false;
@@ -121,11 +101,9 @@ impl TestConfig {
 
     /// Switch `disabled` off, as an operator would on the feature-flag page.
     ///
-    /// The harness pinned `FeatureGate::defaults()` before this existed, so **no test could
-    /// drive a route whose feature is off** (TESTING F-09). `flags.rs` has thirteen unit tests
-    /// on the resolution logic, and none of them proves the layer is actually *mounted* on the
-    /// API's router, or that a real request to a real path gets the documented `404` — which
-    /// is the half a unit test cannot reach.
+    /// Before this existed the harness pinned `FeatureGate::defaults()`, so no test could drive
+    /// a route whose feature is off — `flags.rs`'s unit tests cover resolution logic only, not
+    /// that the gate is mounted on a real router.
     #[must_use]
     pub fn with_features_disabled(mut self, disabled: &[tankovault_domain::Feature]) -> Self {
         self.features = FeatureGate::with_disabled(disabled);
@@ -163,9 +141,8 @@ impl TestApp {
     pub async fn spawn_with(cfg: TestConfig) -> Self {
         let db = TestDb::spawn().await;
         let audit = Arc::new(RecordingAuditSink::default());
-        // Held as well as handed to the router so a test can mint a ticket for an arbitrary
-        // account — which the access matrix needs, because the mint *endpoint* refuses the
-        // suspended account whose stream leg it has to drive. See `Self::stream_ticket`.
+        // Held separately so a test can mint a ticket for an arbitrary account, including a
+        // suspended one the mint endpoint itself would refuse. See `Self::stream_ticket`.
         let stream_tickets = Arc::new(MemoryStreamTickets::new());
 
         let state = AppState {
@@ -199,12 +176,10 @@ impl TestApp {
             audit: audit.clone(),
             features: cfg.features.clone(),
             cookie_secure: cfg.cookie_secure,
-            // A real relying party, so the passkey routes answer their genuine statuses rather
-            // than a blanket `503`. Its origin is deliberately the same `http://localhost` the
-            // mailer uses: no test drives a browser, so nothing here ever verifies a signature
-            // — what the suites exercise is the surface around it (auth gates, feature flags,
-            // ownership scoping, ceremony expiry), and every one of those would be masked by an
-            // unconfigured relying party short-circuiting the handler before it runs.
+            // A real relying party, so passkey routes answer their genuine statuses rather than
+            // a blanket `503`. No test drives a browser, so nothing here verifies a signature —
+            // only the surrounding surface (auth gates, feature flags, ownership scoping) is
+            // exercised.
             webauthn: cfg.webauthn,
             mailer: cfg.mailer,
             email_base_url: "http://localhost".to_owned(),
@@ -229,10 +204,8 @@ impl TestApp {
 
     /// Mint a single-use stream ticket for `user`, bypassing `POST /v1/me/stream-ticket`.
     ///
-    /// Needed because the mint endpoint is gated by `AuthUser`, which refuses a suspended
-    /// account — so the access matrix could not otherwise drive `GET /v1/me/stream`'s *own*
-    /// suspension check, which is the leg SEC-8 exists for. Going through the store directly
-    /// keeps that leg in the sweep instead of dropping the row.
+    /// The mint endpoint is gated by `AuthUser`, which refuses a suspended account — going
+    /// through the store directly keeps that leg of the access matrix testable.
     pub async fn stream_ticket(&self, user: UserId) -> String {
         // Unwrapped here because a test's next move is to put it in a query string.
         self.stream_tickets

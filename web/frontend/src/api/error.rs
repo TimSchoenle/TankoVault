@@ -1,9 +1,7 @@
 //! Turning API operation failures into text a reader can act on.
 //!
-//! The generated client surfaces `progenitor_client::Error`, which mixes transport faults,
-//! decode faults and documented error *responses* into one enum. Views only ever want two
-//! things from it: a short human sentence, and — occasionally — the raw status code so they
-//! can branch (a login `403` means "confirm your email", not "you lack permission").
+//! The generated client's `progenitor_client::Error` mixes transport, decode and error-response
+//! faults into one enum; this maps it to a short sentence and, occasionally, the raw status code.
 
 use crate::i18n::Translator;
 use progenitor_client::Error as ApiOpError;
@@ -19,13 +17,8 @@ pub(crate) fn error_status<E>(err: &ApiOpError<E>) -> Option<u16> {
 
 /// A short, user-facing sentence for a failed operation (§17.3: name what failed).
 ///
-/// Never leaks `Debug` output into the UI: transport and decoding faults are bucketed into
-/// plain language, because the underlying `reqwest`/`serde` text is meaningless to a reader
-/// and, in the decode case, can be long enough to break the error box's layout.
-///
-/// Resolved eagerly, in the language active when the call failed. Error text is transient —
-/// the next retry re-renders it — so carrying a key around to defer translation would buy
-/// nothing but a wider error type in every `Resource` on every screen.
+/// Never leaks `Debug` output into the UI — transport/decode faults are bucketed into plain
+/// language instead. Resolved eagerly, in the language active when the call failed.
 pub(crate) fn friendly_error<E>(i18n: Translator, err: ApiOpError<E>) -> String {
     match err {
         ApiOpError::ErrorResponse(response) => status_message(i18n, response.status().as_u16()),
@@ -53,8 +46,8 @@ fn status_message(i18n: Translator, status: u16) -> String {
 /// The catalogue key wording an HTTP status, or `None` when there is nothing better to say
 /// than the bare code.
 ///
-/// Split out from [`status_message`] so the mapping stays testable on the host target: the
-/// message lookup itself needs a Dioxus runtime, this does not.
+/// Split from [`status_message`] so this stays testable on the host target — the message
+/// lookup needs a Dioxus runtime, this doesn't.
 fn status_key(status: u16) -> Option<&'static str> {
     Some(match status {
         400 => "error.status.badRequest",

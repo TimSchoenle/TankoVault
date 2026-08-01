@@ -1,8 +1,6 @@
-//! Targeted single-series push (design: immediate targeted push).
-//!
-//! The fast path taken when a user does something deliberate — marking a chapter read — as
-//! opposed to the bulk reconciliation in [`super::reconcile`]. No remote list is fetched and no
-//! three-way merge runs: local state wins outright, because the user just asserted it.
+//! Targeted single-series push: the fast path when a user asserts state directly (e.g. marking
+//! a chapter read), as opposed to bulk reconciliation in [`super::reconcile`]. Local state wins
+//! outright — no remote fetch, no three-way merge.
 
 use std::sync::Arc;
 
@@ -121,9 +119,8 @@ impl TargetedPush {
         user_id: UserId,
         series_id: SeriesId,
     ) -> anyhow::Result<()> {
-        // Reactive push is gated on the same two switches every sync path respects (design v2
-        // §B.4): automatic sync must be enabled for the account, and the series must not be
-        // excluded (§A.5). Neither check existed before.
+        // Gated on the same switches every sync path respects: auto-sync enabled for the
+        // account, and the series not excluded.
         match sync::get_account(&self.pool, user_id, slug).await? {
             Some(a) if a.auto_sync_enabled => {}
             _ => return Ok(()),

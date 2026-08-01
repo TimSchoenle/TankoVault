@@ -1,25 +1,6 @@
 //! Title normalization — the shared key used for canonical-series matching and the
-//! `normalized_title` column. Pure and deterministic so the DB, matcher, and adapters
-//! all derive the same key.
-//!
-//! Steps: lowercase, fold diacritics and typographic variants, **elide** apostrophes, drop
-//! remaining punctuation, remove common noise words, and collapse whitespace.
-//!
-//! # Why apostrophes are elided rather than separated
-//!
-//! Every other punctuation mark is a word boundary — `Re:Zero` really is two words. An
-//! apostrophe is not: it sits *inside* a word, and the same work is listed by one provider as
-//! `Sorry but I’m not Yuri` and by another as `Sorry But Im Not Yuri`. Treating it as a
-//! separator produced `sorry but i m not yuri` against `sorry but im not yuri` — two keys with
-//! a token-set overlap of 4/7, scoring 0.80 and landing in the operator-review band instead of
-//! attaching. That single rule accounted for the largest class of duplicates in a 26k-series
-//! catalogue: `witch s tears` / `witchs tears`, `king s journey` / `kings journey`, and so on
-//! for every possessive and contraction a provider spells with a straight quote, a curly quote,
-//! or nothing at all.
-//!
-//! The same reasoning covers combining marks: `İ` lowercases to `i` + U+0307, and separating on
-//! the combining character split `İstanbul` into `i stanbul`. Marks are elided so an NFD-encoded
-//! title folds onto its NFC twin instead of shattering.
+//! `normalized_title` column. Pure and deterministic: lowercase, fold diacritics/width
+//! variants, elide apostrophes and combining marks, drop noise words, collapse whitespace.
 
 /// Noise tokens that carry no discriminating signal across provider titles.
 const NOISE_WORDS: &[&str] = &[
@@ -90,10 +71,8 @@ const NOISE_WORDS: &[&str] = &[
 /// ```
 #[must_use]
 pub fn normalize_title(title: &str) -> String {
-    // One pass: lowercase (which can expand, e.g. `İ` → `i` + U+0307), then fold each
-    // resulting character into the output. `fold_into` is what decides between "drop this",
-    // "this is a word boundary" and "this expands to several ASCII letters", so the old
-    // three-pass lowercase → fold → strip pipeline collapses into this loop.
+    // Lowercasing can expand a character (`İ` → `i` + U+0307), so fold each resulting char
+    // in the same pass rather than lowercasing and folding separately.
     let mut folded = String::with_capacity(title.len());
     for c in title.chars().flat_map(char::to_lowercase) {
         fold_into(widen(c), &mut folded);
@@ -115,18 +94,10 @@ pub fn normalize_title(title: &str) -> String {
 
 /// The whitespace-insensitive form of an already-[`normalize_title`]d key.
 ///
-/// # Why this exists
-///
-/// Providers scrape titles out of HTML, and a missing space between two inline elements is the
-/// single most common way one listing differs from another for the *same* work: `Spy X Family`
-/// against `Spyxfamily`, `Wants to Be Free` against `Wantsto Be Free`, `Hana Kimi` against
-/// `Hanakimi`. Trigram similarity scores those pairs between 0.37 and 0.58 and a token-set ratio
-/// scores most of them 0, so they were invisible to the matcher — 59 such pairs sat in a 26k
-/// catalogue without even reaching the review queue.
-///
-/// Comparing the compact keys makes the whole class exact. It is deliberately derived from the
-/// *normalized* key rather than the raw title, so it inherits the case-folding, diacritic
-/// folding and noise-word removal above and adds exactly one rule of its own.
+/// A missing space between two inline elements is the most common way one provider's listing
+/// differs from another's for the *same* work (`Spy X Family` vs `Spyxfamily`) — invisible to
+/// trigram and token-set matching alike. Deliberately derived from the normalized key, not the
+/// raw title, so it inherits case/diacritic folding and adds exactly one rule of its own.
 ///
 /// ```
 /// use tankovault_domain::{compact_key, normalize_title};
@@ -143,13 +114,11 @@ pub fn compact_key(normalized: &str) -> String {
     normalized.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
-/// Map a full-width or ideographic character onto its ASCII equivalent, leaving everything else
-/// alone.
+/// Map a full-width or ideographic character onto its ASCII equivalent, leaving everything
+/// else alone.
 ///
-/// Full-width forms (`Ｓ`, `０`, `＆`) are the same characters typed on a CJK input method and
-/// appear throughout Japanese and Korean provider listings. Folding them here — *before*
-/// [`fold_into`] dispatches — means the apostrophe and ampersand rules below apply to `＇` and
-/// `＆` without a second set of arms for them.
+/// Runs *before* [`fold_into`] so full-width apostrophes and ampersands hit the same rules as
+/// their ASCII forms, instead of needing a duplicate arm each.
 fn widen(c: char) -> char {
     match c {
         // U+FF01..=U+FF5E are ASCII U+0021..=U+007E shifted by 0xFEE0.
@@ -174,11 +143,9 @@ fn widen(c: char) -> char {
 )]
 fn fold_into(c: char, out: &mut String) {
     match c {
-        // --- elided: these sit *inside* a word ------------------------------------------
-        //
-        // Apostrophes in every spelling a provider emits — straight, curly, modifier-letter,
-        // backtick, acute accent used as one, prime. See the module docs: separating on these
-        // is what split `i’m` into `i m` and cost the largest duplicate class in the catalogue.
+        // Every apostrophe spelling a provider emits — straight, curly, modifier-letter,
+        // backtick, acute-as-apostrophe, prime — elided so a possessive or contraction
+        // matches the same title spelled without one.
         '\'' | '\u{2018}' | '\u{2019}' | '\u{02BC}' | '\u{02B9}' | '`' | '\u{00B4}'
         | '\u{2032}' => {}
         // Combining marks. Dropping them folds an NFD-encoded title onto its NFC twin;
@@ -188,8 +155,6 @@ fn fold_into(c: char, out: &mut String) {
         | '\u{20D0}'..='\u{20F0}'
         | '\u{FE20}'..='\u{FE2F}' => {}
 
-        // --- expanded: one character that is really several letters ---------------------
-        //
         // Surrounded by spaces because an ampersand *is* a word: providers write "Ao & Haru"
         // and "Ao and Haru" for the same series, and `x&y` is two words either way.
         '&' => out.push_str(" and "),
@@ -207,7 +172,6 @@ fn fold_into(c: char, out: &mut String) {
         '\u{FB03}' => out.push_str("ffi"),
         '\u{FB04}' => out.push_str("ffl"),
 
-        // --- folded: an accented letter is its base letter -------------------------------
         'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' | 'ă' | 'ą' | 'ǎ' | 'ȧ' => out.push('a'),
         'ç' | 'ć' | 'ĉ' | 'ċ' | 'č' => out.push('c'),
         'ď' | 'đ' | 'ð' => out.push('d'),
@@ -228,8 +192,6 @@ fn fold_into(c: char, out: &mut String) {
         'ý' | 'ÿ' | 'ŷ' => out.push('y'),
         'ź' | 'ż' | 'ž' => out.push('z'),
 
-        // --- everything else -------------------------------------------------------------
-        //
         // Alphanumeric survives verbatim, which is what keeps CJK and Hangul titles intact;
         // any other character is a word boundary.
         other if other.is_alphanumeric() => out.push(other),
@@ -274,13 +236,9 @@ mod tests {
         assert_eq!(normalize_title("   "), "");
     }
 
-    /// An apostrophe joins a word; it does not split one.
-    ///
-    /// This is the rule the whole merge queue turned on. `Sorry but I’m not Yuri` and `Sorry But
-    /// Im Not Yuri` are the same series on two providers, and while the apostrophe was a
-    /// separator they normalized to `sorry but i m not yuri` and `sorry but im not yuri` — a
-    /// token-set overlap of 4/7 and a trigram score of 0.80, which is the review band, not the
-    /// attach band. Every possessive in the catalogue had the same problem.
+    /// An apostrophe joins a word; it does not split one — treating it as a separator put
+    /// `Sorry but I'm not Yuri` and `Sorry But Im Not Yuri` in the review band instead of
+    /// matching them as the same series.
     #[test]
     fn apostrophes_join_a_word_rather_than_splitting_it() {
         let expected = "sorry but im not yuri";
@@ -301,11 +259,8 @@ mod tests {
         );
     }
 
-    /// Combining marks fold into the letter they sit on instead of breaking the word.
-    ///
-    /// `İ` (U+0130) lowercases to `i` + U+0307, and while combining marks were separators that
-    /// turned `İstanbul` into two tokens. The same rule makes an NFD-encoded title match its
-    /// precomposed twin, which providers mix freely.
+    /// Combining marks fold into the letter they sit on — treating them as separators split
+    /// `İstanbul` (which lowercases to `i` + U+0307) into two tokens.
     #[test]
     fn combining_marks_are_elided_not_separated() {
         assert_eq!(normalize_title("\u{0130}stanbul"), "istanbul");
@@ -316,11 +271,8 @@ mod tests {
         );
     }
 
-    /// Full-width forms are the same characters as their ASCII twins.
-    ///
-    /// Japanese and Korean listings use them freely, and every one of them was previously a
-    /// non-ASCII alphanumeric that survived normalization verbatim — so `ＳＰＹ` and `SPY`
-    /// were different words with a trigram similarity of zero.
+    /// Full-width forms are the same characters as their ASCII twins — before folding, `ＳＰＹ`
+    /// and `SPY` normalized to different keys and never matched.
     #[test]
     fn full_width_forms_fold_to_ascii() {
         assert_eq!(normalize_title("ＳＰＹ×ＦＡＭＩＬＹ"), "spy family");
@@ -337,10 +289,8 @@ mod tests {
         assert_eq!(normalize_title("Tom&Jerry"), "tom and jerry");
     }
 
-    /// Multi-letter folds keep both letters.
-    ///
-    /// `ß` → `s` would have put `Straße` and `Strasse` on different keys, which is the exact
-    /// case the fold exists to collapse.
+    /// Multi-letter folds keep both letters — folding `ß` to a single `s` would put `Straße`
+    /// and `Strasse` on different keys.
     #[test]
     fn multi_letter_folds_expand_rather_than_truncate() {
         assert_eq!(normalize_title("Straße"), "strasse");

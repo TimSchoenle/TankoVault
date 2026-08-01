@@ -1,20 +1,6 @@
 //! The feature-flag control plane: read the catalogue, switch a feature on or off, or reset it
-//! to the value it ships with.
-//!
-//! # Three states, not two
-//!
-//! A feature is *enabled or disabled*, and separately *at its shipped default or explicitly
-//! overridden*. Collapsing those into one boolean would make "reset to default" impossible to
-//! express and would hide the difference between a feature nobody has thought about and one an
-//! operator deliberately confirmed. So: `PUT` records a decision, `DELETE` withdraws it.
-//!
-//! # Propagation
-//!
-//! Writing a flag refreshes *this* replica's gate before responding, so the operator's own next
-//! request already sees the new behaviour. Other replicas pick it up on their next refresh tick
-//! (`features.refresh_secs`, 15s by default). The response says which state the deployment is
-//! now in, not which state this process is in, because they are the same value read from the
-//! same table.
+//! to the value it ships with. Writing a flag refreshes this replica's gate immediately; other
+//! replicas pick it up on their next refresh tick.
 
 use crate::audit::audit;
 use crate::error::{ApiError, ApiResult};
@@ -211,11 +197,8 @@ pub async fn reset_flag(
     Ok(Json(flag_views(&state).await?))
 }
 
-/// Pair the compiled registry with the stored overrides.
-///
-/// The registry drives the iteration, not the table: a feature with no override still has to
-/// appear (at its default), and an override for a feature this build does not know must not
-/// invent a row on the page for something nothing enforces.
+/// Pairs the compiled registry with stored overrides; iterating the registry (not the table)
+/// keeps a removed feature's stale override from inventing a row nothing enforces.
 async fn flag_views(state: &AppState) -> ApiResult<Vec<FlagView>> {
     let overrides = tankovault_db::repo::flags::list_overrides(&state.pool).await?;
     let by_key: HashMap<&str, &tankovault_db::repo::flags::OverrideRow> = overrides

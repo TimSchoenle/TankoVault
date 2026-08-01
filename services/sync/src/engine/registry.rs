@@ -1,8 +1,4 @@
-//! The set of external providers this service knows about.
-//!
-//! Every collaborator in `engine/` reaches a provider through here rather than holding its own
-//! map, so "unknown provider" is one error raised in one place and adding a second provider
-//! stays a single registry entry (design: generalized multi-provider sync).
+//! The set of external providers this service knows about, keyed by slug.
 
 use std::collections::HashMap;
 
@@ -20,16 +16,14 @@ impl ProviderRegistry {
         Self { providers }
     }
 
-    /// The provider registered under `slug`, or the typed `UnknownProvider` error — which
-    /// `crate::error` maps to a 404 rather than a 500 (ARCH-11).
+    /// The provider registered under `slug`, or `UnknownProvider` (maps to a 404, not a 500).
     pub(crate) fn get(&self, slug: &str) -> anyhow::Result<&dyn ExternalProvider> {
         self.try_get(slug).ok_or_else(|| {
             anyhow::Error::new(crate::error::SyncError::UnknownProvider(slug.to_owned()))
         })
     }
 
-    /// The provider registered under `slug`, if any. For paths that skip unknown slugs rather
-    /// than failing on them (the scheduled loop, the targeted push fan-out).
+    /// The provider registered under `slug`, if any, for callers that skip unknown slugs instead of failing.
     pub(crate) fn try_get(&self, slug: &str) -> Option<&dyn ExternalProvider> {
         self.providers.get(slug).map(Box::as_ref)
     }

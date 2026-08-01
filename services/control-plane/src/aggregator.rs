@@ -1,17 +1,7 @@
-//! Progress aggregator (design §12).
-//!
-//! Consumes the compact [`ProgressEvent`]s that workers publish on
-//! [`subjects::PROGRESS_SUBJECT`] after every task settles. Its job is to **finalise a
-//! run**: once every planned task of a run has completed or failed, it transitions the
-//! `scan_runs` row to its terminal state and republishes one final progress event so the
-//! console SSE sees a `completed`/`failed` run without DB-polling.
-//!
-//! Run-counter aggregation itself already happens DB-side in
-//! [`tankovault_db::repo::scans::complete_task`]/`fail_task`/`skip_task`; this consumer only
-//! adds the *completion* transition (which nothing else performed before) and the NATS
-//! relay. The finalisation is a single atomic UPDATE
-//! ([`tankovault_db::repo::scans::finalize_if_complete`]) that fires exactly once, so the
-//! republished terminal event — re-consumed here — is a no-op and cannot loop.
+//! Progress aggregator: finalises a scan run once every planned task has settled, then
+//! republishes one terminal progress event for the console SSE. Finalisation is a single
+//! atomic UPDATE ([`tankovault_db::repo::scans::finalize_if_complete`]) that fires exactly
+//! once, so a redelivered event is a no-op that cannot loop.
 
 use std::time::Duration;
 use tankovault_bus::Bus;
@@ -21,9 +11,8 @@ use time::OffsetDateTime;
 
 /// Consume `scan.progress` until `shutdown`, finalising runs as their tasks settle.
 ///
-/// Previously a bare `while let` with **no cancellation arm**, so this consumer could not be
-/// drained on `SIGTERM` — the control-plane's graceful shutdown hung on it or killed it
-/// mid-message. The shared loop supplies the shutdown arm along with the delivery semantics.
+/// Must use the shared consume loop, not a bare loop — without a cancellation arm this
+/// hangs or gets killed mid-message on `SIGTERM`.
 pub(crate) async fn run(
     pool: PgPool,
     bus: Bus,
@@ -33,10 +22,9 @@ pub(crate) async fn run(
         .event_consumer(subjects::PROGRESS_CONSUMER, subjects::PROGRESS_SUBJECT)
         .await?;
 
-    // Retries a couple of times, then settles. Finalisation is a single idempotent UPDATE
-    // (`finalize_if_complete`), so a redelivery is a no-op — but it is also self-healing:
-    // the *next* task to settle on the same run republishes progress and finalises it then.
-    // That is why giving up here is safe in a way it is not for the notifier.
+    // Idempotent (`finalize_if_complete` fires once) and self-healing: the next task to
+    // settle on this run re-triggers finalisation. Giving up after 3 retries is safe here,
+    // unlike for the notifier.
     let policy = tankovault_bus::ConsumePolicy {
         max_deliveries: 3,
         backoff: |_| Duration::from_secs(15),
@@ -90,10 +78,8 @@ async fn handle_progress(pool: &PgPool, bus: &Bus, event: &ProgressEvent) -> any
     Ok(())
 }
 
-/// Cheap, DB-free predicate mirroring the SQL finalisation guard: a run is a candidate
-/// for finalisation once it has at least one planned task and every task has settled
-/// (`done + failed >= total`). Used to skip the atomic UPDATE for the common
-/// still-in-flight event.
+/// Cheap, DB-free mirror of the SQL finalisation guard; used to skip the atomic UPDATE
+/// for the common still-in-flight event.
 pub(crate) fn should_finalize(total_tasks: i32, done_tasks: i32, failed_tasks: i32) -> bool {
     total_tasks > 0 && done_tasks.saturating_add(failed_tasks) >= total_tasks
 }

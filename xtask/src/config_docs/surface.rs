@@ -1,21 +1,9 @@
-//! The configuration surface, read out of the config structs themselves.
-//!
-//! Two sources, because the codebase has two ways of reading configuration and both can drift
-//! from the document:
-//!
-//! 1. [`Table`] parses `#[derive(Deserialize)]` structs and [`walk`] descends from each
-//!    service's root `Config` into the shared blocks it composes, emitting one environment key
-//!    per leaf field. This is the layered surface — everything `tankovault_config::load` reads.
-//! 2. [`direct_env_keys`] finds `std::env::var("TANKOVAULT_…")` call sites. Those bypass the
-//!    layering entirely (`TANKOVAULT_PROFILE`, `TANKOVAULT_CONFIRM_RESET`), so no amount of
-//!    struct walking would ever see them — and `TANKOVAULT_CONFIRM_RESET` being undocumented is
-//!    precisely what `BUILD_AND_OPS` §10.3 found by hand.
-//!
-//! The walker models the subset of `serde` this repository actually uses and **refuses** the
-//! rest rather than guessing: a `#[serde(flatten)]` or a struct-level `rename_all` silently
-//! rewrites the key path, so meeting one is a hard error telling the reader to teach the walker
-//! first. A gate that quietly mis-derives is worse than no gate, because the document it blesses
-//! is then wrong with a green tick next to it.
+//! The configuration surface, read out of the config structs themselves: [`Table`]/[`walk`]
+//! descend `#[derive(Deserialize)]` structs from each service's root `Config`, and
+//! [`direct_env_keys`] finds `std::env::var("TANKOVAULT_…")` call sites that bypass the
+//! layering entirely. The walker **refuses** any `serde` attribute it doesn't model
+//! (`flatten`, `rename_all`) rather than guessing, since a gate that quietly mis-derives
+//! blesses a wrong document with a green tick.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -89,8 +77,7 @@ impl Table {
     }
 }
 
-/// Every environment key a service reads through `tankovault_config::load` (not a link: `xtask`
-/// parses that crate's source rather than depending on it), derived by
+/// Every environment key a service reads through `tankovault_config::load`, derived by
 /// descending from its root config struct.
 ///
 /// `local` is that service's own source; `shared` is `crates/config` plus the one domain type a

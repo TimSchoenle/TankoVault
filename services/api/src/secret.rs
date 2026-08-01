@@ -1,19 +1,8 @@
-//! Serialising a secret onto the wire, deliberately and in one place.
-//!
-//! [`secrecy::SecretBox`] has no `Serialize` impl unless the inner type opts in via
-//! `SerializableSecret`, and this workspace opts nothing in. That default is the point: a
-//! secret cannot reach a JSON body, a log line or an error payload by being carried along in a
-//! struct someone serialised.
-//!
-//! But two values *must* reach the client, because handing them over is the whole transaction:
-//! the access token a login issues, and the refresh token that rides in a `Set-Cookie` header.
-//! Those go through [`expose_onto_wire`], which is a `#[serde(serialize_with = …)]` — so the
-//! deliberate exception is written at the one field it applies to, and `grep expose_onto_wire`
-//! enumerates every secret this API is allowed to emit.
-//!
-//! A blanket `impl SerializableSecret for String` would have been three lines and would have
-//! made every `SecretString` in the process silently serialisable, which is the same mistake
-//! as a bare `String` with extra steps.
+//! Serialising a secret onto the wire, deliberately and in one place — no type here opts into
+//! `SerializableSecret`, so a secret can't reach a JSON body by riding along in a struct
+//! someone serialised. The two values that must reach the client (the access and refresh
+//! tokens) go through [`expose_onto_wire`], the one exception `grep expose_onto_wire`
+//! enumerates in full.
 
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serializer;
@@ -29,13 +18,10 @@ pub(crate) fn expose_onto_wire<S: Serializer>(
     serializer.serialize_str(secret.expose_secret())
 }
 
-/// [`expose_onto_wire`] for an optional field.
-///
-/// Needed as a separate function because `serialize_with` replaces the serialisation of the
-/// whole field, `Option` and all — the inner-value form cannot be reused through it.
-/// `RegisterResponse::access_token` is `None` on the confirmation-required path, and pairs
-/// this with `skip_serializing_if` so the absent case stays *absent* rather than becoming an
-/// explicit `null`, which is the shape `openapi.json` already describes.
+/// [`expose_onto_wire`] for an optional field — needed separately since `serialize_with`
+/// replaces the whole field's serialisation, `Option` included, so the inner-value form can't
+/// be reused. Paired with `skip_serializing_if` so an absent value stays absent rather than
+/// becoming an explicit `null`.
 ///
 /// # Errors
 /// Propagates whatever the underlying [`Serializer`] returns.
@@ -66,9 +52,8 @@ mod tests {
         expires_in: i64,
     }
 
-    /// The opt-in works: a field that asks for it lands on the wire as a plain string, so the
-    /// client sees exactly what it saw before the wrapper existed. Pins the wire format, which
-    /// `openapi.json` and every existing client depend on.
+    /// The opt-in works: a field that asks for it lands on the wire as a plain string. Pins
+    /// the wire format that `openapi.json` and every client depend on.
     #[test]
     fn an_opted_in_field_serialises_as_a_plain_string() {
         let json = serde_json::to_string(&Response {
@@ -82,19 +67,16 @@ mod tests {
         );
     }
 
-    /// The half that is easy to lose in a refactor: without the attribute the struct must not
-    /// compile at all, rather than serialising `[REDACTED]` or an object. This is a
-    /// compile-fail property, so it is asserted the only way a test can — by stating it — and
-    /// enforced by `secrecy` refusing to implement `Serialize` for `SecretBox<str>`.
+    /// The half easy to lose in a refactor: without the attribute the struct must not compile
+    /// at all, rather than serialising `[REDACTED]` or an object — enforced by `secrecy`
+    /// refusing `Serialize` for `SecretBox<str>`.
     ///
-    /// If a future `impl SerializableSecret for …` is ever added to this workspace, that
-    /// refusal disappears silently and every `SecretString` field starts serialising. Do not
-    /// add one.
+    /// A future `impl SerializableSecret for …` would make this refusal disappear silently.
+    /// Do not add one.
     #[test]
     fn a_secret_is_not_serialisable_without_the_opt_in() {
-        // `SecretString: Serialize` does not hold. Asserted structurally: a helper generic
-        // over `Serialize` cannot be instantiated with it, so this test's *absence of* a call
-        // is the assertion, and the doc comment above is the record of why.
+        // `SecretString: Serialize` does not hold — asserted structurally: a helper generic
+        // over `Serialize` can't be instantiated with it, so the absence of a call is the test.
         fn assert_serialisable<T: serde::Serialize>() {}
         assert_serialisable::<String>();
         // assert_serialisable::<SecretString>();  // <- must not compile

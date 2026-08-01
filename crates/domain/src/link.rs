@@ -1,11 +1,6 @@
-//! The migration-safe link resolver.
-//!
-//! Every persisted location is a **relative path** on a provider. Absolute URLs are
-//! computed at read time from `provider.base_url + path`. This is the single resolver
-//! function referenced by the API, worker, and frontend — see design §5.
-//!
-//! Storing relative paths means a provider domain migration is a one-row
-//! `UPDATE providers SET base_url = ...` with zero link rewrites.
+//! The migration-safe link resolver: every persisted location is a relative path, resolved to
+//! an absolute URL at read time from `provider.base_url`, so a domain migration is a one-row
+//! `base_url` update with zero link rewrites.
 
 use thiserror::Error;
 use url::Url;

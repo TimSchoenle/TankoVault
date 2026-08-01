@@ -1,12 +1,6 @@
-//! # control-plane service
-//!
-//! Schedules and plans scans; workers execute. Responsibilities (design §12):
-//! - **Planner**: expand a run into `scan_tasks`, write them, and publish to the
-//!   provider's `JetStream` subject.
-//! - **Scheduler**: periodically trigger fast scans of active providers (and full scans
-//!   on a slower cadence). A richer per-provider cron (`tokio-cron-scheduler`) + Redis
-//!   leader election are documented follow-ups.
-//! - **Trigger endpoint**: `POST /internal/scans` called by the API's "Scan now".
+//! Schedules and plans scans; workers execute. Exposes `POST /internal/scans` for the
+//! API's "Scan now" and runs a background scheduler that periodically triggers fast and
+//! full scans of active providers.
 
 mod aggregator;
 mod dedupe;
@@ -60,9 +54,9 @@ struct Config {
     /// operator action; the endpoint's name is not an access control.
     #[serde(default)]
     internal: tankovault_config::InternalAuthConfig,
-    /// The confidence policy for deciding whether two series are the same work. Shared with the
-    /// worker's ingest and with external sync so no two paths can disagree (ARCH-16); read here
-    /// because the duplicate sweep applies the *same* policy to series that already exist.
+    /// The confidence policy for matching series, shared with the worker's ingest and
+    /// external sync so no two paths disagree; the duplicate sweep applies it to
+    /// existing series.
     #[serde(default)]
     matching: tankovault_config::MatchingConfig,
 }
@@ -81,9 +75,8 @@ struct SchedulerConfig {
     full_interval_secs: u64,
     /// Seconds between duplicate-reconciliation sweeps. 0 disables.
     ///
-    /// Hourly by default rather than per-scan: the sweep re-reads the whole catalogue's title
-    /// keys, and the thing it is waiting for — enrichment giving a series its authors, year and
-    /// alternative titles — happens on the order of hours, not minutes.
+    /// Hourly by default: the enrichment the sweep needs (authors, year, alt titles)
+    /// happens on the order of hours, not minutes.
     #[serde(default = "default_merge_sweep_interval")]
     merge_sweep_interval_secs: u64,
     /// Newly-blocked duplicate pairs shortlisted per sweep.
@@ -92,13 +85,9 @@ struct SchedulerConfig {
     /// Open queue rows re-scored per sweep, least-recently-scored first.
     #[serde(default = "default_merge_sweep_requeue")]
     merge_sweep_requeue: i64,
-    /// Automatic merges permitted in a single sweep.
-    ///
-    /// A ceiling on a *destructive* background action, and the reason it exists is that nothing
-    /// else bounds one. Without it, a mistaken threshold or a bad normalization rule would
-    /// collapse the whole catalogue between two scheduler ticks; with it, the worst a single bad
-    /// run can do is a number an operator chose, and the sweep's report says how much it
-    /// deferred.
+    /// Automatic merges permitted in a single sweep — the only bound on a destructive
+    /// background action. Without it, a bad threshold or normalization rule could collapse
+    /// the whole catalogue between two scheduler ticks.
     #[serde(default = "default_merge_sweep_max_auto_merges")]
     merge_sweep_max_auto_merges: i64,
 }
@@ -146,9 +135,8 @@ fn default_merge_sweep_max_auto_merges() -> i64 {
 struct AppState {
     pool: PgPool,
     bus: Bus,
-    /// The operator's runtime switches. Consulted at the top of each scheduler sweep rather
-    /// than at boot: switching the scheduler off during an incident has to take effect without
-    /// a redeploy, which is the whole point of a flag as opposed to a config toggle.
+    /// The operator's runtime switches, consulted per sweep rather than at boot so an
+    /// incident-time toggle takes effect without a redeploy.
     features: FeatureGate,
     /// The canonicalisation policy the duplicate sweep applies.
     matching: tankovault_config::MatchingConfig,
@@ -158,10 +146,8 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Before config, telemetry or anything else: this process may have been invoked by
-    // Docker's HEALTHCHECK rather than as the service. `scratch` images have no shell and no
-    // wget, so the binary probing itself is the only probe available. See
-    // `tankovault_service::healthcheck`.
+    // Runs before config/telemetry: `scratch` images have no shell or wget, so the binary
+    // must probe itself for Docker's HEALTHCHECK.
     if tankovault_service::healthcheck::requested() {
         let cfg: Config = tankovault_config::load()?;
         tankovault_service::run_healthcheck_and_exit(&cfg.bind_addr);
@@ -170,9 +156,8 @@ async fn main() -> anyhow::Result<()> {
     let cfg: Config = tankovault_config::load()?;
     tankovault_service::init_tracing(&cfg.telemetry)?;
     let metrics = MetricsRegistry::install(&cfg.metrics)?;
-    // Resolved before anything binds: a service in this tier that starts without a token
-    // silently downgrades to the unauthenticated behaviour the token exists to remove, so
-    // the production profile refuses to boot rather than serving privileged routes openly.
+    // Resolved before anything binds: starting without a token would silently serve
+    // privileged routes unauthenticated, so the production profile refuses to boot instead.
     let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
     let shutdown = tankovault_service::install_shutdown();
 
@@ -186,8 +171,8 @@ async fn main() -> anyhow::Result<()> {
     let bus = Bus::connect(&cfg.nats.url).await?;
     bus.ensure_streams().await?;
 
-    // Loaded before the scheduler starts, so the first sweep after a restart already respects
-    // the operator's stored decisions rather than briefly running against the defaults.
+    // Loaded before the scheduler starts so the first post-restart sweep respects stored
+    // flags rather than briefly running against defaults.
     let features = FeatureGate::new(std::sync::Arc::new(PostgresFlagSource::new(pool.clone())));
     features
         .spawn_refresh(cfg.features.refresh_interval(), shutdown.clone())
@@ -269,19 +254,15 @@ struct TriggerRequest {
     mode: ScanMode,
 }
 
-// The response shape is `tankovault_contracts::admin::ScanTriggeredView`, not a private struct
-// here: `services/api` republishes this body verbatim on `/v1/admin/scans`, and while the
-// definition lived in this binary the republisher could declare nothing more specific than
-// `serde_json::Value` (ARCH-10). Both ends name the same type now.
+// Uses `tankovault_contracts::admin::ScanTriggeredView`, not a private struct —
+// `services/api` republishes this body verbatim.
 
 async fn trigger_scan(
     State(state): State<AppState>,
     Json(req): Json<TriggerRequest>,
 ) -> Result<Json<ScanTriggeredView>, Problem> {
-    // The API refuses a full scan on the same flag before it ever reaches here. Repeating the
-    // check is not redundant: this endpoint is reachable by anything on the internal network,
-    // and a switch an operator has thrown should hold at the component that does the work, not
-    // only at the one that happens to be in front of it today.
+    // Repeats the API's check: this endpoint is reachable by anything on the internal
+    // network, so the switch must hold here too, not only at the component in front of it.
     if req.mode == ScanMode::Full && !state.features.is_enabled(Feature::ScanningFull) {
         return Err(Problem::new(
             StatusCode::NOT_FOUND,
@@ -314,16 +295,11 @@ async fn trigger_scan(
     Ok(Json(ScanTriggeredView { run_ids }))
 }
 
-/// Run one duplicate-reconciliation sweep on demand.
+/// Runs one duplicate-reconciliation sweep on demand — to preview a `matching.auto_merge`
+/// change or clear a backlog without waiting for the schedule.
 ///
-/// The scheduled sweep is the normal path; this exists because an operator changing
-/// `matching.auto_merge` needs to see the effect on one run before leaving it to the schedule,
-/// and because clearing a backlog should not mean waiting an hour per batch.
-///
-/// Not leader-gated — an explicitly requested sweep should run on the replica that was asked —
-/// but still gated on `scanning.auto_merge`, because that flag's purpose is to stop the
-/// destructive action, and a switch an operator has thrown must hold at the component that does
-/// the work rather than only at the one in front of it.
+/// Not leader-gated (runs on the replica asked), but still gated on `scanning.auto_merge`,
+/// since the switch must hold at the component doing the work.
 async fn trigger_merge_sweep(
     State(state): State<AppState>,
     body: Option<Json<MergeSweepRequest>>,
@@ -407,9 +383,8 @@ async fn plan_run(
 
 /// Periodic scheduler loop.
 ///
-/// Exits on `shutdown` rather than being killed mid-sweep: a sweep that is severed
-/// part-way through leaves planned-but-unpublished runs behind, which the aggregator then
-/// waits on forever.
+/// Exits on `shutdown` rather than being killed mid-sweep: a severed sweep leaves
+/// planned-but-unpublished runs behind, which the aggregator then waits on forever.
 async fn run_scheduler(
     state: AppState,
     cfg: SchedulerConfig,
@@ -440,12 +415,11 @@ async fn run_scheduler(
     }
 }
 
-/// Run a duplicate sweep only when this replica holds scheduler leadership *and* the operator
-/// has left automatic merging switched on.
+/// Runs a duplicate sweep only when this replica holds leadership *and* automatic
+/// merging is switched on.
 ///
-/// Leadership matters more here than for a scan sweep. Two replicas planning the same scan run
-/// produce idempotent duplicate work; two replicas merging the same pair race on a destructive
-/// transaction, and the loser's `merge_series` finds one of its two series already gone.
+/// Leadership matters more than for a scan sweep: two replicas merging the same pair
+/// race on a destructive transaction, and the loser finds its series already gone.
 async fn maybe_merge_sweep(state: &AppState, leadership: &leader::Leadership) {
     if !state.features.is_enabled(Feature::ScanningAutoMerge) {
         tracing::debug!("skipping duplicate sweep; automatic merging is switched off");
@@ -468,13 +442,11 @@ async fn maybe_merge_sweep(state: &AppState, leadership: &leader::Leadership) {
     }
 }
 
-/// Run a sweep only when this replica currently holds scheduler leadership *and* the operator
-/// has left scheduled scanning switched on.
+/// Runs a sweep only when this replica holds scheduler leadership *and* scheduled scanning
+/// is switched on.
 ///
-/// The flag is checked here, per sweep, rather than when the loop is built: an operator
-/// switching `scanning.scheduler` off — typically because a provider is complaining about
-/// traffic — needs the next sweep to skip, not a redeploy. The loop itself keeps running so it
-/// resumes on its own when the flag comes back.
+/// Checked per sweep, not when the loop is built, so switching `scanning.scheduler` off
+/// takes effect on the next tick without a redeploy, and resumes on its own when it's back.
 async fn maybe_sweep(state: &AppState, leadership: &leader::Leadership, mode: ScanMode) {
     if !state.features.is_enabled(Feature::ScanningScheduler) {
         tracing::debug!(?mode, "skipping sweep; scheduled scanning is switched off");
@@ -525,12 +497,9 @@ async fn tick(maybe: &mut Option<tokio::time::Interval>) {
     }
 }
 
-/// Log the cause and answer with an opaque `500` [`Problem`].
+/// Logs the cause and answers with an opaque `500` [`Problem`].
 ///
-/// This used to be `(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())`, which put the raw
-/// `Display` of a database or bus error on the wire — connection strings and SQL included — and
-/// left no trace in the log. It is now the other way around, which is the only correct way
-/// around, and it emits the same RFC 9457 body as every other service (ARCH-12).
+/// Never put the raw error `Display` on the wire: it can carry connection strings or SQL.
 fn internal<E: std::fmt::Display>(e: E) -> Problem {
     tracing::error!(error = %e, "control-plane request failed");
     Problem::internal()

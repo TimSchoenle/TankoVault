@@ -1,18 +1,11 @@
 name: Auto-Merge Release PRs
 
-# Approves and merges the release-please pull request once it has sat for the configured time
-# with green checks, using the shared reusable workflow from `TimSchoenle/actions` — the same
-# mechanism as the other repositories in this account, so the behaviour is one implementation
-# rather than a per-repo reimplementation.
+# Approves and merges the release-please pull request once it has sat for the configured time with
+# green checks, via the shared reusable workflow from `TimSchoenle/actions`.
 #
-# `branch_pattern` restricts it to release-please's own branches, and `trusted_authors` to the
-# two bot accounts, so an ordinary pull request can never be swept up by the schedule. The delay
-# is the point: it is the window in which a human can object to a release, and the reason this
-# is not simply `automerge` on the PR.
-#
-# Note what this does *not* bypass: the required `ci` check still has to pass. The release PR
-# carries the version bump and the `Cargo.lock` sync from `update-lockfile.yaml`, and those are
-# exactly what CI needs to see green before a tag is cut.
+# `branch_pattern` and `trusted_authors` are what stop an ordinary pull request being swept up by
+# the schedule. The delay is the window in which a human can object to a release. Nothing here
+# bypasses the required `ci` check.
 
 on:
   schedule:

@@ -1,46 +1,8 @@
-//! `xtask config-docs [--check]` — keep `docs/CONFIGURATION.md` honest about the code.
-//!
-//! # Why this exists
-//!
-//! `docs/CONFIGURATION.md` is hand-written and describes ~80 environment keys across eight
-//! services. Nothing connected it to the structs those keys are read into, so it could drift in
-//! both directions with no gate anywhere noticing — and an unknown `TANKOVAULT_*` key is
-//! *ignored*, not rejected, so the drift never surfaces at runtime either. An operator setting a
-//! key the document promises and the code no longer reads gets silence, which is the same
-//! failure the document's own §8 exists to warn about.
-//!
-//! This is the shape `BUILD_AND_OPS` §10.3 asked for and the same shape as OPS-2.4 and OPS-1.5:
-//! where the codebase records a decision in prose, give it something that notices when the prose
-//! stops being true.
-//!
-//! # What it compares
-//!
-//! | Direction | Meaning |
-//! | --- | --- |
-//! | in the code, not in the document | An operator cannot discover the key at all. |
-//! | in the document, not in the code | Setting it does nothing, silently. |
-//! | in the document's §8, back in the code | A retired name has been reused while the document still says it is dead. |
-//!
-//! The surface is derived twice over, from [`surface::walk`] (the layered config structs) and
-//! [`surface::direct_env_keys`] (`std::env::var` call sites), because the codebase reads
-//! configuration both ways and only the first is visible in a struct.
-//!
-//! # Where the gate lives
-//!
-//! In `tests::the_document_matches_the_code` (a `#[cfg(test)]` module, so no link can reach it
-//! from here), not in a CI step and not in `xtask ci`. Unlike
-//! `openapi --check` there is no write half — the document is prose, so nothing regenerates it —
-//! which leaves only the comparison, and a comparison between two committed artefacts is a test
-//! in this repository (`crates/api-client/tests/workspace_lints.rs`, the `openapi.json` readers
-//! in `services/api`). `cargo test --workspace` therefore runs it, and so does `xtask ci` by
-//! running that. The command itself exists for the *other* half of the job: printing the derived
-//! surface, which is what makes a failure fixable.
-//!
-//! # What it deliberately does not cover
-//!
-//! Non-`TANKOVAULT_` keys — `RUST_LOG`, `DATABASE_URL`, `SQLX_OFFLINE`. They are third-party or
-//! tooling spellings this repository does not own, and the prefix is what makes a key derivable
-//! in the first place. They stay documented by hand, in §3.
+//! `xtask config-docs [--check]` — keep `docs/CONFIGURATION.md` honest about the code. An
+//! unknown `TANKOVAULT_*` key is *ignored*, not rejected, so drift between the document and the
+//! config structs is silent at runtime; `--check` derives the real surface ([`surface`]) and
+//! diffs it against the document, and the gate itself lives in
+//! `tests::the_document_matches_the_code`.
 
 mod markdown;
 mod surface;

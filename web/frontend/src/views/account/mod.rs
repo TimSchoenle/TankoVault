@@ -57,19 +57,11 @@ impl TabKind for Panel {
 
 impl Panel {
     /// Whether this deployment offers the panel at all.
-    ///
-    /// Appearance is unconditional: it is entirely client-side and has no endpoint to switch
-    /// off. Privacy stays visible whenever *any* of its three features is on, because each of
-    /// export, deletion and the request queue can be enabled independently and the panel is
-    /// worth showing for any one of them.
     fn is_visible(self, caps: &CapabilitySet) -> bool {
         match self {
             Self::Appearance => true,
             Self::Profile => caps.has_feature(Feature::AccountsProfile),
-            // Either half is enough. The two cards under this tab are independent features:
-            // an operator can offer passkeys without session management or the other way round,
-            // and hiding the tab unless *sessions* is on would have made the passkey card
-            // unreachable for no reason anyone could see.
+            // Either half is enough; passkeys and sessions are independent features.
             Self::Security => {
                 caps.has_feature(Feature::AccountsSessions)
                     || caps.has_feature(Feature::AccountsPasskeys)
@@ -108,8 +100,8 @@ pub(crate) fn Account() -> Element {
         .copied()
         .filter(|p| p.is_visible(&caps))
         .collect();
-    // Appearance is always visible, so this cannot be empty; falling back to it rather than
-    // unwrapping keeps that a local fact instead of a panic waiting on a future edit.
+    // Appearance is always visible, so this can't be empty; avoid unwrapping so that stays
+    // a local fact, not a future panic.
     let fallback = visible.first().copied().unwrap_or(Panel::Appearance);
     let current = {
         let selected = *panel.read();
@@ -123,9 +115,9 @@ pub(crate) fn Account() -> Element {
     let sign_out = move |_| {
         let client = api.client();
         spawn(async move {
-            // Clear locally regardless of the response: the refresh cookie may already be
-            // gone, and leaving the reader "signed in" after they asked not to be would be
-            // worse than a revocation call that quietly failed.
+            // Clear locally regardless of the response: the refresh cookie may already be gone,
+            // and leaving the reader "signed in" after opting out is worse than a quietly
+            // failed revocation call.
             let _ = client.logout().send().await;
             session.clear();
             caps.clear();

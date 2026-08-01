@@ -61,7 +61,11 @@ pub(crate) fn Series(id: String) -> Element {
     let api = api::use_api();
     let reload_detail = use_reload();
     let reload_wl = use_reload();
-    let reload_chapters = use_reload();
+    // One signal for read state, shared by both surfaces that write it. The chapter list's
+    // per-chapter toggles and the sidebar's progress stepper move the *same* server state, so
+    // they must invalidate the *same* fetches: the two used to own a `Reload` each, and a read
+    // toggle left the sidebar's progress frontier showing a stale number until a full reload.
+    let reload_progress = use_reload();
     // The pin is read once on mount and written back whenever it changes. Reading it is a
     // plain `localStorage` lookup (`crate::browser`), so the signal can be seeded with the
     // stored value outright rather than rendering unpinned and correcting itself.
@@ -91,9 +95,9 @@ pub(crate) fn Series(id: String) -> Element {
 
     // One request per source, issued together. Reading `detail` here subscribes this resource
     // to it, so the fan-out starts the moment the series lands and re-runs after a progress
-    // write bumps `reload_chapters`.
+    // write bumps `reload_progress`.
     let per_source = use_resource(move || {
-        reload_chapters.track();
+        reload_progress.track();
         let sources: Vec<SourceDto> = match &*detail.read() {
             Some(Ok(loaded)) => loaded.sources.clone(),
             _ => Vec::new(),
@@ -216,7 +220,7 @@ pub(crate) fn Series(id: String) -> Element {
                     {
                         async_view(
                             &per_source,
-                            reload_chapters,
+                            reload_progress,
                             || rsx! { SkeletonBlock { height: 320 } },
                             |_| {
                                 if merged.is_empty() {
@@ -230,7 +234,7 @@ pub(crate) fn Series(id: String) -> Element {
                                         chapters: merged.clone(),
                                         sources: sources.clone(),
                                         pinned,
-                                        reload: reload_chapters,
+                                        reload: reload_progress,
                                     }
                                 }
                             },
@@ -246,7 +250,7 @@ pub(crate) fn Series(id: String) -> Element {
                     authed: session.is_authenticated(),
                     total_chapters: i64::try_from(total_chapters).unwrap_or(i64::MAX),
                     reload_wl,
-                    reload_chapters,
+                    reload_progress,
                 }
                 div { class: "ik-sidebar-card",
                     div { class: "ik-sec-lbl", style: "margin-bottom:10px;", {i18n.t("series.alsoFollow")} }

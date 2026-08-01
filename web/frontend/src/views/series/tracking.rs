@@ -46,14 +46,18 @@ pub(super) fn TrackingCard(
     total_chapters: i64,
     /// Bumped after a watchlist write.
     reload_wl: Reload,
-    /// Bumped after a progress write, so the chapter list's read state refetches.
-    reload_chapters: Reload,
+    /// The screen's read-state signal, owned by [`super::Series`] and shared with the chapter
+    /// list: tracked here so a per-chapter toggle refetches the frontier, bumped here so the
+    /// stepper refetches the list. A `Reload` private to this card would only ever hear its
+    /// own writes.
+    reload_progress: Reload,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
-    let reload_progress = use_reload();
     let reload_sync = use_reload();
 
+    // Tracks the shared read-state signal, so the frontier refetches after a per-chapter
+    // toggle in the list as well as after the stepper's own write.
     let progress = use_resource(move || {
         reload_progress.track();
         let client = api.client();
@@ -174,7 +178,6 @@ pub(super) fn TrackingCard(
                     conflict,
                     reload_sync,
                     reload_progress,
-                    reload_chapters,
                 }
             }
 
@@ -185,12 +188,17 @@ pub(super) fn TrackingCard(
                         reload_progress,
                         || rsx! { SkeletonBlock { height: 76 } },
                         |value| rsx! {
+                            // Keyed on the fetched frontier so a value that moved elsewhere —
+                            // a read toggle in the chapter list — remounts the editor and
+                            // discards its draft. Without the key the draft, which outlives
+                            // its own write to keep the stepper from flickering, would go on
+                            // masking every later server value.
                             ProgressEditor {
+                                key: "{value.last_read_whole_number}",
                                 series_id,
                                 current: value.last_read_whole_number,
                                 total: total_chapters,
                                 reload_progress,
-                                reload_chapters,
                             }
                         },
                     )
@@ -282,12 +290,7 @@ fn TrackingHead(conflicts: usize) -> Element {
 /// One unresolved disagreement between local progress and a tracker, with the three ways out:
 /// push local, take remote, or make "newest wins" the standing policy.
 #[component]
-fn ConflictCard(
-    conflict: ConflictRow,
-    reload_sync: Reload,
-    reload_progress: Reload,
-    reload_chapters: Reload,
-) -> Element {
+fn ConflictCard(conflict: ConflictRow, reload_sync: Reload, reload_progress: Reload) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let busy = use_busy();
@@ -315,7 +318,6 @@ fn ConflictCard(
                 Ok(_) => {
                     reload_sync.bump();
                     reload_progress.bump();
-                    reload_chapters.bump();
                 }
                 Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
             }
@@ -414,12 +416,15 @@ fn ProgressEditor(
     current: f64,
     total: i64,
     reload_progress: Reload,
-    reload_chapters: Reload,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let busy = use_busy();
     // `None` means "show whatever the server last said"; `Some` is an unconfirmed local edit.
+    // It survives its own write on purpose — clearing it there would snap the stepper back to
+    // the pre-write number for the length of the refetch. What ends it is the refetched value:
+    // the caller keys this component on it, so a frontier that moved (here, or by a toggle in
+    // the chapter list) remounts the editor and takes the draft with it.
     let mut draft = use_signal(|| Option::<f64>::None);
     let mut error = use_signal(|| Option::<String>::None);
 
@@ -453,10 +458,7 @@ fn ProgressEditor(
                 .send()
                 .await;
             match outcome {
-                Ok(_) => {
-                    reload_chapters.bump();
-                    reload_progress.bump();
-                }
+                Ok(_) => reload_progress.bump(),
                 Err(e) => {
                     // Roll back to the server's value rather than leaving a number that was
                     // never persisted sitting in the editor.
@@ -484,10 +486,7 @@ fn ProgressEditor(
                 .send()
                 .await
             {
-                Ok(_) => {
-                    reload_chapters.bump();
-                    reload_progress.bump();
-                }
+                Ok(_) => reload_progress.bump(),
                 Err(e) => error.set(Some(api::friendly_error(i18n, e))),
             }
             busy.release();

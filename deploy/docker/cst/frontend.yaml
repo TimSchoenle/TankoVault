@@ -33,15 +33,20 @@ fileExistenceTests:
   - name: "CA trust store baked in for HTTPS upstreams"
     path: "/etc/ssl/certs/ca-certificates.crt"
     shouldExist: true
-  # The two libraries the dynamically linked musl binary resolves at load time. On `scratch`
-  # there is no package manager to supply them, so a missing one is a container that exits
-  # before `main` — with no shell to diagnose it in.
-  - name: "musl loader present (the binary is dynamically linked)"
-    path: "/lib/ld-musl-x86_64.so.1"
-    shouldExist: true
+  # What the dynamically linked musl binary resolves at load time. On `scratch` there is no
+  # package manager to supply them, so a missing one is a container that exits before `main` —
+  # with no shell to diagnose it in. The architecture-specific loader is asserted by
+  # `loader-amd64.yaml` / `loader-arm64.yaml`, passed as a second `--config`.
   - name: "libgcc_s present for the unwinder"
     path: "/usr/lib/libgcc_s.so.1"
     shouldExist: true
+  # Deliberately **absent**: `libstdc++.so.6`. The `frontend` binary does not link the C++
+  # standard library — unlike `worker` and `challenge-solver`, which do since `wreq` 6 — and its
+  # runtime stage ships none. Asserting the absence keeps that an intentional property rather
+  # than an accident nobody would notice until the image grew one.
+  - name: "no libstdc++ (frontend links no C++ runtime)"
+    path: "/usr/lib/libstdc++.so.6"
+    shouldExist: false
   - name: "no shell (scratch, minimal attack surface)"
     path: "/bin/sh"
     shouldExist: false

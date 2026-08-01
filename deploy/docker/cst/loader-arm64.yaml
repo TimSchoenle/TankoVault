@@ -1,0 +1,14 @@
+# The arm64 half of the split described in `loader-amd64.yaml` — read that file first.
+#
+# On the Debian `runtime-browser` image this path resolves through the merged-`/usr` symlink
+# (`/lib` -> `/usr/lib`), because BuildKit cannot copy a directory over that symlink and the
+# loader is therefore staged at `/usr/lib/ld-musl-aarch64.so.1`. The Dockerfile asserts the
+# symlink holds at build time; this asserts the loader is reachable under the name
+# `PT_INTERP` actually names.
+schemaVersion: "2.0.0"
+
+fileExistenceTests:
+  - name: "musl loader present for linux/arm64 (the binary's ELF interpreter)"
+    path: "/lib/ld-musl-aarch64.so.1"
+    shouldExist: true
+    isExecutableBy: "any"

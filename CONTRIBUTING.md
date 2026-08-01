@@ -165,3 +165,25 @@ Conventional-commit prefixes (`feat`, `fix`, `refactor`, `docs`, `test`, `ci`, `
 body that says *why*. The bodies in this repository's history are long on purpose: the
 non-obvious part of most changes here is what was wrong before, and that is not recoverable from
 the diff.
+
+Since 2026-08-01 the prefix is **load-bearing rather than a convention**: release-please derives
+the version bump and the changelog from it. `feat` gives a minor, `fix` a patch, and either a
+`feat!` or a `BREAKING CHANGE:` footer gives a major. A change released under the wrong prefix
+cannot be corrected without a new release, so it is worth a second of thought on the subject
+line even for a small commit.
+
+## Releases
+
+You do not cut one by hand. Merging to `main` maintains a release pull request; merging *that*
+tags the repository and publishes nine multi-architecture images. Two things are worth knowing
+before you touch anything under `.github/workflows` or `deploy/docker`:
+
+- `Cargo.lock` is synced automatically on every pull request by `update-lockfile.yaml`. If you
+  see a bot commit called "sync Cargo.lock with the workspace manifests", that is why — do not
+  revert it, and expect it on any PR that edits a manifest.
+- The release build compiles for `linux/arm64` as well as `amd64`, natively. Anything you add to
+  the Dockerfile that names an architecture will break half of it, and the amd64 CI leg will not
+  tell you. `deploy/docker/Dockerfile`'s sysroot staging is the pattern to follow.
+
+[`docs/RELEASING.md`](docs/RELEASING.md) has the full flow, the required secrets and the
+reasoning behind the release-please configuration.

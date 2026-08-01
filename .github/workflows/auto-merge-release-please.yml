@@ -1,0 +1,44 @@
+name: Auto-Merge Release PRs
+
+# Approves and merges the release-please pull request once it has sat for the configured time
+# with green checks, using the shared reusable workflow from `TimSchoenle/actions` — the same
+# mechanism as the other repositories in this account, so the behaviour is one implementation
+# rather than a per-repo reimplementation.
+#
+# `branch_pattern` restricts it to release-please's own branches, and `trusted_authors` to the
+# two bot accounts, so an ordinary pull request can never be swept up by the schedule. The delay
+# is the point: it is the window in which a human can object to a release, and the reason this
+# is not simply `automerge` on the PR.
+#
+# Note what this does *not* bypass: the required `ci` check still has to pass. The release PR
+# carries the version bump and the `Cargo.lock` sync from `update-lockfile.yaml`, and those are
+# exactly what CI needs to see green before a tag is cut.
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # every 6 hours
+  pull_request_review:
+    types: [dismissed]
+  workflow_dispatch:
+    inputs:
+      time_elapsed:
+        description: 'Time elapsed since PR creation (e.g. "24h", "1d").'
+        required: true
+        default: '1d'
+
+permissions: {}
+
+jobs:
+  auto-merge-releases:
+    name: Auto Merge Releases
+    permissions:
+      contents: write # to merge PRs
+      pull-requests: write # to approve and merge PRs
+    uses: TimSchoenle/actions/.github/workflows/maintenance-timed-auto-pr-approve.yaml@ef7f690e384fd488287e45021cf3dce5dfa2576d # tag=workflows-maintenance-timed-auto-pr-approve-v1.2.27
+    with:
+      time_elapsed: ${{ inputs.time_elapsed || '7d' }}
+      branch_pattern: 'release-please--branches--%'
+      trusted_authors: '253958393,248313786' # actions-maintenance-bot, automatic-release-manager
+    secrets:
+      app_id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
+      private_key: ${{ secrets.ACTIONS_MAINTENANCE_PRIVATE_KEY }}

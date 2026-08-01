@@ -63,10 +63,18 @@ commandTests:
   # It exists because `wreq` 6 changed the BoringSSL binding to `btls-sys`, which added a
   # `libstdc++` dependency: the images built, passed every file-existence assertion, and then
   # died at exec with "Error loading shared library". Only running the loader catches that.
-  # The musl loader is invoked directly — this is a glibc base, so the system `ldd` is the wrong
-  # one for a musl binary — and it reads `/etc/ld-musl-x86_64.path`, so it also proves the
-  # private `/usr/lib/musl` search path is wired up correctly.
+  # The musl loader is invoked rather than the system `ldd`, which is glibc's and the wrong one
+  # for a musl binary. It reads `/etc/ld-musl-<arch>.path`, so this also proves the private
+  # `/usr/lib/musl` search path is wired up — and on arm64 that the loader was staged somewhere
+  # the merged-`/usr` symlink reaches.
+  #
+  # Run through `sh -c` with a glob rather than naming the loader: the filename is
+  # architecture-specific, and the glob is what keeps one contract file covering both legs.
+  # `set -e` plus the glob means a missing loader fails the step rather than silently matching
+  # nothing and reporting success.
   - name: "every shared library the service binary needs resolves"
-    command: "/lib/ld-musl-x86_64.so.1"
-    args: ["--list", "/usr/local/bin/tankovault-service"]
+    command: "sh"
+    args:
+      - "-c"
+      - "set -e; exec /lib/ld-musl-*.so.1 --list /usr/local/bin/tankovault-service"
     excludedOutput: ["not found"]

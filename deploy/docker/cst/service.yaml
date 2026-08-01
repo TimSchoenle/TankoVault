@@ -23,12 +23,13 @@ fileExistenceTests:
     path: "/etc/ssl/certs/ca-certificates.crt"
     shouldExist: true
   # The binary is musl-dynamic (BoringSSL forces a native, non-crt-static build — see the
-  # Dockerfile builder stage). Without these two the container fails at exec time with a
-  # bare "no such file or directory", which is why they are part of the contract.
-  - name: "musl loader present (the binary's ELF interpreter)"
-    path: "/lib/ld-musl-x86_64.so.1"
-    shouldExist: true
-    isExecutableBy: "any"
+  # Dockerfile builder stage). Without these the container fails at exec time with a bare
+  # "no such file or directory", which is why they are part of the contract.
+  #
+  # The musl **loader** is asserted in `loader-amd64.yaml` / `loader-arm64.yaml` instead of
+  # here: its filename is the one thing in this contract that differs by architecture, and
+  # keeping it out is what lets this file be shared by both legs unchanged. Pass the matching
+  # one as a second `--config`. The library paths below are identical on both.
   - name: "libgcc_s present (unwinder referenced by BoringSSL's C++ objects)"
     path: "/usr/lib/libgcc_s.so.1"
     shouldExist: true

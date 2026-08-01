@@ -1,0 +1,21 @@
+# The one assertion that cannot be architecture-neutral, split out so every other contract file
+# can be shared between the amd64 and arm64 legs.
+#
+# musl's loader is named for the architecture — `/lib/ld-musl-x86_64.so.1` on amd64,
+# `/lib/ld-musl-aarch64.so.1` on arm64 — and each binary's `PT_INTERP` hardcodes the one it was
+# linked against. `fileExistenceTests` takes a literal path with no globbing, so the only honest
+# options are a per-architecture file or dropping the check. It is not droppable: this is the
+# single file whose absence makes a container fail at exec with a bare
+# "no such file or directory" and no other diagnostic.
+#
+# Pass it alongside the image's own contract, e.g.
+#   container-structure-test test --image <ref> \
+#     --config deploy/docker/cst/service.yaml \
+#     --config deploy/docker/cst/loader-amd64.yaml
+schemaVersion: "2.0.0"
+
+fileExistenceTests:
+  - name: "musl loader present for linux/amd64 (the binary's ELF interpreter)"
+    path: "/lib/ld-musl-x86_64.so.1"
+    shouldExist: true
+    isExecutableBy: "any"

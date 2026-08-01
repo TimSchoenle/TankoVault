@@ -3,10 +3,14 @@
 Notable changes, newest first. Format loosely follows [Keep a Changelog]; this project has not
 cut a release yet, so everything is under *Unreleased* and every crate is at `0.1.0`.
 
-The release workflow builds, structure-tests, signs and attests on every tag but **does not
-push**. Until 2026-08-01 that was `OP-6` — `wreq-util` was GPL-3.0 and distributing the images
-is *conveying*. That is resolved (see *Changed* below); what holds the push now is that this
-repository still has no `LICENSE`.
+Releases are automated with [release-please](https://github.com/googleapis/release-please):
+conventional commits drive a release pull request, and merging it tags the repository and
+publishes the nine service images. See [`docs/RELEASING.md`](docs/RELEASING.md).
+
+Publishing builds, structure-tests, signs and attests but **does not push**. Until 2026-08-01
+that was `OP-6` — `wreq-util` was GPL-3.0 and distributing the images is *conveying*. That is
+resolved (see *Changed* below); what holds the push now is that this repository still has no
+`LICENSE`.
 
 ## [Unreleased]
 
@@ -26,6 +30,25 @@ repository still has no `LICENSE`.
 
 ### Added
 
+- **A full release pipeline, driven by release-please.** Conventional commits maintain a release
+  pull request; merging it tags the repository and publishes all nine service images as
+  `linux/amd64` + `linux/arm64` manifest lists to **Docker Hub and GHCR**, each signed with
+  cosign keyless and carrying an SPDX SBOM attestation. Replaces the tag-triggered, GHCR-only,
+  amd64-only `release.yml`, which is deleted — keeping both would have double-built every
+  release, since release-please pushes the tag the old workflow triggered on.
+  [`docs/RELEASING.md`](docs/RELEASING.md) covers the flow, the required secrets and the two
+  decisions that are still a human's.
+  - `release-type: simple`, not `rust`, and the reason is written down in three places because
+    it is the thing most likely to be "corrected": the Rust strategy rewrites `[package]
+    version` in the root manifest and every member, but this workspace is a *virtual* manifest
+    whose 26 members all inherit `version.workspace = true`. `rust` would rewrite 26 members
+    into literal versions and leave the actual source of truth at `0.1.0`.
+  - `update-lockfile.yaml` syncs `Cargo.lock` on every pull request and is load-bearing rather
+    than a convenience: the version bump changes every member's recorded version, and a stale
+    lockfile fails every `--locked` build in the repository — which would leave the release PR
+    permanently red on a problem it created itself.
+  - Publishing stays behind `ALLOW_IMAGE_PUBLISH`. The blocker is no longer a dependency licence
+    (`OP-6` is resolved) but the absent `LICENSE` file.
 - **Passkeys (`WebAuthn`), end to end.** A passkey is a first-class credential alongside the
   password: register one from Account → Security, then sign in with no identifier and no
   password at all (discoverable credentials, `UserVerificationPolicy::Required`, so it is two
@@ -98,6 +121,16 @@ repository still has no `LICENSE`.
   - `charset`/`encoding_rs` left `wreq`'s default features in 6 and has **not** been re-enabled:
     nothing here decodes by declared charset — `base.rs` decodes `bytes_stream()` as UTF-8
     itself and the solver clients only call `.json()`.
+- **The Dockerfile actually builds on arm64 now.** `ci.yml`'s `docker-arm64` job asserted that
+  "nothing in the build is x86-specific"; five places named `ld-musl-x86_64.so.1` literally, and
+  the loader is `ld-musl-aarch64.so.1` on arm64, so every runtime stage would have failed at
+  `COPY`. Nothing caught it because that job is gated on an unset `ENABLE_ARM64_CI` and had
+  never run — an assertion nothing executes is a comment, not evidence. The builder now stages
+  `/sysroot`, `/sysroot-nocxx` and `/sysroot-browser` trees from `uname -m` and the runtime
+  stages copy those wholesale. The Debian tree deliberately carries no `/lib`, because BuildKit
+  cannot copy a directory over that merged-`/usr` symlink; the stage asserts the symlink holds
+  rather than trusting it. Structure tests gained `cst/loader-amd64.yaml` / `loader-arm64.yaml`
+  for the one assertion that cannot be architecture-neutral.
 - The `api` binary no longer links `wreq`/BoringSSL: the adapter dry-run moved to the worker,
   which already carries the crawl stack. 557 → 487 crates, and one TLS stack instead of two.
 - Postgres 17 everywhere; the reference stack was on a beta major.

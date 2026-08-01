@@ -1,0 +1,99 @@
+name: update-lockfile
+
+# Keeps `Cargo.lock` in step with `Cargo.toml` on pull requests, and commits the result.
+#
+# This exists for release-please and is **not optional**. `release-please-config.json` bumps
+# `$.workspace.package.version`, which every one of the 26 workspace members inherits via
+# `version.workspace = true`. That changes each member's recorded version in `Cargo.lock` —
+# and release-please does not update lockfiles for the `simple` strategy (see the reasoning
+# block in `release-please.yaml` for why `simple` and not `rust`).
+#
+# Left alone, the release pull request would carry a `Cargo.lock` that disagrees with the
+# manifests, and every `--locked` build in the repository fails: `xtask ci`, the `msrv` and
+# `supply-chain` jobs, and the Dockerfile's `cargo auditable build --release --locked`. The
+# release PR could then never go green, which is a deadlock rather than a flaky failure.
+#
+# It runs on every pull request, not only release ones: a Renovate PR that edits a manifest has
+# exactly the same problem, and a single mechanism is easier to trust than two.
+#
+# `cargo update --workspace` rather than `cargo fetch`: it rewrites only the workspace members'
+# entries and leaves every third-party pin alone. A release must not silently move dependency
+# versions — that is what `supply-chain` and `deny` gate, and this workflow runs before them.
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  update-lockfile:
+    name: Update Cargo.lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Forks cannot read the app secrets, and a fork PR must not be able to make this repository
+    # commit on its behalf. Skipping is correct: a fork's lockfile drift is the author's to fix.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions: {}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      # A GitHub App token, not `GITHUB_TOKEN`: a push made with the default token does not
+      # trigger workflows, so the lockfile fix would land without re-running the checks that
+      # need it — leaving the PR red on a problem that had already been solved.
+      - name: Generate Bot Token
+        id: generate_token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.generate_token.outputs.token }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # stable
+        with:
+          toolchain: stable
+
+      # No BoringSSL toolchain is installed on purpose: `cargo update` resolves and rewrites the
+      # lockfile without compiling anything, so none of `cmake`/`nasm`/`clang` is needed here.
+      - name: Sync Cargo.lock with the manifests
+        id: sync
+        run: |
+          set -euo pipefail
+          cargo update --workspace
+          if git diff --quiet -- Cargo.lock; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Cargo.lock already in step with the manifests."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat -- Cargo.lock
+          fi
+
+      - name: Commit the updated lockfile
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          # The GitHub Actions bot identity, so the commit is attributable to automation rather
+          # than to whoever last touched the branch.
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          git add Cargo.lock
+          git commit -m "build: sync Cargo.lock with the workspace manifests"
+          git push

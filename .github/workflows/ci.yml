@@ -1194,23 +1194,37 @@ jobs:
           if [ "$BIN" = "render" ]; then
             config="deploy/docker/cst/render.yaml"
           fi
+          # Two configs: the image's own contract, plus the musl loader assertion, whose path is
+          # the one thing in the contract that differs by architecture. See
+          # `deploy/docker/cst/loader-amd64.yaml`.
           container-structure-test test \
             --image "tankovault-${BIN}:ci" \
-            --config "$config"
+            --config "$config" \
+            --config deploy/docker/cst/loader-amd64.yaml
 
   # Cross-architecture image build, opt-in.
   #
   # Every service image is `FROM scratch` over a musl binary built natively for whatever the
-  # host is, so nothing in the build is x86-specific — but "nothing looks x86-specific" is not
-  # evidence, which is what this job supplies. It runs on a **native** arm
-  # runner: QEMU is not a substitute here, because `wreq` compiles BoringSSL from C/C++/assembly
-  # and an emulated build of it costs upwards of an hour per image.
+  # host is. It runs on a **native** arm runner: QEMU is not a substitute here, because `wreq`
+  # compiles BoringSSL from C/C++/assembly and an emulated build of it costs upwards of an hour
+  # per image.
+  #
+  # This comment used to claim "nothing in the build is x86-specific". **That was false**, and
+  # it stayed false unnoticed for exactly the reason the gate below exists: `ENABLE_ARM64_CI` is
+  # unset, so this job had never once run. Five places in the Dockerfile named
+  # `ld-musl-x86_64.so.1` literally — the loader is `ld-musl-aarch64.so.1` on arm64 — so every
+  # runtime stage would have failed at `COPY`. Fixed 2026-08-01 by staging the libraries into
+  # `/sysroot*` trees from `uname -m`; the structure tests carry the same split
+  # (`cst/loader-amd64.yaml`, `cst/loader-arm64.yaml`). The lesson is the one this job was
+  # supposed to teach: an assertion nothing executes is a comment, not evidence.
   #
   # Gated on the `ENABLE_ARM64_CI` repository variable, and gated rather than simply added
   # because `ubuntu-24.04-arm` runners are free only on **public** repositories; on a private
-  # one they bill. The same shape as `ALLOW_IMAGE_PUBLISH` in `release.yml`: the leg exists and
-  # is correct, and turning it on is a deployment decision rather than a code change. Set the
-  # variable to any non-empty value to enable it.
+  # one they bill. Set the variable to any non-empty value to enable it.
+  #
+  # **Turning this on matters more than it did.** `release-please.yaml` now builds and publishes
+  # `linux/arm64` for all nine images on every release. With this job off, a release is the
+  # first time the arm64 path is exercised — which is how the breakage above happened.
   #
   # Scoped to the two images whose *content* differs by architecture — a `scratch` service
   # (the musl binary plus the loader and `libgcc_s` it resolves) and the `render` tier (a
@@ -1281,7 +1295,8 @@ jobs:
           fi
           container-structure-test test \
             --image "tankovault-${BIN}:ci-arm64" \
-            --config "$config"
+            --config "$config" \
+            --config deploy/docker/cst/loader-arm64.yaml
 
   docker-frontend:
     name: docker build (frontend)
@@ -1348,7 +1363,8 @@ jobs:
         run: |
           container-structure-test test \
             --image "tankovault-frontend:ci" \
-            --config deploy/docker/cst/frontend.yaml
+            --config deploy/docker/cst/frontend.yaml \
+            --config deploy/docker/cst/loader-amd64.yaml
 
   # ---------------------------------------------------------------------------------------------
   # The one required status check.

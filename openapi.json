@@ -714,6 +714,7 @@
           "accounts.email_verification",
           "accounts.profile",
           "accounts.sessions",
+          "accounts.passkeys",
           "privacy.self_export",
           "privacy.self_erasure",
           "privacy.requests",
@@ -1118,6 +1119,139 @@
         "description": "Identifies a notification.",
         "format": "uuid",
         "type": "string"
+      },
+      "PasskeyChallenge": {
+        "description": "The challenge, plus the handle the client echoes back to complete it.\n\n`options` is a W3C `PublicKeyCredentialRequestOptions` envelope, passed to\n`navigator.credentials.get()` verbatim. It is typed as an opaque JSON document here on\npurpose: the shape is the `WebAuthn` specification's, not this API's, and mirroring it into\nthe `OpenAPI` document would be this service publishing a second, hand-maintained copy of a\nstandard — the exact drift that made `/v1/me/sync/*` move its DTOs into\n`crates/contracts`. Both ends parse it with the *same* crate (`webauthn-rs-proto`, pinned to\none version in both workspaces), so there is nothing for the two to disagree about.",
+        "properties": {
+          "ceremony_id": {
+            "description": "Opaque handle for this ceremony. Return it with the assertion.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "options": {
+            "description": "A W3C `PublicKeyCredentialRequestOptions` envelope. Hand it to the browser unmodified.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "ceremony_id",
+          "options"
+        ],
+        "type": "object"
+      },
+      "PasskeyDto": {
+        "description": "A registered passkey as the account page shows it.\n\nNote what is **not** here: the credential itself, the public key and the credential id. None\nof them is a secret, but none is useful to a browser either, and a credential id is the\nlookup key a sign-in resolves an account from — publishing every account's ids on an\nauthenticated page would hand an attacker who compromises one session the material to\nrecognise that user's authenticator elsewhere.",
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "description": "When this key was last used to sign in; absent if it never has been. Surfaced so a user\ncan tell a live key from one registered on a laptop they no longer own.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "PasskeyLoginRequest": {
+        "description": "A signed assertion, returned with the handle from [`PasskeyChallenge`].",
+        "properties": {
+          "ceremony_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "credential": {
+            "description": "The `PublicKeyCredential` produced by `navigator.credentials.get()`, serialised as the\n`WebAuthn` specification defines it.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "ceremony_id",
+          "credential"
+        ],
+        "type": "object"
+      },
+      "PasskeyRegisterChallenge": {
+        "description": "The challenge, plus the handle the client echoes back to complete it.\n\n`options` is a W3C `PublicKeyCredentialCreationOptions` envelope. It is an opaque JSON\ndocument here for the reason [`crate::auth::passkey::PasskeyChallenge`] gives: the shape\nbelongs to the `WebAuthn` specification, and both ends parse it with the same crate.",
+        "properties": {
+          "ceremony_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "options": {
+            "description": "A W3C `PublicKeyCredentialCreationOptions` envelope. Hand it to the browser unmodified.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "ceremony_id",
+          "options"
+        ],
+        "type": "object"
+      },
+      "PasskeyRegisterFinish": {
+        "description": "The attestation returned by `navigator.credentials.create()`.",
+        "properties": {
+          "ceremony_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "credential": {
+            "description": "The `RegisterPublicKeyCredential` the browser produced, serialised as the `WebAuthn`\nspecification defines it.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "ceremony_id",
+          "credential"
+        ],
+        "type": "object"
+      },
+      "PasskeyRegisterStart": {
+        "description": "Proof of the current password, plus what to call the new key.",
+        "properties": {
+          "current_password": {
+            "description": "The caller's current password. Required — see [`passkey_register_start`].",
+            "type": "string"
+          },
+          "label": {
+            "description": "What to call the key in the revoke list. Defaults to \"Passkey\" when absent or blank.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "current_password"
+        ],
+        "type": "object"
+      },
+      "PasskeyRename": {
+        "description": "A new name for an existing key.",
+        "properties": {
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "type": "object"
       },
       "PasswordChange": {
         "properties": {
@@ -6194,6 +6328,120 @@
         ]
       }
     },
+    "/v1/auth/passkey/login/finish": {
+      "post": {
+        "description": "Verifies the assertion against the challenge issued by\n[`passkey_login_start`](passkey_login_start) and, on success, issues an access token and a\nrotating refresh cookie — the same session a password sign-in produces.\n\nEvery outcome is audited under `auth.passkey_login`, matching\n[`login`](super::login::login): an authentication log that only records successes cannot\nanswer the question anyone asks it after an incident.",
+        "operationId": "passkey_login_finish",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Authenticated; access token issued"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The assertion did not verify, or the challenge is no longer live"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The account is suspended, or its email is not yet confirmed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too many attempts; retry later"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "This deployment has no WebAuthn relying party configured"
+          }
+        },
+        "summary": "Complete a passkey sign-in",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/passkey/login/start": {
+      "post": {
+        "description": "Issues a discoverable-credential challenge. Deliberately unauthenticated and deliberately\nidentifier-free: the account is learned from the response, not asked for here.\n\nThe response is safe to hand to any caller. It contains a random challenge and no\ninformation about which accounts exist — mint one for a nonexistent user and it is\nindistinguishable from any other, because no user was named.",
+        "operationId": "passkey_login_start",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyChallenge"
+                }
+              }
+            },
+            "description": "Challenge issued"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too many attempts; retry later"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "This deployment has no WebAuthn relying party configured"
+          }
+        },
+        "summary": "Begin a passkey sign-in",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/v1/auth/password/forgot": {
       "post": {
         "description": "Always responds `202 Accepted`, whether or not the address is registered, so the\nendpoint can't be used to probe which emails have accounts. When the address does exist\nand email is configured, a single-use, time-limited reset link is sent.\n\n**Every** account-dependent step happens on a detached task (SEC-10). The uniform `202`\nwas previously defeated by timing: the known-address branch generated a token, hashed it\nand performed an `INSERT` — a write, so a WAL flush — before answering, while the unknown\nbranch returned straight after the lookup. That is a smaller gap than `login`'s two orders\nof magnitude but it is the same oracle, and it needs no credentials at all to read. With\nthe whole body spawned, this handler's only statement is the spawn, so there is no branch\nleft for a response time to disclose.\n\nThe return type is deliberately `StatusCode` rather than `ApiResult<StatusCode>`: the\nanti-enumeration property is \"this endpoint has exactly one answer\", and making that a\ntype rather than a convention means a later edit cannot reintroduce a second one.",
@@ -6756,6 +7004,312 @@
         "summary": "Mark notifications read",
         "tags": [
           "me-notifications"
+        ]
+      }
+    },
+    "/v1/me/passkeys": {
+      "get": {
+        "description": "Every passkey registered to the caller, newest first.",
+        "operationId": "list_passkeys",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PasskeyDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Registered passkeys"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List my passkeys",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/passkeys/register/finish": {
+      "post": {
+        "description": "Verifies the attestation against the challenge issued by [`passkey_register_start`] and\nstores the credential.",
+        "operationId": "passkey_register_finish",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyRegisterFinish"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyDto"
+                }
+              }
+            },
+            "description": "Registered"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Malformed credential"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required, or the challenge is no longer live"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "This authenticator is already registered"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "This deployment has no WebAuthn relying party configured"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Finish registering a passkey",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/passkeys/register/start": {
+      "post": {
+        "description": "Issues a `WebAuthn` creation challenge for the caller's account.\n\n# Why this asks for the password\n\nBecause a passkey is a **permanent** credential, and an access token is a 15-minute one.\nWithout this check, anyone who got hold of a token for those fifteen minutes — a shared\nbrowser, a proxy log, an XSS payload that survives one page — could register their own\nauthenticator and keep the account forever, surviving every password change and session\nrevocation the real owner performs. That is a strictly worse version of the takeover\n`patch_profile` blocks by requiring the password before an email change, and it is the same\nanswer: installing a credential requires proving you hold one.\n\nThe cost is that a user who signed in *with* a passkey must type their password to add a\nsecond one. That is the trade every major implementation makes, and the friction lands on a\nonce-per-device action rather than on sign-in.\n\nCredentials already registered to the account are sent as the exclusion list, so an\nauthenticator that already holds one for this account says so at the prompt instead of\nsilently minting an indistinguishable duplicate.",
+        "operationId": "passkey_register_start",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyRegisterStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyRegisterChallenge"
+                }
+              }
+            },
+            "description": "Challenge issued"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The label is too long"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required, or current_password is wrong"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "This deployment has no WebAuthn relying party configured"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Begin registering a passkey",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/passkeys/{id}": {
+      "delete": {
+        "description": "Delete one of the caller's own passkeys. Scoped to ownership; a foreign or unknown id yields\n`404`.\n\nDeleting the last passkey is allowed, and is not a lockout: every account on this deployment\nhas a password, and passkeys are additive to it. Refusing would be the wrong protection\nanyway — the case a user most urgently needs this for is a device they have just lost.",
+        "operationId": "delete_passkey",
+        "parameters": [
+          {
+            "description": "Passkey id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such passkey for this caller"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Revoke a passkey",
+        "tags": [
+          "me-account"
+        ]
+      },
+      "patch": {
+        "description": "Change the label on one of the caller's own passkeys. Scoped to ownership; a foreign or\nunknown id yields `404`.",
+        "operationId": "rename_passkey",
+        "parameters": [
+          {
+            "description": "Passkey id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyRename"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Renamed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The label is too long"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such passkey for this caller"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Rename a passkey",
+        "tags": [
+          "me-account"
         ]
       }
     },

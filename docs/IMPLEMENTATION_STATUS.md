@@ -70,7 +70,7 @@ Update it at the end of every coding session: mark what landed, and leave a prec
 > presets (Reader/Operator/Administrator) expand to a checklist the administrator then edits
 > and are never persisted; nothing in the database or in a decision knows presets exist.
 >
-> **2. Every feature is behind a runtime flag.** `tankovault_domain::Feature` — 37 features in
+> **2. Every feature is behind a runtime flag.** `tankovault_domain::Feature` — 38 features in
 > 8 groups, each with a compiled default and an operator-facing description of what switching
 > it off *does*. `feature_flag_overrides` stores only deviations, so an empty table is a working
 > deployment and a new feature needs no migration. Crucially this is a **different mechanism
@@ -464,7 +464,7 @@ Legend: ✅ done & compiling · 🟡 partial/skeleton · ⬜ not started
 ### Shared crates (`crates/`)
 | Crate | Status | Notes |
 |---|---|---|
-| `domain` | ✅ | Entities, typed UUIDv7 ids, enums, `resolve_link` (tested), title normalize, politeness+ceilings. **+ the two registries the whole system authorizes and switches against: `Permission` (24 capabilities, groups, presets) and `Feature` (37 flags, defaults, locked set)** — `UserRole` removed. 38 tests. |
+| `domain` | ✅ | Entities, typed UUIDv7 ids, enums, `resolve_link` (tested), title normalize, politeness+ceilings. **+ the two registries the whole system authorizes and switches against: `Permission` (24 capabilities, groups, presets) and `Feature` (38 flags, defaults, locked set)** — `UserRole` removed. 38 tests. |
 | `config` | ✅ | Figment layered load (defaults → TOML → `TANKOVAULT_*` env). `ConfigError` boxes the large `figment::Error`. Tested. |
 | `contracts` | ✅ | NATS subjects/streams + task/progress/chapter/provider-state messages. Tested. |
 | `bus` | ✅ | `async-nats` JetStream client: stream provisioning, task publish/consume, chapter events. **+ core-NATS client** for non-durable live pushes (`publish_user_notification`/`subscribe_user_notifications`; `BusError::Nats`). |

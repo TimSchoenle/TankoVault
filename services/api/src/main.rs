@@ -92,6 +92,26 @@ struct AuthConfig {
     /// `auth::session::refresh_cookie` for the review behind the wider path.
     #[serde(default = "tankovault_config::default_true")]
     cookie_secure: bool,
+    /// Public origin of the web app, for passkeys — `https://tanko.example.com`.
+    ///
+    /// A `WebAuthn` credential is bound to an origin by the browser, so this cannot be
+    /// inferred from a request: the `Host` header is attacker-controlled, and trusting it
+    /// would let anyone mint credentials under a domain of their choosing. Unset means this
+    /// deployment offers no passkeys — every other credential path is unaffected — and
+    /// defaults to [`tankovault_config::EmailConfig::base_url`], which is already documented
+    /// as the public base URL of the web app and is the same value in every real deployment.
+    #[serde(default)]
+    webauthn_origin: Option<String>,
+    /// Relying-party id: the registrable domain credentials are bound to. Defaults to
+    /// [`Self::webauthn_origin`]'s host, which is what a single-origin deployment wants. Set
+    /// it to a parent domain only if the app moves between subdomains and keys must survive
+    /// the move — a passkey registered under a parent domain works on every child of it.
+    #[serde(default)]
+    webauthn_rp_id: Option<String>,
+    /// The name the authenticator shows in its prompt ("Save a passkey for …"). Purely
+    /// cosmetic, but it is what the user sees at the moment they decide to trust the site.
+    #[serde(default)]
+    webauthn_rp_name: Option<String>,
 }
 
 fn default_bind() -> String {
@@ -278,6 +298,16 @@ async fn main() -> anyhow::Result<()> {
     let internal_http_worker = internal_http.clone();
     let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
 
+    // The passkey relying party, or `None` if this deployment configured no origin for it.
+    // A *malformed* origin is fatal, an *absent* one is not: the first is an operator mistake
+    // that would otherwise surface as browsers refusing every ceremony with an opaque
+    // `SecurityError`, and the second is simply a deployment that does not offer passkeys.
+    let webauthn = build_relying_party(&cfg.auth, &cfg.email.base_url)?;
+
+    // Abandoned ceremonies — a user who closed the tab at the authenticator prompt — are
+    // already unusable, so this reclaims rows rather than enforcing anything.
+    spawn_ceremony_sweep(&pool, webauthn.is_some(), shutdown.clone());
+
     let state = AppState {
         pool: pool.clone(),
         jwt_secret: Arc::new(cfg.auth.jwt_secret.into_bytes()),
@@ -307,6 +337,7 @@ async fn main() -> anyhow::Result<()> {
         audit,
         features,
         cookie_secure: cfg.auth.cookie_secure,
+        webauthn,
         mailer,
         email_base_url: cfg.email.base_url,
     };
@@ -400,6 +431,97 @@ fn spawn_audit_retention(
     });
 }
 
+/// The `WebAuthn` relying party this deployment offers, if any.
+///
+/// `email.base_url` is the fallback because it is already defined as "public base URL of the
+/// web app, used to build absolute links inside emails" — the password-reset link the user
+/// clicks resolves to exactly the origin a passkey has to be bound to. Requiring the same
+/// string to be written twice would mean deployments where the two silently disagree, and a
+/// disagreement here shows up as browsers refusing ceremonies rather than as anything legible.
+///
+/// # Errors
+/// Returns an error when the resolved origin is not a URL, has no host, or is not covered by
+/// the configured relying-party id. All three are refused at boot rather than at first use.
+fn build_relying_party(
+    auth: &AuthConfig,
+    email_base_url: &str,
+) -> anyhow::Result<Option<tankovault_api::SharedRelyingParty>> {
+    let origin = auth
+        .webauthn_origin
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(email_base_url);
+
+    let rp = tankovault_api::RelyingParty::from_config(
+        Some(origin),
+        auth.webauthn_rp_id.as_deref(),
+        auth.webauthn_rp_name.as_deref(),
+    )?;
+
+    let Some(rp) = rp else {
+        tracing::warn!(
+            "no webauthn origin resolved; passkeys are unavailable. Set \
+             TANKOVAULT_AUTH__WEBAUTHN_ORIGIN (or TANKOVAULT_EMAIL__BASE_URL) to the \
+             public origin of the web app."
+        );
+        return Ok(None);
+    };
+
+    tracing::info!(
+        rp_id = rp.rp_id(),
+        origin = rp.origin(),
+        "passkeys enabled; credentials are bound to this origin"
+    );
+    Ok(Some(Arc::new(rp)))
+}
+
+/// How often abandoned `WebAuthn` ceremonies are swept.
+///
+/// Generous, because expiry is already enforced in the read: `take_ceremony` filters on
+/// `expires_at`, so a row that outlives its deadline is unusable, not dangerous. This only
+/// stops the table growing by one row per user who walked away from an authenticator prompt.
+const CEREMONY_SWEEP_INTERVAL: Duration = Duration::from_secs(15 * 60);
+
+/// Start the abandoned-ceremony sweep, unless this deployment has no relying party.
+///
+/// Skipped entirely when passkeys are off: with no relying party nothing writes ceremonies, so
+/// the sweep would be a `DELETE` against an empty table every quarter of an hour forever.
+///
+/// Like the audit sweep, this is idempotent (a bounded `DELETE` by age), so replicas racing on
+/// it simply share the work and no leader election is needed.
+fn spawn_ceremony_sweep(
+    pool: &tankovault_db::PgPool,
+    enabled: bool,
+    shutdown: tokio_util::sync::CancellationToken,
+) {
+    if !enabled {
+        return;
+    }
+    let pool = pool.clone();
+    tokio::spawn(async move {
+        tankovault_service::shutdown::every(
+            CEREMONY_SWEEP_INTERVAL,
+            shutdown,
+            "webauthn-ceremony-sweep",
+            move || {
+                let pool = pool.clone();
+                async move {
+                    match tankovault_db::repo::users::passkeys::prune_expired_ceremonies(&pool)
+                        .await
+                    {
+                        Ok(0) => {}
+                        Ok(deleted) => {
+                            tracing::debug!(deleted, "pruned abandoned webauthn ceremonies");
+                        }
+                        Err(e) => tracing::warn!(error = %e, "webauthn ceremony sweep failed"),
+                    }
+                }
+            },
+        )
+        .await;
+    });
+}
+
 /// Connect Redis, or `None` when unconfigured/unreachable.
 ///
 /// One client for both of this service's Redis users — the cross-replica rate-limit counters and
@@ -470,6 +592,9 @@ mod tests {
             access_ttl_minutes: 15,
             refresh_ttl_days: 30,
             cookie_secure: true,
+            webauthn_origin: None,
+            webauthn_rp_id: None,
+            webauthn_rp_name: None,
         }
     }
 

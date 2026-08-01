@@ -27,6 +27,7 @@ mod auth;
 mod error;
 mod mailer;
 mod me;
+pub mod passkey;
 mod series;
 mod state;
 pub mod stream_tickets;
@@ -34,6 +35,7 @@ mod upstream;
 mod views;
 
 use axum::Router;
+pub use passkey::{RelyingParty, SharedRelyingParty};
 pub use state::AppState;
 use tankovault_config::{RateLimitConfig, SecurityConfig};
 use tankovault_domain::Feature;
@@ -60,8 +62,16 @@ pub fn full_openapi() -> utoipa::openapi::OpenApi {
 #[must_use]
 pub fn route_classifier() -> RouteClassifier {
     RouteClassifier::new()
-        // Credential handling — the online-guessing surface.
+        // Credential handling — the online-guessing surface. Covers `/v1/auth/passkey/*` by
+        // prefix, which is where it is needed most: `login/start` is unauthenticated and mints
+        // a database row per call, so an unclassified passkey surface would be a free way to
+        // fill `webauthn_ceremonies`.
         .auth("/v1/auth")
+        // Adding a passkey verifies an argon2id hash before it issues a challenge, which puts
+        // it on the same online-guessing surface as `/v1/auth` despite living under `/v1/me`.
+        // Without this it would draw from the ordinary authenticated budget, and a stolen
+        // access token would buy an attacker a password oracle at that far looser rate.
+        .auth("/v1/me/passkeys/register/start")
         // Cheap to ask for, expensive to serve — genuinely heavy however they are called.
         .expensive("/v1/me/export")
         .expensive("/v1/me/sync/{provider}/push")
@@ -117,6 +127,13 @@ pub fn route_features() -> RouteFeatures {
         .gate("/v1/auth/verify-email", Feature::AccountsEmailVerification)
         .gate("/v1/me/profile", Feature::AccountsProfile)
         .gate("/v1/me/sessions", Feature::AccountsSessions)
+        // Both halves of passkeys under one flag: the sign-in ceremony and the management
+        // surface. Switching it off must take the *sign-in* path with it — leaving
+        // `/v1/auth/passkey` reachable while the account page can no longer show or revoke a
+        // key is the worst of both, since the credential still works and the owner has no way
+        // to remove it. Registered credentials are kept, so switching it back on restores them.
+        .gate("/v1/auth/passkey", Feature::AccountsPasskeys)
+        .gate("/v1/me/passkeys", Feature::AccountsPasskeys)
         // --- privacy ---
         .gate("/v1/me/export", Feature::PrivacySelfExport)
         // Exact: `DELETE /v1/me` is self-service erasure, and `/v1/me` is the prefix of the
@@ -270,6 +287,11 @@ pub async fn install_feature_gate(
 /// live server) so the two can never drift apart. Each handler carries a
 /// `#[utoipa::path(..)]` attribute that `utoipa_axum`'s `routes!` macro reads to build both
 /// the `axum` route and its `OpenApi` path entry.
+#[expect(
+    clippy::too_many_lines,
+    reason = "a route table: one line per endpoint, and splitting it would mean the \
+              registration no longer reads as a single list of what this service serves"
+)]
 fn documented_router() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(openapi::ApiDoc::openapi())
         // auth
@@ -281,6 +303,10 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(auth::reset_password))
         .routes(routes!(auth::verify_email))
         .routes(routes!(auth::resend_verification))
+        // auth — passwordless sign-in with a passkey. Two legs: an identifier-free challenge,
+        // then the signed assertion the account is resolved from.
+        .routes(routes!(auth::passkey_login_start))
+        .routes(routes!(auth::passkey_login_finish))
         // public series
         .routes(routes!(series::list))
         .routes(routes!(series::detail))
@@ -309,6 +335,11 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(me::change_password))
         .routes(routes!(me::sessions))
         .routes(routes!(me::delete_session))
+        // account settings — passkeys the caller has registered, and the ceremony that adds one
+        .routes(routes!(me::list_passkeys))
+        .routes(routes!(me::passkey_register_start))
+        .routes(routes!(me::passkey_register_finish))
+        .routes(routes!(me::rename_passkey, me::delete_passkey))
         .routes(routes!(me::notification_prefs, me::put_notification_prefs))
         .routes(routes!(me::notifications))
         .routes(routes!(me::mark_read))

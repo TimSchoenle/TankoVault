@@ -47,6 +47,7 @@ pub struct TestConfig {
     rate_limit: RateLimitConfig,
     cookie_secure: bool,
     features: FeatureGate,
+    webauthn: Option<tankovault_api::SharedRelyingParty>,
 }
 
 impl Default for TestConfig {
@@ -60,6 +61,11 @@ impl Default for TestConfig {
             // local-HTTP development spelling.
             cookie_secure: true,
             features: FeatureGate::defaults(),
+            webauthn: Some(Arc::new(
+                tankovault_api::RelyingParty::from_config(Some("http://localhost"), None, None)
+                    .expect("the harness origin builds a relying party")
+                    .expect("and is not empty"),
+            )),
         }
     }
 }
@@ -87,6 +93,19 @@ impl TestConfig {
     #[must_use]
     pub fn without_rate_limiting(mut self) -> Self {
         self.rate_limit.enabled = false;
+        self
+    }
+
+    /// Wire the deployment that configured no `WebAuthn` origin, so every passkey route answers
+    /// `503`.
+    ///
+    /// The distinction this exists to test is `503` versus `404`: an *unconfigured* relying
+    /// party is an operator problem the route reports, while a *switched-off*
+    /// `accounts.passkeys` flag makes the route not exist at all. Collapsing them would tell an
+    /// operator who forgot one environment variable that the endpoint is not part of this build.
+    #[must_use]
+    pub fn without_passkeys(mut self) -> Self {
+        self.webauthn = None;
         self
     }
 
@@ -177,6 +196,13 @@ impl TestApp {
             audit: audit.clone(),
             features: cfg.features.clone(),
             cookie_secure: cfg.cookie_secure,
+            // A real relying party, so the passkey routes answer their genuine statuses rather
+            // than a blanket `503`. Its origin is deliberately the same `http://localhost` the
+            // mailer uses: no test drives a browser, so nothing here ever verifies a signature
+            // — what the suites exercise is the surface around it (auth gates, feature flags,
+            // ownership scoping, ceremony expiry), and every one of those would be masked by an
+            // unconfigured relying party short-circuiting the handler before it runs.
+            webauthn: cfg.webauthn,
             mailer: cfg.mailer,
             email_base_url: "http://localhost".to_owned(),
         };

@@ -170,6 +170,7 @@
     "off": "Aus",
     "on": "An",
     "open": "Öffnen",
+    "or": "oder",
     "previous": "Zurück",
     "readerFallback": "Leser",
     "remove": "Entfernen",
@@ -806,6 +807,36 @@
       "sync": "Sync",
       "unread": "Ungelesen"
     }
+  },
+  "passkey": {
+    "add": "Passkey hinzufügen",
+    "added": "Passkey hinzugefügt. Du kannst dich jetzt damit anmelden.",
+    "addedOn": "Hinzugefügt am {date}",
+    "empty": "Noch keine Passkeys.",
+    "error": {
+      "alreadyRegistered": "Dieses Gerät hat bereits einen Passkey für dieses Konto.",
+      "badPassword": "Dieses Passwort ist nicht korrekt.",
+      "cancelled": "Passkey-Abfrage geschlossen.",
+      "failed": "Dein Gerät konnte den Passkey-Schritt nicht abschließen. Versuch es erneut oder nutze dein Passwort.",
+      "notRecognised": "Dieser Passkey ist hier nicht registriert. Melde dich mit deinem Passwort an oder probiere ein anderes Gerät.",
+      "unsupported": "Passkeys sind in diesem Browser nicht verfügbar."
+    },
+    "field": {
+      "label": "Name für diesen Schlüssel",
+      "password": "Aktuelles Passwort"
+    },
+    "intro": "Ein Passkey meldet dich mit der Bildschirmsperre deines Geräts an, statt mit einem Passwort. Er verlässt das Gerät nie, auf dem er erstellt wurde, und lässt sich nicht per Phishing abgreifen — er funktioniert nur auf dieser Seite.",
+    "lastUsed": "zuletzt verwendet am {date}",
+    "neverUsed": "nie verwendet",
+    "rename": "Umbenennen",
+    "revoke": {
+      "body": "Dieses Gerät kann dich dann nicht mehr anmelden. Dein Passwort funktioniert weiterhin, und du kannst den Schlüssel später erneut hinzufügen.",
+      "cta": "Widerrufen",
+      "title": "„{label}“ widerrufen?"
+    },
+    "signIn": "Mit Passkey anmelden",
+    "title": "Passkeys",
+    "whyPassword": "Dein Passwort ist nötig, weil ein Passkey dauerhaft gilt: ohne diese Prüfung könnte jede Person mit Zugriff auf deinen angemeldeten Browser einen hinzufügen und den Zugang unbegrenzt behalten."
   },
   "password": {
     "forgot": {

@@ -4,6 +4,7 @@
 mod appearance;
 mod callback;
 mod notifications;
+mod passkeys;
 mod privacy;
 mod profile;
 mod security;
@@ -65,7 +66,14 @@ impl Panel {
         match self {
             Self::Appearance => true,
             Self::Profile => caps.has_feature(Feature::AccountsProfile),
-            Self::Security => caps.has_feature(Feature::AccountsSessions),
+            // Either half is enough. The two cards under this tab are independent features:
+            // an operator can offer passkeys without session management or the other way round,
+            // and hiding the tab unless *sessions* is on would have made the passkey card
+            // unreachable for no reason anyone could see.
+            Self::Security => {
+                caps.has_feature(Feature::AccountsSessions)
+                    || caps.has_feature(Feature::AccountsPasskeys)
+            }
             Self::Sync => caps.has_feature(Feature::SyncExternal),
             Self::Notifications => caps.has_feature(Feature::NotificationsPreferences),
             Self::Privacy => {

@@ -7,9 +7,13 @@ use crate::hooks::use_busy;
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
+use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
+use crate::webauthn::{self, CeremonyError};
+use crate::wire::types::Feature;
 use crate::Route;
 use dioxus::prelude::*;
+use webauthn_rs_proto::RequestChallengeResponse;
 
 /// How a failed sign-in should be worded, and whether to offer "resend confirmation".
 ///
@@ -54,9 +58,10 @@ pub(crate) fn Login() -> Element {
     // surface a "resend confirmation email" action.
     let mut needs_verification = use_signal(|| false);
     let busy = use_busy();
-    // `Api` is `Copy`, so both callbacks below capture the same handle without cloning, and
+    // `Api` is `Copy`, so every callback below captures the same handle without cloning, and
     // each resolves the live bearer token when it actually fires.
     let api = api::use_api();
+    let caps = use_capabilities();
 
     let submit = use_callback(move |()| {
         if !busy.claim() {
@@ -122,6 +127,70 @@ pub(crate) fn Login() -> Element {
                         None => error.set(Some(api::friendly_error(i18n, e))),
                     },
                 }
+            }
+            busy.release();
+        });
+    });
+
+    // Sign in with a passkey: no identifier, no password. The account is resolved from the
+    // credential the authenticator returns, which is why this callback sends nothing the reader
+    // typed — see `services/api/src/auth/passkey.rs`.
+    let passkey_sign_in = use_callback(move |()| {
+        if !busy.claim() {
+            return;
+        }
+        error.set(None);
+        info.set(None);
+        needs_verification.set(false);
+        let client = api.client();
+        spawn(async move {
+            let started = match client.passkey_login_start().send().await {
+                Ok(res) => res.into_inner(),
+                Err(e) => {
+                    error.set(Some(api::friendly_error(i18n, e)));
+                    busy.release();
+                    return;
+                }
+            };
+
+            let challenge: RequestChallengeResponse =
+                match webauthn::parse_challenge(started.options) {
+                    Ok(challenge) => challenge,
+                    Err(e) => return report(&e, error, busy, i18n),
+                };
+            let credential = match webauthn::get(challenge).await {
+                Ok(credential) => credential,
+                Err(e) => return report(&e, error, busy, i18n),
+            };
+            let envelope = match webauthn::to_envelope(&credential) {
+                Ok(envelope) => envelope,
+                Err(e) => return report(&e, error, busy, i18n),
+            };
+
+            match client
+                .passkey_login_finish()
+                .body(PasskeyLoginRequest {
+                    ceremony_id: started.ceremony_id,
+                    credential: envelope,
+                })
+                .send()
+                .await
+            {
+                Ok(res) => {
+                    session.set_token(res.into_inner().access_token);
+                    nav.push(Route::Discover {});
+                }
+                // The same two statuses a password sign-in distinguishes, for the same reasons.
+                // A `401` here is not "wrong password" though — nothing was typed — so it gets
+                // its own sentence naming what actually failed.
+                Err(e) => match api::error_status(&e) {
+                    Some(401) => error.set(Some(i18n.t("passkey.error.notRecognised"))),
+                    Some(403) => {
+                        needs_verification.set(true);
+                        error.set(Some(i18n.t("auth.confirmFirst")));
+                    }
+                    _ => error.set(Some(api::friendly_error(i18n, e))),
+                },
             }
             busy.release();
         });
@@ -247,6 +316,23 @@ pub(crate) fn Login() -> Element {
                 }
             }
 
+            // Offered only where it can work: the deployment has the feature on, the browser
+            // exposes `navigator.credentials`, and the page is in a secure context. A button
+            // that can only report "not available here" is worse than no button.
+            if !is_register && caps.has_feature(Feature::AccountsPasskeys) && webauthn::is_available() {
+                div { class: "ik-or", style: "margin:4px 0 12px;text-align:center;",
+                    span { class: "ik-muted", style: "font-size:12px;", {i18n.t("common.or")} }
+                }
+                button {
+                    class: "ik-btn",
+                    style: "width:100%;margin-bottom:14px;",
+                    r#type: "button",
+                    disabled: busy.is_busy(),
+                    onclick: move |_| passkey_sign_in.call(()),
+                    {i18n.t("passkey.signIn")}
+                }
+            }
+
             button {
                 class: "ik-btn primary",
                 style: "width:100%;",
@@ -272,6 +358,27 @@ pub(crate) fn Login() -> Element {
             }
         }
     }
+}
+
+/// Word a failed passkey ceremony, or say nothing when the reader simply cancelled.
+///
+/// Shared with `views::account::passkeys` in intent but not in code: the two screens hold
+/// different signals, and threading them through one function would be more indirection than
+/// the four lines it saves. What must not diverge is the rule — a `Cancelled` outcome clears
+/// the error line rather than writing to it, because the reader pressed Escape and telling them
+/// something went wrong is how a working feature comes to look broken.
+fn report(
+    outcome: &CeremonyError,
+    mut error: Signal<Option<String>>,
+    busy: crate::hooks::Busy,
+    i18n: crate::i18n::Translator,
+) {
+    if matches!(outcome, CeremonyError::Cancelled) {
+        error.set(None);
+    } else {
+        error.set(Some(i18n.t(outcome.key())));
+    }
+    busy.release();
 }
 
 /// The shared brand lockup (§7.9) shown atop every auth screen: gradient tile + wordmark +

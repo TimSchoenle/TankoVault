@@ -174,6 +174,29 @@ skip = [
     { crate = "webpki-root-certs" },
     # `tower-http` 0.6 arrives transitively; ours is pinned at 0.7.
     { crate = "tower-http" },
+    # ---------------------------------------------------------------------------------
+    # The passkey stack. Added 2026-08-01 with `webauthn-rs` 0.6; every entry below is a
+    # *second, older* copy that arrives through `webauthn-rs-core` and nothing else.
+    # ---------------------------------------------------------------------------------
+    # The AEAD cluster: `crypto-glue` (webauthn-rs-core's RustCrypto facade) pins
+    # `aes-gcm 0.10`, while this workspace's own `crates/auth` uses 0.11 to seal sync tokens.
+    # One `aes-gcm` major drags its whole trait cohort along, which is what the next eight
+    # lines are. Verified with `cargo tree --target all -d`: no other dependent exists, so
+    # there is nothing on our side to move — this collapses when `crypto-glue` bumps.
+    { crate = "aead" },
+    { crate = "aes" },
+    { crate = "aes-gcm" },
+    { crate = "cipher" },
+    { crate = "ctr" },
+    { crate = "ghash" },
+    { crate = "inout" },
+    { crate = "polyval" },
+    { crate = "universal-hash" },
+    # `thiserror` 1.x, via `webauthn-rs-core` itself and via `x509-parser`/`asn1-rs`/
+    # `der-parser`, which it uses to parse attestation certificates. This workspace is on 2.
+    { crate = "thiserror" },
+    { crate = "thiserror-impl" },
+
     # Platform shims, present on any graph touching Windows or macOS bindings.
     { crate = "windows-sys" },
     { crate = "windows-link" },

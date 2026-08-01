@@ -25,6 +25,23 @@ images is *conveying*. The first entry below this line will be whatever tag reso
 
 ### Added
 
+- **Passkeys (`WebAuthn`), end to end.** A passkey is a first-class credential alongside the
+  password: register one from Account → Security, then sign in with no identifier and no
+  password at all (discoverable credentials, `UserVerificationPolicy::Required`, so it is two
+  factors in one gesture). Keys can be named, renamed and revoked, and show when they were last
+  used. Behind `accounts.passkeys`, which gates the sign-in ceremony and the management surface
+  together — leaving one half reachable would mean a live credential its owner cannot revoke.
+  Needs `TANKOVAULT_AUTH__WEBAUTHN_ORIGIN` (falls back to `TANKOVAULT_EMAIL__BASE_URL`); an
+  unconfigured deployment answers `503` rather than `404`, so a missing setting cannot be
+  mistaken for a feature that is not in this build.
+  - Built on `webauthn-rs` 0.6 rather than the stable 0.5 line, because 0.5 links `openssl-sys`
+    and the `scratch` runtime images ship no OpenSSL — a link failure that would surface at
+    exec time in production, not at build time in CI.
+  - Ceremony state lives in Postgres and is consumed by a `DELETE ... RETURNING`, so a challenge
+    cannot be replayed and a `finish` cannot land on a replica that never saw the `start`.
+  - Adding a key requires the current password. An access token lasts fifteen minutes; a passkey
+    is permanent, and without the check anyone holding a token briefly could install a credential
+    that survives every later password change and session revocation.
 - `xtask ci` runs every offline gate CI runs, in CI's order.
 - `xtask coverage-ratchet` fails the build when line coverage drops below
   `.github/coverage-floor.txt`.

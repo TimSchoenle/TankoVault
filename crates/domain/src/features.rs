@@ -73,6 +73,11 @@ pub enum Feature {
     /// Viewing and revoking one's own login sessions.
     #[serde(rename = "accounts.sessions")]
     AccountsSessions,
+    /// Passkeys: registering `WebAuthn` credentials and signing in with them instead of a
+    /// password. Off hides the whole surface and refuses both ceremonies; already-registered
+    /// credentials are kept, not deleted, so switching it back on restores them.
+    #[serde(rename = "accounts.passkeys")]
+    AccountsPasskeys,
 
     // --- privacy / data protection ---
     /// Self-service personal-data export (GDPR Art. 20).
@@ -189,6 +194,7 @@ impl Feature {
             Self::AccountsEmailVerification,
             Self::AccountsProfile,
             Self::AccountsSessions,
+            Self::AccountsPasskeys,
             Self::PrivacySelfExport,
             Self::PrivacySelfErasure,
             Self::PrivacyRequests,
@@ -234,6 +240,7 @@ impl Feature {
             Self::AccountsEmailVerification => "accounts.email_verification",
             Self::AccountsProfile => "accounts.profile",
             Self::AccountsSessions => "accounts.sessions",
+            Self::AccountsPasskeys => "accounts.passkeys",
             Self::PrivacySelfExport => "privacy.self_export",
             Self::PrivacySelfErasure => "privacy.self_erasure",
             Self::PrivacyRequests => "privacy.requests",
@@ -303,7 +310,8 @@ impl Feature {
             | Self::AccountsPasswordReset
             | Self::AccountsEmailVerification
             | Self::AccountsProfile
-            | Self::AccountsSessions => FeatureGroup::Accounts,
+            | Self::AccountsSessions
+            | Self::AccountsPasskeys => FeatureGroup::Accounts,
             Self::PrivacySelfExport | Self::PrivacySelfErasure | Self::PrivacyRequests => {
                 FeatureGroup::Privacy
             }
@@ -348,6 +356,7 @@ impl Feature {
             Self::AccountsEmailVerification => "Email verification",
             Self::AccountsProfile => "Profile editing",
             Self::AccountsSessions => "Session management",
+            Self::AccountsPasskeys => "Passkeys",
             Self::PrivacySelfExport => "Self-service data export",
             Self::PrivacySelfErasure => "Self-service account deletion",
             Self::PrivacyRequests => "Data-subject requests",
@@ -384,6 +393,11 @@ impl Feature {
     /// the control plane immediately before someone flips a production switch, so it names
     /// the consequence rather than restating the title.
     #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one arm per feature, and the registry is the list: splitting it by group \
+                  would put half the sentences somewhere a reader adding a feature never looks"
+    )]
     pub const fn description(self) -> &'static str {
         match self {
             Self::CatalogueBrowse => {
@@ -407,6 +421,11 @@ impl Feature {
             Self::AccountsProfile => "Off: users cannot change their own name or email.",
             Self::AccountsSessions => {
                 "Off: users cannot list or revoke their own sessions. Sign-out still works."
+            }
+            Self::AccountsPasskeys => {
+                "Off: passkeys cannot be registered or used to sign in, and the account page \
+                 hides them. Registered keys are kept, so switching it back on restores them; \
+                 password sign-in is unaffected either way."
             }
             Self::PrivacySelfExport => {
                 "Off: users cannot download their own data. File an access request instead."
@@ -566,7 +585,7 @@ mod tests {
 
     #[test]
     fn all_lists_every_variant() {
-        assert_eq!(Feature::all().len(), 37);
+        assert_eq!(Feature::all().len(), 38);
     }
 
     #[test]

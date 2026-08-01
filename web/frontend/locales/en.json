@@ -170,6 +170,7 @@
     "off": "Off",
     "on": "On",
     "open": "Open",
+    "or": "or",
     "previous": "Previous",
     "readerFallback": "reader",
     "remove": "Remove",
@@ -806,6 +807,36 @@
       "sync": "Sync",
       "unread": "Unread"
     }
+  },
+  "passkey": {
+    "add": "Add a passkey",
+    "added": "Passkey added. You can now sign in with it.",
+    "addedOn": "Added {date}",
+    "empty": "No passkeys yet.",
+    "error": {
+      "alreadyRegistered": "That device already has a passkey for this account.",
+      "badPassword": "That password is not correct.",
+      "cancelled": "Passkey prompt closed.",
+      "failed": "Your device could not complete the passkey step. Try again, or use your password.",
+      "notRecognised": "That passkey isn't registered here. Sign in with your password, or try another device.",
+      "unsupported": "Passkeys aren't available in this browser."
+    },
+    "field": {
+      "label": "Name this key",
+      "password": "Current password"
+    },
+    "intro": "A passkey signs you in with your device's screen lock instead of a password. It never leaves the device it was created on, and it cannot be phished — it only works on this site.",
+    "lastUsed": "last used {date}",
+    "neverUsed": "never used",
+    "rename": "Rename",
+    "revoke": {
+      "body": "This device will no longer be able to sign you in. Your password still works, and you can add the key again later.",
+      "cta": "Revoke",
+      "title": "Revoke “{label}”?"
+    },
+    "signIn": "Sign in with a passkey",
+    "title": "Passkeys",
+    "whyPassword": "Your password is required because a passkey is a permanent credential: without this check, anyone who got hold of your signed-in browser could add one and keep access indefinitely."
   },
   "password": {
     "forgot": {

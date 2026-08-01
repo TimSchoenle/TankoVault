@@ -18,6 +18,7 @@
 //! | [`refresh_tokens`] | rotation lineages and reuse detection |
 //! | [`password_reset`] | the forgot-password token and the password column |
 //! | [`email_verification`] | the sign-up confirmation token and the verified flag |
+//! | [`passkeys`] | `WebAuthn` credentials and the ceremony state that mints them |
 //! | [`profile`] | self-service identity changes and notification preferences |
 //! | [`sessions`] | sessions as the user sees them, and the three ways they end |
 //! | [`citext`] | binding a string so a comparison against a `citext` column honours the schema |
@@ -41,11 +42,17 @@
 pub mod citext;
 pub mod credentials;
 pub mod email_verification;
+pub mod passkeys;
 pub mod password_reset;
 pub mod profile;
 pub mod refresh_tokens;
 pub mod sessions;
 
+// [`passkeys`] is deliberately **not** re-exported. The globs below exist to keep pre-split
+// `repo::users::…` paths resolving; there are no such paths for a module that did not exist
+// before the split, and its functions are named `insert`, `delete` and `rename` — three words
+// that mean nothing at `repo::users::delete(…)` and everything at
+// `repo::users::passkeys::delete(…)`. New callers spell the module.
 pub use citext::*;
 pub use credentials::*;
 pub use email_verification::*;

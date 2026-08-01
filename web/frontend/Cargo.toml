@@ -52,12 +52,36 @@ base64 = "0.23"
 # `Storage`/`HtmlInputElement` back `src/browser.rs`, which replaced every `document::eval`
 # call in the app: Dioxus implements web `eval` as `new Function(...)`, and the served CSP
 # does not (and must not) carry `'unsafe-eval'`.
+#
+# `Credential`/`CredentialsContainer` back `src/webauthn.rs`: passkey registration and sign-in
+# are `navigator.credentials.create()` / `.get()`, and there is no other way to reach them —
+# the ceremony is a browser API by construction, not an HTTP call the API client could make.
 web-sys = { version = "0.3", features = [
     "MessageEvent", "Window", "Location", "Navigator",
     "Blob", "BlobPropertyBag", "Url", "Document", "Element", "HtmlAnchorElement",
     "Storage", "HtmlElement", "HtmlInputElement",
+    "Credential", "CredentialsContainer", "CredentialCreationOptions",
+    "CredentialRequestOptions", "PublicKeyCredential", "DomException",
 ] }
 wasm-bindgen = "0.2"
+# `navigator.credentials.*` returns a `Promise`; this is what awaits it. Nothing else in the app
+# needed it, because every other async path goes through `reqwest`/`gloo-net`, which own their
+# own bridge.
+wasm-bindgen-futures = "0.4"
+# The WebAuthn wire types, and — the reason this dependency exists rather than a hand-written
+# conversion — the four `From` impls between them and `web_sys` that its `wasm` feature carries.
+#
+# This is the same crate the API's `webauthn-rs` is built on, at the same pinned version, which
+# is the whole point. `PublicKeyCredentialCreationOptions` is a deep, base64url-in-JSON structure
+# whose byte fields have to become `ArrayBuffer`s before the browser will look at them; writing
+# that translation by hand on this side would be a second, unverified copy of a specification the
+# server already implements, and it would drift exactly the way the hand-mirrored sync DTOs did
+# (see `crates/contracts`). Instead the API sends these types' own serialisation as opaque JSON
+# and both ends parse it with this crate. `openapi.json` deliberately does not model them.
+#
+# `=` pins it for the reason the host workspace pins `webauthn-rs`: a `-dev` pre-release, and
+# these two must never disagree about the format on the wire.
+webauthn-rs-proto = { version = "=0.6.1-dev", features = ["wasm"] }
 # Relative-time formatting on the console uses the browser's own ISO-8601 date parser.
 js-sys = "0.3"
 # Typed ids in the generated wire types (the progenitor `tankovault-api-client` maps

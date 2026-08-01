@@ -26,6 +26,12 @@ tankovault-db = { workspace = true }
 # `cargo tree -p tankovault-api -i boring-sys2` before adding any dependency here.
 tankovault-domain = { workspace = true, features = ["dns"] }
 tankovault-auth = { workspace = true }
+# The WebAuthn relying party. Deliberately *not* in `crates/auth` alongside argon2 and the JWT
+# mint, even though it is the same kind of primitive: that crate is also a dependency of
+# `services/sync`, `xtask` and the fuzz targets, none of which will ever verify a passkey, and
+# an auth crate is exactly where a heavy dependency spreads to every binary unnoticed. This
+# service is the only relying party there is.
+webauthn-rs = { workspace = true }
 tankovault-email = { workspace = true }
 tankovault-matcher = { workspace = true }
 tankovault-bus = { workspace = true }

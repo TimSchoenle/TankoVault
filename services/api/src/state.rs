@@ -66,6 +66,11 @@ pub struct AppState {
     pub features: FeatureGate,
     /// Whether refresh cookies are marked `Secure` (true in production/TLS).
     pub cookie_secure: bool,
+    /// The `WebAuthn` relying party, or `None` when this deployment configured no origin for
+    /// it. `None` is a working state, not a broken one: passkeys are simply unavailable and
+    /// every other credential path is untouched. See [`crate::passkey`] for why an origin
+    /// cannot be inferred from the request.
+    pub webauthn: Option<crate::passkey::SharedRelyingParty>,
     /// Transactional email back-end (welcome, password reset). A no-op mailer when email
     /// is unconfigured, so these flows degrade gracefully rather than failing.
     pub mailer: Arc<dyn tankovault_email::EmailService>,

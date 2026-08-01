@@ -9,6 +9,7 @@
 //! |---|---|
 //! | [`register`] | account creation, and the confirmed/unconfirmed fork |
 //! | [`login`] | sign-in, including the constant-time unknown-identifier branch |
+//! | [`passkey`] | passwordless sign-in with a `WebAuthn` discoverable credential |
 //! | [`session`] | the rotating refresh cookie, reuse detection, and the token mint |
 //! | [`password`] | request and consume a password-reset link |
 //! | [`verification`] | the email-confirmation link and resending it |
@@ -24,6 +25,7 @@
 //! handlers individually would compile and then fail to route.
 
 pub mod login;
+pub mod passkey;
 pub mod password;
 pub mod register;
 pub mod session;
@@ -31,6 +33,7 @@ pub mod validate;
 pub mod verification;
 
 pub use login::*;
+pub use passkey::*;
 pub use password::*;
 pub use register::*;
 pub use session::*;

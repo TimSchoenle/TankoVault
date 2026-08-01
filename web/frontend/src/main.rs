@@ -34,6 +34,7 @@ mod models;
 mod state;
 mod util;
 mod views;
+mod webauthn;
 mod wire;
 
 pub(crate) use app::Route;

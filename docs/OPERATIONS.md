@@ -310,7 +310,7 @@ next to the route registration, mapping route-pattern prefixes to features; one 
 loops, which have no route to declare against, check their own flag at the top of each
 iteration — there the loop *is* the feature.
 
-- **Registry:** `tankovault_domain::Feature` — 37 features in 8 groups, each with a compiled
+- **Registry:** `tankovault_domain::Feature` — 38 features in 8 groups, each with a compiled
   default and an operator-facing description of what switching it off does.
 - **Storage:** `feature_flag_overrides` holds *only* deviations from the shipped defaults. An
   empty table is a fully working deployment; a feature added in code appears in the console at

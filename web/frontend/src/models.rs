@@ -17,16 +17,16 @@ use serde::{Deserialize, Serialize};
 pub(crate) use crate::wire::types::{
     AccountStatus, AdapterKind, AssignRemoteEntry, ChapterDto, ChapterRead, ConflictPolicy,
     ConflictRow, ContentType, ContinueItem, CreateProvider, DismissRequest, FeedEntry,
-    ForgotPasswordRequest, LoginRequest, MarkRead, MarkReadTo, MergeRequest, PermissionPreset,
-    Politeness, PolitenessEmulation, ProfileUpdate, ProgressDto, ProgressUpdate, Provider,
-    ProviderId, ProviderInfo, ProviderStat, ProviderState, PublicProvider, RegisterRequest,
-    RequestKind, RequestStatus, ResendVerificationRequest, ResetPasswordRequest, ResolveConflict,
-    RunState, ScanMode, ScanRun, ScanRunProviderId, SeriesDetail, SeriesId, SeriesSourceId,
-    SeriesStatus, SeriesSummary, SetProviderState as SetProviderStateBody, SourceDto,
-    SuggestedMatch, SyncExcluded, SyncOpts, SyncPullBody, SyncPushBody, SyncSettingsPatch,
-    SystemStats, Tag, TestAdapterBody, TestAdapterRequest, TriggerScan, TriggerScanProviderId,
-    UpdateProvider, UpsertMapping, UserId, VerifyEmailRequest, WatchStatus, WatchlistItem,
-    WatchlistUpsert,
+    ForgotPasswordRequest, LoginRequest, MarkRead, MarkReadTo, MergeRequest, PasskeyLoginRequest,
+    PermissionPreset, Politeness, PolitenessEmulation, ProfileUpdate, ProgressDto, ProgressUpdate,
+    Provider, ProviderId, ProviderInfo, ProviderStat, ProviderState, PublicProvider,
+    RegisterRequest, RequestKind, RequestStatus, ResendVerificationRequest, ResetPasswordRequest,
+    ResolveConflict, RunState, ScanMode, ScanRun, ScanRunProviderId, SeriesDetail, SeriesId,
+    SeriesSourceId, SeriesStatus, SeriesSummary, SetProviderState as SetProviderStateBody,
+    SourceDto, SuggestedMatch, SyncExcluded, SyncOpts, SyncPullBody, SyncPushBody,
+    SyncSettingsPatch, SystemStats, Tag, TestAdapterBody, TestAdapterRequest, TriggerScan,
+    TriggerScanProviderId, UpdateProvider, UpsertMapping, UserId, VerifyEmailRequest, WatchStatus,
+    WatchlistItem, WatchlistUpsert,
 };
 
 // Generated names that read poorly at the call site keep a local alias.

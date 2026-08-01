@@ -1701,6 +1701,7 @@ pub mod types {
     #[doc = "    \"accounts.email_verification\","]
     #[doc = "    \"accounts.profile\","]
     #[doc = "    \"accounts.sessions\","]
+    #[doc = "    \"accounts.passkeys\","]
     #[doc = "    \"privacy.self_export\","]
     #[doc = "    \"privacy.self_erasure\","]
     #[doc = "    \"privacy.requests\","]
@@ -1763,6 +1764,8 @@ pub mod types {
         AccountsProfile,
         #[serde(rename = "accounts.sessions")]
         AccountsSessions,
+        #[serde(rename = "accounts.passkeys")]
+        AccountsPasskeys,
         #[serde(rename = "privacy.self_export")]
         PrivacySelfExport,
         #[serde(rename = "privacy.self_erasure")]
@@ -1833,6 +1836,7 @@ pub mod types {
                 Self::AccountsEmailVerification => f.write_str("accounts.email_verification"),
                 Self::AccountsProfile => f.write_str("accounts.profile"),
                 Self::AccountsSessions => f.write_str("accounts.sessions"),
+                Self::AccountsPasskeys => f.write_str("accounts.passkeys"),
                 Self::PrivacySelfExport => f.write_str("privacy.self_export"),
                 Self::PrivacySelfErasure => f.write_str("privacy.self_erasure"),
                 Self::PrivacyRequests => f.write_str("privacy.requests"),
@@ -1877,6 +1881,7 @@ pub mod types {
                 "accounts.email_verification" => Ok(Self::AccountsEmailVerification),
                 "accounts.profile" => Ok(Self::AccountsProfile),
                 "accounts.sessions" => Ok(Self::AccountsSessions),
+                "accounts.passkeys" => Ok(Self::AccountsPasskeys),
                 "privacy.self_export" => Ok(Self::PrivacySelfExport),
                 "privacy.self_erasure" => Ok(Self::PrivacySelfErasure),
                 "privacy.requests" => Ok(Self::PrivacyRequests),
@@ -2713,6 +2718,269 @@ pub mod types {
     impl ::std::fmt::Display for NotificationId {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
             self.0.fmt(f)
+        }
+    }
+    #[doc = "The challenge, plus the handle the client echoes back to complete it.\n\n`options` is a W3C `PublicKeyCredentialRequestOptions` envelope, passed to\n`navigator.credentials.get()` verbatim. It is typed as an opaque JSON document here on\npurpose: the shape is the `WebAuthn` specification's, not this API's, and mirroring it into\nthe `OpenAPI` document would be this service publishing a second, hand-maintained copy of a\nstandard — the exact drift that made `/v1/me/sync/*` move its DTOs into\n`crates/contracts`. Both ends parse it with the *same* crate (`webauthn-rs-proto`, pinned to\none version in both workspaces), so there is nothing for the two to disagree about."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The challenge, plus the handle the client echoes back to complete it.\\n\\n`options` is a W3C `PublicKeyCredentialRequestOptions` envelope, passed to\\n`navigator.credentials.get()` verbatim. It is typed as an opaque JSON document here on\\npurpose: the shape is the `WebAuthn` specification's, not this API's, and mirroring it into\\nthe `OpenAPI` document would be this service publishing a second, hand-maintained copy of a\\nstandard — the exact drift that made `/v1/me/sync/*` move its DTOs into\\n`crates/contracts`. Both ends parse it with the *same* crate (`webauthn-rs-proto`, pinned to\\none version in both workspaces), so there is nothing for the two to disagree about.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"ceremony_id\","]
+    #[doc = "    \"options\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"ceremony_id\": {"]
+    #[doc = "      \"description\": \"Opaque handle for this ceremony. Return it with the assertion.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"options\": {"]
+    #[doc = "      \"description\": \"A W3C `PublicKeyCredentialRequestOptions` envelope. Hand it to the browser unmodified.\","]
+    #[doc = "      \"type\": \"object\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct PasskeyChallenge {
+        #[doc = "Opaque handle for this ceremony. Return it with the assertion."]
+        pub ceremony_id: ::uuid::Uuid,
+        #[doc = "A W3C `PublicKeyCredentialRequestOptions` envelope. Hand it to the browser unmodified."]
+        pub options: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+    }
+    impl PasskeyChallenge {
+        pub fn builder() -> builder::PasskeyChallenge {
+            Default::default()
+        }
+    }
+    #[doc = "A registered passkey as the account page shows it.\n\nNote what is **not** here: the credential itself, the public key and the credential id. None\nof them is a secret, but none is useful to a browser either, and a credential id is the\nlookup key a sign-in resolves an account from — publishing every account's ids on an\nauthenticated page would hand an attacker who compromises one session the material to\nrecognise that user's authenticator elsewhere."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A registered passkey as the account page shows it.\\n\\nNote what is **not** here: the credential itself, the public key and the credential id. None\\nof them is a secret, but none is useful to a browser either, and a credential id is the\\nlookup key a sign-in resolves an account from — publishing every account's ids on an\\nauthenticated page would hand an attacker who compromises one session the material to\\nrecognise that user's authenticator elsewhere.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"label\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"label\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"last_used_at\": {"]
+    #[doc = "      \"description\": \"When this key was last used to sign in; absent if it never has been. Surfaced so a user\\ncan tell a live key from one registered on a laptop they no longer own.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct PasskeyDto {
+        pub created_at: ::std::string::String,
+        pub id: ::uuid::Uuid,
+        pub label: ::std::string::String,
+        #[doc = "When this key was last used to sign in; absent if it never has been. Surfaced so a user\ncan tell a live key from one registered on a laptop they no longer own."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub last_used_at: ::std::option::Option<::std::string::String>,
+    }
+    impl PasskeyDto {
+        pub fn builder() -> builder::PasskeyDto {
+            Default::default()
+        }
+    }
+    #[doc = "A signed assertion, returned with the handle from [`PasskeyChallenge`]."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A signed assertion, returned with the handle from [`PasskeyChallenge`].\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"ceremony_id\","]
+    #[doc = "    \"credential\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"ceremony_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"credential\": {"]
+    #[doc = "      \"description\": \"The `PublicKeyCredential` produced by `navigator.credentials.get()`, serialised as the\\n`WebAuthn` specification defines it.\","]
+    #[doc = "      \"type\": \"object\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct PasskeyLoginRequest {
+        pub ceremony_id: ::uuid::Uuid,
+        #[doc = "The `PublicKeyCredential` produced by `navigator.credentials.get()`, serialised as the\n`WebAuthn` specification defines it."]
+        pub credential: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+    }
+    impl PasskeyLoginRequest {
+        pub fn builder() -> builder::PasskeyLoginRequest {
+            Default::default()
+        }
+    }
+    #[doc = "The challenge, plus the handle the client echoes back to complete it.\n\n`options` is a W3C `PublicKeyCredentialCreationOptions` envelope. It is an opaque JSON\ndocument here for the reason [`crate::auth::passkey::PasskeyChallenge`] gives: the shape\nbelongs to the `WebAuthn` specification, and both ends parse it with the same crate."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The challenge, plus the handle the client echoes back to complete it.\\n\\n`options` is a W3C `PublicKeyCredentialCreationOptions` envelope. It is an opaque JSON\\ndocument here for the reason [`crate::auth::passkey::PasskeyChallenge`] gives: the shape\\nbelongs to the `WebAuthn` specification, and both ends parse it with the same crate.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"ceremony_id\","]
+    #[doc = "    \"options\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"ceremony_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"options\": {"]
+    #[doc = "      \"description\": \"A W3C `PublicKeyCredentialCreationOptions` envelope. Hand it to the browser unmodified.\","]
+    #[doc = "      \"type\": \"object\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct PasskeyRegisterChallenge {
+        pub ceremony_id: ::uuid::Uuid,
+        #[doc = "A W3C `PublicKeyCredentialCreationOptions` envelope. Hand it to the browser unmodified."]
+        pub options: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+    }
+    impl PasskeyRegisterChallenge {
+        pub fn builder() -> builder::PasskeyRegisterChallenge {
+            Default::default()
+        }
+    }
+    #[doc = "The attestation returned by `navigator.credentials.create()`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The attestation returned by `navigator.credentials.create()`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"ceremony_id\","]
+    #[doc = "    \"credential\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"ceremony_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"credential\": {"]
+    #[doc = "      \"description\": \"The `RegisterPublicKeyCredential` the browser produced, serialised as the `WebAuthn`\\nspecification defines it.\","]
+    #[doc = "      \"type\": \"object\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct PasskeyRegisterFinish {
+        pub ceremony_id: ::uuid::Uuid,
+        #[doc = "The `RegisterPublicKeyCredential` the browser produced, serialised as the `WebAuthn`\nspecification defines it."]
+        pub credential: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+    }
+    impl PasskeyRegisterFinish {
+        pub fn builder() -> builder::PasskeyRegisterFinish {
+            Default::default()
+        }
+    }
+    #[doc = "Proof of the current password, plus what to call the new key."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Proof of the current password, plus what to call the new key.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"current_password\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"current_password\": {"]
+    #[doc = "      \"description\": \"The caller's current password. Required — see [`passkey_register_start`].\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"label\": {"]
+    #[doc = "      \"description\": \"What to call the key in the revoke list. Defaults to \\\"Passkey\\\" when absent or blank.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct PasskeyRegisterStart {
+        #[doc = "The caller's current password. Required — see [`passkey_register_start`]."]
+        pub current_password: ::std::string::String,
+        #[doc = "What to call the key in the revoke list. Defaults to \"Passkey\" when absent or blank."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub label: ::std::option::Option<::std::string::String>,
+    }
+    impl PasskeyRegisterStart {
+        pub fn builder() -> builder::PasskeyRegisterStart {
+            Default::default()
+        }
+    }
+    #[doc = "A new name for an existing key."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A new name for an existing key.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"label\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"label\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct PasskeyRename {
+        pub label: ::std::string::String,
+    }
+    impl PasskeyRename {
+        pub fn builder() -> builder::PasskeyRename {
+            Default::default()
         }
     }
     #[doc = "`PasswordChange`"]
@@ -10188,6 +10456,424 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct PasskeyChallenge {
+            ceremony_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            options: ::std::result::Result<
+                ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for PasskeyChallenge {
+            fn default() -> Self {
+                Self {
+                    ceremony_id: Err("no value supplied for ceremony_id".to_string()),
+                    options: Err("no value supplied for options".to_string()),
+                }
+            }
+        }
+        impl PasskeyChallenge {
+            pub fn ceremony_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ceremony_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ceremony_id: {e}"));
+                self
+            }
+            pub fn options<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.options = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for options: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<PasskeyChallenge> for super::PasskeyChallenge {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PasskeyChallenge,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    ceremony_id: value.ceremony_id?,
+                    options: value.options?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::PasskeyChallenge> for PasskeyChallenge {
+            fn from(value: super::PasskeyChallenge) -> Self {
+                Self {
+                    ceremony_id: Ok(value.ceremony_id),
+                    options: Ok(value.options),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct PasskeyDto {
+            created_at: ::std::result::Result<::std::string::String, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            label: ::std::result::Result<::std::string::String, ::std::string::String>,
+            last_used_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for PasskeyDto {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    label: Err("no value supplied for label".to_string()),
+                    last_used_at: Ok(Default::default()),
+                }
+            }
+        }
+        impl PasskeyDto {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn label<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.label = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for label: {e}"));
+                self
+            }
+            pub fn last_used_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_used_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for last_used_at: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<PasskeyDto> for super::PasskeyDto {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PasskeyDto,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    id: value.id?,
+                    label: value.label?,
+                    last_used_at: value.last_used_at?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::PasskeyDto> for PasskeyDto {
+            fn from(value: super::PasskeyDto) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    id: Ok(value.id),
+                    label: Ok(value.label),
+                    last_used_at: Ok(value.last_used_at),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct PasskeyLoginRequest {
+            ceremony_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            credential: ::std::result::Result<
+                ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for PasskeyLoginRequest {
+            fn default() -> Self {
+                Self {
+                    ceremony_id: Err("no value supplied for ceremony_id".to_string()),
+                    credential: Err("no value supplied for credential".to_string()),
+                }
+            }
+        }
+        impl PasskeyLoginRequest {
+            pub fn ceremony_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ceremony_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ceremony_id: {e}"));
+                self
+            }
+            pub fn credential<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.credential = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for credential: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<PasskeyLoginRequest> for super::PasskeyLoginRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PasskeyLoginRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    ceremony_id: value.ceremony_id?,
+                    credential: value.credential?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::PasskeyLoginRequest> for PasskeyLoginRequest {
+            fn from(value: super::PasskeyLoginRequest) -> Self {
+                Self {
+                    ceremony_id: Ok(value.ceremony_id),
+                    credential: Ok(value.credential),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct PasskeyRegisterChallenge {
+            ceremony_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            options: ::std::result::Result<
+                ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for PasskeyRegisterChallenge {
+            fn default() -> Self {
+                Self {
+                    ceremony_id: Err("no value supplied for ceremony_id".to_string()),
+                    options: Err("no value supplied for options".to_string()),
+                }
+            }
+        }
+        impl PasskeyRegisterChallenge {
+            pub fn ceremony_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ceremony_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ceremony_id: {e}"));
+                self
+            }
+            pub fn options<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.options = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for options: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<PasskeyRegisterChallenge> for super::PasskeyRegisterChallenge {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PasskeyRegisterChallenge,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    ceremony_id: value.ceremony_id?,
+                    options: value.options?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::PasskeyRegisterChallenge> for PasskeyRegisterChallenge {
+            fn from(value: super::PasskeyRegisterChallenge) -> Self {
+                Self {
+                    ceremony_id: Ok(value.ceremony_id),
+                    options: Ok(value.options),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct PasskeyRegisterFinish {
+            ceremony_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            credential: ::std::result::Result<
+                ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for PasskeyRegisterFinish {
+            fn default() -> Self {
+                Self {
+                    ceremony_id: Err("no value supplied for ceremony_id".to_string()),
+                    credential: Err("no value supplied for credential".to_string()),
+                }
+            }
+        }
+        impl PasskeyRegisterFinish {
+            pub fn ceremony_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ceremony_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ceremony_id: {e}"));
+                self
+            }
+            pub fn credential<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.credential = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for credential: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<PasskeyRegisterFinish> for super::PasskeyRegisterFinish {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PasskeyRegisterFinish,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    ceremony_id: value.ceremony_id?,
+                    credential: value.credential?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::PasskeyRegisterFinish> for PasskeyRegisterFinish {
+            fn from(value: super::PasskeyRegisterFinish) -> Self {
+                Self {
+                    ceremony_id: Ok(value.ceremony_id),
+                    credential: Ok(value.credential),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct PasskeyRegisterStart {
+            current_password: ::std::result::Result<::std::string::String, ::std::string::String>,
+            label: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for PasskeyRegisterStart {
+            fn default() -> Self {
+                Self {
+                    current_password: Err("no value supplied for current_password".to_string()),
+                    label: Ok(Default::default()),
+                }
+            }
+        }
+        impl PasskeyRegisterStart {
+            pub fn current_password<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.current_password = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for current_password: {e}")
+                });
+                self
+            }
+            pub fn label<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.label = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for label: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<PasskeyRegisterStart> for super::PasskeyRegisterStart {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PasskeyRegisterStart,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    current_password: value.current_password?,
+                    label: value.label?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::PasskeyRegisterStart> for PasskeyRegisterStart {
+            fn from(value: super::PasskeyRegisterStart) -> Self {
+                Self {
+                    current_password: Ok(value.current_password),
+                    label: Ok(value.label),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct PasskeyRename {
+            label: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for PasskeyRename {
+            fn default() -> Self {
+                Self {
+                    label: Err("no value supplied for label".to_string()),
+                }
+            }
+        }
+        impl PasskeyRename {
+            pub fn label<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.label = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for label: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<PasskeyRename> for super::PasskeyRename {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PasskeyRename,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    label: value.label?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::PasskeyRename> for PasskeyRename {
+            fn from(value: super::PasskeyRename) -> Self {
+                Self {
+                    label: Ok(value.label),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct PasswordChange {
             current_password: ::std::result::Result<::std::string::String, ::std::string::String>,
             new_password: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -15011,6 +15697,14 @@ impl Client {
     pub fn logout(&self) -> builder::Logout<'_> {
         builder::Logout::new(self)
     }
+    #[doc = "Complete a passkey sign-in\n\nVerifies the assertion against the challenge issued by\n[`passkey_login_start`](passkey_login_start) and, on success, issues an access token and a\nrotating refresh cookie — the same session a password sign-in produces.\n\nEvery outcome is audited under `auth.passkey_login`, matching\n[`login`](super::login::login): an authentication log that only records successes cannot\nanswer the question anyone asks it after an incident.\n\nSends a `POST` request to `/v1/auth/passkey/login/finish`\n\n```ignore\nlet response = client.passkey_login_finish()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn passkey_login_finish(&self) -> builder::PasskeyLoginFinish<'_> {
+        builder::PasskeyLoginFinish::new(self)
+    }
+    #[doc = "Begin a passkey sign-in\n\nIssues a discoverable-credential challenge. Deliberately unauthenticated and deliberately\nidentifier-free: the account is learned from the response, not asked for here.\n\nThe response is safe to hand to any caller. It contains a random challenge and no\ninformation about which accounts exist — mint one for a nonexistent user and it is\nindistinguishable from any other, because no user was named.\n\nSends a `POST` request to `/v1/auth/passkey/login/start`\n\n```ignore\nlet response = client.passkey_login_start()\n    .send()\n    .await;\n```"]
+    pub fn passkey_login_start(&self) -> builder::PasskeyLoginStart<'_> {
+        builder::PasskeyLoginStart::new(self)
+    }
     #[doc = "Request a password-reset email\n\nAlways responds `202 Accepted`, whether or not the address is registered, so the\nendpoint can't be used to probe which emails have accounts. When the address does exist\nand email is configured, a single-use, time-limited reset link is sent.\n\n**Every** account-dependent step happens on a detached task (SEC-10). The uniform `202`\nwas previously defeated by timing: the known-address branch generated a token, hashed it\nand performed an `INSERT` — a write, so a WAL flush — before answering, while the unknown\nbranch returned straight after the lookup. That is a smaller gap than `login`'s two orders\nof magnitude but it is the same oracle, and it needs no credentials at all to read. With\nthe whole body spawned, this handler's only statement is the spawn, so there is no branch\nleft for a response time to disclose.\n\nThe return type is deliberately `StatusCode` rather than `ApiResult<StatusCode>`: the\nanti-enumeration property is \"this endpoint has exactly one answer\", and making that a\ntype rather than a convention means a later edit cannot reintroduce a second one.\n\nSends a `POST` request to `/v1/auth/password/forgot`\n\n```ignore\nlet response = client.forgot_password()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn forgot_password(&self) -> builder::ForgotPassword<'_> {
         builder::ForgotPassword::new(self)
@@ -15070,6 +15764,26 @@ impl Client {
     #[doc = "Mark notifications read\n\nSends a `POST` request to `/v1/me/notifications/read`\n\n```ignore\nlet response = client.mark_read()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn mark_read(&self) -> builder::MarkRead<'_> {
         builder::MarkRead::new(self)
+    }
+    #[doc = "List my passkeys\n\nEvery passkey registered to the caller, newest first.\n\nSends a `GET` request to `/v1/me/passkeys`\n\n```ignore\nlet response = client.list_passkeys()\n    .send()\n    .await;\n```"]
+    pub fn list_passkeys(&self) -> builder::ListPasskeys<'_> {
+        builder::ListPasskeys::new(self)
+    }
+    #[doc = "Finish registering a passkey\n\nVerifies the attestation against the challenge issued by [`passkey_register_start`] and\nstores the credential.\n\nSends a `POST` request to `/v1/me/passkeys/register/finish`\n\n```ignore\nlet response = client.passkey_register_finish()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn passkey_register_finish(&self) -> builder::PasskeyRegisterFinish<'_> {
+        builder::PasskeyRegisterFinish::new(self)
+    }
+    #[doc = "Begin registering a passkey\n\nIssues a `WebAuthn` creation challenge for the caller's account.\n\n# Why this asks for the password\n\nBecause a passkey is a **permanent** credential, and an access token is a 15-minute one.\nWithout this check, anyone who got hold of a token for those fifteen minutes — a shared\nbrowser, a proxy log, an XSS payload that survives one page — could register their own\nauthenticator and keep the account forever, surviving every password change and session\nrevocation the real owner performs. That is a strictly worse version of the takeover\n`patch_profile` blocks by requiring the password before an email change, and it is the same\nanswer: installing a credential requires proving you hold one.\n\nThe cost is that a user who signed in *with* a passkey must type their password to add a\nsecond one. That is the trade every major implementation makes, and the friction lands on a\nonce-per-device action rather than on sign-in.\n\nCredentials already registered to the account are sent as the exclusion list, so an\nauthenticator that already holds one for this account says so at the prompt instead of\nsilently minting an indistinguishable duplicate.\n\nSends a `POST` request to `/v1/me/passkeys/register/start`\n\n```ignore\nlet response = client.passkey_register_start()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn passkey_register_start(&self) -> builder::PasskeyRegisterStart<'_> {
+        builder::PasskeyRegisterStart::new(self)
+    }
+    #[doc = "Revoke a passkey\n\nDelete one of the caller's own passkeys. Scoped to ownership; a foreign or unknown id yields\n`404`.\n\nDeleting the last passkey is allowed, and is not a lockout: every account on this deployment\nhas a password, and passkeys are additive to it. Refusing would be the wrong protection\nanyway — the case a user most urgently needs this for is a device they have just lost.\n\nSends a `DELETE` request to `/v1/me/passkeys/{id}`\n\nArguments:\n- `id`: Passkey id\n```ignore\nlet response = client.delete_passkey()\n    .id(id)\n    .send()\n    .await;\n```"]
+    pub fn delete_passkey(&self) -> builder::DeletePasskey<'_> {
+        builder::DeletePasskey::new(self)
+    }
+    #[doc = "Rename a passkey\n\nChange the label on one of the caller's own passkeys. Scoped to ownership; a foreign or\nunknown id yields `404`.\n\nSends a `PATCH` request to `/v1/me/passkeys/{id}`\n\nArguments:\n- `id`: Passkey id\n- `body`\n```ignore\nlet response = client.rename_passkey()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn rename_passkey(&self) -> builder::RenamePasskey<'_> {
+        builder::RenamePasskey::new(self)
     }
     #[doc = "Change the password\n\nChange the caller's password, proving knowledge of the current one.\n\nThere was previously **no authenticated path to a new password at all** — the only route\nwas the emailed reset link, so a signed-in user who simply wanted to rotate their password\nhad to go through an out-of-band channel, and a user whose email had been taken over could\nnot lock the attacker out.\n\nEvery session is revoked on success, including the caller's: a password change is exactly\nwhen you want the other device signed out, and leaving the caller's own session alive would\nmean special-casing the one session an attacker is most likely to be holding.\n\nSends a `POST` request to `/v1/me/password`\n\n```ignore\nlet response = client.change_password()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn change_password(&self) -> builder::ChangePassword<'_> {
@@ -18941,6 +19655,138 @@ pub mod builder {
             }
         }
     }
+    #[doc = "Builder for [`Client::passkey_login_finish`]\n\n[`Client::passkey_login_finish`]: super::Client::passkey_login_finish"]
+    #[derive(Debug, Clone)]
+    pub struct PasskeyLoginFinish<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::PasskeyLoginRequest, String>,
+    }
+    impl<'a> PasskeyLoginFinish<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::PasskeyLoginRequest>,
+            <V as std::convert::TryInto<types::PasskeyLoginRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `PasskeyLoginRequest` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::PasskeyLoginRequest,
+                ) -> types::builder::PasskeyLoginRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/auth/passkey/login/finish`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::TokenResponse>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::PasskeyLoginRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/auth/passkey/login/finish", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "passkey_login_finish",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                429u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                503u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::passkey_login_start`]\n\n[`Client::passkey_login_start`]: super::Client::passkey_login_start"]
+    #[derive(Debug, Clone)]
+    pub struct PasskeyLoginStart<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> PasskeyLoginStart<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `POST` request to `/v1/auth/passkey/login/start`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::PasskeyChallenge>, Error<types::ProblemDetails>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/auth/passkey/login/start", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "passkey_login_start",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                429u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                503u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
     #[doc = "Builder for [`Client::forgot_password`]\n\n[`Client::forgot_password`]: super::Client::forgot_password"]
     #[derive(Debug, Clone)]
     pub struct ForgotPassword<'a> {
@@ -19818,6 +20664,378 @@ pub mod builder {
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::list_passkeys`]\n\n[`Client::list_passkeys`]: super::Client::list_passkeys"]
+    #[derive(Debug, Clone)]
+    pub struct ListPasskeys<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> ListPasskeys<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/me/passkeys`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::PasskeyDto>>, Error<types::ProblemDetails>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v1/me/passkeys", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_passkeys",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::passkey_register_finish`]\n\n[`Client::passkey_register_finish`]: super::Client::passkey_register_finish"]
+    #[derive(Debug, Clone)]
+    pub struct PasskeyRegisterFinish<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::PasskeyRegisterFinish, String>,
+    }
+    impl<'a> PasskeyRegisterFinish<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::PasskeyRegisterFinish>,
+            <V as std::convert::TryInto<types::PasskeyRegisterFinish>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `PasskeyRegisterFinish` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::PasskeyRegisterFinish,
+                ) -> types::builder::PasskeyRegisterFinish,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/passkeys/register/finish`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::PasskeyDto>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::PasskeyRegisterFinish::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/me/passkeys/register/finish", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "passkey_register_finish",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                409u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                503u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::passkey_register_start`]\n\n[`Client::passkey_register_start`]: super::Client::passkey_register_start"]
+    #[derive(Debug, Clone)]
+    pub struct PasskeyRegisterStart<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::PasskeyRegisterStart, String>,
+    }
+    impl<'a> PasskeyRegisterStart<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::PasskeyRegisterStart>,
+            <V as std::convert::TryInto<types::PasskeyRegisterStart>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `PasskeyRegisterStart` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::PasskeyRegisterStart,
+                ) -> types::builder::PasskeyRegisterStart,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/passkeys/register/start`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::PasskeyRegisterChallenge>, Error<types::ProblemDetails>>
+        {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::PasskeyRegisterStart::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/me/passkeys/register/start", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "passkey_register_start",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                503u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::delete_passkey`]\n\n[`Client::delete_passkey`]: super::Client::delete_passkey"]
+    #[derive(Debug, Clone)]
+    pub struct DeletePasskey<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+    }
+    impl<'a> DeletePasskey<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+            }
+        }
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+        #[doc = "Sends a `DELETE` request to `/v1/me/passkeys/{id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+            let Self { client, id } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/me/passkeys/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_passkey",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::rename_passkey`]\n\n[`Client::rename_passkey`]: super::Client::rename_passkey"]
+    #[derive(Debug, Clone)]
+    pub struct RenamePasskey<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::PasskeyRename, String>,
+    }
+    impl<'a> RenamePasskey<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::PasskeyRename>,
+            <V as std::convert::TryInto<types::PasskeyRename>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `PasskeyRename` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::PasskeyRename) -> types::builder::PasskeyRename,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `PATCH` request to `/v1/me/passkeys/{id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+            let Self { client, id, body } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::PasskeyRename::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/me/passkeys/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .patch(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "rename_passkey",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

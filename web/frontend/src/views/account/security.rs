@@ -1,14 +1,24 @@
-//! Security & sessions (§9.4) — list the caller's active login sessions and revoke any one
-//! (its whole rotation family). Password change and 2FA have no endpoint yet, and the panel
-//! says so rather than showing controls that would do nothing.
+//! Security (§9.4) — two independent cards under one tab.
+//!
+//! - **Passkeys** ([`super::passkeys::PasskeysCard`]): register, rename and revoke `WebAuthn`
+//!   credentials.
+//! - **Sessions** (here): list the caller's active login sessions and revoke any one — its
+//!   whole rotation family, not the token on screen, which would sign them out for exactly one
+//!   request cycle.
+//!
+//! Each is behind its own feature flag, so either can be absent; the tab shows whichever the
+//! deployment offers. Password change still has no screen, and the panel says so rather than
+//! showing a control that would do nothing.
 
 use crate::api;
 use crate::components::{async_list, PanelCard};
 use crate::hooks::{use_busy, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::Icon;
+use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::util::iso_date;
+use crate::wire::types::Feature;
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
 
@@ -17,14 +27,20 @@ pub(crate) fn SecurityPanel() -> Element {
     let session = use_session();
     let i18n = use_i18n();
     let api = api::use_api();
+    let caps = use_capabilities();
     let reload = use_reload();
+
+    // Read once, above the resource: the fetch is skipped entirely when the deployment does not
+    // offer session management, because the route does not exist there and the panel would
+    // render an error box for a feature it has already decided not to show.
+    let sessions_enabled = caps.has_feature(Feature::AccountsSessions);
 
     let sessions = use_resource(move || {
         reload.track();
         let client = api.client();
-        let authed = session.is_authenticated();
+        let fetch = session.is_authenticated() && sessions_enabled;
         async move {
-            if !authed {
+            if !fetch {
                 return Ok(Vec::new());
             }
             client
@@ -37,6 +53,13 @@ pub(crate) fn SecurityPanel() -> Element {
     });
 
     rsx! {
+        // Passkeys first: it is the credential a reader came here to add, while the session list
+        // is something they came here to audit.
+        if caps.has_feature(Feature::AccountsPasskeys) {
+            super::passkeys::PasskeysCard {}
+        }
+
+        if sessions_enabled {
         PanelCard { icon: Icon::ShieldLock, title: i18n.t("account.security.title"),
             p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
                 {i18n.t("account.security.intro")}
@@ -63,6 +86,7 @@ pub(crate) fn SecurityPanel() -> Element {
             p { class: "ik-muted", style: "font-size:12px;margin-top:14px;",
                 {i18n.t("account.security.unavailable")}
             }
+        }
         }
     }
 }

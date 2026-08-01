@@ -227,7 +227,11 @@ chromiumoxide = { version = "0.9", default-features = false, features = ["bytes"
 # --- domain building blocks ---
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-uuid = { version = "1", features = ["v7", "serde", "std"] }
+# `v4` alongside `v7`: ids that identify a *row* are v7, so they sort by creation time and keep
+# B-tree inserts local. A WebAuthn ceremony id is not that — it is a short-lived handle a client
+# echoes back, so the timestamp v7 embeds is information given away for nothing. `webauthn-rs`
+# pulls the feature in regardless.
+uuid = { version = "1", features = ["v4", "v7", "serde", "std"] }
 time = { version = "0.3", features = ["serde", "macros", "formatting", "parsing"] }
 thiserror = "2"
 anyhow = "1"
@@ -243,6 +247,31 @@ base64 = "0.23"
 # Constant-time comparison for the internal service-to-service token. Already in the tree
 # transitively (aes-gcm, argon2); declared here so the comparison is not hand-rolled.
 subtle = "2"
+# Passkeys: the WebAuthn relying-party half. Two things about this line are deliberate.
+#
+# **`=0.6.1-dev`, an exact pre-release pin.** The stable line is 0.5.x, and it is not usable
+# here: `webauthn-rs-core` 0.5 verifies attestation with the `openssl` crate, and `deny.toml`
+# bans `openssl-sys` outright because the `scratch` runtime images ship no OpenSSL — a
+# transitive link against a library that is not in the image fails at *exec* time in
+# production rather than at build time in CI. The 0.6 line replaced that with RustCrypto
+# (`crypto-glue`) and pulls no OpenSSL at all, which is why it is worth taking upstream's
+# in-development version. `=` rather than `^` because cargo treats pre-release requirements
+# loosely enough to accept a later `-dev` with different semantics; this is a credential
+# verifier, so the version that moves is the one a person chose to move.
+#
+# **`default-features = false`.** The default is `attestation`, which is the enterprise
+# use-case: pinning credentials to an approved hardware model against a CA list. Passkeys here
+# are a consumer sign-in credential — a phone, a laptop, a password manager — and we accept any
+# authenticator, so the attestation machinery would be dead weight in the binary and, worse,
+# would invite a future reviewer to think it was being enforced. `conditional-ui` supplies the
+# discoverable (usernameless) sign-in; `danger-allow-state-serialisation` makes the in-flight
+# ceremony state `Serialize`, which it must be to survive between the two legs of the protocol
+# in Postgres rather than in one replica's memory. The "danger" is storing that state where the
+# *client* can reach it; see `migrations/0022_passkeys.up.sql`.
+webauthn-rs = { version = "=0.6.1-dev", default-features = false, features = [
+    "conditional-ui",
+    "danger-allow-state-serialisation",
+] }
 
 # --- observability ---
 tracing = "0.1"

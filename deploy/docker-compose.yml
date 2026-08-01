@@ -186,6 +186,16 @@ services:
       # into a deployment that terminates TLS.
       TANKOVAULT_AUTH__COOKIE_SECURE: "false"
       TANKOVAULT_AUTH__PASSWORD_PEPPER: "${TANKOVAULT_AUTH__PASSWORD_PEPPER:-}"
+      # Passkeys are bound to an origin by the browser, so it has to be stated rather than
+      # inferred from a request. This stack serves the SPA on :3000, which is what
+      # `TANKOVAULT_EMAIL__BASE_URL` below already says — the two must agree, and the API falls
+      # back to that one when this is unset. Stated explicitly here because the relationship is
+      # not obvious from either line alone.
+      #
+      # `localhost` is a secure context even over plain HTTP, which is the one exception
+      # browsers make; on any other host, passkeys need HTTPS. A credential registered here is
+      # bound to `localhost:3000` and will not work against a deployed origin.
+      TANKOVAULT_AUTH__WEBAUTHN_ORIGIN: http://localhost:3000
       TANKOVAULT_CONTROL_PLANE_URL: http://control-plane:8081
       TANKOVAULT_SYNC_URL: http://sync:8083
       # The "Test adapter" dry-run is proxied to the worker, which is the tier that carries the

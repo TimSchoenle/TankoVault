@@ -157,3 +157,25 @@ pub async fn mark_email_verified<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId
     .await?;
     Ok(())
 }
+
+/// Whether a user's email address has been confirmed.
+///
+/// The one-column read for sign-in paths that already know *who* is signing in and so cannot
+/// use [`find_by_email_with_verification`] or `find_credentials`, both of which resolve an
+/// account from a typed identifier. Passkey sign-in is that case: the account arrives from the
+/// authenticator, not from a form field, and the confirmation gate still has to apply — leaving
+/// it off would make registering a passkey a way around email confirmation entirely.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A `user_id` matching no row is
+/// `Ok(false)`, which is the safe answer for a gate: an account that does not exist has not
+/// confirmed anything.
+pub async fn is_email_verified<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<bool> {
+    let verified = sqlx::query_scalar!(
+        "SELECT (email_verified_at IS NOT NULL) AS \"verified!\" FROM users WHERE id = $1",
+        user_id.as_uuid(),
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(verified.unwrap_or(false))
+}

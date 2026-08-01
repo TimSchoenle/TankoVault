@@ -112,6 +112,21 @@ fn value_of(el: ElementRef<'_>, attr: Option<&str>) -> String {
     }
 }
 
+/// Split a label/value cell (`Alternative`, `Author(s)`, …) into its entries on `,`/`;`.
+///
+/// Themes render these rows as one joined string, so splitting is the only way to get
+/// individual values out. A value that legitimately contains a comma is split too — accepted,
+/// because the alternative is storing `"A, B, C"` as a single title that matches nothing.
+#[must_use]
+pub fn split_list(value: &str) -> Vec<String> {
+    value
+        .split([',', ';'])
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 /// Collapse an element's inner text to a single, whitespace-normalised line.
 #[must_use]
 pub fn text_of(el: ElementRef<'_>) -> String {

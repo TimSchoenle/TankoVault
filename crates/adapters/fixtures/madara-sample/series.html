@@ -11,15 +11,38 @@
     <div class="post-title">
       <h1>Solo Leveling</h1>
     </div>
-    <div class="summary-heading">Only I Level Up</div>
-    <div class="summary-heading">나 혼자만 레벨업</div>
-    <div class="post-status">
-      <div class="summary-content">OnGoing</div>
+    <!-- Madara's summary block: every row has the same shape, and only the heading text
+         says which field it is. An earlier revision of this fixture invented bare
+         `<div class="summary-heading">Only I Level Up</div>` elements holding the alternative
+         titles directly, which no Madara install renders — and it made the default
+         `alt: div.summary-heading` look correct while it was in fact harvesting labels. -->
+    <div class="post-content">
+      <div class="post-content_item">
+        <div class="summary-heading"><h5>Alternative</h5></div>
+        <div class="summary-content">Only I Level Up, 나 혼자만 레벨업</div>
+      </div>
+      <div class="post-content_item">
+        <div class="summary-heading"><h5>Author(s)</h5></div>
+        <div class="summary-content">
+          <div class="author-content"><a href="/manga-author/chugong/">Chugong</a></div>
+        </div>
+      </div>
+      <div class="post-content_item">
+        <div class="summary-heading"><h5>Genre(s)</h5></div>
+        <div class="summary-content">
+          <div class="genres-content">
+            <a href="/manga-genre/action/">Action</a>
+            <a href="/manga-genre/fantasy/">Fantasy</a>
+            <a href="/manga-genre/adventure/">Adventure</a>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="genres-content">
-      <a href="/manga-genre/action/">Action</a>
-      <a href="/manga-genre/fantasy/">Fantasy</a>
-      <a href="/manga-genre/adventure/">Adventure</a>
+    <div class="post-status">
+      <div class="post-content_item">
+        <div class="summary-heading"><h5>Status</h5></div>
+        <div class="summary-content">OnGoing</div>
+      </div>
     </div>
     <div class="description-summary">
       <p>Ten years ago, gates connecting our world to a world of monsters opened.</p>

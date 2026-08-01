@@ -57,7 +57,15 @@ async fn parses_series_metadata() {
     assert_eq!(meta.status, SeriesStatus::Ongoing);
     assert!(meta.tags.iter().any(|t| t == "Action"));
     assert!(meta.tags.iter().any(|t| t == "Fantasy"));
-    assert!(meta.alt_titles.iter().any(|t| t == "Only I Level Up"));
+    // Alternative titles come from the summary row *labelled* "Alternative", split on the
+    // comma the theme joins them with. The bug this pins: `alt` was the plain selector
+    // `div.summary-heading`, which matched the label cell of every row — so every series on
+    // every Madara provider was ingested with "Alternative"/"Author(s)"/"Genre(s)"/"Status"
+    // as alternative titles, and `series_titles` feeds the trigram matcher and the search.
+    assert_eq!(
+        meta.alt_titles,
+        vec!["Only I Level Up".to_owned(), "나 혼자만 레벨업".to_owned()]
+    );
     assert!(meta.description.unwrap().contains("Ten years ago"));
     // Cover is a link only, resolved to an absolute URL for direct client use.
     assert_eq!(

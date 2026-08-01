@@ -47,7 +47,7 @@ pub fn builtin() -> Vec<ProviderPreset> {
             config: json!({}),
             politeness: Politeness::default(),
         },
-        // Standard Madara. Only two deviations from the defaults.
+        // Standard Madara. Only three deviations from the defaults.
         ProviderPreset {
             slug: "manhuaus",
             name: "Manhuaus",
@@ -55,10 +55,25 @@ pub fn builtin() -> Vec<ProviderPreset> {
             adapter: AdapterKind::Madara,
             config: json!({
                 "catalog": {
-                    // Paginates as `/manga/page/{n}/`; the theme omits `a.nextpostslink`,
-                    // so the <head> rel=next link is the reliable has-next marker.
+                    // Paginates as `/manga/page/{n}/` (page 1 redirects to `/manga/`).
                     "path": "/manga/page/{page}/",
-                    "next": "link[rel=next]"
+                    // No has-next marker exists on this theme, so the Madara default
+                    // `a.nextpostslink` is explicitly *cleared* rather than overridden.
+                    //
+                    // This install replaced the numeric paginator with Madara's AJAX
+                    // "LOAD MORE" button (`nav.navigation-ajax a.load-ajax`, driven by
+                    // `admin-ajax.php`). That button is not a marker: it is rendered on
+                    // every non-empty listing including the final one, so keying `has_next`
+                    // on it would walk forever. There is no `<head>` rel=next link either —
+                    // an earlier revision claimed there was and selected `link[rel=next]`,
+                    // which matches nothing, so the walk stopped after page 1 and a full
+                    // scan registered 12 of ~1300 series.
+                    //
+                    // With no selector, `GenericConfigAdapter::list_catalog` falls back to
+                    // "another page exists while this one yielded items", which is exact
+                    // here: WordPress serves a `body.error404` shell with zero
+                    // `div.page-item-detail` for any page past the last.
+                    "next": null
                 },
                 "series": {
                     // Covers are lazy-loaded — the real URL lives in `data-src`.

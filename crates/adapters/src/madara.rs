@@ -30,7 +30,19 @@ pub fn madara_default_config() -> Value {
             "cover": "div.summary_image img@src",
             "tags": "div.genres-content a",
             "status": "div.post-status .summary-content",
-            "alt": "div.summary-heading",
+            // A labelled row, not a selector: the theme's summary block renders Alternative,
+            // Author(s), Artist(s) and Genre(s) as identical `div.post-content_item` rows
+            // that differ only in their heading text. This field used to be
+            // `div.summary-heading`, which matched every row's *label* — so every series on
+            // every Madara provider was ingested with the alternative titles "Alternative",
+            // "Author(s)", "Genre(s)" and "Status", and those went into `series_titles`,
+            // which the trigram matcher and the catalogue search both read. See `TextSource`.
+            "alt": {
+                "row": "div.post-content_item",
+                "label": "div.summary-heading h5",
+                "match": "Alternative",
+                "value": "div.summary-content"
+            },
             "author": "div.author-content a",
             "artist": "div.artist-content a"
         },

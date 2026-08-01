@@ -31,16 +31,33 @@ through its own listing, so it wraps the generic parser in a small custom adapte
 
 ## Manhuaus — Madara config only
 
-Standard Madara; only two deviations from the defaults:
+Standard Madara; only three deviations from the defaults:
 
 | Field | Default | Override | Why |
 |---|---|---|---|
 | `catalog.path` | `/manga/?page={page}` | `/manga/page/{page}/` | Site paginates on the path, not a query. |
-| `catalog.next` | `a.nextpostslink` | `link[rel=next]` | Theme omits `nextpostslink`; the `<head>` rel=next link is the reliable has-next marker. |
+| `catalog.next` | `a.nextpostslink` | `null` (cleared) | The theme has no next-page marker at all — it paginates through an AJAX "LOAD MORE" button that is rendered on the last page too, and emits no `<head>` rel=next. Cleared, so `has_next` falls back to "this page yielded items"; past the last page WordPress answers `200` with an `error404` shell and zero items, which ends the walk exactly. |
 | `series.cover` | `div.summary_image img@src` | `div.summary_image img@data-src` | Covers are lazy-loaded — `src` is a placeholder, the real URL is in `data-src`. |
 
 Everything else (catalog item `div.page-item-detail`, title `h3 a`, series title/desc/
 status/tags, chapters `li.wp-manga-chapter`) is the Madara default.
+
+### Why `series.alt` is not a selector
+
+The Madara default for alternative titles is a **labelled row**, not a CSS selector:
+
+```json
+"alt": { "row": "div.post-content_item", "label": "div.summary-heading h5",
+         "match": "Alternative", "value": "div.summary-content" }
+```
+
+The theme renders Alternative, Author(s), Artist(s) and Genre(s) as structurally identical
+`div.post-content_item` rows whose only distinguishing feature is the heading text, and CSS
+cannot select on text. The default was the plain selector `div.summary-heading`, which matched
+every row's **label** — so every series scanned from manhuaus or kunmanga was stored with
+"Alternative", "Author(s)", "Genre(s)" and "Status" as alternative titles. Those rows go into
+`series_titles`, whose `normalized` column the trigram matcher and the catalogue search both
+score against, so the effect reached matching and search rather than stopping at display.
 
 ## KunManga — custom adapter over the generic parser
 

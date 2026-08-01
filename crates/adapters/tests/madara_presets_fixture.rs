@@ -21,6 +21,10 @@ struct SiteFetcher {
     /// Bodies for kunmanga's sitemap index and its series shards; unused elsewhere.
     sitemap_index: &'static str,
     sitemap_shard: &'static str,
+    /// Body served for catalogue pages after page 1, when a test supplies one. This is how
+    /// walking off the end of a catalogue is expressed for a site whose only end-of-list
+    /// signal is a page with no items.
+    catalog_past_end: &'static str,
 }
 
 #[async_trait]
@@ -35,7 +39,13 @@ impl Fetcher for SiteFetcher {
         } else if req.url.contains("/api/comics/") {
             self.chapters_api
         } else if req.url.contains("/manga/page/") {
-            self.catalog
+            // Page 1 always gets `catalog`; later pages get `catalog_past_end` when the
+            // test supplied one, so a walk can be driven off the end of the listing.
+            if self.catalog_past_end.is_empty() || req.url.contains("/manga/page/1/") {
+                self.catalog
+            } else {
+                self.catalog_past_end
+            }
         } else {
             self.series
         };
@@ -66,6 +76,7 @@ fn preset_adapter(slug: &str, fetcher: SiteFetcher) -> (Box<dyn SourceAdapter>, 
 }
 
 const MANHUAUS_CATALOG: &str = include_str!("../fixtures/manhuaus/catalog.html");
+const MANHUAUS_CATALOG_EMPTY: &str = include_str!("../fixtures/manhuaus/catalog-empty.html");
 const MANHUAUS_SERIES: &str = include_str!("../fixtures/manhuaus/series.html");
 const KUNMANGA_CATALOG: &str = include_str!("../fixtures/kunmanga/catalog.html");
 const KUNMANGA_SERIES: &str = include_str!("../fixtures/kunmanga/series.html");
@@ -81,11 +92,21 @@ fn kunmanga_fixtures() -> SiteFetcher {
         chapters_api: KUNMANGA_CHAPTERS_API,
         sitemap_index: KUNMANGA_SITEMAP_INDEX,
         sitemap_shard: KUNMANGA_SITEMAP_SHARD,
+        // Unused: kunmanga enumerates from sitemap shards, never from `/manga/page/`.
+        ..SiteFetcher::default()
     }
 }
 
+/// The bug: the preset selected `link[rel=next]` as the has-next marker, but manhuaus renders
+/// no such link — and no `a.nextpostslink` either, since the theme paginates through an AJAX
+/// "LOAD MORE" control. `has_next` was therefore false on every page, the fan-out stopped
+/// after page 1, and a full scan registered 12 series out of roughly 1300.
+///
+/// The preset now clears `catalog.next`, which puts termination on the item count. This pins
+/// the first half of that: a populated listing continues the walk. `catalog.html` deliberately
+/// contains the LOAD MORE control and no rel=next, so re-introducing either selector fails here.
 #[tokio::test]
-async fn manhuaus_catalog_uses_head_rel_next() {
+async fn manhuaus_catalog_continues_while_pages_yield_items() {
     let (adapter, ctx) = preset_adapter(
         "manhuaus",
         SiteFetcher {
@@ -97,12 +118,38 @@ async fn manhuaus_catalog_uses_head_rel_next() {
     let page = adapter.list_catalog(&ctx, 1).await.expect("catalog parses");
 
     assert_eq!(page.items.len(), 2);
-    assert!(page.has_next, "<link rel=next> marks another page");
+    assert!(
+        page.has_next,
+        "a listing with items must chain the next page; this site has no next-link marker"
+    );
     assert_eq!(page.items[0].title, "Reborn As The Heavenly Demon");
     assert_eq!(
         page.items[0].path,
         "/manga/reincarnation-of-the-heavenly-demon/"
     );
+}
+
+/// The other half of the contract above: without a next-link marker, the walk has to stop on
+/// its own. Past the last page manhuaus answers `200` with the `WordPress` `error404` shell and
+/// no catalogue items, so `has_next` goes false there and the fan-out ends.
+#[tokio::test]
+async fn manhuaus_catalog_terminates_on_the_first_empty_page() {
+    let (adapter, ctx) = preset_adapter(
+        "manhuaus",
+        SiteFetcher {
+            catalog: MANHUAUS_CATALOG,
+            series: MANHUAUS_SERIES,
+            catalog_past_end: MANHUAUS_CATALOG_EMPTY,
+            ..SiteFetcher::default()
+        },
+    );
+    let past_end = adapter
+        .list_catalog(&ctx, 2)
+        .await
+        .expect("the 404 shell still parses");
+
+    assert!(past_end.items.is_empty());
+    assert!(!past_end.has_next, "an empty listing ends the catalogue walk");
 }
 
 #[tokio::test]
@@ -123,6 +170,19 @@ async fn manhuaus_series_reads_lazy_cover() {
     assert_eq!(meta.title, "Reborn As The Heavenly Demon");
     assert_eq!(meta.status, SeriesStatus::Ongoing);
     assert!(meta.tags.iter().any(|t| t == "Action"));
+    // Read from the summary row labelled "Alternative", not from the labels themselves.
+    // Until this was fixed the preset harvested `div.summary-heading`, so every manhuaus and
+    // kunmanga series was stored with the alternative titles "Alternative", "Genre(s)" and
+    // "Status" — 4713 such rows in `series_titles`, which the trigram matcher scores against.
+    assert_eq!(
+        meta.alt_titles,
+        vec![
+            "Reincarnation Heavenly Demon".to_owned(),
+            "환생천마".to_owned(),
+            "Reborn As The Heavenly Demon".to_owned(),
+            "Reincarnated Murim Lord".to_owned(),
+        ]
+    );
     // The override reads the real cover from data-src, not the base64 src placeholder.
     assert_eq!(
         meta.cover_url.as_deref(),

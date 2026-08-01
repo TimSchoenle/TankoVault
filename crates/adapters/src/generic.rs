@@ -1,11 +1,11 @@
 //! The config-driven adapter. A Madara-like site is a one-row insert (its selectors in
 //! `providers.config`); a custom site is a small struct implementing [`SourceAdapter`].
 
-use crate::config::AdapterConfig;
+use crate::config::{AdapterConfig, TextSource};
 use crate::error::AdapterError;
 use crate::html::{
     absolutize, extract_all, extract_first, map_status, parse_blocking, parse_chapter_number,
-    parse_selector, parse_year, relativize, split_attr,
+    parse_selector, parse_year, relativize, split_attr, split_list,
 };
 use crate::types::{
     CatalogItem, CatalogPage, ChapterMeta, Ctx, LatestUpdate, SeriesMeta, SourceAdapter,
@@ -54,6 +54,42 @@ fn extract_href(
         .next()
         .and_then(|el| el.value().attr(attr))
         .map(|href| relativize(page_url, href)))
+}
+
+/// Resolve a [`TextSource`] against a parsed page.
+///
+/// [`TextSource::Selector`] is the ordinary case: every non-empty match is a value.
+///
+/// [`TextSource::LabelledRow`] exists because CSS cannot select on text. Madara renders
+/// `Alternative`, `Author(s)`, `Artist(s)` and `Genre(s)` as structurally identical
+/// `div.post-content_item` rows whose only distinguishing feature is the heading text, so the
+/// row has to be found by reading each label. The first row whose label matches wins; a page
+/// that omits the row yields no values, which is the correct answer rather than a failure.
+fn extract_text_source(
+    root: ElementRef<'_>,
+    source: &TextSource,
+) -> Result<Vec<String>, AdapterError> {
+    match source {
+        TextSource::Selector(spec) => extract_all(root, spec),
+        TextSource::LabelledRow(cfg) => {
+            let row_sel = parse_selector(&cfg.row)?;
+            let wanted = cfg.match_label.trim();
+            for row in root.select(&row_sel) {
+                let Some(label) = extract_first(row, &cfg.label)? else {
+                    continue;
+                };
+                // Themes are inconsistent about a trailing colon and about case, and
+                // `text_of` has already collapsed the surrounding whitespace.
+                if !label.trim_end_matches(':').trim().eq_ignore_ascii_case(wanted) {
+                    continue;
+                }
+                return Ok(extract_first(row, &cfg.value)?
+                    .map(|v| split_list(&v))
+                    .unwrap_or_default());
+            }
+            Ok(Vec::new())
+        }
+    }
 }
 
 #[async_trait]
@@ -177,7 +213,7 @@ impl SourceAdapter for GenericConfigAdapter {
             let alt_titles = cfg
                 .alt
                 .as_ref()
-                .map(|s| extract_all(root, s))
+                .map(|s| extract_text_source(root, s))
                 .transpose()?
                 .unwrap_or_default();
 

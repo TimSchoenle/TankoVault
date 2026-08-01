@@ -42,6 +42,47 @@ pub struct LatestCfg {
     pub chapter: Option<String>,
 }
 
+/// How a multi-valued text field is located on a page.
+///
+/// Almost every field is a plain CSS selector. Madara's summary block is the exception it
+/// exists for: `Alternative`, `Author(s)`, `Artist(s)` and `Genre(s)` render as *structurally
+/// identical* `div.post-content_item` rows that differ only in the text of their heading, and
+/// CSS has no way to select on text. The Madara default for `alt` was `div.summary-heading`
+/// until that was found out — it matched every row's **label**, so every series ingested from
+/// a Madara provider carried "Alternative", "Author(s)", "Genre(s)" and "Status" as its
+/// alternative titles. Those rows land in `series_titles`, which the trigram matcher and the
+/// catalogue search both read, so this was never merely cosmetic.
+///
+/// Deserialisation is `untagged`: a JSON string is a [`Self::Selector`], a JSON object is a
+/// [`Self::LabelledRow`]. The cost of untagged is a useless serde error on a malformed object
+/// ("data did not match any variant"), so check the field names below before the selector.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum TextSource {
+    /// A plain selector (`@attr` supported); every non-empty match is one value.
+    Selector(String),
+    /// A label/value row pair, chosen by the label's text.
+    LabelledRow(LabelledRowCfg),
+}
+
+/// A label/value row: find the row whose label reads `match`, then read its value cell.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LabelledRowCfg {
+    /// Selector for each candidate row.
+    pub row: String,
+    /// Selector (relative to the row) for the label cell.
+    pub label: String,
+    /// The label text to match. Compared case-insensitively, ignoring surrounding whitespace
+    /// and a trailing `:` — themes are inconsistent about both.
+    #[serde(rename = "match")]
+    pub match_label: String,
+    /// Selector (relative to the row) for the value cell; `@attr` supported. The cell's text
+    /// is split on `,`/`;` into separate values, as these rows are always a joined list. A
+    /// value that legitimately contains a comma is split too; that trade is deliberate and
+    /// matches what `DemonicScansAdapter` has always done with its own label/value rows.
+    pub value: String,
+}
+
 /// Series metadata page.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SeriesCfg {
@@ -54,8 +95,9 @@ pub struct SeriesCfg {
     pub tags: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
+    /// Alternative titles. See [`TextSource`] for why this one is not just a selector.
     #[serde(default)]
-    pub alt: Option<String>,
+    pub alt: Option<TextSource>,
     #[serde(default)]
     pub author: Option<String>,
     #[serde(default)]

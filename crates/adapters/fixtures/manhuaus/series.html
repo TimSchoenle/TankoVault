@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!-- Trimmed from the live manhuaus.com series page (solver-fetched). Cover is lazy-loaded
-     (real URL in data-src); chapters are li.wp-manga-chapter rows. -->
+     (real URL in data-src); chapters are li.wp-manga-chapter rows. The summary block keeps
+     its real shape — identical `post-content_item` rows told apart only by heading text —
+     because that is what the `alt` labelled-row config has to navigate. -->
 <html lang="en">
 <head><title>Reborn As The Heavenly Demon</title></head>
 <body>
@@ -12,6 +14,13 @@
     </a>
   </div>
   <div class="post-content">
+    <!-- The loader div really is the first child; it is kept because it is why no
+         positional selector (`:first-of-type`) can reach the Alternative row either. -->
+    <div class="loader-inner ball-pulse"><div></div><div></div><div></div></div>
+    <div class="post-content_item">
+      <div class="summary-heading"><h5>Alternative</h5></div>
+      <div class="summary-content">Reincarnation Heavenly Demon , 환생천마, Reborn As The Heavenly Demon, Reincarnated Murim Lord</div>
+    </div>
     <div class="post-content_item">
       <div class="summary-heading"><h5>Genre(s)</h5></div>
       <div class="summary-content genres-content">

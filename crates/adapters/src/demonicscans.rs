@@ -11,7 +11,7 @@
 use crate::error::AdapterError;
 use crate::html::{
     absolutize, map_status, parse_chapter_number, parse_selector, parse_ymd_date, relativize,
-    text_of,
+    split_list, text_of,
 };
 use crate::types::{
     CatalogItem, CatalogPage, ChapterMeta, Ctx, LatestUpdate, SeriesMeta, SourceAdapter,
@@ -65,17 +65,6 @@ fn clean_description(root: ElementRef<'_>) -> Option<String> {
         .map_or(raw.as_str(), |(_, tail)| tail)
         .trim();
     (!body.is_empty()).then(|| body.to_owned())
-}
-
-/// Split a label/value cell (Alternatives, Author) into individual entries on `,`/`;`
-/// separators.
-fn split_list(value: &str) -> Vec<String> {
-    value
-        .split([',', ';'])
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_owned)
-        .collect()
 }
 
 #[async_trait]

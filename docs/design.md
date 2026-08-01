@@ -499,6 +499,12 @@ their transport — the transport is injected (testable, swappable).
 
 **Config schema (`providers.config`) for the generic adapter:**
 
+Every field is a CSS selector (`sel@attr` reads an attribute) with one exception: `series.alt`
+also accepts a **labelled row** — `{row, label, match, value}` — because Madara's summary block
+renders Alternative/Author(s)/Artist(s)/Genre(s) as identical rows distinguishable only by
+their heading text, and CSS cannot select on text. The value cell is split on `,`/`;`.
+
+
 ```json
 {
   "catalog": { "path": "/manga/?page={page}", "item": "div.page-item-detail",
@@ -507,7 +513,9 @@ their transport — the transport is injected (testable, swappable).
                "chapter": "span.chapter a" },
   "series":  { "title": "div.post-title h1", "desc": "div.description-summary",
                "cover": "div.summary_image img@src", "tags": "div.genres-content a",
-               "status": "div.post-status .summary-content", "alt": "div.summary-heading" },
+               "status": "div.post-status .summary-content",
+               "alt": { "row": "div.post-content_item", "label": "div.summary-heading h5",
+                        "match": "Alternative", "value": "div.summary-content" } },
   "chapters":{ "container": "li.wp-manga-chapter", "link": "a",
                "number_from": "text", "date": "span.chapter-release-date" }
 }

@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<!-- Trimmed from a live manhuaus.com request for a page past the end of the catalogue
+     (solver-fetched: /manga/page/110/ while the catalogue held 109 pages).
+
+     This is the *only* end-of-catalogue signal the theme gives: HTTP 200 with the WordPress
+     error404 shell, no div.page-item-detail, and — importantly — no LOAD MORE control. The
+     preset carries no `catalog.next` selector, so `list_catalog` reports has_next = false
+     from the empty item list, and the fan-out stops here. -->
+<html lang="en">
+<head>
+  <title>Page not found</title>
+</head>
+<body class="error404 wp-embed-responsive page">
+<section class="c-page-content c-page-404">
+  <section class="error-404 not-found">
+    <div class="error-404_content">
+      <div class="entry-title"><h3 class="heading">Oops! page not found.</h3></div>
+      <div class="entry-footer"><a class="c-btn c-btn_style-3" href="https://manhuaus.com/">Go home</a></div>
+    </div>
+  </section>
+</section>
+</body>
+</html>

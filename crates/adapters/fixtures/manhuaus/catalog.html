@@ -1,10 +1,13 @@
 <!DOCTYPE html>
-<!-- Trimmed from a live manhuaus.com /manga/page/N/ listing (solver-fetched). The theme
-     omits a.nextpostslink and signals the next page via a <head> rel=next link. -->
+<!-- Trimmed from a live manhuaus.com /manga/page/N/ listing (solver-fetched).
+
+     Note what is NOT here: no a.nextpostslink, no <head> rel=next, no numeric paginator.
+     This theme paginates on the path but exposes the next page only through the AJAX
+     "LOAD MORE" control below, which is rendered on the final listing too — so the preset
+     clears `catalog.next` and lets an empty page end the walk (see catalog-empty.html). -->
 <html lang="en">
 <head>
   <title>Manga List</title>
-  <link rel="next" href="https://manhuaus.com/manga/page/2/">
 </head>
 <body>
 <div class="c-page__content">
@@ -31,5 +34,12 @@
     </div>
   </div>
 </div>
+<!-- The only "next page" affordance the theme renders. It is present on the last listing
+     page too, which is why it must not be used as the has-next marker. -->
+<nav class="navigation-ajax">
+  <a href="javascript:void(0)" data-template="madara-core/content/content-archive" id="navigation-ajax" class="btn btn-default load-ajax">
+    <div class="load-title">LOAD MORE</div>
+  </a>
+</nav>
 </body>
 </html>

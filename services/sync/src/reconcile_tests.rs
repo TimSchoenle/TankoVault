@@ -300,15 +300,20 @@ fn remote_entry(
     updated: i64,
 ) -> RemoteEntry {
     RemoteEntry {
-        external_id: external_id.to_owned(),
-        titles: vec![TITLE.to_owned()],
         status,
         progress,
         updated_at: OffsetDateTime::from_unix_timestamp(updated).expect("valid timestamp"),
-        start_year: None,
-        content_type: ContentType::Unknown,
-        tags: Vec::new(),
-        authors: Vec::new(),
+        metadata: RemoteMetadata {
+            external_id: external_id.to_owned(),
+            titles: vec![TITLE.to_owned()],
+            description: None,
+            cover_url: None,
+            start_year: None,
+            content_type: ContentType::Unknown,
+            series_status: SeriesStatus::Unknown,
+            tags: Vec::new(),
+            authors: Vec::new(),
+        },
     }
 }
 
@@ -605,7 +610,7 @@ mod reconcile {
         // console's review queue, and counted `unmatched` rather than dropped.
         let f = Fixture::spawn().await;
         let mut entry = remote_entry("m9", WatchStatus::Reading, 3.0, STALE);
-        entry.titles = vec!["Something Entirely Unrelated".to_owned()];
+        entry.metadata.titles = vec!["Something Entirely Unrelated".to_owned()];
         f.set_list(vec![entry]);
 
         let report = f.engine.pull(SLUG, f.user, None).await.expect("pull");

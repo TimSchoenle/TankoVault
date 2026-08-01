@@ -25,6 +25,7 @@
 //! | [`reconcile`] | the account-wide three-way merge (I/O half) |
 //! | [`push`] | the targeted single-series push |
 //! | [`enrich`] | the tokenless public-metadata sweep |
+//! | [`metadata`] | folding provider metadata into a series — shared by `enrich` and `reconcile` |
 //! | [`plan`] | the three-way merge rules themselves — pure, no I/O, unit-tested |
 //!
 //! The key seam is `plan` vs `reconcile`: the merge *decisions* are now a pure function over
@@ -33,6 +34,7 @@
 mod accounts;
 mod conflicts;
 mod enrich;
+mod metadata;
 mod plan;
 mod push;
 mod reconcile;
@@ -60,6 +62,7 @@ pub(crate) use reconcile::{PullReport, PushReport};
 use accounts::AccountService;
 use conflicts::ConflictService;
 use enrich::Enricher;
+use metadata::MetadataWriter;
 use push::TargetedPush;
 use reconcile::Reconciler;
 use registry::ProviderRegistry;
@@ -102,6 +105,10 @@ impl SyncEngine {
             Arc::clone(&tokens),
             default_policy,
         ));
+        // One writer behind both metadata paths. The sweep and a linked account's list sync now
+        // fold the same fields into a series through the same field-priority resolution, so the
+        // two cannot disagree about which source outranks which.
+        let metadata = Arc::new(MetadataWriter::new(pool.clone(), metadata_priority));
 
         Self {
             conflicts: ConflictService::new(
@@ -115,9 +122,10 @@ impl SyncEngine {
                 Arc::clone(&tokens),
                 Arc::clone(&accounts),
                 Arc::clone(&resolver),
+                Arc::clone(&metadata),
             ),
             targeted_push: TargetedPush::new(pool.clone(), Arc::clone(&registry), tokens, resolver),
-            enricher: Enricher::new(pool, Arc::clone(&registry), metadata_priority),
+            enricher: Enricher::new(pool, Arc::clone(&registry), metadata),
             registry,
             accounts,
         }

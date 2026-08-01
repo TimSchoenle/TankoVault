@@ -175,7 +175,13 @@ fn default_enrich_batch() -> i64 {
     200
 }
 fn default_enrich_max() -> usize {
-    500
+    // Sized against the sweep's own pacing, not picked round: every series costs one `AniList`
+    // request, and the client paces itself at `min_request_interval_ms` (700 ms by default), so
+    // 2 000 is roughly 23 minutes of an hourly sweep's interval — busy enough to walk a
+    // catalogue of tens of thousands of series in under a day, idle enough that a sweep is long
+    // finished before the next one starts. It was 500, which is a ~60-hour pass over a 30 000
+    // series catalogue: a series a user was looking at showed "Unknown" for days.
+    2_000
 }
 
 /// `figment`'s `Env` provider infers numeric-looking values (e.g. `TANKOVAULT_ANILIST__CLIENT_ID`)

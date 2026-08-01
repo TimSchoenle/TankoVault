@@ -15,26 +15,47 @@ pub struct SeriesEnrichmentRow {
     pub canonical_title: String,
     pub description: Option<String>,
     pub cover_url: Option<String>,
-    /// The row's sort key, carried back so the caller can page from it. Part of the cursor,
-    /// not of the enrichment payload.
-    pub updated_at: OffsetDateTime,
 }
 
-/// One page of series for the background metadata-enrichment sweep, as a **keyset** walk.
+/// The shared row shape behind the two enrichment work-list queries.
+#[derive(FromRow)]
+struct EnrichmentRow {
+    id: Uuid,
+    canonical_title: String,
+    description: Option<String>,
+    cover_url: Option<String>,
+}
+
+impl From<EnrichmentRow> for SeriesEnrichmentRow {
+    fn from(r: EnrichmentRow) -> Self {
+        Self {
+            id: SeriesId::from_uuid(r.id),
+            canonical_title: r.canonical_title,
+            description: r.description,
+            cover_url: r.cover_url,
+        }
+    }
+}
+
+/// One page of series for the background metadata-enrichment sweep, least-recently-attempted
+/// first (never-attempted series lead).
 ///
-/// `after` is the `(updated_at, id)` of the last row of the previous page, and `started_at`
-/// is the timestamp the sweep began. Both are load-bearing:
+/// `started_at` is the timestamp the sweep began, and it is the *only* thing that stops a page
+/// being handed back: every row this returns must have `metadata_checked_at` stamped with a
+/// `now()` before the next page is asked for, which then fails this predicate. That is why the
+/// caller stamps a series it could not resolve, and one whose lookup errored, exactly as it
+/// stamps a success — an unstamped row would lead every subsequent page and the sweep would
+/// spin on it for its whole per-run budget.
 ///
-/// - The previous shape was `ORDER BY updated_at ASC LIMIT $1 OFFSET $2`, and enrichment
-///   *writes* `updated_at = now()`. So the sort key moved under the cursor: every enriched row
-///   jumped to the end of the ordering, the rows behind it shifted forward by one, and the
-///   next `OFFSET` skipped exactly those. The sweep silently missed series — not a slowdown,
-///   a correctness bug.
-/// - `updated_at < started_at` excludes rows this sweep has already touched, so a row cannot
-///   be handed back to the same run.
-/// - Keyset paging also drops the cost from O(n²/batch): `OFFSET` re-sorted the whole table
-///   per batch (5 000 sorts of 500 000 rows for a full catalogue), whereas this seeks straight
-///   into `series_enrichment_cursor_idx`.
+/// The predicate replaces two earlier shapes, both of which silently lost series:
+///
+/// - `ORDER BY updated_at ASC LIMIT $1 OFFSET $2`, where enrichment *writes* `updated_at`: every
+///   enriched row jumped to the end of the ordering, the rows behind it shifted forward, and the
+///   next `OFFSET` skipped exactly those.
+/// - The keyset walk that replaced it, which fixed the skipping but still ordered by a column
+///   only a *successful* enrichment wrote. A series no provider resolved kept its old
+///   `updated_at` and led the ordering again on the next sweep, so a catalogue holding more
+///   unresolvable series than the per-run cap never advanced past them.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable. An exhausted sweep is an empty
@@ -44,45 +65,73 @@ pub struct SeriesEnrichmentRow {
 pub async fn list_series_for_enrichment<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
-    after: Option<(OffsetDateTime, Uuid)>,
     started_at: OffsetDateTime,
 ) -> DbResult<Vec<SeriesEnrichmentRow>> {
-    #[derive(FromRow)]
-    struct Row {
-        id: Uuid,
-        canonical_title: String,
-        description: Option<String>,
-        cover_url: Option<String>,
-        updated_at: OffsetDateTime,
-    }
-    let (after_updated, after_id) = match after {
-        Some((updated, id)) => (Some(updated), Some(id)),
-        None => (None, None),
-    };
     let rows = sqlx::query_as!(
-        Row,
-        "SELECT id, canonical_title, description, cover_url, updated_at FROM series \
-         WHERE updated_at < $4 \
-           AND ($2::timestamptz IS NULL OR (updated_at, id) > ($2, $3)) \
-         ORDER BY updated_at ASC, id ASC \
+        EnrichmentRow,
+        "SELECT id, canonical_title, description, cover_url FROM series \
+         WHERE metadata_checked_at IS NULL OR metadata_checked_at < $2 \
+         ORDER BY metadata_checked_at ASC NULLS FIRST, id ASC \
          LIMIT $1",
         limit,
-        after_updated,
-        after_id,
         started_at,
     )
     .fetch_all(exec)
     .await?;
-    Ok(rows
-        .into_iter()
-        .map(|r| SeriesEnrichmentRow {
-            id: SeriesId::from_uuid(r.id),
-            canonical_title: r.canonical_title,
-            description: r.description,
-            cover_url: r.cover_url,
-            updated_at: r.updated_at,
-        })
-        .collect())
+    Ok(rows.into_iter().map(Into::into).collect())
+}
+
+/// Which of `series_ids` have not had their metadata attempted since `stale_before`, with the
+/// current locally-stored values the priority resolver needs.
+///
+/// The list-reconciliation counterpart to [`list_series_for_enrichment`]: a linked account's
+/// sync already knows the upstream id of every series it matched, so it can fold that metadata
+/// in immediately instead of waiting for a catalogue-wide sweep to reach the row. One statement
+/// for the whole matched set, not one per entry — a library is hundreds of entries and this runs
+/// on every scheduled reconciliation.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only. Ids that do not exist simply do not come back.
+pub async fn series_needing_metadata<'e, E: PgExecutor<'e>>(
+    exec: E,
+    series_ids: &[Uuid],
+    stale_before: OffsetDateTime,
+) -> DbResult<Vec<SeriesEnrichmentRow>> {
+    let rows = sqlx::query_as!(
+        EnrichmentRow,
+        "SELECT id, canonical_title, description, cover_url FROM series \
+         WHERE id = ANY($1::uuid[]) \
+           AND (metadata_checked_at IS NULL OR metadata_checked_at < $2)",
+        series_ids,
+        stale_before,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows.into_iter().map(Into::into).collect())
+}
+
+/// Record that a series was examined by an enrichment pass that had nothing to write — no
+/// provider resolved it, or the lookup failed.
+///
+/// Deliberately does **not** touch `updated_at`: a lookup that found nothing is not a change to
+/// the series, and every catalogue listing ordered by `updated_at` would otherwise be reshuffled
+/// by the failures of a background sweep.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only. A `series_id` that no longer exists matches nothing and is
+/// still `Ok(())` — the sweep reads its work list from `series`, so a row erased between the two
+/// is a no-op rather than an error.
+pub async fn mark_metadata_checked<'e, E: PgExecutor<'e>>(
+    exec: E,
+    series_id: SeriesId,
+) -> DbResult<()> {
+    sqlx::query!(
+        "UPDATE series SET metadata_checked_at = now() WHERE id = $1",
+        series_id.as_uuid(),
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
 }
 
 /// A batch of metadata to fold into an existing series (the tokenless enrichment worker's
@@ -93,6 +142,10 @@ pub struct MetadataEnrichment<'a> {
     pub cover_url: Option<&'a str>,
     /// Content-type token (e.g. `manga`/`manhwa`); only fills a currently-`unknown` series.
     pub content_type: Option<&'a str>,
+    /// Publication-status token (e.g. `ongoing`/`completed`); only fills a currently-`unknown`
+    /// series, for the same reason as `content_type` — a provider page that states a status
+    /// outranks an upstream catalogue that may lag a chapter behind it.
+    pub status: Option<&'a str>,
     /// Release year; only fills a series whose year is currently null.
     pub release_year: Option<i32>,
     pub alt_titles: &'a [(String, String)],
@@ -101,16 +154,21 @@ pub struct MetadataEnrichment<'a> {
 }
 
 /// Apply an enrichment batch to a series in one transaction: overwrite description/cover
-/// (priority already applied by the caller) and additively record alternative titles, tags,
-/// and authors. Idempotent — re-running converges to the same rows.
+/// (priority already applied by the caller), gap-fill content type, publication status and
+/// release year, and additively record alternative titles, tags and authors. Idempotent —
+/// re-running converges to the same rows.
+///
+/// `metadata_checked_at` is stamped here as well as by [`mark_metadata_checked`], so a
+/// successful enrichment and a fruitless lookup both take the series out of the sweep's work
+/// list. See [`list_series_for_enrichment`] for why that is load-bearing rather than tidy.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable, and one of its shapes is worth
-/// naming because it is the only *input*-driven failure in this module: `content_type` is cast
-/// `text::content_type` in the statement, so a token the Postgres enum does not carry is an
-/// invalid-input error from the driver rather than a silently skipped field. That is the
-/// intended trade — an upstream vocabulary this build does not model should stop the batch, not
-/// half-apply it.
+/// naming because it is the only *input*-driven failure in this module: `content_type`/`status`
+/// are cast `text::content_type`/`text::series_status` in the statement, so a token the Postgres
+/// enum does not carry is an invalid-input error from the driver rather than a silently skipped
+/// field. That is the intended trade — an upstream vocabulary this build does not model should
+/// stop the batch, not half-apply it.
 ///
 /// A `series_id` that no longer exists matches nothing and is still `Ok(())`: the sweep reads
 /// its work list from `series`, so a row erased between the two is a no-op rather than an error,
@@ -128,14 +186,19 @@ pub async fn apply_enrichment(
             content_type = CASE WHEN content_type = 'unknown' \
                                 THEN COALESCE($4::text::content_type, content_type) \
                                 ELSE content_type END, \
+            status = CASE WHEN status = 'unknown' \
+                          THEN COALESCE($6::text::series_status, status) \
+                          ELSE status END, \
             release_year = COALESCE(release_year, $5), \
-            updated_at = now() \
+            updated_at = now(), \
+            metadata_checked_at = now() \
          WHERE id = $1",
         series_id.as_uuid(),
         enrichment.description,
         enrichment.cover_url,
         enrichment.content_type,
         enrichment.release_year,
+        enrichment.status,
     )
     .execute(&mut *tx)
     .await?;

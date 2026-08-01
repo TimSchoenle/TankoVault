@@ -21,14 +21,23 @@ const PER_CHUNK: i64 = 500;
 /// The authenticated viewer's id and display name.
 const VIEWER_QUERY: &str = "query { Viewer { id name } }";
 
-/// One page of the viewer's manga list, with every field the local matcher uses as signal.
+/// One page of the viewer's manga list.
+///
+/// The `media` selection is deliberately the *same* set of fields as [`METADATA_QUERY`] below,
+/// not the narrower "whatever the matcher scores on" set it used to be. A list sync already
+/// resolves each entry to a local series, so with the full selection in hand it can fold the
+/// upstream description, cover, publication status and content type straight into that series —
+/// where before it discarded them and left the row waiting for a catalogue-wide sweep that walks
+/// tens of thousands of series to come round to it. The extra fields cost no extra request.
 const MEDIA_LIST_QUERY: &str = "\
     query ($userId: Int, $chunk: Int, $perChunk: Int) { \
       MediaListCollection(userId: $userId, type: MANGA, chunk: $chunk, perChunk: $perChunk) { \
         hasNextChunk \
         lists { entries { \
           status progress updatedAt \
-          media { id countryOfOrigin startDate { year } \
+          media { id countryOfOrigin format status startDate { year } \
+                  description(asHtml: false) \
+                  coverImage { extraLarge large } \
                   title { romaji english native } \
                   synonyms \
                   genres \
@@ -51,7 +60,7 @@ const SEARCH_QUERY: &str = "query ($search: String) { Media(search: $search, typ
 const METADATA_QUERY: &str = "\
     query ($id: Int, $search: String) { \
       Media(id: $id, search: $search, type: MANGA) { \
-        id countryOfOrigin startDate { year } \
+        id countryOfOrigin format status startDate { year } \
         description(asHtml: false) \
         coverImage { extraLarge large } \
         title { romaji english native } \

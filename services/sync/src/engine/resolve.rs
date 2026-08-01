@@ -43,13 +43,14 @@ impl SeriesResolver {
         entry: &RemoteEntry,
     ) -> anyhow::Result<Option<SeriesId>> {
         if let Some(id) =
-            sync::mapping_series_for_external(&self.pool, slug, &entry.external_id).await?
+            sync::mapping_series_for_external(&self.pool, slug, entry.external_id()).await?
         {
             return Ok(Some(id));
         }
 
-        let mut seen = std::collections::HashSet::with_capacity(entry.titles.len());
+        let mut seen = std::collections::HashSet::with_capacity(entry.metadata.titles.len());
         let normalized_titles: Vec<String> = entry
+            .metadata
             .titles
             .iter()
             .map(|title| normalize_title(title))
@@ -74,10 +75,10 @@ impl SeriesResolver {
             // tags/authors — the extra signal that makes ambiguous title matches confident.
             let query = Query {
                 normalized_title: normalized,
-                content_type: entry.content_type,
-                release_year: entry.start_year,
-                tags: entry.tags.clone(),
-                authors: entry.authors.clone(),
+                content_type: entry.metadata.content_type,
+                release_year: entry.metadata.start_year,
+                tags: entry.metadata.tags.clone(),
+                authors: entry.metadata.authors.clone(),
             };
             if let Some((id, assessment)) = best_assessment(&query, &candidates) {
                 if best.is_none_or(|(_, b)| assessment.score > b.score) {

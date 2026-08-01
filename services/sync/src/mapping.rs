@@ -4,7 +4,7 @@
 //! conflict policy — are exhaustively unit-tested. The engine layer wires these to the
 //! database and the `AniList` GraphQL client.
 
-use tankovault_domain::{ContentType, WatchStatus};
+use tankovault_domain::{ContentType, SeriesStatus, WatchStatus};
 
 /// `AniList` `MediaListStatus` enum values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,15 +71,48 @@ impl AniListStatus {
     }
 }
 
-/// `AniList` `countryOfOrigin` → our [`ContentType`] (`AniList` models manga/manhwa/manhua as
-/// one `MANGA` format distinguished only by country).
+/// `AniList` `countryOfOrigin`/`format` → our [`ContentType`].
+///
+/// Country is the primary signal: `AniList` models manga, manhwa and manhua as one `MANGA`
+/// format distinguished only by where the work was published.
+///
+/// `format` is the fallback for the countries this catalogue does not model — an OEL comic
+/// published in the US, a French *manfra*. Those used to land on `Unknown` even though `AniList`
+/// had said plainly that the work is manga-format, which is one of the ways a series that
+/// `AniList` knew perfectly well still displayed as "Unknown" locally. `NOVEL` is deliberately
+/// absent from the fallback: a light novel is not a content type this catalogue models, and
+/// calling it `Manga` would be worse than admitting we do not know.
 #[must_use]
-pub(crate) fn content_type_from_country(country: Option<&str>) -> ContentType {
+pub(crate) fn content_type_from_origin(country: Option<&str>, format: Option<&str>) -> ContentType {
     match country {
         Some("JP") => ContentType::Manga,
         Some("KR") => ContentType::Manhwa,
         Some("CN" | "TW" | "HK") => ContentType::Manhua,
-        _ => ContentType::Unknown,
+        _ => match format {
+            Some("MANGA" | "ONE_SHOT") => ContentType::Manga,
+            _ => ContentType::Unknown,
+        },
+    }
+}
+
+/// `AniList` `MediaStatus` → our [`SeriesStatus`].
+///
+/// This is the *publication* status of the work, not the reader's own `MediaListStatus` — two
+/// different `AniList` enums, and only this one belongs on a catalogue row. [`AniListStatus`]
+/// above covers the other.
+///
+/// `NOT_YET_RELEASED` has no local counterpart and maps to `Unknown`: the catalogue models four
+/// publication states, and inventing a fifth to carry one upstream token would ripple through
+/// the Postgres enum, the API contract and every locale file for a state no source adapter can
+/// produce.
+#[must_use]
+pub(crate) fn series_status_from_media(status: Option<&str>) -> SeriesStatus {
+    match status {
+        Some("RELEASING") => SeriesStatus::Ongoing,
+        Some("FINISHED") => SeriesStatus::Completed,
+        Some("HIATUS") => SeriesStatus::Hiatus,
+        Some("CANCELLED") => SeriesStatus::Cancelled,
+        _ => SeriesStatus::Unknown,
     }
 }
 
@@ -270,11 +303,65 @@ mod tests {
 
     #[test]
     fn country_maps_to_content_type() {
-        assert_eq!(content_type_from_country(Some("JP")), ContentType::Manga);
-        assert_eq!(content_type_from_country(Some("KR")), ContentType::Manhwa);
-        assert_eq!(content_type_from_country(Some("CN")), ContentType::Manhua);
-        assert_eq!(content_type_from_country(None), ContentType::Unknown);
-        assert_eq!(content_type_from_country(Some("US")), ContentType::Unknown);
+        let ct = |c| content_type_from_origin(c, None);
+        assert_eq!(ct(Some("JP")), ContentType::Manga);
+        assert_eq!(ct(Some("KR")), ContentType::Manhwa);
+        assert_eq!(ct(Some("CN")), ContentType::Manhua);
+        assert_eq!(ct(None), ContentType::Unknown);
+        assert_eq!(ct(Some("US")), ContentType::Unknown);
+    }
+
+    /// A country we do not model used to erase a content type `AniList` had stated: an OEL
+    /// comic is `countryOfOrigin: "US"`, `format: "MANGA"`, and landed on `Unknown`.
+    #[test]
+    fn format_fills_in_a_country_we_do_not_model() {
+        assert_eq!(
+            content_type_from_origin(Some("US"), Some("MANGA")),
+            ContentType::Manga
+        );
+        assert_eq!(
+            content_type_from_origin(None, Some("ONE_SHOT")),
+            ContentType::Manga
+        );
+        // Country still wins where we have one: a Korean work is manhwa, not manga, however
+        // AniList spells its format.
+        assert_eq!(
+            content_type_from_origin(Some("KR"), Some("MANGA")),
+            ContentType::Manhwa
+        );
+        // A light novel is not a content type this catalogue models — better `Unknown` than
+        // filed as manga.
+        assert_eq!(
+            content_type_from_origin(Some("US"), Some("NOVEL")),
+            ContentType::Unknown
+        );
+    }
+
+    #[test]
+    fn media_status_maps_to_publication_status() {
+        assert_eq!(
+            series_status_from_media(Some("RELEASING")),
+            SeriesStatus::Ongoing
+        );
+        assert_eq!(
+            series_status_from_media(Some("FINISHED")),
+            SeriesStatus::Completed
+        );
+        assert_eq!(
+            series_status_from_media(Some("HIATUS")),
+            SeriesStatus::Hiatus
+        );
+        assert_eq!(
+            series_status_from_media(Some("CANCELLED")),
+            SeriesStatus::Cancelled
+        );
+        // Both the unmodelled upstream state and an absent field are `Unknown`, so neither
+        // can be written over a status a source adapter already determined.
+        assert_eq!(
+            series_status_from_media(Some("NOT_YET_RELEASED")),
+            SeriesStatus::Unknown
+        );
+        assert_eq!(series_status_from_media(None), SeriesStatus::Unknown);
     }
 
     #[test]

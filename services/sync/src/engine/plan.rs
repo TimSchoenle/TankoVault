@@ -191,8 +191,8 @@ pub(crate) fn plan_merge(
 mod tests {
     use super::{Ancestor, LocalSide, MergePlan, SeriesPlan, plan_merge, plan_series};
     use crate::mapping::{ConflictPolicy, MergeAction};
-    use crate::provider::RemoteEntry;
-    use tankovault_domain::{ContentType, WatchStatus};
+    use crate::provider::{RemoteEntry, RemoteMetadata};
+    use tankovault_domain::{ContentType, SeriesStatus, WatchStatus};
     use time::OffsetDateTime;
 
     fn local(progress: f64, status: Option<WatchStatus>, updated_unix: i64) -> LocalSide {
@@ -206,15 +206,22 @@ mod tests {
 
     fn remote(progress: f64, status: WatchStatus, updated_unix: i64) -> RemoteEntry {
         RemoteEntry {
-            external_id: "1".to_owned(),
-            titles: vec!["t".to_owned()],
             status,
             progress,
             updated_at: OffsetDateTime::from_unix_timestamp(updated_unix).unwrap(),
-            start_year: None,
-            content_type: ContentType::Unknown,
-            tags: Vec::new(),
-            authors: Vec::new(),
+            // The planner decides on progress/status/timestamps alone; the metadata half of an
+            // entry is inert here, so it stays at its "upstream said nothing" values.
+            metadata: RemoteMetadata {
+                external_id: "1".to_owned(),
+                titles: vec!["t".to_owned()],
+                description: None,
+                cover_url: None,
+                start_year: None,
+                content_type: ContentType::Unknown,
+                series_status: SeriesStatus::Unknown,
+                tags: Vec::new(),
+                authors: Vec::new(),
+            },
         }
     }
 

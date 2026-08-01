@@ -301,7 +301,7 @@ that can disagree.
 | `TANKOVAULT_METADATA__ENRICH_ENABLED` | `true` | The background metadata-enrichment sweep. |
 | `TANKOVAULT_METADATA__ENRICH_INTERVAL_SECS` | `3600` | |
 | `TANKOVAULT_METADATA__ENRICH_BATCH` | `200` | Series per database page. |
-| `TANKOVAULT_METADATA__ENRICH_MAX_SERIES` | `500` | Upper bound per sweep. |
+| `TANKOVAULT_METADATA__ENRICH_MAX_SERIES` | `2000` | Upper bound per sweep. One `AniList` request each, paced by `TANKOVAULT_ANILIST__MIN_REQUEST_INTERVAL_MS`, so the default is ~23 min of work inside the hourly interval. Lower it if the sweep is crowding a shared rate-limit budget; raise it to walk a large catalogue sooner. |
 | `TANKOVAULT_METADATA__PRIORITY__DESCRIPTION` / `__TITLE` / `__COVER` / `__DEFAULT` | `["anilist","adapter"]` | Which source wins per field; `__DEFAULT` is the fallback order for fields without one of their own. Only `anilist` and `adapter` are accepted; anything else is a startup error rather than a silently ignored entry. |
 
 ### `challenge-solver`

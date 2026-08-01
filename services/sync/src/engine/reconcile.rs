@@ -15,6 +15,7 @@ use tankovault_db::repo::{sync, tracking};
 use tankovault_domain::{SeriesId, UserId, WatchStatus};
 
 use super::accounts::AccountService;
+use super::metadata::MetadataWriter;
 use super::plan::{Ancestor, LocalSide, MergePlan, SeriesPlan, plan_merge, plan_series};
 use super::registry::ProviderRegistry;
 use super::resolve::SeriesResolver;
@@ -66,7 +67,18 @@ pub(crate) struct ReconcileCounts {
     pub(crate) conflicts: usize,
     /// Series skipped because they are excluded from sync (§A.5).
     pub(crate) skipped: usize,
+    /// Series whose catalogue metadata was refreshed from the entries just fetched.
+    pub(crate) enriched: usize,
 }
+
+/// How long a series' catalogue metadata is left alone after an enrichment attempt before a
+/// list reconciliation will refresh it again.
+///
+/// Reconciliation runs every few minutes per linked account; catalogue metadata changes on the
+/// scale of a work's publication status, not a reader's progress. A week keeps the first sync of
+/// an account filling in everything it matched — the point of the pass — while later runs do one
+/// query and stop. The tokenless sweep is what keeps metadata current between times.
+const METADATA_REFRESH_INTERVAL: time::Duration = time::Duration::WEEK;
 
 /// One user's local sync-relevant state for one provider, read once per reconciliation run.
 ///
@@ -131,10 +143,10 @@ struct RunContext<'a> {
 fn dedupe_latest_by_external_id(entries: Vec<RemoteEntry>) -> Vec<RemoteEntry> {
     let mut by_id: HashMap<String, RemoteEntry> = HashMap::with_capacity(entries.len());
     for entry in entries {
-        match by_id.get(&entry.external_id) {
+        match by_id.get(entry.external_id()) {
             Some(existing) if existing.updated_at >= entry.updated_at => {}
             _ => {
-                by_id.insert(entry.external_id.clone(), entry);
+                by_id.insert(entry.external_id().to_owned(), entry);
             }
         }
     }
@@ -148,6 +160,7 @@ pub(crate) struct Reconciler {
     tokens: Arc<TokenVault>,
     accounts: Arc<AccountService>,
     resolver: Arc<SeriesResolver>,
+    metadata: Arc<MetadataWriter>,
 }
 
 impl Reconciler {
@@ -157,6 +170,7 @@ impl Reconciler {
         tokens: Arc<TokenVault>,
         accounts: Arc<AccountService>,
         resolver: Arc<SeriesResolver>,
+        metadata: Arc<MetadataWriter>,
     ) -> Self {
         Self {
             pool,
@@ -164,6 +178,7 @@ impl Reconciler {
             tokens,
             accounts,
             resolver,
+            metadata,
         }
     }
 
@@ -291,6 +306,7 @@ impl Reconciler {
         }
 
         self.persist_fetched(&run, &resolved).await?;
+        self.enrich_matched(&run, &resolved, &mut counts).await;
         let handled_ids = self
             .reconcile_fetched(&run, &resolved, &local, &mut counts)
             .await?;
@@ -318,12 +334,12 @@ impl Reconciler {
         let snapshots: Vec<sync::FetchedRemoteEntry> = resolved
             .iter()
             .map(|(entry, matched)| sync::FetchedRemoteEntry {
-                external_id: entry.external_id.clone(),
-                title: entry.titles.first().cloned().unwrap_or_default(),
+                external_id: entry.external_id().to_owned(),
+                title: entry.metadata.titles.first().cloned().unwrap_or_default(),
                 status: entry.status.as_str().to_owned(),
                 progress: entry.progress,
-                content_type: entry.content_type.as_str().to_owned(),
-                start_year: entry.start_year,
+                content_type: entry.metadata.content_type.as_str().to_owned(),
+                start_year: entry.metadata.start_year,
                 updated_at: entry.updated_at,
                 series_id: *matched,
             })
@@ -332,10 +348,62 @@ impl Reconciler {
 
         let mappings: Vec<(SeriesId, String)> = resolved
             .iter()
-            .filter_map(|(entry, matched)| matched.map(|id| (id, entry.external_id.clone())))
+            .filter_map(|(entry, matched)| matched.map(|id| (id, entry.external_id().to_owned())))
             .collect();
         sync::upsert_mappings(&self.pool, run.slug, &mappings).await?;
         Ok(())
+    }
+
+    /// Phase 2b: fold each matched entry's upstream metadata into its local series.
+    ///
+    /// The provider already told us everything it knows about these works when it returned the
+    /// list — description, cover, alternative titles, content type, publication status, genres,
+    /// credits — and this pass is the reason the list query asks for all of it. Before, that
+    /// metadata was parsed, scored for matching and dropped; a series a user actively tracks then
+    /// waited for a catalogue-wide sweep running a few hundred series an hour to reach it, which
+    /// on a catalogue of tens of thousands is days, and looked to the user like the configured
+    /// metadata priority simply not working.
+    ///
+    /// No extra provider call: the metadata is already in hand. The one query asks which of the
+    /// matched series are actually due (see [`METADATA_REFRESH_INTERVAL`]), so a settled
+    /// catalogue costs one statement and nothing else, and the sweep stays the thing that keeps
+    /// metadata *fresh* rather than this running on every tick.
+    ///
+    /// Best-effort: metadata is not what a reconciliation is for, so a failure is logged and the
+    /// progress/status merge proceeds.
+    async fn enrich_matched(
+        &self,
+        run: &RunContext<'_>,
+        resolved: &[(&RemoteEntry, Option<SeriesId>)],
+        counts: &mut ReconcileCounts,
+    ) {
+        let by_series: HashMap<SeriesId, &RemoteEntry> = resolved
+            .iter()
+            .filter_map(|(entry, matched)| matched.map(|id| (id, *entry)))
+            .collect();
+        if by_series.is_empty() {
+            return;
+        }
+        let ids: Vec<SeriesId> = by_series.keys().copied().collect();
+        let stale_before = OffsetDateTime::now_utc() - METADATA_REFRESH_INTERVAL;
+        let due = match self.metadata.needing_metadata(&ids, stale_before).await {
+            Ok(rows) => rows,
+            Err(e) => {
+                tracing::warn!(error = %e, provider = %run.slug,
+                    "could not select series for list-sync enrichment");
+                return;
+            }
+        };
+        for row in &due {
+            let Some(entry) = by_series.get(&row.id) else {
+                continue;
+            };
+            match self.metadata.apply(row, run.slug, &entry.metadata).await {
+                Ok(()) => counts.enriched += 1,
+                Err(e) => tracing::warn!(error = %e, series_id = %row.id,
+                    "could not apply list-sync metadata"),
+            }
+        }
     }
 
     /// Phase 3, remote-driven: reconcile every matched entry against its local state. Returns
@@ -360,14 +428,14 @@ impl Reconciler {
                 continue;
             };
             counts.matched += 1;
-            handled_ids.insert(entry.external_id.clone());
+            handled_ids.insert(entry.external_id().to_owned());
             if !handled_series.insert(series_id) {
                 continue; // this series was already reconciled against a duplicate remote row
             }
             self.reconcile_series(
                 run,
                 series_id,
-                &entry.external_id,
+                entry.external_id(),
                 Some(entry),
                 local,
                 counts,
@@ -644,21 +712,26 @@ mod tests {
     )]
 
     use super::dedupe_latest_by_external_id;
-    use crate::provider::RemoteEntry;
-    use tankovault_domain::{ContentType, WatchStatus};
+    use crate::provider::{RemoteEntry, RemoteMetadata};
+    use tankovault_domain::{ContentType, SeriesStatus, WatchStatus};
     use time::OffsetDateTime;
 
     fn entry(external_id: &str, progress: f64, updated_unix: i64) -> RemoteEntry {
         RemoteEntry {
-            external_id: external_id.to_owned(),
-            titles: vec![format!("title-{external_id}")],
             status: WatchStatus::Reading,
             progress,
             updated_at: OffsetDateTime::from_unix_timestamp(updated_unix).unwrap(),
-            start_year: None,
-            content_type: ContentType::Unknown,
-            tags: Vec::new(),
-            authors: Vec::new(),
+            metadata: RemoteMetadata {
+                external_id: external_id.to_owned(),
+                titles: vec![format!("title-{external_id}")],
+                description: None,
+                cover_url: None,
+                start_year: None,
+                content_type: ContentType::Unknown,
+                series_status: SeriesStatus::Unknown,
+                tags: Vec::new(),
+                authors: Vec::new(),
+            },
         }
     }
 
@@ -676,12 +749,12 @@ mod tests {
             vec![stale.clone(), fresh.clone(), other.clone()],
         ] {
             let mut out = dedupe_latest_by_external_id(input);
-            out.sort_by(|a, b| a.external_id.cmp(&b.external_id));
+            out.sort_by(|a, b| a.external_id().cmp(b.external_id()));
 
             assert_eq!(out.len(), 2, "one row per distinct external id");
-            let dup = out.iter().find(|e| e.external_id == "143056").unwrap();
+            let dup = out.iter().find(|e| e.external_id() == "143056").unwrap();
             assert_eq!(dup.progress, 182.0, "freshest occurrence must win");
-            let single = out.iter().find(|e| e.external_id == "129918").unwrap();
+            let single = out.iter().find(|e| e.external_id() == "129918").unwrap();
             assert_eq!(
                 single.progress, 182.0,
                 "non-duplicated entries pass through"

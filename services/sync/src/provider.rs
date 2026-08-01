@@ -7,7 +7,7 @@
 //! `AniListStatus` in `crate::mapping`), so the engine never touches provider-specific enums.
 
 use async_trait::async_trait;
-use tankovault_domain::{ContentType, WatchStatus};
+use tankovault_domain::{ContentType, SeriesStatus, WatchStatus};
 use time::OffsetDateTime;
 
 /// Tokens returned by an `OAuth2` code exchange or refresh.
@@ -26,26 +26,33 @@ pub(crate) struct Viewer {
     pub(crate) name: String,
 }
 
-/// One remote list entry, normalised for local matching. `status` and `external_id` are
-/// already translated/stringified by the provider that produced this.
+/// One remote list entry, normalised for local matching: where the reader is on the list, plus
+/// the catalogue metadata of the work behind it.
+///
+/// The metadata is the *same* [`RemoteMetadata`] the tokenless enrichment path fetches, not a
+/// second, narrower copy of the same fields. A list sync resolves each entry to a local series
+/// anyway, so carrying the full metadata lets it enrich that series on the spot; when this
+/// struct held only what the matcher scored on, everything else `AniList` had said about the
+/// work was parsed and thrown away.
 #[derive(Debug, Clone)]
 pub(crate) struct RemoteEntry {
-    pub(crate) external_id: String,
-    pub(crate) titles: Vec<String>,
     pub(crate) status: WatchStatus,
     pub(crate) progress: f64,
     pub(crate) updated_at: OffsetDateTime,
-    pub(crate) start_year: Option<i32>,
-    pub(crate) content_type: ContentType,
-    /// Genres, matched against a local series' tags for extra matching confidence.
-    pub(crate) tags: Vec<String>,
-    /// Story/art staff names, matched against a local series' authors.
-    pub(crate) authors: Vec<String>,
+    pub(crate) metadata: RemoteMetadata,
+}
+
+impl RemoteEntry {
+    /// The provider's own id for the media this entry points at.
+    pub(crate) fn external_id(&self) -> &str {
+        &self.metadata.external_id
+    }
 }
 
 /// Public catalogue metadata for one remote work, fetched **without** a user token from a
-/// provider's public API. This is what the tokenless enrichment worker uses to fill in a
-/// local series' description, cover, alternative titles, genres and credits.
+/// provider's public API, or carried on a [`RemoteEntry`] from a list sync. This is what fills
+/// in a local series' description, cover, alternative titles, content type, publication status,
+/// genres and credits.
 #[derive(Debug, Clone)]
 pub(crate) struct RemoteMetadata {
     pub(crate) external_id: String,
@@ -55,6 +62,8 @@ pub(crate) struct RemoteMetadata {
     pub(crate) cover_url: Option<String>,
     pub(crate) start_year: Option<i32>,
     pub(crate) content_type: ContentType,
+    /// The work's publication status (ongoing/completed/…), not any reader's list status.
+    pub(crate) series_status: SeriesStatus,
     pub(crate) tags: Vec<String>,
     pub(crate) authors: Vec<String>,
 }

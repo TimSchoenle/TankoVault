@@ -7,61 +7,56 @@
 
 use time::OffsetDateTime;
 
-use tankovault_domain::ContentType;
+use tankovault_domain::{ContentType, SeriesStatus};
 
-use crate::mapping::{AniListStatus, content_type_from_country};
+use crate::mapping::{AniListStatus, content_type_from_origin, series_status_from_media};
 use crate::provider::{RemoteEntry, RemoteMetadata};
 
-/// One entry from a user's `AniList` manga list, `AniList`-shaped (numeric id, `AniList`'s own
-/// status vocabulary).
+/// One entry from a user's `AniList` manga list: the reader's own position on the list, plus
+/// the catalogue metadata of the work it points at.
+///
+/// `media` is the same [`MediaMetadata`] the tokenless public lookup returns, parsed by the same
+/// function from the same GraphQL selection — so a series reached through a user's list is
+/// enriched with exactly the fields it would have got from a sweep, and the two paths cannot
+/// drift into disagreeing about what `AniList` said.
 #[derive(Debug, Clone)]
 pub(crate) struct AniListEntry {
-    pub(crate) media_id: i64,
-    /// Candidate titles (romaji/english/native, then every `AniList` synonym), non-empty
-    /// ones only. `titles[0]` is always the first non-empty of romaji/english/native, so
-    /// callers relying on "the primary title" (e.g. the remote-entry snapshot) still see
-    /// the same value as before synonyms were added.
-    pub(crate) titles: Vec<String>,
     pub(crate) status: AniListStatus,
     pub(crate) progress: f64,
     pub(crate) updated_at: OffsetDateTime,
-    pub(crate) start_year: Option<i32>,
-    pub(crate) content_type: ContentType,
-    /// Genres, used as an extra local-matching signal alongside title (design: make
-    /// `AniList` matching use the metadata adapters now capture).
-    pub(crate) tags: Vec<String>,
-    /// Staff names (story/art credits), matched against locally-scraped authors.
-    pub(crate) authors: Vec<String>,
+    pub(crate) media: MediaMetadata,
 }
 
 impl From<AniListEntry> for RemoteEntry {
     fn from(e: AniListEntry) -> Self {
         Self {
-            external_id: e.media_id.to_string(),
-            titles: e.titles,
             status: e.status.to_watch_status(),
             progress: e.progress,
             updated_at: e.updated_at,
-            start_year: e.start_year,
-            content_type: e.content_type,
-            tags: e.tags,
-            authors: e.authors,
+            metadata: e.media.into(),
         }
     }
 }
 
-/// Public catalogue metadata for one `AniList` media, fetched **without** any user token
-/// from the public GraphQL API.
+/// Public catalogue metadata for one `AniList` media. Reachable with **no** user token from the
+/// public GraphQL API, and carried on every list entry as well.
 #[derive(Debug, Clone)]
 pub(crate) struct MediaMetadata {
     pub(crate) media_id: i64,
-    /// All titles (romaji/english/native, then every synonym), non-blank only.
+    /// All titles (romaji/english/native, then every synonym), non-blank only. `titles[0]` is
+    /// always the first non-empty of romaji/english/native, so callers relying on "the primary
+    /// title" (e.g. the remote-entry snapshot) see a stable value.
     pub(crate) titles: Vec<String>,
     pub(crate) description: Option<String>,
     pub(crate) cover_url: Option<String>,
     pub(crate) start_year: Option<i32>,
     pub(crate) content_type: ContentType,
+    /// The work's *publication* status, not the reader's list status.
+    pub(crate) series_status: SeriesStatus,
+    /// Genres, used as an extra local-matching signal alongside title (design: make `AniList`
+    /// matching use the metadata adapters now capture) and persisted as series tags.
     pub(crate) tags: Vec<String>,
+    /// Staff names (story/art credits), matched against locally-scraped authors.
     pub(crate) authors: Vec<String>,
 }
 
@@ -74,6 +69,7 @@ impl From<MediaMetadata> for RemoteMetadata {
             cover_url: m.cover_url,
             start_year: m.start_year,
             content_type: m.content_type,
+            series_status: m.series_status,
             tags: m.tags,
             authors: m.authors,
         }
@@ -117,14 +113,8 @@ pub(crate) fn has_next_chunk(data: &serde_json::Value) -> bool {
 }
 
 fn parse_entry(entry: &serde_json::Value) -> Option<AniListEntry> {
-    let media = entry.get("media")?;
-    let media_id = media.get("id").and_then(serde_json::Value::as_i64)?;
+    let media = parse_media(entry.get("media")?)?;
     let status = AniListStatus::parse(entry.get("status").and_then(serde_json::Value::as_str)?)?;
-
-    let titles = titles_from_media(media);
-    if titles.is_empty() {
-        return None;
-    }
 
     let progress = entry
         .get("progress")
@@ -135,30 +125,29 @@ fn parse_entry(entry: &serde_json::Value) -> Option<AniListEntry> {
         .and_then(serde_json::Value::as_i64)
         .and_then(|s| OffsetDateTime::from_unix_timestamp(s).ok())
         .unwrap_or(OffsetDateTime::UNIX_EPOCH);
-    let start_year = start_year_from_media(media);
-    let content_type = content_type_from_media(media);
-
-    let tags = genres_from_media(media);
-    let authors = staff_from_media(media);
 
     Some(AniListEntry {
-        media_id,
-        titles,
         status,
         progress,
         updated_at,
-        start_year,
-        content_type,
-        tags,
-        authors,
+        media,
     })
 }
 
-/// Extract [`MediaMetadata`] from a public `Media(...)` GraphQL `data` object (no user
-/// token). Returns `None` when there is no `Media` node or it has no usable id/title.
+/// Extract [`MediaMetadata`] from a public `Media(...)` GraphQL `data` object (no user token).
+/// Returns `None` when there is no `Media` node or it has no usable id/title.
 #[must_use]
 pub(crate) fn parse_media_metadata(data: &serde_json::Value) -> Option<MediaMetadata> {
-    let media = data.get("Media")?;
+    parse_media(data.get("Media")?)
+}
+
+/// Read one `media` node — the single place a GraphQL media selection becomes local values.
+///
+/// Both the list parser and the public-metadata parser go through here because both queries
+/// request the same selection; splitting them was how a list sync ended up knowing less about a
+/// work than a sweep did. Returns `None` for a node with no id or no usable title: an entry we
+/// cannot name is one we cannot match, and dropping it beats failing the whole run.
+fn parse_media(media: &serde_json::Value) -> Option<MediaMetadata> {
     let media_id = media.get("id").and_then(serde_json::Value::as_i64)?;
     let titles = titles_from_media(media);
     if titles.is_empty() {
@@ -187,6 +176,9 @@ pub(crate) fn parse_media_metadata(data: &serde_json::Value) -> Option<MediaMeta
         cover_url,
         start_year: start_year_from_media(media),
         content_type: content_type_from_media(media),
+        series_status: series_status_from_media(
+            media.get("status").and_then(serde_json::Value::as_str),
+        ),
         tags: genres_from_media(media),
         authors: staff_from_media(media),
     })
@@ -228,12 +220,13 @@ fn start_year_from_media(media: &serde_json::Value) -> Option<i32> {
         .and_then(|y| i32::try_from(y).ok())
 }
 
-/// Manga/manhwa/manhua, inferred from `AniList`'s country of origin.
+/// Manga/manhwa/manhua, from `AniList`'s country of origin with its format as the fallback.
 fn content_type_from_media(media: &serde_json::Value) -> ContentType {
-    content_type_from_country(
+    content_type_from_origin(
         media
             .get("countryOfOrigin")
             .and_then(serde_json::Value::as_str),
+        media.get("format").and_then(serde_json::Value::as_str),
     )
 }
 
@@ -295,8 +288,8 @@ mod tests {
     )]
 
     use super::{
-        AniListStatus, ContentType, has_next_chunk, parse_media_list, parse_media_metadata,
-        strip_html,
+        AniListStatus, ContentType, SeriesStatus, has_next_chunk, parse_media_list,
+        parse_media_metadata, strip_html,
     };
 
     #[test]
@@ -308,7 +301,10 @@ mod tests {
                         "status": "CURRENT", "progress": 42, "updatedAt": 1_700_000_000i64,
                         "media": {
                             "id": 105_778, "countryOfOrigin": "KR",
+                            "status": "FINISHED", "format": "MANGA",
                             "startDate": { "year": 2018 },
+                            "description": "A hunter <b>rises</b>.",
+                            "coverImage": { "extraLarge": "https://img/xl.jpg" },
                             "title": { "romaji": "Na Honjaman Level Up",
                                        "english": "Solo Leveling", "native": null },
                             "synonyms": ["Only I Level Up", "I Level Up Alone"],
@@ -335,13 +331,13 @@ mod tests {
         assert_eq!(entries.len(), 2);
 
         let solo = &entries[0];
-        assert_eq!(solo.media_id, 105_778);
         assert_eq!(solo.status, AniListStatus::Current);
         assert_eq!(solo.progress, 42.0);
-        assert_eq!(solo.start_year, Some(2018));
-        assert_eq!(solo.content_type, ContentType::Manhwa);
+        assert_eq!(solo.media.media_id, 105_778);
+        assert_eq!(solo.media.start_year, Some(2018));
+        assert_eq!(solo.media.content_type, ContentType::Manhwa);
         assert_eq!(
-            solo.titles,
+            solo.media.titles,
             vec![
                 "Na Honjaman Level Up",
                 "Solo Leveling",
@@ -349,18 +345,31 @@ mod tests {
                 "I Level Up Alone",
             ]
         );
-        assert_eq!(solo.tags, vec!["Action", "Fantasy"]);
-        assert_eq!(solo.authors, vec!["Chugong", "Redice Studio"]);
+        assert_eq!(solo.media.tags, vec!["Action", "Fantasy"]);
+        assert_eq!(solo.media.authors, vec!["Chugong", "Redice Studio"]);
+        // A list entry carries the *full* media metadata, not just the fields the local
+        // matcher scores on. Description, cover and publication status used to be absent from
+        // the list query, so a series in a user's library kept its scraped description and an
+        // `unknown` status until a catalogue-wide sweep reached it.
+        assert_eq!(solo.media.description.as_deref(), Some("A hunter rises."));
+        assert_eq!(solo.media.cover_url.as_deref(), Some("https://img/xl.jpg"));
+        assert_eq!(solo.media.series_status, SeriesStatus::Completed);
 
         let berserk = &entries[1];
-        assert_eq!(berserk.content_type, ContentType::Manga);
-        assert_eq!(berserk.start_year, None);
+        assert_eq!(berserk.media.content_type, ContentType::Manga);
+        assert_eq!(berserk.media.start_year, None);
         // No `synonyms` field at all in this fixture: falls back to just romaji/native,
         // not a parse failure.
-        assert_eq!(berserk.titles, vec!["Berserk", "ベルセルク"]);
+        assert_eq!(berserk.media.titles, vec!["Berserk", "ベルセルク"]);
         // No genres/staff in the fixture: both default to empty, not a parse failure.
-        assert!(berserk.tags.is_empty());
-        assert!(berserk.authors.is_empty());
+        assert!(berserk.media.tags.is_empty());
+        assert!(berserk.media.authors.is_empty());
+        // Nor is a missing publication status: `Unknown` is what stops the enrichment write
+        // from claiming to know something, so it must survive parsing rather than default to
+        // a real state.
+        assert_eq!(berserk.media.series_status, SeriesStatus::Unknown);
+        assert_eq!(berserk.media.description, None);
+        assert_eq!(berserk.media.cover_url, None);
     }
 
     #[test]
@@ -375,7 +384,7 @@ mod tests {
             ] }
         });
         let entries = parse_media_list(&data);
-        assert_eq!(entries[0].titles, vec!["x", "Valid Synonym"]);
+        assert_eq!(entries[0].media.titles, vec!["x", "Valid Synonym"]);
     }
 
     #[test]
@@ -424,6 +433,7 @@ mod tests {
         let data = serde_json::json!({
             "Media": {
                 "id": 105_778, "countryOfOrigin": "KR",
+                "status": "RELEASING", "format": "MANGA",
                 "startDate": { "year": 2018 },
                 "description": "A hunter <b>rises</b>.<br>Solo.",
                 "coverImage": { "extraLarge": "https://img/xl.jpg", "large": "https://img/l.jpg" },
@@ -447,6 +457,7 @@ mod tests {
         assert_eq!(m.cover_url.as_deref(), Some("https://img/xl.jpg"));
         assert_eq!(m.tags, vec!["Action", "Fantasy"]);
         assert_eq!(m.authors, vec!["Chugong"]);
+        assert_eq!(m.series_status, SeriesStatus::Ongoing);
     }
 
     #[test]

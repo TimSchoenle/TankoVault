@@ -362,7 +362,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: download this image's digests
-        uses: actions/download-artifact@abd6e58bcf1e9564a37b062f7f89a9ac99b56316 # v6.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           path: /tmp/digests
           pattern: digest-${{ matrix.bin }}-*

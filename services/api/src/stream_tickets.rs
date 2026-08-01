@@ -44,6 +44,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use secrecy::SecretString;
 use tankovault_auth::{generate_refresh_token, hash_refresh_token};
 use tankovault_domain::UserId;
 use uuid::Uuid;
@@ -68,9 +69,15 @@ const KEY_PREFIX: &str = "tankovault:stream-ticket:";
 pub trait StreamTicketStore: Send + Sync + 'static {
     /// Mint a fresh single-use ticket for `user`, returning the value to hand the client.
     ///
+    /// A [`SecretString`]: a ticket is a bearer credential for one user's private event
+    /// stream. It is short-lived and single-use, but between minting and redemption it is
+    /// exactly as good as the access token it replaced in that route's query string (SEC-8) —
+    /// and query strings are the thing most likely to end up in a proxy log, which is why the
+    /// value must not be printable on the way there.
+    ///
     /// # Errors
     /// A message describing the store failure, for the caller to log.
-    async fn mint(&self, user: UserId) -> Result<String, String>;
+    async fn mint(&self, user: UserId) -> Result<SecretString, String>;
 
     /// Redeem `ticket`, returning the user it was minted for.
     ///
@@ -87,15 +94,22 @@ pub trait StreamTicketStore: Send + Sync + 'static {
 /// Reuses the refresh-token generator (32 CSPRNG bytes, URL-safe base64) rather than inventing
 /// a second opaque-token format, and the same SHA-256 hashing the reset and confirmation tokens
 /// use, for the same reason: what is stored must not be replayable.
-fn new_ticket() -> (String, String) {
+fn new_ticket() -> (SecretString, String) {
     let raw = generate_refresh_token();
     let key = format!("{KEY_PREFIX}{}", hash_refresh_token(&raw));
     (raw, key)
 }
 
 /// The key `ticket` would have been stored under.
+///
+/// `ticket` stays a `&str`: it arrives as a borrowed query parameter, and wrapping a value the
+/// caller does not own buys nothing — the same reasoning as
+/// `tankovault_auth::verify_access_token`'s presented token.
 fn key_for(ticket: &str) -> String {
-    format!("{KEY_PREFIX}{}", hash_refresh_token(ticket))
+    format!(
+        "{KEY_PREFIX}{}",
+        hash_refresh_token(&SecretString::from(ticket))
+    )
 }
 
 /// Tickets in Redis, redeemable by any replica.
@@ -113,7 +127,7 @@ impl RedisStreamTickets {
 
 #[async_trait]
 impl StreamTicketStore for RedisStreamTickets {
-    async fn mint(&self, user: UserId) -> Result<String, String> {
+    async fn mint(&self, user: UserId) -> Result<SecretString, String> {
         use fred::interfaces::KeysInterface as _;
 
         let (raw, key) = new_ticket();
@@ -177,7 +191,7 @@ impl MemoryStreamTickets {
 
 #[async_trait]
 impl StreamTicketStore for MemoryStreamTickets {
-    async fn mint(&self, user: UserId) -> Result<String, String> {
+    async fn mint(&self, user: UserId) -> Result<SecretString, String> {
         let (raw, key) = new_ticket();
         let now = Instant::now();
         let mut live = self.live.lock().map_err(|_| "ticket mutex poisoned")?;
@@ -200,6 +214,7 @@ impl StreamTicketStore for MemoryStreamTickets {
 #[cfg(test)]
 mod tests {
     use super::{KEY_PREFIX, MemoryStreamTickets, StreamTicketStore, key_for, new_ticket};
+    use secrecy::ExposeSecret as _;
     use tankovault_domain::UserId;
 
     /// A ticket is redeemable exactly once.
@@ -215,9 +230,18 @@ mod tests {
         let user = UserId::new();
         let ticket = store.mint(user).await.expect("mint");
 
-        assert_eq!(store.consume(&ticket).await.expect("consume"), Some(user));
         assert_eq!(
-            store.consume(&ticket).await.expect("consume"),
+            store
+                .consume(ticket.expose_secret())
+                .await
+                .expect("consume"),
+            Some(user)
+        );
+        assert_eq!(
+            store
+                .consume(ticket.expose_secret())
+                .await
+                .expect("consume"),
             None,
             "a spent ticket must not open a second stream"
         );
@@ -244,9 +268,18 @@ mod tests {
         let user = UserId::new();
         let first = store.mint(user).await.expect("mint");
         let second = store.mint(user).await.expect("mint");
-        assert_ne!(first, second);
-        assert_eq!(store.consume(&first).await.expect("consume"), Some(user));
-        assert_eq!(store.consume(&second).await.expect("consume"), Some(user));
+        assert_ne!(first.expose_secret(), second.expose_secret());
+        assert_eq!(
+            store.consume(first.expose_secret()).await.expect("consume"),
+            Some(user)
+        );
+        assert_eq!(
+            store
+                .consume(second.expose_secret())
+                .await
+                .expect("consume"),
+            Some(user)
+        );
     }
 
     /// What is stored is the hash, not the ticket.
@@ -256,10 +289,10 @@ mod tests {
     #[test]
     fn the_stored_key_does_not_contain_the_ticket() {
         let (raw, key) = new_ticket();
-        assert_eq!(key, key_for(&raw));
+        assert_eq!(key, key_for(raw.expose_secret()));
         assert!(key.starts_with(KEY_PREFIX));
         assert!(
-            !key.contains(&raw),
+            !key.contains(raw.expose_secret()),
             "the ticket value must not be recoverable from the key it is stored under"
         );
         // SHA-256, hex: 64 characters after the namespace.

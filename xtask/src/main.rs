@@ -31,6 +31,7 @@ mod coverage;
 mod repo_lint;
 
 use progenitor_impl::{GenerationSettings, Generator, InterfaceStyle, TypePatch};
+use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -79,8 +80,11 @@ async fn main() -> anyhow::Result<()> {
         return sqlx_prepare(check);
     }
 
-    let url =
-        std::env::var("DATABASE_URL").map_err(|_| anyhow::anyhow!("DATABASE_URL must be set"))?;
+    // Wrapped straight out of the environment: a DSN carries its password, and `connect`
+    // takes the wrapper so no caller can hold it as a bare `String` on the way there.
+    let url = SecretString::from(
+        std::env::var("DATABASE_URL").map_err(|_| anyhow::anyhow!("DATABASE_URL must be set"))?,
+    );
     let pool = tankovault_db::connect(&url, 5, 10).await?;
 
     match cmd.as_str() {
@@ -469,12 +473,18 @@ async fn reset(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
 
 async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
     // Admin user (idempotent: ignore if already present).
-    let password = std::env::var("TANKOVAULT_SEED_ADMIN_PASSWORD")
-        .unwrap_or_else(|_| "changeme12345".to_owned());
+    let password = SecretString::from(
+        std::env::var("TANKOVAULT_SEED_ADMIN_PASSWORD")
+            .unwrap_or_else(|_| "changeme12345".to_owned()),
+    );
     // Hash with the same pepper the API is configured with, or the seeded admin could never
     // log in. Absent (the common local-dev case) means no pepper, matching the API default.
-    let pepper = std::env::var("TANKOVAULT_AUTH__PASSWORD_PEPPER").unwrap_or_default();
-    let hash = tankovault_auth::hash_password(&password, pepper.as_bytes())
+    let pepper = SecretSlice::from(
+        std::env::var("TANKOVAULT_AUTH__PASSWORD_PEPPER")
+            .unwrap_or_default()
+            .into_bytes(),
+    );
+    let hash = tankovault_auth::hash_password(&password, &pepper)
         .map_err(|e| anyhow::anyhow!("hash failed: {e}"))?;
     match tankovault_db::repo::users::create(pool, "admin@tankovault.local", "admin", &hash).await {
         Ok(u) => {
@@ -492,10 +502,15 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
             for permission in tankovault_domain::Permission::all() {
                 tankovault_db::repo::permissions::grant(pool, u.id, *permission, None).await?;
             }
+            // The seed password is printed on purpose: this is a local bootstrap command
+            // whose whole output is "here is the account you can now log in with", and it is
+            // the operator's own value or the published default. `expose_secret` is what
+            // makes that deliberate rather than incidental.
             println!(
-                "seeded admin user {} with all {} permissions (password: {password})",
+                "seeded admin user {} with all {} permissions (password: {})",
                 u.username,
                 tankovault_domain::Permission::all().len(),
+                password.expose_secret(),
             );
         }
         Err(e) if e.is_unique_violation() || matches!(e, tankovault_db::DbError::Conflict(_)) => {

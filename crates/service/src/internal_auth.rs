@@ -18,6 +18,7 @@ use axum::extract::{Request, State};
 use axum::http::{HeaderName, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
+use secrecy::{ExposeSecret, SecretString};
 use std::sync::Arc;
 use subtle::ConstantTimeEq;
 
@@ -29,21 +30,21 @@ pub const INTERNAL_TOKEN_HEADER: HeaderName = HeaderName::from_static("x-interna
 ///
 /// `Debug` is redacted: this value ends up inside service `AppState`s, and one
 /// `tracing::debug!(?state)` would otherwise put the key to the whole internal tier in the
-/// log stream.
-#[derive(Clone)]
-pub struct InternalToken(Arc<str>);
+/// log stream. That redaction used to be a hand-written `Debug` impl on this type; it is now
+/// [`secrecy`]'s, which is the same guarantee written once for the whole workspace instead of
+/// once per type that someone remembered to protect.
+///
+/// `Arc<SecretString>` rather than a bare [`SecretString`]: this is cloned into an `AppState`
+/// on every request, and `SecretString`'s `Clone` copies the heap allocation. The `Arc` keeps
+/// exactly one copy of the secret in the process, which is also the copy that gets zeroized.
+#[derive(Clone, Debug)]
+pub struct InternalToken(Arc<SecretString>);
 
 impl InternalToken {
     /// Wrap a resolved token.
     #[must_use]
-    pub fn new(token: impl Into<Arc<str>>) -> Self {
-        Self(token.into())
-    }
-
-    /// The raw value, for attaching to an outbound request.
-    #[must_use]
-    pub fn expose(&self) -> &str {
-        &self.0
+    pub fn new(token: impl Into<SecretString>) -> Self {
+        Self(Arc::new(token.into()))
     }
 
     /// Constant-time equality against a presented value.
@@ -52,15 +53,19 @@ impl InternalToken {
         // Lengths are compared in constant time too: `ct_eq` on unequal-length slices is
         // false, but `as_bytes()` lengths are public, so an early length check would leak
         // the secret's length. `subtle` handles the mismatch without branching on content.
-        let expected = self.0.as_bytes();
+        let expected = self.0.expose_secret().as_bytes();
         let got = presented.as_bytes();
         expected.len() == got.len() && bool::from(expected.ct_eq(got))
     }
 }
 
-impl std::fmt::Debug for InternalToken {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("InternalToken(<redacted>)")
+/// Reading the token is [`ExposeSecret`], not an inherent `expose()` method, so that every
+/// read of a secret anywhere in the workspace is the same greppable call — the outbound
+/// clients that attach `X-Internal-Token` look identical to the ones exposing a DSN or a
+/// pepper.
+impl ExposeSecret<str> for InternalToken {
+    fn expose_secret(&self) -> &str {
+        self.0.expose_secret()
     }
 }
 
@@ -90,7 +95,7 @@ pub fn resolve(
     let resolved = cfg.resolve(tankovault_config::is_production())?;
 
     if let Some(token) = &resolved {
-        if let Some(name) = known_placeholder(token) {
+        if let Some(name) = known_placeholder(token.expose_secret()) {
             return Err(tankovault_config::ConfigError::Invalid(format!(
                 "refusing to start: internal.token is the well-known {name}, which is published \
                  in this repository. Anything that has read deploy/docker-compose.yml can call \
@@ -192,10 +197,16 @@ mod tests {
     }
 
     /// The whole point of the type is that it cannot be printed by accident.
+    ///
+    /// Asserted as "the secret does not appear" rather than against an exact rendering: the
+    /// redaction is now `secrecy`'s rather than a hand-written `Debug` impl, and pinning its
+    /// exact wording would turn a dependency's cosmetic change into a failing test while
+    /// saying nothing about the property that matters.
     #[test]
     fn debug_is_redacted() {
         let token = InternalToken::new("do-not-print-me-do-not-print-me-1");
-        assert_eq!(format!("{token:?}"), "InternalToken(<redacted>)");
-        assert!(!format!("{token:?}").contains("do-not-print"));
+        let rendered = format!("{token:?}");
+        assert!(!rendered.contains("do-not-print"), "{rendered}");
+        assert!(rendered.contains("REDACTED"), "{rendered}");
     }
 }

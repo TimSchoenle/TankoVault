@@ -5,6 +5,7 @@
 //! transport underneath is [`super::client`]; the response shaping is [`super::parse`].
 
 use anyhow::anyhow;
+use secrecy::SecretString;
 use tracing::info;
 
 use crate::mapping::AniListStatus;
@@ -73,7 +74,7 @@ const METADATA_QUERY: &str = "\
 impl AniListClient {
     /// Resolve the authenticated viewer's `AniList` user id and display name (the latter is
     /// cached against the linked account so the UI can show "Connected as X").
-    pub(crate) async fn viewer(&self, access_token: &str) -> anyhow::Result<Viewer> {
+    pub(crate) async fn viewer(&self, access_token: &SecretString) -> anyhow::Result<Viewer> {
         let data = self
             .graphql(access_token, VIEWER_QUERY, serde_json::json!({}))
             .await?;
@@ -102,7 +103,7 @@ impl AniListClient {
     /// than only its first page.
     pub(crate) async fn fetch_media_list(
         &self,
-        access_token: &str,
+        access_token: &SecretString,
         user_id: i64,
     ) -> anyhow::Result<Vec<AniListEntry>> {
         let mut all = Vec::new();
@@ -132,7 +133,7 @@ impl AniListClient {
     /// Create or update a remote list entry.
     pub(crate) async fn save_entry(
         &self,
-        access_token: &str,
+        access_token: &SecretString,
         media_id: i64,
         status: AniListStatus,
         progress: i64,
@@ -150,7 +151,7 @@ impl AniListClient {
     /// Best-effort search for a manga's `AniList` media id by title.
     pub(crate) async fn search_media(
         &self,
-        access_token: &str,
+        access_token: &SecretString,
         title: &str,
     ) -> anyhow::Result<Option<i64>> {
         // A no-match search yields a GraphQL error; treat that as "not found".

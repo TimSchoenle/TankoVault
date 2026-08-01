@@ -18,6 +18,11 @@ tankovault-matcher = { workspace = true }
 # For the `Canonicaliser` port itself, which is domain vocabulary rather than the scorer's.
 tankovault-domain = { workspace = true }
 serde = { workspace = true }
+# Config is where secrets enter the process, so it is where the wrapper has to start: a
+# `SecretString` field cannot be un-wrapped by the aggregate that nests it, so the DSN a
+# service reads out of `TANKOVAULT_DATABASE__URL` stays wrapped all the way to the pool
+# builder. `figment` deserialises into it through the crate's `serde` feature.
+secrecy = { workspace = true }
 figment = { workspace = true }
 thiserror = { workspace = true }
 

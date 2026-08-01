@@ -30,6 +30,7 @@
 
 use crate::error::{ApiError, ApiResult};
 use axum::Json;
+use secrecy::ExposeSecret as _;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::time::Duration;
@@ -159,7 +160,7 @@ impl Upstream {
     /// Attach the internal token, if one is configured.
     fn authenticate(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         match &self.token {
-            Some(token) => req.header(INTERNAL_TOKEN_HEADER, token.expose()),
+            Some(token) => req.header(INTERNAL_TOKEN_HEADER, token.expose_secret()),
             None => req,
         }
     }

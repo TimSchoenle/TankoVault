@@ -6,6 +6,7 @@
 
 use axum::Json;
 use axum::extract::{Path, State};
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use utoipa::ToSchema;
@@ -59,7 +60,8 @@ pub struct PasskeyDto {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PasskeyRegisterStart {
     /// The caller's current password. Required — see [`passkey_register_start`].
-    pub current_password: String,
+    #[schema(value_type = String)]
+    pub current_password: SecretString,
     /// What to call the key in the revoke list. Defaults to "Passkey" when absent or blank.
     #[serde(default)]
     pub label: Option<String>,

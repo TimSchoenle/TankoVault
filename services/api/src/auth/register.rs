@@ -7,6 +7,7 @@
 use axum::Json;
 use axum::extract::State;
 use axum_extra::extract::cookie::CookieJar;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use tankovault_auth::hash_password;
 use tankovault_domain::Feature;
@@ -25,7 +26,11 @@ use crate::state::AppState;
 pub struct RegisterRequest {
     pub email: String,
     pub username: String,
-    pub password: String,
+    // Wrapped so the derived `Debug` on this struct cannot print it. See
+    // `super::login::LoginRequest::password` for why `value_type = String` keeps the generated
+    // schema unchanged, and why this rationale is not a doc comment.
+    #[schema(value_type = String)]
+    pub password: SecretString,
 }
 
 /// The result of [`register`]. Registration has two outcomes depending on whether email
@@ -44,8 +49,14 @@ pub struct RegisterResponse {
     pub verification_required: bool,
     /// The issued bearer access token — present only when the account was activated
     /// immediately (email delivery not configured). Mirrors [`TokenResponse::access_token`].
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub access_token: Option<String>,
+    // Including its `expose_option_onto_wire` opt-in, which is what lets a secret reach the
+    // client at all.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::secret::expose_option_onto_wire"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub access_token: Option<SecretString>,
     /// Access-token lifetime in seconds; present exactly when `access_token` is.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expires_in: Option<i64>,

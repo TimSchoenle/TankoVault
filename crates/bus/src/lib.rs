@@ -7,6 +7,7 @@
 
 use async_nats::jetstream::{self, AckKind, consumer::PullConsumer, consumer::pull, stream};
 use futures::StreamExt;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 use std::time::Duration;
 use tankovault_contracts::{
@@ -153,10 +154,14 @@ pub enum BusError {
 impl Bus {
     /// Connect to NATS and build a `JetStream` context.
     ///
+    /// `url` is a [`SecretString`] because `nats://user:pass@host` is a supported form; the
+    /// compose deployment happens not to use it, but the type has to describe the field, not
+    /// one deployment's value. It is exposed exactly here, into the client builder.
+    ///
     /// # Errors
     /// [`BusError::Connect`] if the server is unreachable.
-    pub async fn connect(url: &str) -> Result<Self, BusError> {
-        let client = async_nats::connect(url)
+    pub async fn connect(url: &SecretString) -> Result<Self, BusError> {
+        let client = async_nats::connect(url.expose_secret())
             .await
             .map_err(|e| BusError::Connect(e.to_string()))?;
         Ok(Self {

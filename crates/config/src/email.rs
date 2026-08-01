@@ -1,5 +1,6 @@
 //! Outgoing-email (SMTP relay) settings.
 
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
 /// Transport security for an SMTP relay.
@@ -37,8 +38,12 @@ pub enum EmailSecurity {
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct EmailConfig {
     /// Full lettre relay URL; takes precedence over the explicit fields below when set.
+    ///
+    /// [`SecretString`]: the documented form embeds the mailbox password
+    /// (`smtps://user:pass@ssl0.ovh.net:465`), so this field is a credential even though the
+    /// two neighbouring host/port fields are not.
     #[serde(default)]
-    pub url: Option<String>,
+    pub url: Option<SecretString>,
     /// SMTP host (OVH Exchange: `pro3.mail.ovh.net` for STARTTLS or `ssl0.ovh.net` for TLS).
     #[serde(default)]
     pub host: Option<String>,
@@ -50,7 +55,7 @@ pub struct EmailConfig {
     pub username: Option<String>,
     /// Login password / app password.
     #[serde(default)]
-    pub password: Option<String>,
+    pub password: Option<SecretString>,
     /// Transport security to use with the explicit host/port fields.
     #[serde(default)]
     pub security: EmailSecurity,
@@ -110,7 +115,10 @@ impl EmailConfig {
     /// Whether enough is configured to actually send mail (a relay plus a `From` address).
     #[must_use]
     pub fn is_enabled(&self) -> bool {
-        let has_relay = self.url.as_deref().is_some_and(|u| !u.is_empty())
+        let has_relay = self
+            .url
+            .as_ref()
+            .is_some_and(|u| !u.expose_secret().is_empty())
             || self.host.as_deref().is_some_and(|h| !h.is_empty());
         has_relay && self.from.as_deref().is_some_and(|f| !f.is_empty())
     }

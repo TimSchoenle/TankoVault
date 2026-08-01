@@ -23,7 +23,8 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use time::OffsetDateTime;
 
-use tankovault_auth::SecretBox;
+use secrecy::SecretString;
+use tankovault_auth::Sealer;
 use tankovault_config::MatchingConfig;
 use tankovault_db::repo::catalog::{ScannedSeries, SeriesUpsert, ingest_series};
 use tankovault_db::repo::providers::{self, NewProvider};
@@ -85,10 +86,10 @@ impl ExternalProvider for FakeProvider {
     async fn exchange_code(&self, _code: &str) -> anyhow::Result<OAuthTokens> {
         unreachable!("linking goes through the fixture, not an OAuth exchange")
     }
-    async fn refresh(&self, _refresh_token: &str) -> anyhow::Result<OAuthTokens> {
+    async fn refresh(&self, _refresh_token: &SecretString) -> anyhow::Result<OAuthTokens> {
         unreachable!("the fixture stores a token that never expires")
     }
-    async fn viewer(&self, _access_token: &str) -> anyhow::Result<Viewer> {
+    async fn viewer(&self, _access_token: &SecretString) -> anyhow::Result<Viewer> {
         Ok(Viewer {
             id: "1".to_owned(),
             name: "fake-viewer".to_owned(),
@@ -96,12 +97,16 @@ impl ExternalProvider for FakeProvider {
     }
     async fn fetch_list(
         &self,
-        _access_token: &str,
+        _access_token: &SecretString,
         _viewer: &Viewer,
     ) -> anyhow::Result<Vec<RemoteEntry>> {
         Ok(self.0.list.lock().expect("list mutex").clone())
     }
-    async fn search(&self, _access_token: &str, _title: &str) -> anyhow::Result<Option<String>> {
+    async fn search(
+        &self,
+        _access_token: &SecretString,
+        _title: &str,
+    ) -> anyhow::Result<Option<String>> {
         Ok(self.0.search.lock().expect("search mutex").clone())
     }
     async fn fetch_public_metadata_by_title(
@@ -112,7 +117,7 @@ impl ExternalProvider for FakeProvider {
     }
     async fn save_entry(
         &self,
-        _access_token: &str,
+        _access_token: &SecretString,
         external_id: &str,
         status: WatchStatus,
         progress: f64,
@@ -197,7 +202,7 @@ impl Fixture {
 
         let engine = SyncEngine::new(
             db.pool.clone(),
-            SecretBox::new(&[7u8; 32]),
+            Sealer::new(&[7u8; 32]),
             ConflictPolicy::NewestWins,
             serde_json::from_value::<MetadataPriority>(serde_json::json!({}))
                 .expect("default metadata priority"),
@@ -207,8 +212,8 @@ impl Fixture {
 
         // Link the account by storing a sealed token directly: `link` would go through an OAuth
         // exchange the fake cannot perform, and every test needs the same never-expiring token.
-        let sealed = SecretBox::new(&[7u8; 32])
-            .seal(b"access-token")
+        let sealed = Sealer::new(&[7u8; 32])
+            .seal_string(&SecretString::from("access-token"))
             .expect("seal test token");
         sync::upsert_account(&db.pool, user, SLUG, &sealed, None, None)
             .await

@@ -26,6 +26,10 @@ tankovault-db = { workspace = true }
 # `cargo tree -p tankovault-api -i boring-sys2` before adding any dependency here.
 tankovault-domain = { workspace = true, features = ["dns"] }
 tankovault-auth = { workspace = true }
+# Passwords, reset tokens, the JWT key and the pepper are all `secrecy` wrappers here, and the
+# request DTOs that carry them are too — a handler that logs `?req` must not be able to print
+# the password it just received.
+secrecy = { workspace = true }
 # The WebAuthn relying party. Deliberately *not* in `crates/auth` alongside argon2 and the JWT
 # mint, even though it is the same kind of primitive: that crate is also a dependency of
 # `services/sync`, `xtask` and the fuzz targets, none of which will ever verify a passkey, and

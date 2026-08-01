@@ -1,13 +1,13 @@
 //! Sealed OAuth token storage — the only place in this service that holds the encryption key.
 //!
-//! Tokens are sealed with [`SecretBox`] before they reach the database and are opened only
+//! Tokens are sealed with [`Sealer`] before they reach the database and are opened only
 //! here, so no other collaborator needs the key in its state. Expiry-driven refresh lives here
 //! too, because a refresh writes new sealed tokens and would otherwise duplicate the sealing.
 
-use anyhow::Context;
+use secrecy::SecretString;
 use time::OffsetDateTime;
 
-use tankovault_auth::SecretBox;
+use tankovault_auth::Sealer;
 use tankovault_db::PgPool;
 use tankovault_db::repo::sync;
 use tankovault_domain::UserId;
@@ -17,11 +17,11 @@ use crate::provider::{ExternalProvider, OAuthTokens};
 /// Seals, stores and opens a user's provider tokens.
 pub(crate) struct TokenVault {
     pool: PgPool,
-    secret: SecretBox,
+    secret: Sealer,
 }
 
 impl TokenVault {
-    pub(crate) const fn new(pool: PgPool, secret: SecretBox) -> Self {
+    pub(crate) const fn new(pool: PgPool, secret: Sealer) -> Self {
         Self { pool, secret }
     }
 
@@ -32,11 +32,11 @@ impl TokenVault {
         user_id: UserId,
         tokens: &OAuthTokens,
     ) -> anyhow::Result<()> {
-        let access_ct = self.secret.seal(tokens.access_token.as_bytes())?;
+        let access_ct = self.secret.seal_string(&tokens.access_token)?;
         let refresh_ct = tokens
             .refresh_token
             .as_ref()
-            .map(|r| self.secret.seal(r.as_bytes()))
+            .map(|r| self.secret.seal_string(r))
             .transpose()?;
         sync::upsert_account(
             &self.pool,
@@ -57,7 +57,7 @@ impl TokenVault {
         slug: &str,
         provider: &dyn ExternalProvider,
         user_id: UserId,
-    ) -> anyhow::Result<String> {
+    ) -> anyhow::Result<SecretString> {
         let account = sync::get_account(&self.pool, user_id, slug)
             .await?
             .ok_or_else(|| {
@@ -68,8 +68,7 @@ impl TokenVault {
             (account.expires_at, account.refresh_token.as_ref())
         {
             if expiry <= OffsetDateTime::now_utc() {
-                let refresh = String::from_utf8(self.secret.open(refresh_ct)?)
-                    .context("decoded refresh token was not valid UTF-8")?;
+                let refresh = self.secret.open_string(refresh_ct)?;
                 if let Ok(tokens) = provider.refresh(&refresh).await {
                     self.store(slug, user_id, &tokens).await?;
                     return Ok(tokens.access_token);
@@ -77,7 +76,8 @@ impl TokenVault {
             }
         }
 
-        String::from_utf8(self.secret.open(&account.access_token)?)
-            .context("decoded access token was not valid UTF-8")
+        // `open_string` folds "wrong key" and "not UTF-8" into one error on purpose; see
+        // its doc comment. The plaintext never leaves a `SecretString` on the way out.
+        Ok(self.secret.open_string(&account.access_token)?)
     }
 }

@@ -5,6 +5,7 @@
 //! configuration the worker's ingest canonicalisation reads, so the two paths cannot disagree
 //! about what counts as a confident match (ARCH-16).
 
+use secrecy::SecretString;
 use tankovault_db::PgPool;
 use tankovault_db::repo::{catalog, matching, sync};
 use tankovault_domain::{SeriesId, normalize_title};
@@ -102,7 +103,7 @@ impl SeriesResolver {
         &self,
         provider: &dyn ExternalProvider,
         slug: &str,
-        access: &str,
+        access: &SecretString,
         series_id: SeriesId,
     ) -> anyhow::Result<Option<String>> {
         if let Some(ext) = sync::mapping_external_for_series(&self.pool, series_id, slug).await? {

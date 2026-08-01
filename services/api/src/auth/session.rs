@@ -4,6 +4,7 @@
 use axum::Json;
 use axum::extract::State;
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
+use secrecy::{ExposeSecret as _, SecretString};
 use tankovault_auth::{generate_refresh_token, hash_refresh_token, issue_access_token};
 use tankovault_domain::User;
 use tankovault_service::AuditOutcome;
@@ -157,9 +158,11 @@ pub async fn refresh(
     jar: CookieJar,
 ) -> ApiResult<(CookieJar, Json<TokenResponse>)> {
     let (name, _) = refresh_cookie(state.cookie_secure);
+    // The cookie's value is a live refresh token, so it is wrapped the moment it is copied
+    // out of the jar rather than after it has been hashed.
     let raw = jar
         .get(name)
-        .map(|c| c.value().to_owned())
+        .map(|c| SecretString::from(c.value()))
         .ok_or(ApiError::Unauthorized)?;
     let token_hash = hash_refresh_token(&raw);
 
@@ -284,7 +287,7 @@ pub async fn refresh(
 )]
 pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> ApiResult<CookieJar> {
     let (name, path) = refresh_cookie(state.cookie_secure);
-    if let Some(raw) = jar.get(name).map(|c| c.value().to_owned()) {
+    if let Some(raw) = jar.get(name).map(|c| SecretString::from(c.value())) {
         if let Some(record) =
             tankovault_db::repo::users::find_refresh(&state.pool, &hash_refresh_token(&raw)).await?
         {
@@ -338,7 +341,11 @@ pub(super) async fn issue_session_tokens(
     // unprefixed name at `/v1/auth` only for the local-HTTP opt-out. `refresh_cookie` carries the
     // review behind that choice. No `Domain` is set — deliberately, and the prefix enforces it.
     let (name, path) = refresh_cookie(state.cookie_secure);
-    let cookie = Cookie::build((name, raw_refresh))
+    // One of the two deliberate unwrappings in this service (the other is
+    // `crate::secret::expose_onto_wire`): the refresh token's whole purpose is to be handed to
+    // the browser in this header. `Cookie::build` needs an owned `String`, and there is no
+    // serializer hook on the cookie path to route it through.
+    let cookie = Cookie::build((name, raw_refresh.expose_secret().to_owned()))
         .http_only(true)
         .secure(state.cookie_secure)
         .same_site(SameSite::Strict)

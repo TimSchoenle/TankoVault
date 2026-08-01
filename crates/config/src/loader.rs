@@ -43,6 +43,7 @@ pub fn is_production() -> bool {
 #[cfg(test)]
 mod tests {
     use crate::{DatabaseConfig, MetricsConfig, load};
+    use secrecy::ExposeSecret as _;
     use serde::Deserialize;
 
     #[derive(Debug, Deserialize)]
@@ -66,7 +67,13 @@ mod tests {
             );
             jail.set_env("TANKOVAULT_DATABASE__MAX_CONNECTIONS", "32");
             let cfg: Sample = load().map_err(|e| e.to_string()).unwrap();
-            assert_eq!(cfg.database.url, "postgres://localhost/tankovault");
+            // The DSN is a `SecretString`, so a plain `assert_eq!` no longer compiles — the
+            // wrapper has no `PartialEq`. That is the type doing its job: comparing a secret
+            // is a deliberate act, and a failing `assert_eq!` would print it.
+            assert_eq!(
+                cfg.database.url.expose_secret(),
+                "postgres://localhost/tankovault"
+            );
             assert_eq!(cfg.database.max_connections, 32);
             // Untouched nested default still applies.
             assert_eq!(cfg.database.acquire_timeout_secs, 10);

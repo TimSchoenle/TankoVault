@@ -518,7 +518,7 @@ Legend: ✅ done & compiling · 🟡 partial/skeleton · ⬜ not started
 | `fetch` | ✅ | `Fetcher` trait + decorator stack (backoff → rate-limit → cache → solving → retry → base), **SSRF guard**, browser emulation via `wreq`/`wreq-util`, solver client. |
 | `solver` | ✅ | `ChallengeSolver` trait, `detect_challenge` classifier, FlareSolverr back-end, fake solver for the swap test. 7 tests. |
 | `adapters` | ✅ | `SourceAdapter` trait, `Ctx`, generic/Madara config adapter, custom `DemonicScansAdapter`, HTML helpers (number/status/date parsers, `relativize`/`absolutize`), `builtin_presets()` (demonicscans + manhuaus + kunmanga, solver-derived), factory slug dispatch. Fixtures per provider; unit + fixture tests. See [`PROVIDERS.md`](./PROVIDERS.md). |
-| `auth` | ✅ | argon2id, HS256 access JWT (**identity claims only — no role or permission travels in a token**), rotating hashed refresh + reuse detection. **+ `SecretBox` (AES-256-GCM) for external tokens at rest (§16).** 15 tests. |
+| `auth` | ✅ | argon2id, HS256 access JWT (**identity claims only — no role or permission travels in a token**), rotating hashed refresh + reuse detection. **+ `Sealer` (AES-256-GCM) for external tokens at rest (§16).** Every credential it takes or returns is a `secrecy` wrapper — `SecretSlice<u8>` for the signing key and pepper, `SecretString` for passwords and minted tokens. 18 tests. |
 | `matcher` | ✅ | Pure scoring/decision bands (attach/ambiguous/create). First live consumer is the sync service. 5 tests. |
 
 ### Services (`services/`)
@@ -612,7 +612,7 @@ PG19.
 4. **`argon2 = 0.5`** (latest stable; 0.6 is pre-release only).
 5. Added `notification_dedup`, `merge_candidates`, and `audit_log` tables (`0007`) that
    the spec text (§10, §16) requires but the §6 SQL block omitted.
-6. **Sync token encryption lives in `auth::SecretBox`** (AES-256-GCM), not a standalone
+6. **Sync token encryption lives in `auth::Sealer`** (AES-256-GCM), not a standalone
    crate — it is a security primitive that belongs with the other §16 primitives and is
    reusable for any future encrypted-at-rest secret.
 7. **Sync service owns its own HTTP contract** (`/v1/anilist/*`); the API's user-facing
@@ -631,7 +631,7 @@ PG19.
 - Idempotent worker writes (`ON CONFLICT`) — `catalog::ingest_series`; sync mappings and
   accounts are likewise upserts.
 - Domain crate is persistence-free; enums cross the DB boundary via `::text` casts.
-- External tokens are **never stored in plaintext** — sealed by `SecretBox` before the
+- External tokens are **never stored in plaintext** — sealed by `Sealer` before the
   `db::repo::sync` layer ever sees them.
 - Whole workspace is `rustfmt`- and `clippy -D warnings`-clean (DoD §21).
 
@@ -720,14 +720,14 @@ PG19.
   AniList-only: `AniListStatus` never leaves `anilist`), `anilist` (`impl ExternalProvider for
   AniListClient`; `AniListEntry` is the AniList-shaped wire type, converted to the shared
   `RemoteEntry` via `From`), `engine` (`SyncEngine` holds the provider registry + orchestrates
-  over `db` + `matcher` + `SecretBox`), `main` (Axum contract + `build_providers` registry
+  over `db` + `matcher` + `Sealer`), `main` (Axum contract + `build_providers` registry
   wiring). AniList is the only registered provider; a second one is a new `ExternalProvider`
   impl inserted into `build_providers`, no other wiring changes.
 - **Contract:** `GET /v1/sync/providers`, `POST /v1/sync/push-series` (targeted push, always
   `200`), `GET /v1/sync/{provider}/authorize-url`, `GET /v1/sync/{provider}/status/{user_id}`,
   `POST`/`DELETE /v1/sync/{provider}/link`, `POST /v1/sync/{provider}/pull`,
   `POST /v1/sync/{provider}/push`, plus `/health` `/ready`.
-- **Linking:** `exchange_code` → seal access/refresh with `SecretBox` →
+- **Linking:** `exchange_code` → seal access/refresh with `Sealer` →
   `db::repo::sync::upsert_account` (ciphertext, keyed by `provider` slug). `access_token()`
   decrypts and, if expired with a refresh token present, refreshes first.
 - **Series ↔ media resolution:** existing `sync_mappings` first (keyed by `provider`); else

@@ -6,6 +6,7 @@ use crate::state::{AppState, AuthUser};
 use axum::Json;
 use axum::extract::{Query, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use tankovault_contracts::UserNotification;
@@ -133,7 +134,11 @@ pub struct StreamQuery {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct StreamTicket {
     /// The opaque value to pass as `?ticket=` when opening the stream.
-    pub ticket: String,
+    // Handing it to the client is the endpoint's purpose, so it opts into serialisation
+    // explicitly — see `crate::secret` for why that opt-in is per field rather than blanket.
+    #[serde(serialize_with = "crate::secret::expose_onto_wire")]
+    #[schema(value_type = String)]
+    pub ticket: SecretString,
     /// Seconds until it expires. Redeem immediately; this is for diagnostics, not scheduling.
     pub expires_in: u64,
 }

@@ -5,6 +5,7 @@ use crate::openapi::{ME_ACCOUNT_TAG, ME_NOTIFICATIONS_TAG};
 use crate::state::{AppState, AuthUser};
 use axum::Json;
 use axum::extract::{Path, State};
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use utoipa::ToSchema;
@@ -21,8 +22,9 @@ pub struct ProfileUpdate {
     #[serde(default)]
     pub email: Option<String>,
     /// Required when `email` changes the address on the account. See [`patch_profile`].
+    #[schema(value_type = Option<String>)]
     #[serde(default)]
-    pub current_password: Option<String>,
+    pub current_password: Option<SecretString>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -94,7 +96,7 @@ pub async fn patch_profile(
     let email_changing = email.is_some_and(|e| !e.eq_ignore_ascii_case(&before.email));
 
     if email_changing {
-        let current = body.current_password.as_deref().ok_or_else(|| {
+        let current = body.current_password.as_ref().ok_or_else(|| {
             ApiError::BadRequest("current_password is required to change the email address".into())
         })?;
         let credentials =
@@ -138,8 +140,10 @@ pub async fn patch_profile(
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PasswordChange {
-    pub current_password: String,
-    pub new_password: String,
+    #[schema(value_type = String)]
+    pub current_password: SecretString,
+    #[schema(value_type = String)]
+    pub new_password: SecretString,
 }
 
 /// Change the password

@@ -2,7 +2,7 @@
 //! mappings for a third-party provider such as `AniList`.
 //!
 //! Token columns hold **ciphertext only** — the sync service seals them with
-//! `tankovault_auth::SecretBox` before they reach this layer, so nothing here ever handles
+//! `tankovault_auth::Sealer` before they reach this layer, so nothing here ever handles
 //! plaintext credentials. The `provider` column is the external service key (e.g.
 //! `"anilist"`), mirroring the shape used by [`tracking`](super::tracking) entries.
 //!

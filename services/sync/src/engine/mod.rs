@@ -2,7 +2,7 @@
 //! metadata enrichment, and the multi-provider registry (design: generalized multi-provider
 //! sync).
 //!
-//! Tokens are sealed with `SecretBox` before persistence and only ever decrypted in
+//! Tokens are sealed with `Sealer` before persistence and only ever decrypted in
 //! [`tokens::TokenVault`]. Series are mapped to canonical works by reusing `tankovault_matcher`
 //! over trigram candidates, then cached in `sync_mappings` so later syncs skip re-matching.
 //! Reconciling progress across the two sides is delegated to the pure [`crate::mapping`] logic.
@@ -45,7 +45,7 @@ mod tokens;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tankovault_auth::SecretBox;
+use tankovault_auth::Sealer;
 use tankovault_config::MatchingConfig;
 use tankovault_contracts::sync::{AccountSettings, AccountStatus, ProviderInfo};
 use tankovault_db::PgPool;
@@ -83,7 +83,7 @@ pub(crate) struct SyncEngine {
 impl SyncEngine {
     pub(crate) fn new(
         pool: PgPool,
-        secret: SecretBox,
+        secret: Sealer,
         default_policy: ConflictPolicy,
         metadata_priority: MetadataPriority,
         matching: &MatchingConfig,

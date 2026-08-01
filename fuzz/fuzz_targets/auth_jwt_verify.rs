@@ -46,17 +46,26 @@
 
 use jsonwebtoken::{Algorithm, decode_header};
 use libfuzzer_sys::fuzz_target;
+use secrecy::SecretSlice;
+use std::sync::LazyLock;
 use tankovault_auth::verify_access_token;
 
 /// The secret the committed seeds are signed with. Named in the audit's own sketch of this
 /// target; it is a fuzzing constant and seals nothing.
-const SECRET: &[u8] = b"fuzz-secret-please-rotate";
+///
+/// A `LazyLock` rather than a `const` because `verify_access_token` takes a
+/// [`SecretSlice<u8>`], which owns a heap allocation and so cannot be a constant. Built once
+/// per process, not once per iteration — a fresh allocation on every input would be pure
+/// overhead in the hot loop the fuzzer spends all its time in.
+static SECRET: LazyLock<SecretSlice<u8>> =
+    LazyLock::new(|| SecretSlice::from(b"fuzz-secret-please-rotate".to_vec()));
 
 /// Any other key. Only its difference from [`SECRET`] matters.
-const OTHER_SECRET: &[u8] = b"a-different-secret-entirely";
+static OTHER_SECRET: LazyLock<SecretSlice<u8>> =
+    LazyLock::new(|| SecretSlice::from(b"a-different-secret-entirely".to_vec()));
 
 fuzz_target!(|data: &str| {
-    let Ok(claims) = verify_access_token(SECRET, data) else {
+    let Ok(claims) = verify_access_token(&SECRET, data) else {
         // The overwhelmingly common outcome, and still worth reaching: it is the path that
         // walks the token's own header and signature, which is where a parser crash would be.
         return;
@@ -75,7 +84,7 @@ fuzz_target!(|data: &str| {
 
     // (3) The signature is over this secret and no other.
     assert!(
-        verify_access_token(OTHER_SECRET, data).is_err(),
+        verify_access_token(&OTHER_SECRET, data).is_err(),
         "a token verified under two different secrets"
     );
 

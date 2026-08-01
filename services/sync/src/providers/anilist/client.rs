@@ -5,6 +5,7 @@
 use std::time::Duration;
 
 use anyhow::{Context, anyhow};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use time::OffsetDateTime;
 
@@ -18,7 +19,7 @@ pub(crate) struct AniListClient {
     graphql_url: String,
     oauth_base: String,
     client_id: String,
-    client_secret: String,
+    client_secret: SecretString,
     redirect_uri: String,
     pacer: Pacer,
 }
@@ -30,7 +31,7 @@ impl AniListClient {
         graphql_url: String,
         oauth_base: String,
         client_id: String,
-        client_secret: String,
+        client_secret: SecretString,
         redirect_uri: String,
         min_interval: Duration,
     ) -> anyhow::Result<Self> {
@@ -72,7 +73,7 @@ impl AniListClient {
         let body = serde_json::json!({
             "grant_type": "authorization_code",
             "client_id": self.client_id,
-            "client_secret": self.client_secret,
+            "client_secret": self.client_secret.expose_secret(),
             "redirect_uri": self.redirect_uri,
             "code": code,
         });
@@ -80,12 +81,15 @@ impl AniListClient {
     }
 
     /// Refresh an access token, where the provider supports it.
-    pub(crate) async fn refresh(&self, refresh_token: &str) -> anyhow::Result<OAuthTokens> {
+    pub(crate) async fn refresh(
+        &self,
+        refresh_token: &SecretString,
+    ) -> anyhow::Result<OAuthTokens> {
         let body = serde_json::json!({
             "grant_type": "refresh_token",
             "client_id": self.client_id,
-            "client_secret": self.client_secret,
-            "refresh_token": refresh_token,
+            "client_secret": self.client_secret.expose_secret(),
+            "refresh_token": refresh_token.expose_secret(),
         });
         self.token_request(&body).await
     }
@@ -93,9 +97,12 @@ impl AniListClient {
     async fn token_request(&self, body: &serde_json::Value) -> anyhow::Result<OAuthTokens> {
         #[derive(Deserialize)]
         struct TokenResponse {
-            access_token: String,
+            // `SecretString` even inside this throwaway decode struct: the response body is
+            // already in `text` below, and the point is that the *parsed* tokens cannot be
+            // logged or `dbg!`-ed on their way into `OAuthTokens`.
+            access_token: SecretString,
             #[serde(default)]
-            refresh_token: Option<String>,
+            refresh_token: Option<SecretString>,
             #[serde(default)]
             expires_in: Option<i64>,
         }
@@ -127,7 +134,7 @@ impl AniListClient {
     /// Execute a GraphQL operation, returning the `data` object. Retries once on `429`.
     pub(super) async fn graphql(
         &self,
-        access_token: &str,
+        access_token: &SecretString,
         query: &str,
         variables: serde_json::Value,
     ) -> anyhow::Result<serde_json::Value> {
@@ -147,7 +154,7 @@ impl AniListClient {
 
     async fn graphql_inner(
         &self,
-        access_token: Option<&str>,
+        access_token: Option<&SecretString>,
         query: &str,
         variables: serde_json::Value,
     ) -> anyhow::Result<serde_json::Value> {
@@ -156,7 +163,9 @@ impl AniListClient {
             self.wait_for_slot().await;
             let mut req = self.http.post(&self.graphql_url).json(&body);
             if let Some(token) = access_token {
-                req = req.bearer_auth(token);
+                // The one place a stored `AniList` token is unwrapped: into the `Authorization`
+                // header of the request it authenticates.
+                req = req.bearer_auth(token.expose_secret());
             }
             let resp = req.send().await.context("AniList GraphQL request failed")?;
 
@@ -233,6 +242,7 @@ impl AniListClient {
 #[cfg(test)]
 mod tests {
     use super::AniListClient;
+    use secrecy::{ExposeSecret, SecretString};
     use std::time::{Duration, Instant};
     use time::OffsetDateTime;
     use wiremock::matchers::{method, path};
@@ -243,7 +253,7 @@ mod tests {
             "https://graphql.example".to_owned(),
             "https://oauth.example".to_owned(),
             client_id.to_owned(),
-            "secret".to_owned(),
+            SecretString::from("secret"),
             redirect_uri.to_owned(),
             Duration::from_millis(1),
         )
@@ -257,7 +267,7 @@ mod tests {
             format!("{}/graphql", server.uri()),
             server.uri(),
             "46552".to_owned(),
-            "secret".to_owned(),
+            SecretString::from("secret"),
             "https://app.example/cb".to_owned(),
             min_interval,
         )
@@ -336,8 +346,17 @@ mod tests {
             .expect("the exchange succeeds");
         let after = OffsetDateTime::now_utc();
 
-        assert_eq!(tokens.access_token, "at-1");
-        assert_eq!(tokens.refresh_token.as_deref(), Some("rt-1"));
+        // `SecretString` has no `PartialEq` — comparing a secret has to be a deliberate act,
+        // and a failing `assert_eq!` would print it. Here the values are test fixtures, so the
+        // comparison is on the exposed strings.
+        assert_eq!(tokens.access_token.expose_secret(), "at-1");
+        assert_eq!(
+            tokens
+                .refresh_token
+                .as_ref()
+                .map(ExposeSecret::expose_secret),
+            Some("rt-1")
+        );
         // `expires_in` is a duration and `expires_at` an instant; the conversion is the only
         // arithmetic in this function and is bracketed rather than approximated.
         let expires_at = tokens.expires_at.expect("expires_in yields an expiry");
@@ -378,12 +397,12 @@ mod tests {
             .await;
 
         let tokens = client_for(&server, Duration::from_millis(1))
-            .refresh("rt-old")
+            .refresh(&SecretString::from("rt-old"))
             .await
             .expect("the refresh succeeds");
 
-        assert_eq!(tokens.access_token, "at-2");
-        assert_eq!(tokens.refresh_token, None);
+        assert_eq!(tokens.access_token.expose_secret(), "at-2");
+        assert!(tokens.refresh_token.is_none());
         assert_eq!(tokens.expires_at, None);
 
         assert_eq!(
@@ -434,7 +453,11 @@ mod tests {
 
         let client = client_for(&server, Duration::from_millis(1));
         client
-            .graphql("tok-1", "query {}", serde_json::json!({}))
+            .graphql(
+                &SecretString::from("tok-1"),
+                "query {}",
+                serde_json::json!({}),
+            )
             .await
             .expect("authenticated call");
         client
@@ -624,7 +647,11 @@ mod tests {
             .await;
 
         let err = client_for(&server, Duration::from_millis(1))
-            .graphql("stale", "query {}", serde_json::json!({}))
+            .graphql(
+                &SecretString::from("stale"),
+                "query {}",
+                serde_json::json!({}),
+            )
             .await
             .expect_err("an errors array is an error");
         assert!(

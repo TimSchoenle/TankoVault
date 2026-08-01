@@ -21,6 +21,9 @@ tankovault-db = { workspace = true }
 tankovault-contracts = { workspace = true }
 tankovault-domain = { workspace = true }
 tankovault-auth = { workspace = true }
+# The OAuth client secret, the token-sealing key and every access/refresh token this
+# service moves between AniList and the database.
+secrecy = { workspace = true }
 tankovault-matcher = { workspace = true }
 axum = { workspace = true }
 async-trait = { workspace = true }

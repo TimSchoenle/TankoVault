@@ -44,6 +44,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use tankovault_service::health::PostgresCheck;
 use tankovault_service::{
@@ -55,7 +56,7 @@ use engine::SyncEngine;
 use mapping::ConflictPolicy;
 use provider::ExternalProvider;
 use providers::anilist::{AniListClient, DEFAULT_GRAPHQL_URL, DEFAULT_OAUTH_BASE};
-use tankovault_auth::SecretBox;
+use tankovault_auth::Sealer;
 use tankovault_config::{DatabaseConfig, TelemetryConfig};
 use tankovault_contracts::sync::{AccountSettings, AccountStatus, AuthorizeUrl, ProviderInfo};
 use tankovault_domain::{Feature, MetadataPriority, SeriesId, UserId};
@@ -136,10 +137,16 @@ impl Default for MetadataConfig {
 struct AniListConfig {
     #[serde(deserialize_with = "string_or_number")]
     client_id: String,
-    client_secret: String,
+    /// The `OAuth2` client secret. A [`SecretString`]: this struct derives `Debug` and is
+    /// nested in `Config`, and the secret is what lets anyone mint tokens as this app.
+    client_secret: SecretString,
     redirect_uri: String,
     /// Base64 (standard alphabet) 32-byte data-encryption key for tokens at rest.
-    token_encryption_key: String,
+    ///
+    /// The most valuable single value this service holds: it opens every user's stored
+    /// `AniList` access and refresh token. Wrapped from the moment `figment` produces it to
+    /// the moment `Sealer::from_base64_key` consumes it, and never in between.
+    token_encryption_key: SecretString,
     #[serde(default = "default_graphql_url")]
     graphql_url: String,
     #[serde(default = "default_oauth_base")]
@@ -326,10 +333,10 @@ fn route_features() -> RouteFeatures {
 /// Compares the *decoded* bytes rather than the string, so the several base64 spellings of 32
 /// zero bytes (with and without padding, with whitespace) are all caught rather than only the
 /// exact literal that happened to ship in the compose file.
-fn is_placeholder_key(encoded: &str) -> bool {
+fn is_placeholder_key(encoded: &SecretString) -> bool {
     use base64::Engine as _;
     base64::engine::general_purpose::STANDARD
-        .decode(encoded.trim())
+        .decode(encoded.expose_secret().trim())
         .is_ok_and(|bytes| !bytes.is_empty() && bytes.iter().all(|b| *b == 0))
 }
 
@@ -376,7 +383,7 @@ async fn main() -> anyhow::Result<()> {
              `openssl rand -base64 32` and set TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY."
         );
     }
-    let secret = SecretBox::from_base64_key(&cfg.anilist.token_encryption_key)
+    let secret = Sealer::from_base64_key(&cfg.anilist.token_encryption_key)
         .map_err(|e| anyhow::anyhow!("invalid anilist.token_encryption_key: {e}"))?;
     let default_policy = cfg.anilist.default_conflict_policy;
     let metadata = cfg.metadata;

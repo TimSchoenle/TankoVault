@@ -6,6 +6,7 @@
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use tankovault_auth::{generate_refresh_token, hash_password, hash_refresh_token};
 use time::{Duration, OffsetDateTime};
@@ -30,9 +31,13 @@ pub struct ForgotPasswordRequest {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ResetPasswordRequest {
     /// The opaque token from the emailed reset link.
-    pub token: String,
+    // A bearer credential for "set this account's password", so it is wrapped exactly like the
+    // password beside it.
+    #[schema(value_type = String)]
+    pub token: SecretString,
     /// The new password (same policy as registration: at least 8 characters).
-    pub new_password: String,
+    #[schema(value_type = String)]
+    pub new_password: SecretString,
 }
 
 /// Request a password-reset email
@@ -106,9 +111,13 @@ async fn deliver_reset_link(state: AppState, email: String) {
     if !state.mailer.is_enabled() {
         return;
     }
+    // The token has to appear in the emailed link — that is what makes the link work — so
+    // this is a deliberate unwrapping. Note what it is *not* used for: the link is never
+    // logged, and the failure branch below records only the error.
     let link = format!(
-        "{}/reset-password?token={raw}",
+        "{}/reset-password?token={}",
         state.email_base_url.trim_end_matches('/'),
+        raw.expose_secret(),
     );
     if let Err(e) = state
         .mailer

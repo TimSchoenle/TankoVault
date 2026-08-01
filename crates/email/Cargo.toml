@@ -12,6 +12,9 @@ publish = false
 [dependencies]
 tankovault-config = { workspace = true }
 lettre = { workspace = true }
+# The relay URL and the mailbox password arrive from `EmailConfig` as `SecretString`s and
+# are exposed exactly once each, where lettre's transport builder needs them.
+secrecy = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }

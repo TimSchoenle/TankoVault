@@ -4,6 +4,7 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum_extra::extract::cookie::CookieJar;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use tankovault_auth::{generate_refresh_token, hash_refresh_token};
 use tankovault_domain::User;
@@ -25,7 +26,10 @@ const VERIFY_TOKEN_TTL: Duration = Duration::hours(24);
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct VerifyEmailRequest {
     /// The opaque token from the emailed confirmation link.
-    pub token: String,
+    // A bearer credential for "confirm this address and sign me in", so it is wrapped like
+    // every other one.
+    #[schema(value_type = String)]
+    pub token: SecretString,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -179,8 +183,11 @@ async fn issue_verification_link(state: &AppState, user: &User) -> ApiResult<Str
         expires_at,
     )
     .await?;
+    // Deliberate unwrapping: the token has to be in the emailed link for the link to work.
+    // The link itself is never logged.
     Ok(format!(
-        "{}/verify-email?token={raw}",
+        "{}/verify-email?token={}",
         state.email_base_url.trim_end_matches('/'),
+        raw.expose_secret(),
     ))
 }

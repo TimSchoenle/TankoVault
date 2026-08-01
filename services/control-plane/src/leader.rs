@@ -16,6 +16,7 @@
 //! the background renewal task via [`Leadership::is_leader`].
 
 use fred::prelude::*;
+use secrecy::{ExposeSecret as _, SecretString};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -42,8 +43,11 @@ impl Leadership {
 }
 
 /// Connect (and wait for readiness) a Redis client for leader election.
-pub(crate) async fn connect(url: &str) -> anyhow::Result<Client> {
-    let config = Config::from_url(url)?;
+///
+/// `url` is a [`SecretString`] because `redis://:password@host` is a supported form; it is
+/// exposed exactly here, into the client config.
+pub(crate) async fn connect(url: &SecretString) -> anyhow::Result<Client> {
+    let config = Config::from_url(url.expose_secret())?;
     let client = Builder::from_config(config).build()?;
     client.init().await?;
     Ok(client)

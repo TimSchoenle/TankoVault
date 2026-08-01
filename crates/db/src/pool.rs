@@ -1,6 +1,7 @@
 //! Connection pool construction and migration running.
 
 use crate::error::DbResult;
+use secrecy::{ExposeSecret as _, SecretString};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::time::Duration;
 
@@ -9,10 +10,17 @@ pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations"
 
 /// Build a Postgres connection pool.
 ///
+/// `url` is a [`SecretString`] rather than a `&str` because a Postgres DSN carries the
+/// password inline. This is the single funnel every service and `xtask` goes through, so
+/// typing it here is what forces each of those call sites to hold the DSN in a wrapper of its
+/// own rather than a `String` that reaches a log line on the way to this function.
+///
 /// # Errors
-/// Returns [`crate::DbError`] if the pool cannot establish an initial connection.
+/// Returns [`crate::DbError`] if the pool cannot establish an initial connection. Note that
+/// `sqlx` redacts the password from its own connection errors, so a failure here does not
+/// undo the wrapper.
 pub async fn connect(
-    url: &str,
+    url: &SecretString,
     max_connections: u32,
     acquire_timeout_secs: u64,
 ) -> DbResult<PgPool> {
@@ -26,7 +34,7 @@ pub async fn connect(
         // real statement is not covered by it either. Turning it off trades a rare
         // retryable error for a round trip on every call.
         .test_before_acquire(false)
-        .connect(url)
+        .connect(url.expose_secret())
         .await?;
     Ok(pool)
 }

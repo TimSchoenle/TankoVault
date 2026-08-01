@@ -5,6 +5,7 @@
 //! rule going unenforced on one of those paths is exactly the SEC-9 defect.
 
 use crate::error::{ApiError, ApiResult};
+use secrecy::{ExposeSecret as _, SecretString};
 
 /// The character class a username may draw from.
 ///
@@ -55,13 +56,18 @@ pub(crate) fn validate_email(email: &str) -> ApiResult<()> {
 }
 
 /// Validate a password, for registration, reset and the authenticated change.
-pub(crate) fn validate_password(password: &str) -> ApiResult<()> {
-    if password.len() < 8 {
+///
+/// Takes the [`SecretString`] rather than a `&str` so the single `expose_secret` needed to
+/// measure a length lives inside the validator instead of at each of its three call sites.
+/// The error messages carry the *bound*, never the value.
+pub(crate) fn validate_password(password: &SecretString) -> ApiResult<()> {
+    let len = password.expose_secret().len();
+    if len < 8 {
         return Err(ApiError::BadRequest(
             "password must be at least 8 characters".into(),
         ));
     }
-    if password.len() > MAX_PASSWORD_LEN {
+    if len > MAX_PASSWORD_LEN {
         return Err(ApiError::BadRequest(format!(
             "password must be at most {MAX_PASSWORD_LEN} characters"
         )));
@@ -91,11 +97,11 @@ mod tests {
 
     #[test]
     fn a_password_is_bounded_at_both_ends() {
-        assert!(validate_password("short").is_err());
-        assert!(validate_password("long enough").is_ok());
+        assert!(validate_password(&SecretString::from("short")).is_err());
+        assert!(validate_password(&SecretString::from("long enough")).is_ok());
         // Unbounded length meant a 1 MiB password pinned 19 MiB of argon2 memory per request.
-        assert!(validate_password(&"x".repeat(MAX_PASSWORD_LEN)).is_ok());
-        assert!(validate_password(&"x".repeat(MAX_PASSWORD_LEN + 1)).is_err());
+        assert!(validate_password(&SecretString::from("x".repeat(MAX_PASSWORD_LEN))).is_ok());
+        assert!(validate_password(&SecretString::from("x".repeat(MAX_PASSWORD_LEN + 1))).is_err());
     }
 
     #[test]

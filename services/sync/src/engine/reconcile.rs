@@ -7,6 +7,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use secrecy::SecretString;
 use serde::Serialize;
 use time::OffsetDateTime;
 
@@ -126,7 +127,7 @@ impl LocalState {
 struct RunContext<'a> {
     provider: &'a dyn ExternalProvider,
     slug: &'a str,
-    access: &'a str,
+    access: &'a SecretString,
     user_id: UserId,
     policy: ConflictPolicy,
 }

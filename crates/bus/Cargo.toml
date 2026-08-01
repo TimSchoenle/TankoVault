@@ -12,6 +12,9 @@ publish = false
 [dependencies]
 tankovault-contracts = { workspace = true }
 async-nats = { workspace = true }
+# `Bus::connect` takes the NATS URL as a `SecretString`: `nats://user:pass@host` is a
+# supported form, so the URL is a credential even when a given deployment leaves it bare.
+secrecy = { workspace = true }
 uuid = { workspace = true }
 bytes = { workspace = true }
 serde = { workspace = true }

@@ -11,6 +11,11 @@ publish = false
 
 [dependencies]
 tankovault-domain = { workspace = true }
+# Every credential this crate takes or returns is a `secrecy` wrapper rather than a `String`:
+# the signing key, the pepper, the plaintext password, the minted access token and the raw
+# refresh token. That is what makes `expose_secret()` the grep that answers "where does the
+# pepper leave its wrapper" — see the rationale block in the workspace manifest.
+secrecy = { workspace = true }
 argon2 = { workspace = true }
 aes-gcm = { workspace = true }
 jsonwebtoken = { workspace = true }

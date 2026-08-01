@@ -9,6 +9,7 @@
 //! Everything cross-cutting (rate limiting, CORS, security headers, request ids, metrics,
 //! timeouts, body caps, health probes, graceful shutdown) comes from `tankovault-service`.
 
+use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
 use std::sync::Arc;
 use std::time::Duration;
 use tankovault_api::AppState;
@@ -63,13 +64,16 @@ struct Config {
 
 #[derive(Debug, serde::Deserialize)]
 struct AuthConfig {
-    jwt_secret: String,
+    /// HS256 signing key for access tokens. A [`SecretString`]: this struct derives `Debug`
+    /// and is nested in `Config`, so without the wrapper a single `tracing::debug!(?cfg)`
+    /// would publish the key that authenticates every session.
+    jwt_secret: SecretString,
     /// Server-side password pepper: a secret mixed into every argon2id hash so a database
     /// leak alone cannot be brute-forced offline. Optional — empty (the default) keeps
     /// hashing un-peppered, which is backward-compatible with hashes stored before it was
     /// set. Once configured it must stay stable, or existing passwords stop verifying.
     #[serde(default)]
-    password_pepper: String,
+    password_pepper: SecretString,
     #[serde(default = "default_access_minutes")]
     access_ttl_minutes: i64,
     #[serde(default = "default_refresh_days")]
@@ -177,6 +181,17 @@ const KNOWN_PLACEHOLDERS: [(&str, &str); 4] = [
     ("change-me", "default email password"),
 ];
 
+/// Re-wrap a configured secret as the key material `tankovault_auth` takes.
+///
+/// A `SecretString` and a `SecretSlice<u8>` are the same bytes under two wrappers, and the
+/// crossing has to happen somewhere: the config surface is text, and HMAC and argon2 both take
+/// a byte slice. Doing it here — once, for both secrets — means neither the JWT key nor the
+/// pepper ever exists as a bare `String` or `Vec<u8>` in this process, which is what
+/// `String::into_bytes` used to produce and hand to `Arc::new`.
+fn secret_bytes(value: &SecretString) -> SecretSlice<u8> {
+    SecretSlice::from(value.expose_secret().as_bytes().to_vec())
+}
+
 /// The name of the placeholder `value` matches, if any.
 fn known_placeholder(value: &str) -> Option<&'static str> {
     let trimmed = value.trim();
@@ -202,7 +217,10 @@ fn validate_auth_secrets(auth: &AuthConfig, production: bool) -> anyhow::Result<
     // can skip by forgetting one environment variable is not a check — and these exact
     // strings shipped in the reference compose file, so they are what an operator who never
     // set TANKOVAULT_PROFILE is running with.
-    if let Some(name) = known_placeholder(&auth.jwt_secret) {
+    // The *length* of a secret is what an operator has to act on and is not itself sensitive,
+    // so it appears in these messages. The value never does: `expose_secret` is called below
+    // only to measure and to compare, never to format.
+    if let Some(name) = known_placeholder(auth.jwt_secret.expose_secret()) {
         anyhow::bail!(
             "refusing to start: jwt_secret is the well-known {name} placeholder, which is \
              published in this repository. Every session against it is forgeable by anyone \
@@ -211,30 +229,30 @@ fn validate_auth_secrets(auth: &AuthConfig, production: bool) -> anyhow::Result<
     }
 
     if !production {
-        if auth.jwt_secret.len() < MIN_JWT_SECRET_LEN {
+        if auth.jwt_secret.expose_secret().len() < MIN_JWT_SECRET_LEN {
             tracing::warn!(
                 "jwt_secret is short ({} < {MIN_JWT_SECRET_LEN}); acceptable for development but \
                  set a strong secret and TANKOVAULT_PROFILE=production before deploying",
-                auth.jwt_secret.len()
+                auth.jwt_secret.expose_secret().len()
             );
         }
         return Ok(());
     }
 
-    if auth.jwt_secret.trim().is_empty() {
+    if auth.jwt_secret.expose_secret().trim().is_empty() {
         anyhow::bail!(
             "refusing to start: jwt_secret is empty in a production profile; every session could \
              be forged. Set a strong random secret (at least {MIN_JWT_SECRET_LEN} bytes)."
         );
     }
-    if auth.jwt_secret.len() < MIN_JWT_SECRET_LEN {
+    if auth.jwt_secret.expose_secret().len() < MIN_JWT_SECRET_LEN {
         anyhow::bail!(
             "refusing to start: jwt_secret is too short ({} < {MIN_JWT_SECRET_LEN}) for a \
              production profile; it is brute-forceable. Set a strong random secret.",
-            auth.jwt_secret.len()
+            auth.jwt_secret.expose_secret().len()
         );
     }
-    if auth.password_pepper.is_empty() {
+    if auth.password_pepper.expose_secret().is_empty() {
         tracing::warn!(
             "password_pepper is empty in a production profile; password hashes are un-peppered, so \
              a database leak alone can be brute-forced offline. Configure a stable pepper."
@@ -310,8 +328,11 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState {
         pool: pool.clone(),
-        jwt_secret: Arc::new(cfg.auth.jwt_secret.into_bytes()),
-        password_pepper: Arc::new(cfg.auth.password_pepper.into_bytes()),
+        // The only place these two cross from text to key material. `secret_bytes` keeps them
+        // inside a wrapper across the hop; the `Arc` is because axum clones the state per
+        // request — see `AppState::jwt_secret`.
+        jwt_secret: Arc::new(secret_bytes(&cfg.auth.jwt_secret)),
+        password_pepper: Arc::new(secret_bytes(&cfg.auth.password_pepper)),
         access_ttl: time::Duration::minutes(cfg.auth.access_ttl_minutes),
         refresh_ttl: time::Duration::days(cfg.auth.refresh_ttl_days),
         control_plane: tankovault_api::Upstream::new(
@@ -533,8 +554,10 @@ async fn connect_redis(
     cfg: Option<&tankovault_config::RedisConfig>,
 ) -> Option<fred::clients::Client> {
     let cfg = cfg?;
-    match fred::prelude::Builder::from_config(fred::prelude::Config::from_url(&cfg.url).ok()?)
-        .build()
+    match fred::prelude::Builder::from_config(
+        fred::prelude::Config::from_url(cfg.url.expose_secret()).ok()?,
+    )
+    .build()
     {
         Ok(client) => match fred::prelude::ClientLike::init(&client).await {
             Ok(_) => {
@@ -584,11 +607,12 @@ fn stream_ticket_store(
 #[cfg(test)]
 mod tests {
     use super::{AuthConfig, MIN_JWT_SECRET_LEN, validate_auth_secrets};
+    use secrecy::SecretString;
 
     fn auth(jwt_secret: &str, pepper: &str) -> AuthConfig {
         AuthConfig {
-            jwt_secret: jwt_secret.to_owned(),
-            password_pepper: pepper.to_owned(),
+            jwt_secret: SecretString::from(jwt_secret),
+            password_pepper: SecretString::from(pepper),
             access_ttl_minutes: 15,
             refresh_ttl_days: 30,
             cookie_secure: true,

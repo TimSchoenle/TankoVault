@@ -15,6 +15,8 @@ path = "src/main.rs"
 
 [dependencies]
 tankovault-config = { workspace = true }
+# The NATS URL arrives from config as `SecretString`.
+secrecy = { workspace = true }
 tankovault-service = { workspace = true, features = ["db"] }
 tokio-util = { workspace = true }
 tankovault-db = { workspace = true }

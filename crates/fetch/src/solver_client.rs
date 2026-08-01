@@ -5,6 +5,7 @@
 //! identical whether the solver runs in-process or over the network.
 
 use async_trait::async_trait;
+use secrecy::{ExposeSecret as _, SecretString};
 use std::time::Duration;
 use tankovault_solver::{ChallengeSolver, SolveError, SolveOutcome, SolveRequest};
 
@@ -15,7 +16,7 @@ pub struct HttpChallengeSolver {
     /// Presented as `X-Internal-Token`. The solver refuses unauthenticated callers, so this
     /// is not optional in a production deployment — it is `Option` only because the token is
     /// allowed to be absent outside the production profile.
-    token: Option<String>,
+    token: Option<SecretString>,
 }
 
 impl HttpChallengeSolver {
@@ -28,7 +29,11 @@ impl HttpChallengeSolver {
     /// at construction, where the process has not started serving, rather than a `Result` every
     /// caller would `unwrap`.
     #[must_use]
-    pub fn new(endpoint: impl Into<String>, timeout: Duration, token: Option<String>) -> Self {
+    pub fn new(
+        endpoint: impl Into<String>,
+        timeout: Duration,
+        token: Option<SecretString>,
+    ) -> Self {
         // Deliberately no emulation profile and no SSRF resolver: this talks to our own
         // service on the internal network, not to a provider.
         let client = wreq::Client::builder()
@@ -49,7 +54,7 @@ impl ChallengeSolver for HttpChallengeSolver {
         let url = format!("{}/v1/solve", self.endpoint.trim_end_matches('/'));
         let mut request = self.client.post(&url).json(&req);
         if let Some(token) = &self.token {
-            request = request.header("x-internal-token", token.as_str());
+            request = request.header("x-internal-token", token.expose_secret());
         }
         let resp = request.send().await.map_err(|e| {
             if e.is_timeout() {
@@ -78,6 +83,7 @@ impl ChallengeSolver for HttpChallengeSolver {
 #[cfg(test)]
 mod tests {
     use super::HttpChallengeSolver;
+    use secrecy::SecretString;
     use std::time::{Duration, Instant};
     use tankovault_solver::{ChallengeKind, ChallengeSolver as _, SolveError, SolveRequest};
     use wiremock::matchers::{method, path};
@@ -173,7 +179,7 @@ mod tests {
         HttpChallengeSolver::new(
             server.uri(),
             Duration::from_secs(5),
-            Some("shared-secret".to_owned()),
+            Some(SecretString::from("shared-secret")),
         )
         .solve(request())
         .await

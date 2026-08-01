@@ -6,6 +6,7 @@
 use axum::Json;
 use axum::extract::State;
 use axum_extra::extract::cookie::CookieJar;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use tankovault_auth::verify_password;
 use tankovault_domain::Feature;
@@ -33,12 +34,28 @@ const DUMMY_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$\
 pub struct LoginRequest {
     /// Email or username.
     pub login: String,
-    pub password: String,
+    // A `SecretString`, so the derived `Debug` on this struct renders `[REDACTED]` here. The
+    // login path already audits every outcome and records the *identifier*; the submitted
+    // password must never join it, and the wrapper is what makes a future `?req` safe rather
+    // than merely absent today.
+    //
+    // `value_type = String` keeps the generated schema — and therefore `openapi.json` and
+    // `crates/api-client` — byte-identical: this is a server-side representation change, not
+    // a contract change. Deliberately a `//` comment and not a `///` one: utoipa publishes doc
+    // comments as the field's `description`, and how this server holds the value in memory is
+    // not something to tell every API consumer.
+    #[schema(value_type = String)]
+    pub password: SecretString,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct TokenResponse {
-    pub access_token: String,
+    // Wrapped in transit through the handler and unwrapped exactly once, by
+    // `crate::secret::expose_onto_wire`, at the boundary where it is handed to the client —
+    // which is the one place doing so is the entire point of the response.
+    #[serde(serialize_with = "crate::secret::expose_onto_wire")]
+    #[schema(value_type = String)]
+    pub access_token: SecretString,
     pub token_type: &'static str,
     pub expires_in: i64,
 }
@@ -175,6 +192,7 @@ pub async fn login(
 #[cfg(test)]
 mod tests {
     use super::DUMMY_PASSWORD_HASH;
+    use secrecy::{SecretSlice, SecretString};
     use tankovault_auth::{hash_password, verify_password};
 
     /// The dummy hash must **parse** and must carry the live hasher's parameters. If it does
@@ -182,7 +200,7 @@ mod tests {
     /// fast again — restoring the enumeration oracle without any visible symptom.
     #[test]
     fn the_dummy_hash_is_a_real_argon2id_hash_with_the_live_parameters() {
-        let live = hash_password("any password", b"");
+        let live = hash_password(&SecretString::from("any password"), &SecretSlice::default());
         let live = live.expect("the live hasher produces a PHC string");
         let params = |h: &str| {
             h.split('$')
@@ -199,8 +217,12 @@ mod tests {
 
         // Parses, and does the work rather than erroring out of it.
         assert!(
-            !verify_password("whatever", DUMMY_PASSWORD_HASH, b"")
-                .expect("the dummy hash parses as a PHC string"),
+            !verify_password(
+                &SecretString::from("whatever"),
+                DUMMY_PASSWORD_HASH,
+                &SecretSlice::default()
+            )
+            .expect("the dummy hash parses as a PHC string"),
             "the dummy hash must not verify against an arbitrary password"
         );
     }

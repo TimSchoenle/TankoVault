@@ -43,6 +43,7 @@ pub mod seed;
 use std::sync::Mutex;
 use std::time::Duration as StdDuration;
 
+use secrecy::{ExposeSecret as _, SecretSlice};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Connection as _, PgConnection, PgPool};
 use tankovault_domain::{AccountStatus, Permission, UserId};
@@ -57,7 +58,18 @@ use uuid::Uuid;
 
 /// The JWT signing secret every harness signs with. Fixed so a test can mint a token that the
 /// router will accept, and long enough to satisfy the production strength check.
+///
+/// Kept as raw bytes rather than a [`SecretSlice`] because a `const` cannot hold a heap
+/// allocation. [`test_jwt_secret`] is the wrapped form the auth API takes; this constant is
+/// the one place in the workspace where the two spellings meet, and it is test-only.
 pub const TEST_JWT_SECRET: &[u8] = b"integration-test-jwt-secret-please-rotate-0123456789";
+
+/// [`TEST_JWT_SECRET`] in the [`SecretSlice`] form `tankovault_auth` and the API's `AppState`
+/// both take.
+#[must_use]
+pub fn test_jwt_secret() -> SecretSlice<u8> {
+    SecretSlice::from(TEST_JWT_SECRET.to_vec())
+}
 
 /// A `Bearer …` header value carrying a freshly-minted, valid access token for `user`, signed
 /// with [`TEST_JWT_SECRET`].
@@ -69,10 +81,16 @@ pub const TEST_JWT_SECRET: &[u8] = b"integration-test-jwt-secret-please-rotate-0
 /// If signing fails, which in a test always means the secret is wrong.
 #[must_use]
 pub fn bearer(user: UserId) -> String {
-    let token =
-        tankovault_auth::issue_access_token(TEST_JWT_SECRET, user, "seed", Duration::minutes(15))
-            .expect("mint access token");
-    format!("Bearer {token}")
+    let token = tankovault_auth::issue_access_token(
+        &test_jwt_secret(),
+        user,
+        "seed",
+        Duration::minutes(15),
+    )
+    .expect("mint access token");
+    // One of the few places a minted token is deliberately unwrapped: it is going into an
+    // `Authorization` header a test will send, which is the value's whole purpose.
+    format!("Bearer {}", token.expose_secret())
 }
 
 /// The process-wide Postgres container, started once on first use and kept alive for the

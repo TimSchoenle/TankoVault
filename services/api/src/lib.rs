@@ -28,6 +28,7 @@ mod error;
 mod mailer;
 mod me;
 pub mod passkey;
+mod secret;
 mod series;
 mod state;
 pub mod stream_tickets;
@@ -268,7 +269,7 @@ pub fn build_router(
 /// job is to name a bucket. A suspended account still gets rate limited under its own id; the
 /// handler is what refuses it.
 fn bearer_principal_resolver(
-    jwt_secret: std::sync::Arc<Vec<u8>>,
+    jwt_secret: std::sync::Arc<secrecy::SecretSlice<u8>>,
 ) -> tankovault_service::http::PrincipalResolver {
     std::sync::Arc::new(move |headers: &axum::http::HeaderMap| {
         let token = headers
@@ -334,7 +335,10 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(me::watchlist))
         // Bulk before the `{series_id}` sibling for readability only — `matchit` prefers the
         // static segment regardless, and a `series_id` is a uuid, so `bulk` can never be one.
-        .routes(routes!(me::bulk_update_watchlist, me::bulk_remove_watchlist))
+        .routes(routes!(
+            me::bulk_update_watchlist,
+            me::bulk_remove_watchlist
+        ))
         .routes(routes!(
             me::get_watchlist_entry,
             me::put_watchlist,

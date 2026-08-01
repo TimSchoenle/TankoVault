@@ -238,6 +238,28 @@ anyhow = "1"
 figment = { version = "0.10", features = ["toml", "env"] }
 
 # --- auth / security ---
+# Every secret value in this workspace is a `secrecy` type — `SecretString` for text,
+# `SecretSlice<u8>` for key material — rather than a `String` that happens to hold one.
+#
+# Three properties, in the order they matter here:
+#
+# 1. **`Debug` is redacted by construction.** The workspace derives `Debug` on every config
+#    struct and every `AppState`, and `tracing` records them with `?`. Before this, the only
+#    thing between `TANKOVAULT_DATABASE__URL` and the log stream was that nobody had yet
+#    written `debug!(?cfg)` — and two types (`InternalToken`, the AES sealer) carried
+#    hand-written redacting `Debug` impls precisely because someone had noticed that once. A
+#    hand-written impl protects the one type it is written on; the wrapper protects every
+#    field that uses it, including the field added next year.
+# 2. **Reading a secret is a visible call.** `expose_secret()` is greppable, so "where is the
+#    pepper actually used" is a search rather than a code review.
+# 3. **Zeroize on drop.** The weakest of the three — `figment` and `serde` both materialise a
+#    plain `String` before the wrapper takes ownership, so the *first* copy is not covered —
+#    but it bounds how long the long-lived copy sits in a core dump or a freed page.
+#
+# No `Serialize`: `SecretBox<T>` serialises only when `T: SerializableSecret`, which nothing
+# here implements. A secret that must go on the wire (`LoginResponse::access_token`) opts in
+# at that one field with `serialize_with`, which is the audit trail this trade wants.
+secrecy = { version = "0.10", features = ["serde"] }
 argon2 = "0.5"          # 0.6 is only a pre-release (rc); 0.5 is the current stable.
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
 aes-gcm = "0.11"

@@ -43,6 +43,9 @@ jsonwebtoken = { version = "11", default-features = false, features = ["rust_cry
 # `test` adds `figment::Jail`, which `config_env_load` needs to set and restore `TANKOVAULT_*`
 # around each iteration. `crates/config` already carries the same feature as a dev-dependency.
 figment = { version = "0.10", features = ["toml", "env", "test"] }
+# The workspace's secret wrappers reach both `auth_jwt_verify` (the signing key) and
+# `config_env_load` (the resolved internal token). Same major as the root manifest.
+secrecy = { version = "0.10", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 
 # `-Z sanitizer=address` instruments the crate under test, so the fuzz binary must be built

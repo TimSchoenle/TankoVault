@@ -35,7 +35,7 @@ a `query!`/`query_as!` changed → `cargo run -p xtask -- sqlx-prepare` against 
 database; config surface changed → update `docs/CONFIGURATION.md` (`cargo run -p xtask --
 config-docs` prints the current surface). The gates check these, they do not fix them.
 
-## Eight rules you will otherwise break
+## Nine rules you will otherwise break
 
 1. **Never widen a Content-Security-Policy to make code work.** Change the code. The SPA's access
    token is in memory; the CSP is the ceiling on where an injected script could send it.
@@ -54,6 +54,17 @@ config-docs` prints the current surface). The gates check these, they do not fix
    A frontend URL and the API struct behind it have no compile-time relationship; `openapi.json`
    is the only connector.
 8. **A fix that could silently come back gets a test whose doc comment says what the bug was.**
+9. **Every secret value is a `secrecy` type — never a `String`, `&str` or `Vec<u8>`.**
+   `SecretString` for text (DSNs, broker URLs, tokens, passwords, the pepper, webhook URLs with an
+   embedded token), `SecretSlice<u8>` for key material, `Arc<…>` when it lives in an `AppState`
+   that axum clones per request. Reading one is an explicit `expose_secret()`, and `rg
+   expose_secret` is meant to stay a short, justifiable list. Do **not** implement
+   `SerializableSecret`: a value that must go on the wire opts in at that one field with
+   `#[serde(serialize_with = "crate::secret::expose_onto_wire")]`. A wrapped API DTO field needs
+   `#[schema(value_type = String)]` so `openapi.json` stays byte-identical, and its rationale goes
+   in a `//` comment — utoipa publishes `///` as the public `description`. Values that are *not*
+   secrets (a PHC hash, a token digest, ciphertext) keep their plain types on purpose.
+   Full table and the two deliberate exceptions: `docs/ENGINEERING_GUIDE.md` §2.2.
 
 ## When a gate fails
 

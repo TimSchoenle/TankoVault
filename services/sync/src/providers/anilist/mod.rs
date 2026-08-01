@@ -16,6 +16,7 @@ mod parse;
 
 use anyhow::Context;
 use async_trait::async_trait;
+use secrecy::SecretString;
 
 use tankovault_domain::WatchStatus;
 
@@ -49,17 +50,17 @@ impl ExternalProvider for AniListClient {
         self.exchange_code(code).await
     }
 
-    async fn refresh(&self, refresh_token: &str) -> anyhow::Result<OAuthTokens> {
+    async fn refresh(&self, refresh_token: &SecretString) -> anyhow::Result<OAuthTokens> {
         self.refresh(refresh_token).await
     }
 
-    async fn viewer(&self, access_token: &str) -> anyhow::Result<Viewer> {
+    async fn viewer(&self, access_token: &SecretString) -> anyhow::Result<Viewer> {
         self.viewer(access_token).await
     }
 
     async fn fetch_list(
         &self,
-        access_token: &str,
+        access_token: &SecretString,
         viewer: &Viewer,
     ) -> anyhow::Result<Vec<RemoteEntry>> {
         let user_id: i64 = viewer
@@ -74,7 +75,11 @@ impl ExternalProvider for AniListClient {
             .collect())
     }
 
-    async fn search(&self, access_token: &str, title: &str) -> anyhow::Result<Option<String>> {
+    async fn search(
+        &self,
+        access_token: &SecretString,
+        title: &str,
+    ) -> anyhow::Result<Option<String>> {
         Ok(self
             .search_media(access_token, title)
             .await?
@@ -104,7 +109,7 @@ impl ExternalProvider for AniListClient {
 
     async fn save_entry(
         &self,
-        access_token: &str,
+        access_token: &SecretString,
         external_id: &str,
         status: WatchStatus,
         progress: f64,

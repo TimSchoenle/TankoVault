@@ -23,6 +23,7 @@ tankovault-domain = { workspace = true }
 # `seed::series` has to hand `ingest_series` (ARCH-16 moved the policy out of `crates/db`).
 tankovault-config = { workspace = true }
 tankovault-auth = { workspace = true }
+secrecy = { workspace = true }
 tankovault-email = { workspace = true }
 tankovault-service = { workspace = true }
 tokio = { workspace = true }

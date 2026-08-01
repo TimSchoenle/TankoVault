@@ -19,6 +19,10 @@ tankovault-domain = { workspace = true, features = ["sqlx"] }
 # performs the outcome; it holds no thresholds and links no scorer. Both are dev-dependencies,
 # because the integration tests exercise the composition with the real configured policy.
 sqlx = { workspace = true }
+# The Postgres DSN carries its password inline, so `pool::connect` takes a `SecretString`
+# rather than a `&str`. Nothing else in this crate handles a secret: sealed OAuth tokens
+# arrive here already ciphertext, and an argon2 PHC hash is not one.
+secrecy = { workspace = true }
 # For `try_join!` only, so the browse page and its match count overlap on the hottest public
 # route instead of costing two serial round trips. `sqlx`'s `runtime-tokio` feature already
 # puts tokio in the graph; this is a direct edge for the macro, not a new dependency.

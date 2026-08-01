@@ -18,6 +18,8 @@ publish = false
 
 [dependencies]
 tankovault-api = { path = ".." }
+# `AppState`'s key material and the stream-ticket store both speak `secrecy` types.
+secrecy = { workspace = true }
 tankovault-test-support = { path = "../../../crates/test-support" }
 tankovault-config = { workspace = true }
 tankovault-service = { workspace = true }

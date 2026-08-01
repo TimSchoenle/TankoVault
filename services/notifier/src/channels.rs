@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use tankovault_domain::{Feature, SeriesId};
 use tankovault_email::{EmailMessage, EmailService};
@@ -20,11 +21,20 @@ use tankovault_email::{EmailMessage, EmailService};
 #[derive(Debug, Deserialize)]
 pub(crate) struct ChannelsConfig {
     /// A Discord "Incoming Webhook" URL. Receives the Discord message/embed shape.
+    ///
+    /// A [`SecretString`], not a URL: Discord's form is
+    /// `https://discord.com/api/webhooks/{id}/{token}`, so the credential *is* the path.
+    /// Anyone holding it can post to the channel as this integration, and this struct derives
+    /// `Debug`.
     #[serde(default)]
-    pub discord_webhook_url: Option<String>,
+    pub discord_webhook_url: Option<SecretString>,
     /// A generic HTTP endpoint. Receives [`webhook_payload`] as a JSON `POST` body.
+    ///
+    /// Wrapped for the same reason as [`Self::discord_webhook_url`]: an embedded token in the
+    /// path or query is the ordinary way these endpoints authenticate, and the type has to
+    /// assume the credential-bearing form.
     #[serde(default)]
-    pub webhook_url: Option<String>,
+    pub webhook_url: Option<SecretString>,
     /// Recipients of a new-chapter alert email. Empty disables the email channel.
     ///
     /// The relay, credentials and `From` address are **not** here: they come from the shared
@@ -160,11 +170,11 @@ pub(crate) trait NotificationChannel: Send + Sync {
 /// Generic JSON webhook: `POST` [`webhook_payload`] to a configured URL.
 pub(crate) struct WebhookChannel {
     client: reqwest::Client,
-    url: String,
+    url: SecretString,
 }
 
 impl WebhookChannel {
-    pub(crate) fn new(client: reqwest::Client, url: String) -> Self {
+    pub(crate) fn new(client: reqwest::Client, url: SecretString) -> Self {
         Self { client, url }
     }
 }
@@ -182,7 +192,9 @@ impl NotificationChannel for WebhookChannel {
     async fn deliver(&self, alert: &Alert) -> anyhow::Result<()> {
         let resp = self
             .client
-            .post(&self.url)
+            // Exposed into the request builder and nowhere else — note in particular that the
+            // error below reports the status, never the endpoint.
+            .post(self.url.expose_secret())
             .json(&webhook_payload(alert))
             .send()
             .await?;
@@ -197,11 +209,11 @@ impl NotificationChannel for WebhookChannel {
 /// Discord incoming-webhook channel.
 pub(crate) struct DiscordChannel {
     client: reqwest::Client,
-    url: String,
+    url: SecretString,
 }
 
 impl DiscordChannel {
-    pub(crate) fn new(client: reqwest::Client, url: String) -> Self {
+    pub(crate) fn new(client: reqwest::Client, url: SecretString) -> Self {
         Self { client, url }
     }
 }
@@ -219,7 +231,7 @@ impl NotificationChannel for DiscordChannel {
     async fn deliver(&self, alert: &Alert) -> anyhow::Result<()> {
         let resp = self
             .client
-            .post(&self.url)
+            .post(self.url.expose_secret())
             .json(&discord_payload(alert))
             .send()
             .await?;
@@ -288,10 +300,18 @@ pub(crate) fn build(
         .unwrap_or_default();
 
     let mut channels: Vec<Box<dyn NotificationChannel>> = Vec::new();
-    if let Some(url) = cfg.webhook_url.clone().filter(|u| !u.is_empty()) {
+    if let Some(url) = cfg
+        .webhook_url
+        .clone()
+        .filter(|u| !u.expose_secret().is_empty())
+    {
         channels.push(Box::new(WebhookChannel::new(client.clone(), url)));
     }
-    if let Some(url) = cfg.discord_webhook_url.clone().filter(|u| !u.is_empty()) {
+    if let Some(url) = cfg
+        .discord_webhook_url
+        .clone()
+        .filter(|u| !u.expose_secret().is_empty())
+    {
         channels.push(Box::new(DiscordChannel::new(client.clone(), url)));
     }
     // The mailer comes from the same `EmailConfig` and the same builder the API uses, so an
@@ -412,8 +432,8 @@ mod tests {
     #[test]
     fn build_respects_configured_urls() {
         let cfg = ChannelsConfig {
-            discord_webhook_url: Some("https://discord.example/hook".to_owned()),
-            webhook_url: Some(String::new()),
+            discord_webhook_url: Some(SecretString::from("https://discord.example/hook")),
+            webhook_url: Some(SecretString::default()),
             timeout_secs: 5,
             ..ChannelsConfig::default()
         };
@@ -515,10 +535,13 @@ mod tests {
         let server = accepting_server().await;
         let alert = sample();
 
-        WebhookChannel::new(reqwest::Client::new(), format!("{}/hook", server.uri()))
-            .deliver(&alert)
-            .await
-            .expect("a 204 is a successful delivery");
+        WebhookChannel::new(
+            reqwest::Client::new(),
+            SecretString::from(format!("{}/hook", server.uri())),
+        )
+        .deliver(&alert)
+        .await
+        .expect("a 204 is a successful delivery");
 
         assert_eq!(sole_request_body(&server).await, webhook_payload(&alert));
         let requests = server.received_requests().await.expect("request recording");
@@ -540,10 +563,13 @@ mod tests {
         let server = accepting_server().await;
         let alert = sample();
 
-        DiscordChannel::new(reqwest::Client::new(), format!("{}/hook", server.uri()))
-            .deliver(&alert)
-            .await
-            .expect("a 204 is a successful delivery");
+        DiscordChannel::new(
+            reqwest::Client::new(),
+            SecretString::from(format!("{}/hook", server.uri())),
+        )
+        .deliver(&alert)
+        .await
+        .expect("a 204 is a successful delivery");
 
         assert_eq!(sole_request_body(&server).await, discord_payload(&alert));
     }
@@ -560,7 +586,7 @@ mod tests {
             .expect(2)
             .mount(&server)
             .await;
-        let url = format!("{}/hook", server.uri());
+        let url = SecretString::from(format!("{}/hook", server.uri()));
 
         let webhook = WebhookChannel::new(reqwest::Client::new(), url.clone())
             .deliver(&sample())
@@ -594,7 +620,7 @@ mod tests {
             .await;
 
         let cfg = ChannelsConfig {
-            webhook_url: Some(format!("{}/hook", server.uri())),
+            webhook_url: Some(SecretString::from(format!("{}/hook", server.uri()))),
             timeout_secs: 1,
             ..ChannelsConfig::default()
         };

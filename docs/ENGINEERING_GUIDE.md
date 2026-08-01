@@ -132,6 +132,55 @@ is one of those three.
 
 ### 2.2 Secrets
 
+**[R] A secret value is a `secrecy` type, never a `String`, `&str` or `Vec<u8>`.** This is the
+rule the rest of this section stands on: everything below refuses a *bad* secret at boot, and this
+one stops a *good* one leaking afterwards.
+
+| Kind of value | Type |
+| --- | --- |
+| Text — DSN, broker URL, token, password, pepper, API key, webhook URL with an embedded token | `secrecy::SecretString` |
+| Key material — HMAC key, argon2 pepper as bytes, decoded DEK | `secrecy::SecretSlice<u8>` |
+| Long-lived and cloned per request (an `AppState` field) | `Arc<SecretString>` / `Arc<SecretSlice<u8>>` |
+
+What the wrapper buys, in the order it matters:
+
+1. **`Debug` is redacted by construction.** Every config struct and every `AppState` in this
+   workspace derives `Debug`, and `tracing` records them with `?`. The wrapper is what makes a
+   future `debug!(?cfg)` safe rather than merely absent today. Two types used to carry
+   hand-written redacting `Debug` impls for exactly this reason; a hand-written impl protects the
+   one type it is written on, the wrapper protects every field that uses it.
+2. **Reading a secret is a visible, greppable call.** `rg expose_secret` enumerates every point
+   in the workspace where a credential leaves its wrapper. That list is short, and it is meant to
+   stay short — each call is one you can point at and justify.
+3. **Zeroize on drop.** The weakest of the three, because `figment` and `serde` both materialise a
+   plain `String` before the wrapper takes ownership, so the *first* copy is not covered. It
+   still bounds how long the long-lived copy sits in a core dump or a freed page.
+
+**[R] Values that are not secrets keep their plain types.** An argon2 PHC hash, a SHA-256
+refresh-token digest, AEAD ciphertext and a Redis key are all written to the database and logged
+on purpose. Wrapping them would make `expose_secret` mean "this came from the auth crate" instead
+of "this must not leak", and dilute the one signal the call is for.
+
+**[R] Nothing implements `SerializableSecret`.** `secrecy` gives `SecretBox<T>` no `Serialize`
+impl unless the inner type opts in, which is what stops a secret reaching a JSON body by being
+carried along in a struct someone serialised. A value that genuinely must go on the wire — the
+access token a login issues, a stream ticket — opts in **per field** with
+`#[serde(serialize_with = "crate::secret::expose_onto_wire")]`. A blanket
+`impl SerializableSecret for String` would be three lines and would make every `SecretString` in
+the process silently serialisable: a bare `String` with extra steps.
+
+**[R] A wrapped API DTO field carries `#[schema(value_type = String)]`.** The wrapper is a
+server-side representation change, not a contract change, and `openapi.json` must come back
+byte-identical from `xtask openapi`. Keep the *rationale* for the wrapper in a `//` comment, not a
+`///` one: utoipa publishes doc comments as the field's `description`, and how this server holds a
+value in memory is not something to tell every API consumer.
+
+**[R] Two things stay unwrapped deliberately, and both have the same reason.** A presented bearer
+token (`verify_access_token`) and a presented ticket (`key_for`) arrive as borrowed slices of a
+header or query string on every request. They are transient, the caller owns them, and wrapping
+would cost an allocation and a copy per request to protect a value this process cannot zeroize
+anyway. The long-lived *key* they are checked against is wrapped; the presented value is not.
+
 **[E] A placeholder secret published in this repository is refused at boot, in every profile.**
 Not just production: a check a deployment can skip by forgetting one environment variable is not
 a check, and the published placeholder is precisely what an operator who never created

@@ -22,6 +22,7 @@ use lettre::message::header::ContentType;
 use lettre::message::{Mailbox, MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Address, AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
+use secrecy::ExposeSecret;
 use tankovault_config::{EmailConfig, EmailSecurity};
 
 /// Errors raised while building or sending email.
@@ -153,7 +154,15 @@ impl SmtpMailer {
             .map_err(|e| EmailError::Address(format!("{from_raw:?}: {e}")))?;
 
         let timeout = Some(Duration::from_secs(cfg.timeout_secs));
-        let transport = if let Some(url) = cfg.url.as_deref().filter(|u| !u.is_empty()) {
+        let transport = if let Some(url) = cfg
+            .url
+            .as_ref()
+            .map(ExposeSecret::expose_secret)
+            .filter(|u| !u.is_empty())
+        {
+            // The relay URL embeds the mailbox password, so this is one of exactly two
+            // `expose_secret` calls in this crate — both immediately adjacent to the lettre
+            // builder that needs the plaintext, and neither reachable from an error path.
             AsyncSmtpTransport::<Tokio1Executor>::from_url(url)
                 .map_err(|e| EmailError::Config(e.to_string()))?
                 .timeout(timeout)
@@ -180,7 +189,10 @@ impl SmtpMailer {
             .port(cfg.effective_port())
             .timeout(timeout);
 
-            if let (Some(user), Some(pass)) = (cfg.username.as_deref(), cfg.password.as_deref()) {
+            if let (Some(user), Some(pass)) = (
+                cfg.username.as_deref(),
+                cfg.password.as_ref().map(ExposeSecret::expose_secret),
+            ) {
                 if !user.is_empty() {
                     builder =
                         builder.credentials(Credentials::new(user.to_owned(), pass.to_owned()));
@@ -359,6 +371,7 @@ pub fn build(cfg: &EmailConfig) -> Arc<dyn EmailService> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use secrecy::SecretString;
 
     #[test]
     fn build_returns_noop_when_unconfigured() {
@@ -436,7 +449,7 @@ mod tests {
             host: Some("ssl0.ovh.net".to_owned()),
             security: EmailSecurity::None,
             username: Some("login@my-domain.com".to_owned()),
-            password: Some("secret".to_owned()),
+            password: Some(SecretString::from("secret")),
             from: Some("TankoVault <no-reply@my-domain.com>".to_owned()),
             ..EmailConfig::default()
         };
@@ -456,7 +469,7 @@ mod tests {
             host: Some("ssl0.ovh.net".to_owned()),
             security: EmailSecurity::None,
             username: Some("login@my-domain.com".to_owned()),
-            password: Some("secret".to_owned()),
+            password: Some(SecretString::from("secret")),
             envelope_from: Some("bounce@my-domain.com".to_owned()),
             from: Some("TankoVault <no-reply@my-domain.com>".to_owned()),
             ..EmailConfig::default()

@@ -1,7 +1,7 @@
 //! Linked provider accounts and their automatic-sync settings.
 //!
 //! `access_token`/`refresh_token` hold **ciphertext only** — the sync service seals them with
-//! `tankovault_auth::SecretBox` before they reach this layer.
+//! `tankovault_auth::Sealer` before they reach this layer.
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};

@@ -11,6 +11,7 @@ mod engine;
 mod queue;
 
 use engine::Engine;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -132,7 +133,9 @@ async fn main() -> anyhow::Result<()> {
     let solver: Arc<dyn ChallengeSolver> = Arc::new(HttpChallengeSolver::new(
         cfg.worker.challenge_solver_endpoint.clone(),
         Duration::from_secs(90),
-        internal_token.as_ref().map(|t| t.expose().to_owned()),
+        internal_token
+            .as_ref()
+            .map(|t| SecretString::from(t.expose_secret())),
     ));
     let session_store: Arc<dyn SessionStore> = Arc::new(InMemorySessionStore::default());
 

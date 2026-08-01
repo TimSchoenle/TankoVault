@@ -17,6 +17,7 @@ use crate::error::ApiError;
 use axum::extract::{ConnectInfo, FromRequestParts};
 use axum::http::header::{AUTHORIZATION, USER_AGENT};
 use axum::http::request::Parts;
+use secrecy::SecretSlice;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tankovault_auth::verify_access_token;
@@ -28,12 +29,21 @@ use tankovault_service::{AuditEvent, AuditSink, FeatureGate};
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
-    pub jwt_secret: Arc<Vec<u8>>,
+    /// HS256 signing key for access tokens.
+    ///
+    /// `Arc<SecretSlice<u8>>`, not `SecretSlice<u8>`: axum clones the whole state on every
+    /// request, and `SecretSlice`'s `Clone` copies the heap allocation — so a bare wrapper
+    /// would scatter a fresh copy of the signing key across the heap per request, which is
+    /// the opposite of what the wrapper is for. The `Arc` keeps exactly one copy, and that
+    /// one copy is what gets zeroized at shutdown.
+    pub jwt_secret: Arc<SecretSlice<u8>>,
     /// Server-side password pepper: a secret mixed into every argon2id hash as its keyed
     /// input, held here rather than in the database so a database leak alone cannot be
     /// brute-forced offline. Empty when the operator configured none, which reproduces
     /// un-peppered hashing for backward compatibility.
-    pub password_pepper: Arc<Vec<u8>>,
+    ///
+    /// `Arc` for the same reason as [`Self::jwt_secret`].
+    pub password_pepper: Arc<SecretSlice<u8>>,
     pub access_ttl: time::Duration,
     pub refresh_ttl: time::Duration,
     /// The control-plane, for proxying "Scan now".

@@ -44,6 +44,7 @@
 
 use figment::Jail;
 use libfuzzer_sys::fuzz_target;
+use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use tankovault_config::{
     AuditConfig, DatabaseConfig, EmailConfig, FeaturesConfig, InternalAuthConfig,
@@ -149,6 +150,10 @@ fuzz_target!(|data: &str| {
         // (2) The internal-token floor, over a value that survived env parsing.
         let production = is_production();
         if let Ok(Some(token)) = cfg.internal.resolve(production) {
+            // `resolve` hands back a `SecretString`, so the oracle exposes it here. That is
+            // the right shape for a fuzz target: the assertions are about the token's
+            // *length* and *trimming*, and neither message can print the value.
+            let token = token.expose_secret();
             assert!(
                 token.len() >= MIN_INTERNAL_TOKEN_LEN,
                 "resolve() returned a {}-character internal token, under the {MIN_INTERNAL_TOKEN_LEN}-character floor",
@@ -187,6 +192,10 @@ fuzz_target!(|data: &str| {
         let candidate = Candidate {
             series_id: SeriesId::new(),
             normalized_title: "one punch man".to_owned(),
+            // Added when `Candidate` grew the field; this literal had not been updated, so
+            // the fuzz workspace did not compile. It is excluded from the host workspace and
+            // from every CI gate, which is exactly why the drift went unnoticed.
+            alt_normalized_titles: Vec::new(),
             similarity: 1.0,
             content_type: ContentType::Manga,
             release_year: Some(2012),

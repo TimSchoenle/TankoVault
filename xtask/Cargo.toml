@@ -15,6 +15,8 @@ path = "src/main.rs"
 tankovault-db = { workspace = true }
 tankovault-domain = { workspace = true }
 tankovault-auth = { workspace = true }
+# The seed step hashes an admin password and `connect` takes a wrapped DSN.
+secrecy = { workspace = true }
 tankovault-adapters = { workspace = true }
 tankovault-api = { path = "../services/api" }
 tokio = { workspace = true }

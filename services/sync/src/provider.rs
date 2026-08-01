@@ -7,14 +7,19 @@
 //! `AniListStatus` in `crate::mapping`), so the engine never touches provider-specific enums.
 
 use async_trait::async_trait;
+use secrecy::SecretString;
 use tankovault_domain::{ContentType, SeriesStatus, WatchStatus};
 use time::OffsetDateTime;
 
 /// Tokens returned by an `OAuth2` code exchange or refresh.
+///
+/// Both credentials are [`SecretString`]s, which is what makes the derived `Debug` on this
+/// struct safe — it is carried through the engine, the token vault and the linking handler,
+/// and any of those is a plausible place for someone to add a `tracing::debug!(?tokens)`.
 #[derive(Debug, Clone)]
 pub(crate) struct OAuthTokens {
-    pub(crate) access_token: String,
-    pub(crate) refresh_token: Option<String>,
+    pub(crate) access_token: SecretString,
+    pub(crate) refresh_token: Option<SecretString>,
     pub(crate) expires_at: Option<OffsetDateTime>,
 }
 
@@ -84,17 +89,26 @@ pub(crate) trait ExternalProvider: Send + Sync {
     /// Exchange an OAuth `code` for tokens.
     async fn exchange_code(&self, code: &str) -> anyhow::Result<OAuthTokens>;
     /// Refresh an expired access token.
-    async fn refresh(&self, refresh_token: &str) -> anyhow::Result<OAuthTokens>;
+    async fn refresh(&self, refresh_token: &SecretString) -> anyhow::Result<OAuthTokens>;
     /// The authenticated viewer behind `access_token`.
-    async fn viewer(&self, access_token: &str) -> anyhow::Result<Viewer>;
+    ///
+    /// Every token-taking method on this trait takes a [`SecretString`] rather than a `&str`.
+    /// Unlike a presented bearer header — which is borrowed, transient and belongs to the
+    /// caller — these are *stored* credentials this service decrypted out of its own
+    /// database, so it owns them and is responsible for not leaking them.
+    async fn viewer(&self, access_token: &SecretString) -> anyhow::Result<Viewer>;
     /// The viewer's full remote list.
     async fn fetch_list(
         &self,
-        access_token: &str,
+        access_token: &SecretString,
         viewer: &Viewer,
     ) -> anyhow::Result<Vec<RemoteEntry>>;
     /// Search for a remote entry by title, returning its external id if found.
-    async fn search(&self, access_token: &str, title: &str) -> anyhow::Result<Option<String>>;
+    async fn search(
+        &self,
+        access_token: &SecretString,
+        title: &str,
+    ) -> anyhow::Result<Option<String>>;
 
     /// Whether this provider exposes a public (token-free) metadata API that the enrichment
     /// worker can use. Defaults to `false`; providers that support it override this.
@@ -122,7 +136,7 @@ pub(crate) trait ExternalProvider: Send + Sync {
     /// Create or update a remote list entry.
     async fn save_entry(
         &self,
-        access_token: &str,
+        access_token: &SecretString,
         external_id: &str,
         status: WatchStatus,
         progress: f64,

@@ -28,13 +28,14 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, Response, StatusCode};
+use secrecy::ExposeSecret as _;
 use tankovault_api::AppState;
 use tankovault_api::stream_tickets::{MemoryStreamTickets, StreamTicketStore as _};
 use tankovault_config::RateLimitConfig;
 use tankovault_domain::{AccountStatus, Permission, UserId};
 use tankovault_email::EmailService;
 use tankovault_service::{FeatureGate, Health, MetricsRegistry};
-use tankovault_test_support::{RecordingAuditSink, TEST_JWT_SECRET, TestDb, bearer};
+use tankovault_test_support::{RecordingAuditSink, TestDb, bearer, test_jwt_secret};
 use time::Duration;
 use tower::ServiceExt as _;
 
@@ -169,8 +170,10 @@ impl TestApp {
 
         let state = AppState {
             pool: db.pool.clone(),
-            jwt_secret: Arc::new(TEST_JWT_SECRET.to_vec()),
-            password_pepper: Arc::new(Vec::new()),
+            jwt_secret: Arc::new(test_jwt_secret()),
+            // Empty: the harness hashes un-peppered, matching a deployment that configured
+            // no pepper. `SecretSlice::default()` is an empty slice, not a missing one.
+            password_pepper: Arc::new(secrecy::SecretSlice::default()),
             access_ttl: Duration::minutes(15),
             refresh_ttl: Duration::days(30),
             control_plane: tankovault_api::Upstream::new(
@@ -231,10 +234,13 @@ impl TestApp {
     /// suspension check, which is the leg SEC-8 exists for. Going through the store directly
     /// keeps that leg in the sweep instead of dropping the row.
     pub async fn stream_ticket(&self, user: UserId) -> String {
+        // Unwrapped here because a test's next move is to put it in a query string.
         self.stream_tickets
             .mint(user)
             .await
             .expect("the in-memory ticket store cannot fail")
+            .expose_secret()
+            .to_owned()
     }
 
     /// Seed a user with the given capabilities and status. See [`TestDb::seed_user`].

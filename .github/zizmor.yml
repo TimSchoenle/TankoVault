@@ -20,6 +20,9 @@ rules:
   superfluous-actions:
     ignore:
       - ci.yml
+      # Same action, same argument. `update-lockfile.yaml` installs the toolchain to run one
+      # `cargo update`, and it now shares `ci.yml`'s pin so there is a single number to review.
+      - update-lockfile.yaml
 
   # `stale-action-refs` flags a pinned SHA that no tag points at. `dtolnay/rust-toolchain` is
   # pinned to a `master` commit deliberately: its only release tag, `v1`, has not moved since
@@ -30,3 +33,4 @@ rules:
   stale-action-refs:
     ignore:
       - ci.yml
+      - update-lockfile.yaml

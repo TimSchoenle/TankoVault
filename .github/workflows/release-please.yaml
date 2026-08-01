@@ -99,6 +99,17 @@ jobs:
         with:
           app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          # Narrowed to what release-please actually does (zizmor `github-app`): without these,
+          # the minted token inherits every permission the app's installation holds, and this
+          # job goes on to build and publish images — so the blast radius of anything reached
+          # through that build was the release bot's full authority.
+          #
+          # `contents: write` commits the version bumps, the changelog and the tag;
+          # `pull-requests: write` opens, updates and labels the release PR. Nothing else is
+          # used: the token is consumed by the one step below, and the registry pushes
+          # authenticate with `GITHUB_TOKEN` and the Docker Hub secrets instead.
+          permission-contents: write
+          permission-pull-requests: write
 
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
         id: release

@@ -27,6 +27,15 @@
 //!
 //! `T = serde_json::Value` is still the right answer for a genuinely schema-less command
 //! response and costs nothing: [`serde_json::from_value`] into a `Value` is the identity.
+//!
+//! # What this type does *not* check
+//!
+//! [`Upstream::url`] is a `format!` and nothing more: it joins `base` and `path` and trusts the
+//! path. That is the one thing a caller must not hand a raw client-supplied string, because a
+//! `/`, a `..`, a `?` or a `#` in it moves the request to a different endpoint on the internal
+//! service — one this client then presents `X-Internal-Token` on. Path segments that come from
+//! a request are validated *before* they get here, by their type; see [`crate::slug`] for the
+//! bug that was and why it is a type rather than a check at each of the eleven call sites.
 
 use crate::error::{ApiError, ApiResult};
 use axum::Json;

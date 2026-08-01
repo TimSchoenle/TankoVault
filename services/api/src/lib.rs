@@ -30,6 +30,7 @@ mod me;
 pub mod passkey;
 mod secret;
 mod series;
+mod slug;
 mod state;
 pub mod stream_tickets;
 mod upstream;

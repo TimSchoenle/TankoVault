@@ -289,6 +289,31 @@ impl NotificationChannel for EmailChannel {
     }
 }
 
+/// Say so, once at startup, when a webhook will be delivered in clear.
+///
+/// A webhook URL is a `SecretString` for a reason: for both Discord and the generic receiver the
+/// token *is* the path (`…/webhooks/{id}/{token}`), so an `http://` endpoint puts a bearer
+/// credential and the alert body on the wire in plain text, readable and replayable by anything
+/// on the path. That is what CodeQL `rust/cleartext-transmission` flags at the two `post` calls
+/// above, and it is a fair flag.
+///
+/// It is a warning and not a refusal because `http://` is a legitimate choice for a receiver on
+/// the same private network — an internal bridge, a compose-local collector — and turning that
+/// into a startup failure would be this repository deciding an operator's network topology for
+/// them. What is *not* legitimate is not knowing, so the scheme is stated at the one moment an
+/// operator is reading the log for confirmation their notifier came up.
+///
+/// The URL itself is never logged, only the channel and the scheme: the whole point is that it
+/// carries a credential.
+fn warn_if_cleartext(channel: &str, url: &SecretString) {
+    if !url.expose_secret().starts_with("https://") {
+        tracing::warn!(
+            channel,
+            "webhook URL is not https: alerts and the URL's own token will be sent in clear"
+        );
+    }
+}
+
 /// Build the set of enabled channels from config (empty when none are configured).
 pub(crate) fn build(
     cfg: &ChannelsConfig,
@@ -305,6 +330,7 @@ pub(crate) fn build(
         .clone()
         .filter(|u| !u.expose_secret().is_empty())
     {
+        warn_if_cleartext("webhook", &url);
         channels.push(Box::new(WebhookChannel::new(client.clone(), url)));
     }
     if let Some(url) = cfg
@@ -312,6 +338,7 @@ pub(crate) fn build(
         .clone()
         .filter(|u| !u.expose_secret().is_empty())
     {
+        warn_if_cleartext("discord", &url);
         channels.push(Box::new(DiscordChannel::new(client.clone(), url)));
     }
     // The mailer comes from the same `EmailConfig` and the same builder the API uses, so an

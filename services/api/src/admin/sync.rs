@@ -3,6 +3,7 @@
 use crate::audit::audit;
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::ADMIN_SYNC_TAG;
+use crate::slug::ProviderSlug;
 use crate::state::{AppState, AuthUser};
 use crate::views::IntoView;
 use axum::Json;
@@ -66,7 +67,16 @@ pub async fn list_sync_mappings(
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SyncAccountTarget {
     pub user_id: UserId,
-    pub provider: String,
+    // A `ProviderSlug`, not a `String`: this value is interpolated into the upstream path
+    // (`/v1/sync/{provider}/pull`) by all three handlers below, so it is the same
+    // request-forgery source `crate::slug` exists to close — an operator endpoint is still a
+    // network-reachable one, and `SyncAdminWrite` is not a licence to choose which internal
+    // endpoint the API calls with its own token attached.
+    //
+    // `//` and not `///`: utoipa publishes a doc comment as the field's public `description`,
+    // and `value_type = String` is here precisely so `openapi.json` does not move (rule 9).
+    #[schema(value_type = String)]
+    pub provider: ProviderSlug,
 }
 
 /// Force-pull another user's linked account

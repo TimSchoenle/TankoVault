@@ -53,6 +53,12 @@ jobs:
         with:
           app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          # Narrowed to the one permission this job uses (zizmor `github-app`). By default the
+          # minted token inherits *every* permission the app's installation holds, so a
+          # compromised step here — a malicious build script reached through a dependency, say —
+          # would hold the release bot's full authority for the life of the token. It needs to
+          # push one commit to the PR branch; `contents: write` is that and nothing else.
+          permission-contents: write
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,7 +70,10 @@ jobs:
           persist-credentials: true
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # stable
+        # The same pin as every `ci.yml` job, deliberately: two SHAs for one action are two
+        # things to review and one to forget. See `.github/zizmor.yml` for why this action is
+        # pinned to a `master` commit rather than its `v1` tag.
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
         with:
           toolchain: stable
 

@@ -297,8 +297,27 @@ pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> ApiResult<
     // The removal must match the name *and* path the cookie was set with, or the browser keeps
     // its copy: a `Set-Cookie` for `refresh_token` at `/v1/auth` does not clear
     // `__Host-refresh_token` at `/`.
-    let removal = Cookie::build((name, "")).path(path).build();
-    Ok(jar.remove(removal))
+    //
+    // `Secure` is on the same footing and is the half this used to miss (CodeQL
+    // `rust/insecure-cookie`). A removal is an ordinary `Set-Cookie` with an expired date, so
+    // the `__Host-` prefix's rules apply to it exactly as they do to the one issued in
+    // `issue_session_tokens`: a `__Host-` cookie that does not carry `Secure` is *refused* by
+    // the browser rather than downgraded. Without this flag the logout response was rejected
+    // outright in every deployment that sets `cookie_secure` — the server-side family was
+    // revoked (so the stale value could not be redeemed), but the cookie itself sat in the jar
+    // until it expired, weeks later, and no error said so on either side.
+    Ok(jar.remove(removal_cookie(name, path, state.cookie_secure)))
+}
+
+/// The `Set-Cookie` that clears the refresh cookie, built to the same rules as the one that set
+/// it. Separate from [`logout`] so those rules are assertable without a database.
+fn removal_cookie(name: &'static str, path: &'static str, secure: bool) -> Cookie<'static> {
+    Cookie::build((name, ""))
+        .http_only(true)
+        .secure(secure)
+        .same_site(SameSite::Strict)
+        .path(path)
+        .build()
 }
 
 /// Mint an access token + a rotating refresh cookie for `user` under `family_id`, returning
@@ -365,8 +384,38 @@ pub(super) async fn issue_session_tokens(
 mod tests {
     use super::{
         DEV_REFRESH_COOKIE, DEV_REFRESH_PATH, HOST_REFRESH_COOKIE, HOST_REFRESH_PATH,
-        refresh_cookie,
+        refresh_cookie, removal_cookie,
     };
+
+    /// A `__Host-` cookie without `Secure` is *refused*, and that applies to the removal too.
+    ///
+    /// The bug: `logout` built its removal as `Cookie::build((name, "")).path(path)` and nothing
+    /// else. Every server-side test passed — the family was revoked, the response carried a
+    /// `Set-Cookie` — while the browser dropped that header on the floor in any deployment with
+    /// `cookie_secure` on, because `__Host-refresh_token` may not be written without `Secure`.
+    /// The user stayed "logged in" in the only place they could see: their cookie jar.
+    ///
+    /// `secure` therefore tracks `cookie_secure` rather than being pinned to `true`: the
+    /// local-HTTP opt-out issues the unprefixed name, and a `Secure` removal sent over plain
+    /// HTTP is itself ignored, which would break logout the other way round.
+    #[test]
+    fn the_logout_removal_carries_the_attributes_the_host_prefix_requires() {
+        let secure = removal_cookie(HOST_REFRESH_COOKIE, HOST_REFRESH_PATH, true);
+        assert_eq!(secure.secure(), Some(true), "__Host- removal needs Secure");
+        assert_eq!(secure.path(), Some(HOST_REFRESH_PATH));
+        assert_eq!(secure.http_only(), Some(true));
+        assert!(
+            secure.domain().is_none(),
+            "a Domain would have the __Host- removal refused as well"
+        );
+
+        let dev = removal_cookie(DEV_REFRESH_COOKIE, DEV_REFRESH_PATH, false);
+        assert_eq!(
+            dev.secure(),
+            Some(false),
+            "a Secure removal over local HTTP is ignored, so logout would never clear it"
+        );
+    }
 
     /// The `__Host-` prefix is only honoured at `Path=/`, and a browser that refuses the cookie
     /// says nothing about it (SEC-7).

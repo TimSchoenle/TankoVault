@@ -2,6 +2,7 @@
 
 use crate::error::ApiResult;
 use crate::openapi::ME_SYNC_TAG;
+use crate::slug::ProviderSlug;
 use crate::state::{AppState, AuthUser};
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -55,7 +56,7 @@ pub async fn sync_providers(
 pub async fn sync_authorize_url(
     State(state): State<AppState>,
     _user: AuthUser,
-    Path(provider): Path<String>,
+    Path(provider): Path<ProviderSlug>,
 ) -> ApiResult<Json<AuthorizeUrl>> {
     state
         .sync
@@ -83,7 +84,7 @@ pub async fn sync_authorize_url(
 pub async fn sync_status(
     State(state): State<AppState>,
     user: AuthUser,
-    Path(provider): Path<String>,
+    Path(provider): Path<ProviderSlug>,
 ) -> ApiResult<Json<AccountStatus>> {
     state
         .sync
@@ -112,7 +113,7 @@ pub async fn sync_status(
 pub async fn sync_disconnect(
     State(state): State<AppState>,
     user: AuthUser,
-    Path(provider): Path<String>,
+    Path(provider): Path<ProviderSlug>,
 ) -> ApiResult<Json<serde_json::Value>> {
     state
         .sync
@@ -149,7 +150,7 @@ pub struct AniListCallback {
 pub async fn sync_callback(
     State(state): State<AppState>,
     user: AuthUser,
-    Path(provider): Path<String>,
+    Path(provider): Path<ProviderSlug>,
     Query(q): Query<AniListCallback>,
 ) -> ApiResult<Json<serde_json::Value>> {
     sync_proxy(
@@ -194,7 +195,7 @@ pub struct SyncOpts {
 pub async fn sync_push(
     State(state): State<AppState>,
     user: AuthUser,
-    Path(provider): Path<String>,
+    Path(provider): Path<ProviderSlug>,
     body: Option<Json<SyncOpts>>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let opts = body.map(|b| b.0).unwrap_or_default();
@@ -226,7 +227,7 @@ pub async fn sync_push(
 pub async fn sync_pull(
     State(state): State<AppState>,
     user: AuthUser,
-    Path(provider): Path<String>,
+    Path(provider): Path<ProviderSlug>,
     body: Option<Json<SyncOpts>>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let opts = body.map(|b| b.0).unwrap_or_default();
@@ -257,7 +258,7 @@ pub async fn sync_pull(
 pub async fn sync_settings(
     State(state): State<AppState>,
     user: AuthUser,
-    Path(provider): Path<String>,
+    Path(provider): Path<ProviderSlug>,
 ) -> ApiResult<Json<AccountSettings>> {
     sync_get(
         &state,
@@ -295,7 +296,7 @@ pub struct SyncSettingsPatch {
 pub async fn sync_settings_patch(
     State(state): State<AppState>,
     user: AuthUser,
-    Path(provider): Path<String>,
+    Path(provider): Path<ProviderSlug>,
     Json(body): Json<SyncSettingsPatch>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let payload = serde_json::json!({
@@ -382,8 +383,16 @@ pub async fn sync_resolve_conflict(
 pub struct HistoryParams {
     #[serde(default)]
     pub series_id: Option<Uuid>,
+    // A `ProviderSlug` rather than a `String` because this one is written into the *query
+    // string* of the upstream URL, unescaped — see `sync_history`. The validation is a
+    // server-side narrowing of a parameter that was always documented as a slug.
+    //
+    // `//` and not `///`: utoipa publishes a doc comment as the parameter's public
+    // `description`, and `value_type = String` is here precisely so `openapi.json` does not
+    // move (rule 9).
+    #[param(value_type = String)]
     #[serde(default)]
-    pub provider: Option<String>,
+    pub provider: Option<ProviderSlug>,
     #[serde(default)]
     pub page: Option<i64>,
 }
@@ -413,6 +422,9 @@ pub async fn sync_history(
         let _ = write!(path, "series_id={s}&");
     }
     if let Some(p) = &q.provider {
+        // No percent-encoding step, and none is needed: a `ProviderSlug` is `[A-Za-z0-9_-]+`,
+        // which is already `application/x-www-form-urlencoded`-safe. Widening that type back to
+        // `String` re-opens query injection here — `&`, `=` and `#` would all be caller-chosen.
         let _ = write!(path, "provider={p}&");
     }
     let _ = write!(path, "page={}", q.page.unwrap_or(0));

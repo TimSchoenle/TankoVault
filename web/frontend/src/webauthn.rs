@@ -104,7 +104,7 @@ pub(crate) async fn create(
     Ok(RegisterPublicKeyCredential::from(credential))
 }
 
-/// Assert an existing credential: `navigator.credentials.get()`.
+/// Assert an existing credential: `navigator.credentials.get()`, as a modal prompt.
 ///
 /// # Errors
 /// [`CeremonyError`]; see [`create`].
@@ -112,7 +112,7 @@ pub(crate) async fn get(
     challenge: RequestChallengeResponse,
 ) -> Result<PublicKeyCredential, CeremonyError> {
     let credentials = container()?;
-    let options = web_sys::CredentialRequestOptions::from(challenge);
+    let options = web_sys::CredentialRequestOptions::from(for_modal_prompt(challenge));
     let promise = credentials
         .get_with_options(&options)
         .map_err(|e| classify(&e))?;
@@ -122,6 +122,33 @@ pub(crate) async fn get(
         .dyn_into::<web_sys::PublicKeyCredential>()
         .map_err(|_| CeremonyError::Cancelled)?;
     Ok(PublicKeyCredential::from(credential))
+}
+
+/// Drop the `mediation` hint the API's challenge carries, so the ceremony opens a dialog.
+///
+/// # The bug this exists to prevent
+///
+/// `webauthn-rs`'s `start_discoverable_authentication()` unconditionally stamps
+/// `mediation: Some(Conditional)` onto the challenge, and `webauthn-rs-proto`'s `wasm`
+/// conversion serialises the *whole* envelope into the `CredentialRequestOptions` it hands to
+/// the browser — so the field survives all the way to `navigator.credentials.get()`.
+///
+/// `mediation: "conditional"` is **Conditional UI**: the browser must not prompt. It parks the
+/// promise and waits for the reader to pick a passkey out of an autofill dropdown on an
+/// `<input autocomplete="… webauthn">`. There is no such input on the sign-in card, so the
+/// promise never settled — pressing "Sign in with a passkey" showed no dialog, produced no
+/// error, and left the button disabled with the [`crate::hooks::Busy`] guard still claimed.
+/// "Nothing happens" was the whole symptom, and it looks identical to a dead `onclick`.
+///
+/// Mediation is a client-side presentation choice, not part of what the server verifies: the
+/// stored `DiscoverableAuthentication` state, the challenge and the origin binding are all
+/// untouched by this. So the decision belongs on this side of the wire, and stripping it here
+/// covers every screen rather than the one that happens to remember. A future conditional-UI
+/// affordance is a *second* entry point that opts back in — not a reason to leave the default
+/// on a button that has no autofill surface to attach to.
+fn for_modal_prompt(mut challenge: RequestChallengeResponse) -> RequestChallengeResponse {
+    challenge.mediation = None;
+    challenge
 }
 
 /// Parse the opaque challenge envelope the API sent into the typed options the browser wants.
@@ -208,6 +235,51 @@ fn describe(error: &JsValue) -> String {
 #[cfg(test)]
 mod tests {
     use super::CeremonyError;
+    use webauthn_rs_proto::RequestChallengeResponse;
+
+    /// A verbatim `/v1/auth/passkey/login/start` response, captured from the running API.
+    ///
+    /// Hard-coded rather than built from the proto types because the point of the test below is
+    /// that the field arrives *from the server*, in the envelope, whether or not this crate
+    /// thinks about it. Constructing the value locally would test our own literal.
+    const SERVER_CHALLENGE: &str = r#"{
+        "mediation": "conditional",
+        "publicKey": {
+            "allowCredentials": [],
+            "challenge": "iwZUf9YFixFHQNSDNsvwUc5UIx2rd7OC7uOYEaQxY1k",
+            "extensions": { "uvm": true },
+            "rpId": "localhost",
+            "timeout": 300000,
+            "userVerification": "required"
+        }
+    }"#;
+
+    /// The challenge handed to `navigator.credentials.get()` must carry no `mediation`.
+    ///
+    /// The bug: `webauthn-rs` forces `mediation: conditional` on every discoverable-auth
+    /// challenge, and the `wasm` conversion passes it through to the browser. Conditional
+    /// mediation forbids a prompt — the call waits, silently and forever, for an autofill pick
+    /// on a `webauthn` input the sign-in card does not have. So the "Sign in with a passkey"
+    /// button opened nothing, reported nothing, and stayed disabled behind a `Busy` guard that
+    /// was never released. See [`super::for_modal_prompt`].
+    ///
+    /// This asserts on the parsed challenge rather than the `CredentialRequestOptions` because
+    /// the latter only exists under `wasm32`; what regresses is this field surviving, and that
+    /// is visible here.
+    #[test]
+    fn a_ceremony_started_from_a_button_does_not_ask_for_conditional_mediation() {
+        let challenge: RequestChallengeResponse =
+            super::parse_challenge(serde_json::from_str(SERVER_CHALLENGE).expect("valid JSON"))
+                .expect("the captured envelope parses");
+        assert!(
+            challenge.mediation.is_some(),
+            "the captured envelope must still carry the field, or this test proves nothing"
+        );
+        assert!(
+            super::for_modal_prompt(challenge).mediation.is_none(),
+            "conditional mediation reached the browser: the ceremony will never prompt"
+        );
+    }
 
     /// Each outcome must reach a *different* message, and the cancelled one must not be worded
     /// as a failure.

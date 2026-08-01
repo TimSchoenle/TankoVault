@@ -373,10 +373,6 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: download this image's digests
-        # The SHA `v6.0.0` actually points at. The previous pin, `abd6e58b…`, does not exist in
-        # `actions/download-artifact` at all — `GET /repos/actions/download-artifact/commits/abd6e58b…`
-        # is a 422 — so this step could only ever have failed to resolve, taking the whole
-        # multi-arch manifest job with it. zizmor's `impostor-commit` is what found it.
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           path: /tmp/digests

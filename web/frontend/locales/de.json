@@ -273,6 +273,11 @@
       "resume": "Fortsetzen"
     },
     "merge": {
+      "actionFailed": "Fehlgeschlagen: {message}",
+      "bandAll": "Alle",
+      "bandHigh": "≥ 90 %",
+      "bandLow": "≥ 60 %",
+      "bandMed": "≥ 75 %",
       "compare": "Vergleichen",
       "distinct": "Verschieden",
       "drop": "Einfügen & löschen",
@@ -281,8 +286,29 @@
       "keep": "Behalten (kanonisch)",
       "merge": "Zusammenführen →",
       "reason": "Grund: {reason}",
+      "rebuildDone": "Schlüssel neu berechnet: {series} Serien, {titles} Alternativtitel aktualisiert.",
+      "rebuildKeys": "Schlüssel neu berechnen",
       "score": "{percent}% Übereinstimmung",
-      "seriesUnavailable": "Serie konnte nicht geladen werden: {message}"
+      "seriesUnavailable": "Serie konnte nicht geladen werden: {message}",
+      "sides": "behält {keep} · übernimmt {drop}",
+      "signal": {
+        "alias_identity": "entspricht einem bekannten Alternativtitel",
+        "compact_identity": "gleicher Titel, andere Leerzeichen",
+        "containment": "ein Titel enthält den anderen",
+        "exact_title": "identischer Titel",
+        "near_identical": "nahezu identischer Titel",
+        "numeric_conflict": "unterschiedliche Nummern",
+        "shared_author": "gemeinsame Urheber",
+        "tag_overlap": "gemeinsame Genres",
+        "type_agreement": "gleiches Medium",
+        "type_conflict": "unterschiedliches Medium",
+        "year_agreement": "gleiches Erscheinungsjahr",
+        "year_conflict": "unterschiedliches Erscheinungsjahr"
+      },
+      "swap": "Tauschen",
+      "sweep": "Duplikatlauf starten",
+      "sweepDone": "{examined} Paare geprüft: {merged} zusammengeführt, {queued} eingereiht, {withdrawn} zurückgezogen.",
+      "sweepFailed": "Duplikatlauf fehlgeschlagen: {message}"
     },
     "noAutoRefresh": "diese Ansicht aktualisiert sich beim Bearbeiten nicht selbst",
     "operatorsOnly": "Du hast für keinen Bereich der Konsole eine Berechtigung.",

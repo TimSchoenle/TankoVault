@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series_sync_overrides (user_id, series_id, provider, excluded) SELECT user_id, $1, provider, excluded FROM series_sync_overrides WHERE series_id = $2 ON CONFLICT (user_id, series_id, provider) DO UPDATE SET excluded = series_sync_overrides.excluded OR EXCLUDED.excluded",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2d0784024451b1c608f36a6bda64e7701cb70bb5f8b592f7ca201766e3ef4236"
+}

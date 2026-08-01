@@ -78,6 +78,11 @@ pub fn route_classifier() -> RouteClassifier {
         .expensive("/v1/me/sync/{provider}/pull")
         .expensive("/v1/admin/providers/{id}/test")
         .expensive("/v1/admin/series/merge")
+        // A sweep re-blocks the whole catalogue and may perform hundreds of merge
+        // transactions; a key rebuild rewrites every normalized title in `series` and
+        // `series_titles`. Both are the heaviest calls the console can make.
+        .expensive("/v1/admin/merge-candidates/sweep")
+        .expensive("/v1/admin/matching/rebuild-keys")
         // Admin surfaces the console polls to paint itself: only the mutating calls draw
         // from the tight budget, so the read-heavy console and account pages are not
         // throttled for merely loading. `GET /v1/admin/scans` (scan-queue overview) and
@@ -178,6 +183,17 @@ pub fn route_features() -> RouteFeatures {
         .gate_writes("/v1/admin/scans", Feature::ScanningManual)
         .gate("/v1/admin/merge-candidates", Feature::ScanningMergeQueue)
         .gate("/v1/admin/series/merge", Feature::ScanningMergeQueue)
+        // Longest prefix wins, so this overrides the rule above for the sweep specifically. The
+        // sweep is the one route here that *deletes* series, and `scanning.auto_merge` exists to
+        // stop exactly that without also hiding the review queue an operator would use to see
+        // why they wanted it stopped. The control-plane re-checks the same flag — a switch an
+        // operator has thrown must hold at the component doing the work, not only at the one in
+        // front of it.
+        .gate(
+            "/v1/admin/merge-candidates/sweep",
+            Feature::ScanningAutoMerge,
+        )
+        .gate("/v1/admin/matching", Feature::ScanningMergeQueue)
         .gate("/v1/admin/sync", Feature::AdminSync)
         .gate("/v1/admin/audit", Feature::AdminAudit)
         .gate("/v1/admin/stats", Feature::AdminStats)
@@ -431,6 +447,8 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::list_merge_candidates))
         .routes(routes!(admin::dismiss_merge_candidate))
         .routes(routes!(admin::merge_series))
+        .routes(routes!(admin::sweep_merge_candidates))
+        .routes(routes!(admin::rebuild_matching_keys))
 }
 
 /// Best-effort connection to NATS for the live notification relay. Returns `None` (with a

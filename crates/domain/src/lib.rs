@@ -42,7 +42,7 @@ pub use ids::{
 };
 pub use link::{ResolveError, resolve_link};
 pub use metadata_priority::{MetadataField, MetadataPriority, MetadataSource};
-pub use normalize::normalize_title;
+pub use normalize::{compact_key, normalize_title};
 pub use pacing::{Pacer, PacingPolicy};
 pub use permissions::{
     ParsePermissionError, Permission, PermissionGroup, PermissionPreset, PermissionSet,

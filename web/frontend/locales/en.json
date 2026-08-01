@@ -273,6 +273,11 @@
       "resume": "Resume"
     },
     "merge": {
+      "actionFailed": "Failed: {message}",
+      "bandAll": "All",
+      "bandHigh": "≥ 90%",
+      "bandLow": "≥ 60%",
+      "bandMed": "≥ 75%",
       "compare": "Compare",
       "distinct": "Distinct",
       "drop": "Merge in & delete",
@@ -281,8 +286,29 @@
       "keep": "Keep (canonical)",
       "merge": "Merge →",
       "reason": "reason: {reason}",
+      "rebuildDone": "Rebuilt keys: {series} series, {titles} alternative titles updated.",
+      "rebuildKeys": "Rebuild match keys",
       "score": "{percent}% match",
-      "seriesUnavailable": "Could not load series: {message}"
+      "seriesUnavailable": "Could not load series: {message}",
+      "sides": "keeping {keep} · absorbing {drop}",
+      "signal": {
+        "alias_identity": "same as a known alternative title",
+        "compact_identity": "same title, different spacing",
+        "containment": "one title contains the other",
+        "exact_title": "identical title",
+        "near_identical": "near-identical title",
+        "numeric_conflict": "different numbers",
+        "shared_author": "shared author",
+        "tag_overlap": "shared genres",
+        "type_agreement": "same medium",
+        "type_conflict": "different medium",
+        "year_agreement": "same release year",
+        "year_conflict": "different release year"
+      },
+      "swap": "Swap",
+      "sweep": "Run duplicate sweep",
+      "sweepDone": "Swept {examined} pairs: {merged} merged, {queued} queued, {withdrawn} withdrawn.",
+      "sweepFailed": "Sweep failed: {message}"
     },
     "noAutoRefresh": "this surface does not auto-refresh while you edit",
     "operatorsOnly": "You do not have permission to use any part of the console.",

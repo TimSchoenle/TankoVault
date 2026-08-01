@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH by_canonical AS ( SELECT a.id AS lo, b.id AS hi FROM series a JOIN series b ON replace(a.normalized_title, ' ', '') = replace(b.normalized_title, ' ', '') AND a.id < b.id WHERE a.normalized_title <> '' ), by_alias AS ( SELECT LEAST(s.id, st.series_id) AS lo, GREATEST(s.id, st.series_id) AS hi FROM series s JOIN series_titles st ON replace(st.normalized, ' ', '') = replace(s.normalized_title, ' ', '') WHERE st.series_id <> s.id AND s.normalized_title <> '' ), by_shared_alias AS ( SELECT x.series_id AS lo, y.series_id AS hi FROM series_titles x JOIN series_titles y ON replace(x.normalized, ' ', '') = replace(y.normalized, ' ', '') AND x.series_id < y.series_id WHERE x.normalized <> '' ), pairs AS ( SELECT lo, hi FROM by_canonical UNION SELECT lo, hi FROM by_alias UNION SELECT lo, hi FROM by_shared_alias ) SELECT p.lo AS \"lo!\", p.hi AS \"hi!\" FROM pairs p WHERE NOT EXISTS ( SELECT 1 FROM merge_candidates mc WHERE mc.series_id = p.lo AND mc.candidate_id = p.hi AND mc.resolved ) ORDER BY p.lo, p.hi LIMIT $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "lo!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "hi!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "3a7773c9432233808bc67fe0209c4a76155506a65bc9d4aab7901610985be36b"
+}

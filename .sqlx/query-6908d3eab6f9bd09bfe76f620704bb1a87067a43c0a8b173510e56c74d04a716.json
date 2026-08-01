@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, canonical_title, normalized_title FROM series WHERE id > $1 ORDER BY id LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "canonical_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "canonical_title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "normalized_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "normalized_title"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6908d3eab6f9bd09bfe76f620704bb1a87067a43c0a8b173510e56c74d04a716"
+}

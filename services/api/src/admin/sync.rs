@@ -475,6 +475,11 @@ pub async fn list_suggestions(
                 series_id: SeriesId::from_uuid(r.series_id),
                 normalized_title: r.normalized_title,
                 similarity: r.similarity,
+                // `suggest_series_candidates` returns one row per series without its synonym
+                // list, so the alias rules simply never fire here. An operator is eyeballing
+                // the ranked list, and the trigram query behind it already searched
+                // `series_titles`, so the ranking is unaffected in the cases that matter.
+                alt_normalized_titles: Vec::new(),
                 content_type: ct,
                 release_year: r.release_year,
                 tags: Vec::new(),

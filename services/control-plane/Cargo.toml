@@ -21,6 +21,7 @@ tankovault-db = { workspace = true }
 tankovault-domain = { workspace = true }
 tankovault-bus = { workspace = true }
 tankovault-contracts = { workspace = true }
+tankovault-matcher = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

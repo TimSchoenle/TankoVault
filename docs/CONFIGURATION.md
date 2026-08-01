@@ -190,14 +190,16 @@ and external sync's remote-entry resolution, deliberately: they used to take the
 different places, so the worker could attach a source that sync would refuse to map with no single
 place to reason about it.
 
-Scores are in `[0, 1]` and come from `tankovault_matcher::score` — trigram or token-set title
-similarity, adjusted by content-type agreement, release-year proximity, tag overlap and shared
-author credits.
+Scores are in `[0, 1]` and come from `tankovault_matcher::score` — the strongest of three views of
+the two titles (the database's trigram similarity, a token-set ratio, and a whitespace-insensitive
+"compact" comparison), adjusted by content-type agreement, release-year proximity, tag overlap and
+shared author credits, and vetoed outright when the two titles carry different numbers.
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
 | `TANKOVAULT_MATCHING__HIGH` | `0.85` | worker, sync | At or above this, attach to the existing series outright. **Raising it makes the matcher conservative**: fewer wrong merges, more duplicate series for an operator to reconcile. Lowering it does the reverse, and a wrong merge is the harder one to undo. |
 | `TANKOVAULT_MATCHING__LOW` | `0.6` | worker, sync | At or above this but below `HIGH`, the worker creates the series *and* files a merge candidate for review. Sync ignores this band — it declines to map rather than guessing. |
+| `TANKOVAULT_MATCHING__AUTO_MERGE` | `0.97` | control-plane | At or above this — **and** only when a structural identity rule fired (identical titles, identical modulo whitespace, or an exact hit on a name the series already answers to) — the duplicate sweep merges two *already-existing* series without asking. A separate knob from `HIGH` because it governs a different act: `HIGH` files an incoming source, this one deletes a series row and the id it carries. A score alone never suffices; see `tankovault_matcher::adjudicate`. |
 | `TANKOVAULT_MATCHING__CANDIDATE_LIMIT` | `10` | worker, sync | Trigram candidates scored per query title. More costs a wider index scan and buys nothing once the true match is in the set. |
 
 ### `internal` — service-to-service authentication
@@ -258,6 +260,10 @@ that can disagree.
 | `TANKOVAULT_BIND_ADDR` | `0.0.0.0:8081` | |
 | `TANKOVAULT_SCHEDULER__FAST_INTERVAL_SECS` | `300` | Seconds between fast-scan sweeps of every active provider. `0` disables. |
 | `TANKOVAULT_SCHEDULER__FULL_INTERVAL_SECS` | `0` (disabled) | Full scans are normally on demand. |
+| `TANKOVAULT_SCHEDULER__MERGE_SWEEP_INTERVAL_SECS` | `3600` | Seconds between duplicate-reconciliation sweeps. `0` disables. Hourly rather than per-scan because what the sweep is waiting for — enrichment giving a series its authors, year and alternative titles — happens on the order of hours. Also gated by the `scanning.auto_merge` feature flag. |
+| `TANKOVAULT_SCHEDULER__MERGE_SWEEP_PAIRS` | `500` | Newly-blocked duplicate pairs shortlisted per sweep. |
+| `TANKOVAULT_SCHEDULER__MERGE_SWEEP_REQUEUE` | `250` | Open review-queue rows re-scored per sweep, least-recently-scored first. A candidate filed at ingest was scored before the series had tags, authors or synonyms, so its score is a floor; this is how it gets revisited. |
+| `TANKOVAULT_SCHEDULER__MERGE_SWEEP_MAX_AUTO_MERGES` | `200` | **Ceiling on a destructive background action.** Nothing else bounds how many series one sweep may delete, so a mistaken threshold or normalization rule would otherwise collapse the catalogue between two ticks. Exceeding it defers the rest to the next sweep and reports the count. |
 
 ### `worker`
 

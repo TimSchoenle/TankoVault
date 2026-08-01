@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sync_remote_entries SET series_id = $1 WHERE series_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3efa57d77ed990e3672ae045b3fe76e7e15050f4da90524e0ca48a7a88f3511e"
+}

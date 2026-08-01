@@ -156,6 +156,15 @@ pub enum Feature {
     /// Automatic canonicalisation merge-candidate recording and the review queue.
     #[serde(rename = "scanning.merge_queue")]
     ScanningMergeQueue,
+    /// The standing duplicate sweep, and the automatic merges it performs.
+    ///
+    /// Separate from [`Self::ScanningMergeQueue`] because it is the only flag in this registry
+    /// that gates a **destructive** background action: a sweep merges two series and the
+    /// absorbed row is deleted. An operator who suspects the matcher is over-merging needs to
+    /// stop that without also blinding themselves to the review queue that would show them the
+    /// evidence, which is exactly what switching off the queue as a whole would do.
+    #[serde(rename = "scanning.auto_merge")]
+    ScanningAutoMerge,
 
     // --- operator surfaces ---
     /// The operator console's provider lifecycle surface.
@@ -217,6 +226,7 @@ impl Feature {
             Self::ScanningManual,
             Self::ScanningFull,
             Self::ScanningMergeQueue,
+            Self::ScanningAutoMerge,
             Self::AdminProviders,
             Self::AdminAdapterTest,
             Self::AdminSync,
@@ -263,6 +273,7 @@ impl Feature {
             Self::ScanningManual => "scanning.manual",
             Self::ScanningFull => "scanning.full",
             Self::ScanningMergeQueue => "scanning.merge_queue",
+            Self::ScanningAutoMerge => "scanning.auto_merge",
             Self::AdminProviders => "admin.providers",
             Self::AdminAdapterTest => "admin.adapter_test",
             Self::AdminSync => "admin.sync",
@@ -333,7 +344,8 @@ impl Feature {
             Self::ScanningScheduler
             | Self::ScanningManual
             | Self::ScanningFull
-            | Self::ScanningMergeQueue => FeatureGroup::Scanning,
+            | Self::ScanningMergeQueue
+            | Self::ScanningAutoMerge => FeatureGroup::Scanning,
             Self::AdminProviders
             | Self::AdminAdapterTest
             | Self::AdminSync
@@ -379,6 +391,7 @@ impl Feature {
             Self::ScanningManual => "Manual scans",
             Self::ScanningFull => "Full catalogue scans",
             Self::ScanningMergeQueue => "Merge queue",
+            Self::ScanningAutoMerge => "Automatic duplicate merging",
             Self::AdminProviders => "Provider management",
             Self::AdminAdapterTest => "Adapter dry-run",
             Self::AdminSync => "Sync administration",
@@ -481,6 +494,10 @@ impl Feature {
             }
             Self::ScanningMergeQueue => {
                 "Off: duplicate-series candidates stop being surfaced for review."
+            }
+            Self::ScanningAutoMerge => {
+                "Off: the duplicate sweep stops running, so no series is ever merged without an \
+                 operator pressing merge. The review queue is unaffected."
             }
             Self::AdminProviders => {
                 "Off: the provider lifecycle surface closes. Existing providers keep scanning."
@@ -585,7 +602,7 @@ mod tests {
 
     #[test]
     fn all_lists_every_variant() {
-        assert_eq!(Feature::all().len(), 38);
+        assert_eq!(Feature::all().len(), 39);
     }
 
     #[test]

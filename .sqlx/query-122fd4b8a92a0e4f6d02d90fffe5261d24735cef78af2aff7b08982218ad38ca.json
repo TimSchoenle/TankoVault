@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT series_id, title, normalized FROM series_titles WHERE (series_id, normalized) > ($1, $2) ORDER BY series_id, normalized LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series_titles",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series_titles",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "normalized",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series_titles",
+            "name": "normalized"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "122fd4b8a92a0e4f6d02d90fffe5261d24735cef78af2aff7b08982218ad38ca"
+}

@@ -5306,6 +5306,7 @@ dependencies = [
  "tankovault-contracts",
  "tankovault-db",
  "tankovault-domain",
+ "tankovault-matcher",
  "tankovault-service",
  "time",
  "tokio",

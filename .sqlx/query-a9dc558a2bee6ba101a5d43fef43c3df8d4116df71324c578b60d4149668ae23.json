@@ -1,0 +1,131 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.canonical_title, s.normalized_title, s.content_type AS \"content_type: ContentType\", s.release_year, COALESCE((SELECT array_agg(st.normalized) FROM series_titles st WHERE st.series_id = s.id), '{}') AS \"alt_titles!\", COALESCE((SELECT array_agg(t.name) FROM series_tags stg JOIN tags t ON t.id = stg.tag_id WHERE stg.series_id = s.id), '{}') AS \"tags!\", COALESCE((SELECT array_agg(a.name) FROM series_authors sa JOIN authors a ON a.id = sa.author_id WHERE sa.series_id = s.id), '{}') AS \"authors!\", (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\", COALESCE((SELECT sum(ss.chapter_count) FROM series_sources ss WHERE ss.series_id = s.id), 0) AS \"chapter_count!\", (SELECT count(*) FROM watchlist_entries w WHERE w.series_id = s.id) AS \"watcher_count!\" FROM series s WHERE s.id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "canonical_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "canonical_title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "normalized_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "normalized_title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "content_type: ContentType",
+        "type_info": {
+          "Custom": {
+            "name": "content_type",
+            "kind": {
+              "Enum": [
+                "manga",
+                "manhwa",
+                "manhua",
+                "webtoon",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "content_type"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "release_year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "release_year"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "alt_titles!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "tags!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "authors!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "source_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "chapter_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "watcher_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "a9dc558a2bee6ba101a5d43fef43c3df8d4116df71324c578b60d4149668ae23"
+}

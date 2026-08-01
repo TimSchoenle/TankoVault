@@ -114,20 +114,80 @@ pub struct FailedTaskView {
     pub finished_at: Option<OffsetDateTime>,
 }
 
-/// A pending merge candidate enriched with both series' display titles, for the operator
-/// review queue (design §11 `GET /v1/admin/merge-candidates`).
+/// A pending merge candidate, enriched with everything the console needs to triage it without
+/// opening both series (design §11 `GET /v1/admin/merge-candidates`).
+///
+/// The counts and `suggested_keep` are not decoration. Acting on a candidate means choosing
+/// which of the two rows survives, and the absorbed id *stops existing* — every bookmark,
+/// notification and external tracker mapping naming it breaks. The right answer is whichever
+/// series carries more of the catalogue, which is a comparison the server can make once instead
+/// of an operator eyeballing it per row.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct MergeCandidateView {
     pub id: Uuid,
     pub series_id: SeriesId,
     pub series_title: String,
+    pub series_sources: i64,
+    pub series_chapters: i64,
     pub candidate_id: SeriesId,
     pub candidate_title: String,
+    pub candidate_sources: i64,
+    pub candidate_chapters: i64,
     pub score: f32,
+    /// Stable slugs for the scoring rules that fired — `exact_title`, `compact_identity`,
+    /// `alias_identity`, `near_identical`, `shared_author`, and so on. Rendered as badges; the
+    /// set is `tankovault_domain::matching::MatchSignals::labels`.
+    pub signals: Vec<String>,
     pub reason: Option<String>,
+    /// Which side the console should offer to keep. Advisory: the merge endpoint takes an
+    /// explicit direction.
+    pub suggested_keep: SeriesId,
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
+    pub updated_at: OffsetDateTime,
+}
+
+/// What one duplicate-reconciliation sweep did.
+///
+/// Returned by `POST /v1/admin/merge-candidates/sweep` and logged by the scheduled sweep, so an
+/// operator can see the effect of a threshold change on a single run before leaving it to the
+/// schedule.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, ToSchema)]
+pub struct MergeSweepView {
+    /// Pairs re-scored. The shortlist is produced by blocking on the whitespace-insensitive
+    /// title key, so this is far smaller than the number of series.
+    pub pairs_examined: i64,
+    /// Pairs merged without asking, because a structural identity rule fired *and* the score
+    /// cleared the automatic-merge threshold.
+    pub auto_merged: i64,
+    /// Pairs added to, or refreshed in, the review queue.
+    pub queued: i64,
+    /// Open queue rows removed because re-scoring with everything now known about both series
+    /// put the pair below the review floor.
+    pub withdrawn: i64,
+    /// Pairs the sweep judged distinct and left alone.
+    pub distinct: i64,
+    /// Pairs skipped because the sweep's per-run automatic-merge budget was exhausted. Non-zero
+    /// means the next sweep has more to do, not that anything failed.
+    pub deferred: i64,
+}
+
+/// What a normalized-key rebuild changed.
+///
+/// `normalized_title` is a persisted matching key, so a change to the normalization rules only
+/// reaches rows that happen to be re-scanned until this runs.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, ToSchema)]
+pub struct KeyRebuildView {
+    pub series_scanned: i64,
+    pub series_updated: i64,
+    pub titles_scanned: i64,
+    pub titles_updated: i64,
+    /// Alternative titles dropped because the corrected rules collapsed them onto a key the
+    /// same series already held.
+    pub titles_deduplicated: i64,
 }
 
 /// One row of the admin Sync console's "Linked accounts" table. The automatic-sync policy

@@ -8,7 +8,7 @@
 use tankovault_db::PgPool;
 use tankovault_db::repo::{catalog, matching, sync};
 use tankovault_domain::{SeriesId, normalize_title};
-use tankovault_matcher::{Query, Thresholds, best_match};
+use tankovault_matcher::{Assessment, Query, Thresholds, best_assessment};
 
 use crate::provider::{ExternalProvider, RemoteEntry};
 
@@ -63,7 +63,7 @@ impl SeriesResolver {
             matching::find_candidates_multi(&self.pool, &normalized_titles, self.candidate_limit)
                 .await?;
 
-        let mut best: Option<(SeriesId, f32)> = None;
+        let mut best: Option<(SeriesId, Assessment)> = None;
         for (normalized, candidates) in per_title {
             // No conversion: `find_candidates_multi` already yields the scorer's own
             // [`Candidate`], the single type both this path and the worker's ingest
@@ -79,15 +79,19 @@ impl SeriesResolver {
                 tags: entry.tags.clone(),
                 authors: entry.authors.clone(),
             };
-            if let Some((id, score)) = best_match(&query, &candidates) {
-                if best.is_none_or(|(_, b)| score > b) {
-                    best = Some((id, score));
+            if let Some((id, assessment)) = best_assessment(&query, &candidates) {
+                if best.is_none_or(|(_, b)| assessment.score > b.score) {
+                    best = Some((id, assessment));
                 }
             }
         }
 
+        // The numeric veto applies here for the same reason it applies at ingest, and this path
+        // needs it more: a tracker library is full of numbered sequels sitting next to their
+        // predecessors, and mapping `Overlord 2` onto the local `Overlord` writes a
+        // `sync_mappings` row that then pushes one series' progress onto the other's.
         Ok(best
-            .filter(|(_, score)| *score >= self.thresholds.high)
+            .filter(|(_, a)| a.score >= self.thresholds.high && !a.signals.numeric_conflict)
             .map(|(id, _)| id))
     }
 

@@ -147,11 +147,18 @@ impl IntoView for repo::matching::MergeCandidateView {
             id: self.id,
             series_id: self.series_id,
             series_title: self.series_title,
+            series_sources: self.series_sources,
+            series_chapters: self.series_chapters,
             candidate_id: self.candidate_id,
             candidate_title: self.candidate_title,
+            candidate_sources: self.candidate_sources,
+            candidate_chapters: self.candidate_chapters,
             score: self.score,
+            signals: self.signals,
             reason: self.reason,
+            suggested_keep: self.suggested_keep,
             created_at: self.created_at,
+            updated_at: self.updated_at,
         }
     }
 }

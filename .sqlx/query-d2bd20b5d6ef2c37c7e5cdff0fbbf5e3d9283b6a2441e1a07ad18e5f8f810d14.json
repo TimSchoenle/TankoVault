@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.lo AS \"lo!\", p.hi AS \"hi!\", GREATEST( similarity(a.normalized_title, b.normalized_title), COALESCE((SELECT MAX(similarity(x.normalized, b.normalized_title)) FROM series_titles x WHERE x.series_id = a.id), 0), COALESCE((SELECT MAX(similarity(y.normalized, a.normalized_title)) FROM series_titles y WHERE y.series_id = b.id), 0) ) AS \"sim!\" FROM UNNEST($1::uuid[], $2::uuid[]) AS p(lo, hi) JOIN series a ON a.id = p.lo JOIN series b ON b.id = p.hi",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "lo!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "hi!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "sim!",
+        "type_info": "Float4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "d2bd20b5d6ef2c37c7e5cdff0fbbf5e3d9283b6a2441e1a07ad18e5f8f810d14"
+}

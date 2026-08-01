@@ -759,6 +759,7 @@
           "scanning.manual",
           "scanning.full",
           "scanning.merge_queue",
+          "scanning.auto_merge",
           "admin.providers",
           "admin.adapter_test",
           "admin.sync",
@@ -981,6 +982,40 @@
         ],
         "type": "object"
       },
+      "KeyRebuildView": {
+        "description": "What a normalized-key rebuild changed.\n\n`normalized_title` is a persisted matching key, so a change to the normalization rules only\nreaches rows that happen to be re-scanned until this runs.",
+        "properties": {
+          "series_scanned": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "series_updated": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "titles_deduplicated": {
+            "description": "Alternative titles dropped because the corrected rules collapsed them onto a key the\nsame series already held.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "titles_scanned": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "titles_updated": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "series_scanned",
+          "series_updated",
+          "titles_scanned",
+          "titles_updated",
+          "titles_deduplicated"
+        ],
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "login": {
@@ -1058,10 +1093,18 @@
         "type": "object"
       },
       "MergeCandidateView": {
-        "description": "A pending merge candidate enriched with both series' display titles, for the operator\nreview queue (design §11 `GET /v1/admin/merge-candidates`).",
+        "description": "A pending merge candidate, enriched with everything the console needs to triage it without\nopening both series (design §11 `GET /v1/admin/merge-candidates`).\n\nThe counts and `suggested_keep` are not decoration. Acting on a candidate means choosing\nwhich of the two rows survives, and the absorbed id *stops existing* — every bookmark,\nnotification and external tracker mapping naming it breaks. The right answer is whichever\nseries carries more of the catalogue, which is a comparison the server can make once instead\nof an operator eyeballing it per row.",
         "properties": {
+          "candidate_chapters": {
+            "format": "int64",
+            "type": "integer"
+          },
           "candidate_id": {
             "$ref": "#/components/schemas/SeriesId"
+          },
+          "candidate_sources": {
+            "format": "int64",
+            "type": "integer"
           },
           "candidate_title": {
             "type": "string"
@@ -1083,10 +1126,32 @@
             "format": "float",
             "type": "number"
           },
+          "series_chapters": {
+            "format": "int64",
+            "type": "integer"
+          },
           "series_id": {
             "$ref": "#/components/schemas/SeriesId"
           },
+          "series_sources": {
+            "format": "int64",
+            "type": "integer"
+          },
           "series_title": {
+            "type": "string"
+          },
+          "signals": {
+            "description": "Stable slugs for the scoring rules that fired — `exact_title`, `compact_identity`,\n`alias_identity`, `near_identical`, `shared_author`, and so on. Rendered as badges; the\nset is `tankovault_domain::matching::MatchSignals::labels`.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "suggested_keep": {
+            "$ref": "#/components/schemas/SeriesId",
+            "description": "Which side the console should offer to keep. Advisory: the merge endpoint takes an\nexplicit direction."
+          },
+          "updated_at": {
             "type": "string"
           }
         },
@@ -1094,10 +1159,17 @@
           "id",
           "series_id",
           "series_title",
+          "series_sources",
+          "series_chapters",
           "candidate_id",
           "candidate_title",
+          "candidate_sources",
+          "candidate_chapters",
           "score",
-          "created_at"
+          "signals",
+          "suggested_keep",
+          "created_at",
+          "updated_at"
         ],
         "type": "object"
       },
@@ -1115,6 +1187,50 @@
         "required": [
           "keep",
           "merge"
+        ],
+        "type": "object"
+      },
+      "MergeSweepView": {
+        "description": "What one duplicate-reconciliation sweep did.\n\nReturned by `POST /v1/admin/merge-candidates/sweep` and logged by the scheduled sweep, so an\noperator can see the effect of a threshold change on a single run before leaving it to the\nschedule.",
+        "properties": {
+          "auto_merged": {
+            "description": "Pairs merged without asking, because a structural identity rule fired *and* the score\ncleared the automatic-merge threshold.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "deferred": {
+            "description": "Pairs skipped because the sweep's per-run automatic-merge budget was exhausted. Non-zero\nmeans the next sweep has more to do, not that anything failed.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "distinct": {
+            "description": "Pairs the sweep judged distinct and left alone.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "pairs_examined": {
+            "description": "Pairs re-scored. The shortlist is produced by blocking on the whitespace-insensitive\ntitle key, so this is far smaller than the number of series.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "queued": {
+            "description": "Pairs added to, or refreshed in, the review queue.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "withdrawn": {
+            "description": "Open queue rows removed because re-scoring with everything now known about both series\nput the pair below the review floor.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pairs_examined",
+          "auto_merged",
+          "queued",
+          "withdrawn",
+          "distinct",
+          "deferred"
         ],
         "type": "object"
       },
@@ -3447,10 +3563,72 @@
         ]
       }
     },
+    "/v1/admin/matching/rebuild-keys": {
+      "post": {
+        "description": "Re-derives `series.normalized_title` and `series_titles.normalized` for the whole catalogue\nthrough the current `normalize_title`.\n\n# Why this is an operator action\n\nThe normalized title is a *persisted* key: it is written once, when a series is created, and\nevery later match compares against the stored value. A change to the normalization rules —\nlike making an apostrophe join a word instead of splitting one — therefore leaves the entire\ncatalogue on keys derived by the previous rules, and the improvement only reaches rows that\nhappen to be re-scanned. Running this is what makes a rules change take effect, and it is\nsafe to run repeatedly: only rows whose key actually changed are written.",
+        "operationId": "rebuild_matching_keys",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyRebuildView"
+                }
+              }
+            },
+            "description": "What the rebuild changed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Rebuild the normalized matching keys",
+        "tags": [
+          "admin-matching"
+        ]
+      }
+    },
     "/v1/admin/merge-candidates": {
       "get": {
-        "description": "The canonicalisation review queue (design §10).",
+        "description": "The canonicalisation review queue (design §10), highest confidence first.",
         "operationId": "list_merge_candidates",
+        "parameters": [
+          {
+            "description": "Only return candidates at or above this confidence, in `[0,1]`.\n\nAn operator works a large queue in bands: everything above 0.9 is nearly all genuine\nduplicates and can be actioned quickly, while the 0.6–0.7 band needs real attention per\nrow. Out-of-range values are clamped rather than rejected — this narrows a list, so the\nworst a nonsense value can do is return nothing.",
+            "in": "query",
+            "name": "min_score",
+            "required": false,
+            "schema": {
+              "format": "float",
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3463,7 +3641,7 @@
                 }
               }
             },
-            "description": "Up to 200 open merge candidates"
+            "description": "Up to 200 open merge candidates, highest score first"
           },
           "401": {
             "content": {
@@ -3499,7 +3677,7 @@
     },
     "/v1/admin/merge-candidates/dismiss": {
       "post": {
-        "description": "Operator judged the two works distinct.",
+        "description": "Operator judged the two works distinct. The judgement is durable: the pair is suppressed\nagainst re-scans and against the standing duplicate sweep, which is what the previous\nimplementation could not promise — a dismissed pair could be re-inserted as a fresh open row\nby the next scan that saw it.",
         "operationId": "dismiss_merge_candidate",
         "requestBody": {
           "content": {
@@ -3550,6 +3728,63 @@
           }
         ],
         "summary": "Dismiss a merge candidate",
+        "tags": [
+          "admin-matching"
+        ]
+      }
+    },
+    "/v1/admin/merge-candidates/sweep": {
+      "post": {
+        "description": "Re-blocks the whole catalogue on the whitespace-insensitive title key, re-scores every\nshortlisted pair with everything now known about both series, merges the certain ones and\nqueues the rest.\n\nForwarded to the control-plane, which owns the schedule and the leader election that keeps\ntwo replicas from racing on the same destructive merge. The scheduled sweep is the normal\npath; this is here so an operator changing a threshold can see the effect on one run.",
+        "operationId": "sweep_merge_candidates",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeSweepView"
+                }
+              }
+            },
+            "description": "What the sweep did"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "automatic duplicate merging is switched off"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Run the duplicate sweep",
         "tags": [
           "admin-matching"
         ]
@@ -4937,7 +5172,7 @@
     },
     "/v1/admin/series/merge": {
       "post": {
-        "description": "Transactional re-parent + title/tag union (design §10).",
+        "description": "Transactional re-parent + title/tag/progress/sync union (design §10).",
         "operationId": "merge_series",
         "requestBody": {
           "content": {

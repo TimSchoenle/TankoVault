@@ -104,13 +104,24 @@ pub async fn resolve_canonical_series(
 
     match canonicaliser.canonicalise(&query, &candidates) {
         Decision::Attach(id) => Ok(id),
-        Decision::Ambiguous { candidate, score } => {
+        Decision::Ambiguous {
+            candidate,
+            score,
+            signals,
+        } => {
             let id = create_series(conn, meta).await?;
+            // The signals travel with the row. `"ambiguous title match"` was the *only* reason
+            // this queue ever recorded, for every one of its rows, which left an operator
+            // triaging thousands of pairs with two titles and a percentage and no way to tell a
+            // whitespace variant from a coincidence of wording. It is also what lets the
+            // standing sweep re-judge a row without re-deriving how it got there.
+            let labels = signals.labels();
             crate::repo::matching::record_merge_candidate(
                 &mut *conn,
                 id,
                 candidate,
                 score,
+                &labels,
                 "ambiguous title match",
             )
             .await?;

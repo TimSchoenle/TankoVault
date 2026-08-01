@@ -29,7 +29,9 @@
 
 use proptest::prelude::*;
 use tankovault_domain::{ContentType, SeriesId};
-use tankovault_matcher::{Candidate, Decision, Query, Thresholds, best_match, decide, score};
+use tankovault_matcher::{
+    Candidate, Decision, Query, Thresholds, best_assessment, best_match, decide, score,
+};
 
 /// Titles as the normalizer produces them: lowercase alphanumeric words, single-spaced.
 /// Generating raw `".*"` would mostly produce strings that `normalize_title` could never
@@ -71,6 +73,10 @@ prop_compose! {
     fn any_candidate()(
         normalized_title in normalized_title(),
         similarity in -2.0f32..2.0f32,
+        // A candidate carries every name its series answers to, and the scorer consults all of
+        // them. Generated rather than left empty so the properties below cover the alias path
+        // as well as the canonical one.
+        alt_normalized_titles in prop::collection::vec(normalized_title(), 0..3),
         content_type in content_type(),
         release_year in safe_year(),
         tags in names(),
@@ -80,6 +86,7 @@ prop_compose! {
             series_id: SeriesId::new(),
             normalized_title,
             similarity,
+            alt_normalized_titles,
             content_type,
             release_year,
             tags,
@@ -168,25 +175,60 @@ proptest! {
         );
     }
 
-    /// `decide` and `best_match` are two hand-written maxima over the same scored list
-    /// (`lib.rs:197` and `lib.rs:206`). They can drift. This pins them to one another: the
-    /// decision must be exactly the band the best score falls in.
+    /// `decide` and `best_assessment` must agree about which band the best candidate is in,
+    /// and `best_match` must report the same score as `best_assessment`.
+    ///
+    /// Three functions now walk the same scored list. This pins them to one another: the
+    /// decision must be exactly the band the best score falls in, *and* the numeric veto must
+    /// hold in `decide` independently of the penalty `assess` already applied — the penalty is
+    /// sized to drop a realistic sequel pair out of the attach band, which is not the same claim
+    /// as it always doing so.
     #[test]
-    fn decide_agrees_with_best_match(
+    fn decide_agrees_with_the_best_assessment(
         q in any_query(),
         candidates in prop::collection::vec(any_candidate(), 0..6),
     ) {
         let thresholds = Thresholds::default();
         let decision = decide(&q, &candidates, thresholds);
-        match best_match(&q, &candidates) {
-            None => prop_assert_eq!(decision, Decision::Create),
-            Some((id, s)) if s >= thresholds.high => {
-                prop_assert_eq!(decision, Decision::Attach(id));
+        match best_assessment(&q, &candidates) {
+            None => {
+                prop_assert_eq!(decision, Decision::Create);
+                prop_assert!(best_match(&q, &candidates).is_none());
             }
-            Some((id, s)) if s >= thresholds.low => {
-                prop_assert_eq!(decision, Decision::Ambiguous { candidate: id, score: s });
+            Some((id, a)) => {
+                let (best_id, best_score) = best_match(&q, &candidates)
+                    .expect("best_match must find what best_assessment found");
+                prop_assert_eq!(best_id, id);
+                prop_assert_eq!(best_score, a.score);
+
+                if a.score >= thresholds.high && !a.signals.numeric_conflict {
+                    prop_assert_eq!(decision, Decision::Attach(id));
+                } else if a.score >= thresholds.low {
+                    prop_assert_eq!(
+                        decision,
+                        Decision::Ambiguous { candidate: id, score: a.score, signals: a.signals }
+                    );
+                } else {
+                    prop_assert_eq!(decision, Decision::Create);
+                }
             }
-            Some(_) => prop_assert_eq!(decision, Decision::Create),
+        }
+    }
+
+    /// Titles carrying different numbers are never attached, whatever else agrees.
+    ///
+    /// The scoring penalty and the guard in `decide` are two separate mechanisms for one rule,
+    /// and this is the rule rather than either mechanism: a sequel resembles its predecessor
+    /// *more* the better the matcher works, so this is the property that has to survive every
+    /// future improvement to the scorer.
+    #[test]
+    fn a_numeric_conflict_is_never_attached(
+        q in any_query(),
+        candidates in prop::collection::vec(any_candidate(), 1..4),
+    ) {
+        if let Some((id, a)) = best_assessment(&q, &candidates) {
+            prop_assume!(a.signals.numeric_conflict);
+            prop_assert_ne!(decide(&q, &candidates, Thresholds::default()), Decision::Attach(id));
         }
     }
 }
@@ -224,6 +266,7 @@ fn score_survives_the_extremes_of_the_release_year_range() {
         series_id: SeriesId::new(),
         normalized_title: "x".to_owned(),
         similarity: 0.5,
+        alt_normalized_titles: Vec::new(),
         content_type: ContentType::Unknown,
         release_year: Some(i32::MAX),
         tags: Vec::new(),

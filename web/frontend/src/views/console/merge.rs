@@ -1,5 +1,19 @@
-//! The canonicalisation review queue, with merge and dismiss actions, and the compact
-//! read-only series card the compare view is built from.
+//! The canonicalisation review queue, with merge and dismiss actions, the standing duplicate
+//! sweep, and the compact read-only series card the compare view is built from.
+//!
+//! # What this surface has to answer
+//!
+//! On a real catalogue this queue is thousands of rows long, and a row is only actionable if it
+//! answers three questions without opening both series: *is this actually one work*, *which of
+//! the two should survive*, and *why does the matcher think so*. It used to answer none of them
+//! — every row carried the same "ambiguous title match" reason, the list was ordered by
+//! insertion time so the certain duplicates were buried among the coincidences, and the merge
+//! button always kept whichever series the scan happened to create *second*, deleting the older,
+//! richer one.
+//!
+//! So: the band filter narrows to a confidence range, the server orders by score, the signal
+//! badges say which rule fired, the counts say which side carries more of the catalogue, and the
+//! direction defaults to the server's `suggested_keep` with an explicit swap.
 
 use crate::api;
 use crate::components::{async_block, async_block_list, Cover};
@@ -10,18 +24,37 @@ use crate::state::use_session;
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
 
-/// Canonicalisation review queue with merge / dismiss actions.
+/// The confidence bands an operator triages in.
+///
+/// Working a large queue means working it in bands: above 90% is nearly all genuine duplicates
+/// and can be actioned quickly, while 60–75% needs real attention per row. Filtering server-side
+/// keeps the page small as well as the list relevant.
+const BANDS: &[(f32, &str)] = &[
+    (0.0, "console.merge.bandAll"),
+    (0.6, "console.merge.bandLow"),
+    (0.75, "console.merge.bandMed"),
+    (0.9, "console.merge.bandHigh"),
+];
+
+/// Canonicalisation review queue with merge / dismiss actions and the duplicate sweep.
 #[component]
 pub(super) fn MergeQueue() -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
+    let session = use_session();
     let reload = use_reload();
+    let mut min_score = use_signal(|| 0.0_f32);
+    let mut notice = use_signal(String::new);
+    let mut busy = use_signal(|| false);
+
     let resource = use_resource(move || {
         reload.track();
+        let threshold = *min_score.read();
         let client = api.client();
         async move {
             client
                 .list_merge_candidates()
+                .min_score(threshold)
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
@@ -39,9 +72,101 @@ pub(super) fn MergeQueue() -> Element {
         }
     });
 
+    // The sweep is the only control here that acts on rows the operator cannot see — it finds
+    // duplicates the queue never recorded — so its outcome is reported as a line of text rather
+    // than left to be inferred from the list changing length.
+    let run_sweep = move |_| {
+        if *busy.peek() {
+            return;
+        }
+        busy.set(true);
+        notice.set(String::new());
+        spawn(async move {
+            let client = api.client();
+            if session.token_value().is_some() {
+                match client.sweep_merge_candidates().send().await {
+                    Ok(r) => {
+                        let r = r.into_inner();
+                        notice.set(i18n.args(
+                            "console.merge.sweepDone",
+                            &[
+                                ("examined", &r.pairs_examined.to_string()),
+                                ("merged", &r.auto_merged.to_string()),
+                                ("queued", &r.queued.to_string()),
+                                ("withdrawn", &r.withdrawn.to_string()),
+                            ],
+                        ));
+                        reload.bump();
+                    }
+                    Err(e) => notice.set(i18n.args(
+                        "console.merge.actionFailed",
+                        &[("message", &api::friendly_error(i18n, e))],
+                    )),
+                }
+            }
+            busy.set(false);
+        });
+    };
+
+    let rebuild_keys = move |_| {
+        if *busy.peek() {
+            return;
+        }
+        busy.set(true);
+        notice.set(String::new());
+        spawn(async move {
+            let client = api.client();
+            if session.token_value().is_some() {
+                match client.rebuild_matching_keys().send().await {
+                    Ok(r) => {
+                        let r = r.into_inner();
+                        notice.set(i18n.args(
+                            "console.merge.rebuildDone",
+                            &[
+                                ("series", &r.series_updated.to_string()),
+                                ("titles", &r.titles_updated.to_string()),
+                            ],
+                        ));
+                        reload.bump();
+                    }
+                    Err(e) => notice.set(i18n.args(
+                        "console.merge.actionFailed",
+                        &[("message", &api::friendly_error(i18n, e))],
+                    )),
+                }
+            }
+            busy.set(false);
+        });
+    };
+
+    let active = *min_score.read();
     rsx! {
         section {
             h3 { {i18n.t("console.tab.merge")} }
+            div { class: "ik-row", style: "gap:8px;flex-wrap:wrap;margin-bottom:12px;",
+                div { class: "ik-flex", style: "gap:4px;flex-wrap:wrap;",
+                    for (threshold , label) in BANDS.iter().copied() {
+                        button {
+                            key: "{label}",
+                            class: if (active - threshold).abs() < f32::EPSILON { "ik-btn primary" } else { "ik-btn" },
+                            onclick: move |_| min_score.set(threshold),
+                            {i18n.t(label)}
+                        }
+                    }
+                }
+                div { class: "grow" }
+                button { class: "ik-btn", disabled: *busy.read(), onclick: run_sweep,
+                    {i18n.t("console.merge.sweep")}
+                }
+                button { class: "ik-btn", disabled: *busy.read(), onclick: rebuild_keys,
+                    {i18n.t("console.merge.rebuildKeys")}
+                }
+            }
+            if !notice.read().is_empty() {
+                div { class: "ik-card", style: "margin-bottom:12px;padding:10px;",
+                    "{notice}"
+                }
+            }
             {body}
         }
     }
@@ -62,10 +187,12 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
     )]
     let pct = (can.score * 100.0).round().clamp(0.0, 100.0) as i32;
     let id = can.id;
-    let a = can.series_id;
-    let b = can.candidate_id;
     let mut open = use_signal(|| false);
     let mut busy = use_signal(|| false);
+    // Which side survives. Seeded from the server's suggestion — the series with more sources,
+    // then more chapters — because the absorbed id stops existing and everything already
+    // pointing at it breaks. Swappable, because the operator can see something the counts cannot.
+    let mut keep_first = use_signal(|| can.suggested_keep == can.series_id);
 
     // Higher-confidence matches get a warmer pill so operators can triage at a glance.
     let score_class = if pct >= 90 {
@@ -76,75 +203,115 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
         "ik-mono ik-muted"
     };
 
-    let series_title = can.series_title.clone();
-    let candidate_title = can.candidate_title.clone();
+    let first = SideSummary {
+        id: can.series_id,
+        title: can.series_title.clone(),
+        sources: can.series_sources,
+        chapters: can.series_chapters,
+    };
+    let second = SideSummary {
+        id: can.candidate_id,
+        title: can.candidate_title.clone(),
+        sources: can.candidate_sources,
+        chapters: can.candidate_chapters,
+    };
+    let signals = can.signals.clone();
     let reason = can.reason.clone();
+    drop(can);
 
-    let merge = {
-        move |_| {
-            if *busy.peek() {
-                return;
-            }
-            busy.set(true);
-            spawn(async move {
-                let client = api.client();
-                if session.token_value().is_some()
-                    && client
-                        .merge_series()
-                        .body(MergeRequest { keep: a, merge: b })
-                        .send()
-                        .await
-                        .is_ok()
-                {
-                    reload.bump();
-                }
-                busy.set(false);
-            });
+    let (keep, drop_side) = if *keep_first.read() {
+        (first.clone(), second.clone())
+    } else {
+        (second.clone(), first.clone())
+    };
+    let keep_id = keep.id;
+    let drop_id = drop_side.id;
+
+    let merge = move |_| {
+        if *busy.peek() {
+            return;
         }
+        busy.set(true);
+        spawn(async move {
+            let client = api.client();
+            if session.token_value().is_some()
+                && client
+                    .merge_series()
+                    .body(MergeRequest {
+                        keep: keep_id,
+                        merge: drop_id,
+                    })
+                    .send()
+                    .await
+                    .is_ok()
+            {
+                reload.bump();
+            }
+            busy.set(false);
+        });
     };
 
-    let dismiss = {
-        move |_| {
-            if *busy.peek() {
-                return;
-            }
-            busy.set(true);
-            spawn(async move {
-                let client = api.client();
-                if session.token_value().is_some()
-                    && client
-                        .dismiss_merge_candidate()
-                        .body(DismissRequest { id })
-                        .send()
-                        .await
-                        .is_ok()
-                {
-                    reload.bump();
-                }
-                busy.set(false);
-            });
+    let dismiss = move |_| {
+        if *busy.peek() {
+            return;
         }
+        busy.set(true);
+        spawn(async move {
+            let client = api.client();
+            if session.token_value().is_some()
+                && client
+                    .dismiss_merge_candidate()
+                    .body(DismissRequest { id })
+                    .send()
+                    .await
+                    .is_ok()
+            {
+                reload.bump();
+            }
+            busy.set(false);
+        });
     };
 
-    let keep_id = a;
-    let drop_id = b;
-
+    let keep_title = keep.title.clone();
     rsx! {
         div { class: "ik-card", style: "margin-bottom:10px;",
             div { class: "ik-row",
                 div { class: "grow",
                     div { class: "ik-flex", style: "justify-content:space-between;align-items:center;",
-                        span { style: "font-weight:600;", "{series_title}" }
+                        span { style: "font-weight:600;", "{keep.title}" }
                         span { class: "{score_class}",
                             {i18n.args("console.merge.score", &[("percent", &pct.to_string())])}
                         }
                     }
-                    div { class: "ik-muted", style: "font-size:13px;", "↔ {candidate_title}" }
+                    div { class: "ik-muted", style: "font-size:13px;", "↔ {drop_side.title}" }
+                    div { class: "ik-flex", style: "gap:4px;margin-top:6px;flex-wrap:wrap;",
+                        for s in signals.iter() {
+                            span { key: "{s}", class: "ik-pill", style: "font-size:11px;",
+                                {i18n.t(&format!("console.merge.signal.{s}"))}
+                            }
+                        }
+                    }
+                    div { class: "ik-muted", style: "font-size:12px;margin-top:4px;",
+                        {
+                            i18n.args(
+                                "console.merge.sides",
+                                &[
+                                    ("keep", &keep.summary(i18n)),
+                                    ("drop", &drop_side.summary(i18n)),
+                                ],
+                            )
+                        }
+                    }
                     if let Some(r) = &reason {
                         div { class: "ik-muted", style: "font-size:12px;",
                             {i18n.args("console.merge.reason", &[("reason", r)])}
                         }
                     }
+                }
+                button {
+                    class: "ik-btn",
+                    onclick: move |_| { let v = *keep_first.peek(); keep_first.set(!v); },
+                    {i18n.t("console.merge.swap")}
                 }
                 button {
                     class: "ik-btn",
@@ -155,7 +322,11 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
                         {i18n.t("console.merge.compare")}
                     }
                 }
-                button { class: "ik-btn primary", disabled: *busy.read(), onclick: merge,
+                button {
+                    class: "ik-btn primary",
+                    disabled: *busy.read(),
+                    title: "{keep_title}",
+                    onclick: merge,
                     {i18n.t("console.merge.merge")}
                 }
                 button { class: "ik-btn", disabled: *busy.read(), onclick: dismiss,
@@ -179,6 +350,24 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
                 }
             }
         }
+    }
+}
+
+/// One side of a candidate pair, as the row header summarises it.
+#[derive(Clone, PartialEq)]
+struct SideSummary {
+    id: SeriesId,
+    title: String,
+    sources: i64,
+    chapters: i64,
+}
+
+impl SideSummary {
+    /// "3 sources · 412 chapters" — the two numbers that decide which side should survive.
+    fn summary(&self, i18n: crate::i18n::Translator) -> String {
+        let sources = i18n.plural("series.sources", self.sources, &[]);
+        let chapters = i18n.args("series.chapterCount", &[("count", &self.chapters.to_string())]);
+        format!("{sources} · {chapters}")
     }
 }
 

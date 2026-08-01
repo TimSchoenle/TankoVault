@@ -41,6 +41,7 @@ use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 ///     series_id: existing,
 ///     normalized_title: "berserk".to_owned(),
 ///     similarity,
+///     alt_normalized_titles: Vec::new(),
 ///     content_type: ContentType::Unknown,
 ///     release_year: None,
 ///     tags: Vec::new(),
@@ -68,7 +69,7 @@ use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 /// ));
 ///
 /// // Boundaries are inclusive on the lower side of each band: `score == high` attaches.
-/// let exact = MatchingConfig { high: 0.9, low: 0.6, candidate_limit: 10 };
+/// let exact = MatchingConfig { high: 0.9, low: 0.6, auto_merge: 0.97, candidate_limit: 10 };
 /// assert_eq!(exact.canonicalise(&query, &[scoring(0.9)]), Decision::Attach(existing));
 ///
 /// // No candidates is the same answer as no good candidate. The first source of a work has
@@ -84,6 +85,16 @@ pub struct MatchingConfig {
     /// operator review.
     #[serde(default = "default_threshold_low")]
     pub low: f32,
+    /// At or above this score — **and** only when a structural identity rule fired — the
+    /// duplicate sweep merges two already-existing series without asking an operator.
+    ///
+    /// Sits deliberately close to 1.0, and is a *separate* knob from [`Self::high`] because it
+    /// governs a different act. `high` decides where an incoming source is filed while nothing
+    /// has been written yet; this one deletes a series row that already exists, taking its id
+    /// with it. See `tankovault_matcher::adjudicate` for the structural half of the bar, which
+    /// no threshold can substitute for.
+    #[serde(default = "default_threshold_auto_merge")]
+    pub auto_merge: f32,
     /// How many trigram candidates to score per query title. More costs a wider index scan and
     /// buys nothing once the true match is in the set.
     #[serde(default = "default_candidate_limit")]
@@ -98,6 +109,10 @@ fn default_threshold_low() -> f32 {
     tankovault_matcher::Thresholds::default().low
 }
 
+fn default_threshold_auto_merge() -> f32 {
+    tankovault_matcher::Thresholds::default().auto_merge
+}
+
 fn default_candidate_limit() -> i64 {
     10
 }
@@ -107,6 +122,7 @@ impl Default for MatchingConfig {
         Self {
             high: default_threshold_high(),
             low: default_threshold_low(),
+            auto_merge: default_threshold_auto_merge(),
             candidate_limit: default_candidate_limit(),
         }
     }
@@ -119,6 +135,7 @@ impl MatchingConfig {
         tankovault_matcher::Thresholds {
             high: self.high,
             low: self.low,
+            auto_merge: self.auto_merge,
         }
     }
 }
@@ -151,6 +168,7 @@ mod tests {
             series_id: SeriesId::new(),
             normalized_title: "berserk".to_owned(),
             similarity,
+            alt_normalized_titles: Vec::new(),
             content_type: ContentType::Unknown,
             release_year: None,
             tags: Vec::new(),

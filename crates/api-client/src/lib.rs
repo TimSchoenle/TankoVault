@@ -1763,6 +1763,7 @@ pub mod types {
     #[doc = "    \"scanning.manual\","]
     #[doc = "    \"scanning.full\","]
     #[doc = "    \"scanning.merge_queue\","]
+    #[doc = "    \"scanning.auto_merge\","]
     #[doc = "    \"admin.providers\","]
     #[doc = "    \"admin.adapter_test\","]
     #[doc = "    \"admin.sync\","]
@@ -1849,6 +1850,8 @@ pub mod types {
         ScanningFull,
         #[serde(rename = "scanning.merge_queue")]
         ScanningMergeQueue,
+        #[serde(rename = "scanning.auto_merge")]
+        ScanningAutoMerge,
         #[serde(rename = "admin.providers")]
         AdminProviders,
         #[serde(rename = "admin.adapter_test")]
@@ -1898,6 +1901,7 @@ pub mod types {
                 Self::ScanningManual => f.write_str("scanning.manual"),
                 Self::ScanningFull => f.write_str("scanning.full"),
                 Self::ScanningMergeQueue => f.write_str("scanning.merge_queue"),
+                Self::ScanningAutoMerge => f.write_str("scanning.auto_merge"),
                 Self::AdminProviders => f.write_str("admin.providers"),
                 Self::AdminAdapterTest => f.write_str("admin.adapter_test"),
                 Self::AdminSync => f.write_str("admin.sync"),
@@ -1943,6 +1947,7 @@ pub mod types {
                 "scanning.manual" => Ok(Self::ScanningManual),
                 "scanning.full" => Ok(Self::ScanningFull),
                 "scanning.merge_queue" => Ok(Self::ScanningMergeQueue),
+                "scanning.auto_merge" => Ok(Self::ScanningAutoMerge),
                 "admin.providers" => Ok(Self::AdminProviders),
                 "admin.adapter_test" => Ok(Self::AdminAdapterTest),
                 "admin.sync" => Ok(Self::AdminSync),
@@ -2419,6 +2424,61 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "What a normalized-key rebuild changed.\n\n`normalized_title` is a persisted matching key, so a change to the normalization rules only\nreaches rows that happen to be re-scanned until this runs."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What a normalized-key rebuild changed.\\n\\n`normalized_title` is a persisted matching key, so a change to the normalization rules only\\nreaches rows that happen to be re-scanned until this runs.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"series_scanned\","]
+    #[doc = "    \"series_updated\","]
+    #[doc = "    \"titles_deduplicated\","]
+    #[doc = "    \"titles_scanned\","]
+    #[doc = "    \"titles_updated\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"series_scanned\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"series_updated\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"titles_deduplicated\": {"]
+    #[doc = "      \"description\": \"Alternative titles dropped because the corrected rules collapsed them onto a key the\\nsame series already held.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"titles_scanned\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"titles_updated\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct KeyRebuildView {
+        pub series_scanned: i64,
+        pub series_updated: i64,
+        #[doc = "Alternative titles dropped because the corrected rules collapsed them onto a key the\nsame series already held."]
+        pub titles_deduplicated: i64,
+        pub titles_scanned: i64,
+        pub titles_updated: i64,
+    }
+    impl KeyRebuildView {
+        pub fn builder() -> builder::KeyRebuildView {
+            Default::default()
+        }
+    }
     #[doc = "`LoginRequest`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -2565,26 +2625,41 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "A pending merge candidate enriched with both series' display titles, for the operator\nreview queue (design §11 `GET /v1/admin/merge-candidates`)."]
+    #[doc = "A pending merge candidate, enriched with everything the console needs to triage it without\nopening both series (design §11 `GET /v1/admin/merge-candidates`).\n\nThe counts and `suggested_keep` are not decoration. Acting on a candidate means choosing\nwhich of the two rows survives, and the absorbed id *stops existing* — every bookmark,\nnotification and external tracker mapping naming it breaks. The right answer is whichever\nseries carries more of the catalogue, which is a comparison the server can make once instead\nof an operator eyeballing it per row."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A pending merge candidate enriched with both series' display titles, for the operator\\nreview queue (design §11 `GET /v1/admin/merge-candidates`).\","]
+    #[doc = "  \"description\": \"A pending merge candidate, enriched with everything the console needs to triage it without\\nopening both series (design §11 `GET /v1/admin/merge-candidates`).\\n\\nThe counts and `suggested_keep` are not decoration. Acting on a candidate means choosing\\nwhich of the two rows survives, and the absorbed id *stops existing* — every bookmark,\\nnotification and external tracker mapping naming it breaks. The right answer is whichever\\nseries carries more of the catalogue, which is a comparison the server can make once instead\\nof an operator eyeballing it per row.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
+    #[doc = "    \"candidate_chapters\","]
     #[doc = "    \"candidate_id\","]
+    #[doc = "    \"candidate_sources\","]
     #[doc = "    \"candidate_title\","]
     #[doc = "    \"created_at\","]
     #[doc = "    \"id\","]
     #[doc = "    \"score\","]
+    #[doc = "    \"series_chapters\","]
     #[doc = "    \"series_id\","]
-    #[doc = "    \"series_title\""]
+    #[doc = "    \"series_sources\","]
+    #[doc = "    \"series_title\","]
+    #[doc = "    \"signals\","]
+    #[doc = "    \"suggested_keep\","]
+    #[doc = "    \"updated_at\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"candidate_chapters\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
     #[doc = "    \"candidate_id\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    },"]
+    #[doc = "    \"candidate_sources\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"candidate_title\": {"]
     #[doc = "      \"type\": \"string\""]
@@ -2606,10 +2681,31 @@ pub mod types {
     #[doc = "      \"type\": \"number\","]
     #[doc = "      \"format\": \"float\""]
     #[doc = "    },"]
+    #[doc = "    \"series_chapters\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
     #[doc = "    \"series_id\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
     #[doc = "    },"]
+    #[doc = "    \"series_sources\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
     #[doc = "    \"series_title\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"signals\": {"]
+    #[doc = "      \"description\": \"Stable slugs for the scoring rules that fired — `exact_title`, `compact_identity`,\\n`alias_identity`, `near_identical`, `shared_author`, and so on. Rendered as badges; the\\nset is `tankovault_domain::matching::MatchSignals::labels`.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"suggested_keep\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    },"]
+    #[doc = "    \"updated_at\": {"]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -2618,15 +2714,23 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct MergeCandidateView {
+        pub candidate_chapters: i64,
         pub candidate_id: SeriesId,
+        pub candidate_sources: i64,
         pub candidate_title: ::std::string::String,
         pub created_at: ::std::string::String,
         pub id: ::uuid::Uuid,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub reason: ::std::option::Option<::std::string::String>,
         pub score: f32,
+        pub series_chapters: i64,
         pub series_id: SeriesId,
+        pub series_sources: i64,
         pub series_title: ::std::string::String,
+        #[doc = "Stable slugs for the scoring rules that fired — `exact_title`, `compact_identity`,\n`alias_identity`, `near_identical`, `shared_author`, and so on. Rendered as badges; the\nset is `tankovault_domain::matching::MatchSignals::labels`."]
+        pub signals: ::std::vec::Vec<::std::string::String>,
+        pub suggested_keep: SeriesId,
+        pub updated_at: ::std::string::String,
     }
     impl MergeCandidateView {
         pub fn builder() -> builder::MergeCandidateView {
@@ -2662,6 +2766,77 @@ pub mod types {
     }
     impl MergeRequest {
         pub fn builder() -> builder::MergeRequest {
+            Default::default()
+        }
+    }
+    #[doc = "What one duplicate-reconciliation sweep did.\n\nReturned by `POST /v1/admin/merge-candidates/sweep` and logged by the scheduled sweep, so an\noperator can see the effect of a threshold change on a single run before leaving it to the\nschedule."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What one duplicate-reconciliation sweep did.\\n\\nReturned by `POST /v1/admin/merge-candidates/sweep` and logged by the scheduled sweep, so an\\noperator can see the effect of a threshold change on a single run before leaving it to the\\nschedule.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"auto_merged\","]
+    #[doc = "    \"deferred\","]
+    #[doc = "    \"distinct\","]
+    #[doc = "    \"pairs_examined\","]
+    #[doc = "    \"queued\","]
+    #[doc = "    \"withdrawn\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"auto_merged\": {"]
+    #[doc = "      \"description\": \"Pairs merged without asking, because a structural identity rule fired *and* the score\\ncleared the automatic-merge threshold.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"deferred\": {"]
+    #[doc = "      \"description\": \"Pairs skipped because the sweep's per-run automatic-merge budget was exhausted. Non-zero\\nmeans the next sweep has more to do, not that anything failed.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"distinct\": {"]
+    #[doc = "      \"description\": \"Pairs the sweep judged distinct and left alone.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"pairs_examined\": {"]
+    #[doc = "      \"description\": \"Pairs re-scored. The shortlist is produced by blocking on the whitespace-insensitive\\ntitle key, so this is far smaller than the number of series.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"queued\": {"]
+    #[doc = "      \"description\": \"Pairs added to, or refreshed in, the review queue.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"withdrawn\": {"]
+    #[doc = "      \"description\": \"Open queue rows removed because re-scoring with everything now known about both series\\nput the pair below the review floor.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MergeSweepView {
+        #[doc = "Pairs merged without asking, because a structural identity rule fired *and* the score\ncleared the automatic-merge threshold."]
+        pub auto_merged: i64,
+        #[doc = "Pairs skipped because the sweep's per-run automatic-merge budget was exhausted. Non-zero\nmeans the next sweep has more to do, not that anything failed."]
+        pub deferred: i64,
+        #[doc = "Pairs the sweep judged distinct and left alone."]
+        pub distinct: i64,
+        #[doc = "Pairs re-scored. The shortlist is produced by blocking on the whitespace-insensitive\ntitle key, so this is far smaller than the number of series."]
+        pub pairs_examined: i64,
+        #[doc = "Pairs added to, or refreshed in, the review queue."]
+        pub queued: i64,
+        #[doc = "Open queue rows removed because re-scoring with everything now known about both series\nput the pair below the review floor."]
+        pub withdrawn: i64,
+    }
+    impl MergeSweepView {
+        pub fn builder() -> builder::MergeSweepView {
             Default::default()
         }
     }
@@ -10470,6 +10645,104 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct KeyRebuildView {
+            series_scanned: ::std::result::Result<i64, ::std::string::String>,
+            series_updated: ::std::result::Result<i64, ::std::string::String>,
+            titles_deduplicated: ::std::result::Result<i64, ::std::string::String>,
+            titles_scanned: ::std::result::Result<i64, ::std::string::String>,
+            titles_updated: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for KeyRebuildView {
+            fn default() -> Self {
+                Self {
+                    series_scanned: Err("no value supplied for series_scanned".to_string()),
+                    series_updated: Err("no value supplied for series_updated".to_string()),
+                    titles_deduplicated: Err(
+                        "no value supplied for titles_deduplicated".to_string()
+                    ),
+                    titles_scanned: Err("no value supplied for titles_scanned".to_string()),
+                    titles_updated: Err("no value supplied for titles_updated".to_string()),
+                }
+            }
+        }
+        impl KeyRebuildView {
+            pub fn series_scanned<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_scanned = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for series_scanned: {e}")
+                });
+                self
+            }
+            pub fn series_updated<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_updated = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for series_updated: {e}")
+                });
+                self
+            }
+            pub fn titles_deduplicated<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.titles_deduplicated = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for titles_deduplicated: {e}")
+                });
+                self
+            }
+            pub fn titles_scanned<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.titles_scanned = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for titles_scanned: {e}")
+                });
+                self
+            }
+            pub fn titles_updated<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.titles_updated = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for titles_updated: {e}")
+                });
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<KeyRebuildView> for super::KeyRebuildView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: KeyRebuildView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    series_scanned: value.series_scanned?,
+                    series_updated: value.series_updated?,
+                    titles_deduplicated: value.titles_deduplicated?,
+                    titles_scanned: value.titles_scanned?,
+                    titles_updated: value.titles_updated?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::KeyRebuildView> for KeyRebuildView {
+            fn from(value: super::KeyRebuildView) -> Self {
+                Self {
+                    series_scanned: Ok(value.series_scanned),
+                    series_updated: Ok(value.series_updated),
+                    titles_deduplicated: Ok(value.titles_deduplicated),
+                    titles_scanned: Ok(value.titles_scanned),
+                    titles_updated: Ok(value.titles_updated),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct LoginRequest {
             login: ::std::result::Result<::std::string::String, ::std::string::String>,
             password: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -10697,7 +10970,9 @@ pub mod types {
         }
         #[derive(Clone, Debug)]
         pub struct MergeCandidateView {
+            candidate_chapters: ::std::result::Result<i64, ::std::string::String>,
             candidate_id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+            candidate_sources: ::std::result::Result<i64, ::std::string::String>,
             candidate_title: ::std::result::Result<::std::string::String, ::std::string::String>,
             created_at: ::std::result::Result<::std::string::String, ::std::string::String>,
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
@@ -10706,24 +10981,49 @@ pub mod types {
                 ::std::string::String,
             >,
             score: ::std::result::Result<f32, ::std::string::String>,
+            series_chapters: ::std::result::Result<i64, ::std::string::String>,
             series_id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+            series_sources: ::std::result::Result<i64, ::std::string::String>,
             series_title: ::std::result::Result<::std::string::String, ::std::string::String>,
+            signals: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            suggested_keep: ::std::result::Result<super::SeriesId, ::std::string::String>,
+            updated_at: ::std::result::Result<::std::string::String, ::std::string::String>,
         }
         impl ::std::default::Default for MergeCandidateView {
             fn default() -> Self {
                 Self {
+                    candidate_chapters: Err("no value supplied for candidate_chapters".to_string()),
                     candidate_id: Err("no value supplied for candidate_id".to_string()),
+                    candidate_sources: Err("no value supplied for candidate_sources".to_string()),
                     candidate_title: Err("no value supplied for candidate_title".to_string()),
                     created_at: Err("no value supplied for created_at".to_string()),
                     id: Err("no value supplied for id".to_string()),
                     reason: Ok(Default::default()),
                     score: Err("no value supplied for score".to_string()),
+                    series_chapters: Err("no value supplied for series_chapters".to_string()),
                     series_id: Err("no value supplied for series_id".to_string()),
+                    series_sources: Err("no value supplied for series_sources".to_string()),
                     series_title: Err("no value supplied for series_title".to_string()),
+                    signals: Err("no value supplied for signals".to_string()),
+                    suggested_keep: Err("no value supplied for suggested_keep".to_string()),
+                    updated_at: Err("no value supplied for updated_at".to_string()),
                 }
             }
         }
         impl MergeCandidateView {
+            pub fn candidate_chapters<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.candidate_chapters = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for candidate_chapters: {e}")
+                });
+                self
+            }
             pub fn candidate_id<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<super::SeriesId>,
@@ -10732,6 +11032,16 @@ pub mod types {
                 self.candidate_id = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for candidate_id: {e}"));
+                self
+            }
+            pub fn candidate_sources<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.candidate_sources = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for candidate_sources: {e}")
+                });
                 self
             }
             pub fn candidate_title<T>(mut self, value: T) -> Self
@@ -10784,6 +11094,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for score: {e}"));
                 self
             }
+            pub fn series_chapters<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_chapters = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for series_chapters: {e}")
+                });
+                self
+            }
             pub fn series_id<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<super::SeriesId>,
@@ -10792,6 +11112,16 @@ pub mod types {
                 self.series_id = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for series_id: {e}"));
+                self
+            }
+            pub fn series_sources<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_sources = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for series_sources: {e}")
+                });
                 self
             }
             pub fn series_title<T>(mut self, value: T) -> Self
@@ -10804,6 +11134,36 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for series_title: {e}"));
                 self
             }
+            pub fn signals<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.signals = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for signals: {e}"));
+                self
+            }
+            pub fn suggested_keep<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::SeriesId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.suggested_keep = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for suggested_keep: {e}")
+                });
+                self
+            }
+            pub fn updated_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_at: {e}"));
+                self
+            }
         }
         impl ::std::convert::TryFrom<MergeCandidateView> for super::MergeCandidateView {
             type Error = super::error::ConversionError;
@@ -10811,28 +11171,42 @@ pub mod types {
                 value: MergeCandidateView,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    candidate_chapters: value.candidate_chapters?,
                     candidate_id: value.candidate_id?,
+                    candidate_sources: value.candidate_sources?,
                     candidate_title: value.candidate_title?,
                     created_at: value.created_at?,
                     id: value.id?,
                     reason: value.reason?,
                     score: value.score?,
+                    series_chapters: value.series_chapters?,
                     series_id: value.series_id?,
+                    series_sources: value.series_sources?,
                     series_title: value.series_title?,
+                    signals: value.signals?,
+                    suggested_keep: value.suggested_keep?,
+                    updated_at: value.updated_at?,
                 })
             }
         }
         impl ::std::convert::From<super::MergeCandidateView> for MergeCandidateView {
             fn from(value: super::MergeCandidateView) -> Self {
                 Self {
+                    candidate_chapters: Ok(value.candidate_chapters),
                     candidate_id: Ok(value.candidate_id),
+                    candidate_sources: Ok(value.candidate_sources),
                     candidate_title: Ok(value.candidate_title),
                     created_at: Ok(value.created_at),
                     id: Ok(value.id),
                     reason: Ok(value.reason),
                     score: Ok(value.score),
+                    series_chapters: Ok(value.series_chapters),
                     series_id: Ok(value.series_id),
+                    series_sources: Ok(value.series_sources),
                     series_title: Ok(value.series_title),
+                    signals: Ok(value.signals),
+                    suggested_keep: Ok(value.suggested_keep),
+                    updated_at: Ok(value.updated_at),
                 }
             }
         }
@@ -10887,6 +11261,116 @@ pub mod types {
                 Self {
                     keep: Ok(value.keep),
                     merge: Ok(value.merge),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct MergeSweepView {
+            auto_merged: ::std::result::Result<i64, ::std::string::String>,
+            deferred: ::std::result::Result<i64, ::std::string::String>,
+            distinct: ::std::result::Result<i64, ::std::string::String>,
+            pairs_examined: ::std::result::Result<i64, ::std::string::String>,
+            queued: ::std::result::Result<i64, ::std::string::String>,
+            withdrawn: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for MergeSweepView {
+            fn default() -> Self {
+                Self {
+                    auto_merged: Err("no value supplied for auto_merged".to_string()),
+                    deferred: Err("no value supplied for deferred".to_string()),
+                    distinct: Err("no value supplied for distinct".to_string()),
+                    pairs_examined: Err("no value supplied for pairs_examined".to_string()),
+                    queued: Err("no value supplied for queued".to_string()),
+                    withdrawn: Err("no value supplied for withdrawn".to_string()),
+                }
+            }
+        }
+        impl MergeSweepView {
+            pub fn auto_merged<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.auto_merged = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for auto_merged: {e}"));
+                self
+            }
+            pub fn deferred<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.deferred = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for deferred: {e}"));
+                self
+            }
+            pub fn distinct<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.distinct = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for distinct: {e}"));
+                self
+            }
+            pub fn pairs_examined<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.pairs_examined = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for pairs_examined: {e}")
+                });
+                self
+            }
+            pub fn queued<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.queued = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for queued: {e}"));
+                self
+            }
+            pub fn withdrawn<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.withdrawn = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for withdrawn: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MergeSweepView> for super::MergeSweepView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MergeSweepView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    auto_merged: value.auto_merged?,
+                    deferred: value.deferred?,
+                    distinct: value.distinct?,
+                    pairs_examined: value.pairs_examined?,
+                    queued: value.queued?,
+                    withdrawn: value.withdrawn?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MergeSweepView> for MergeSweepView {
+            fn from(value: super::MergeSweepView) -> Self {
+                Self {
+                    auto_merged: Ok(value.auto_merged),
+                    deferred: Ok(value.deferred),
+                    distinct: Ok(value.distinct),
+                    pairs_examined: Ok(value.pairs_examined),
+                    queued: Ok(value.queued),
+                    withdrawn: Ok(value.withdrawn),
                 }
             }
         }
@@ -16530,13 +17014,21 @@ impl Client {
     pub fn reset_flag(&self) -> builder::ResetFlag<'_> {
         builder::ResetFlag::new(self)
     }
-    #[doc = "List merge candidates\n\nThe canonicalisation review queue (design §10).\n\nSends a `GET` request to `/v1/admin/merge-candidates`\n\n```ignore\nlet response = client.list_merge_candidates()\n    .send()\n    .await;\n```"]
+    #[doc = "Rebuild the normalized matching keys\n\nRe-derives `series.normalized_title` and `series_titles.normalized` for the whole catalogue\nthrough the current `normalize_title`.\n\n# Why this is an operator action\n\nThe normalized title is a *persisted* key: it is written once, when a series is created, and\nevery later match compares against the stored value. A change to the normalization rules —\nlike making an apostrophe join a word instead of splitting one — therefore leaves the entire\ncatalogue on keys derived by the previous rules, and the improvement only reaches rows that\nhappen to be re-scanned. Running this is what makes a rules change take effect, and it is\nsafe to run repeatedly: only rows whose key actually changed are written.\n\nSends a `POST` request to `/v1/admin/matching/rebuild-keys`\n\n```ignore\nlet response = client.rebuild_matching_keys()\n    .send()\n    .await;\n```"]
+    pub fn rebuild_matching_keys(&self) -> builder::RebuildMatchingKeys<'_> {
+        builder::RebuildMatchingKeys::new(self)
+    }
+    #[doc = "List merge candidates\n\nThe canonicalisation review queue (design §10), highest confidence first.\n\nSends a `GET` request to `/v1/admin/merge-candidates`\n\nArguments:\n- `min_score`: Only return candidates at or above this confidence, in `[0,1]`.\n\nAn operator works a large queue in bands: everything above 0.9 is nearly all genuine\nduplicates and can be actioned quickly, while the 0.6–0.7 band needs real attention per\nrow. Out-of-range values are clamped rather than rejected — this narrows a list, so the\nworst a nonsense value can do is return nothing.\n```ignore\nlet response = client.list_merge_candidates()\n    .min_score(min_score)\n    .send()\n    .await;\n```"]
     pub fn list_merge_candidates(&self) -> builder::ListMergeCandidates<'_> {
         builder::ListMergeCandidates::new(self)
     }
-    #[doc = "Dismiss a merge candidate\n\nOperator judged the two works distinct.\n\nSends a `POST` request to `/v1/admin/merge-candidates/dismiss`\n\n```ignore\nlet response = client.dismiss_merge_candidate()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Dismiss a merge candidate\n\nOperator judged the two works distinct. The judgement is durable: the pair is suppressed\nagainst re-scans and against the standing duplicate sweep, which is what the previous\nimplementation could not promise — a dismissed pair could be re-inserted as a fresh open row\nby the next scan that saw it.\n\nSends a `POST` request to `/v1/admin/merge-candidates/dismiss`\n\n```ignore\nlet response = client.dismiss_merge_candidate()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn dismiss_merge_candidate(&self) -> builder::DismissMergeCandidate<'_> {
         builder::DismissMergeCandidate::new(self)
+    }
+    #[doc = "Run the duplicate sweep\n\nRe-blocks the whole catalogue on the whitespace-insensitive title key, re-scores every\nshortlisted pair with everything now known about both series, merges the certain ones and\nqueues the rest.\n\nForwarded to the control-plane, which owns the schedule and the leader election that keeps\ntwo replicas from racing on the same destructive merge. The scheduled sweep is the normal\npath; this is here so an operator changing a threshold can see the effect on one run.\n\nSends a `POST` request to `/v1/admin/merge-candidates/sweep`\n\n```ignore\nlet response = client.sweep_merge_candidates()\n    .send()\n    .await;\n```"]
+    pub fn sweep_merge_candidates(&self) -> builder::SweepMergeCandidates<'_> {
+        builder::SweepMergeCandidates::new(self)
     }
     #[doc = "List assignable permissions\n\nEvery capability this build defines, with its grouping and description, plus the preset\nbundles the editor offers. Served from the compiled registry, so the editor can never list a\ncapability the backend does not enforce or miss one it does.\n\nSends a `GET` request to `/v1/admin/permissions`\n\n```ignore\nlet response = client.permission_catalogue()\n    .send()\n    .await;\n```"]
     pub fn permission_catalogue(&self) -> builder::PermissionCatalogue<'_> {
@@ -16618,7 +17110,7 @@ impl Client {
     pub fn get_scan(&self) -> builder::GetScan<'_> {
         builder::GetScan::new(self)
     }
-    #[doc = "Merge two series\n\nTransactional re-parent + title/tag union (design §10).\n\nSends a `POST` request to `/v1/admin/series/merge`\n\n```ignore\nlet response = client.merge_series()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Merge two series\n\nTransactional re-parent + title/tag/progress/sync union (design §10).\n\nSends a `POST` request to `/v1/admin/series/merge`\n\n```ignore\nlet response = client.merge_series()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn merge_series(&self) -> builder::MergeSeries<'_> {
         builder::MergeSeries::new(self)
     }
@@ -17245,14 +17737,77 @@ pub mod builder {
             }
         }
     }
+    #[doc = "Builder for [`Client::rebuild_matching_keys`]\n\n[`Client::rebuild_matching_keys`]: super::Client::rebuild_matching_keys"]
+    #[derive(Debug, Clone)]
+    pub struct RebuildMatchingKeys<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> RebuildMatchingKeys<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/matching/rebuild-keys`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::KeyRebuildView>, Error<types::ProblemDetails>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/admin/matching/rebuild-keys", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "rebuild_matching_keys",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
     #[doc = "Builder for [`Client::list_merge_candidates`]\n\n[`Client::list_merge_candidates`]: super::Client::list_merge_candidates"]
     #[derive(Debug, Clone)]
     pub struct ListMergeCandidates<'a> {
         client: &'a super::Client,
+        min_score: Result<Option<f32>, String>,
     }
     impl<'a> ListMergeCandidates<'a> {
         pub fn new(client: &'a super::Client) -> Self {
-            Self { client: client }
+            Self {
+                client: client,
+                min_score: Ok(None),
+            }
+        }
+        pub fn min_score<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<f32>,
+        {
+            self.min_score = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `f32` for min_score failed".to_string());
+            self
         }
         #[doc = "Sends a `GET` request to `/v1/admin/merge-candidates`"]
         pub async fn send(
@@ -17261,7 +17816,8 @@ pub mod builder {
             ResponseValue<::std::vec::Vec<types::MergeCandidateView>>,
             Error<types::ProblemDetails>,
         > {
-            let Self { client } = self;
+            let Self { client, min_score } = self;
+            let min_score = min_score.map_err(Error::InvalidRequest)?;
             let url = format!("{}/v1/admin/merge-candidates", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
@@ -17276,6 +17832,7 @@ pub mod builder {
                     ::reqwest::header::ACCEPT,
                     ::reqwest::header::HeaderValue::from_static("application/json"),
                 )
+                .query(&progenitor_client::QueryParam::new("min_score", &min_score))
                 .headers(header_map)
                 .build()?;
             let info = OperationInfo {
@@ -17366,6 +17923,58 @@ pub mod builder {
                     ResponseValue::from_response(response).await?,
                 )),
                 403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::sweep_merge_candidates`]\n\n[`Client::sweep_merge_candidates`]: super::Client::sweep_merge_candidates"]
+    #[derive(Debug, Clone)]
+    pub struct SweepMergeCandidates<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> SweepMergeCandidates<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/merge-candidates/sweep`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::MergeSweepView>, Error<types::ProblemDetails>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/admin/merge-candidates/sweep", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "sweep_merge_candidates",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

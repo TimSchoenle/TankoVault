@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO merge_candidates (id, series_id, candidate_id, score, reason, resolved, outcome, resolved_by, resolved_at) VALUES ($1, LEAST($2::uuid, $3::uuid), GREATEST($2::uuid, $3::uuid), 0, 'operator marked distinct', true, 'dismissed', $4, now()) ON CONFLICT (series_id, candidate_id) DO UPDATE SET resolved = true, outcome = 'dismissed', resolved_by = $4, resolved_at = now(), updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a845bd7a4706cffe97ed60f7371e9345714a79e39125b038d8ef5af46209fea9"
+}

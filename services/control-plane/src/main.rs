@@ -9,6 +9,7 @@
 //! - **Trigger endpoint**: `POST /internal/scans` called by the API's "Scan now".
 
 mod aggregator;
+mod dedupe;
 mod leader;
 
 use axum::extract::State;
@@ -59,6 +60,11 @@ struct Config {
     /// operator action; the endpoint's name is not an access control.
     #[serde(default)]
     internal: tankovault_config::InternalAuthConfig,
+    /// The confidence policy for deciding whether two series are the same work. Shared with the
+    /// worker's ingest and with external sync so no two paths can disagree (ARCH-16); read here
+    /// because the duplicate sweep applies the *same* policy to series that already exist.
+    #[serde(default)]
+    matching: tankovault_config::MatchingConfig,
 }
 
 fn default_bind() -> String {
@@ -73,6 +79,28 @@ struct SchedulerConfig {
     /// Seconds between full-scan sweeps. 0 disables (full scans are usually on demand).
     #[serde(default)]
     full_interval_secs: u64,
+    /// Seconds between duplicate-reconciliation sweeps. 0 disables.
+    ///
+    /// Hourly by default rather than per-scan: the sweep re-reads the whole catalogue's title
+    /// keys, and the thing it is waiting for — enrichment giving a series its authors, year and
+    /// alternative titles — happens on the order of hours, not minutes.
+    #[serde(default = "default_merge_sweep_interval")]
+    merge_sweep_interval_secs: u64,
+    /// Newly-blocked duplicate pairs shortlisted per sweep.
+    #[serde(default = "default_merge_sweep_pairs")]
+    merge_sweep_pairs: i64,
+    /// Open queue rows re-scored per sweep, least-recently-scored first.
+    #[serde(default = "default_merge_sweep_requeue")]
+    merge_sweep_requeue: i64,
+    /// Automatic merges permitted in a single sweep.
+    ///
+    /// A ceiling on a *destructive* background action, and the reason it exists is that nothing
+    /// else bounds one. Without it, a mistaken threshold or a bad normalization rule would
+    /// collapse the whole catalogue between two scheduler ticks; with it, the worst a single bad
+    /// run can do is a number an operator chose, and the sweep's report says how much it
+    /// deferred.
+    #[serde(default = "default_merge_sweep_max_auto_merges")]
+    merge_sweep_max_auto_merges: i64,
 }
 
 impl Default for SchedulerConfig {
@@ -80,12 +108,38 @@ impl Default for SchedulerConfig {
         Self {
             fast_interval_secs: default_fast_interval(),
             full_interval_secs: 0,
+            merge_sweep_interval_secs: default_merge_sweep_interval(),
+            merge_sweep_pairs: default_merge_sweep_pairs(),
+            merge_sweep_requeue: default_merge_sweep_requeue(),
+            merge_sweep_max_auto_merges: default_merge_sweep_max_auto_merges(),
+        }
+    }
+}
+
+impl SchedulerConfig {
+    const fn merge_budget(&self) -> dedupe::SweepBudget {
+        dedupe::SweepBudget {
+            pairs: self.merge_sweep_pairs,
+            requeue: self.merge_sweep_requeue,
+            max_auto_merges: self.merge_sweep_max_auto_merges,
         }
     }
 }
 
 fn default_fast_interval() -> u64 {
     300
+}
+fn default_merge_sweep_interval() -> u64 {
+    3600
+}
+fn default_merge_sweep_pairs() -> i64 {
+    500
+}
+fn default_merge_sweep_requeue() -> i64 {
+    250
+}
+fn default_merge_sweep_max_auto_merges() -> i64 {
+    200
 }
 
 #[derive(Clone)]
@@ -96,6 +150,10 @@ struct AppState {
     /// than at boot: switching the scheduler off during an incident has to take effect without
     /// a redeploy, which is the whole point of a flag as opposed to a config toggle.
     features: FeatureGate,
+    /// The canonicalisation policy the duplicate sweep applies.
+    matching: tankovault_config::MatchingConfig,
+    /// How much work one duplicate sweep may do — including how many series it may delete.
+    merge_budget: dedupe::SweepBudget,
 }
 
 #[tokio::main]
@@ -139,6 +197,8 @@ async fn main() -> anyhow::Result<()> {
         pool: pool.clone(),
         bus: bus.clone(),
         features,
+        matching: cfg.matching.clone(),
+        merge_budget: cfg.scheduler.merge_budget(),
     };
 
     // Leader election: only the elected replica runs the scheduler sweeps.
@@ -193,6 +253,7 @@ async fn main() -> anyhow::Result<()> {
         .apply(
             Router::new()
                 .route("/internal/scans", post(trigger_scan))
+                .route("/internal/merge-sweep", post(trigger_merge_sweep))
                 .with_state(state),
         )
         .merge(tankovault_service::ops_router(health, metrics));
@@ -253,6 +314,50 @@ async fn trigger_scan(
     Ok(Json(ScanTriggeredView { run_ids }))
 }
 
+/// Run one duplicate-reconciliation sweep on demand.
+///
+/// The scheduled sweep is the normal path; this exists because an operator changing
+/// `matching.auto_merge` needs to see the effect on one run before leaving it to the schedule,
+/// and because clearing a backlog should not mean waiting an hour per batch.
+///
+/// Not leader-gated — an explicitly requested sweep should run on the replica that was asked —
+/// but still gated on `scanning.auto_merge`, because that flag's purpose is to stop the
+/// destructive action, and a switch an operator has thrown must hold at the component that does
+/// the work rather than only at the one in front of it.
+async fn trigger_merge_sweep(
+    State(state): State<AppState>,
+    body: Option<Json<MergeSweepRequest>>,
+) -> Result<Json<tankovault_contracts::admin::MergeSweepView>, Problem> {
+    if !state.features.is_enabled(Feature::ScanningAutoMerge) {
+        return Err(Problem::new(
+            StatusCode::NOT_FOUND,
+            "feature_disabled",
+            "automatic duplicate merging is switched off",
+        ));
+    }
+    let actor = body.and_then(|Json(b)| b.actor);
+    let report = dedupe::sweep(&state.pool, &state.matching, state.merge_budget, actor)
+        .await
+        .map_err(internal)?;
+    tracing::info!(
+        examined = report.pairs_examined,
+        auto_merged = report.auto_merged,
+        queued = report.queued,
+        withdrawn = report.withdrawn,
+        deferred = report.deferred,
+        "duplicate sweep (on demand) complete"
+    );
+    Ok(Json(report))
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct MergeSweepRequest {
+    /// The operator who asked, recorded against every candidate the sweep resolves so an
+    /// automatic merge is attributable to a person rather than only to the schedule.
+    #[serde(default)]
+    actor: Option<tankovault_domain::UserId>,
+}
+
 /// Expand a run into its initial task(s) and dispatch them.
 async fn plan_run(
     state: &AppState,
@@ -311,12 +416,16 @@ async fn run_scheduler(
     leadership: leader::Leadership,
     shutdown: tokio_util::sync::CancellationToken,
 ) {
-    if cfg.fast_interval_secs == 0 && cfg.full_interval_secs == 0 {
+    if cfg.fast_interval_secs == 0
+        && cfg.full_interval_secs == 0
+        && cfg.merge_sweep_interval_secs == 0
+    {
         tracing::info!("scheduler disabled");
         return;
     }
     let mut fast = interval_or_never(cfg.fast_interval_secs);
     let mut full = interval_or_never(cfg.full_interval_secs);
+    let mut merge = interval_or_never(cfg.merge_sweep_interval_secs);
 
     loop {
         tokio::select! {
@@ -326,7 +435,36 @@ async fn run_scheduler(
             }
             () = tick(&mut fast) => maybe_sweep(&state, &leadership, ScanMode::Fast).await,
             () = tick(&mut full) => maybe_sweep(&state, &leadership, ScanMode::Full).await,
+            () = tick(&mut merge) => maybe_merge_sweep(&state, &leadership).await,
         }
+    }
+}
+
+/// Run a duplicate sweep only when this replica holds scheduler leadership *and* the operator
+/// has left automatic merging switched on.
+///
+/// Leadership matters more here than for a scan sweep. Two replicas planning the same scan run
+/// produce idempotent duplicate work; two replicas merging the same pair race on a destructive
+/// transaction, and the loser's `merge_series` finds one of its two series already gone.
+async fn maybe_merge_sweep(state: &AppState, leadership: &leader::Leadership) {
+    if !state.features.is_enabled(Feature::ScanningAutoMerge) {
+        tracing::debug!("skipping duplicate sweep; automatic merging is switched off");
+        return;
+    }
+    if !leadership.is_leader() {
+        tracing::debug!("skipping duplicate sweep; not scheduler leader");
+        return;
+    }
+    match dedupe::sweep(&state.pool, &state.matching, state.merge_budget, None).await {
+        Ok(report) => tracing::info!(
+            examined = report.pairs_examined,
+            auto_merged = report.auto_merged,
+            queued = report.queued,
+            withdrawn = report.withdrawn,
+            deferred = report.deferred,
+            "duplicate sweep complete"
+        ),
+        Err(e) => tracing::warn!(error = %e, "duplicate sweep failed"),
     }
 }
 

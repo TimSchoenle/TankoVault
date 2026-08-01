@@ -27,6 +27,51 @@ const HOST_REFRESH_PATH: &str = "/";
 /// The narrow path the unprefixed development cookie keeps.
 const DEV_REFRESH_PATH: &str = "/v1/auth";
 
+/// How long after its *own* rotation a refresh token is still honoured.
+///
+/// # Why a revoked token is not automatically theft
+///
+/// Rotation is atomic on the server and not atomic from the client's side: the old token is
+/// revoked and the new one issued in one request, but the client only holds the new value once
+/// the response — and its `Set-Cookie` — actually arrives. Anything that interrupts that
+/// leaves an honest client presenting a value the server has already retired:
+///
+/// - **Two requests racing.** Every open tab runs its own renewal timer against one shared
+///   cookie jar. They were seeded by the same rotation, so they fire together, both send the
+///   same cookie, and the second arrives after the first has rotated it away.
+/// - **A lost response.** A dropped connection, a laptop suspending, a frozen background tab
+///   or an API restart between the commit and the response. The rotation happened; the client
+///   never learned. It retries within seconds (`use_token_refresh` in `web/frontend`) with the
+///   only value it has — the old one.
+///
+/// Treating those as theft is not a harmless false positive: reuse detection revokes the whole
+/// family, so it does not merely fail the request, it *ends the session*. That is what it
+/// looked like in production — a 30-day session dying seconds after a restart, with
+/// `token_reuse_detected` in the audit log and no attacker anywhere near it.
+///
+/// # Why one minute, and why it is still safe
+///
+/// The window has to cover a client's retry, not a human's patience. The SPA retries a failed
+/// renewal on a backoff starting at two seconds, and a racing tab arrives inside one — the
+/// production incident that prompted this was **1.35 s**. A minute is generous for both and
+/// far too short to be a foothold: an attacker would have to steal the cookie *and* present it
+/// within a minute of the legitimate client rotating it away.
+///
+/// Two further conditions narrow it, and both are load-bearing:
+///
+/// 1. The family must still hold a live token ([`family_has_live_token`]). A lineage that has
+///    already been shut down — expired, logged out, reuse-revoked — never re-opens.
+/// 2. Acceptance **collapses the family** and issues a single new token, so the race resolves
+///    to exactly one credential rather than leaving both parties running.
+///
+/// Point 2 is what keeps theft detectable. If an attacker does win a grace-window replay, the
+/// legitimate client's token is revoked along with it, and that client comes back holding a
+/// token revoked far longer than `ROTATION_GRACE` ago — which is reuse, unambiguously, and
+/// takes the family down. Detection is deferred by one cycle, never removed.
+///
+/// [`family_has_live_token`]: tankovault_db::repo::users::family_has_live_token
+const ROTATION_GRACE: time::Duration = time::Duration::seconds(60);
+
 /// The name and `Path` this deployment issues the refresh cookie under.
 ///
 /// # The `__Host-` prefix, and the `Path=/` review it needed (SEC-7)
@@ -92,7 +137,11 @@ const fn refresh_cookie(cookie_secure: bool) -> (&'static str, &'static str) {
 /// Refresh the access token
 ///
 /// Reads the `refresh_token` `HttpOnly` cookie, rotates it, and issues a fresh access token.
-/// Presenting a token that was already rotated (reuse) revokes the whole token family.
+/// Presenting a token that was already rotated (reuse) revokes the whole token family. The one
+/// exception is a token presented within a short grace window of its own rotation while its
+/// family is still live: that is an interrupted or raced rotation by a client that never took
+/// delivery of the successor, and it is served — collapsing the family to the single token it
+/// issues — rather than counted as theft.
 #[utoipa::path(
     post,
     path = "/v1/auth/refresh",
@@ -118,18 +167,61 @@ pub async fn refresh(
         .await?
         .ok_or(ApiError::Unauthorized)?;
 
-    // Reuse detection: a token presented after it was already rotated (revoked) means the
-    // family is compromised — revoke the whole lineage.
-    if record.revoked_at.is_some() {
+    // Reuse detection: a token presented after it was already rotated (revoked) usually means
+    // two parties hold the same credential. Usually — an interrupted or raced rotation leaves
+    // an honest client holding exactly the same evidence, which is what `ROTATION_GRACE`
+    // exists to separate out. It is a security boundary standing on a subtle distinction:
+    // read `ROTATION_GRACE`'s doc comment in full before changing anything below.
+    if let Some(revoked_at) = record.revoked_at {
+        // Both halves of the test, evaluated *before* the family is collapsed below — the
+        // liveness question is about the state this request arrived into, not the one it
+        // leaves behind.
+        let raced = OffsetDateTime::now_utc() - revoked_at <= ROTATION_GRACE
+            && tankovault_db::repo::users::family_has_live_token(&state.pool, record.family_id)
+                .await?;
+
+        // Collapse the lineage either way. On theft that is the entire point. On a race it is
+        // what preserves "a family holds at most one live token": the successor the winning
+        // request produced is one nobody took delivery of, and leaving it live would both show
+        // up as a phantom entry in the reader's session list and keep answering
+        // `family_has_live_token` long after the rotation it belonged to.
         tankovault_db::repo::users::revoke_family(&state.pool, record.family_id).await?;
-        // The single highest-signal security event this service can emit: a rotated
-        // refresh token being replayed means two parties hold the same credential.
-        // Previously it revoked the family and returned 401 silently, leaving the
-        // operator no way to know a token had been stolen.
-        tracing::warn!(
+
+        if !raced {
+            // The single highest-signal security event this service can emit: a rotated
+            // refresh token being replayed means two parties hold the same credential.
+            // Previously it revoked the family and returned 401 silently, leaving the
+            // operator no way to know a token had been stolen.
+            tracing::warn!(
+                user_id = %record.user_id.as_uuid(),
+                family_id = %record.family_id,
+                "refresh token reuse detected; revoking family"
+            );
+            audit_anonymous(
+                &state,
+                &client,
+                Some(record.user_id),
+                "auth.refresh",
+                &record.user_id.as_uuid().to_string(),
+                &serde_json::json!({
+                    "reason": "token_reuse_detected",
+                    "family_id": record.family_id,
+                    "action_taken": "family_revoked",
+                }),
+                AuditOutcome::Denied,
+            )
+            .await;
+            return Err(ApiError::Unauthorized);
+        }
+
+        // Audited as a *success*, and separately from theft, so the two are never confused in
+        // the log. An operator reading `token_reuse_detected` should be able to treat it as
+        // what it claims to be; before the grace window existed, every one of these was
+        // recorded under that name.
+        tracing::info!(
             user_id = %record.user_id.as_uuid(),
             family_id = %record.family_id,
-            "refresh token reuse detected; revoking family"
+            "refresh token presented inside the rotation grace window; recovering the session"
         );
         audit_anonymous(
             &state,
@@ -138,20 +230,22 @@ pub async fn refresh(
             "auth.refresh",
             &record.user_id.as_uuid().to_string(),
             &serde_json::json!({
-                "reason": "token_reuse_detected",
+                "reason": "rotation_race_recovered",
                 "family_id": record.family_id,
-                "action_taken": "family_revoked",
+                "action_taken": "family_collapsed_and_reissued",
             }),
-            AuditOutcome::Denied,
+            AuditOutcome::Success,
         )
         .await;
-        return Err(ApiError::Unauthorized);
     }
+
     if record.expires_at <= OffsetDateTime::now_utc() {
         return Err(ApiError::Unauthorized);
     }
 
-    // Rotate: revoke the presented token, mint a new one in the same family.
+    // Rotate: revoke the presented token, mint a new one in the same family. On the grace path
+    // this is a no-op — `revoke_token` is guarded by `revoked_at IS NULL`, and the token was
+    // revoked above with the rest of its family — which is why the call stays unconditional.
     tankovault_db::repo::users::revoke_token(&state.pool, record.id).await?;
     let user = tankovault_db::repo::users::get(&state.pool, record.user_id).await?;
 

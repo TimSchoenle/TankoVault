@@ -1,8 +1,12 @@
 //! Rotating refresh tokens and the reuse-detection primitives over them.
 //!
 //! Only hashes are stored. A *family* is one rotation lineage: normal rotation revokes a
-//! single token, and presenting an already-revoked one means the lineage is compromised, so
-//! [`revoke_family`] takes the whole family out. The lookups deliberately do **not** filter
+//! single token, and presenting an already-revoked one is the signature of a compromised
+//! lineage, so [`revoke_family`] takes the whole family out. It is only the *signature*, not
+//! proof — an interrupted rotation looks identical from here — which is why
+//! [`family_has_live_token`] exists and why the judgement is made at the call site
+//! (`services/api/src/auth/session.rs`) with a time bound this layer knows nothing about. The
+//! lookups deliberately do **not** filter
 //! revoked or expired rows — that judgement belongs to the caller, and hiding a revoked token
 //! would make a replayed one indistinguishable from an unknown one, which is precisely the
 //! case reuse detection exists to catch.
@@ -99,6 +103,39 @@ pub async fn revoke_token<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<
     .execute(exec)
     .await?;
     Ok(())
+}
+
+/// Does `family_id` still hold a token that is usable right now — unrevoked and unexpired?
+///
+/// This is the second half of the test that separates an *interrupted* rotation from token
+/// theft (`services/api/src/auth/session.rs::refresh`). On its own, "the presented token is
+/// revoked" cannot tell the two apart: rotation revokes the old token and issues the new one
+/// server-side, but the client only learns the new value if the response reaches it. A lost
+/// response, or a second request that raced the first, leaves a perfectly honest client
+/// holding a value the server has already retired.
+///
+/// A live sibling is what makes the difference. It means the lineage is still running — some
+/// party successfully took delivery of the successor — so the presenter is racing that
+/// rotation rather than replaying a lineage that has already been shut down. Paired with a
+/// tight time bound at the call site, that is a *narrow* window, and it is deliberately not a
+/// substitute for reuse detection: see the caller for what happens after.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable.
+pub async fn family_has_live_token<'e, E: PgExecutor<'e>>(
+    exec: E,
+    family_id: Uuid,
+) -> DbResult<bool> {
+    let live = sqlx::query_scalar!(
+        "SELECT EXISTS( \
+             SELECT 1 FROM refresh_tokens \
+              WHERE family_id = $1 AND revoked_at IS NULL AND expires_at > now() \
+         ) AS \"live!\"",
+        family_id,
+    )
+    .fetch_one(exec)
+    .await?;
+    Ok(live)
 }
 
 /// Revoke an entire token family (reuse detected → invalidate the lineage).

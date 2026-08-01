@@ -15019,7 +15019,7 @@ impl Client {
     pub fn reset_password(&self) -> builder::ResetPassword<'_> {
         builder::ResetPassword::new(self)
     }
-    #[doc = "Refresh the access token\n\nReads the `refresh_token` `HttpOnly` cookie, rotates it, and issues a fresh access token.\nPresenting a token that was already rotated (reuse) revokes the whole token family.\n\nSends a `POST` request to `/v1/auth/refresh`\n\n```ignore\nlet response = client.refresh()\n    .send()\n    .await;\n```"]
+    #[doc = "Refresh the access token\n\nReads the `refresh_token` `HttpOnly` cookie, rotates it, and issues a fresh access token.\nPresenting a token that was already rotated (reuse) revokes the whole token family. The one\nexception is a token presented within a short grace window of its own rotation while its\nfamily is still live: that is an interrupted or raced rotation by a client that never took\ndelivery of the successor, and it is served — collapsing the family to the single token it\nissues — rather than counted as theft.\n\nSends a `POST` request to `/v1/auth/refresh`\n\n```ignore\nlet response = client.refresh()\n    .send()\n    .await;\n```"]
     pub fn refresh(&self) -> builder::Refresh<'_> {
         builder::Refresh::new(self)
     }

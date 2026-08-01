@@ -6256,7 +6256,7 @@
     },
     "/v1/auth/refresh": {
       "post": {
-        "description": "Reads the `refresh_token` `HttpOnly` cookie, rotates it, and issues a fresh access token.\nPresenting a token that was already rotated (reuse) revokes the whole token family.",
+        "description": "Reads the `refresh_token` `HttpOnly` cookie, rotates it, and issues a fresh access token.\nPresenting a token that was already rotated (reuse) revokes the whole token family. The one\nexception is a token presented within a short grace window of its own rotation while its\nfamily is still live: that is an interrupted or raced rotation by a client that never took\ndelivery of the successor, and it is served — collapsing the family to the single token it\nissues — rather than counted as theft.",
         "operationId": "refresh",
         "responses": {
           "200": {

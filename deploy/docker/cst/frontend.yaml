@@ -1,6 +1,11 @@
 # Container-structure-test contract for the frontend image built from
-# deploy/docker/Dockerfile.frontend (target `frontend`): the static musl axum server plus the
-# built Dioxus SPA bundle, on a `scratch` runtime.
+# deploy/docker/Dockerfile (target `frontend`): the musl axum server plus the built Dioxus SPA
+# bundle, on a `scratch` runtime.
+#
+# The server binary used to be a *static* musl cross-build from its own Dockerfile. It is now
+# produced by the shared Alpine `builder` alongside every other service binary, which links
+# dynamically against musl (see that file's `cook` stage for why BoringSSL forces it) — hence
+# the loader and `libgcc_s` assertions below, which the static build did not need.
 #
 # `scratch` ships no shell, so this suite is metadata + file assertions only. Run with:
 #   container-structure-test test --image <ref> --config deploy/docker/cst/frontend.yaml
@@ -27,6 +32,15 @@ fileExistenceTests:
     shouldExist: true
   - name: "CA trust store baked in for HTTPS upstreams"
     path: "/etc/ssl/certs/ca-certificates.crt"
+    shouldExist: true
+  # The two libraries the dynamically linked musl binary resolves at load time. On `scratch`
+  # there is no package manager to supply them, so a missing one is a container that exits
+  # before `main` — with no shell to diagnose it in.
+  - name: "musl loader present (the binary is dynamically linked)"
+    path: "/lib/ld-musl-x86_64.so.1"
+    shouldExist: true
+  - name: "libgcc_s present for the unwinder"
+    path: "/usr/lib/libgcc_s.so.1"
     shouldExist: true
   - name: "no shell (scratch, minimal attack surface)"
     path: "/bin/sh"

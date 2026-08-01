@@ -329,7 +329,7 @@ Everything that can fail, what owns it, and how to run it.
 | pedantic lints, `expect`-not-`allow`, `# Errors`/`# Panics` | `[workspace.lints]` | `cargo clippy --workspace --all-targets --all-features -- -D warnings` |
 | banned calls and macros (backend) | `clippy.toml` | as above |
 | banned calls and macros (frontend, incl. `eval`) | `web/frontend/clippy.toml` | `cd web/frontend && cargo clippy --all-targets -- -D warnings` |
-| CSP grants no `'unsafe-eval'`; shell is same-origin; no `dangerous_inner_html`; published secrets are refused | `xtask repo-lint` | `cargo run -p xtask -- repo-lint` |
+| CSP grants no `'unsafe-eval'`; shell is same-origin; no `dangerous_inner_html`; published secrets are refused; the Dockerfile ships every workspace binary | `xtask repo-lint` | `cargo run -p xtask -- repo-lint` |
 | intra-doc links | `[workspace.lints.rustdoc]` | `cargo doc --workspace --no-deps --all-features` |
 | OpenAPI + generated client are current | `xtask openapi --check` | `cargo run -p xtask -- openapi --check` |
 | `docs/CONFIGURATION.md` matches the config structs | `xtask config-docs --check` | `cargo run -p xtask -- config-docs --check` |
@@ -383,7 +383,7 @@ Prefer the highest row that fits. A unit test beats a text scan; a compiler erro
 
 ### 6.3 Writing a `repo-lint` rule
 
-`xtask/src/repo_lint.rs`. Requirements, all of which the existing four meet:
+`xtask/src/repo_lint.rs`. Requirements, all of which the existing five meet:
 
 1. **A doc comment saying what breaks if the rule is absent** — ideally the incident.
 2. **A test proving it fires.** A rule only ever seen green is indistinguishable from one whose

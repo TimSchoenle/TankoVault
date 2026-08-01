@@ -44,16 +44,17 @@ struct Finding {
 pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     let mut findings = Vec::new();
     // The two scanning rules cannot fail to *run*: an unreadable path simply holds nothing to
-    // judge. The two below read one specific, required artefact each, and a missing app shell
-    // or compose file is a broken checkout rather than a clean bill of health — so those two
-    // return `Result` and this function stops.
+    // judge. The three below read one specific, required artefact each, and a missing app
+    // shell, compose file or Dockerfile is a broken checkout rather than a clean bill of
+    // health — so those three return `Result` and this function stops.
     findings.extend(no_unsafe_eval(root));
     findings.extend(no_dangerous_inner_html(root));
     findings.extend(shell_loads_nothing_off_origin(root)?);
     findings.extend(published_secrets_are_refused(root)?);
+    findings.extend(dockerfile_ships_every_workspace_binary(root)?);
 
     if findings.is_empty() {
-        println!("repo-lint: 4 rules, no violations");
+        println!("repo-lint: 5 rules, no violations");
         return Ok(());
     }
 
@@ -263,6 +264,128 @@ fn published_secrets_are_refused(root: &Path) -> anyhow::Result<Vec<Finding>> {
     Ok(findings)
 }
 
+/// **Every workspace binary must be listed in the Dockerfile's `SERVICE_BINS`.**
+///
+/// `deploy/docker/Dockerfile` compiles all nine binaries in one `cargo` invocation and copies
+/// them into `/out`; each runtime stage then does `COPY --from=builder /out/${BIN}`. That is
+/// what collapsed nine serialised per-binary compiles into one, but it costs the property the
+/// old shape had for free: `--build-arg BIN=x` used to *be* `cargo build --bin x`, so an
+/// unknown binary failed at the compile with cargo's own error. Now the list is a literal, and
+/// a `[[bin]]` added to the workspace without touching the Dockerfile produces an image that
+/// fails at the final `COPY` — for the one service nobody was building, and only once someone
+/// tries to build it.
+///
+/// So: the two lists must agree. This reads `SERVICE_BINS` out of the Dockerfile and the
+/// `[[bin]] name = …` entries out of every workspace manifest, and reports each direction of
+/// disagreement separately, because they are different mistakes with different repairs.
+///
+/// `web/frontend` is deliberately not counted. It is excluded from the host workspace (root
+/// `Cargo.toml` → `exclude`) and its `app` binary is a `wasm32` artefact built by `dx`, not a
+/// binary any runtime stage copies.
+fn dockerfile_ships_every_workspace_binary(root: &Path) -> anyhow::Result<Vec<Finding>> {
+    let dockerfile = root.join("deploy/docker/Dockerfile");
+    let Ok(text) = std::fs::read_to_string(&dockerfile) else {
+        anyhow::bail!("repo-lint: cannot read {}", dockerfile.display());
+    };
+
+    let Some((line_number, declared)) = service_bins(&text) else {
+        anyhow::bail!(
+            "repo-lint: {} declares no `ARG SERVICE_BINS=\"…\"`; the builder stage cannot \
+             have been left without one",
+            dockerfile.display()
+        );
+    };
+
+    let mut findings = Vec::new();
+    let mut actual = Vec::new();
+    // `exclude`d members are not workspace binaries; `target` holds build output, and a vendored
+    // manifest under it would otherwise be read as a member.
+    for manifest in walk(root, &["toml"], &["target", "web", "fuzz", "mutants.out", "mutants.out.old"]) {
+        if manifest.file_name().is_none_or(|name| name != "Cargo.toml") {
+            continue;
+        }
+        let Ok(contents) = std::fs::read_to_string(&manifest) else {
+            continue;
+        };
+        actual.extend(bin_targets(&contents));
+    }
+
+    for bin in &actual {
+        if !declared.contains(bin) {
+            findings.push(Finding {
+                rule: "dockerfile-ships-every-workspace-binary",
+                file: dockerfile.clone(),
+                line: line_number,
+                detail: format!(
+                    "workspace binary `{bin}` is missing from SERVICE_BINS, so no image can \
+                     ship it — add it here (and give it a compose service if it needs one)"
+                ),
+            });
+        }
+    }
+    for bin in &declared {
+        if !actual.contains(bin) {
+            findings.push(Finding {
+                rule: "dockerfile-ships-every-workspace-binary",
+                file: dockerfile.clone(),
+                line: line_number,
+                detail: format!(
+                    "SERVICE_BINS names `{bin}`, which is not a `[[bin]]` target in any \
+                     workspace manifest — the builder stage will fail on it"
+                ),
+            });
+        }
+    }
+    Ok(findings)
+}
+
+/// The `SERVICE_BINS` value from a Dockerfile, with its 1-based line number.
+///
+/// Split out so the parse can be tested against the forms that must and must not be recognised,
+/// without a filesystem.
+fn service_bins(dockerfile: &str) -> Option<(usize, Vec<String>)> {
+    for (index, line) in dockerfile.lines().enumerate() {
+        let Some(value) = line.trim().strip_prefix("ARG SERVICE_BINS=") else {
+            continue;
+        };
+        let names = value
+            .trim()
+            .trim_matches('"')
+            .split_whitespace()
+            .map(str::to_owned)
+            .collect();
+        return Some((index + 1, names));
+    }
+    None
+}
+
+/// The `name` of every `[[bin]]` target declared in one `Cargo.toml`.
+///
+/// A text scan, like every rule in this module. `[[bin]]` sections are terminated by the next
+/// table header, so tracking whether the current section is one is enough — and it is what keeps
+/// `[package] name = …` out of the result, which is the only real ambiguity here.
+fn bin_targets(manifest: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut in_bin_section = false;
+    for line in manifest.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_bin_section = line.starts_with("[[bin]]");
+            continue;
+        }
+        if !in_bin_section {
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("name") {
+            let Some(value) = value.trim_start().strip_prefix('=') else {
+                continue;
+            };
+            names.push(value.trim().trim_matches('"').to_owned());
+        }
+    }
+    names
+}
+
 // ---------------------------------------------------------------------------------------
 // Scanning
 // ---------------------------------------------------------------------------------------
@@ -447,6 +570,44 @@ mod tests {
             "assert!(!csp.contains(\"'{}'\"));",
             "unsafe-eval"
         )));
+    }
+
+    #[test]
+    fn service_bins_is_read_off_the_arg_line() {
+        let dockerfile = "FROM scratch AS builder\n\
+             # ARG SERVICE_BINS=\"decoy\"\n\
+             ARG SERVICE_BINS=\"api worker xtask\"\n\
+             RUN true\n";
+        let (line, names) = service_bins(dockerfile).expect("the ARG is present");
+        // Line 3, not the commented decoy on line 2: the finding has to point at the
+        // declaration an author would edit.
+        assert_eq!(line, 3);
+        assert_eq!(names, ["api", "worker", "xtask"]);
+
+        assert!(service_bins("FROM scratch\nARG BIN\n").is_none());
+    }
+
+    #[test]
+    fn bin_targets_are_told_apart_from_the_package_name() {
+        // The real shape of a service manifest. `[package] name` and `[[bin]] name` differ on
+        // purpose here (`tankovault-api` vs `api`) and confusing them is the whole hazard.
+        let manifest = "[package]\n\
+             name = \"tankovault-api\"\n\
+             version.workspace = true\n\
+             \n\
+             [[bin]]\n\
+             name = \"api\"\n\
+             path = \"src/main.rs\"\n\
+             \n\
+             [dependencies]\n\
+             name-resolver = \"1\"\n";
+        assert_eq!(bin_targets(manifest), ["api"]);
+
+        // A library-only crate declares no binary at all.
+        assert_eq!(
+            bin_targets("[package]\nname = \"tankovault-domain\"\n"),
+            Vec::<String>::new()
+        );
     }
 
     /// The rules must pass against the tree they ship with. A rule that has never been run

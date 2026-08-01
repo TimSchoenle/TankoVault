@@ -3,21 +3,24 @@
 Container build and local orchestration for TankoVault (design §19).
 
 ## Layout
-- `docker/Dockerfile` — a single parameterised, cargo-chef-cached multi-stage build for the
-  Rust services. Pick the binary with `--build-arg BIN=<name>` (`api`, `worker`,
-  `control-plane`, `notifier`, `sync`, `challenge-solver`, `render`, `xtask`). Each binary is
-  compiled natively on Alpine as a **musl binary** and shipped on a bare `scratch` image (no
-  OS, no shell, no package manager — just the binary, the musl loader and `libgcc_s` it
-  resolves, a CA trust store, and a numeric nonroot user). It is dynamically rather than
+- `docker/Dockerfile` — **every image, from one file**: a cargo-chef-cached multi-stage build
+  that compiles all nine workspace binaries in a single `cargo` invocation and then hands each
+  one to a thin runtime stage. Pick a backend service with `--build-arg BIN=<name>` (`api`,
+  `worker`, `control-plane`, `notifier`, `sync`, `challenge-solver`, `render`, `xtask`). Each
+  binary is compiled natively on Alpine as a **musl binary** and shipped on a bare `scratch`
+  image (no OS, no shell, no package manager — just the binary, the musl loader and `libgcc_s`
+  it resolves, a CA trust store, and a numeric nonroot user). It is dynamically rather than
   statically linked because `wreq`'s BoringSSL build script `dlopen`s libclang, which a
-  `crt-static` build script cannot do; see the Dockerfile's builder stage. The `render` tier
-  needs a real Chromium at runtime, so it uses the Debian `runtime-browser` stage
-  (`--target runtime-browser`) instead.
-- `docker/Dockerfile.frontend` — builds the Dioxus WASM SPA (`web/frontend/`) with the `dx`
-  CLI, compiles the `frontend` axum server (`services/frontend/`) as a **static musl binary**,
-  and ships both on a bare `scratch` image (like every backend service). The server serves the
-  SPA and reverse-proxies `/v1/*` (REST + SSE) to the `api` service, so the SPA's same-origin
-  API calls resolve without CORS.
+  `crt-static` build script cannot do; see the Dockerfile's builder stage. Two tiers need
+  something else and select it with `--target`:
+  - `runtime-browser` — the `render` tier, which drives a real Chromium and so needs a Debian
+    base rather than `scratch`.
+  - `frontend` — the Dioxus WASM SPA (`web/frontend/`, built with the `dx` CLI) shipped
+    alongside the `frontend` axum server (`services/frontend/`) on `scratch`. The server serves
+    the SPA and reverse-proxies `/v1/*` (REST + SSE) to the `api` service, so the SPA's
+    same-origin API calls resolve without CORS. This was a second Dockerfile until its musl
+    cross-build was folded into the shared Alpine builder, which had been compiling the same
+    dependency graph a second time for a binary the workspace already builds.
 - `docker-compose.yml` — the full end-to-end local stack: Postgres 17, Redis 7, NATS
   (JetStream), FlareSolverr, a one-shot `migrate`+`seed`, every backend service, and the
   web frontend. **This is the only supported deployment shape** — see [Kubernetes](#kubernetes)
@@ -77,9 +80,12 @@ The complete surface — every `TANKOVAULT_*` key, its default, and which servic
 docker build -f deploy/docker/Dockerfile --build-arg BIN=api -t tankovault-api .
 # The render tier (Debian + Chromium):
 docker build -f deploy/docker/Dockerfile --build-arg BIN=render --target runtime-browser -t tankovault-render .
-# The frontend:
-docker build -f deploy/docker/Dockerfile.frontend -t tankovault-frontend .
+# The frontend (WASM bundle + axum server -> scratch):
+docker build -f deploy/docker/Dockerfile --target frontend -t tankovault-frontend .
 ```
+Note that `BIN` selects which *already-compiled* binary the runtime layer copies in, not what
+gets compiled: the `builder` stage builds all nine at once, so the second and subsequent images
+in a session are a `COPY` onto `scratch` and cost seconds.
 
 ### Reproducible & cached builds
 All base images are pinned by digest, cargo resolves against the committed `Cargo.lock`

@@ -4,7 +4,51 @@ This file tracks the build state of the system described in [`design.md`](./desi
 Update it at the end of every coding session: mark what landed, and leave a precise
 "pick up next" list so the next session starts without re-deriving context.
 
-**Last updated:** 2026-07-29 (Session 19 — part-release read state was invisible to the series page)
+**Last updated:** 2026-08-01 (Session 20 — the image build was compiling the workspace nine times)
+
+> **Session 20 — `docker compose build` took over twenty minutes, and most of it was repeated
+> work.** `deploy/docker/Dockerfile`'s `builder` stage took `ARG BIN` and ran
+> `cargo build --bin $BIN`, so the nine service images produced nine distinct build vertices.
+> They shared one `target/` cache mount, and cargo takes an *exclusive* lock on a target
+> directory, so BuildKit serialised them — the image timestamps showed the nine finishing two to
+> four minutes apart, in sequence. Worse, nine invocations resolve features nine times (cargo
+> unifies features only within one invocation), so dependencies wanted with different feature
+> sets by different services were recompiled on the way past, turning the shared mount into
+> thrash. `builder` now compiles **all nine binaries in one `cargo` invocation** into `/out`,
+> takes no `ARG BIN`, and the runtime stages copy `/out/${BIN}` — so it is one vertex BuildKit
+> builds once, the leaf services compile concurrently, and features resolve once. Every backend
+> image came out byte-identical in size, so the feature union cost nothing.
+>
+> `deploy/docker/Dockerfile.frontend` is **deleted**; its stages moved into the one Dockerfile
+> (`--target frontend`). It had been compiling a second full musl dependency graph, from Debian,
+> to cross-build the `frontend` server — a workspace member the Alpine builder was already
+> compiling the dependencies for. Only the wasm half needs Debian (the `dx` CLI and its bundled
+> `wasm-opt` are glibc binaries), so that is all that stayed: `cook-web` now rehydrates the host
+> skeleton with `cargo chef cook --no-build` purely to resolve `web/frontend`'s two
+> cross-workspace path deps, instead of cooking a ~600-crate graph to leave the manifests on
+> disk. The frontend server binary is consequently dynamically linked against musl like every
+> other service (it was static), so its `scratch` image now carries the loader and `libgcc_s`;
+> `deploy/docker/cst/frontend.yaml` asserts both.
+>
+> The host was also the problem: `.wslconfig` capped Docker at 6 CPUs / 8 GB on a 16-core/94 GB
+> machine, and this build is entirely compile-bound. Raised to 24 / 48 GB (not a repository
+> change — noted here because the timings below assume it).
+>
+> **Measured, on this tree:** a cold build of all ten images, 12 m 29 s; a rebuild after one
+> backend source edit, **3 m 50 s**, of which 3 m 28 s is the single `cargo` run. CI keeps the
+> same shape: `docker-deps` now builds `--target builder` rather than `--target cook`, so the
+> eight matrix legs are a cache hit plus a `COPY` instead of a per-binary compile, and a new
+> `docker-wasm-deps` job publishes `cook-web` under its own scope (the frontend job must not
+> `mode=max`-export, or it would put a second copy of the backend chain into a 10 GB LRU cache
+> and evict the original). New `repo-lint` rule
+> `dockerfile-ships-every-workspace-binary` — `SERVICE_BINS` is a literal now, so a `[[bin]]`
+> added without touching the Dockerfile would otherwise fail at the final `COPY`, for the one
+> service nobody was building.
+>
+> **Not done, and the next thing available:** `cargo install dioxus-cli@0.7.9 --locked` costs
+> 189 s from cold on its own. `cargo-binstall` would fetch a prebuilt `dx` instead, but that
+> trades building from crates.io source for a GitHub release download, which is a supply-chain
+> posture decision rather than a build-speed one.
 
 > **Session 19 — marking a part release read did nothing visible.** `GET /v1/series/:id/chapters`
 > decided each chapter's `read` flag from the whole-chapter frontier alone

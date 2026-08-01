@@ -1,9 +1,15 @@
 # Full end-to-end local stack (design §19): Postgres + Redis + NATS(JetStream) +
 # FlareSolverr, a one-shot migrate/seed step, every TankoVault backend service, and the Dioxus
-# web frontend. Backend images are built from the single parameterised deploy/docker/Dockerfile;
-# the frontend from deploy/docker/Dockerfile.frontend (build context = repo root for both).
+# web frontend. **Every image here is built from the one deploy/docker/Dockerfile** (build
+# context = repo root), selected by `target` and `BIN`; the frontend used to have a file of its
+# own, which meant compiling a second copy of the same musl dependency graph for a binary the
+# backend workspace already builds.
 #
 #   docker compose -f deploy/docker-compose.yml up --build
+#
+# That single Dockerfile compiles all nine binaries in one `cargo` invocation, so the nine
+# service images share one build vertex and BuildKit runs it once. Passing `BIN` no longer
+# selects what gets compiled, only which already-built binary the runtime layer copies in.
 #
 # Then open the app at http://localhost:3000 (the frontend server serves the SPA and proxies
 # /v1/* to api).
@@ -422,7 +428,7 @@ services:
   frontend:
     deploy: { resources: { limits: { memory: 256m } } }
     # Same self-probe as the backends, but this image's entrypoint has its own name
-    # (deploy/docker/Dockerfile.frontend), so the anchor above cannot be reused verbatim.
+    # (`tankovault-frontend`), so the anchor above cannot be reused verbatim.
     healthcheck:
       test: ["CMD", "/usr/local/bin/tankovault-frontend", "--healthcheck"]
       interval: 10s
@@ -431,8 +437,10 @@ services:
       start_period: 20s
     <<: *hardening
     build:
-      context: ..
-      dockerfile: deploy/docker/Dockerfile.frontend
+      <<: *build
+      # No `BIN`: this image carries the WASM bundle alongside the server binary, so it has a
+      # stage of its own rather than a `BIN` value on the shared runtime stage.
+      target: frontend
     environment:
       <<: *telemetry
       TANKOVAULT_TELEMETRY__SERVICE_NAME: frontend

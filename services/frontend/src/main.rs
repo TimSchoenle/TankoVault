@@ -3,7 +3,7 @@
 //! Serves the compiled Dioxus WASM single-page app and reverse-proxies `/v1/*` (REST + SSE)
 //! to the `api` service from a single origin, replacing the previous nginx image. Like every
 //! other backend binary it is a fully static musl build shipped on a bare `scratch` image
-//! (see `deploy/docker/Dockerfile.frontend`).
+//! (see `deploy/docker/Dockerfile`, target `frontend`).
 //!
 //! ## Why one origin
 //!

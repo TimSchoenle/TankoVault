@@ -993,21 +993,31 @@ jobs:
           docker compose -f deploy/docker-compose.yml \
             -f deploy/docker-compose.observability.yml config --quiet
 
-  # Dependency warm-up for the image matrix below.
+  # The one compile every image below is built on.
   #
-  # Every one of those builds derives from the same `cook` stage — one `cargo chef cook`
-  # over ~600 lockfile entries at `codegen-units = 1`, which dominates each build's wall clock.
-  # Run inside the matrix, that work happened once per leg: the jobs start together, all
-  # miss a cold cache, and all cook the identical graph. They also all exported into the
-  # *same* unscoped GHA cache concurrently (`cache-to: type=gha,mode=max` with no `scope`), so
-  # the writes raced and whichever finished last decided what the next run imported —
-  # which is why the matrix kept missing a cache it had just populated.
+  # Every image in this repository derives from the same two stages — `cook` (one
+  # `cargo chef cook` over ~600 lockfile entries at `codegen-units = 1`) and `builder` (all nine
+  # workspace binaries in a single `cargo` invocation). Together they are the entire wall clock
+  # of an image build; everything above them is a `COPY` onto `scratch`.
   #
-  # This job builds `--target cook` alone and publishes it under a scope of its own. The matrix
-  # imports that scope read-only and keeps a per-`bin` scope for the layers above it, so the
-  # exports no longer collide. The cost is one serialised step ahead of the matrix in
-  # exchange for cooking the graph once; `cacheonly` because no image is wanted here, only the
-  # exported layers.
+  # Run inside the matrix, that work happened once per leg: the jobs start together, all miss a
+  # cold cache, and all cook the identical graph. They also all exported into the *same*
+  # unscoped GHA cache concurrently (`cache-to: type=gha,mode=max` with no `scope`), so the
+  # writes raced and whichever finished last decided what the next run imported — which is why
+  # the matrix kept missing a cache it had just populated.
+  #
+  # This job builds `--target builder` alone and publishes it under a scope of its own. The
+  # matrix imports that scope read-only, and — because `builder` no longer takes `ARG BIN`, so
+  # every leg's cache key for it is identical — each leg is now a cache hit plus a `COPY`
+  # rather than a per-binary compile. It was `--target cook` while `builder` was per-`BIN`; the
+  # extra stage is the same total work moved from eight legs into one.
+  #
+  # `cacheonly` because no image is wanted here, only the exported layers.
+  #
+  # Next available step, not taken here: the matrix below still downloads this multi-gigabyte
+  # cache eight times to perform eight `COPY`s. Collapsing it into a single `buildx bake` job
+  # that emits all eight images would remove seven of those downloads, at the cost of per-image
+  # job granularity in the checks list.
   docker-deps:
     name: docker build (deps)
     runs-on: ubuntu-latest
@@ -1033,18 +1043,68 @@ jobs:
         id: epoch
         run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
 
-      - name: cook dependency graph
+      - name: cook dependency graph and compile every binary
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: deploy/docker/Dockerfile
           build-args: SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
-          target: cook
+          target: builder
           push: false
           outputs: type=cacheonly
           provenance: false
           cache-from: type=gha,scope=backend-deps
           cache-to: type=gha,scope=backend-deps,mode=max
+
+  # The wasm half of the frontend image, warmed for the same reason and in the same shape as
+  # `docker-deps` above: `cook-web` compiles the SPA's dependency graph at `lto = "fat"`,
+  # `codegen-units = 1`, and a BuildKit cache mount cannot survive a fresh runner — only an
+  # exported *layer* can.
+  #
+  # It is a separate job, and a separate scope, rather than a `cache-to` on `docker-frontend`
+  # below, because that image also consumes the Alpine `builder`: a `mode=max` export from the
+  # frontend job would re-upload the whole backend cache under a second scope. GitHub's Actions
+  # cache is 10 GB per repository with least-recently-used eviction, and duplicating the one
+  # layer that matters is precisely how this repository last evicted it (see the matrix below).
+  # `cook-web` derives from `planner` and the Debian wasm toolchain only, so its export carries
+  # nothing `backend-deps` already holds.
+  docker-wasm-deps:
+    name: docker build (wasm deps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [changes, lint]
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
+    permissions:
+      contents: read # to check out the build context
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: derive SOURCE_DATE_EPOCH
+        id: epoch
+        run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
+
+      - name: cook the wasm dependency graph
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          build-args: SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
+          target: cook-web
+          push: false
+          outputs: type=cacheonly
+          provenance: false
+          cache-from: type=gha,scope=frontend-deps
+          cache-to: type=gha,scope=frontend-deps,mode=max
 
   docker:
     name: docker build (${{ matrix.bin }})
@@ -1100,10 +1160,11 @@ jobs:
           provenance: false
           # Import only — this job writes no cache at all, deliberately.
           #
-          # `backend-deps` is the shared `cook` stage published by the `docker-deps` job above.
-          # Everything below `builder` comes from there; `builder` itself starts with `COPY . .`,
-          # so its cache key changes with every commit and a per-`bin` export could only ever be
-          # hit by re-running the *identical* commit.
+          # `backend-deps` is the shared `cook` + `builder` pair published by the `docker-deps`
+          # job above, in this same run and therefore at this same commit — which is what makes
+          # the `COPY . .` inside `builder` a cache *hit* here rather than a recompile. There is
+          # nothing left above it worth exporting: this leg's remaining work is one `COPY` of an
+          # already-compiled binary onto `scratch`.
           #
           # That near-zero benefit was being bought at a serious price. `mode=max` re-exports
           # every layer a build touched, including ones it imported — so each of the eight legs
@@ -1139,9 +1200,9 @@ jobs:
 
   # Cross-architecture image build, opt-in.
   #
-  # Every service image is `FROM scratch` over a musl binary and `Dockerfile.frontend` already
-  # parameterises `BUILD_TARGET`, so nothing in the build is x86-specific — but "nothing looks
-  # x86-specific" is not evidence, which is what this job supplies. It runs on a **native** arm
+  # Every service image is `FROM scratch` over a musl binary built natively for whatever the
+  # host is, so nothing in the build is x86-specific — but "nothing looks x86-specific" is not
+  # evidence, which is what this job supplies. It runs on a **native** arm
   # runner: QEMU is not a substitute here, because `wreq` compiles BoringSSL from C/C++/assembly
   # and an emulated build of it costs upwards of an hour per image.
   #
@@ -1226,7 +1287,10 @@ jobs:
     name: docker build (frontend)
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: [changes, lint]
+    # Both warm-ups: this image is the one that consumes both lineages — the musl `frontend`
+    # binary from the Alpine `builder` (`backend-deps`) and the SPA bundle from `cook-web`
+    # (`frontend-deps`).
+    needs: [changes, lint, docker-deps, docker-wasm-deps]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
     permissions:
       contents: read # to check out the build context
@@ -1251,7 +1315,8 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          file: deploy/docker/Dockerfile.frontend
+          file: deploy/docker/Dockerfile
+          target: frontend
           build-args: |
             SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           push: false
@@ -1260,8 +1325,14 @@ jobs:
           load: true
           tags: tankovault-frontend:ci
           provenance: false
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,scope=frontend,mode=max
+          # Import both warm-up scopes; write neither. Writing is what had to stop: a `mode=max`
+          # export from here re-uploads every layer this build touched *including the imported
+          # ones*, so it would put a second copy of the backend `cook`/`builder` chain into a
+          # 10 GB LRU cache and evict the original. Both scopes are published by the two
+          # dedicated `docker-*-deps` jobs, in this run and at this commit.
+          cache-from: |
+            type=gha,scope=backend-deps
+            type=gha,scope=frontend-deps
 
       # Enforce the frontend image contract (design §21): non-root UID:GID 1001:1001, the
       # unprivileged 3000 exposed port, the entrypoint, the static-dir env var, and the presence
@@ -1314,6 +1385,7 @@ jobs:
       - supply-chain
       - observability
       - docker-deps
+      - docker-wasm-deps
       - docker
       - docker-arm64
       - docker-frontend

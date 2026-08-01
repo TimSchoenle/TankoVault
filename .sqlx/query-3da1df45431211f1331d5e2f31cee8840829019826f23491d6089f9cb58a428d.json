@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE watchlist_entries SET status = COALESCE($3, status), notify = COALESCE($4, notify), updated_at = now() WHERE user_id = $1 AND series_id = ANY($2) RETURNING series_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "series_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        {
+          "Custom": {
+            "name": "watch_status",
+            "kind": {
+              "Enum": [
+                "reading",
+                "planned",
+                "completed",
+                "dropped",
+                "paused"
+              ]
+            }
+          }
+        },
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3da1df45431211f1331d5e2f31cee8840829019826f23491d6089f9cb58a428d"
+}

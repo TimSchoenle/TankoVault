@@ -282,6 +282,71 @@ pub async fn progress_mark_unread(
     progress_write(pool, user_id, series_id, whole, part).await
 }
 
+/// Advance many series' progress to "everything read", returning the ids that were on the
+/// user's watchlist and therefore acted on. Backs the Watchlist's `Mark group read`.
+///
+/// # Why the part frontier is cleared rather than advanced
+///
+/// The whole frontier is set to `max(floor(number))` across every source, and
+/// [`ReadProgress::covers`] reports `number` read as soon as `floor(number) <= whole`. Since
+/// `max(floor(…))` is by construction at least `floor(x)` for every chapter `x` in the series,
+/// that single value covers the part releases too, and any surviving part frontier would be
+/// stale — exactly the state the §A.1 invariant forbids.
+///
+/// # Why `GREATEST`
+///
+/// The frontier only ever moves forward. Without it, a catalogue that *lost* chapters (a source
+/// delisted, a merge undone) would silently rewind a reader's progress the next time they
+/// pressed the button — and `progress_mark_read` never does that, so this must not either.
+///
+/// # Why every watchlisted id comes back, including ones nothing was written for
+///
+/// A tracked series with no chapters yet has nothing to mark; that is a no-op, not a failure,
+/// and reporting it as one would make "Mark group read" claim a partial failure on a perfectly
+/// healthy group. The `written` CTE is data-modifying, so Postgres executes it whether or not
+/// the outer query references it; the outer query deliberately reads `targets` instead, so the
+/// result is "these ids were yours" rather than "these ids had rows written".
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Ids the user does not track
+/// are absent from the result rather than [`crate::DbError::NotFound`]. Note this is one
+/// statement, so unlike [`progress_mark_read`] it cannot lose a concurrent advance: the
+/// `GREATEST` is evaluated inside the `ON CONFLICT` update against the row it locks.
+pub async fn progress_bulk_mark_all_read<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    series_ids: &[Uuid],
+) -> DbResult<Vec<SeriesId>> {
+    let acted = sqlx::query_scalar!(
+        "WITH targets AS ( \
+           SELECT w.series_id, latest.n \
+           FROM watchlist_entries w \
+           CROSS JOIN LATERAL ( \
+             SELECT max(floor(c.number)) AS n \
+             FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+             WHERE ss.series_id = w.series_id \
+           ) latest \
+           WHERE w.user_id = $1 AND w.series_id = ANY($2) \
+         ), written AS ( \
+           INSERT INTO read_progress \
+                  (user_id, series_id, last_read_whole_number, last_read_part_number) \
+           SELECT $1, t.series_id, t.n, NULL FROM targets t WHERE t.n IS NOT NULL \
+           ON CONFLICT (user_id, series_id) DO UPDATE \
+              SET last_read_whole_number = GREATEST(read_progress.last_read_whole_number, \
+                                                    EXCLUDED.last_read_whole_number), \
+                  last_read_part_number  = NULL, \
+                  updated_at = now() \
+           RETURNING series_id \
+         ) \
+         SELECT series_id AS \"series_id!\" FROM targets",
+        user_id.as_uuid(),
+        series_ids,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(acted.into_iter().map(SeriesId::from_uuid).collect())
+}
+
 /// The highest whole chapter that exists for this series strictly below `number`, or `0.0`
 /// when there is none (§A.3). Two callers, both of which must land on a chapter the catalogue
 /// actually holds rather than on `number - 1`: the retreat target for un-reading a whole

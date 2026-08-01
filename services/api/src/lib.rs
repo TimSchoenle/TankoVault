@@ -316,10 +316,18 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(series::providers))
         // me
         .routes(routes!(me::watchlist))
-        .routes(routes!(me::put_watchlist, me::delete_watchlist))
+        // Bulk before the `{series_id}` sibling for readability only — `matchit` prefers the
+        // static segment regardless, and a `series_id` is a uuid, so `bulk` can never be one.
+        .routes(routes!(me::bulk_update_watchlist, me::bulk_remove_watchlist))
+        .routes(routes!(
+            me::get_watchlist_entry,
+            me::put_watchlist,
+            me::delete_watchlist
+        ))
         .routes(routes!(me::get_progress, me::put_progress))
         .routes(routes!(me::put_chapter_progress))
         .routes(routes!(me::mark_read_to))
+        .routes(routes!(me::bulk_mark_read))
         .routes(routes!(me::put_sync_excluded))
         .routes(routes!(me::put_sync_override))
         .routes(routes!(me::feed))

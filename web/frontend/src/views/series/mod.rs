@@ -125,19 +125,32 @@ pub(crate) fn Series(id: String) -> Element {
         }
     });
 
+    // One entry, not the whole watchlist.
+    //
+    // This used to fetch every tracked title and scan the array for this series. That was
+    // already an odd way to read one row — a 598-entry payload to answer a yes/no — and it
+    // became a *bug* when the list started paginating: past the first page the entry simply is
+    // not in the response, and the page would offer "Add to watchlist" for a title the reader
+    // is already tracking.
     let watchlist = use_resource(move || {
         reload_wl.track();
         let client = api.client();
         let authed = session.is_authenticated();
         async move {
             if !authed {
-                return Ok(Vec::new());
+                return Ok(None);
             }
             client
-                .watchlist()
+                .get_watchlist_entry()
+                .series_id(id)
                 .send()
                 .await
-                .map(ResponseValue::into_inner)
+                .map(|r| match r.into_inner().entry {
+                    Some(WatchlistEntryViewEntry::Variant1(item)) => Some(item),
+                    // `Variant0` is the generated shape of the schema's `null` arm; it and an
+                    // absent field mean the same thing — this series is not tracked.
+                    _ => None,
+                })
                 .map_err(|e| api::friendly_error(i18n, e))
         }
     });
@@ -194,7 +207,7 @@ pub(crate) fn Series(id: String) -> Element {
         })
         .collect();
 
-    let entry = current_entry(&watchlist, id);
+    let entry = current_entry(&watchlist);
     let total_chapters = merged.iter().filter(|c| !c.is_part()).count();
 
     rsx! {
@@ -502,13 +515,14 @@ fn WatchControls(
     }
 }
 
-/// Find this series' watchlist entry (if any) from the loaded watchlist resource.
-fn current_entry(
-    watchlist: &Resource<Result<Vec<WatchlistItem>, String>>,
-    series_id: SeriesId,
-) -> Option<WatchlistItem> {
+/// This series' watchlist entry, once the lookup has landed.
+///
+/// A failed or in-flight lookup is `None`, i.e. "not tracked as far as this page knows" — the
+/// watch button then offers to add the title, and adding one already tracked is an upsert, so
+/// the worst case is a no-op rather than a wrong write.
+fn current_entry(watchlist: &Resource<Result<Option<WatchlistItem>, String>>) -> Option<WatchlistItem> {
     match &*watchlist.read_unchecked() {
-        Some(Ok(list)) => list.iter().find(|i| i.series_id == series_id).cloned(),
+        Some(Ok(entry)) => entry.clone(),
         _ => None,
     }
 }

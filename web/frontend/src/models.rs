@@ -20,14 +20,19 @@ pub(crate) use crate::wire::types::{
     ForgotPasswordRequest, LoginRequest, MarkRead, MarkReadTo, MergeRequest, PasskeyLoginRequest,
     PermissionPreset, Politeness, PolitenessEmulation, ProfileUpdate, ProgressDto, ProgressUpdate,
     Provider, ProviderId, ProviderInfo, ProviderStat, ProviderState, PublicProvider,
-    RegisterRequest, RequestKind, RequestStatus, ResendVerificationRequest, ResetPasswordRequest,
-    ResolveConflict, RunState, ScanMode, ScanRun, ScanRunProviderId, SeriesDetail, SeriesId,
-    SeriesSourceId, SeriesStatus, SeriesSummary, SetProviderState as SetProviderStateBody,
-    SourceDto, SuggestedMatch, SyncExcluded, SyncOpts, SyncPullBody, SyncPushBody,
-    SyncSettingsPatch, SystemStats, Tag, TestAdapterBody, TestAdapterRequest, TriggerScan,
-    TriggerScanProviderId, UpdateProvider, UpsertMapping, UserId, VerifyEmailRequest, WatchStatus,
-    WatchlistItem, WatchlistUpsert,
+    ProblemDetails, RegisterRequest, RequestKind, RequestStatus, ResendVerificationRequest,
+    ResetPasswordRequest, ResolveConflict, RunState, ScanMode, ScanRun, ScanRunProviderId,
+    SeriesDetail, SeriesId, SeriesSourceId, SeriesStatus, SeriesSummary,
+    SetProviderState as SetProviderStateBody, SourceDto, SuggestedMatch, SyncExcluded, SyncOpts,
+    SyncPullBody, SyncPushBody, SyncSettingsPatch, SystemStats, Tag, TestAdapterBody,
+    TestAdapterRequest, TriggerScan, TriggerScanProviderId, UpdateProvider, UpsertMapping, UserId,
+    VerifyEmailRequest, WatchStatus, WatchlistBulkIds, WatchlistBulkUpdate, WatchlistCounts,
+    WatchlistEntryViewEntry, WatchlistGroup, WatchlistItem, WatchlistUpsert, WatchlistView,
 };
+
+// `BulkResult` is the only generated name in this module that says nothing about what it is a
+// result *of*; the watchlist bulk bar and the group-header mark-read are its only callers.
+pub(crate) use crate::wire::types::BulkResult;
 
 // Generated names that read poorly at the call site keep a local alias.
 //
@@ -162,9 +167,17 @@ pub(crate) trait WatchStatusExt {
     /// The catalogue key of this variant's display name (see [`crate::i18n`]).
     fn label_key(&self) -> &'static str;
     fn token(&self) -> &'static str;
-    fn parse(token: &str) -> WatchStatus;
-    /// Kanban column order on the Watchlist board.
-    fn columns() -> &'static [WatchStatus];
+    /// Every status, in the order the Watchlist's tab strip and its movers offer them:
+    /// the shelf a title is on, then the shelves it plausibly moves to.
+    ///
+    /// This used to be `columns()`, named for the kanban board's five drag targets. The board
+    /// is gone; the order it defined is still the right one, so only the name changed.
+    ///
+    /// There is deliberately no `parse` beside it. The one that used to live here mapped an
+    /// unrecognised token to `Reading`, which is the wrong answer twice over — it invents a
+    /// status the caller never named, and on the watchlist's status filter it would silently
+    /// hide four fifths of the list. Callers match on `token()` and handle the miss themselves.
+    fn all() -> &'static [WatchStatus];
 }
 
 impl WatchStatusExt for WatchStatus {
@@ -186,16 +199,7 @@ impl WatchStatusExt for WatchStatus {
             Self::Paused => "paused",
         }
     }
-    fn parse(token: &str) -> WatchStatus {
-        match token {
-            "planned" => Self::Planned,
-            "completed" => Self::Completed,
-            "dropped" => Self::Dropped,
-            "paused" => Self::Paused,
-            _ => Self::Reading,
-        }
-    }
-    fn columns() -> &'static [WatchStatus] {
+    fn all() -> &'static [WatchStatus] {
         &[
             WatchStatus::Reading,
             WatchStatus::Planned,
@@ -390,11 +394,18 @@ impl ConflictPolicyExt for ConflictPolicy {
 mod tests {
     use super::*;
 
+    /// The tokens are the wire contract with `tankovault_domain::WatchStatus` and with the
+    /// watchlist's `?status=` parameter, and callers select a status by comparing against
+    /// them. Two variants sharing a token would make one of them unreachable from a URL and
+    /// unpickable from the bulk bar — silently, and only for whichever the `find` hit second.
     #[test]
-    fn watch_status_tokens_round_trip() {
-        for status in WatchStatus::columns() {
-            assert_eq!(WatchStatus::parse(status.token()), *status);
-        }
+    fn every_watch_status_has_a_distinct_token() {
+        let mut tokens: Vec<&str> = WatchStatus::all().iter().map(|s| s.token()).collect();
+        let listed = tokens.len();
+        tokens.sort_unstable();
+        tokens.dedup();
+        assert_eq!(tokens.len(), listed, "two watch statuses share a token");
+        assert_eq!(listed, 5, "a status is missing from WatchStatus::all()");
     }
 
     /// The policy picker must offer every policy the server accepts.

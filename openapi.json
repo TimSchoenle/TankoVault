@@ -314,6 +314,28 @@
         ],
         "type": "string"
       },
+      "BulkResult": {
+        "description": "Which ids a bulk operation actually acted on, and which it did not.\n\nPer-id rather than a count, because the two failure modes are different and the UI has to\ntell them apart: `skipped` means the caller asked about a series it does not track (a stale\nclient, or a title removed in another tab), which is worth reporting, while a transport\nfailure fails the whole call.",
+        "properties": {
+          "applied": {
+            "items": {
+              "$ref": "#/components/schemas/SeriesId"
+            },
+            "type": "array"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/SeriesId"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "applied",
+          "skipped"
+        ],
+        "type": "object"
+      },
       "Capabilities": {
         "description": "The caller's capabilities and the deployment's enabled features.",
         "properties": {
@@ -2871,6 +2893,137 @@
         ],
         "type": "string"
       },
+      "WatchlistBulkIds": {
+        "description": "The ids a bulk removal or bulk mark-read should act on.",
+        "properties": {
+          "series_ids": {
+            "items": {
+              "$ref": "#/components/schemas/SeriesId"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "series_ids"
+        ],
+        "type": "object"
+      },
+      "WatchlistBulkUpdate": {
+        "description": "The ids a bulk operation should act on, plus what to change.",
+        "properties": {
+          "notify": {
+            "description": "Leave absent to keep each entry's current notification setting.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "series_ids": {
+            "items": {
+              "$ref": "#/components/schemas/SeriesId"
+            },
+            "type": "array"
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WatchStatus",
+                "description": "Leave absent to keep each entry's current status."
+              }
+            ]
+          }
+        },
+        "required": [
+          "series_ids"
+        ],
+        "type": "object"
+      },
+      "WatchlistCounts": {
+        "description": "Entry counts per status, for the tab strip.",
+        "properties": {
+          "all": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "completed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "dropped": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "paused": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "planned": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reading": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "source_issues": {
+            "description": "Rows whose preferred source is unhealthy, for the toolbar's `Source issues` chip.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reading",
+          "planned",
+          "paused",
+          "completed",
+          "dropped",
+          "all",
+          "source_issues"
+        ],
+        "type": "object"
+      },
+      "WatchlistEntryView": {
+        "description": "One series' watchlist entry, or `null` when the caller does not track it.\n\nAn object wrapping a nullable field rather than a bare nullable body: \"not tracked\" is a\nperfectly ordinary answer to this question, so it is a `200` with `entry: null` rather than\na `404` the client has to special-case out of its error path.",
+        "properties": {
+          "entry": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WatchlistItem"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "WatchlistGroup": {
+        "description": "One release-recency band's aggregates, for a group header.",
+        "properties": {
+          "chapter_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "key": {
+            "description": "`today` | `week` | `earlier`.",
+            "type": "string"
+          },
+          "title_count": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "title_count",
+          "chapter_count"
+        ],
+        "type": "object"
+      },
       "WatchlistItem": {
         "properties": {
           "added_at": {
@@ -2890,15 +3043,46 @@
               "null"
             ]
           },
+          "latest_chapter_at": {
+            "description": "When the newest chapter was discovered. Drives the default sort, the `Released` column\nand the Today/This week/Earlier grouping.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latest_chapter_number": {
+            "description": "The highest chapter number known across all sources.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
           "notify": {
             "type": "boolean"
+          },
+          "preferred_source_name": {
+            "description": "Display name of the provider this series is primarily carried by.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "series_id": {
             "$ref": "#/components/schemas/SeriesId"
           },
           "series_title": {
-            "description": "Embedded series title so the Watchlist board renders without a per-card detail\nfetch (frontend §9.3, kills the N+1).",
+            "description": "Embedded series title so the Watchlist renders without a per-row detail fetch\n(frontend §9.3, kills the N+1).",
             "type": "string"
+          },
+          "source_count": {
+            "description": "Distinct providers carrying this series.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "source_degraded": {
+            "description": "Whether the preferred source, or the provider behind it, is unhealthy.",
+            "type": "boolean"
           },
           "status": {
             "$ref": "#/components/schemas/WatchStatus"
@@ -2906,6 +3090,11 @@
           "sync_excluded": {
             "description": "Whether this series is opted out of external sync (design v2 §A.5).",
             "type": "boolean"
+          },
+          "total_chapters": {
+            "description": "Distinct whole chapters known across all sources — the progress bar's denominator.",
+            "format": "int64",
+            "type": "integer"
           },
           "unread": {
             "description": "Unread chapters above the user's progress.",
@@ -2920,6 +3109,9 @@
           "added_at",
           "series_title",
           "unread",
+          "total_chapters",
+          "source_count",
+          "source_degraded",
           "sync_excluded"
         ],
         "type": "object"
@@ -2933,6 +3125,39 @@
             "$ref": "#/components/schemas/WatchStatus"
           }
         },
+        "type": "object"
+      },
+      "WatchlistView": {
+        "description": "The watchlist page plus the chrome around it.",
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/WatchlistCounts"
+          },
+          "groups": {
+            "description": "Newest band first; empty bands are omitted.",
+            "items": {
+              "$ref": "#/components/schemas/WatchlistGroup"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WatchlistItem"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Rows matching the whole filter, `status` included — the pager's denominator.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "counts",
+          "groups"
+        ],
         "type": "object"
       }
     },
@@ -7597,6 +7822,63 @@
         ]
       }
     },
+    "/v1/me/progress/bulk-read": {
+      "post": {
+        "description": "Backs the Watchlist's `Mark group read`: each listed series' progress advances to its\nhighest known chapter. Ids the caller does not track come back in `skipped`.\n\nThe frontier only moves forward, so pressing this twice is a no-op the second time, and a\nseries whose catalogue has shrunk is not rewound.",
+        "operationId": "bulk_mark_read",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchlistBulkIds"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkResult"
+                }
+              }
+            },
+            "description": "Per-id outcome"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "empty or oversized id list"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Mark every chapter read across many series",
+        "tags": [
+          "me-progress"
+        ]
+      }
+    },
     "/v1/me/progress/{series_id}": {
       "get": {
         "description": "Both read frontiers for the series (design v2 §A.6).",
@@ -8802,21 +9084,110 @@
     },
     "/v1/me/watchlist": {
       "get": {
-        "description": "The user's watchlist with embedded title/cover/progress (frontend §9.3). Extra fields are\nadditive; older clients ignore them.",
+        "description": "The user's watchlist, filtered/sorted/paginated **server-side**, with the tab counts and\ngroup-header aggregates the list renders around it.\n\nThe body is an object rather than the bare `WatchlistItem[]` it used to be. That is a\nbreaking change, made deliberately: `total`, `counts` and `groups` cannot ride on response\nheaders without splitting one render into three requests, and the counts in particular are\n*not* derivable from `items` — they describe the tabs the caller is not looking at. The\nfrontend is the only consumer, and it is regenerated from this document.",
         "operationId": "watchlist",
+        "parameters": [
+          {
+            "description": "`reading | planned | paused | completed | dropped`; absent means every status.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Free-text filter over title, alternative titles, tags and authors.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unread_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "`24h | 7d | 30d`; absent (or `any`) means no recency constraint.\n\nA *window* token rather than an absolute instant, despite the name. The client would\nhave to compute the instant from its own clock, and a browser minutes ahead of the\nserver would filter out the very releases the \"last 24 hours\" option exists to show.\nThe server resolves the window against the clock the timestamps were written by.",
+            "in": "query",
+            "name": "released_since",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only rows whose preferred source is unhealthy.",
+            "in": "query",
+            "name": "source_issues",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "`released | unread | added | title | progress` (default `released`).",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "`asc | desc`. Defaults to whichever direction reads as \"most interesting first\" for the\nchosen sort — descending everywhere except `title`.",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/WatchlistItem"
-                  },
-                  "type": "array"
+                  "$ref": "#/components/schemas/WatchlistView"
                 }
               }
             },
-            "description": "The caller's watchlist"
+            "description": "A page of the caller's watchlist"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "unrecognised filter or sort token"
           },
           "401": {
             "content": {
@@ -8835,6 +9206,117 @@
           }
         ],
         "summary": "Get the watchlist",
+        "tags": [
+          "me-watchlist"
+        ]
+      }
+    },
+    "/v1/me/watchlist/bulk": {
+      "delete": {
+        "operationId": "bulk_remove_watchlist",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchlistBulkIds"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkResult"
+                }
+              }
+            },
+            "description": "Per-id outcome"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "empty or oversized id list"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Remove many watchlist entries at once",
+        "tags": [
+          "me-watchlist"
+        ]
+      },
+      "post": {
+        "description": "Applies a status and/or notify change across a selection. Ids the caller does not track are\nreported in `skipped` rather than inserted — the selection was made from the list, so an id\nthat is not on it means the client is stale, and re-adding a title the user just removed is\nthe wrong repair.",
+        "operationId": "bulk_update_watchlist",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchlistBulkUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkResult"
+                }
+              }
+            },
+            "description": "Per-id outcome"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "empty or oversized id list"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Change many watchlist entries at once",
         "tags": [
           "me-watchlist"
         ]
@@ -8883,6 +9365,52 @@
           }
         ],
         "summary": "Remove a watchlist entry",
+        "tags": [
+          "me-watchlist"
+        ]
+      },
+      "get": {
+        "description": "The same enriched row the list renders, for a single series. The Series page used to answer\nthis by fetching the entire watchlist and scanning it — which stopped working the moment the\nlist paginated.",
+        "operationId": "get_watchlist_entry",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistEntryView"
+                }
+              }
+            },
+            "description": "The entry, or null when untracked"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get one watchlist entry",
         "tags": [
           "me-watchlist"
         ]

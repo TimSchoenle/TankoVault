@@ -1,5 +1,6 @@
 //! Read progress: whole-chapter and part frontiers, sync exclusion, targeted push.
 
+use super::watchlist::{BulkResult, WatchlistBulkIds, bulk_ids};
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::{ME_PROGRESS_TAG, ME_WATCHLIST_TAG};
 use crate::state::{AppState, AuthUser};
@@ -252,44 +253,110 @@ pub async fn put_sync_override(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
+/// Mark every chapter read across many series
+///
+/// Backs the Watchlist's `Mark group read`: each listed series' progress advances to its
+/// highest known chapter. Ids the caller does not track come back in `skipped`.
+///
+/// The frontier only moves forward, so pressing this twice is a no-op the second time, and a
+/// series whose catalogue has shrunk is not rewound.
+#[utoipa::path(
+    post,
+    path = "/v1/me/progress/bulk-read",
+    tag = ME_PROGRESS_TAG,
+    request_body = WatchlistBulkIds,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Per-id outcome", body = BulkResult),
+        (status = 400, description = "empty or oversized id list", body = crate::error::ProblemDetails),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn bulk_mark_read(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(body): Json<WatchlistBulkIds>,
+) -> ApiResult<Json<BulkResult>> {
+    let ids = bulk_ids(&body.series_ids)?;
+    let applied =
+        tankovault_db::repo::tracking::progress_bulk_mark_all_read(&state.pool, user.user_id, &ids)
+            .await?;
+    spawn_targeted_push_many(&state, user.user_id, applied.clone());
+    Ok(Json(BulkResult::new(&body.series_ids, applied)))
+}
+
+/// Best-effort background push of every id in `series_ids`, one after another in a single
+/// task.
+///
+/// **Sequential, not a task per id.** A bulk mark-read is capped at 200 series, and spawning
+/// 200 concurrent pushes would aim a burst at `services/sync` — and through it at a third-party
+/// API with its own rate limit — every time someone clears a group header. One task walking the
+/// list keeps the caller's response immediate (which is the only thing the spawn was for)
+/// without turning a UI click into a thundering herd.
+pub(super) fn spawn_targeted_push_many(state: &AppState, user_id: UserId, series_ids: Vec<SeriesId>) {
+    if series_ids.is_empty() {
+        return;
+    }
+    let state = state.clone();
+    tokio::spawn(async move {
+        for series_id in series_ids {
+            push_series(&state, user_id, series_id).await;
+        }
+    });
+}
+
 /// Best-effort background push of `series_id` to every provider `user_id` has linked. Mirrors
 /// this codebase's existing "best-effort side effect" convention (notifier channels, the sync
 /// engine's viewer-name lookup on link): logged on failure, never surfaced to the caller, never
 /// blocks the response (design: immediate targeted push — marking a chapter/series read locally
 /// reflects to `AniList` without a manual "Push" click).
+pub(super) fn spawn_targeted_push(state: &AppState, user_id: UserId, series_id: SeriesId) {
+    if !push_enabled(state) {
+        return;
+    }
+    let state = state.clone();
+    tokio::spawn(async move {
+        push_series(&state, user_id, series_id).await;
+    });
+}
+
+/// Whether a targeted push should be attempted at all.
 ///
 /// Gated on [`Feature::SyncAutoPush`] — and on [`Feature::SyncExternal`], since the finer flag
 /// is meaningless when the whole surface is off. This is a *behaviour* rather than a route, so
 /// it is checked here rather than in the route-feature table: the caller is marking a chapter
 /// read, which must keep working either way; the only question is whether that reaches a
 /// third party.
-pub(super) fn spawn_targeted_push(state: &AppState, user_id: UserId, series_id: SeriesId) {
-    if !state.features.is_enabled(Feature::SyncExternal)
-        || !state.features.is_enabled(Feature::SyncAutoPush)
-    {
+fn push_enabled(state: &AppState) -> bool {
+    state.features.is_enabled(Feature::SyncExternal)
+        && state.features.is_enabled(Feature::SyncAutoPush)
+}
+
+/// One push. Logged on failure, never surfaced to the caller — the caller's write already
+/// succeeded locally, and failing their request because a third party is unreachable would be
+/// reporting the wrong thing.
+async fn push_series(state: &AppState, user_id: UserId, series_id: SeriesId) {
+    if !push_enabled(state) {
         return;
     }
-
-    let sync = state.sync.clone();
-    tokio::spawn(async move {
-        let body = serde_json::json!({ "user_id": user_id, "series_id": series_id });
-        let request = sync
-            .request(reqwest::Method::POST, "/v1/sync/push-series")
-            .json(&body);
-        match request.send().await {
-            Ok(resp) if resp.status().is_success() => {}
-            Ok(resp) => tracing::warn!(
-                status = %resp.status(),
-                %user_id,
-                %series_id,
-                "targeted sync push returned an error"
-            ),
-            Err(e) => tracing::warn!(
-                error = %e,
-                %user_id,
-                %series_id,
-                "targeted sync push unreachable"
-            ),
-        }
-    });
+    let body = serde_json::json!({ "user_id": user_id, "series_id": series_id });
+    let request = state
+        .sync
+        .request(reqwest::Method::POST, "/v1/sync/push-series")
+        .json(&body);
+    match request.send().await {
+        Ok(resp) if resp.status().is_success() => {}
+        Ok(resp) => tracing::warn!(
+            status = %resp.status(),
+            %user_id,
+            %series_id,
+            "targeted sync push returned an error"
+        ),
+        Err(e) => tracing::warn!(
+            error = %e,
+            %user_id,
+            %series_id,
+            "targeted sync push unreachable"
+        ),
+    }
 }

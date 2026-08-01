@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH targets AS ( SELECT w.series_id, latest.n FROM watchlist_entries w CROSS JOIN LATERAL ( SELECT max(floor(c.number)) AS n FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id WHERE ss.series_id = w.series_id ) latest WHERE w.user_id = $1 AND w.series_id = ANY($2) ), written AS ( INSERT INTO read_progress (user_id, series_id, last_read_whole_number, last_read_part_number) SELECT $1, t.series_id, t.n, NULL FROM targets t WHERE t.n IS NOT NULL ON CONFLICT (user_id, series_id) DO UPDATE SET last_read_whole_number = GREATEST(read_progress.last_read_whole_number, EXCLUDED.last_read_whole_number), last_read_part_number  = NULL, updated_at = now() RETURNING series_id ) SELECT series_id AS \"series_id!\" FROM targets",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "series_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "961b6607be6b2002b7862b26ea41854690ed3d17f9b9ad4c9e8d9e97e34660ac"
+}

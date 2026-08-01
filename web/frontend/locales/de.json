@@ -970,15 +970,85 @@
     "pending": "Deine E-Mail-Adresse wird bestätigt…"
   },
   "watchlist": {
-    "empty": "Deine Merkliste ist leer. Such dir eine Serie und füge sie hinzu, um sie zu verfolgen.",
-    "moveToColumn": "In Spalte verschieben",
-    "notifyOff": "Benachrichtigung aus",
-    "notifyOn": "Benachrichtigung an",
-    "subtitle": "Zieh einen Titel zwischen die Spalten, um seinen Status zu ändern — oder nutze die Auswahl auf jeder Karte.",
+    "bulkLabel": "Sammelaktionen",
+    "bulkPartial": "Auf {applied} von {total} Titeln angewendet.",
+    "changeSource": "Quelle ändern…",
+    "chapterNo": "Kap. {number}",
+    "clearSelection": "Auswahl aufheben",
+    "col": {
+      "progress": "Fortschritt",
+      "released": "Erschienen",
+      "title": "Titel",
+      "unread": "Ungelesen"
+    },
+    "confirmRemove": "{count} entfernen?",
+    "continue": "Weiterlesen",
+    "empty": "Deine Merkliste ist leer. Suche eine Serie und füge sie hinzu.",
+    "emptyCta": "Katalog durchsuchen",
+    "filterLabel": "Merkliste filtern",
+    "filterPlaceholder": "{count} Titel nach Name, Tag, Autor filtern…",
+    "group": {
+      "earlier": "Früher",
+      "thisWeek": "Diese Woche",
+      "today": "Heute"
+    },
+    "groupStats": "{titles} Titel · {chapters} Kapitel",
+    "headline": "{titles} Titel verfolgt · {chapters} Kapitel ungelesen",
+    "keyLegend": "J/K bewegen · X auswählen · ↵ weiterlesen · S Menü · / filtern",
+    "loadMore": "Mehr laden",
+    "markAllRead": "Als gelesen markieren",
+    "markGroupIncomplete": "Lade erst die ganze Gruppe, bevor du sie als gelesen markierst.",
+    "markGroupRead": "Gruppe als gelesen markieren",
+    "markGroupTooBig": "Zu viele Titel auf einmal (Grenze {limit}).",
+    "moveTo": "Verschieben nach {status}",
+    "moveToPrompt": "Verschieben nach…",
+    "mute": "Stummschalten",
+    "muted": "stumm",
+    "nSelected": "{count} ausgewählt",
+    "noMatch": {
+      "hint": "Erweitere den Zeitraum, schalte „Nur ungelesen“ aus oder leere das Textfeld.",
+      "title": "Keine Treffer für diese Filter."
+    },
+    "noSource": "keine Quelle",
+    "notifyOff": "Hinweise aus",
+    "notifyOn": "Hinweise an",
+    "released": {
+      "any": "jederzeit",
+      "day": "letzte 24 Stunden",
+      "month": "letzte 30 Tage",
+      "week": "letzte 7 Tage"
+    },
+    "releasedWithin": "Erschienen",
+    "removeFromWatchlist": "Von der Merkliste entfernen",
+    "resetFilters": "Alles anzeigen",
+    "rowMenu": "Aktionen für {title}",
+    "rowsOf": "Zeilen 1–{shown} von {total} · scrollen zum Nachladen",
+    "selectRow": "{title} auswählen",
+    "sort": {
+      "added": "Zuletzt hinzugefügt",
+      "progress": "Fortschritt",
+      "released": "Neueste Kapitel",
+      "title": "Titel",
+      "unread": "Meiste ungelesen"
+    },
+    "sortBy": "Sortierung",
+    "sourceIssues": "Quellenprobleme ({count})",
+    "sourceMeta": "{source} · {count} Quellen",
+    "sourceOffline": "Quelle offline",
     "sync": "AniList synchronisieren",
     "synced": "Mit AniList synchronisiert.",
-    "syncing": "Wird synchronisiert…",
-    "toggleNotifications": "Benachrichtigungen umschalten",
-    "unread": "{count} ungelesen"
+    "syncedAgo": "AniList synchronisiert {when}",
+    "syncing": "Synchronisiere…",
+    "tab": {
+      "all": "Alle"
+    },
+    "toggleNotifications": "Hinweise umschalten",
+    "unmute": "Ton an",
+    "unread": "{count} ungelesen",
+    "unreadOnly": "Nur ungelesen",
+    "upToDate": "Aktuell",
+    "viewGrid": "Rasteransicht",
+    "viewList": "Listenansicht",
+    "viewToggle": "Liste oder Raster"
   }
 }

@@ -51,7 +51,7 @@
 use tankovault_db::repo::tracking::{
     ReadProgress, continue_reading, feed, is_sync_excluded, me_stats, progress_get_full,
     progress_mark_read, progress_mark_unread, progress_set, set_sync_excluded, watchers_for_series,
-    watchlist_detailed, watchlist_upsert,
+    watchlist_page, watchlist_upsert, WatchlistFilter,
 };
 use tankovault_domain::{ProviderId, SeriesId, UserId, WatchStatus};
 use tankovault_test_support::{TestDb, seed};
@@ -275,15 +275,26 @@ async fn the_sql_and_the_rust_predicate_agree_on_every_chapter() {
             ),
         }
 
-        // 3. The watchlist badge.
-        let cards = watchlist_detailed(&db.pool, user).await.expect("watchlist");
-        let card = cards
+        // 3. The watchlist badge. `limit` is raised past the page default so the assertion is
+        //    about the predicate rather than about which page the series landed on.
+        let page = watchlist_page(
+            &db.pool,
+            user,
+            &WatchlistFilter {
+                limit: 1000,
+                ..WatchlistFilter::default()
+            },
+        )
+        .await
+        .expect("watchlist");
+        let card = page
+            .items
             .iter()
             .find(|c| c.series_id == series)
             .expect("the watched series");
         assert_eq!(
             card.unread, expected_count,
-            "watchlist_detailed unread count ({})",
+            "watchlist_page unread count ({})",
             state.name
         );
 

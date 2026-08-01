@@ -816,6 +816,45 @@ pub mod types {
             value.parse()
         }
     }
+    #[doc = "Which ids a bulk operation actually acted on, and which it did not.\n\nPer-id rather than a count, because the two failure modes are different and the UI has to\ntell them apart: `skipped` means the caller asked about a series it does not track (a stale\nclient, or a title removed in another tab), which is worth reporting, while a transport\nfailure fails the whole call."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Which ids a bulk operation actually acted on, and which it did not.\\n\\nPer-id rather than a count, because the two failure modes are different and the UI has to\\ntell them apart: `skipped` means the caller asked about a series it does not track (a stale\\nclient, or a title removed in another tab), which is worth reporting, while a transport\\nfailure fails the whole call.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"applied\","]
+    #[doc = "    \"skipped\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"applied\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"skipped\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct BulkResult {
+        pub applied: ::std::vec::Vec<SeriesId>,
+        pub skipped: ::std::vec::Vec<SeriesId>,
+    }
+    impl BulkResult {
+        pub fn builder() -> builder::BulkResult {
+            Default::default()
+        }
+    }
     #[doc = "The caller's capabilities and the deployment's enabled features."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -7270,6 +7309,297 @@ pub mod types {
             value.parse()
         }
     }
+    #[doc = "The ids a bulk removal or bulk mark-read should act on."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The ids a bulk removal or bulk mark-read should act on.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"series_ids\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"series_ids\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct WatchlistBulkIds {
+        pub series_ids: ::std::vec::Vec<SeriesId>,
+    }
+    impl WatchlistBulkIds {
+        pub fn builder() -> builder::WatchlistBulkIds {
+            Default::default()
+        }
+    }
+    #[doc = "The ids a bulk operation should act on, plus what to change."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The ids a bulk operation should act on, plus what to change.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"series_ids\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"notify\": {"]
+    #[doc = "      \"description\": \"Leave absent to keep each entry's current notification setting.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"boolean\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"series_ids\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"status\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {},"]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/WatchStatus\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct WatchlistBulkUpdate {
+        #[doc = "Leave absent to keep each entry's current notification setting."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub notify: ::std::option::Option<bool>,
+        pub series_ids: ::std::vec::Vec<SeriesId>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub status: ::std::option::Option<WatchlistBulkUpdateStatus>,
+    }
+    impl WatchlistBulkUpdate {
+        pub fn builder() -> builder::WatchlistBulkUpdate {
+            Default::default()
+        }
+    }
+    #[doc = "`WatchlistBulkUpdateStatus`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/WatchStatus\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum WatchlistBulkUpdateStatus {
+        Variant0(::serde_json::Value),
+        Variant1(WatchStatus),
+    }
+    impl ::std::convert::From<::serde_json::Value> for WatchlistBulkUpdateStatus {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<WatchStatus> for WatchlistBulkUpdateStatus {
+        fn from(value: WatchStatus) -> Self {
+            Self::Variant1(value)
+        }
+    }
+    #[doc = "Entry counts per status, for the tab strip."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Entry counts per status, for the tab strip.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"all\","]
+    #[doc = "    \"completed\","]
+    #[doc = "    \"dropped\","]
+    #[doc = "    \"paused\","]
+    #[doc = "    \"planned\","]
+    #[doc = "    \"reading\","]
+    #[doc = "    \"source_issues\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"all\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"completed\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"dropped\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"paused\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"planned\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"reading\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"source_issues\": {"]
+    #[doc = "      \"description\": \"Rows whose preferred source is unhealthy, for the toolbar's `Source issues` chip.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct WatchlistCounts {
+        pub all: i64,
+        pub completed: i64,
+        pub dropped: i64,
+        pub paused: i64,
+        pub planned: i64,
+        pub reading: i64,
+        #[doc = "Rows whose preferred source is unhealthy, for the toolbar's `Source issues` chip."]
+        pub source_issues: i64,
+    }
+    impl WatchlistCounts {
+        pub fn builder() -> builder::WatchlistCounts {
+            Default::default()
+        }
+    }
+    #[doc = "One series' watchlist entry, or `null` when the caller does not track it.\n\nAn object wrapping a nullable field rather than a bare nullable body: \"not tracked\" is a\nperfectly ordinary answer to this question, so it is a `200` with `entry: null` rather than\na `404` the client has to special-case out of its error path."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One series' watchlist entry, or `null` when the caller does not track it.\\n\\nAn object wrapping a nullable field rather than a bare nullable body: \\\"not tracked\\\" is a\\nperfectly ordinary answer to this question, so it is a `200` with `entry: null` rather than\\na `404` the client has to special-case out of its error path.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"entry\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {},"]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/WatchlistItem\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct WatchlistEntryView {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub entry: ::std::option::Option<WatchlistEntryViewEntry>,
+    }
+    impl ::std::default::Default for WatchlistEntryView {
+        fn default() -> Self {
+            Self {
+                entry: Default::default(),
+            }
+        }
+    }
+    impl WatchlistEntryView {
+        pub fn builder() -> builder::WatchlistEntryView {
+            Default::default()
+        }
+    }
+    #[doc = "`WatchlistEntryViewEntry`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/WatchlistItem\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum WatchlistEntryViewEntry {
+        Variant0(::serde_json::Value),
+        Variant1(WatchlistItem),
+    }
+    impl ::std::convert::From<::serde_json::Value> for WatchlistEntryViewEntry {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<WatchlistItem> for WatchlistEntryViewEntry {
+        fn from(value: WatchlistItem) -> Self {
+            Self::Variant1(value)
+        }
+    }
+    #[doc = "One release-recency band's aggregates, for a group header."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One release-recency band's aggregates, for a group header.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"chapter_count\","]
+    #[doc = "    \"key\","]
+    #[doc = "    \"title_count\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"chapter_count\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"key\": {"]
+    #[doc = "      \"description\": \"`today` | `week` | `earlier`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"title_count\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct WatchlistGroup {
+        pub chapter_count: i64,
+        #[doc = "`today` | `week` | `earlier`."]
+        pub key: ::std::string::String,
+        pub title_count: i64,
+    }
+    impl WatchlistGroup {
+        pub fn builder() -> builder::WatchlistGroup {
+            Default::default()
+        }
+    }
     #[doc = "`WatchlistItem`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -7282,8 +7612,11 @@ pub mod types {
     #[doc = "    \"notify\","]
     #[doc = "    \"series_id\","]
     #[doc = "    \"series_title\","]
+    #[doc = "    \"source_count\","]
+    #[doc = "    \"source_degraded\","]
     #[doc = "    \"status\","]
     #[doc = "    \"sync_excluded\","]
+    #[doc = "    \"total_chapters\","]
     #[doc = "    \"unread\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
@@ -7304,15 +7637,46 @@ pub mod types {
     #[doc = "      ],"]
     #[doc = "      \"format\": \"double\""]
     #[doc = "    },"]
+    #[doc = "    \"latest_chapter_at\": {"]
+    #[doc = "      \"description\": \"When the newest chapter was discovered. Drives the default sort, the `Released` column\\nand the Today/This week/Earlier grouping.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"latest_chapter_number\": {"]
+    #[doc = "      \"description\": \"The highest chapter number known across all sources.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"number\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    },"]
     #[doc = "    \"notify\": {"]
     #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"preferred_source_name\": {"]
+    #[doc = "      \"description\": \"Display name of the provider this series is primarily carried by.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"series_id\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
     #[doc = "    },"]
     #[doc = "    \"series_title\": {"]
-    #[doc = "      \"description\": \"Embedded series title so the Watchlist board renders without a per-card detail\\nfetch (frontend §9.3, kills the N+1).\","]
+    #[doc = "      \"description\": \"Embedded series title so the Watchlist renders without a per-row detail fetch\\n(frontend §9.3, kills the N+1).\","]
     #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"source_count\": {"]
+    #[doc = "      \"description\": \"Distinct providers carrying this series.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"source_degraded\": {"]
+    #[doc = "      \"description\": \"Whether the preferred source, or the provider behind it, is unhealthy.\","]
+    #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"status\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/WatchStatus\""]
@@ -7320,6 +7684,11 @@ pub mod types {
     #[doc = "    \"sync_excluded\": {"]
     #[doc = "      \"description\": \"Whether this series is opted out of external sync (design v2 §A.5).\","]
     #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"total_chapters\": {"]
+    #[doc = "      \"description\": \"Distinct whole chapters known across all sources — the progress bar's denominator.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"unread\": {"]
     #[doc = "      \"description\": \"Unread chapters above the user's progress.\","]
@@ -7338,13 +7707,28 @@ pub mod types {
         #[doc = "The user's last-read chapter number, if any."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub last_read_number: ::std::option::Option<f64>,
+        #[doc = "When the newest chapter was discovered. Drives the default sort, the `Released` column\nand the Today/This week/Earlier grouping."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub latest_chapter_at: ::std::option::Option<::std::string::String>,
+        #[doc = "The highest chapter number known across all sources."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub latest_chapter_number: ::std::option::Option<f64>,
         pub notify: bool,
+        #[doc = "Display name of the provider this series is primarily carried by."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub preferred_source_name: ::std::option::Option<::std::string::String>,
         pub series_id: SeriesId,
-        #[doc = "Embedded series title so the Watchlist board renders without a per-card detail\nfetch (frontend §9.3, kills the N+1)."]
+        #[doc = "Embedded series title so the Watchlist renders without a per-row detail fetch\n(frontend §9.3, kills the N+1)."]
         pub series_title: ::std::string::String,
+        #[doc = "Distinct providers carrying this series."]
+        pub source_count: i64,
+        #[doc = "Whether the preferred source, or the provider behind it, is unhealthy."]
+        pub source_degraded: bool,
         pub status: WatchStatus,
         #[doc = "Whether this series is opted out of external sync (design v2 §A.5)."]
         pub sync_excluded: bool,
+        #[doc = "Distinct whole chapters known across all sources — the progress bar's denominator."]
+        pub total_chapters: i64,
         #[doc = "Unread chapters above the user's progress."]
         pub unread: i64,
     }
@@ -7388,6 +7772,60 @@ pub mod types {
     }
     impl WatchlistUpsert {
         pub fn builder() -> builder::WatchlistUpsert {
+            Default::default()
+        }
+    }
+    #[doc = "The watchlist page plus the chrome around it."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The watchlist page plus the chrome around it.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"counts\","]
+    #[doc = "    \"groups\","]
+    #[doc = "    \"items\","]
+    #[doc = "    \"total\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"counts\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/WatchlistCounts\""]
+    #[doc = "    },"]
+    #[doc = "    \"groups\": {"]
+    #[doc = "      \"description\": \"Newest band first; empty bands are omitted.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/WatchlistGroup\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"items\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/WatchlistItem\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"total\": {"]
+    #[doc = "      \"description\": \"Rows matching the whole filter, `status` included — the pager's denominator.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct WatchlistView {
+        pub counts: WatchlistCounts,
+        #[doc = "Newest band first; empty bands are omitted."]
+        pub groups: ::std::vec::Vec<WatchlistGroup>,
+        pub items: ::std::vec::Vec<WatchlistItem>,
+        #[doc = "Rows matching the whole filter, `status` included — the pager's denominator."]
+        pub total: i64,
+    }
+    impl WatchlistView {
+        pub fn builder() -> builder::WatchlistView {
             Default::default()
         }
     }
@@ -8259,6 +8697,60 @@ pub mod types {
         impl ::std::convert::From<super::AuthorizeUrl> for AuthorizeUrl {
             fn from(value: super::AuthorizeUrl) -> Self {
                 Self { url: Ok(value.url) }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct BulkResult {
+            applied: ::std::result::Result<::std::vec::Vec<super::SeriesId>, ::std::string::String>,
+            skipped: ::std::result::Result<::std::vec::Vec<super::SeriesId>, ::std::string::String>,
+        }
+        impl ::std::default::Default for BulkResult {
+            fn default() -> Self {
+                Self {
+                    applied: Err("no value supplied for applied".to_string()),
+                    skipped: Err("no value supplied for skipped".to_string()),
+                }
+            }
+        }
+        impl BulkResult {
+            pub fn applied<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::SeriesId>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.applied = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for applied: {e}"));
+                self
+            }
+            pub fn skipped<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::SeriesId>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.skipped = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for skipped: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<BulkResult> for super::BulkResult {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: BulkResult,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    applied: value.applied?,
+                    skipped: value.skipped?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::BulkResult> for BulkResult {
+            fn from(value: super::BulkResult) -> Self {
+                Self {
+                    applied: Ok(value.applied),
+                    skipped: Ok(value.skipped),
+                }
             }
         }
         #[derive(Clone, Debug)]
@@ -15230,6 +15722,354 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct WatchlistBulkIds {
+            series_ids:
+                ::std::result::Result<::std::vec::Vec<super::SeriesId>, ::std::string::String>,
+        }
+        impl ::std::default::Default for WatchlistBulkIds {
+            fn default() -> Self {
+                Self {
+                    series_ids: Err("no value supplied for series_ids".to_string()),
+                }
+            }
+        }
+        impl WatchlistBulkIds {
+            pub fn series_ids<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::SeriesId>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_ids = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series_ids: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistBulkIds> for super::WatchlistBulkIds {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistBulkIds,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    series_ids: value.series_ids?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistBulkIds> for WatchlistBulkIds {
+            fn from(value: super::WatchlistBulkIds) -> Self {
+                Self {
+                    series_ids: Ok(value.series_ids),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct WatchlistBulkUpdate {
+            notify: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+            series_ids:
+                ::std::result::Result<::std::vec::Vec<super::SeriesId>, ::std::string::String>,
+            status: ::std::result::Result<
+                ::std::option::Option<super::WatchlistBulkUpdateStatus>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for WatchlistBulkUpdate {
+            fn default() -> Self {
+                Self {
+                    notify: Ok(Default::default()),
+                    series_ids: Err("no value supplied for series_ids".to_string()),
+                    status: Ok(Default::default()),
+                }
+            }
+        }
+        impl WatchlistBulkUpdate {
+            pub fn notify<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.notify = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for notify: {e}"));
+                self
+            }
+            pub fn series_ids<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::SeriesId>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_ids = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series_ids: {e}"));
+                self
+            }
+            pub fn status<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::WatchlistBulkUpdateStatus>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.status = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for status: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistBulkUpdate> for super::WatchlistBulkUpdate {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistBulkUpdate,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    notify: value.notify?,
+                    series_ids: value.series_ids?,
+                    status: value.status?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistBulkUpdate> for WatchlistBulkUpdate {
+            fn from(value: super::WatchlistBulkUpdate) -> Self {
+                Self {
+                    notify: Ok(value.notify),
+                    series_ids: Ok(value.series_ids),
+                    status: Ok(value.status),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct WatchlistCounts {
+            all: ::std::result::Result<i64, ::std::string::String>,
+            completed: ::std::result::Result<i64, ::std::string::String>,
+            dropped: ::std::result::Result<i64, ::std::string::String>,
+            paused: ::std::result::Result<i64, ::std::string::String>,
+            planned: ::std::result::Result<i64, ::std::string::String>,
+            reading: ::std::result::Result<i64, ::std::string::String>,
+            source_issues: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for WatchlistCounts {
+            fn default() -> Self {
+                Self {
+                    all: Err("no value supplied for all".to_string()),
+                    completed: Err("no value supplied for completed".to_string()),
+                    dropped: Err("no value supplied for dropped".to_string()),
+                    paused: Err("no value supplied for paused".to_string()),
+                    planned: Err("no value supplied for planned".to_string()),
+                    reading: Err("no value supplied for reading".to_string()),
+                    source_issues: Err("no value supplied for source_issues".to_string()),
+                }
+            }
+        }
+        impl WatchlistCounts {
+            pub fn all<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.all = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for all: {e}"));
+                self
+            }
+            pub fn completed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.completed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for completed: {e}"));
+                self
+            }
+            pub fn dropped<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.dropped = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for dropped: {e}"));
+                self
+            }
+            pub fn paused<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.paused = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for paused: {e}"));
+                self
+            }
+            pub fn planned<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.planned = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for planned: {e}"));
+                self
+            }
+            pub fn reading<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reading = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reading: {e}"));
+                self
+            }
+            pub fn source_issues<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.source_issues = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for source_issues: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistCounts> for super::WatchlistCounts {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistCounts,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    all: value.all?,
+                    completed: value.completed?,
+                    dropped: value.dropped?,
+                    paused: value.paused?,
+                    planned: value.planned?,
+                    reading: value.reading?,
+                    source_issues: value.source_issues?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistCounts> for WatchlistCounts {
+            fn from(value: super::WatchlistCounts) -> Self {
+                Self {
+                    all: Ok(value.all),
+                    completed: Ok(value.completed),
+                    dropped: Ok(value.dropped),
+                    paused: Ok(value.paused),
+                    planned: Ok(value.planned),
+                    reading: Ok(value.reading),
+                    source_issues: Ok(value.source_issues),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct WatchlistEntryView {
+            entry: ::std::result::Result<
+                ::std::option::Option<super::WatchlistEntryViewEntry>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for WatchlistEntryView {
+            fn default() -> Self {
+                Self {
+                    entry: Ok(Default::default()),
+                }
+            }
+        }
+        impl WatchlistEntryView {
+            pub fn entry<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::WatchlistEntryViewEntry>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.entry = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for entry: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistEntryView> for super::WatchlistEntryView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistEntryView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    entry: value.entry?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistEntryView> for WatchlistEntryView {
+            fn from(value: super::WatchlistEntryView) -> Self {
+                Self {
+                    entry: Ok(value.entry),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct WatchlistGroup {
+            chapter_count: ::std::result::Result<i64, ::std::string::String>,
+            key: ::std::result::Result<::std::string::String, ::std::string::String>,
+            title_count: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for WatchlistGroup {
+            fn default() -> Self {
+                Self {
+                    chapter_count: Err("no value supplied for chapter_count".to_string()),
+                    key: Err("no value supplied for key".to_string()),
+                    title_count: Err("no value supplied for title_count".to_string()),
+                }
+            }
+        }
+        impl WatchlistGroup {
+            pub fn chapter_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.chapter_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for chapter_count: {e}"));
+                self
+            }
+            pub fn key<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.key = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for key: {e}"));
+                self
+            }
+            pub fn title_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.title_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for title_count: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistGroup> for super::WatchlistGroup {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistGroup,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    chapter_count: value.chapter_count?,
+                    key: value.key?,
+                    title_count: value.title_count?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistGroup> for WatchlistGroup {
+            fn from(value: super::WatchlistGroup) -> Self {
+                Self {
+                    chapter_count: Ok(value.chapter_count),
+                    key: Ok(value.key),
+                    title_count: Ok(value.title_count),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct WatchlistItem {
             added_at: ::std::result::Result<::std::string::String, ::std::string::String>,
             cover_url: ::std::result::Result<
@@ -15238,11 +16078,24 @@ pub mod types {
             >,
             last_read_number:
                 ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
+            latest_chapter_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            latest_chapter_number:
+                ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
             notify: ::std::result::Result<bool, ::std::string::String>,
+            preferred_source_name: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             series_id: ::std::result::Result<super::SeriesId, ::std::string::String>,
             series_title: ::std::result::Result<::std::string::String, ::std::string::String>,
+            source_count: ::std::result::Result<i64, ::std::string::String>,
+            source_degraded: ::std::result::Result<bool, ::std::string::String>,
             status: ::std::result::Result<super::WatchStatus, ::std::string::String>,
             sync_excluded: ::std::result::Result<bool, ::std::string::String>,
+            total_chapters: ::std::result::Result<i64, ::std::string::String>,
             unread: ::std::result::Result<i64, ::std::string::String>,
         }
         impl ::std::default::Default for WatchlistItem {
@@ -15251,11 +16104,17 @@ pub mod types {
                     added_at: Err("no value supplied for added_at".to_string()),
                     cover_url: Ok(Default::default()),
                     last_read_number: Ok(Default::default()),
+                    latest_chapter_at: Ok(Default::default()),
+                    latest_chapter_number: Ok(Default::default()),
                     notify: Err("no value supplied for notify".to_string()),
+                    preferred_source_name: Ok(Default::default()),
                     series_id: Err("no value supplied for series_id".to_string()),
                     series_title: Err("no value supplied for series_title".to_string()),
+                    source_count: Err("no value supplied for source_count".to_string()),
+                    source_degraded: Err("no value supplied for source_degraded".to_string()),
                     status: Err("no value supplied for status".to_string()),
                     sync_excluded: Err("no value supplied for sync_excluded".to_string()),
+                    total_chapters: Err("no value supplied for total_chapters".to_string()),
                     unread: Err("no value supplied for unread".to_string()),
                 }
             }
@@ -15291,6 +16150,26 @@ pub mod types {
                 });
                 self
             }
+            pub fn latest_chapter_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.latest_chapter_at = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for latest_chapter_at: {e}")
+                });
+                self
+            }
+            pub fn latest_chapter_number<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<f64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.latest_chapter_number = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for latest_chapter_number: {e}")
+                });
+                self
+            }
             pub fn notify<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<bool>,
@@ -15299,6 +16178,16 @@ pub mod types {
                 self.notify = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for notify: {e}"));
+                self
+            }
+            pub fn preferred_source_name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.preferred_source_name = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for preferred_source_name: {e}")
+                });
                 self
             }
             pub fn series_id<T>(mut self, value: T) -> Self
@@ -15321,6 +16210,26 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for series_title: {e}"));
                 self
             }
+            pub fn source_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.source_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for source_count: {e}"));
+                self
+            }
+            pub fn source_degraded<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.source_degraded = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for source_degraded: {e}")
+                });
+                self
+            }
             pub fn status<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<super::WatchStatus>,
@@ -15339,6 +16248,16 @@ pub mod types {
                 self.sync_excluded = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for sync_excluded: {e}"));
+                self
+            }
+            pub fn total_chapters<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.total_chapters = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for total_chapters: {e}")
+                });
                 self
             }
             pub fn unread<T>(mut self, value: T) -> Self
@@ -15361,11 +16280,17 @@ pub mod types {
                     added_at: value.added_at?,
                     cover_url: value.cover_url?,
                     last_read_number: value.last_read_number?,
+                    latest_chapter_at: value.latest_chapter_at?,
+                    latest_chapter_number: value.latest_chapter_number?,
                     notify: value.notify?,
+                    preferred_source_name: value.preferred_source_name?,
                     series_id: value.series_id?,
                     series_title: value.series_title?,
+                    source_count: value.source_count?,
+                    source_degraded: value.source_degraded?,
                     status: value.status?,
                     sync_excluded: value.sync_excluded?,
+                    total_chapters: value.total_chapters?,
                     unread: value.unread?,
                 })
             }
@@ -15376,11 +16301,17 @@ pub mod types {
                     added_at: Ok(value.added_at),
                     cover_url: Ok(value.cover_url),
                     last_read_number: Ok(value.last_read_number),
+                    latest_chapter_at: Ok(value.latest_chapter_at),
+                    latest_chapter_number: Ok(value.latest_chapter_number),
                     notify: Ok(value.notify),
+                    preferred_source_name: Ok(value.preferred_source_name),
                     series_id: Ok(value.series_id),
                     series_title: Ok(value.series_title),
+                    source_count: Ok(value.source_count),
+                    source_degraded: Ok(value.source_degraded),
                     status: Ok(value.status),
                     sync_excluded: Ok(value.sync_excluded),
+                    total_chapters: Ok(value.total_chapters),
                     unread: Ok(value.unread),
                 }
             }
@@ -15439,6 +16370,92 @@ pub mod types {
                 Self {
                     notify: Ok(value.notify),
                     status: Ok(value.status),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct WatchlistView {
+            counts: ::std::result::Result<super::WatchlistCounts, ::std::string::String>,
+            groups: ::std::result::Result<
+                ::std::vec::Vec<super::WatchlistGroup>,
+                ::std::string::String,
+            >,
+            items:
+                ::std::result::Result<::std::vec::Vec<super::WatchlistItem>, ::std::string::String>,
+            total: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for WatchlistView {
+            fn default() -> Self {
+                Self {
+                    counts: Err("no value supplied for counts".to_string()),
+                    groups: Err("no value supplied for groups".to_string()),
+                    items: Err("no value supplied for items".to_string()),
+                    total: Err("no value supplied for total".to_string()),
+                }
+            }
+        }
+        impl WatchlistView {
+            pub fn counts<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::WatchlistCounts>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.counts = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for counts: {e}"));
+                self
+            }
+            pub fn groups<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::WatchlistGroup>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.groups = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for groups: {e}"));
+                self
+            }
+            pub fn items<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::WatchlistItem>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.items = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for items: {e}"));
+                self
+            }
+            pub fn total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for total: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistView> for super::WatchlistView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    counts: value.counts?,
+                    groups: value.groups?,
+                    items: value.items?,
+                    total: value.total?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistView> for WatchlistView {
+            fn from(value: super::WatchlistView) -> Self {
+                Self {
+                    counts: Ok(value.counts),
+                    groups: Ok(value.groups),
+                    items: Ok(value.items),
+                    total: Ok(value.total),
                 }
             }
         }
@@ -15805,6 +16822,10 @@ impl Client {
     pub fn patch_profile(&self) -> builder::PatchProfile<'_> {
         builder::PatchProfile::new(self)
     }
+    #[doc = "Mark every chapter read across many series\n\nBacks the Watchlist's `Mark group read`: each listed series' progress advances to its\nhighest known chapter. Ids the caller does not track come back in `skipped`.\n\nThe frontier only moves forward, so pressing this twice is a no-op the second time, and a\nseries whose catalogue has shrunk is not rewound.\n\nSends a `POST` request to `/v1/me/progress/bulk-read`\n\n```ignore\nlet response = client.bulk_mark_read()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn bulk_mark_read(&self) -> builder::BulkMarkRead<'_> {
+        builder::BulkMarkRead::new(self)
+    }
     #[doc = "Get read progress\n\nBoth read frontiers for the series (design v2 §A.6).\n\nSends a `GET` request to `/v1/me/progress/{series_id}`\n\nArguments:\n- `series_id`: Series id\n```ignore\nlet response = client.get_progress()\n    .series_id(series_id)\n    .send()\n    .await;\n```"]
     pub fn get_progress(&self) -> builder::GetProgress<'_> {
         builder::GetProgress::new(self)
@@ -15893,9 +16914,21 @@ impl Client {
     pub fn sync_status(&self) -> builder::SyncStatus<'_> {
         builder::SyncStatus::new(self)
     }
-    #[doc = "Get the watchlist\n\nThe user's watchlist with embedded title/cover/progress (frontend §9.3). Extra fields are\nadditive; older clients ignore them.\n\nSends a `GET` request to `/v1/me/watchlist`\n\n```ignore\nlet response = client.watchlist()\n    .send()\n    .await;\n```"]
+    #[doc = "Get the watchlist\n\nThe user's watchlist, filtered/sorted/paginated **server-side**, with the tab counts and\ngroup-header aggregates the list renders around it.\n\nThe body is an object rather than the bare `WatchlistItem[]` it used to be. That is a\nbreaking change, made deliberately: `total`, `counts` and `groups` cannot ride on response\nheaders without splitting one render into three requests, and the counts in particular are\n*not* derivable from `items` — they describe the tabs the caller is not looking at. The\nfrontend is the only consumer, and it is regenerated from this document.\n\nSends a `GET` request to `/v1/me/watchlist`\n\nArguments:\n- `limit`\n- `offset`\n- `order`: `asc | desc`. Defaults to whichever direction reads as \"most interesting first\" for the\nchosen sort — descending everywhere except `title`.\n- `q`: Free-text filter over title, alternative titles, tags and authors.\n- `released_since`: `24h | 7d | 30d`; absent (or `any`) means no recency constraint.\n\nA *window* token rather than an absolute instant, despite the name. The client would\nhave to compute the instant from its own clock, and a browser minutes ahead of the\nserver would filter out the very releases the \"last 24 hours\" option exists to show.\nThe server resolves the window against the clock the timestamps were written by.\n- `sort`: `released | unread | added | title | progress` (default `released`).\n- `source_issues`: Only rows whose preferred source is unhealthy.\n- `status`: `reading | planned | paused | completed | dropped`; absent means every status.\n- `unread_only`\n```ignore\nlet response = client.watchlist()\n    .limit(limit)\n    .offset(offset)\n    .order(order)\n    .q(q)\n    .released_since(released_since)\n    .sort(sort)\n    .source_issues(source_issues)\n    .status(status)\n    .unread_only(unread_only)\n    .send()\n    .await;\n```"]
     pub fn watchlist(&self) -> builder::Watchlist<'_> {
         builder::Watchlist::new(self)
+    }
+    #[doc = "Change many watchlist entries at once\n\nApplies a status and/or notify change across a selection. Ids the caller does not track are\nreported in `skipped` rather than inserted — the selection was made from the list, so an id\nthat is not on it means the client is stale, and re-adding a title the user just removed is\nthe wrong repair.\n\nSends a `POST` request to `/v1/me/watchlist/bulk`\n\n```ignore\nlet response = client.bulk_update_watchlist()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn bulk_update_watchlist(&self) -> builder::BulkUpdateWatchlist<'_> {
+        builder::BulkUpdateWatchlist::new(self)
+    }
+    #[doc = "Remove many watchlist entries at once\n\nSends a `DELETE` request to `/v1/me/watchlist/bulk`\n\n```ignore\nlet response = client.bulk_remove_watchlist()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn bulk_remove_watchlist(&self) -> builder::BulkRemoveWatchlist<'_> {
+        builder::BulkRemoveWatchlist::new(self)
+    }
+    #[doc = "Get one watchlist entry\n\nThe same enriched row the list renders, for a single series. The Series page used to answer\nthis by fetching the entire watchlist and scanning it — which stopped working the moment the\nlist paginated.\n\nSends a `GET` request to `/v1/me/watchlist/{series_id}`\n\nArguments:\n- `series_id`: Series id\n```ignore\nlet response = client.get_watchlist_entry()\n    .series_id(series_id)\n    .send()\n    .await;\n```"]
+    pub fn get_watchlist_entry(&self) -> builder::GetWatchlistEntry<'_> {
+        builder::GetWatchlistEntry::new(self)
     }
     #[doc = "Add or update a watchlist entry\n\nSends a `PUT` request to `/v1/me/watchlist/{series_id}`\n\nArguments:\n- `series_id`: Series id\n- `body`\n```ignore\nlet response = client.put_watchlist()\n    .series_id(series_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn put_watchlist(&self) -> builder::PutWatchlist<'_> {
@@ -21388,6 +22421,83 @@ pub mod builder {
             }
         }
     }
+    #[doc = "Builder for [`Client::bulk_mark_read`]\n\n[`Client::bulk_mark_read`]: super::Client::bulk_mark_read"]
+    #[derive(Debug, Clone)]
+    pub struct BulkMarkRead<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::WatchlistBulkIds, String>,
+    }
+    impl<'a> BulkMarkRead<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::WatchlistBulkIds>,
+            <V as std::convert::TryInto<types::WatchlistBulkIds>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `WatchlistBulkIds` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::WatchlistBulkIds,
+                ) -> types::builder::WatchlistBulkIds,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/progress/bulk-read`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::BulkResult>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::WatchlistBulkIds::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/me/progress/bulk-read", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "bulk_mark_read",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
     #[doc = "Builder for [`Client::get_progress`]\n\n[`Client::get_progress`]: super::Client::get_progress"]
     #[derive(Debug, Clone)]
     pub struct GetProgress<'a> {
@@ -22950,20 +24060,383 @@ pub mod builder {
     #[derive(Debug, Clone)]
     pub struct Watchlist<'a> {
         client: &'a super::Client,
+        limit: Result<Option<i64>, String>,
+        offset: Result<Option<i64>, String>,
+        order: Result<Option<::std::string::String>, String>,
+        q: Result<Option<::std::string::String>, String>,
+        released_since: Result<Option<::std::string::String>, String>,
+        sort: Result<Option<::std::string::String>, String>,
+        source_issues: Result<Option<bool>, String>,
+        status: Result<Option<::std::string::String>, String>,
+        unread_only: Result<Option<bool>, String>,
     }
     impl<'a> Watchlist<'a> {
         pub fn new(client: &'a super::Client) -> Self {
-            Self { client: client }
+            Self {
+                client: client,
+                limit: Ok(None),
+                offset: Ok(None),
+                order: Ok(None),
+                q: Ok(None),
+                released_since: Ok(None),
+                sort: Ok(None),
+                source_issues: Ok(None),
+                status: Ok(None),
+                unread_only: Ok(None),
+            }
+        }
+        pub fn limit<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i64>,
+        {
+            self.limit = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i64` for limit failed".to_string());
+            self
+        }
+        pub fn offset<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i64>,
+        {
+            self.offset = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i64` for offset failed".to_string());
+            self
+        }
+        pub fn order<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.order = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for order failed".to_string()
+            });
+            self
+        }
+        pub fn q<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.q = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `:: std :: string :: String` for q failed".to_string());
+            self
+        }
+        pub fn released_since<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.released_since = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for released_since failed".to_string()
+            });
+            self
+        }
+        pub fn sort<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.sort = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for sort failed".to_string()
+            });
+            self
+        }
+        pub fn source_issues<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.source_issues = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for source_issues failed".to_string());
+            self
+        }
+        pub fn status<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.status = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for status failed".to_string()
+            });
+            self
+        }
+        pub fn unread_only<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.unread_only = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for unread_only failed".to_string());
+            self
         }
         #[doc = "Sends a `GET` request to `/v1/me/watchlist`"]
         pub async fn send(
             self,
-        ) -> Result<
-            ResponseValue<::std::vec::Vec<types::WatchlistItem>>,
-            Error<types::ProblemDetails>,
-        > {
-            let Self { client } = self;
+        ) -> Result<ResponseValue<types::WatchlistView>, Error<types::ProblemDetails>> {
+            let Self {
+                client,
+                limit,
+                offset,
+                order,
+                q,
+                released_since,
+                sort,
+                source_issues,
+                status,
+                unread_only,
+            } = self;
+            let limit = limit.map_err(Error::InvalidRequest)?;
+            let offset = offset.map_err(Error::InvalidRequest)?;
+            let order = order.map_err(Error::InvalidRequest)?;
+            let q = q.map_err(Error::InvalidRequest)?;
+            let released_since = released_since.map_err(Error::InvalidRequest)?;
+            let sort = sort.map_err(Error::InvalidRequest)?;
+            let source_issues = source_issues.map_err(Error::InvalidRequest)?;
+            let status = status.map_err(Error::InvalidRequest)?;
+            let unread_only = unread_only.map_err(Error::InvalidRequest)?;
             let url = format!("{}/v1/me/watchlist", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("limit", &limit))
+                .query(&progenitor_client::QueryParam::new("offset", &offset))
+                .query(&progenitor_client::QueryParam::new("order", &order))
+                .query(&progenitor_client::QueryParam::new("q", &q))
+                .query(&progenitor_client::QueryParam::new(
+                    "released_since",
+                    &released_since,
+                ))
+                .query(&progenitor_client::QueryParam::new("sort", &sort))
+                .query(&progenitor_client::QueryParam::new(
+                    "source_issues",
+                    &source_issues,
+                ))
+                .query(&progenitor_client::QueryParam::new("status", &status))
+                .query(&progenitor_client::QueryParam::new(
+                    "unread_only",
+                    &unread_only,
+                ))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "watchlist",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::bulk_update_watchlist`]\n\n[`Client::bulk_update_watchlist`]: super::Client::bulk_update_watchlist"]
+    #[derive(Debug, Clone)]
+    pub struct BulkUpdateWatchlist<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::WatchlistBulkUpdate, String>,
+    }
+    impl<'a> BulkUpdateWatchlist<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::WatchlistBulkUpdate>,
+            <V as std::convert::TryInto<types::WatchlistBulkUpdate>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `WatchlistBulkUpdate` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::WatchlistBulkUpdate,
+                ) -> types::builder::WatchlistBulkUpdate,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/watchlist/bulk`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::BulkResult>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::WatchlistBulkUpdate::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/me/watchlist/bulk", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "bulk_update_watchlist",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::bulk_remove_watchlist`]\n\n[`Client::bulk_remove_watchlist`]: super::Client::bulk_remove_watchlist"]
+    #[derive(Debug, Clone)]
+    pub struct BulkRemoveWatchlist<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::WatchlistBulkIds, String>,
+    }
+    impl<'a> BulkRemoveWatchlist<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::WatchlistBulkIds>,
+            <V as std::convert::TryInto<types::WatchlistBulkIds>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `WatchlistBulkIds` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::WatchlistBulkIds,
+                ) -> types::builder::WatchlistBulkIds,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `DELETE` request to `/v1/me/watchlist/bulk`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::BulkResult>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::WatchlistBulkIds::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/me/watchlist/bulk", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "bulk_remove_watchlist",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::get_watchlist_entry`]\n\n[`Client::get_watchlist_entry`]: super::Client::get_watchlist_entry"]
+    #[derive(Debug, Clone)]
+    pub struct GetWatchlistEntry<'a> {
+        client: &'a super::Client,
+        series_id: Result<types::SeriesId, String>,
+    }
+    impl<'a> GetWatchlistEntry<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                series_id: Err("series_id was not initialized".to_string()),
+            }
+        }
+        pub fn series_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SeriesId>,
+        {
+            self.series_id = value
+                .try_into()
+                .map_err(|_| "conversion to `SeriesId` for series_id failed".to_string());
+            self
+        }
+        #[doc = "Sends a `GET` request to `/v1/me/watchlist/{series_id}`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::WatchlistEntryView>, Error<types::ProblemDetails>>
+        {
+            let Self { client, series_id } = self;
+            let series_id = series_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/me/watchlist/{}",
+                client.baseurl,
+                encode_path(&series_id.to_string()),
+            );
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -22980,7 +24453,7 @@ pub mod builder {
                 .headers(header_map)
                 .build()?;
             let info = OperationInfo {
-                operation_id: "watchlist",
+                operation_id: "get_watchlist_entry",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

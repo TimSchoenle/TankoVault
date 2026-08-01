@@ -409,21 +409,149 @@ a { color: inherit; text-decoration: none; }
 .ik-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; }
 .ik-row.unread { border-left: 3px solid var(--acc); background: var(--surface-unread); }
 .ik-row .grow { flex: 1; min-width: 0; }
-.ik-board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(240px, 1fr); gap: 14px; overflow-x: auto; padding-bottom: 8px; }
-.ik-col { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; min-height: 140px; }
-.ik-col.dragover { border-color: var(--acc); background: color-mix(in srgb, var(--acc) 8%, var(--surface-2)); }
-.ik-col h3 { margin: 0 0 10px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.ik-col h3 .count { font-family: var(--font-mono); color: var(--muted); font-size: 12px; }
+/* ============================================================================
+ * Watchlist — status filter strip + one virtualized list (design turn 4 / 4a),
+ * with a cover-grid alternate (4b).
+ *
+ * This replaced a five-column drag-and-drop board (`.ik-board` / `.ik-col` /
+ * `.ik-wl-card`, all deleted). The row is a CSS grid whose track list is shared
+ * verbatim with the column header — `--wl-cols` exists so the two cannot drift,
+ * which is what used to make every "just nudge this column" change a
+ * two-file edit with one of them forgotten.
+ * ========================================================================== */
+:root { --wl-cols: 34px 1fr 176px 74px 128px 122px; }
 
-/* Notification kind icon tile. */
-.ik-kind { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; flex: none; }
+/* Status tabs. The active tab's bottom border is transparent so it merges into
+   the toolbar below it rather than sitting in its own box. */
+.ik-wl-tabs { display: flex; gap: 4px; flex-wrap: wrap; align-items: flex-end; border-bottom: 1px solid var(--border); }
+.ik-wl-tab { font: inherit; font-size: 13px; color: var(--muted); background: transparent; border: 1px solid transparent; border-bottom-color: transparent; border-radius: 9px 9px 0 0; padding: 8px 13px; margin-bottom: -1px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+.ik-wl-tab:hover { color: var(--text); }
+.ik-wl-tab.active { color: var(--acc3); border-color: var(--acc); border-bottom-color: transparent; background: color-mix(in srgb, var(--acc) 12%, transparent); }
+.ik-wl-tab.all { margin-left: auto; }
+.ik-wl-tabcount { font-family: var(--font-mono); font-size: 11px; padding: 1px 7px; border-radius: 20px; background: var(--surface-2); color: var(--muted); }
+.ik-wl-tab.active .ik-wl-tabcount { background: color-mix(in srgb, var(--acc) 22%, transparent); color: var(--acc3); }
 
-/* Draggable watchlist card. */
-.ik-wl-card { border: 1px solid var(--border); border-radius: 10px; padding: 8px; margin-bottom: 8px; background: var(--surface); cursor: grab; transition: border-color 120ms ease, box-shadow 120ms ease; }
-.ik-wl-card:hover { border-color: var(--acc); }
-.ik-wl-card:active { cursor: grabbing; }
-.ik-wl-card .ik-cover, .ik-wl-card .ik-cover-fallback { border-radius: 6px; }
-.ik-wl-card .ik-cover-fallback { font-size: 18px; }
+/* Toolbar. Sticky under the top bar so the filters stay reachable 400 rows down. */
+.ik-wl-toolbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 13px 26px; margin: 0 -26px; background: var(--bg); border-bottom: 1px solid var(--border); }
+.ik-wl-toolbar .ik-input, .ik-wl-toolbar .ik-select, .ik-wl-toolbar .ik-chip, .ik-wl-toolbar .ik-btn { height: 34px; }
+.ik-wl-search { position: relative; display: flex; align-items: center; flex: 1; min-width: 220px; max-width: 420px; }
+.ik-wl-search .lead { position: absolute; left: 11px; color: var(--faint); pointer-events: none; display: inline-flex; }
+.ik-wl-search .ik-input { padding-left: 34px; padding-right: 34px; }
+.ik-wl-search .kbd { position: absolute; right: 10px; font-family: var(--font-mono); font-size: 11px; color: var(--faint); border: 1px solid var(--border-ctl); border-radius: 5px; padding: 0 5px; pointer-events: none; }
+.ik-wl-ctl { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; }
+.ik-wl-toolbar .ik-chip { display: inline-flex; align-items: center; gap: 6px; }
+/* Amber, not vermilion: a degraded source is something to notice and fix, and
+   vermilion is this app's accent/destructive role. */
+.ik-chip.warn { color: var(--star); border-color: color-mix(in srgb, var(--star) 45%, transparent); }
+.ik-chip.warn.active { background: color-mix(in srgb, var(--star) 14%, transparent); }
+.ik-wl-viewtoggle { display: inline-flex; margin-left: auto; border: 1px solid var(--border-ctl); border-radius: 9px; overflow: hidden; }
+.ik-wl-viewtoggle button { background: var(--surface); border: none; color: var(--muted); padding: 0 11px; height: 34px; cursor: pointer; display: grid; place-items: center; }
+.ik-wl-viewtoggle button.on { background: color-mix(in srgb, var(--acc) 16%, transparent); color: var(--acc3); }
+
+/* Column header + rows share one track list. */
+.ik-wl-head, .ik-wl-row { display: grid; grid-template-columns: var(--wl-cols); gap: 12px; align-items: center; padding: 0 26px; margin: 0 -26px; }
+.ik-wl-head { height: 32px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint-2); border-bottom: 1px solid var(--border); }
+.ik-wl-sortcol { background: none; border: none; padding: 0; font: inherit; color: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.ik-wl-sortcol.on { color: var(--acc3); }
+.ik-wl-sortcol[aria-sort="ascending"] svg { transform: rotate(180deg); }
+
+.ik-wl-list { outline: none; }
+.ik-wl-list:focus-visible { outline: 2px solid var(--acc); outline-offset: 3px; border-radius: 4px; }
+
+/* Band heading, sticky under the toolbar. */
+.ik-wl-band { position: sticky; top: 61px; z-index: 2; display: flex; align-items: center; gap: 12px; height: 30px; padding: 0 26px; margin: 0 -26px; background: var(--bg); border-bottom: 1px solid var(--border-soft); }
+.ik-wl-band-name { font-family: var(--font-mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-3); }
+.ik-wl-band-stats { font-size: 12px; color: var(--faint); }
+.ik-wl-band-act { margin-left: auto; background: none; border: none; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; }
+.ik-wl-band-act:hover:not(:disabled) { color: var(--acc); }
+.ik-wl-band-act:disabled { opacity: .4; cursor: not-allowed; }
+
+/* The row. 54px is the whole budget: a cover thumb, a title, a progress bar and
+   one action, and nothing else fits — which is the point. */
+.ik-wl-row { height: 54px; border-bottom: 1px solid var(--border-soft); position: relative; }
+.ik-wl-row:hover { background: rgba(255,255,255,.02); }
+.ik-wl-row.focused { background: rgba(255,255,255,.035); }
+.ik-wl-row.selected { box-shadow: inset 2px 0 0 var(--acc); background: color-mix(in srgb, var(--acc) 4%, transparent); }
+/* Caught-up rows recede rather than disappear: they are still the answer to
+   "am I tracking this?", just not to "what do I read next?". */
+.ik-wl-row.caught-up { opacity: .62; }
+.ik-wl-row.caught-up:hover { opacity: 1; }
+.ik-wl-check { accent-color: var(--acc); width: 15px; height: 15px; cursor: pointer; }
+
+.ik-wl-title { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.ik-wl-thumb { width: 28px; height: 38px; flex: none; border-radius: 4px; overflow: hidden; }
+.ik-wl-thumb .ik-cover, .ik-wl-thumb .ik-cover-fallback { width: 28px; height: 38px; aspect-ratio: auto; font-size: 13px; }
+.ik-wl-name { display: flex; align-items: center; gap: 7px; min-width: 0; font-weight: 600; font-size: 13.5px; }
+.ik-wl-name a { color: inherit; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ik-wl-name a:hover { color: var(--acc3); }
+.ik-wl-name .ik-pill { text-transform: lowercase; flex: none; }
+.ik-wl-warn { color: var(--star); display: inline-flex; flex: none; }
+.ik-wl-sub { font-size: 11.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+.ik-wl-sub.warn { color: var(--star); }
+
+.ik-wl-count { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ik-wl-bar { height: 3px; margin-top: 4px; background: var(--border-soft); border-radius: 999px; overflow: hidden; }
+.ik-wl-bar > span { display: block; height: 100%; background: var(--acc); }
+.ik-wl-bar.muted > span { background: var(--border-ctl); }
+.ik-wl-bar.done > span { background: var(--jade-bright); }
+
+.ik-wl-unread { text-align: right; }
+.ik-wl-released { font-size: 12px; color: var(--muted); line-height: 1.35; }
+.ik-wl-released .ik-faint { font-size: 11px; }
+
+.ik-wl-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; position: relative; }
+.ik-wl-continue { font: inherit; font-weight: 600; font-size: 12.5px; border-radius: 8px; padding: 6px 12px; border: 1px solid var(--border-ctl); background: var(--surface); color: var(--text-3); cursor: pointer; }
+.ik-wl-continue:hover, .ik-wl-continue.on { border-color: var(--acc); color: var(--acc3); }
+.ik-wl-more { background: none; border: none; color: var(--muted); cursor: pointer; display: grid; place-items: center; padding: 5px; border-radius: 7px; }
+.ik-wl-more:hover { background: rgba(255,255,255,.06); color: var(--text); }
+
+/* Row menu. The backdrop is a full-viewport click target, not a scrim — it must
+   not dim the page, only catch the click that closes the menu. */
+.ik-wl-backdrop { position: fixed; inset: 0; z-index: 20; }
+.ik-wl-menu { position: absolute; top: calc(100% - 6px); right: 0; z-index: 21; min-width: 208px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 5px; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+.ik-wl-menu-item { display: block; width: 100%; text-align: left; font: inherit; font-size: 13px; color: var(--text-3); background: none; border: none; border-radius: 7px; padding: 7px 10px; cursor: pointer; }
+.ik-wl-menu-item:hover, .ik-wl-menu-item:focus-visible { background: rgba(255,255,255,.06); color: var(--text); outline: none; }
+.ik-wl-menu-item.danger { color: var(--acc3); }
+/* The divider is drawn by the group wrapping the item below it, so the keyed
+   node stays first in its block (see `RowMenu`). */
+.ik-wl-menu-group.sep { border-top: 1px solid var(--border); margin-top: 5px; padding-top: 5px; }
+
+.ik-wl-sentinel { height: 1px; }
+.ik-wl-foot { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 14px 0 4px; font-size: 12px; color: var(--faint); }
+.ik-wl-more-btn { background: none; border: none; font: inherit; font-size: 12px; color: var(--acc3); cursor: pointer; padding: 0; }
+.ik-wl-more-btn:hover { text-decoration: underline; }
+.ik-wl-legend { margin-left: auto; font-family: var(--font-mono); font-size: 11px; }
+
+/* Bulk bar. Floats over the list rather than pushing it, so selecting a row
+   does not reflow the forty rows under the cursor. */
+.ik-wl-bulk { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 9px; padding: 9px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 18px 48px rgba(0,0,0,.55); }
+.ik-wl-bulk .ik-btn, .ik-wl-bulk .ik-select { height: 32px; padding-top: 0; padding-bottom: 0; font-size: 13px; }
+.ik-wl-bulk-count { font-size: 12px; color: var(--acc3); padding-right: 4px; }
+.ik-wl-bulk-close { background: none; border: none; color: var(--muted); cursor: pointer; display: grid; place-items: center; padding: 5px; border-radius: 7px; }
+.ik-wl-bulk-close:hover { background: rgba(255,255,255,.06); color: var(--text); }
+
+/* 4b — the cover grid. Seven-up at the design width, and it degrades by column
+   count rather than by card size so the covers stay legible. */
+.ik-wl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 16px; padding-top: 16px; }
+.ik-wl-tile { min-width: 0; }
+.ik-wl-tile.selected { box-shadow: 0 0 0 2px var(--acc); border-radius: 10px; }
+.ik-wl-tile-art { position: relative; display: block; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+.ik-wl-tile-badge { position: absolute; top: 6px; right: 6px; font-family: var(--font-mono); font-size: 11px; color: #fff; background: var(--acc); border-radius: 20px; padding: 1px 7px; }
+.ik-wl-tile-warn { position: absolute; top: 6px; left: 6px; color: var(--star); background: rgba(0,0,0,.6); border-radius: 6px; padding: 3px; display: grid; place-items: center; }
+.ik-wl-tile-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(0,0,0,.5); }
+.ik-wl-tile-bar > span { display: block; height: 100%; background: var(--acc); }
+.ik-wl-tile-name { margin-top: 7px; font-weight: 600; font-size: 13px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ik-wl-tile-meta { margin-top: 3px; font-size: 11px; color: var(--faint); }
+
+/* Below the design's two-pane width the fixed cells stop fitting; the row keeps
+   the title, the unread pill and the actions, which is the minimum that still
+   answers "what do I read next?". */
+@media (max-width: 900px) {
+  :root { --wl-cols: 34px 1fr 74px 96px; }
+  .ik-wl-head > :nth-child(3), .ik-wl-row > .ik-wl-progress { display: none; }
+  .ik-wl-head > :nth-child(5) { display: none; }
+  .ik-wl-row > .ik-wl-released { display: none; }
+}
 
 /* ============================================================================
  * Discover — two-pane filter panel + results (DESIGN_SPEC §7.2)

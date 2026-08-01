@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM watchlist_entries WHERE user_id = $1 AND series_id = ANY($2) RETURNING series_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "series_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "491b46dba2a9515c1b839362398888bbe2cfb3810c488f3e86a9863bd57e1b30"
+}

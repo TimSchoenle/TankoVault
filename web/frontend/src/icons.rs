@@ -49,12 +49,20 @@ pub(crate) enum Icon {
     ShieldLock,
     Code,
     Dashboard,
-    // watchlist columns
-    Fire,
-    Schedule,
-    TaskAlt,
-    PauseCircle,
-    Cancel,
+    // Five glyphs used to live here — one per kanban column (`Fire`, `Schedule`, `TaskAlt`,
+    // `PauseCircle`, `Cancel`). The board is gone and its replacement's status tabs are text
+    // plus a count pill, so they are deleted rather than kept "in case": an unused arm in
+    // `path_for` is path data nothing renders and nothing reviews.
+    // watchlist list view
+    /// Source-health warning on a row and on a grid card.
+    Warning,
+    /// The per-row overflow menu (`⋯`).
+    MoreHoriz,
+    /// A muted title's bell-with-a-slash, distinct from [`Icon::Notify`] rather than a dimmed
+    /// copy of it — "notifications are off here" has to be legible without comparing two rows.
+    NotifyOff,
+    ViewList,
+    ViewGrid,
     // discover / misc
     Add,
     Remove,
@@ -172,13 +180,23 @@ fn path_for(icon: Icon) -> &'static str {
             r#"<path d="M12 3l8 3v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/><rect x="9.5" y="11" width="5" height="4" rx="1"/><path d="M10.5 11V9.5a1.5 1.5 0 0 1 3 0V11"/>"#
         }
         Icon::Code => r#"<path d="m8 8-4 4 4 4"/><path d="m16 8 4 4-4 4"/><path d="m13 5-2 14"/>"#,
-        Icon::Fire => {
-            r#"<path d="M12 3c1 3-1 4-1 6a3 3 0 0 0 6 0c0-1 0-2-.5-3 2 1.5 3.5 4 3.5 7a7 7 0 1 1-14 0c0-3.5 2.5-6 6-10z"/>"#
+        Icon::Warning => {
+            r#"<path d="M12 3 2.5 20h19z"/><path d="M12 10v4"/><path d="M12 17.2v.1"/>"#
         }
-        Icon::Schedule => r#"<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>"#,
-        Icon::TaskAlt => r#"<path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/>"#,
-        Icon::PauseCircle => r#"<circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/>"#,
-        Icon::Cancel => r#"<circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/>"#,
+        Icon::MoreHoriz => {
+            r#"<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>"#
+        }
+        // The bell of `Icon::Notify` with a strike through it. The path data is duplicated
+        // rather than composed because `path_for` returns one `&'static str`.
+        Icon::NotifyOff => {
+            r#"<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a2 2 0 0 0 3.4 0"/><path d="M3 3l18 18"/>"#
+        }
+        Icon::ViewList => {
+            r#"<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>"#
+        }
+        Icon::ViewGrid => {
+            r#"<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>"#
+        }
         Icon::Add => r#"<path d="M12 5v14M5 12h14"/>"#,
         Icon::Remove => r#"<path d="M5 12h14"/>"#,
         Icon::Refresh => r#"<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v5h-5"/>"#,

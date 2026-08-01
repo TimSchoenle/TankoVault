@@ -21,7 +21,7 @@ pub(crate) use notifications::Notifications;
 pub(crate) use password::{ForgotPassword, ResetPassword};
 pub(crate) use search::Search;
 pub(crate) use series::Series;
-pub(crate) use watchlist::Watchlist;
+pub(crate) use watchlist::{Watchlist, WatchlistQuery};
 
 use dioxus::prelude::*;
 

@@ -7,7 +7,7 @@ use crate::state::capabilities::CapabilitySet;
 use crate::state::Session;
 use crate::views::{
     Account, AnilistCallback, Console, Discover, ForgotPassword, Home, Login, NotFound,
-    Notifications, ResetPassword, Search, Series, VerifyEmail, Watchlist,
+    Notifications, ResetPassword, Search, Series, VerifyEmail, Watchlist, WatchlistQuery,
 };
 use dioxus::prelude::*;
 
@@ -25,8 +25,12 @@ pub(crate) enum Route {
         Series { id: String },
         // The old Reading feed folded into Home; the path stays alive for bookmarks and links.
         #[redirect("/reading", || Route::Home {})]
-        #[route("/watchlist")]
-        Watchlist {},
+        // The whole view state — status tab, sort, filter text, recency window, list/grid —
+        // rides in the query string so a filtered watchlist is shareable and the back button
+        // steps through it. One catch-all field rather than seven named ones; see
+        // `views::watchlist::query`.
+        #[route("/watchlist?:..query")]
+        Watchlist { query: WatchlistQuery },
         #[route("/notifications")]
         Notifications {},
         #[route("/account")]

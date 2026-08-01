@@ -209,8 +209,37 @@ fn me_gates() -> Vec<Gate> {
                 "/v1/me/progress/00000000-0000-7000-8000-00000000000a/mark-read-to",
             )
         },
+        Gate {
+            body: || Some(json!({ "series_ids": ["00000000-0000-7000-8000-00000000000a"] })),
+            ..gate(
+                "POST",
+                "/v1/me/progress/bulk-read",
+                "/v1/me/progress/bulk-read",
+            )
+        },
         // --- watchlist ---
         get("/v1/me/watchlist", "/v1/me/watchlist"),
+        get(
+            "/v1/me/watchlist/{series_id}",
+            "/v1/me/watchlist/00000000-0000-7000-8000-00000000000a",
+        ),
+        // The bulk pair sits at a *static* segment under the same prefix as
+        // `/v1/me/watchlist/{series_id}`. Driving both here is also what proves the router
+        // resolves `bulk` to the bulk handler rather than to the parameterised one — which
+        // would answer `400` on the uuid parse and never reach the authorization leg.
+        Gate {
+            body: || {
+                Some(json!({
+                    "series_ids": ["00000000-0000-7000-8000-00000000000a"],
+                    "status": "dropped"
+                }))
+            },
+            ..gate("POST", "/v1/me/watchlist/bulk", "/v1/me/watchlist/bulk")
+        },
+        Gate {
+            body: || Some(json!({ "series_ids": ["00000000-0000-7000-8000-00000000000a"] })),
+            ..gate("DELETE", "/v1/me/watchlist/bulk", "/v1/me/watchlist/bulk")
+        },
         Gate {
             body: || Some(json!({ "status": "reading", "notify": true })),
             ..gate(

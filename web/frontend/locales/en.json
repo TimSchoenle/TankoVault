@@ -970,15 +970,85 @@
     "pending": "Confirming your email address…"
   },
   "watchlist": {
+    "bulkLabel": "Bulk actions",
+    "bulkPartial": "Applied to {applied} of {total} titles.",
+    "changeSource": "Change source…",
+    "chapterNo": "ch {number}",
+    "clearSelection": "Clear selection",
+    "col": {
+      "progress": "Progress",
+      "released": "Released",
+      "title": "Title",
+      "unread": "Unread"
+    },
+    "confirmRemove": "Remove {count}?",
+    "continue": "Continue",
     "empty": "Your watchlist is empty. Find a series and add it to start tracking.",
-    "moveToColumn": "Move to column",
+    "emptyCta": "Browse the catalogue",
+    "filterLabel": "Filter the watchlist",
+    "filterPlaceholder": "Filter {count} titles by name, tag, author…",
+    "group": {
+      "earlier": "Earlier",
+      "thisWeek": "Earlier this week",
+      "today": "Today"
+    },
+    "groupStats": "{titles} titles · {chapters} chapters",
+    "headline": "{titles} titles tracked · {chapters} chapters unread",
+    "keyLegend": "J/K move · X select · ↵ continue · S menu · / filter",
+    "loadMore": "Load more",
+    "markAllRead": "Mark read",
+    "markGroupIncomplete": "Scroll to load the whole group before marking it read.",
+    "markGroupRead": "Mark group read",
+    "markGroupTooBig": "Too many titles to mark at once (limit {limit}).",
+    "moveTo": "Move to {status}",
+    "moveToPrompt": "Move to…",
+    "mute": "Mute",
+    "muted": "muted",
+    "nSelected": "{count} selected",
+    "noMatch": {
+      "hint": "Widen the release window, switch off Unread only, or clear the text filter.",
+      "title": "Nothing matches these filters."
+    },
+    "noSource": "no source",
     "notifyOff": "Notify off",
     "notifyOn": "Notify on",
-    "subtitle": "Drag a title between columns to change its status — or use the picker on each card.",
+    "released": {
+      "any": "any time",
+      "day": "last 24 hours",
+      "month": "last 30 days",
+      "week": "last 7 days"
+    },
+    "releasedWithin": "Released",
+    "removeFromWatchlist": "Remove from watchlist",
+    "resetFilters": "Show everything",
+    "rowMenu": "Actions for {title}",
+    "rowsOf": "Rows 1–{shown} of {total} · scroll to load",
+    "selectRow": "Select {title}",
+    "sort": {
+      "added": "Recently added",
+      "progress": "Progress",
+      "released": "Newest release",
+      "title": "Title",
+      "unread": "Most unread"
+    },
+    "sortBy": "Sort",
+    "sourceIssues": "Source issues ({count})",
+    "sourceMeta": "{source} · {count} sources",
+    "sourceOffline": "source offline",
     "sync": "Sync AniList",
     "synced": "Synced with AniList.",
+    "syncedAgo": "AniList synced {when}",
     "syncing": "Syncing…",
+    "tab": {
+      "all": "All"
+    },
     "toggleNotifications": "Toggle notifications",
-    "unread": "{count} unread"
+    "unmute": "Unmute",
+    "unread": "{count} unread",
+    "unreadOnly": "Unread only",
+    "upToDate": "Up to date",
+    "viewGrid": "Grid view",
+    "viewList": "List view",
+    "viewToggle": "List or grid"
   }
 }

@@ -6,6 +6,7 @@ use crate::icons::{Ic, Icon};
 use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::util::initial;
+use crate::views::WatchlistQuery;
 use crate::wire::types::Feature;
 use crate::Route;
 use dioxus::prelude::*;
@@ -54,7 +55,7 @@ pub(crate) fn Rail() -> Element {
                 NavGroup { label: i18n.t("nav.group.library") }
             }
             if show_watchlist {
-                NavLink { to: Route::Watchlist {}, label: i18n.t("nav.watchlist"), icon: Icon::Watchlist, current: route.clone() }
+                NavLink { to: Route::Watchlist { query: WatchlistQuery::default() }, label: i18n.t("nav.watchlist"), icon: Icon::Watchlist, current: route.clone() }
             }
             if show_notifications {
                 NavLink {

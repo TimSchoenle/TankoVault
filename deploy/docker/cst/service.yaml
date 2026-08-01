@@ -32,6 +32,14 @@ fileExistenceTests:
   - name: "libgcc_s present (unwinder referenced by BoringSSL's C++ objects)"
     path: "/usr/lib/libgcc_s.so.1"
     shouldExist: true
+  # `challenge-solver` and `worker` link the C++ standard library through `btls-sys`, the
+  # BoringSSL binding `wreq` 6 replaced `boring-sys2` with. They share this runtime stage with
+  # the six binaries that do not, so the contract covers the union. Absent it, those two die at
+  # exec with "Error loading shared library libstdc++.so.6" — which is how this was found, after
+  # the images built and passed everything else.
+  - name: "libstdc++ present (C++ runtime referenced by btls-sys/BoringSSL)"
+    path: "/usr/lib/libstdc++.so.6"
+    shouldExist: true
   # The image must NOT ship a shell / package manager: `scratch` guarantees this, and asserting
   # it turns any accidental base-image swap into a hard CI failure.
   - name: "no shell (scratch, minimal attack surface)"

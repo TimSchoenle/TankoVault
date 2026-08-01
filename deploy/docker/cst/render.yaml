@@ -56,3 +56,17 @@ commandTests:
     # Anchored so it means "the username is not exactly root" — an unanchored "root" would also
     # match the legitimate "nonroot" account name.
     excludedOutput: ["^root$"]
+  # Every shared library the binary names must actually resolve inside this image. This is the
+  # one image with a shell, so it is the only one where the contract can be checked by the
+  # loader itself rather than by asserting a hand-written list of file paths.
+  #
+  # It exists because `wreq` 6 changed the BoringSSL binding to `btls-sys`, which added a
+  # `libstdc++` dependency: the images built, passed every file-existence assertion, and then
+  # died at exec with "Error loading shared library". Only running the loader catches that.
+  # The musl loader is invoked directly — this is a glibc base, so the system `ldd` is the wrong
+  # one for a musl binary — and it reads `/etc/ld-musl-x86_64.path`, so it also proves the
+  # private `/usr/lib/musl` search path is wired up correctly.
+  - name: "every shared library the service binary needs resolves"
+    command: "/lib/ld-musl-x86_64.so.1"
+    args: ["--list", "/usr/local/bin/tankovault-service"]
+    excludedOutput: ["not found"]

@@ -208,6 +208,42 @@ RUN --mount=type=cache,id=tankovault-backend-cargo,target=/cargo,sharing=shared 
     mkdir -p /out; \
     for bin in ${SERVICE_BINS}; do cp "target/release/${bin}" "/out/${bin}"; done
 
+# The linkage contract. Every runtime stage below is `scratch` or a glibc image, so it ships an
+# explicit, hand-listed set of shared libraries; nothing resolves a dependency for us. If a
+# binary's `DT_NEEDED` set grows beyond what its runtime stage carries, the image still builds
+# and the container dies at exec with `Error loading shared library …` and a wall of
+# `symbol not found` — no build, test or structure-test sees it, because the only thing that
+# can is a loader running the real binary in the real image.
+#
+# That is not hypothetical. `wreq` 6 swapped the BoringSSL binding `boring-sys2` for `btls-sys`,
+# which links `libstdc++` where the old one needed only `libgcc_s`; every service image built
+# fine and every one of them failed to start. This check is what makes that a build failure.
+#
+# There are three runtime stages and they do not ship the same set, so neither does this check.
+# `render` (`runtime-browser`) and `frontend` (its own `scratch` stage) carry no `libstdc++`;
+# only the shared `runtime` stage does. One combined list would mean either allowing
+# `libstdc++` everywhere — losing the guarantee for the two stages that deliberately omit it —
+# or banning it everywhere, which is the bug this exists to catch. Keep the `case` in step with
+# what the stages actually `COPY`: a binary checked against the wrong list is a hole in exactly
+# the shape of the failure this prevents.
+RUN set -eu; \
+    runtime_libs='libstdc++.so.6 libgcc_s.so.1 libc.musl-x86_64.so.1'; \
+    no_cxx_libs='libgcc_s.so.1 libc.musl-x86_64.so.1'; \
+    rc=0; \
+    for f in /out/*; do \
+      bin="$(basename "$f")"; \
+      case "${bin}" in render|frontend) allowed="${no_cxx_libs}" ;; *) allowed="${runtime_libs}" ;; esac; \
+      for need in $(readelf -d "$f" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'); do \
+        echo " ${allowed} " | grep -q " ${need} " || { \
+          echo "linkage contract: ${bin} needs ${need}, which its runtime stage does not ship" >&2; \
+          echo "  allowed: ${allowed}" >&2; \
+          rc=1; \
+        }; \
+      done; \
+    done; \
+    [ "$rc" -eq 0 ] || { echo "Add the library to the matching runtime stage, or drop the dependency." >&2; exit 1; }; \
+    echo "linkage contract: ok"
+
 # --- Toolchain (wasm): rustc + the `dx` CLI, on Debian. -----------------------------
 # The SPA bundle needs `dx`, which drives `wasm-bindgen` and a bundled `wasm-opt`; both are
 # glibc binaries, so this half stays on Debian rather than joining the Alpine lineage above.
@@ -366,6 +402,13 @@ RUN groupadd --gid 1001 nonroot \
 # The service binary is musl-linked, so this glibc image needs the musl loader too. Its
 # `libgcc_s` goes in a private directory named by `/etc/ld-musl-x86_64.path` rather than into
 # `/usr/lib`, so it cannot shadow the glibc `libgcc_s` that Chromium loads.
+#
+# Deliberately **no `libstdc++`** here, unlike the `scratch` `runtime` stage. `render` is the
+# only binary this stage ever carries and it does not link the C++ standard library — verified
+# from `readelf -d` on the builder's output, not assumed. Keeping it out matters beyond size:
+# a musl-built `libstdc++` anywhere Chromium could find it is an ABI mismatch rather than a
+# near-miss. If `render` ever does need it, the `linkage contract` check in the builder stage
+# fails the build and this comment is where the answer is.
 COPY --from=builder /lib/ld-musl-x86_64.so.1 /lib/ld-musl-x86_64.so.1
 COPY --from=builder /usr/lib/libgcc_s.so.1 /usr/lib/musl/libgcc_s.so.1
 RUN echo /usr/lib/musl > /etc/ld-musl-x86_64.path
@@ -410,14 +453,24 @@ ENTRYPOINT ["/usr/local/bin/tankovault-frontend"]
 # else: still no shell, no package manager, no OS.
 #
 # The binary is dynamically linked against musl (see the cook stage for why BoringSSL
-# forces a native, non-`crt-static` build), so `ldd` resolves exactly three things — the musl
-# loader, `libc` (the same file), and `libgcc_s` for the unwinder BoringSSL's C++ objects
-# reference. Both live on musl's default search path (`/lib:/usr/local/lib:/usr/lib`), so no
-# loader configuration is needed. The CA trust store is for the rustls/reqwest/lettre clients
-# validating outbound TLS to AniList and SMTP; `wreq` uses its own bundled webpki roots.
+# forces a native, non-`crt-static` build), so `ldd` resolves exactly four things — the musl
+# loader, `libc` (the same file), `libgcc_s` for the unwinder BoringSSL's C++ objects
+# reference, and `libstdc++` for the C++ runtime itself. All live on musl's default search path
+# (`/lib:/usr/local/lib:/usr/lib`), so no loader configuration is needed. The CA trust store is
+# for the rustls/reqwest/lettre clients validating outbound TLS to AniList and SMTP; `wreq`
+# uses its own bundled webpki roots.
+#
+# `libstdc++` was **not** needed until 2026-08-01 and its absence was documented as deliberate.
+# `wreq` 6 replaced the `boring-sys2` BoringSSL binding with `btls-sys`, which links the C++
+# standard library where the old one resolved to `libgcc_s` alone. Nothing in the build catches
+# that: the image builds, and every service dies at exec with `Error loading shared library
+# libstdc++.so.6` followed by a wall of `_ZTVN10__cxxabiv1…: symbol not found`. Verified with
+# `readelf -d` on the shipped binary rather than by reasoning about it — that is the only way to
+# know, and it is worth redoing after any change to the TLS stack.
 FROM scratch AS runtime
 COPY --from=builder /lib/ld-musl-x86_64.so.1 /lib/ld-musl-x86_64.so.1
 COPY --from=builder /usr/lib/libgcc_s.so.1 /usr/lib/libgcc_s.so.1
+COPY --from=builder /usr/lib/libstdc++.so.6 /usr/lib/libstdc++.so.6
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 # Declared last so every layer above is shared across all eight service images and BuildKit
 # builds them once. `BIN` is the only thing that distinguishes them.

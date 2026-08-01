@@ -88,6 +88,13 @@ repository still has no `LICENSE`.
     Firefox 139 → 151, Safari 18.5 → 26.4, Edge 134 → 148).
   - The BoringSSL binding is renamed `boring-sys2` → `btls-sys`, which the Dockerfile and
     `CONTRIBUTING.md` referred to by name; the build toolchain it needs is unchanged.
+  - **`btls-sys` links `libstdc++`, which `boring-sys2` did not**, so the `scratch` runtime now
+    ships `libstdc++.so.6` alongside the musl loader and `libgcc_s`. Without it `worker` and
+    `challenge-solver` build cleanly and then die at exec with `Error loading shared library
+    libstdc++.so.6`. `render` and `frontend` do not link it and their stages still omit it.
+    The builder stage gained a **linkage contract** that fails the build when any binary needs
+    a library its runtime stage does not ship — this class of breakage is invisible to every
+    other gate, because only a loader running the real binary in the real image can see it.
   - `charset`/`encoding_rs` left `wreq`'s default features in 6 and has **not** been re-enabled:
     nothing here decodes by declared charset — `base.rs` decodes `bytes_stream()` as UTF-8
     itself and the solver clients only call `.json()`.

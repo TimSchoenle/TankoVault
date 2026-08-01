@@ -131,7 +131,9 @@ survivors, and every one sat under a passing test that compared an *ordering* ra
 **Dependencies.** `cargo deny` denies duplicate versions against an explicit skip list, and
 `-D unnecessary-skip` fails on a skip whose duplicate has since resolved — so a pull request that
 collapses one deletes its line. Adding a dependency to `services/api` needs a look at
-`cargo tree -p tankovault-api -i boring-sys2`: that binary deliberately links one TLS stack.
+`cargo tree -p tankovault-api -i btls-sys`: that binary deliberately links one TLS stack.
+(It was `boring-sys2` until `wreq` 6, which renamed its BoringSSL binding. The old name now
+matches nothing, so the check would have quietly passed on any graph.)
 
 ## Conventions worth knowing
 

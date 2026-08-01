@@ -69,32 +69,28 @@ allow = [
     # copyleft and no attribution requirement, which is the right shape for a trust store
     # compiled into a binary.
     "CDLA-Permissive-2.0",
-
-    # ---------------------------------------------------------------------------------
-    # GPL-3.0 — `wreq-util`. This is a real decision, not a formality. Read before editing.
-    # ---------------------------------------------------------------------------------
-    # `wreq-util` supplies the browser-emulation profiles (`Emulation`, `EmulationOS`) that
-    # `crates/fetch/src/base.rs` builds every provider client from. It is load-bearing for the
-    # crawl stack and cannot simply be dropped. `wreq` itself is Apache-2.0; only this
-    # companion crate is GPL-3.0.
-    #
-    # The licence entered the tree with the reqwest→wreq migration and this gate has been
-    # failing ever since. (The audit reported the *advisories* half of the red `deny` job and
-    # missed this half.) Allowing it here makes the gate meaningful again for new problems; it
-    # does not answer the licensing question, which is:
-    #
-    #   GPL-3.0 obligations attach on **conveying** the work. Running it as a network service
-    #   is not conveying — that is AGPL's additional clause, which GPL-3.0 does not have — so
-    #   a privately hosted deployment triggers nothing. **Distributing the Docker images** —
-    #   the registry push proposed in the audit's Phase 6 — *is* conveying, and would require
-    #   offering corresponding source for the whole combined work.
-    #
-    # If TankoVault is ever published or its images distributed, resolve this first:
-    # relicense the project, vendor an Apache-2.0 emulation profile set, or drop the
-    # dependency. Tracked as OP-6 in docs/audit/PROGRESS.md.
-    # Reviewed 2026-07-29.
-    "GPL-3.0",
 ]
+
+# ---------------------------------------------------------------------------------
+# GPL-3.0 was here until 2026-08-01, for `wreq-util`. Do not put it back casually.
+# ---------------------------------------------------------------------------------
+# `wreq-util` supplies the browser-emulation profiles `crates/fetch/src/base.rs` builds every
+# provider client from; it is load-bearing for the crawl stack and could not simply be dropped.
+# It entered the tree GPL-3.0 with the reqwest→wreq migration, and because GPL-3.0 obligations
+# attach on **conveying**, that made publishing the Docker images — not running them — a
+# source-offer obligation over the whole combined work. That was OP-6, and it blocked both
+# image publishing and choosing a `LICENSE`.
+#
+# It was resolved by upgrading, not by relicensing anything of ours: upstream moved wreq-util
+# GPL-3.0 → LGPL-3.0 (3.0.0-rc.9) → Apache-2.0 (3.0.0-rc.12), so `wreq-util` 3.0.0-rc.14 and
+# the `wreq` 6.0.0-rc it requires are both Apache-2.0. Note the shape of the fix: the crate we
+# had pinned, 2.2.6, is still GPL-3.0 and always will be — a relicence is not retroactive, so
+# *only moving off that version* changed anything.
+#
+# The consequence for this list: an accidental downgrade to any wreq-util below 3.0.0-rc.12 is
+# a licensing regression, and the thing that catches it is GPL-3.0 and LGPL-3.0 being absent
+# here. Adding either back re-opens OP-6 silently.
+
 confidence-threshold = 0.8
 # Every workspace member is `publish = false` and carries no `license` field. Licence-checking
 # our own crates only produces noise about code whose licence is the repository's.
@@ -160,18 +156,23 @@ skip = [
     { crate = "sha2" },
     { crate = "cpufeatures" },
     # Long-tail utility crates where two majors coexist across the graph.
-    { crate = "bitflags" },
+    # `bitflags`, `etcetera` and `redox_syscall` were in this list until 2026-08-01 and were
+    # already reported as unnecessary before the `wreq` 6 bump — the graph had converged and
+    # nothing removed the entries. They stay out: a skip that covers nothing is a licence to
+    # reintroduce the duplicate silently, which is the failure mode `multiple-versions = deny`
+    # exists to prevent.
     { crate = "hashbrown" },
     { crate = "itertools" },
     { crate = "nom" },
     { crate = "shlex" },
     { crate = "socket2" },
     { crate = "syn" },
-    { crate = "etcetera" },
     { crate = "r-efi" },
     # TLS root stores: `webpki-roots` majors, pulled by different clients.
     { crate = "webpki-roots" },
-    { crate = "webpki-root-certs" },
+    # `webpki-root-certs` was here too, for `wreq` 5 pinning 0.26 against the 1.0 the rest of
+    # the graph used. `wreq` 6 moved to `^1.0.7`, so there is now one version and cargo-deny
+    # reports the skip itself as unnecessary.
     # `tower-http` 0.6 arrives transitively; ours is pinned at 0.7.
     { crate = "tower-http" },
     # ---------------------------------------------------------------------------------
@@ -196,15 +197,19 @@ skip = [
     # `der-parser`, which it uses to parse attestation certificates. This workspace is on 2.
     { crate = "thiserror" },
     { crate = "thiserror-impl" },
+    # `base64`: three copies. 0.23 is ours (`crates/auth`, `services/frontend`,
+    # `services/sync`, plus `email-encoding`), 0.22 is the wide transitive middle (sqlx,
+    # async-nats, chromiumoxide, headers, …), and 0.21 arrives only through
+    # `webauthn-rs-core`/`-proto`. Nothing on our side pins the two older ones, so there is
+    # nothing here to move.
+    { crate = "base64" },
+    # `const-oid`: 0.10 via `digest` 0.11, 0.9 via the passkey stack's older RustCrypto cohort
+    # (`crypto-glue`, `der`, `rsa`, `x509-cert`). Same shape as the AEAD cluster above and it
+    # collapses with the same `crypto-glue` bump.
+    { crate = "const-oid" },
 
     # Platform shims, present on any graph touching Windows or macOS bindings.
     { crate = "windows-sys" },
-    { crate = "windows-link" },
-    { crate = "windows-registry" },
-    { crate = "windows-result" },
-    { crate = "windows-strings" },
-    { crate = "core-foundation" },
-    { crate = "redox_syscall" },
 ]
 
 [sources]

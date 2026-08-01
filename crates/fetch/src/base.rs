@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tankovault_domain::BrowserEmulation;
 use url::Url;
-use wreq_util::{Emulation, EmulationOS, EmulationOption};
+use wreq_util::{Emulation, Platform, Profile};
 
 /// Maximum redirects followed before erroring.
 const MAX_REDIRECTS: usize = 5;
@@ -38,17 +38,23 @@ const MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
 /// releases are themselves anomalous. Bumping `wreq-util` moves every provider forward
 /// without a database migration — which is why [`BrowserEmulation`] names families, not
 /// versions.
-fn profile_for(browser: BrowserEmulation) -> EmulationOption {
-    let (emulation, os) = match browser {
-        BrowserEmulation::Chrome => (Emulation::Chrome137, EmulationOS::Windows),
-        BrowserEmulation::Firefox => (Emulation::Firefox139, EmulationOS::Windows),
-        BrowserEmulation::Safari => (Emulation::Safari18_5, EmulationOS::MacOS),
-        BrowserEmulation::Edge => (Emulation::Edge134, EmulationOS::Windows),
-        BrowserEmulation::OkHttp => (Emulation::OkHttp5, EmulationOS::Android),
+///
+/// `wreq-util` 3 renamed both halves of this API and *swapped* one of the names, so the old
+/// spelling still compiles in the reader's head while meaning something else: the enum of
+/// concrete builds went `Emulation` → [`Profile`], the OS selector went `EmulationOS` →
+/// [`Platform`], and the settings struct went `EmulationOption` → [`Emulation`]. Anything
+/// written against the 2.x docs has to be re-read, not translated.
+fn profile_for(browser: BrowserEmulation) -> Emulation {
+    let (profile, platform) = match browser {
+        BrowserEmulation::Chrome => (Profile::Chrome149, Platform::Windows),
+        BrowserEmulation::Firefox => (Profile::Firefox151, Platform::Windows),
+        BrowserEmulation::Safari => (Profile::Safari26_4, Platform::MacOS),
+        BrowserEmulation::Edge => (Profile::Edge148, Platform::Windows),
+        BrowserEmulation::OkHttp => (Profile::OkHttp5, Platform::Android),
     };
-    EmulationOption::builder()
-        .emulation(emulation)
-        .emulation_os(os)
+    Emulation::builder()
+        .profile(profile)
+        .platform(platform)
         .build()
 }
 
@@ -78,12 +84,18 @@ impl BaseHttpFetcher {
         request_timeout: Duration,
     ) -> Result<Self, FetchError> {
         let redirect = wreq::redirect::Policy::custom(|attempt| {
-            if attempt.previous().len() >= MAX_REDIRECTS {
+            if attempt.previous.len() >= MAX_REDIRECTS {
                 return attempt.error("too many redirects");
             }
-            match attempt.url().scheme() {
-                "http" | "https" => attempt.follow(),
-                _ => attempt.stop(),
+            // `wreq` 6 carries a `http::Uri` here rather than a `url::Url`, and `Uri::scheme`
+            // is `Option<&Scheme>` — a scheme-relative or malformed target yields `None`, which
+            // must fall to `stop()` with the other non-HTTP schemes rather than being unwrapped.
+            // Resolved before the branch because `follow`/`stop` consume `attempt`.
+            let http_scheme = matches!(attempt.uri.scheme_str(), Some("http" | "https"));
+            if http_scheme {
+                attempt.follow()
+            } else {
+                attempt.stop()
             }
         });
 
@@ -114,7 +126,10 @@ impl Fetcher for BaseHttpFetcher {
         // Cheap pre-flight; the resolver enforces the address-range check at connect time.
         ssrf::validate_url(&url)?;
 
-        let mut builder = self.client.get(url);
+        // `.as_str()`: `wreq` 6 takes `IntoUri` (a `http::Uri`), which `url::Url` does not
+        // implement. Going through the string is the lossless hop — `Url` has already
+        // normalised and, above, been SSRF-validated in that form.
+        let mut builder = self.client.get(url.as_str());
         // Precedence: a solved session's user-agent, else the bot user-agent when not
         // emulating, else nothing — leaving the profile's own header untouched.
         if let Some(ua) = req.user_agent.as_deref().or(self.bot_user_agent.as_deref()) {
@@ -138,7 +153,7 @@ impl Fetcher for BaseHttpFetcher {
         let resp = builder.send().await.map_err(map_wreq_err)?;
 
         let status = resp.status().as_u16();
-        let final_url = resp.url().to_string();
+        let final_url = resp.uri().to_string();
         // Every header is materialised, not just the four the workspace ever reads
         // (`content-type`, `retry-after`, `cf-mitigated`, `server`). PERF-19 proposed narrowing
         // this and it is **declined**, deliberately: `FetchResponse::headers` is a public field

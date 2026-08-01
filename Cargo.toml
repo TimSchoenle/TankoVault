@@ -208,14 +208,31 @@ bytes = "1"
 # HTTP/2 SETTINGS frame. Only a client that reproduces a real browser's handshake gets
 # through, which rustls/reqwest cannot do by construction.
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "gzip", "brotli", "cookies", "stream"] }
-# BoringSSL-backed client with browser TLS/HTTP2 emulation. Default features give the
-# bundled webpki trust store (no OS CA bundle needed on `scratch`) and charset decoding.
-wreq = { version = "5.3", features = ["json", "stream", "gzip", "brotli", "zstd", "deflate"] }
-# The emulation profile catalogue (Chrome/Firefox/Safari/Edge/OkHttp, per-OS header sets).
-# Only `emulation`: the compression features here are re-exports of `wreq`'s, already
-# selected above, and `emulation-rand` would pick a *random* profile per client — the
-# opposite of the stable per-provider identity the fetch stack needs.
-wreq-util = { version = "2.2", default-features = false, features = ["emulation"] }
+# BoringSSL-backed client with browser TLS/HTTP2 emulation.
+#
+# Both of these are **pre-release on purpose**, and downgrading is a licensing regression, not
+# just a version change: `wreq-util` was GPL-3.0 through 2.x, which made publishing an image
+# — conveying — a source-offer obligation over the whole combined work. Upstream relicensed to
+# Apache-2.0 at 3.0.0-rc.12, and that release requires `wreq ^6.0.0-rc`, so the escape from
+# GPL-3.0 is only available on the rc line. `deny.toml` carries the full reasoning and is what
+# catches a slip back: GPL-3.0 and LGPL-3.0 are both absent from its allow list.
+#
+# `default-features` is left on for `wreq`: its defaults are `webpki-roots` (the bundled trust
+# store — the `scratch` runtime ships no OS CA bundle) and `tokio-rt`. Note that `charset`
+# (`encoding_rs`) was a default in `wreq` 5 and is **not** one in 6. That is deliberate here
+# rather than an oversight: nothing in this workspace relies on charset-aware decoding —
+# `crates/fetch`'s `base.rs` decodes the body from `bytes_stream()` as UTF-8 itself, and the
+# two solver clients only call `.json()`, which is UTF-8 by specification.
+wreq = { version = "6.0.0-rc.29", features = ["json", "stream", "gzip", "brotli", "zstd", "deflate"] }
+# The emulation profile catalogue (Chrome/Firefox/Safari/Edge/OkHttp, per-platform header sets).
+# Only `emulation`, which is also its default — spelled out so that a future default gaining a
+# feature does not enable it here silently. In 3.x this pulls `brotli`/`flate2`/`zstd` as its
+# own dependencies rather than re-exporting `wreq`'s, so they are listed in both places.
+#
+# 2.x's `emulation-rand` is gone; randomness is now `Emulation::random()`, which this crate
+# must keep not calling — a random profile per client is the opposite of the stable
+# per-provider identity the fetch stack needs.
+wreq-util = { version = "3.0.0-rc.14", default-features = false, features = ["emulation"] }
 scraper = "0.27"
 governor = "0.10"
 url = "2.5"

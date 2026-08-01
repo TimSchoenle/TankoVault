@@ -4,8 +4,9 @@ Notable changes, newest first. Format loosely follows [Keep a Changelog]; this p
 cut a release yet, so everything is under *Unreleased* and every crate is at `0.1.0`.
 
 The release workflow builds, structure-tests, signs and attests on every tag but **does not
-push** — see `OP-6` in `docs/audit/PROGRESS.md`: `wreq-util` is GPL-3.0, and distributing the
-images is *conveying*. The first entry below this line will be whatever tag resolves that.
+push**. Until 2026-08-01 that was `OP-6` — `wreq-util` was GPL-3.0 and distributing the images
+is *conveying*. That is resolved (see *Changed* below); what holds the push now is that this
+repository still has no `LICENSE`.
 
 ## [Unreleased]
 
@@ -70,6 +71,26 @@ images is *conveying*. The first entry below this line will be whatever tag reso
 
 ### Changed
 
+- **`wreq` 5.3 → 6.0.0-rc.29 and `wreq-util` 2.2 → 3.0.0-rc.14, to get off GPL-3.0** (`OP-6`).
+  The crawl stack's emulation profiles come from `wreq-util`, which was GPL-3.0 on the 2.x line;
+  since GPL-3.0 obligations attach on *conveying*, that made pushing an image a source-offer
+  obligation over the whole combined work, and it is why the release workflow has never pushed.
+  Upstream relicensed — GPL-3.0 → LGPL-3.0 at `3.0.0-rc.9` → Apache-2.0 at `3.0.0-rc.12` — so
+  the fix was a version bump, not a relicensing of anything here. Pre-release on both is
+  deliberate and load-bearing: Apache-2.0 `wreq-util` requires `wreq ^6.0.0-rc`, and 2.2.6 stays
+  GPL-3.0 forever because a relicence is not retroactive. `deny.toml` now allows neither GPL-3.0
+  nor LGPL-3.0, so a downgrade fails the licence gate instead of quietly re-opening `OP-6`.
+  - API churn in `crates/fetch/src/base.rs`: `wreq` 6 carries `http::Uri` where 5 carried
+    `url::Url` (`Response::url` → `uri`, redirect `Attempt` exposes fields rather than
+    accessors), and `wreq-util` 3 renamed all three emulation types *and swapped one name* —
+    the enum of concrete builds is now `Profile`, and `Emulation` is what `EmulationOption`
+    used to be. Profiles moved to the newest build per family with it (Chrome 137 → 149,
+    Firefox 139 → 151, Safari 18.5 → 26.4, Edge 134 → 148).
+  - The BoringSSL binding is renamed `boring-sys2` → `btls-sys`, which the Dockerfile and
+    `CONTRIBUTING.md` referred to by name; the build toolchain it needs is unchanged.
+  - `charset`/`encoding_rs` left `wreq`'s default features in 6 and has **not** been re-enabled:
+    nothing here decodes by declared charset — `base.rs` decodes `bytes_stream()` as UTF-8
+    itself and the solver clients only call `.json()`.
 - The `api` binary no longer links `wreq`/BoringSSL: the adapter dry-run moved to the worker,
   which already carries the crawl stack. 557 → 487 crates, and one TLS stack instead of two.
 - Postgres 17 everywhere; the reference stack was on a beta major.

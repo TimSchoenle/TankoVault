@@ -12,6 +12,134 @@ that was `OP-6` — `wreq-util` was GPL-3.0 and distributing the images is *conv
 resolved (see *Changed* below); what holds the push now is that this repository still has no
 `LICENSE`.
 
+## [0.2.0](https://github.com/TimSchoenle/TankoVault/compare/v0.1.0...v0.2.0) (2026-08-02)
+
+
+### Features
+
+* add anilist meta enrincher ([#3](https://github.com/TimSchoenle/TankoVault/issues/3)) ([39346df](https://github.com/TimSchoenle/TankoVault/commit/39346df2fdc24882c4636efd9c687d04e4092dff))
+* add independent read history tracking feature ([#2](https://github.com/TimSchoenle/TankoVault/issues/2)) ([002f9a6](https://github.com/TimSchoenle/TankoVault/commit/002f9a642c4c670ee20cc8c0a403520a97ac2c4e))
+* add passkey support ([7dbd7c7](https://github.com/TimSchoenle/TankoVault/commit/7dbd7c7f86f0e8a7ce0b7ac05f7e91e6221efe32))
+* add prototype ([09a7c06](https://github.com/TimSchoenle/TankoVault/commit/09a7c0665cb196d8ee166d2b3ad1fcb9262c04c0))
+* **Email:** add proper email features ([#5](https://github.com/TimSchoenle/TankoVault/issues/5)) ([c0c0dce](https://github.com/TimSchoenle/TankoVault/commit/c0c0dced3e3c1b6d40eb9ae7133919bdfa0211e1))
+* **Frontend:** improve anilink syncing ([e4e5719](https://github.com/TimSchoenle/TankoVault/commit/e4e5719fa9a48c1c5e58a923fe23b83eb1a157c6))
+* **Frontend:** start implementing anilist sync feature ([b6e35a1](https://github.com/TimSchoenle/TankoVault/commit/b6e35a130e2bd1d50f452440ccdc07edfcb01be2))
+* improve crawler through wreq ([c879cd0](https://github.com/TimSchoenle/TankoVault/commit/c879cd04ba1c68140bb7253580c279f4261f1b91))
+* smart merge duplicated entries from the same adapter ([e68fef5](https://github.com/TimSchoenle/TankoVault/commit/e68fef5307948367b96d6519ff3953cc9e1b888f))
+
+
+### Bug Fixes
+
+* **Adapter:** kunmanga missing entries ([f3750e8](https://github.com/TimSchoenle/TankoVault/commit/f3750e84371f9fc5edd944d14fbc7550e4391623))
+* **Adapters:** mandara full scan detection ([f75adfa](https://github.com/TimSchoenle/TankoVault/commit/f75adfa445264ad7b46242c7dc89f3f06aaafda1))
+* **Auth:** invalid season token invalidation ([b409dbb](https://github.com/TimSchoenle/TankoVault/commit/b409dbbf001ba7fdda1464d05e49fa4e207ece96))
+* ci failures ([4aaecbb](https://github.com/TimSchoenle/TankoVault/commit/4aaecbb9ae6a346fda4da61053145c99ff5c779e))
+* correctly calculate new chapters ([72908dd](https://github.com/TimSchoenle/TankoVault/commit/72908ddb8d0fbe6bf1e71ccdd417f38f7785ee0c))
+* **deps:** update cargo non-major (minor) ([#26](https://github.com/TimSchoenle/TankoVault/issues/26)) ([bcaae5c](https://github.com/TimSchoenle/TankoVault/commit/bcaae5c6dae3ba75224eaf015056a296f082ce62))
+* **deps:** update rust crate jsonwebtoken to v11 ([#31](https://github.com/TimSchoenle/TankoVault/issues/31)) ([0e2f22b](https://github.com/TimSchoenle/TankoVault/commit/0e2f22b8c857942d5041a29b9a10aec951248e70))
+* display re-name not working ([20f02bb](https://github.com/TimSchoenle/TankoVault/commit/20f02bb36abe4f8871cb077e78d17939446c7270))
+* **Frontend:** chapter tracking bar not updating ([6290c9e](https://github.com/TimSchoenle/TankoVault/commit/6290c9ebe568beb1fbb0c92173ebbd0d1a221ff0))
+* **Frontend:** fix load behaviour on first load ([e841063](https://github.com/TimSchoenle/TankoVault/commit/e84106380a21f0cf923f163bbc662a574677c1ed))
+* **Frontend:** passkey login ([722fbc1](https://github.com/TimSchoenle/TankoVault/commit/722fbc143dc854206a6d68954110e1250b2e0455))
+* **Frontend:** refresh access tokens ([68a9762](https://github.com/TimSchoenle/TankoVault/commit/68a9762bc2523679f91d419419ea017e73c0a6af))
+* **Frontend:** wasm filename ([d25ba71](https://github.com/TimSchoenle/TankoVault/commit/d25ba7145402803c86415b8c3187fbf83e2a8911))
+* merge system ([15b7053](https://github.com/TimSchoenle/TankoVault/commit/15b70535ba5fd29325c353ac1eb976dc25f7f798))
+* new dependencies ([0571768](https://github.com/TimSchoenle/TankoVault/commit/05717689980379e4c6a35c8d00fb06a7ae4c1188))
+* security flags ([#41](https://github.com/TimSchoenle/TankoVault/issues/41)) ([e0c7bfc](https://github.com/TimSchoenle/TankoVault/commit/e0c7bfc7d3b842051ddafde89a5527dfc31c6575))
+* source scanners not finding all entries ([ace94eb](https://github.com/TimSchoenle/TankoVault/commit/ace94eb882cc28f671f026fb2d79aeac31093b83))
+* sync operations on sup parts ([d0be8a7](https://github.com/TimSchoenle/TankoVault/commit/d0be8a72075f315005fccd0869869446433c7a36))
+* **Sync:** anilist same source duplication issue ([cd800c8](https://github.com/TimSchoenle/TankoVault/commit/cd800c852c70382df6cd759c8566dbf55bf3ee1d))
+* **Sync:** correctly mark whole chapters when marking parts ([b031eb1](https://github.com/TimSchoenle/TankoVault/commit/b031eb17e84c701e8c4558ced1528d7c91f7726f))
+* weaken frontend nginx CSP to fix wasm frontend ([3d798e6](https://github.com/TimSchoenle/TankoVault/commit/3d798e69553951f113d6186bb25f90e68504f6ef))
+* **Worker:** increase max page default value ([abd56bb](https://github.com/TimSchoenle/TankoVault/commit/abd56bbd422b4169a6275fe3f87f69e93fcb6493))
+
+
+### Documentation
+
+* add raw frontend design document ([488146a](https://github.com/TimSchoenle/TankoVault/commit/488146a67d2266fdd251c729e223391708c8ce4b))
+* add simple readme ([ca02fc1](https://github.com/TimSchoenle/TankoVault/commit/ca02fc1b46a13b1e2ee3048630ee8640c1a98e0e))
+* **Frontend:** add detailed implementation plan ([9d48e28](https://github.com/TimSchoenle/TankoVault/commit/9d48e28e251d4a85bf0bf41be578565c30c06a18))
+* reduce AI gates ([d1835ae](https://github.com/TimSchoenle/TankoVault/commit/d1835aeb2c3dcc8dac6ab9e8eb76717d6de25c7d))
+* simplify comments ([1a0ac95](https://github.com/TimSchoenle/TankoVault/commit/1a0ac956f7f88e385b0d81fa6792e7f7ae80eb68))
+
+
+### Code Refactoring
+
+* add metric endpoints to all services ([dc3e245](https://github.com/TimSchoenle/TankoVault/commit/dc3e245bbb37abb0eb995a3ab14a95ae982789f9))
+* add paswword pepper ([4dd4077](https://github.com/TimSchoenle/TankoVault/commit/4dd40778b0a8de5312ff65aef63a060a95baaec6))
+* add secrecy to harden security ([35d661c](https://github.com/TimSchoenle/TankoVault/commit/35d661c6e4c4e4d5c204cd6f7fdf1cb96a8a5c39))
+* audit based cleanup ([#7](https://github.com/TimSchoenle/TankoVault/issues/7)) ([701a7cb](https://github.com/TimSchoenle/TankoVault/commit/701a7cb71d756684fb6c3385d6125a39d807c429))
+* correctly include authors, descriptions and tags ([16c322b](https://github.com/TimSchoenle/TankoVault/commit/16c322b1e2f9f6a09d935507e9afb578588776d0))
+* enable sql compiletime verification ([f972873](https://github.com/TimSchoenle/TankoVault/commit/f972873c105005bb6be35bc900ee227c75af8ba8))
+* **Frontend:** add propper i18n message support ([f7a138d](https://github.com/TimSchoenle/TankoVault/commit/f7a138d189ad03a494c0568ccddda64ae1c0f260))
+* **Frontend:** correctly indicate chapter parts ([bb3a776](https://github.com/TimSchoenle/TankoVault/commit/bb3a776cc823385ac69b5bcd8965647ae3e8ae22))
+* **Frontend:** implement most frontend changes ([affed5e](https://github.com/TimSchoenle/TankoVault/commit/affed5eccab8e5e9b1187205ad7313ec4facb8b5))
+* **Frontend:** modularize components ([88da866](https://github.com/TimSchoenle/TankoVault/commit/88da8664f80438c3fcc883e2ee753ee54c30d6d8))
+* **Frontend:** rework watchlist ([6081695](https://github.com/TimSchoenle/TankoVault/commit/6081695bdc108213f48c423340125e19a96d03b1))
+* implement a fair priority queue ([6389680](https://github.com/TimSchoenle/TankoVault/commit/6389680f4a9935192ed41741c67cb92e8e19eeca))
+* improve adapter error handeling ([1fa3048](https://github.com/TimSchoenle/TankoVault/commit/1fa3048ea175d3fb908c26063fc45876fcfeb2ab))
+* improve anilist metadata sync ([4cb132f](https://github.com/TimSchoenle/TankoVault/commit/4cb132fc1713c44a1f95e3802123cb44ea33a6ce))
+* improve anilist sync behaviour ([60e340b](https://github.com/TimSchoenle/TankoVault/commit/60e340bfde475e804b643a0f2f68eb4bd2401be4))
+* improve anilist sync matcher ([06590c7](https://github.com/TimSchoenle/TankoVault/commit/06590c7e356ff1bb3f73fb6b150593907e56606b))
+* improve continue reading section ([fcb1632](https://github.com/TimSchoenle/TankoVault/commit/fcb16326ba162e1c004734909732dcd07c01624e))
+* improve merge dedupe feature ([a562d42](https://github.com/TimSchoenle/TankoVault/commit/a562d42eeed6824af90dd15979a0866153c00002))
+* migrate all rust based docker builds to use scratch runtimes ([33d4649](https://github.com/TimSchoenle/TankoVault/commit/33d46492a6061ea62953b4a591dd0f6c558b0cc8))
+* migrate away from nginx to minimal axum server ([01ed204](https://github.com/TimSchoenle/TankoVault/commit/01ed204ae1ed1c74b489bc9717d1938760ce6044))
+* migrate to postgres 19 ([851d275](https://github.com/TimSchoenle/TankoVault/commit/851d27530480635439067fc6336916e25814e572))
+* migrate to propper OpenAPI definitions and generation ([#4](https://github.com/TimSchoenle/TankoVault/issues/4)) ([081f407](https://github.com/TimSchoenle/TankoVault/commit/081f407b068f75a574d435609b3ba14138195acd))
+* re-design chapter overview and console view ([9bae1b6](https://github.com/TimSchoenle/TankoVault/commit/9bae1b6bca9ec70e280d01f077c22896e63d0935))
+* rework frontend ([62820c1](https://github.com/TimSchoenle/TankoVault/commit/62820c19c3ddcc2c07ea49b160907679309f3493))
+* standardize backend ([#6](https://github.com/TimSchoenle/TankoVault/issues/6)) ([fcbb9eb](https://github.com/TimSchoenle/TankoVault/commit/fcbb9eb145faecba718c453af1448e72d3825024))
+
+
+### Tests
+
+* add more access integration checks ([8df8a2c](https://github.com/TimSchoenle/TankoVault/commit/8df8a2cc40a23d49f44df94e06c476eef4dfea8f))
+
+
+### CI
+
+* add docker cst rules ([a6c7638](https://github.com/TimSchoenle/TankoVault/commit/a6c76384c7960b8aee5815f9a16a6574027c4bef))
+* add release logics ([8ecfe0a](https://github.com/TimSchoenle/TankoVault/commit/8ecfe0ab5b5c2a464a888350fee328bfe55dd6f4))
+* improve ([35b4c75](https://github.com/TimSchoenle/TankoVault/commit/35b4c756d6cc917b803e7f40cc93f75977feec35))
+* remove dependabot ([129b04a](https://github.com/TimSchoenle/TankoVault/commit/129b04ae9d6b6dd9368ec2ac3ec13223253bf0b0))
+
+
+### Build System
+
+* fix missing libstdc dependency in docker builds ([e3a260f](https://github.com/TimSchoenle/TankoVault/commit/e3a260f7fd1f73ff2e044c3eb031b9a9e16bd144))
+* improve docker caching ([6895b2f](https://github.com/TimSchoenle/TankoVault/commit/6895b2fe0d5e3ed13e63aef041ef6946c85c3eda))
+* improve docker container release setup ([c9f0c68](https://github.com/TimSchoenle/TankoVault/commit/c9f0c68ccc08f6729cb9e73a1a68db3d7440d288))
+* merge all standalone docker build ([cd385a9](https://github.com/TimSchoenle/TankoVault/commit/cd385a997a9770cddeb03642a4eb9ae273d53c6c))
+* update flaresolverr image to v3.5.0 ([998ec3b](https://github.com/TimSchoenle/TankoVault/commit/998ec3bb698250558f536d639a408e38eff95e27))
+
+
+### Miscellaneous
+
+* **deps:** pin dependencies ([#18](https://github.com/TimSchoenle/TankoVault/issues/18)) ([bb6b42b](https://github.com/TimSchoenle/TankoVault/commit/bb6b42b87a449953d68955f079cf27a9a2e3da1e))
+* **deps:** update actions/download-artifact digest to 018cc2c ([#39](https://github.com/TimSchoenle/TankoVault/issues/39)) ([6c0b2e7](https://github.com/TimSchoenle/TankoVault/commit/6c0b2e7247c4cd3f2fca4a6926fc1a5fc6627282))
+* **deps:** update cargo non-major (patch) ([#19](https://github.com/TimSchoenle/TankoVault/issues/19)) ([e3128c8](https://github.com/TimSchoenle/TankoVault/commit/e3128c86d2f72f75197fae9877bff76550b5ea81))
+* **deps:** update debian docker tag to v13 ([#27](https://github.com/TimSchoenle/TankoVault/issues/27)) ([22d9e48](https://github.com/TimSchoenle/TankoVault/commit/22d9e4890a890d32e3cdfb8986bad47f96f5d0f1))
+* **deps:** update dependency node to v24 ([#28](https://github.com/TimSchoenle/TankoVault/issues/28)) ([00aecba](https://github.com/TimSchoenle/TankoVault/commit/00aecbabdfae7cb19a9afa7e94a4155c3f92e162))
+* **deps:** update grafana/grafana docker tag to v11.6.16 ([#21](https://github.com/TimSchoenle/TankoVault/issues/21)) ([a48b4c0](https://github.com/TimSchoenle/TankoVault/commit/a48b4c019a04045be9fd4f31f4968046a69bb499))
+* **deps:** update grafana/grafana docker tag to v13 ([#29](https://github.com/TimSchoenle/TankoVault/issues/29)) ([f1d963e](https://github.com/TimSchoenle/TankoVault/commit/f1d963ef8d3ae201c60f50bc2e0950ce7e796b7e))
+* **deps:** update natsio/prometheus-nats-exporter docker tag to v0.20.1 ([#23](https://github.com/TimSchoenle/TankoVault/issues/23)) ([e6fe21b](https://github.com/TimSchoenle/TankoVault/commit/e6fe21b6f9acb734a52a5a967b66afdbac69bc60))
+* **deps:** update postgres docker tag to v18 ([#37](https://github.com/TimSchoenle/TankoVault/issues/37)) ([f22cba0](https://github.com/TimSchoenle/TankoVault/commit/f22cba01285a20ad28d97ff801ef15e48fb53752))
+* **deps:** update prom/blackbox-exporter docker tag to v0.28.0 ([#24](https://github.com/TimSchoenle/TankoVault/issues/24)) ([63544c3](https://github.com/TimSchoenle/TankoVault/commit/63544c3ea540e2850a09bb735a39e6f11bcff0e1))
+* **deps:** update prom/prometheus docker tag to v3.13.1 ([#25](https://github.com/TimSchoenle/TankoVault/issues/25)) ([69aaa5a](https://github.com/TimSchoenle/TankoVault/commit/69aaa5af4fa06f69581b768c16b69432cf551a9e))
+* **deps:** update prom/prometheus docker tag to v3.13.2 ([#35](https://github.com/TimSchoenle/TankoVault/issues/35)) ([f547d13](https://github.com/TimSchoenle/TankoVault/commit/f547d130cf623286ab31c3a6ca29ed8c55d4b220))
+* **deps:** update prom/prometheus docker tag to v3.5.5 ([#22](https://github.com/TimSchoenle/TankoVault/issues/22)) ([9f074a9](https://github.com/TimSchoenle/TankoVault/commit/9f074a9ad24f23aea90ee2d55782e39817265f61))
+* **deps:** update redis docker tag to v8 ([#34](https://github.com/TimSchoenle/TankoVault/issues/34)) ([ed20e85](https://github.com/TimSchoenle/TankoVault/commit/ed20e855839778ad559b8815f69e993e958c517d))
+* **deps:** update rust crate dioxus to v0.7.10 ([#36](https://github.com/TimSchoenle/TankoVault/issues/36)) ([7b3cca0](https://github.com/TimSchoenle/TankoVault/commit/7b3cca07c7e33f1bcece1cba3e825cb1e838d328))
+* **deps:** update rust crate syn to v3 ([#30](https://github.com/TimSchoenle/TankoVault/issues/30)) ([4d84e74](https://github.com/TimSchoenle/TankoVault/commit/4d84e7462f0bb0a6da6bdbdd1449185a59f59e14))
+* **deps:** update rust crate syn to v3.0.3 ([#33](https://github.com/TimSchoenle/TankoVault/issues/33)) ([6ba513c](https://github.com/TimSchoenle/TankoVault/commit/6ba513c090799963457eda7a38c623d2d1602d94))
+* update wreq to remove GPL-3.0 licence ([3fdee96](https://github.com/TimSchoenle/TankoVault/commit/3fdee96dd05154daefd2254cc0e43a047de84914))
+
+
+### Dependencies
+
+* **deps:** lock file maintenance ([#32](https://github.com/TimSchoenle/TankoVault/issues/32)) ([0584614](https://github.com/TimSchoenle/TankoVault/commit/0584614a0e6c384b495615ca3fe1f75b78f384b6))
+
 ## [Unreleased]
 
 ### Security

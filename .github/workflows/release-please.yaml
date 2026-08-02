@@ -41,6 +41,19 @@ name: release-please
 # keeps it in step; it is not optional.
 #
 # ---------------------------------------------------------------------------------------------
+# The cache contract with `ci.yml`
+# ---------------------------------------------------------------------------------------------
+# Three scope families, all arch-qualified because a BuildKit cache does not cross architectures:
+#
+#   backend-deps-<arch>   written by `ci.yml`, off `main` only. Read here, never written.
+#   frontend-deps-<arch>  the same, for the wasm half. Read by the two `frontend` legs.
+#   release-deps-<arch>   written by `release-deps` below, at the release commit. Read by the legs.
+#
+# The third exists because this workflow and `ci.yml` both fire on the push that merges a release
+# PR, so the CI scopes are still at the *previous* commit when the legs start — and because two
+# workflows exporting `mode=max` into one scope concurrently is a write race, not a warm cache.
+#
+# ---------------------------------------------------------------------------------------------
 # On the `${{ }}` discipline in this file
 # ---------------------------------------------------------------------------------------------
 # This workflow holds `packages: write` and `id-token: write`, so an expression expanded into a
@@ -118,6 +131,75 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+  # The warm-up the eighteen legs below are built on, one per architecture — the same job
+  # `ci.yml`'s `docker-deps` is, at the release commit, and it exists for the same reason: `cook`
+  # and `builder` are the entire wall clock of an image build and `builder` takes no `ARG BIN`, so
+  # one compile per architecture serves all nine images.
+  #
+  # Without it every leg re-ran `builder` independently. `ci.yml`'s `backend-deps-<arch>` is
+  # written at the *previous* `main` commit, and the release commit changes `Cargo.toml`,
+  # `Cargo.lock` and `CHANGELOG.md` — so `COPY . .` inside `builder` misses and the whole workspace
+  # is compiled again. Eighteen times, in parallel, where two would do.
+  #
+  # `cargo chef`'s recipe masks local package versions (it rewrites them to `0.0.1`), which is why
+  # importing the pre-bump `backend-deps-<arch>` is still worth doing: the `cook` layer is
+  # version-invariant and hits, so this job's real work is the workspace compile alone.
+  #
+  # Its own scope, not `backend-deps-<arch>`: `ci.yml` fires on this same push and its `docker-deps`
+  # exports to that scope concurrently. Sharing one would be the write race the `docker-deps`
+  # comment describes, and a release build must not be able to poison what CI reads.
+  release-deps:
+    name: warm the build cache (${{ matrix.arch }})
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read # to check out the build context
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: derive SOURCE_DATE_EPOCH
+        id: epoch
+        run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
+
+      # Build args and `platforms` must match the legs below exactly, or they look up a key this
+      # never wrote. `BIN` is deliberately absent: no stage up to `builder` reads it, which is what
+      # makes one warm-up serve nine images.
+      - name: cook dependency graph and compile every binary
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          build-args: SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
+          target: builder
+          push: false
+          outputs: type=cacheonly
+          provenance: false
+          cache-from: |
+            type=gha,scope=release-deps-${{ matrix.arch }}
+            type=gha,scope=backend-deps-${{ matrix.arch }}
+          cache-to: type=gha,scope=release-deps-${{ matrix.arch }},mode=max
+
   # One leg per (image, architecture). Both architectures build **natively**: `wreq` compiles
   # BoringSSL from C/C++/assembly and an emulated build of it costs upwards of an hour per
   # image, which is why there is no QEMU here and `ci.yml` says the same thing about its own
@@ -134,8 +216,10 @@ jobs:
   # reaches it can pass unnoticed.
   build:
     name: ${{ matrix.bin }} (${{ matrix.arch }})
-    needs: [release-please]
-    if: needs.release-please.outputs.release_created == 'true'
+    needs: [release-please, release-deps]
+    # `!cancelled() && !failure()` rather than the bare output test: an explicit `if:` replaces the
+    # implicit `success()`, so the bare form would publish images from a run whose warm-up failed.
+    if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' }}
     environment:
       name: release
       deployment: false
@@ -236,9 +320,13 @@ jobs:
           load: true
           tags: tankovault-${{ matrix.bin }}:release-${{ matrix.arch }}
           provenance: false
+          # `release-deps-<arch>` first: it is this commit's `builder`, so the leg's remaining work
+          # is the `COPY`s onto `scratch`. `backend-deps-<arch>` stays as the fallback for the
+          # layers the warm-up itself imported rather than rebuilt.
           cache-from: |
-            type=gha,scope=backend-deps
-            ${{ matrix.bin == 'frontend' && 'type=gha,scope=frontend-deps' || '' }}
+            type=gha,scope=release-deps-${{ matrix.arch }}
+            type=gha,scope=backend-deps-${{ matrix.arch }}
+            ${{ matrix.bin == 'frontend' && format('type=gha,scope=frontend-deps-{0}', matrix.arch) || '' }}
 
       - name: install container-structure-test
         env:
@@ -287,13 +375,15 @@ jobs:
           # attestation layer carries build timestamps, which breaks byte-identical rebuilds.
           # The SBOM attested in the `manifest` job compensates.
           provenance: false
-          # Read ci.yml's scopes; write nothing. Nine legs exporting `mode=max` would re-upload
-          # the whole imported layer chain and evict the caches ci.yml depends on — GitHub's
-          # Actions cache is 10 GB per repository with LRU eviction. A release build is also the
-          # one build that should not be able to poison what CI reads.
+          # Read only, and the same three scopes as the step above — this is a hit against the
+          # local buildkit instance, so it re-exports and uploads rather than recompiling. Nine
+          # legs exporting `mode=max` would re-upload the whole imported layer chain and evict the
+          # caches ci.yml depends on; GitHub's Actions cache is 10 GB per repository with LRU
+          # eviction, and a release build is the one build that must not poison what CI reads.
           cache-from: |
-            type=gha,scope=backend-deps
-            ${{ matrix.bin == 'frontend' && 'type=gha,scope=frontend-deps' || '' }}
+            type=gha,scope=release-deps-${{ matrix.arch }}
+            type=gha,scope=backend-deps-${{ matrix.arch }}
+            ${{ matrix.bin == 'frontend' && format('type=gha,scope=frontend-deps-{0}', matrix.arch) || '' }}
 
       # The digest is what the `manifest` job assembles the list from. Written as an empty file
       # *named* for the digest, which is the conventional shape: artifact merging then yields one
@@ -318,7 +408,11 @@ jobs:
   manifest:
     name: publish ${{ matrix.bin }}
     needs: [release-please, build]
-    if: needs.release-please.outputs.release_created == 'true'
+    # Same reason as `build`: a bare output test replaces the implicit `success()`, so with
+    # `fail-fast: false` above a single failed leg still reached this job — and `imagetools create`
+    # over whichever digests *did* upload publishes `:vX.Y.Z` as a single-architecture manifest
+    # list. Tagging a half-built release is worse than not tagging one.
+    if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' }}
     environment:
       name: release
       deployment: false
@@ -473,9 +567,13 @@ jobs:
           cosign attest --yes --predicate "$SBOM" --type spdxjson "${DOCKERHUB_IMAGE}@${DOCKERHUB_DIGEST}"
           cosign attest --yes --predicate "$SBOM" --type spdxjson "${GHCR_IMAGE}@${GHCR_DIGEST}"
 
+  # `always()`, so a release that tagged but failed to publish still gets a summary — which is the
+  # reason the text below branches on `manifest`'s result rather than asserting nine images
+  # shipped. It ran on `always()` and claimed a full publish unconditionally, so every way the
+  # build path can fail produced a green-sounding summary under a tag with nothing behind it.
   summary:
     name: release summary
-    needs: [release-please, build, manifest]
+    needs: [release-please, release-deps, build, manifest]
     if: always() && needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -491,20 +589,27 @@ jobs:
           TAG: ${{ needs.release-please.outputs.tag_name }}
           DOCKERHUB_NS: ${{ env.DOCKERHUB_NAMESPACE }}
           GHCR_PREFIX: ${{ env.GHCR_REGISTRY }}/${{ github.repository }}
+          PUBLISHED: ${{ needs.manifest.result }}
         run: |
           {
             echo "## Release ${TAG}"
             echo
-            echo "Nine images **published** as \`linux/amd64\` + \`linux/arm64\` manifest lists to:"
-            echo
-            echo "- \`docker.io/${DOCKERHUB_NS}/tankovault-*\`"
-            echo "- \`${GHCR_PREFIX}/*\`"
-            echo
-            echo "Each was structure-tested before it was pushed, signed with cosign (keyless) and"
-            echo "SBOM-attested against the published digest."
-            echo
-            echo "Licensed under PolyForm Noncommercial 1.0.0 — the terms ship inside every image at"
-            echo "\`/LICENSE\`. Commercial use needs a separate licence from the copyright holder."
-            echo
-            echo "SBOMs are attached to this run as artifacts (one per image, SPDX JSON)."
+            if [ "$PUBLISHED" != "success" ]; then
+              echo "The tag exists, but publishing reported \`${PUBLISHED}\` — **no complete image"
+              echo "set was published for this tag**. Read the failed jobs in this run before"
+              echo "re-running; a partially pushed digest set is not a release."
+            else
+              echo "Nine images **published** as \`linux/amd64\` + \`linux/arm64\` manifest lists to:"
+              echo
+              echo "- \`docker.io/${DOCKERHUB_NS}/tankovault-*\`"
+              echo "- \`${GHCR_PREFIX}/*\`"
+              echo
+              echo "Each was structure-tested before it was pushed, signed with cosign (keyless) and"
+              echo "SBOM-attested against the published digest."
+              echo
+              echo "Licensed under PolyForm Noncommercial 1.0.0 — the terms ship inside every image"
+              echo "at \`/LICENSE\`. Commercial use needs a separate licence from the copyright holder."
+              echo
+              echo "SBOMs are attached to this run as artifacts (one per image, SPDX JSON)."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

@@ -937,19 +937,42 @@ jobs:
   # The one compile every image below is built on. `cook` and `builder` are the entire wall clock
   # of an image build; everything above them is a `COPY` onto `scratch`.
   #
-  # Built once here under its own cache scope, which the matrix imports read-only. Run inside the
-  # matrix instead, every leg cooked the identical graph and all of them exported into the same
-  # unscoped GHA cache concurrently — the writes raced, and the matrix kept missing a cache it had
-  # just populated. `builder` takes no `ARG BIN`, so every leg's key for it is identical and each
-  # leg is a cache hit plus a `COPY`. `cacheonly` because only the layers are wanted.
+  # Built once per architecture under its own cache scope, which every consumer imports read-only.
+  # Run inside the image matrix instead, every leg cooked the identical graph and all of them
+  # exported into the same unscoped GHA cache concurrently — the writes raced, and the matrix kept
+  # missing a cache it had just populated. `builder` takes no `ARG BIN`, so every leg's key for it
+  # is identical and each leg is a cache hit plus a `COPY`. `cacheonly` because only the layers are
+  # wanted.
+  #
+  # The scope is **arch-qualified** because a BuildKit cache is not portable across architectures:
+  # the `chef` base resolves to a different digest per platform, so every key downstream of it
+  # differs and an amd64 export is a guaranteed miss on an arm64 build. `release-please.yaml`
+  # builds all nine images for both architectures and imports these scopes; while the scope was
+  # unqualified its nine arm64 legs silently got nothing and cooked ~600 crates each.
+  #
+  # `platforms` is stated rather than left to default to the host, here and at every consumer, so
+  # the key a warm-up writes and the key a consumer looks up are visibly the same thing.
+  #
+  # `cache-to` only off `main`. A cache written from a pull request is scoped to that PR's ref and
+  # is unreadable from anywhere else, yet still counts against the repository's 10 GB LRU budget —
+  # so exporting here evicted the `main` caches that every PR and every release actually reads.
+  # Pull requests keep *importing*: GitHub falls back to the base branch's scope.
   docker-deps:
-    name: docker build (deps)
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    name: docker build (deps, ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
     needs: [changes, lint]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
     permissions:
       contents: read # to check out the build context
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -972,29 +995,43 @@ jobs:
         with:
           context: .
           file: deploy/docker/Dockerfile
+          platforms: linux/${{ matrix.arch }}
           build-args: SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           target: builder
           push: false
           outputs: type=cacheonly
           provenance: false
-          cache-from: type=gha,scope=backend-deps
-          cache-to: type=gha,scope=backend-deps,mode=max
+          cache-from: type=gha,scope=backend-deps-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,scope=backend-deps-{0},mode=max', matrix.arch) || '' }}
 
-  # The wasm half, warmed in the same shape as `docker-deps`: a BuildKit cache mount cannot survive
-  # a fresh runner, only an exported layer can.
+  # The wasm half, warmed in the same shape as `docker-deps` and for the same reasons — read that
+  # job's comment for the arch-qualified scope and the pull-request `cache-to` rule.
   #
   # A separate job and scope rather than a `cache-to` on `docker-frontend`, because that image also
   # consumes the Alpine `builder` — a `mode=max` export there would re-upload the whole backend
   # cache under a second scope. The Actions cache is 10 GB per repository with LRU eviction, and
   # duplicating the one layer that matters is exactly how it gets evicted.
+  #
+  # The arm64 leg warms a cache no job in *this* workflow reads: the frontend image is built for
+  # amd64 only here. It exists for `release-please.yaml`, which publishes `frontend` for both
+  # architectures — and `cook-web` is arch-dependent despite emitting wasm, because `dx` and
+  # `cargo-chef` are compiled from source for the host.
   docker-wasm-deps:
-    name: docker build (wasm deps)
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    name: docker build (wasm deps, ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
     needs: [changes, lint]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
     permissions:
       contents: read # to check out the build context
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -1017,13 +1054,14 @@ jobs:
         with:
           context: .
           file: deploy/docker/Dockerfile
+          platforms: linux/${{ matrix.arch }}
           build-args: SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           target: cook-web
           push: false
           outputs: type=cacheonly
           provenance: false
-          cache-from: type=gha,scope=frontend-deps
-          cache-to: type=gha,scope=frontend-deps,mode=max
+          cache-from: type=gha,scope=frontend-deps-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,scope=frontend-deps-{0},mode=max', matrix.arch) || '' }}
 
   docker:
     name: docker build (${{ matrix.bin }})
@@ -1062,6 +1100,7 @@ jobs:
         with:
           context: .
           file: deploy/docker/Dockerfile
+          platforms: linux/amd64
           build-args: |
             BIN=${{ matrix.bin }}
             SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
@@ -1075,14 +1114,14 @@ jobs:
           tags: tankovault-${{ matrix.bin }}:ci
           # Reproducible output: no attestation/provenance layer, and mtimes rewritten.
           provenance: false
-          # Import only — this job deliberately writes no cache. `backend-deps` is published by
-          # `docker-deps` in this same run at this same commit, which is what makes `COPY . .`
+          # Import only — this job deliberately writes no cache. `backend-deps-amd64` is published
+          # by `docker-deps` in this same run at this same commit, which is what makes `COPY . .`
           # inside `builder` a hit; this leg's remaining work is one `COPY` onto `scratch`.
           #
           # Do not add `cache-to`: `mode=max` re-exports imported layers too, so each leg uploaded
           # its own copy of the multi-gigabyte `cook` layer. At 10 GB per repository with LRU
           # eviction, that evicted `backend-deps` itself and the next run cooked ~600 crates cold.
-          cache-from: type=gha,scope=backend-deps
+          cache-from: type=gha,scope=backend-deps-amd64
 
       # Enforces the image contract: non-root 1001:1001, the entrypoint, the baked-in binary and CA
       # trust store, and for the render tier the absence of root plus the presence of Chromium.
@@ -1126,11 +1165,17 @@ jobs:
   #
   # Scoped to the two images whose content differs by architecture: a `scratch` service and the
   # Debian-based `render` tier.
+  #
+  # These legs used to cook their own dependency graph into a per-image scope
+  # (`arm64-api`, `arm64-render`), which held two full duplicates of one arm64 `builder` chain in a
+  # 10 GB LRU budget and was readable by nothing else — least of all the release, which builds
+  # nine arm64 images. They now import the shared `backend-deps-arm64` and write nothing, exactly
+  # as the amd64 `docker` legs treat `backend-deps-amd64`.
   docker-arm64:
     name: docker build (arm64, ${{ matrix.bin }})
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
-    needs: [changes, lint]
+    needs: [changes, lint, docker-deps]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
     permissions:
       contents: read # to check out the build context
@@ -1169,8 +1214,7 @@ jobs:
           load: true
           tags: tankovault-${{ matrix.bin }}:ci-arm64
           provenance: false
-          cache-from: type=gha,scope=arm64-${{ matrix.bin }}
-          cache-to: type=gha,scope=arm64-${{ matrix.bin }},mode=max
+          cache-from: type=gha,scope=backend-deps-arm64
 
       # The same image contract as the amd64 leg. `container-structure-test` ships a separate
       # arm64 binary; the config files are architecture-independent.
@@ -1229,6 +1273,7 @@ jobs:
         with:
           context: .
           file: deploy/docker/Dockerfile
+          platforms: linux/amd64
           target: frontend
           build-args: |
             SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
@@ -1241,8 +1286,8 @@ jobs:
           # layers too, putting a second copy of the backend chain into a 10 GB LRU cache and
           # evicting the original.
           cache-from: |
-            type=gha,scope=backend-deps
-            type=gha,scope=frontend-deps
+            type=gha,scope=backend-deps-amd64
+            type=gha,scope=frontend-deps-amd64
 
       # Enforces the frontend image contract: non-root 1001:1001, the unprivileged 3000 port, the
       # entrypoint, the static-dir env var, and the server binary plus built SPA bundle.

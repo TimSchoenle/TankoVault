@@ -3331,7 +3331,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-api-client"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "bytes",
  "futures",
@@ -3347,7 +3347,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-domain"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "serde",
  "serde_json",

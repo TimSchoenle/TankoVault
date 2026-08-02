@@ -18,8 +18,9 @@ commit to main (conventional commits)
      ci.yml               → the required `ci` check runs against the bumped tree
      auto-merge-release-please.yml → approves + merges after the delay
   └─ merge → release-please tags vX.Y.Z and creates the GitHub release
-        └─ build (18 legs: 9 images x amd64/arm64, native runners)
-              └─ manifest (9 jobs: manifest list per image, cosign sign, SBOM attest)
+        └─ release-deps (2 legs: one `builder` compile per architecture)
+              └─ build (18 legs: 9 images x amd64/arm64, native runners)
+                    └─ manifest (9 jobs: manifest list per image, cosign sign, SBOM attest)
 ```
 
 ## What is published
@@ -30,11 +31,36 @@ Nine images, each a `linux/amd64` + `linux/arm64` manifest list, to **both** reg
 | --- | --- |
 | `timschoenle/tankovault-<bin>` | `ghcr.io/<owner>/<repo>/<bin>` |
 
-for `<bin>` in `api`, `worker`, `control-plane`, `notifier`, `sync`, `challenge-solver`,
-`render`, `xtask`, `frontend`.
+for `<bin>` in `api`, `bootstrap`, `worker`, `control-plane`, `notifier`, `sync`,
+`challenge-solver`, `render`, `frontend`. `xtask` is **not** among them — the deploy blacklist
+(`[workspace.metadata.deploy.exclude]`, root `Cargo.toml`) keeps it out of every registry, and
+`xtask repo-lint` fails if it appears in either matrix.
 
 Tags per release: `vX.Y.Z`, `X.Y` and `latest`. Every published manifest-list digest is signed
 with cosign keyless and carries an SPDX SBOM attestation.
+
+## Build caching
+
+`cook` and `builder` are the entire wall clock of an image build, and `builder` takes no
+`ARG BIN` — so one compile per architecture serves all nine images. Three arch-qualified BuildKit
+cache scopes carry it (a cache does not cross architectures; the `chef` base resolves to a
+different digest per platform, so every key downstream of it differs):
+
+| Scope | Written by | Read by |
+| --- | --- | --- |
+| `backend-deps-<arch>` | `ci.yml` `docker-deps`, off `main` only | every image build in both workflows |
+| `frontend-deps-<arch>` | `ci.yml` `docker-wasm-deps`, off `main` only | the `frontend` legs |
+| `release-deps-<arch>` | `release-please.yaml` `release-deps` | the 18 release legs |
+
+`release-deps` exists because both workflows fire on the push that merges the release PR, so the
+CI scopes are still at the previous commit when the release legs start — and the release commit
+changes `Cargo.toml`, `Cargo.lock` and `CHANGELOG.md`, which misses `builder`'s `COPY . .`.
+Without the warm-up all eighteen legs recompiled the workspace independently.
+
+Two rules keep the 10 GB per-repository LRU budget from evicting the one layer that matters:
+pull requests import but never export (a PR-scoped cache is unreadable from anywhere else and
+still consumes the budget), and no image leg ever sets `cache-to` — `mode=max` re-exports
+imported layers, so each leg would upload its own copy of the multi-gigabyte `cook` layer.
 
 ## Licensing of what is published
 

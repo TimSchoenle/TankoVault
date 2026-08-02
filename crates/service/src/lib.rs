@@ -52,8 +52,8 @@ pub use reload::run as run_reloading;
 pub use shutdown::install_shutdown;
 // Re-exported so a service can name the token `run_reloading` hands its runtime without
 // taking a direct `tokio-util` dependency for one type.
-pub use tokio_util::sync::CancellationToken;
 pub use telemetry::init_tracing;
+pub use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "db")]
 pub use audit::PostgresAuditSink;

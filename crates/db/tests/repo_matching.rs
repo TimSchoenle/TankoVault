@@ -1559,7 +1559,10 @@ async fn a_distinct_verdict_is_durable_revisitable_and_yields_to_an_operator() {
         "durable: the shortlist must not re-offer a pair it has already judged"
     );
     assert!(
-        open_merge_pairs(&db.pool, 50).await.expect("open").is_empty(),
+        open_merge_pairs(&db.pool, 50)
+            .await
+            .expect("open")
+            .is_empty(),
         "and it must not reach an operator, who has nothing to decide"
     );
     assert_eq!(

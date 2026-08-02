@@ -223,6 +223,8 @@ jobs:
           toolchain: ${{ needs.changes.outputs.toolchain }}
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # `wreq` compiles BoringSSL from C/C++ source; installed explicitly rather than relying on
       # whatever the runner image ships.
@@ -266,6 +268,8 @@ jobs:
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
@@ -319,6 +323,8 @@ jobs:
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
@@ -383,6 +389,8 @@ jobs:
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
@@ -426,6 +434,8 @@ jobs:
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
@@ -512,6 +522,7 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: web/frontend
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Host target: these are pure logic tests with no DOM dependency. Anything needing a DOM
       # would need wasm-bindgen-test.
@@ -617,6 +628,8 @@ jobs:
         with:
           toolchain: ${{ needs.changes.outputs.msrv }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
@@ -659,6 +672,8 @@ jobs:
           toolchain: ${{ needs.changes.outputs.toolchain }}
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@6a1bd70eaac3c8bdf093356838d7ee09fda951cf # v2.85.5
         with:
           tool: cargo-llvm-cov
@@ -707,6 +722,8 @@ jobs:
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@6a1bd70eaac3c8bdf093356838d7ee09fda951cf # v2.85.5
         with:
           tool: cargo-mutants
@@ -788,6 +805,8 @@ jobs:
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@6a1bd70eaac3c8bdf093356838d7ee09fda951cf # v2.85.5
         with:
           tool: cargo-about
@@ -957,11 +976,18 @@ jobs:
   # is unreadable from anywhere else, yet still counts against the repository's 10 GB LRU budget —
   # so exporting here evicted the `main` caches that every PR and every release actually reads.
   # Pull requests keep *importing*: GitHub falls back to the base branch's scope.
+  #
+  # Deliberately **not** `needs: lint`. A warm-up is not a gate: nothing it produces reaches a
+  # registry, and `docker`, `docker-arm64` and `docker-frontend` all still wait on `lint`. Gating
+  # the warm-up too only severed the cache lineage — `main` went red on a three-file `cargo fmt`
+  # diff, this job was skipped on every push after it, and `backend-deps-<arch>` was never written
+  # at all, so the next release warm-up cooked ~600 crates cold. One wasted deps build on a red
+  # `main` is cheaper than a cold cache that compounds across every later run.
   docker-deps:
     name: docker build (deps, ${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
-    needs: [changes, lint]
+    needs: [changes]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
     permissions:
       contents: read # to check out the build context
@@ -1016,11 +1042,13 @@ jobs:
   # amd64 only here. It exists for `release-please.yaml`, which publishes `frontend` for both
   # architectures — and `cook-web` is arch-dependent despite emitting wasm, because `dx` and
   # `cargo-chef` are compiled from source for the host.
+  #
+  # Not `needs: lint`, for the reason spelled out on `docker-deps`.
   docker-wasm-deps:
     name: docker build (wasm deps, ${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
-    needs: [changes, lint]
+    needs: [changes]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
     permissions:
       contents: read # to check out the build context

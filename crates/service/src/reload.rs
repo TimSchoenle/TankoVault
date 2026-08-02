@@ -172,15 +172,16 @@ impl Watch {
         }
 
         let (tx, rx) = mpsc::channel(SIGNAL_DEPTH);
-        let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
-            // The callback runs on `notify`'s own thread. `try_send` rather than a blocking
-            // send: a full channel already means "re-read pending", so dropping this one loses
-            // nothing and never parks the watcher thread.
-            if event.is_ok() {
-                let _ = tx.try_send(());
-            }
-        })
-        .map_err(|e| ServiceError::Watch(e.to_string()))?;
+        let mut watcher =
+            notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+                // The callback runs on `notify`'s own thread. `try_send` rather than a blocking
+                // send: a full channel already means "re-read pending", so dropping this one loses
+                // nothing and never parks the watcher thread.
+                if event.is_ok() {
+                    let _ = tx.try_send(());
+                }
+            })
+            .map_err(|e| ServiceError::Watch(e.to_string()))?;
 
         for path in watchable {
             // Non-recursive: a `Secret` volume is flat, and recursing into the timestamped

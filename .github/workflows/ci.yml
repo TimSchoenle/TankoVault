@@ -1052,15 +1052,17 @@ jobs:
             --config "$config" \
             --config deploy/docker/cst/loader-amd64.yaml
 
-  # Cross-architecture build, opt-in via the `ENABLE_ARM64_CI` repository variable — gated because
-  # `ubuntu-24.04-arm` runners are free only on public repositories. Native, not QEMU: `wreq`
-  # compiles BoringSSL from C/C++/assembly and an emulated build costs upwards of an hour.
+  # Cross-architecture build. Native, not QEMU: `wreq` compiles BoringSSL from C/C++/assembly and
+  # an emulated build costs upwards of an hour.
   #
-  # Worth turning on: releases publish `linux/arm64` for every image, so with this off a release is
-  # the first time that path runs. That is how five hard-coded `ld-musl-x86_64.so.1` paths survived
-  # unnoticed — the loader is `ld-musl-aarch64.so.1` on arm64, so every runtime stage would have
-  # failed at `COPY`. The libraries now stage into `/sysroot*` trees from `uname -m`, and the
-  # structure tests carry the same split.
+  # This ran behind an `ENABLE_ARM64_CI` repository variable until releases began publishing, on
+  # the grounds that `ubuntu-24.04-arm` runners bill on private repositories. It is unconditional
+  # now because every release publishes `linux/arm64` for all nine images: with it off, a release
+  # was the first time that path ran. That is how five hard-coded `ld-musl-x86_64.so.1` paths
+  # survived unnoticed — the loader is `ld-musl-aarch64.so.1` on arm64, so every runtime stage
+  # would have failed at `COPY`. The libraries now stage into `/sysroot*` trees from `uname -m`,
+  # and the structure tests carry the same split. Do not put the gate back without also accepting
+  # that a tag is where arm64 breakage would surface.
   #
   # Scoped to the two images whose content differs by architecture: a `scratch` service and the
   # Debian-based `render` tier.
@@ -1069,7 +1071,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     needs: [changes, lint]
-    if: ${{ !cancelled() && !failure() && vars.ENABLE_ARM64_CI != '' && needs.changes.outputs.docker == 'true' }}
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
     permissions:
       contents: read # to check out the build context
     strategy:

@@ -7,10 +7,10 @@ Releases are automated with [release-please](https://github.com/googleapis/relea
 conventional commits drive a release pull request, and merging it tags the repository and
 publishes the nine service images. See [`docs/RELEASING.md`](docs/RELEASING.md).
 
-Publishing builds, structure-tests, signs and attests but **does not push**. Until 2026-08-01
-that was `OP-6` — `wreq-util` was GPL-3.0 and distributing the images is *conveying*. That is
-resolved (see *Changed* below); what holds the push now is that this repository still has no
-`LICENSE`.
+Publishing is no longer gated. It was blocked by `OP-6` until 2026-08-01 — `wreq-util` was
+GPL-3.0 and distributing the images is *conveying* — and after that by the absence of a
+`LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
+[PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
 ## [0.2.1](https://github.com/TimSchoenle/TankoVault/compare/v0.2.0...v0.2.1) (2026-08-02)
 
@@ -193,7 +193,7 @@ resolved (see *Changed* below); what holds the push now is that this repository 
     lockfile fails every `--locked` build in the repository — which would leave the release PR
     permanently red on a problem it created itself.
   - Publishing stays behind `ALLOW_IMAGE_PUBLISH`. The blocker is no longer a dependency licence
-    (`OP-6` is resolved) but the absent `LICENSE` file.
+    (`OP-6` is resolved) but the absent `LICENSE` file. *(Both resolved since; the gate is gone.)*
 - **Passkeys (`WebAuthn`), end to end.** A passkey is a first-class credential alongside the
   password: register one from Account → Security, then sign in with no identifier and no
   password at all (discoverable credentials, `UserVerificationPolicy::Required`, so it is two
@@ -285,3 +285,4 @@ Every entry above traces to a row in `docs/audit/PROGRESS.md`, which carries the
 and the test that pins it.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
+.1.0/

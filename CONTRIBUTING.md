@@ -4,6 +4,37 @@
 style and security** — every rule, and what enforces it. This file covers workflow: setup, what to
 run, and what a change needs. The two do not overlap by design.
 
+## Licensing of contributions
+
+Read this before opening a pull request. It is short, and it asks for something real.
+
+TankoVault is [PolyForm Noncommercial 1.0.0](LICENSE): free for any noncommercial use, commercial
+use only by separate licence from the maintainer. That model only works if one party owns enough
+of the copyright to grant those licences — so **by opening a pull request you agree to both of
+the following**:
+
+1. Your contribution is licensed to everyone under the project licence, and
+2. you grant the maintainer a perpetual, worldwide, irrevocable, royalty-free and
+   **sublicensable** right to use, modify, sublicense and relicense it, including under
+   commercial terms and including in a paid hosted service.
+
+Said plainly, because it is better said than discovered later: **you are giving the maintainer
+the right to make money from your work, on terms you do not get.** That is the deal. It is the
+same one Grafana, MinIO and Qt ask for, and if it is not one you want to accept, please open an
+issue describing the change instead of a pull request implementing it — a good bug report is
+worth as much here and costs you nothing.
+
+Every commit also needs a [Developer Certificate of Origin](https://developercertificate.org/)
+sign-off, which is your assertion that you had the right to submit the code in the first place:
+
+```
+git commit -s -m "fix: ..."
+```
+
+Contributions carrying someone else's copyright — code lifted from another project, output you
+are not free to relicense — cannot be accepted, whatever the upstream licence, because clause 2
+is not yours to grant for them.
+
 ## Before you push
 
 ```

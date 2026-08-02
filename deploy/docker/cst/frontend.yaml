@@ -33,6 +33,11 @@ fileExistenceTests:
   - name: "CA trust store baked in for HTTPS upstreams"
     path: "/etc/ssl/certs/ca-certificates.crt"
     shouldExist: true
+  # See `service.yaml`: PolyForm Noncommercial's Notices clause, asserted because the
+  # `.dockerignore` exemption that lets the Dockerfile COPY it is a one-line change to undo.
+  - name: "licence terms ship with the image"
+    path: "/LICENSE"
+    shouldExist: true
   # What the dynamically linked musl binary resolves at load time. On `scratch` there is no
   # package manager to supply them, so a missing one is a container that exits before `main` —
   # with no shell to diagnose it in. The architecture-specific loader is asserted by

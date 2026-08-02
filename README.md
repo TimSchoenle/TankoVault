@@ -218,3 +218,26 @@ client, and the i18n rules.
 - [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) — current status.
 - [`docs/audit/`](docs/audit/README.md) — full codebase audit (2026-07-29): findings and cleanup roadmap.
 - [`openapi.json`](openapi.json) — canonical REST API spec (also served at `/scalar`).
+
+## License
+
+**[PolyForm Noncommercial 1.0.0](LICENSE)** — source available, not open source. Use, modify and
+redistribute it freely for any noncommercial purpose; **commercial use requires a separate
+licence** from the copyright holder. Charities, schools, public research bodies and government
+institutions count as noncommercial regardless of how they are funded.
+
+Where the line falls, in plain terms:
+
+- **Fine** — running your own instance, for yourself, your household or your friends, including
+  when donations cover the hosting bill. Modifying it. Publishing your fork under the same terms.
+- **Needs a licence from me** — charging for access, running ads against it, or offering it to
+  customers as a hosted or managed service.
+
+If you are unsure which side something falls on, open an issue and ask.
+
+The published images carry the same terms — a registry page does not say so, but pulling
+`ghcr.io/timschoenle/tankovault/api` to run a paid service is unlicensed. The terms ship inside
+every image at `/LICENSE`.
+
+Contributions are welcome and are covered by the inbound terms in
+[`CONTRIBUTING.md`](CONTRIBUTING.md); read those before opening a pull request.

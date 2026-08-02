@@ -185,6 +185,9 @@ RUN set -eu; \
 # Only ever built with `render`; kept as an ARG so both runtime stages take the same input.
 ARG BIN=render
 COPY --from=builder /out/${BIN} /usr/local/bin/tankovault-service
+# PolyForm Noncommercial's Notices clause: the terms travel with every copy of the software, and
+# a published image is a copy. `.dockerignore` exempts LICENSE from the docs exclusion for this.
+COPY --from=builder /app/LICENSE /LICENSE
 # No sandbox: no user namespaces inside the container.
 ENV TANKOVAULT_RENDER__CHROME_PATH=/usr/bin/chromium \
     TANKOVAULT_RENDER__NO_SANDBOX=true
@@ -198,6 +201,8 @@ COPY --from=builder /sysroot-nocxx/ /
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /out/frontend /usr/local/bin/tankovault-frontend
 COPY --from=wasm-builder /dist /srv/www
+# See the `runtime-browser` stage: the licence terms ship with the image, not just the repo.
+COPY --from=builder /app/LICENSE /LICENSE
 ENV TANKOVAULT_FRONTEND__STATIC_DIR=/srv/www
 # Numeric nonroot UID (scratch has no /etc/passwd); binds 3000, not the privileged port 80.
 USER 1001:1001
@@ -212,6 +217,8 @@ COPY --from=builder /sysroot/ /
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 ARG BIN
 COPY --from=builder /out/${BIN} /usr/local/bin/tankovault-service
+# See the `runtime-browser` stage: the licence terms ship with the image, not just the repo.
+COPY --from=builder /app/LICENSE /LICENSE
 # Numeric nonroot UID (scratch has no /etc/passwd).
 USER 1001:1001
 ENTRYPOINT ["/usr/local/bin/tankovault-service"]

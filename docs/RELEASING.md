@@ -36,33 +36,26 @@ for `<bin>` in `api`, `worker`, `control-plane`, `notifier`, `sync`, `challenge-
 Tags per release: `vX.Y.Z`, `X.Y` and `latest`. Every published manifest-list digest is signed
 with cosign keyless and carries an SPDX SBOM attestation.
 
-## Two things a human decides
+## Licensing of what is published
 
-### 1. `LICENSE` — publishing is gated until this exists
+TankoVault is **PolyForm Noncommercial 1.0.0** (root `LICENSE`, `license` under
+`[workspace.package]`). Every runtime stage in `deploy/docker/Dockerfile` copies the terms to
+`/LICENSE`, and each contract under `deploy/docker/cst/` asserts they are there — a published
+image is a copy of the software, and the Notices clause requires the terms to travel with it.
+Pulling an image does not grant commercial use.
 
-`ALLOW_IMAGE_PUBLISH` is unset, so the release pipeline builds, structure-tests and attests but
-does **not** push. This is no longer about a dependency licence: `OP-6` (GPL-3.0 `wreq-util`)
-was resolved on 2026-08-01 by upgrading to `wreq-util` 3.x, which is Apache-2.0. What is
-outstanding is that this repository has no `LICENSE` file at all (`OPS-10.4`), and publishing
-images of an unlicensed work is not a decision a merged workflow should make.
+This is what the two former gates were waiting on:
 
-To enable, once a licence is chosen:
+- **`ALLOW_IMAGE_PUBLISH`** blocked every push, sign and attest step while the repository was
+  unlicensed (`OPS-10.4`). The variable and the `gate` job that read it are gone; merging a
+  release pull request publishes. The structure tests that used to run only on the
+  non-publishing branch now run on the publishing path, before the push.
+- **`ENABLE_ARM64_CI`** kept `ci.yml`'s `docker-arm64` job off, which meant a release was the
+  first time the arm64 path ran — how that build stayed broken for months. That job is
+  unconditional now. Both variables can be deleted from the repository settings.
 
-```sh
-# add LICENSE, and `license = "..."` under [workspace.package] in Cargo.toml
-gh variable set ALLOW_IMAGE_PUBLISH --body true
-```
-
-### 2. `ENABLE_ARM64_CI` — turn it on before the first release
-
-`ci.yml`'s `docker-arm64` job is gated off because `ubuntu-24.04-arm` runners bill on private
-repositories. With releases now building arm64 for all nine images, leaving it off means **a
-release is the first time the arm64 path runs**. That is exactly how the arm64 build came to be
-broken for months without anyone noticing — see the comment on that job.
-
-```sh
-gh variable set ENABLE_ARM64_CI --body 1
-```
+`OP-6` (GPL-3.0 `wreq-util`) was resolved separately, on 2026-08-01, by upgrading to
+`wreq-util` 3.x under Apache-2.0.
 
 ## Required secrets and variables
 
@@ -71,10 +64,10 @@ gh variable set ENABLE_ARM64_CI --body 1
 | `RELEASE_BOT_APP_ID`, `RELEASE_BOT_PRIVATE_KEY` | secret | release-please, update-lockfile |
 | `ACTIONS_MAINTENANCE_APP_ID`, `ACTIONS_MAINTENANCE_PRIVATE_KEY` | secret | auto-merge |
 | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | secret | image publish |
-| `ALLOW_IMAGE_PUBLISH` | variable | the publish gate |
-| `ENABLE_ARM64_CI` | variable | `ci.yml`'s arm64 job |
+| `GHCR_PUBLISH_TOKEN` | secret | image publish (the `build` job's GHCR login) |
 
-GHCR needs no secret — it authenticates with the job's `GITHUB_TOKEN`.
+The `manifest` job's GHCR login needs no secret — it authenticates with the job's `GITHUB_TOKEN`.
+The `build` job pushes by digest with `GHCR_PUBLISH_TOKEN` instead.
 
 The App token is not a stylistic preference: a push made with `GITHUB_TOKEN` does not trigger
 workflows, so a release PR created or corrected by it would never run CI, and the required `ci`

@@ -30,6 +30,11 @@ fileExistenceTests:
   - name: "CA trust store present for outbound TLS"
     path: "/etc/ssl/certs/ca-certificates.crt"
     shouldExist: true
+  # See `service.yaml`: PolyForm Noncommercial's Notices clause, asserted because the
+  # `.dockerignore` exemption that lets the Dockerfile COPY it is a one-line change to undo.
+  - name: "licence terms ship with the image"
+    path: "/LICENSE"
+    shouldExist: true
   - name: "writable HOME provisioned for the Chromium profile"
     path: "/home/nonroot"
     shouldExist: true

@@ -6,6 +6,7 @@ mod ci;
 mod config_docs;
 mod coverage;
 mod notices;
+mod prune_chapters;
 mod repo_lint;
 
 use progenitor_impl::{GenerationSettings, Generator, InterfaceStyle, TypePatch};
@@ -70,11 +71,15 @@ async fn main() -> anyhow::Result<()> {
         }
         "reset" => reset(&pool).await?,
         "seed" => seed(&pool).await?,
+        "prune-chapters" => {
+            let apply = std::env::args().nth(2).as_deref() == Some("--apply");
+            prune_chapters::run(&pool, apply).await?;
+        }
         other => {
             eprintln!(
                 "unknown command {other:?}; usage: xtask \
-                 <migrate|reset|seed|openapi [--check]|config-docs [--check]|\
-                 notices [--check]|sqlx-prepare [--check]>"
+                 <migrate|reset|seed|prune-chapters [--apply]|openapi [--check]|\
+                 config-docs [--check]|notices [--check]|sqlx-prepare [--check]>"
             );
             std::process::exit(2);
         }

@@ -22,6 +22,10 @@ secrecy = { workspace = true }
 tankovault-api = { path = "../services/api" }
 tokio = { workspace = true }
 anyhow = { workspace = true }
+# `prune-chapters` re-judges stored chapter numbers, which is a query no repository exposes:
+# it is a one-off maintenance sweep, not part of any service's contract.
+sqlx = { workspace = true, default-features = false, features = ["postgres", "uuid", "runtime-tokio"] }
+uuid = { workspace = true }
 # `notices` parses `cargo about generate --format json`; the derive is on structs that name only
 # the four fields of that output this repository's notices document actually needs.
 serde = { workspace = true }

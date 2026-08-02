@@ -10,7 +10,7 @@ mod dryrun;
 mod engine;
 mod queue;
 
-use engine::Engine;
+use engine::{Engine, EngineSettings};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use std::sync::Arc;
@@ -50,6 +50,11 @@ struct Config {
     /// same (ARCH-16).
     #[serde(default)]
     matching: tankovault_config::MatchingConfig,
+    /// Which scraped chapter numbers a scan refuses to index. Sources publish stray entries
+    /// numbered from dates, years and title text; left in, one of them becomes the series'
+    /// latest chapter.
+    #[serde(default)]
+    chapter_outliers: tankovault_config::ChapterOutlierConfig,
 }
 
 fn default_bind() -> String {
@@ -186,8 +191,11 @@ async fn build(cfg: &Config) -> anyhow::Result<Built> {
         solver,
         session_store,
         format!("worker-{}", uuid::Uuid::now_v7()),
-        cfg.worker.max_catalog_pages,
-        cfg.matching.clone(),
+        EngineSettings {
+            max_catalog_pages: cfg.worker.max_catalog_pages,
+            matching: cfg.matching.clone(),
+            outliers: cfg.chapter_outliers.policy(),
+        },
     );
 
     Ok(Built {

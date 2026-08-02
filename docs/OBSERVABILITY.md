@@ -26,7 +26,7 @@ Grafana's own documentation, so it is not a password.
 
 ## 1. What is measured
 
-This is the **complete** inventory — nine metrics, hand-verified against every `counter!`,
+This is the **complete** inventory — ten metrics, hand-verified against every `counter!`,
 `histogram!` and `gauge!` call site in the workspace. Nothing in the dashboards or rules queries
 anything outside this table, because a panel or an alert referencing a metric nobody emits is an
 operator believing they have coverage they do not have.
@@ -40,8 +40,16 @@ operator believing they have coverage they do not have.
 | `rate_limit_store_errors_total` | counter | `backend` (`redis`) | `crates/service/src/ratelimit/redis.rs` | services on the Redis backend |
 | `http_feature_disabled_total` | counter | `feature` | `crates/service/src/flags.rs` | `api`, `control-plane`, `sync`, `notifier` |
 | `scan_tasks_served_total` | counter | `provider`, `scan` (`full`/`fast`) | `services/worker/src/queue.rs` | `worker` |
+| `chapters_rejected_total` | counter | `provider` | `services/worker/src/engine.rs` | `worker` |
 | `solve_attempts_total` | counter | `result` (`ok`/`error`/`rejected`) | `crates/solver/src/http.rs` | `challenge-solver` **and** `render` |
 | `render_requests_total` | counter | `result` (`ok`/`error`/`rejected`) | `services/render/src/main.rs` | `render` |
+
+`chapters_rejected_total` counts listing entries a scan refused to index because the source
+cannot plausibly have released them (see `chapter_outliers` in [`CONFIGURATION.md`](CONFIGURATION.md)).
+A steady trickle is normal — it is what the rule exists for. A **step change on one provider** is
+the signal worth acting on: either that site started publishing junk slugs, or an adapter change
+altered how its numbers parse and the rule is now discarding real chapters. The `warn` log at the
+same site carries the numbers, which is what tells the two apart.
 
 One thing the services deliberately do **not** measure is how much work is *waiting*.
 `scan_tasks_served_total` counts tasks handed out, so from the worker's side a wedged pipeline and

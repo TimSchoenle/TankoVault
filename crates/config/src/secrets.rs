@@ -178,9 +178,8 @@ fn read_secrets_dir(dir: &Path) -> Result<BTreeMap<String, FileValue>, ConfigErr
 
     let mut values = BTreeMap::new();
     for entry in entries {
-        let entry = entry.map_err(|e| {
-            ConfigError::Source(format!("reading {}: {e}", dir.display()))
-        })?;
+        let entry =
+            entry.map_err(|e| ConfigError::Source(format!("reading {}: {e}", dir.display())))?;
         let name = entry.file_name().to_string_lossy().into_owned();
         if name.starts_with('.') {
             continue;
@@ -192,7 +191,13 @@ fn read_secrets_dir(dir: &Path) -> Result<BTreeMap<String, FileValue>, ConfigErr
 
         let path = entry.path();
         let key = key_from_name(&name, &path)?;
-        values.insert(key, FileValue { value: read_value(&path)?, path });
+        values.insert(
+            key,
+            FileValue {
+                value: read_value(&path)?,
+                path,
+            },
+        );
     }
     Ok(values)
 }
@@ -209,7 +214,9 @@ fn read_file_suffix_env() -> Result<BTreeMap<String, FileValue>, ConfigError> {
         let (Some(name), Some(path)) = (name.to_str(), path.to_str()) else {
             continue;
         };
-        let Some(key) = name.strip_prefix(PREFIX).and_then(|k| k.strip_suffix(FILE_SUFFIX))
+        let Some(key) = name
+            .strip_prefix(PREFIX)
+            .and_then(|k| k.strip_suffix(FILE_SUFFIX))
         else {
             continue;
         };
@@ -228,9 +235,8 @@ fn read_file_suffix_env() -> Result<BTreeMap<String, FileValue>, ConfigError> {
         let path = PathBuf::from(path);
         // A `_FILE` naming an unreadable path is fatal rather than skipped. Skipping is how a
         // secret goes silently unset and the service boots with a default instead.
-        let value = read_value(&path).map_err(|e| {
-            ConfigError::Source(format!("{name} names {}: {e}", path.display()))
-        })?;
+        let value = read_value(&path)
+            .map_err(|e| ConfigError::Source(format!("{name} names {}: {e}", path.display())))?;
         values.insert(normalise_key(key), FileValue { path, value });
     }
     Ok(values)
@@ -245,9 +251,8 @@ fn read_value(path: &Path) -> Result<String, ConfigError> {
     let bytes = std::fs::read(path)
         .map_err(|e| ConfigError::Source(format!("reading {}: {e}", path.display())))?;
     // Named, not printed: the file holds a secret, so the invalid bytes stay out of the log.
-    let text = String::from_utf8(bytes).map_err(|_| {
-        ConfigError::Source(format!("{} is not valid UTF-8", path.display()))
-    })?;
+    let text = String::from_utf8(bytes)
+        .map_err(|_| ConfigError::Source(format!("{} is not valid UTF-8", path.display())))?;
     Ok(text.trim_end_matches(['\r', '\n']).to_owned())
 }
 
@@ -320,7 +325,11 @@ fn plain_env_keys() -> BTreeSet<String> {
 }
 
 /// The one shadowing error, so both directions read identically.
-fn shadowed(key: &str, source: &impl std::fmt::Display, other: &impl std::fmt::Display) -> ConfigError {
+fn shadowed(
+    key: &str,
+    source: &impl std::fmt::Display,
+    other: &impl std::fmt::Display,
+) -> ConfigError {
     ConfigError::Source(format!(
         "`{key}` is supplied twice — by {source} and by {other}. Remove one: a stale \
          environment variable shadowing a rotated secret keeps the service running on the old \

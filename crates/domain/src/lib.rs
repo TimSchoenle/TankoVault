@@ -1,7 +1,9 @@
 //! Pure domain types for the `TankoVault` manga aggregator: entities, typed ids, enums, the
 //! [`Permission`] and [`Feature`] registries, the [`resolve_link`] resolver, crawl
-//! [`Politeness`], and title [`normalize_title`]. No I/O, no async, no persistence.
+//! [`Politeness`], title [`normalize_title`], and the [`implausible_indices`] guard against
+//! junk chapter numbers. No I/O, no async, no persistence.
 
+pub mod chapter_outliers;
 pub mod entities;
 pub mod enums;
 pub mod features;
@@ -15,6 +17,7 @@ pub mod permissions;
 pub mod politeness;
 pub mod ssrf;
 
+pub use chapter_outliers::{OutlierPolicy, implausible_indices};
 pub use entities::{
     Author, Chapter, Notification, Provider, ReadProgress, ScanRun, ScanTask, Series, SeriesSource,
     SeriesTitle, Tag, User, WatchlistEntry,

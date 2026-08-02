@@ -61,13 +61,20 @@ This is what the two former gates were waiting on:
 
 | Name | Kind | Used by |
 | --- | --- | --- |
-| `RELEASE_BOT_APP_ID`, `RELEASE_BOT_PRIVATE_KEY` | secret | release-please, update-lockfile |
-| `ACTIONS_MAINTENANCE_APP_ID`, `ACTIONS_MAINTENANCE_PRIVATE_KEY` | secret | auto-merge |
-| `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | secret | image publish |
-| `GHCR_PUBLISH_TOKEN` | secret | image publish (the `build` job's GHCR login) |
+| `RELEASE_BOT_APP_ID`, `RELEASE_BOT_PRIVATE_KEY` | `release` environment secret | release-please, update-lockfile |
+| `ACTIONS_MAINTENANCE_APP_ID`, `ACTIONS_MAINTENANCE_PRIVATE_KEY` | repository secret | auto-merge |
+| `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | `release` environment secret | image publish |
 
-The `manifest` job's GHCR login needs no secret — it authenticates with the job's `GITHUB_TOKEN`.
-The `build` job pushes by digest with `GHCR_PUBLISH_TOKEN` instead.
+Every job that reads one of these names an `environment: release` with `deployment: false` —
+`release-please`, `update-lockfile`, and both publish jobs, `build` and `manifest`. That is not
+optional and it fails quietly: a job that omits the environment reads the secret as an empty
+string, so `docker/login-action` reports "Username and password required" and
+`create-github-app-token` reports an empty `app-id`, neither of which names the environment as
+the cause. `deployment: false` keeps a secret scope from writing a deployment record per job.
+
+GHCR needs no secret at all: both the `build` and `manifest` jobs log in with the run's own
+`GITHUB_TOKEN`, which their `packages: write` permission covers. Only Docker Hub, which is
+outside GitHub's trust boundary, requires stored credentials.
 
 The App token is not a stylistic preference: a push made with `GITHUB_TOKEN` does not trigger
 workflows, so a release PR created or corrected by it would never run CI, and the required `ci`

@@ -13,6 +13,7 @@ use tankovault_config::MatchingConfig;
 use tankovault_contracts::{ChapterDiscovered, ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
 use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert};
+use tankovault_domain::chapter_outliers::{OutlierPolicy, implausible_indices};
 use tankovault_domain::{Provider, ProviderId, normalize_title};
 use tankovault_fetch::{Fetcher, ProviderFetchConfig, SessionStore, build_provider_fetcher};
 use tankovault_solver::ChallengeSolver;
@@ -39,6 +40,8 @@ pub(crate) struct Engine {
     /// Held here, not defaulted in the repository, so this path and external sync answer
     /// "is this the same series?" the same way.
     pub(crate) matching: MatchingConfig,
+    /// Which scraped chapter numbers the source cannot plausibly have released.
+    pub(crate) outliers: OutlierPolicy,
     /// One fetch stack per provider, keyed by the politeness settings it was built from.
     ///
     /// Load-bearing for correctness, not just speed: the rate limiter and adaptive 429
@@ -85,6 +88,14 @@ struct CachedFetcher {
     fetcher: Arc<dyn Fetcher>,
 }
 
+/// The tunables an engine scans under, grouped so they travel together rather than as a
+/// widening argument list.
+pub(crate) struct EngineSettings {
+    pub(crate) max_catalog_pages: u32,
+    pub(crate) matching: MatchingConfig,
+    pub(crate) outliers: OutlierPolicy,
+}
+
 impl Engine {
     /// Assemble the engine with an empty fetcher cache.
     ///
@@ -96,8 +107,7 @@ impl Engine {
         solver: Arc<dyn ChallengeSolver>,
         session_store: Arc<dyn SessionStore>,
         worker_id: String,
-        max_catalog_pages: u32,
-        matching: MatchingConfig,
+        settings: EngineSettings,
     ) -> Self {
         Self {
             pool,
@@ -105,8 +115,9 @@ impl Engine {
             solver,
             session_store,
             worker_id,
-            max_catalog_pages,
-            matching,
+            max_catalog_pages: settings.max_catalog_pages,
+            matching: settings.matching,
+            outliers: settings.outliers,
             fetchers: Arc::default(),
         }
     }
@@ -188,7 +199,10 @@ impl Engine {
         path: &str,
     ) -> anyhow::Result<usize> {
         let meta = adapter.fetch_series(ctx, path).await?;
-        let chapters = adapter.fetch_chapters(ctx, path).await?;
+        let mut chapters = adapter.fetch_chapters(ctx, path).await?;
+        // Before the hash, not after: a source that keeps serving the same junk then hashes as
+        // unchanged, so re-scans stay no-ops instead of re-deciding every time.
+        drop_implausible(&self.outliers, provider, path, &mut chapters);
         let hash = content_hash(&meta, &chapters);
 
         // `meta`/`chapters` move into `scanned`, not copy: the fan-out below reads them
@@ -652,6 +666,47 @@ pub(crate) struct ScanSummary {
     pub(crate) new_chapters: usize,
 }
 
+/// Drop chapter entries whose numbers the source cannot plausibly have released.
+///
+/// These are the source's own slugs, not a parse failure — `chapter-180302` (a date),
+/// `chapter-2025` (a year), `chapter-2099` (a number lifted out of the series title). Left in,
+/// one of them becomes the series' latest chapter and every reader's progress against it reads
+/// as hundreds of chapters behind.
+fn drop_implausible(
+    policy: &OutlierPolicy,
+    provider: &Provider,
+    path: &str,
+    chapters: &mut Vec<ChapterMeta>,
+) {
+    let numbers: Vec<f64> = chapters.iter().map(|c| c.number).collect();
+    let rejected = implausible_indices(&numbers, policy);
+    if rejected.is_empty() {
+        return;
+    }
+
+    // Logged with the numbers, not just a count: this is the only record that a chapter was
+    // skipped, and an operator judging whether the thresholds are right needs to see them.
+    tracing::warn!(
+        provider = %provider.slug,
+        series_path = %path,
+        rejected = rejected.len(),
+        of = chapters.len(),
+        numbers = ?rejected.iter().map(|&i| numbers[i]).collect::<Vec<_>>(),
+        "skipping implausible chapter numbers"
+    );
+    metrics::counter!("chapters_rejected_total", "provider" => provider.slug.clone())
+        .increment(rejected.len() as u64);
+
+    // `rejected` is ascending and `retain` visits in order, so the running index tracks the
+    // original positions those indices refer to.
+    let mut index = 0usize;
+    chapters.retain(|_| {
+        let keep = rejected.binary_search(&index).is_err();
+        index += 1;
+        keep
+    });
+}
+
 /// Content hash over title + chapter (number, path) pairs, for cheap change detection.
 fn content_hash(meta: &SeriesMeta, chapters: &[ChapterMeta]) -> Vec<u8> {
     let mut h = Sha256::new();
@@ -760,6 +815,74 @@ mod tests {
             path: path.to_owned(),
             published_at: None,
         }
+    }
+
+    /// The listing is in the source's order, which is usually newest-first — so the stray is at
+    /// index 0 while the domain rule reasons about it sorted. Getting the index bookkeeping
+    /// wrong here deletes real chapters and keeps the junk.
+    #[test]
+    fn rejecting_a_stray_removes_that_entry_and_no_other() {
+        let mut chapters = vec![chapter(9000.0, None, "/manga/x/chapter-9000/")];
+        chapters.extend((1..=40).map(|n| chapter(f64::from(n), None, "/manga/x/")));
+
+        drop_implausible(
+            &OutlierPolicy::default(),
+            &provider(1.0, "ua"),
+            "/manga/x",
+            &mut chapters,
+        );
+
+        assert_eq!(chapters.len(), 40);
+        assert!(
+            chapters.iter().all(|c| c.number <= 40.0),
+            "the stray survived: {:?}",
+            chapters.iter().map(|c| c.number).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_plausible_listing_is_left_untouched() {
+        let mut chapters: Vec<ChapterMeta> = (1..=40)
+            .map(|n| chapter(f64::from(n), None, "/manga/x/"))
+            .collect();
+        let before = chapters.len();
+
+        drop_implausible(
+            &OutlierPolicy::default(),
+            &provider(1.0, "ua"),
+            "/manga/x",
+            &mut chapters,
+        );
+
+        assert_eq!(chapters.len(), before);
+    }
+
+    /// Rejection happens before the hash, so a source that keeps serving the same junk hashes
+    /// as unchanged. Hashing first would make every re-scan of such a series look changed and
+    /// re-do the full ingest forever.
+    #[test]
+    fn a_rejected_chapter_does_not_move_the_content_hash() {
+        let series = meta("Solo Leveling", None);
+        let listing = || -> Vec<ChapterMeta> {
+            (1..=40)
+                .map(|n| chapter(f64::from(n), None, "/manga/x/"))
+                .collect()
+        };
+        let clean = listing();
+
+        let mut with_junk = listing();
+        with_junk.push(chapter(9000.0, None, "/manga/x/chapter-9000/"));
+        drop_implausible(
+            &OutlierPolicy::default(),
+            &provider(1.0, "ua"),
+            "/manga/x",
+            &mut with_junk,
+        );
+
+        assert_eq!(
+            content_hash(&series, &clean),
+            content_hash(&series, &with_junk)
+        );
     }
 
     /// Determinism is the entire contract: a hash that varies for identical input makes

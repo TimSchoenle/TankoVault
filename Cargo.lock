@@ -7153,12 +7153,14 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "sqlx",
  "syn 3.0.3",
  "tankovault-api",
  "tankovault-bootstrap",
  "tankovault-db",
  "tankovault-domain",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

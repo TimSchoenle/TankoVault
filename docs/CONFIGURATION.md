@@ -218,6 +218,34 @@ shared author credits, and vetoed outright when the two titles carry different n
 | `TANKOVAULT_MATCHING__AUTO_MERGE` | `0.97` | control-plane | At or above this — **and** only when a structural identity rule fired (identical titles, identical modulo whitespace, or an exact hit on a name the series already answers to) — the duplicate sweep merges two *already-existing* series without asking. A separate knob from `HIGH` because it governs a different act: `HIGH` files an incoming source, this one deletes a series row and the id it carries. A score alone never suffices; see `tankovault_matcher::adjudicate`. |
 | `TANKOVAULT_MATCHING__CANDIDATE_LIMIT` | `10` | worker, sync | Trigram candidates scored per query title. More costs a wider index scan and buys nothing once the true match is in the set. |
 
+### `chapter_outliers` — refusing implausible chapter numbers
+
+Aggregator sites publish listing entries that are not releases: a slug carrying a date
+(`chapter-180302`), a year (`chapter-2025`), or a number lifted out of the series title
+(`Demon-Lord-2099` → `chapter-2099`). The adapter parses them correctly — the source really does
+say that — so a scan judges the listing as a whole and skips the entries that cannot be releases.
+Left in, one of them becomes the series' latest chapter and every reader's progress against it
+reads as hundreds of chapters behind.
+
+Every threshold is relative to the listing's own spacing rather than an absolute chapter number,
+so one setting covers a 20-chapter series and a 4,000-chapter one. Rejections are logged at
+`warn` with the numbers, and counted by `chapters_rejected_total{provider}`.
+
+This guard runs at ingest only. Chapters indexed before it existed stay indexed — nothing in the
+normal path deletes a chapter — so clearing those is a separate, opt-in sweep:
+`cargo run -p xtask -- prune-chapters` reports what the same rule would remove, and
+`-- prune-chapters --apply` deletes it.
+
+| Key | Default | Services | Notes |
+|---|---|---|---|
+| `TANKOVAULT_CHAPTER_OUTLIERS__ENABLED` | `true` | worker | Whether a scan rejects anything at all. The escape hatch for a provider the rule is wrong about. Turning it off does not restore skipped chapters — but ingest is idempotent, so the next scan re-indexes them. |
+| `TANKOVAULT_CHAPTER_OUTLIERS__SPARSE_FACTOR` | `20` | worker | **The knob to reach for first.** A trailing run spread more thinly than this multiple of the listing's typical spacing is noise rather than a continuation. Raising it rejects less; lowering it toward `10` starts taking genuine renumbered arcs (a series resuming at 505 after 359) with the junk. |
+| `TANKOVAULT_CHAPTER_OUTLIERS__GAP_FACTOR` | `20` | worker | Multiple of typical spacing past which a jump is suspicious enough to consider a cut at all. Only gates which positions are examined; `SPARSE_FACTOR` decides. |
+| `TANKOVAULT_CHAPTER_OUTLIERS__MIN_GAP` | `10` | worker | Absolute floor, in chapter numbers, under which a jump is never suspicious. Stops ordinary holes — a pulled chapter, a merged double release — from being examined. |
+| `TANKOVAULT_CHAPTER_OUTLIERS__MIN_SAMPLE` | `6` | worker | Smallest listing worth judging. Below this there is no rhythm to compare against, so newly-added series are trusted whole until a later scan grows them. |
+| `TANKOVAULT_CHAPTER_OUTLIERS__MIN_BODY` | `5` | worker | Chapters that must survive. Stops a listing being judged down to nothing. |
+| `TANKOVAULT_CHAPTER_OUTLIERS__MAX_REJECTED_FRACTION` | `0.25` | worker | Ceiling on the fraction of one listing a single scan may reject. A source that trips this has had its numbering misread wholesale — an adapter to fix, not a catalogue to quietly empty. |
+
 ### `internal` — service-to-service authentication
 
 | Key | Default | Services | Notes |

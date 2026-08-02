@@ -153,7 +153,10 @@ fn toml_layers(path: &Path) -> Result<Vec<PathBuf>, ConfigError> {
             continue;
         }
         let file = entry.path();
-        if file.extension().is_some_and(|e| e.eq_ignore_ascii_case("toml")) {
+        if file
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("toml"))
+        {
             files.push(file);
         }
     }
@@ -240,7 +243,10 @@ mod tests {
             // what a `ConfigMap` volume puts beside the real keys.
             jail.create_file("conf.d/..data", "[database]\nmax_connections = 1\n")?;
             jail.create_file("conf.d/notes.md", "not config\n")?;
-            jail.set_env("TANKOVAULT_CONFIG", jail.directory().join("conf.d").display());
+            jail.set_env(
+                "TANKOVAULT_CONFIG",
+                jail.directory().join("conf.d").display(),
+            );
 
             let cfg: Sample = load().map_err(|e| e.to_string()).unwrap();
             assert_eq!(cfg.database.url.expose_secret(), "postgres://base/tv");
@@ -259,10 +265,16 @@ mod tests {
     fn a_secrets_directory_outranks_the_toml_layer() {
         figment::Jail::expect_with(|jail| {
             jail.clear_env();
-            jail.create_file("config.toml", "[database]\nurl = \"postgres://placeholder/tv\"\n")?;
+            jail.create_file(
+                "config.toml",
+                "[database]\nurl = \"postgres://placeholder/tv\"\n",
+            )?;
             jail.create_dir("secrets")?;
             jail.create_file("secrets/database__url", "postgres://real/tv\n")?;
-            jail.set_env("TANKOVAULT_CONFIG", jail.directory().join("config.toml").display());
+            jail.set_env(
+                "TANKOVAULT_CONFIG",
+                jail.directory().join("config.toml").display(),
+            );
             jail.set_env(
                 "TANKOVAULT_SECRETS_DIR",
                 jail.directory().join("secrets").display(),
@@ -291,21 +303,31 @@ mod tests {
                 jail.directory().join("secrets").display(),
             );
 
-            let first = super::load_watched::<Sample>().map_err(|e| e.to_string()).unwrap();
-            let again = super::load_watched::<Sample>().map_err(|e| e.to_string()).unwrap();
+            let first = super::load_watched::<Sample>()
+                .map_err(|e| e.to_string())
+                .unwrap();
+            let again = super::load_watched::<Sample>()
+                .map_err(|e| e.to_string())
+                .unwrap();
             assert!(
                 !again.sources.differs_from(&first.sources),
                 "re-reading unchanged files must not look like a change"
             );
 
             jail.create_file("secrets/database__url", "postgres://two/tv")?;
-            let rotated = super::load_watched::<Sample>().map_err(|e| e.to_string()).unwrap();
+            let rotated = super::load_watched::<Sample>()
+                .map_err(|e| e.to_string())
+                .unwrap();
             assert!(
                 rotated.sources.differs_from(&first.sources),
                 "a rotated secret must look like a change"
             );
             assert!(
-                rotated.sources.watch_paths().iter().any(|p| p.ends_with("secrets")),
+                rotated
+                    .sources
+                    .watch_paths()
+                    .iter()
+                    .any(|p| p.ends_with("secrets")),
                 "the secrets directory must be watched: {:?}",
                 rotated.sources.watch_paths()
             );

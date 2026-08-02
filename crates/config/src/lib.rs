@@ -10,6 +10,7 @@
 //! refused at boot rather than resolved by precedence; `src/secrets.rs` says why.
 
 mod audit;
+mod chapter_outliers;
 mod cors;
 mod database;
 mod email;
@@ -26,6 +27,7 @@ mod security;
 mod telemetry;
 
 pub use audit::AuditConfig;
+pub use chapter_outliers::ChapterOutlierConfig;
 pub use cors::CorsConfig;
 pub use database::DatabaseConfig;
 pub use email::{EmailConfig, EmailSecurity};

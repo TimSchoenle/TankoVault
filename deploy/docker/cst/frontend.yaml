@@ -38,6 +38,13 @@ fileExistenceTests:
   - name: "licence terms ship with the image"
     path: "/LICENSE"
     shouldExist: true
+  # This image owes the dependencies' terms twice: it is a binary distribution itself, and it
+  # hands the WASM bundle - a second dependency graph, `web/frontend`'s - to every browser that
+  # loads the page. The server publishes this file at `/third-party-notices`, which is the URL
+  # the SPA's rail links to.
+  - name: "third-party licence notices ship with the image"
+    path: "/THIRD-PARTY-NOTICES"
+    shouldExist: true
   # What the dynamically linked musl binary resolves at load time. On `scratch` there is no
   # package manager to supply them, so a missing one is a container that exits before `main` —
   # with no shell to diagnose it in. The architecture-specific loader is asserted by
@@ -55,3 +62,13 @@ fileExistenceTests:
   - name: "no shell (scratch, minimal attack surface)"
     path: "/bin/sh"
     shouldExist: false
+
+fileContentTests:
+  # An empty file would satisfy the existence test above and discharge nothing; the SPA would
+  # link a blank page. Both graphs must be in there, which is what the section headings prove.
+  - name: "the notices cover both dependency graphs, not just the backend's"
+    path: "/THIRD-PARTY-NOTICES"
+    expectedContents:
+      - "THIRD-PARTY NOTICES"
+      - "Part 1 of 2"
+      - "Part 2 of 2"

@@ -804,6 +804,7 @@
       "operator": "OPERATOR"
     },
     "home": "Home",
+    "notices": "Open-source notices",
     "notifications": "Notifications",
     "railLabel": "Main",
     "search": "Search",

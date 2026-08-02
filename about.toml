@@ -1,0 +1,71 @@
+# cargo-about configuration for the backend workspace — the input to `THIRD-PARTY-NOTICES`.
+#
+# Why this file exists at all: `deny.toml`'s `[licenses] allow` list is entirely permissive, and
+# every licence on it except `CC0-1.0` and `0BSD` requires its notice text to travel with a
+# binary distribution. A published image is a binary distribution, and the attested SBOM is
+# evidence of *composition*, not a notice — it carries no licence text. So the terms of every
+# dependency ship as one generated file, beside the project's own `LICENSE`.
+#
+# Regenerate with `cargo run -p xtask -- notices` whenever `Cargo.lock` moves; CI's `notices` job
+# runs `--check` and fails on drift. That command reads this file, renders the document from
+# cargo-about's JSON output (`xtask/src/notices.rs` explains why not from a handlebars template)
+# and writes `THIRD-PARTY-NOTICES` at the repository root.
+
+# Priority order, not a set: cargo-about satisfies a dual-licensed crate with the first entry it
+# can, so `Apache-2.0 OR MIT` resolves to Apache-2.0 for the whole graph and the notices file
+# carries one text instead of two per crate.
+#
+# **This list must equal `deny.toml`'s `[licenses] allow`**, and `xtask repo-lint` holds it
+# there. A licence cargo-deny admits but this file does not accept fails generation (`--fail`)
+# rather than being omitted; one this file accepts but cargo-deny forbids would publish a notice
+# for a licence that must never enter the graph. Both directions are silent without the rule.
+accepted = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "MPL-2.0",
+    "CC0-1.0",
+    "BSL-1.0",
+    "0BSD",
+    "CDLA-Permissive-2.0",
+]
+
+# What the images actually run. Every shipped backend binary is musl-linked on one of these two
+# architectures — including `render`, which is built in the Alpine builder stage and only *runs*
+# on Debian (see `deploy/docker/Dockerfile`). Naming them drops the Windows and macOS shims that
+# `cargo metadata` reports and no image contains; notices for code that is not distributed are
+# noise in a document whose whole purpose is to be read.
+targets = [
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+]
+
+# Test-only code is never distributed, so it owes no notice: `testcontainers`, `wiremock`,
+# `proptest` and the rest reach the graph as dev-dependencies alone.
+ignore-dev-dependencies = true
+# Build dependencies are deliberately **not** ignored. A build dependency can and does put code
+# into the shipped artefact — a proc macro expands into it, `bindgen` emits bindings from it, and
+# `cmake`/`cc` compile BoringSSL's vendored C into it — and nothing in the dependency graph
+# records which of them did. Over-inclusion cannot breach an attribution obligation; omission can.
+ignore-build-dependencies = false
+
+# Workspace members are `publish = false` and carry the project's own licence, which ships as
+# `LICENSE`. Same reasoning as `deny.toml`'s `private = { ignore = true }`.
+private = { ignore = true }
+
+# cargo-about's built-in clarifications for crates whose licence files defeat machine reading.
+# Only crates actually in this graph are listed: an entry for an absent crate is silently
+# unused, so the list would otherwise only ever grow.
+workarounds = [
+    "chrono",
+    "prost",
+    "ring",
+    "rustix",
+    "rustls",
+    "tonic",
+]

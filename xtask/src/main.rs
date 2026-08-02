@@ -1,9 +1,11 @@
-//! Developer/CI entry point: migrations, seeding, OpenAPI regeneration, the offline CI gate,
-//! and the repo-invariant/config-docs/coverage checks. Run with no arguments for usage.
+//! Developer/CI entry point: migrations, seeding, `OpenAPI` and third-party-notices
+//! regeneration, the offline CI gate, and the repo-invariant/config-docs/coverage checks. Run
+//! with no arguments for usage.
 
 mod ci;
 mod config_docs;
 mod coverage;
+mod notices;
 mod repo_lint;
 
 use progenitor_impl::{GenerationSettings, Generator, InterfaceStyle, TypePatch};
@@ -42,6 +44,11 @@ async fn main() -> anyhow::Result<()> {
         return config_docs::run(workspace_root(), check);
     }
 
+    if cmd == "notices" {
+        let check = std::env::args().nth(2).as_deref() == Some("--check");
+        return notices::run(workspace_root(), check);
+    }
+
     // Shells out to `sqlx-cli`, which manages its own `DATABASE_URL` connection, so this runs
     // before the pool below is opened.
     if cmd == "sqlx-prepare" {
@@ -67,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
             eprintln!(
                 "unknown command {other:?}; usage: xtask \
                  <migrate|reset|seed|openapi [--check]|config-docs [--check]|\
-                 sqlx-prepare [--check]>"
+                 notices [--check]|sqlx-prepare [--check]>"
             );
             std::process::exit(2);
         }

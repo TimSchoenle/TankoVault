@@ -46,6 +46,14 @@ struct FrontendConfig {
     /// Directory the built SPA bundle is served from. Baked into the image at `/srv/www`.
     #[serde(default = "FrontendConfig::default_static_dir")]
     static_dir: String,
+    /// The generated third-party licence notices, served at `/third-party-notices`.
+    ///
+    /// Points at the image's own copy (`/THIRD-PARTY-NOTICES`, beside `/LICENSE`) rather than a
+    /// second one inside the bundle: it is 300-odd KB, and two copies is the arrangement where
+    /// one of them goes stale. Configurable because the path only exists inside the image — a
+    /// developer running `dx serve` and the tests point it at their own checkout.
+    #[serde(default = "FrontendConfig::default_notices_path")]
+    notices_path: String,
     /// Base origin the `/v1/*` proxy targets, e.g. `http://api:8080`. No trailing slash.
     #[serde(default = "FrontendConfig::default_api_upstream")]
     api_upstream: String,
@@ -66,6 +74,9 @@ impl FrontendConfig {
     fn default_static_dir() -> String {
         "/srv/www".to_owned()
     }
+    fn default_notices_path() -> String {
+        "/THIRD-PARTY-NOTICES".to_owned()
+    }
     fn default_api_upstream() -> String {
         "http://api:8080".to_owned()
     }
@@ -81,6 +92,7 @@ impl Default for FrontendConfig {
     fn default() -> Self {
         Self {
             static_dir: Self::default_static_dir(),
+            notices_path: Self::default_notices_path(),
             api_upstream: Self::default_api_upstream(),
             max_body_bytes: Self::default_max_body_bytes(),
             connect_timeout_secs: Self::default_connect_timeout_secs(),
@@ -160,6 +172,7 @@ async fn serve_once(
     let health = upstream_health(&state);
     let app = build_app(
         &cfg.frontend.static_dir,
+        &cfg.frontend.notices_path,
         state,
         &stack_security(&cfg.frontend),
         &metrics,
@@ -212,13 +225,14 @@ fn upstream_health(state: &AppState) -> Health {
 /// replica look unhealthy to its orchestrator.
 fn build_app(
     static_dir: &str,
+    notices_path: &str,
     state: AppState,
     security: &SecurityConfig,
     metrics: &MetricsRegistry,
     health: Health,
 ) -> Router {
     HttpStack::new(security, metrics.clone())
-        .apply(build_router(static_dir, state))
+        .apply(build_router(static_dir, notices_path, state))
         .merge(tankovault_service::ops_router(health, metrics.clone()))
 }
 
@@ -370,9 +384,16 @@ fn normalize_newlines(script: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(out)
 }
 
-/// Assemble the router: the health probe, the `/v1/*` proxy, and the static bundle (with SPA
-/// fallback and hardening headers) catching everything else.
-fn build_router(static_dir: &str, state: AppState) -> Router {
+/// Where the SPA links its third-party licence notices, and the only URL they are published at.
+///
+/// `web/frontend/src/components/nav.rs` repeats this literal — it is a separate workspace, so
+/// there is no compile-time relationship between the two — and `xtask repo-lint` is what holds
+/// them equal.
+const NOTICES_ROUTE: &str = "/third-party-notices";
+
+/// Assemble the router: the health probe, the licence notices, the `/v1/*` proxy, and the
+/// static bundle (with SPA fallback and hardening headers) catching everything else.
+fn build_router(static_dir: &str, notices_path: &str, state: AppState) -> Router {
     // SPA fallback: any path with no matching file resolves to the app shell so client-side
     // routing (`/series/…`, `/account/…`) works on a hard refresh or a deep link.
     let index = format!("{}/index.html", static_dir.trim_end_matches('/'));
@@ -416,8 +437,25 @@ fn build_router(static_dir: &str, state: AppState) -> Router {
     // `Content-Encoding` or `text/event-stream` — which is what keeps SSE flushing frame by
     // frame.
 
+    // A route of its own rather than a file dropped into the bundle, for two reasons that both
+    // end in a reader not seeing the notices: an extensionless file is served
+    // `application/octet-stream`, which downloads rather than displays under `nosniff`; and any
+    // path the bundle does not contain resolves to the app shell, so a typo'd or renamed file
+    // would answer 200 with the SPA and nothing would look wrong.
+    let notices = ServiceBuilder::new()
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; charset=utf-8"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .service(ServeFile::new(notices_path));
+
     Router::new()
         .route("/healthz", get(healthz))
+        .route_service(NOTICES_ROUTE, notices)
         .route("/v1/{*rest}", any(proxy))
         .fallback_service(static_service)
         .with_state(state)
@@ -567,7 +605,8 @@ mod tests {
         addr
     }
 
-    /// Write a minimal SPA bundle (shell + one hashed asset) to a unique temp directory.
+    /// Write a minimal SPA bundle (shell + one hashed asset + a stand-in notices file) to a
+    /// unique temp directory.
     fn write_bundle() -> PathBuf {
         static COUNTER: AtomicU32 = AtomicU32::new(0);
         let unique = format!(
@@ -579,8 +618,15 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("index.html"), SHELL).unwrap();
         std::fs::write(dir.join("app.js"), "APPJS").unwrap();
+        // Beside the bundle here only because a test needs somewhere to put it; in the image it
+        // sits at `/THIRD-PARTY-NOTICES`, outside the served directory.
+        std::fs::write(dir.join(NOTICES_FILE), NOTICES).unwrap();
         dir
     }
+
+    /// The stand-in notices document and the name [`write_bundle`] writes it under.
+    const NOTICES: &str = "THIRD-PARTY NOTICES\nApache License 2.0\n";
+    const NOTICES_FILE: &str = "THIRD-PARTY-NOTICES";
 
     /// The stand-in app shell: an inline boot script (which the CSP has to admit by hash) and
     /// an external one (which `'self'` already covers), matching the real shell's shape.
@@ -595,6 +641,21 @@ mod tests {
     /// missing (request id, ops probes) lives in the stack, so testing only the inner router
     /// would miss a regression.
     async fn spawn_frontend(static_dir: &str, upstream: SocketAddr) -> SocketAddr {
+        spawn_frontend_with_notices(
+            static_dir,
+            &format!("{static_dir}/{NOTICES_FILE}"),
+            upstream,
+        )
+        .await
+    }
+
+    /// As [`spawn_frontend`], with the notices document somewhere of the caller's choosing —
+    /// including nowhere.
+    async fn spawn_frontend_with_notices(
+        static_dir: &str,
+        notices_path: &str,
+        upstream: SocketAddr,
+    ) -> SocketAddr {
         let frontend = FrontendConfig {
             max_body_bytes: 1024 * 1024,
             ..FrontendConfig::default()
@@ -611,6 +672,7 @@ mod tests {
         let health = upstream_health(&state);
         let app = build_app(
             static_dir,
+            notices_path,
             state,
             &stack_security(&frontend),
             // No recorder: installing the process-wide Prometheus recorder twice fails, and
@@ -841,6 +903,52 @@ mod tests {
         );
         assert_eq!(response.headers().get("x-frame-options").unwrap(), "DENY");
         assert_eq!(response.text().await.unwrap(), "APPJS");
+    }
+
+    /// The obligation the whole notices artefact exists for: a reader whose browser downloads
+    /// and runs the WASM bundle has received a binary distribution, and almost every licence in
+    /// it requires its text to travel along. Serving them only inside the image would satisfy
+    /// whoever pulls the image and nobody who actually runs the code.
+    ///
+    /// `text/plain` matters as much as the 200: the file is extensionless, so left to content
+    /// sniffing it is `application/octet-stream`, which a browser downloads instead of showing.
+    #[tokio::test]
+    async fn the_licence_notices_are_served_to_the_reader_as_text() {
+        let upstream = spawn_stub_upstream().await;
+        let dir = write_bundle();
+        let front = spawn_frontend(dir.to_str().unwrap(), upstream).await;
+
+        let response = reqwest::get(format!("http://{front}{NOTICES_ROUTE}"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "text/plain; charset=utf-8"
+        );
+        assert_eq!(
+            response.headers().get("x-content-type-options").unwrap(),
+            "nosniff"
+        );
+        assert_eq!(response.text().await.unwrap(), NOTICES);
+    }
+
+    /// Pins why the notices are a route and not a file in the served bundle: every unmatched
+    /// path resolves to the app shell, so a missing or renamed notices file would answer `200`
+    /// with a page of HTML claiming to be the licence texts, and no gate would see it.
+    #[tokio::test]
+    async fn missing_notices_are_a_404_rather_than_the_app_shell() {
+        let upstream = spawn_stub_upstream().await;
+        let dir = write_bundle();
+        let front =
+            spawn_frontend_with_notices(dir.to_str().unwrap(), "./no-such-notices-file", upstream)
+                .await;
+
+        let response = reqwest::get(format!("http://{front}{NOTICES_ROUTE}"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_ne!(response.text().await.unwrap(), SHELL);
     }
 
     #[tokio::test]

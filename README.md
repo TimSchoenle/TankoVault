@@ -190,6 +190,7 @@ cargo run -p xtask -- reset           # DESTRUCTIVE: drop + recreate schema (dev
 cargo run -p xtask -- seed            # demo admin + built-in provider presets
 cargo run -p xtask -- openapi         # regenerate openapi.json + the typed api-client
 cargo run -p xtask -- sqlx-prepare    # refresh the committed sqlx offline query cache
+cargo run -p xtask -- notices         # regenerate THIRD-PARTY-NOTICES from both lockfiles
 ```
 
 ### Frontend
@@ -238,6 +239,17 @@ If you are unsure which side something falls on, open an issue and ask.
 The published images carry the same terms — a registry page does not say so, but pulling
 `ghcr.io/timschoenle/tankovault/api` to run a paid service is unlicensed. The terms ship inside
 every image at `/LICENSE`.
+
+### Third-party licences
+
+Those terms cover TankoVault's own code. The dependencies it is built from are separately
+licensed — overwhelmingly MIT, Apache-2.0 and similar — and most of them require their licence
+text to accompany a binary distribution, which an image and a WASM bundle both are.
+
+[`THIRD-PARTY-NOTICES`](THIRD-PARTY-NOTICES) is that text for both dependency graphs, generated
+from the lockfiles by `cargo run -p xtask -- notices`. It ships at `/THIRD-PARTY-NOTICES` in
+every image, and a running instance serves it at `/third-party-notices`, linked from the app's
+navigation — so the person whose browser ran the code can read the terms it came under.
 
 Contributions are welcome and are covered by the inbound terms in
 [`CONTRIBUTING.md`](CONTRIBUTING.md); read those before opening a pull request.

@@ -28,6 +28,15 @@ Dockerfile*   text eol=lf
 *.yml         text eol=lf
 *.yaml        text eol=lf
 
+# `THIRD-PARTY-NOTICES` is generated (`xtask notices`) and belongs with the artefacts at the top
+# of this file, but its attributes are declared *here*, after `* text=auto`: the last matching
+# line wins, and `eol=lf` stated above that one would be overridden by it. LF because this file
+# is copied verbatim into every image and compared by CI, so a CRLF working copy would make the
+# built layer differ by platform. Its diff is suppressed for the reason `openapi.json`'s is —
+# 300-odd KB of licence text that only ever changes because `Cargo.lock` did, and *that* diff is
+# the one worth reading.
+THIRD-PARTY-NOTICES  linguist-generated=true -diff text eol=lf
+
 # …but a fuzzing seed is an **input**, not a text file, and `text=auto` was quietly rewriting
 # some of them. `git ls-files --eol fuzz/seeds/` reported two entries as `i/lf w/crlf`
 # (`adapters_json_body/wrapped-in-pre` and its entity-escaped sibling), so the bytes libFuzzer

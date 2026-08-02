@@ -1,0 +1,36 @@
+# cargo-about configuration for the SPA — the second half of the root `THIRD-PARTY-NOTICES`.
+#
+# This workspace needs its own config because it *is* its own workspace (root `Cargo.toml`
+# `exclude`), with its own lockfile and a wasm-only dependency graph. The bundle it produces is
+# served by the `frontend` image and executes in a reader's browser, which is a binary
+# distribution like any other, so its dependencies' notices are owed too. Regenerated together
+# with the backend half by `cargo run -p xtask -- notices`, which renders both into one document.
+
+# Exactly the licences this graph resolves to today, and deliberately not a copy of the root
+# `about.toml`'s list.
+#
+# No `deny.toml` covers this workspace — `cargo deny` runs against the host workspace, which
+# excludes this crate — so nothing else gates what licence may enter the browser bundle. Keeping
+# the list to the observed set makes generation fail on the first dependency that arrives under
+# an unfamiliar one, which is the only place a human is currently asked. Widening it is a
+# one-line decision plus a regenerate; the point is that it is a decision.
+accepted = [
+    "Apache-2.0",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+    "MPL-2.0",
+    "CC0-1.0",
+]
+
+# `dx` builds this crate for one target and one only.
+targets = ["wasm32-unknown-unknown"]
+
+ignore-dev-dependencies = true
+# Included for the reason the root config gives: a proc macro's output is part of the bundle.
+ignore-build-dependencies = false
+private = { ignore = true }
+
+# Only the built-ins whose crates are in this graph; `ring`/`rustls` are absent because the SPA's
+# `reqwest` talks through the browser's fetch and links no TLS stack of its own.
+workarounds = ["chrono"]

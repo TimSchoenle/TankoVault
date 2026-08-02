@@ -78,6 +78,7 @@ jobs:
       rust: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.rust == 'true' }}
       frontend: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.frontend == 'true' }}
       docker: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.docker == 'true' }}
+      notices: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.notices == 'true' }}
       observability: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.observability == 'true' }}
     steps:
       - name: Harden Runner
@@ -176,6 +177,17 @@ jobs:
               - 'web/frontend/**'
               - 'crates/api-client/**'
               - 'openapi.json'
+            # Everything `THIRD-PARTY-NOTICES` is a function of. Both lockfiles, because the
+            # document covers both dependency graphs, and the artefact itself, so a hand-edit of
+            # generated licence text is caught by the job that would have overwritten it.
+            notices:
+              - *workflows
+              - 'about.toml'
+              - 'web/frontend/about.toml'
+              - 'Cargo.lock'
+              - 'web/frontend/Cargo.lock'
+              - 'THIRD-PARTY-NOTICES'
+              - 'xtask/**'
             docker:
               - *rust
               - 'deploy/docker/**'
@@ -745,6 +757,54 @@ jobs:
           # the subcommand.
           command-arguments: -D unnecessary-skip
 
+  # `cargo-deny` above decides which licences may enter the graph. This decides whether their
+  # terms actually ship: `THIRD-PARTY-NOTICES` is committed, copied into every image beside
+  # `/LICENSE`, and served to readers at `/third-party-notices` — so a lockfile change that adds
+  # a crate and leaves the document behind publishes a binary distribution whose notices are
+  # incomplete, and nothing else would say so.
+  #
+  # Not part of `xtask ci`: that gate is deliberately cargo-and-rustfmt-only, and folding this in
+  # would make `cargo-about` a prerequisite for every developer running it.
+  notices:
+    name: third-party notices
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [changes]
+    if: needs.changes.outputs.notices == 'true'
+    permissions:
+      contents: read # to check out the code
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+        with:
+          toolchain: ${{ needs.changes.outputs.toolchain }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: taiki-e/install-action@6a1bd70eaac3c8bdf093356838d7ee09fda951cf # v2.85.5
+        with:
+          tool: cargo-about
+
+      # Generation runs `--frozen`, which is what makes the artefact reproducible — but offline
+      # means the licence *files* have to already be on disk, and they live in the extracted
+      # crate sources. `cargo fetch` unpacks them; without this the run would harvest nothing and
+      # report drift that does not exist. Both graphs, because `web/frontend` is its own
+      # workspace with its own lockfile.
+      - name: fetch both dependency graphs
+        run: |
+          cargo fetch --locked
+          cargo fetch --locked --manifest-path web/frontend/Cargo.toml
+
+      - name: notices drift
+        run: cargo run -p xtask -- notices --check
+
   audit:
     name: cargo-audit
     runs-on: ubuntu-latest
@@ -1229,6 +1289,7 @@ jobs:
       - coverage
       - mutants
       - deny
+      - notices
       - audit
       - supply-chain
       - observability

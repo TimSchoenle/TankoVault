@@ -22,6 +22,9 @@ secrecy = { workspace = true }
 tankovault-api = { path = "../services/api" }
 tokio = { workspace = true }
 anyhow = { workspace = true }
+# `notices` parses `cargo about generate --format json`; the derive is on structs that name only
+# the four fields of that output this repository's notices document actually needs.
+serde = { workspace = true }
 serde_json = { workspace = true }
 progenitor-impl = { workspace = true }
 openapiv3 = "2.2.0"

@@ -57,6 +57,12 @@ docs/
 # runtime stage in deploy/docker/Dockerfile COPYs it to /LICENSE, which it can
 # only do if the file is in the build context. The image contracts under
 # deploy/docker/cst/ assert it is there.
+#
+# `THIRD-PARTY-NOTICES` travels with it, for the dependencies' terms rather than
+# ours, and is why that file has no extension: `**/*.md` above is a whole-suffix
+# exclusion, so a `.md` copy would leave the context and every runtime stage's
+# COPY would fail — at the end of a ten-minute build. Regenerate it with
+# `cargo run -p xtask -- notices`.
 
 # ---------------------------------------------------------------------------
 # Local env & secrets (never bake these into an image)

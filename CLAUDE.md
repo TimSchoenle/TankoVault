@@ -33,7 +33,8 @@ Regeneration is the exception and stays mandatory, because the artefacts are com
 hand-editing them is banned (rule 6): OpenAPI surface changed → `cargo run -p xtask -- openapi`;
 a `query!`/`query_as!` changed → `cargo run -p xtask -- sqlx-prepare` against a migrated
 database; config surface changed → update `docs/CONFIGURATION.md` (`cargo run -p xtask --
-config-docs` prints the current surface). The gates check these, they do not fix them.
+config-docs` prints the current surface); either `Cargo.lock` moved → `cargo run -p xtask --
+notices`, which needs `cargo-about` installed. The gates check these, they do not fix them.
 
 ## Nine rules you will otherwise break
 
@@ -53,8 +54,8 @@ config-docs` prints the current surface). The gates check these, they do not fix
    trimming, keep the sentence that carries the risk and drop the narration around it.
 5. **Do not simplify a test you do not understand.** If its doc comment describes a bug, it is
    there to stop that bug returning.
-6. **Never hand-edit generated files** — `openapi.json`, `crates/api-client/src/lib.rs`. Run
-   `cargo run -p xtask -- openapi`.
+6. **Never hand-edit generated files** — `openapi.json`, `crates/api-client/src/lib.rs`,
+   `THIRD-PARTY-NOTICES`. Run `cargo run -p xtask -- openapi` / `-- notices`.
 7. **`web/frontend` is a separate workspace and inherits nothing** — not lints, not `clippy.toml`.
    A frontend URL and the API struct behind it have no compile-time relationship; `openapi.json`
    is the only connector.

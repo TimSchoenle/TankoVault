@@ -109,6 +109,15 @@ fifteen minutes — expected, not a hang. `docker rm -f tankovault-test-postgres
 generated. Change a handler's `#[utoipa::path]` or a `crates/contracts` type and run
 `cargo run -p xtask -- openapi`; `--check` is a CI gate. Never edit either by hand.
 
+**Third-party notices.** `THIRD-PARTY-NOTICES` is generated too, from both lockfiles — the
+backend workspace's and `web/frontend`'s. Add or bump a dependency and run
+`cargo run -p xtask -- notices` (`cargo install cargo-about --locked` first); `--check` is the CI
+`notices` job. It is not a formality: the images are a binary distribution and the SPA is another
+one, and nearly every licence `deny.toml` admits requires its text to travel along — which is why
+the file ships at `/THIRD-PARTY-NOTICES` in every image and is served to readers at
+`/third-party-notices`. If generation fails because a crate's licence is unaccepted, that is a
+decision to make in `about.toml`, not a build error to work around.
+
 **Configuration.** `docs/CONFIGURATION.md` is the surface — every `TANKOVAULT_*` key, its default,
 and which services read it. Add, rename or retire a field and the document has to follow: a test
 derives the surface from the config structs and the `std::env::var` call sites and fails on a

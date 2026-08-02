@@ -43,8 +43,8 @@ The short list. Everything else in this document is elaboration.
 3. **Suppress with `#[expect(…, reason = "…")]`, never `#[allow]`.** [§3.4](#34-suppressions)
 4. **A secret published in this repository must be refused by the code that reads it.** [§2.2](#22-secrets)
 5. **Anything fetching a URL someone else chose calls `tankovault_domain::ssrf`.** [§2.3](#23-ssrf)
-6. **Generated artefacts are generated.** Never hand-edit `openapi.json` or
-   `crates/api-client/src/lib.rs`. [§1.4](#14-generated-artefacts)
+6. **Generated artefacts are generated.** Never hand-edit `openapi.json`,
+   `crates/api-client/src/lib.rs` or `THIRD-PARTY-NOTICES`. [§1.4](#14-generated-artefacts)
 7. **A fix that could silently come back gets a test whose doc comment says what the bug was.** [§3.6](#36-tests-carry-the-story)
 8. **`cargo run -p xtask -- ci` is what a change passes before it lands** — run by the human
    pushing it, not by an agent after every edit. [§7](#7-before-you-push), [§8](#8-for-agents)
@@ -117,6 +117,17 @@ Same shape, same rule, for the SQL cache: change any `query!` *text* and run
 **[E]** `xtask config-docs --check` derives the `TANKOVAULT_*` list from the config structs and
 the `std::env::var` call sites and compares it to `docs/CONFIGURATION.md`, failing in either
 direction.
+
+`THIRD-PARTY-NOTICES` is the fourth, and the one whose input is a *lockfile* rather than code:
+move either `Cargo.lock` and run `cargo run -p xtask -- notices`. **[E]** CI's `notices` job.
+It is the dependencies' licence texts, which `deny.toml`'s permissive allow list obliges a binary
+distribution to carry — so it ships at `/THIRD-PARTY-NOTICES` in every image beside `/LICENSE`,
+and is served to readers at `/third-party-notices`. Generation is `--frozen`: no network, and the
+document is a pure function of the two lockfiles and the two `about.toml`s.
+
+Why it is not in `xtask ci` when the other three are: that gate needs nothing but cargo and
+rustfmt, and this one needs `cargo-about` installed. Keeping the promise is worth the separate
+job.
 
 ---
 
@@ -388,11 +399,12 @@ Everything that can fail, what owns it, and how to run it.
 | pedantic lints, `expect`-not-`allow`, `# Errors`/`# Panics` | `[workspace.lints]` | `cargo clippy --workspace --all-targets --all-features -- -D warnings` |
 | banned calls and macros (backend) | `clippy.toml` | as above |
 | banned calls and macros (frontend, incl. `eval`) | `web/frontend/clippy.toml` | `cd web/frontend && cargo clippy --all-targets -- -D warnings` |
-| CSP grants no `'unsafe-eval'`; shell is same-origin; no `dangerous_inner_html`; published secrets are refused; the Dockerfile ships every workspace binary; the deploy blacklist is honoured | `xtask repo-lint` | `cargo run -p xtask -- repo-lint` |
+| CSP grants no `'unsafe-eval'`; shell is same-origin; no `dangerous_inner_html`; published secrets are refused; the Dockerfile ships every workspace binary; the deploy blacklist is honoured; the notices config matches `deny.toml`; the SPA's notices link matches the served route | `xtask repo-lint` | `cargo run -p xtask -- repo-lint` |
 | intra-doc links | `[workspace.lints.rustdoc]` | `cargo doc --workspace --no-deps --all-features` |
 | OpenAPI + generated client are current | `xtask openapi --check` | `cargo run -p xtask -- openapi --check` |
 | `docs/CONFIGURATION.md` matches the config structs | `xtask config-docs --check` | `cargo run -p xtask -- config-docs --check` |
 | SQL cache is complete | `cargo sqlx prepare --check` | `cargo run -p xtask -- sqlx-prepare --check` |
+| `THIRD-PARTY-NOTICES` matches both lockfiles | `xtask notices --check` | `cargo run -p xtask -- notices --check` |
 | licences, advisories, duplicate-version budget, banned crates | `deny.toml` | `cargo deny check` |
 | secrets in history | gitleaks | CI `secrets` job |
 | coverage floor | `xtask coverage-ratchet` | CI `coverage` job |
@@ -442,7 +454,7 @@ Prefer the highest row that fits. A unit test beats a text scan; a compiler erro
 
 ### 6.3 Writing a `repo-lint` rule
 
-`xtask/src/repo_lint.rs`. Requirements, all of which the existing five meet:
+`xtask/src/repo_lint.rs`. Requirements, all of which the existing eight meet:
 
 1. **A doc comment saying what breaks if the rule is absent** — ideally the incident.
 2. **A test proving it fires.** A rule only ever seen green is indistinguishable from one whose
@@ -502,9 +514,10 @@ without having read it.
   (`cargo test -p <crate> <test_name>`), not the suite around it. §7 is what the *human* runs
   before pushing; a full pass rebuilds two workspaces and both test suites, and deciding to
   spend that is theirs, not yours.
-- **Regeneration is not part of that exemption.** `xtask openapi`, `xtask sqlx-prepare` and
-  `docs/CONFIGURATION.md` still get updated when you change the surface behind them, because
-  the artefacts are committed and rule 6 bans hand-editing them.
+- **Regeneration is not part of that exemption.** `xtask openapi`, `xtask sqlx-prepare`,
+  `xtask notices` (whenever either `Cargo.lock` moves) and `docs/CONFIGURATION.md` still get
+  updated when you change the surface behind them, because the artefacts are committed and
+  rule 6 bans hand-editing them.
 - **When a gate fails, read the rule's doc comment before changing the rule.** Every rule in
   `repo_lint.rs` and both `clippy.toml` files carries its reason inline.
 - **Report honestly, and report the scope.** If a suite fails, say so with the output. If you

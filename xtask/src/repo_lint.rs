@@ -22,17 +22,19 @@ struct Finding {
 /// so one invocation reports the whole set.
 pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     let mut findings = Vec::new();
-    // The three below read one specific, required artefact each; a missing one is a broken
-    // checkout, not a clean bill of health, so those three return `Result` and stop the run.
+    // Every rule below the first two reads one specific, required artefact; a missing one is a
+    // broken checkout, not a clean bill of health, so those return `Result` and stop the run.
     findings.extend(no_unsafe_eval(root));
     findings.extend(no_dangerous_inner_html(root));
     findings.extend(shell_loads_nothing_off_origin(root)?);
     findings.extend(published_secrets_are_refused(root)?);
     findings.extend(dockerfile_ships_every_workspace_binary(root)?);
     findings.extend(deploy_blacklist_is_honoured(root)?);
+    findings.extend(notices_accept_every_allowed_licence(root)?);
+    findings.extend(the_notices_url_is_the_one_the_server_publishes(root)?);
 
     if findings.is_empty() {
-        println!("repo-lint: 6 rules, no violations");
+        println!("repo-lint: 8 rules, no violations");
         return Ok(());
     }
 
@@ -389,6 +391,205 @@ fn deploy_blacklist_is_honoured(root: &Path) -> anyhow::Result<Vec<Finding>> {
         );
     }
     Ok(findings)
+}
+
+/// **Every licence `cargo-deny` admits must be one the notices generator accepts, and vice
+/// versa.** `deny.toml`'s `[licenses] allow` decides what may enter the dependency graph;
+/// `about.toml`'s `accepted` decides which licence each crate's notice is published under in
+/// `THIRD-PARTY-NOTICES`. Nothing connects the two lists, and each direction of drift fails
+/// differently: a licence cargo-deny admits but the generator does not accept stops generation
+/// dead with `--fail` (loud, but only in the job that regenerates), while one the generator
+/// accepts and cargo-deny forbids is a standing invitation to publish a notice for terms that
+/// must never be in the graph at all — the GPL-3.0 note in `deny.toml` is exactly that hazard,
+/// and it is silent.
+///
+/// `web/frontend/about.toml` is deliberately *not* held to this: no `deny.toml` covers that
+/// workspace, so its shorter list is the only licence gate the browser bundle has, and widening
+/// it to match this one would retire the gate.
+fn notices_accept_every_allowed_licence(root: &Path) -> anyhow::Result<Vec<Finding>> {
+    const RULE: &str = "notices-accept-every-allowed-licence";
+
+    let deny = root.join("deny.toml");
+    let about = root.join("about.toml");
+    let (Ok(deny_text), Ok(about_text)) = (
+        std::fs::read_to_string(&deny),
+        std::fs::read_to_string(&about),
+    ) else {
+        anyhow::bail!(
+            "repo-lint: cannot read {} and {}",
+            deny.display(),
+            about.display()
+        );
+    };
+
+    let Some((allow_line, allowed)) = toml_string_array(&deny_text, "[licenses]", "allow") else {
+        anyhow::bail!(
+            "repo-lint: {} declares no `[licenses] allow = [...]`; an absent list is not an \
+             empty one — cargo-deny would admit nothing",
+            deny.display()
+        );
+    };
+    let Some((accepted_line, accepted)) = toml_string_array(&about_text, "", "accepted") else {
+        anyhow::bail!(
+            "repo-lint: {} declares no `accepted = [...]`; the notices generator would satisfy \
+             no crate at all",
+            about.display()
+        );
+    };
+
+    let mut findings = Vec::new();
+    for licence in &allowed {
+        if !accepted.contains(licence) {
+            findings.push(Finding {
+                rule: RULE,
+                file: about.clone(),
+                line: accepted_line,
+                detail: format!(
+                    "`deny.toml` admits `{licence}` into the graph and this list does not \
+                     accept it — `xtask notices` fails on the first crate that uses it"
+                ),
+            });
+        }
+    }
+    for licence in &accepted {
+        if !allowed.contains(licence) {
+            findings.push(Finding {
+                rule: RULE,
+                file: deny.clone(),
+                line: allow_line,
+                detail: format!(
+                    "`about.toml` accepts `{licence}`, which this list forbids — either it \
+                     belongs in the graph and belongs here, or it does not and must not be \
+                     publishable as a notice"
+                ),
+            });
+        }
+    }
+    Ok(findings)
+}
+
+/// **The URL the SPA links its notices at must be the one the frontend service publishes
+/// them at.** `web/frontend` is a separate workspace, so the two `NOTICES_ROUTE` literals have
+/// no compile-time relationship. Getting them out of step does not 404: every unmatched path on
+/// that server falls back to the app shell, so a stale link answers `200` with the application
+/// itself, and the reader — who is owed those notices for the bundle their browser just ran —
+/// sees a page that looks like it worked.
+fn the_notices_url_is_the_one_the_server_publishes(root: &Path) -> anyhow::Result<Vec<Finding>> {
+    const RULE: &str = "notices-url-matches-the-route";
+    const SERVER: &str = "services/frontend/src/main.rs";
+    const SPA: &str = "web/frontend/src/components/nav.rs";
+
+    let mut routes = Vec::new();
+    for relative in [SERVER, SPA] {
+        let path = root.join(relative);
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            anyhow::bail!("repo-lint: cannot read {}", path.display());
+        };
+        let Some((line, value)) = const_str(&text, "NOTICES_ROUTE") else {
+            anyhow::bail!(
+                "repo-lint: {} declares no `const NOTICES_ROUTE: &str = \"…\"`; the notices \
+                 link and the route that serves it are held together by nothing else",
+                path.display()
+            );
+        };
+        routes.push((path, line, value));
+    }
+
+    let [
+        (server_path, server_line, server_route),
+        (spa_path, spa_line, spa_route),
+    ] = routes.as_slice()
+    else {
+        unreachable!("two files were read")
+    };
+
+    if server_route == spa_route {
+        return Ok(Vec::new());
+    }
+    Ok(vec![
+        Finding {
+            rule: RULE,
+            file: spa_path.clone(),
+            line: *spa_line,
+            detail: format!(
+                "the SPA links `{spa_route}` but the server publishes `{server_route}` \
+                 ({SERVER}:{server_line}) — the link resolves to the app shell with a 200 \
+                 rather than failing"
+            ),
+        },
+        Finding {
+            rule: RULE,
+            file: server_path.clone(),
+            line: *server_line,
+            detail: format!("the other half of this disagreement is {SPA}:{spa_line}"),
+        },
+    ])
+}
+
+/// The value of a `const <name>: &str = "…";`, with its 1-based line number.
+///
+/// Split out so the parse can be tested without a filesystem. Deliberately anchored on `const`:
+/// a `let` or a doc comment mentioning the name is not the declaration.
+fn const_str(source: &str, name: &str) -> Option<(usize, String)> {
+    for (index, line) in source.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if is_comment(trimmed) {
+            continue;
+        }
+        let Some(rest) = trimmed.strip_prefix("const ") else {
+            continue;
+        };
+        let Some(rest) = rest.strip_prefix(name) else {
+            continue;
+        };
+        let Some((_, value)) = rest.split_once('=') else {
+            continue;
+        };
+        let value = value.trim().trim_end_matches(';').trim();
+        return Some((index + 1, value.trim_matches('"').to_owned()));
+    }
+    None
+}
+
+/// The entries of a `<key> = [ "…", "…" ]` array in `table`, with the key's 1-based line number.
+///
+/// A line-based read of one known table, like the rest of this module. `table` is the header the
+/// key must sit under (`""` for a top-level key), which is what keeps `[licenses] allow` from
+/// being confused with `[bans] allow-wildcard-paths` or `[sources] allow-registry`.
+fn toml_string_array(text: &str, table: &str, key: &str) -> Option<(usize, Vec<String>)> {
+    let mut in_table = table.is_empty();
+    let mut collecting = None;
+    let mut entries = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let trimmed = line.trim();
+        if is_comment(trimmed) {
+            continue;
+        }
+        if collecting.is_none() && trimmed.starts_with('[') {
+            in_table = trimmed.starts_with(table) && !table.is_empty();
+            continue;
+        }
+        if collecting.is_none() {
+            let is_key = in_table
+                && trimmed
+                    .strip_prefix(key)
+                    .is_some_and(|rest| rest.trim_start().starts_with('='));
+            if is_key && trimmed.ends_with('[') {
+                collecting = Some(index + 1);
+            }
+            continue;
+        }
+        if trimmed.starts_with(']') {
+            return collecting.map(|line| (line, entries));
+        }
+        entries.extend(
+            trimmed
+                .split(',')
+                .map(|entry| entry.trim().trim_matches('"').to_owned())
+                .filter(|entry| !entry.is_empty()),
+        );
+    }
+    None
 }
 
 /// The `SERVICE_BINS` value from a Dockerfile, with its 1-based line number.
@@ -843,6 +1044,155 @@ mod tests {
 
         // A name no runtime stage could copy, in either kind of matrix.
         assert_eq!(publish(&["api", "render", "typo"]).len(), 1);
+    }
+
+    /// The array read has to be scoped to its table: `deny.toml` carries three keys beginning
+    /// `allow`, in three tables, and picking the wrong one would compare the notices config
+    /// against a list of registries.
+    #[test]
+    fn a_toml_array_is_read_from_its_own_table_only() {
+        let deny = "[licenses]\n\
+             version = 2\n\
+             # allow = [\"GPL-3.0\"]\n\
+             allow = [\n\
+             \x20   \"MIT\",\n\
+             \x20   # a comment between entries\n\
+             \x20   \"Apache-2.0\",\n\
+             ]\n\
+             \n\
+             [bans]\n\
+             allow-wildcard-paths = true\n\
+             deny = [\n\
+             \x20   \"openssl\",\n\
+             ]\n";
+        let (line, entries) = toml_string_array(deny, "[licenses]", "allow").expect("the list");
+        assert_eq!(line, 4, "the commented decoy on line 3 is not the key");
+        assert_eq!(entries, ["MIT", "Apache-2.0"]);
+
+        // `[bans] deny` is a list of crates, not licences: asking for it under `[licenses]`
+        // must find nothing rather than the wrong array.
+        assert!(toml_string_array(deny, "[licenses]", "deny").is_none());
+        // A top-level key (`about.toml` has no tables at all) is `""`.
+        assert_eq!(
+            toml_string_array("accepted = [\n    \"MIT\",\n]\n", "", "accepted"),
+            Some((1, vec!["MIT".to_owned()]))
+        );
+    }
+
+    /// Both directions of the licence-list rule. The dangerous one is the second: a licence the
+    /// notices generator accepts and `deny.toml` forbids publishes terms for something that
+    /// must never be in the graph, and nothing else in the repository would say so.
+    #[test]
+    fn the_licence_lists_are_compared_in_both_directions() {
+        let root = tempdir("licences");
+        let write = |name: &str, body: &str| std::fs::write(root.join(name), body).unwrap();
+
+        write(
+            "deny.toml",
+            "[licenses]\nallow = [\n    \"MIT\",\n    \"MPL-2.0\",\n]\n",
+        );
+        write(
+            "about.toml",
+            "accepted = [\n    \"MIT\",\n    \"MPL-2.0\",\n]\n",
+        );
+        assert!(
+            notices_accept_every_allowed_licence(&root)
+                .unwrap()
+                .is_empty(),
+            "equal lists are the passing case"
+        );
+
+        // Admitted into the graph, unknown to the generator: `xtask notices` dies on the first
+        // crate that uses it.
+        write("about.toml", "accepted = [\n    \"MIT\",\n]\n");
+        let missing = notices_accept_every_allowed_licence(&root).unwrap();
+        assert_eq!(missing.len(), 1);
+        assert!(
+            missing[0].detail.contains("MPL-2.0"),
+            "{}",
+            missing[0].detail
+        );
+
+        // Accepted by the generator, forbidden in the graph.
+        write(
+            "about.toml",
+            "accepted = [\n    \"MIT\",\n    \"MPL-2.0\",\n    \"GPL-3.0\",\n]\n",
+        );
+        let extra = notices_accept_every_allowed_licence(&root).unwrap();
+        assert_eq!(extra.len(), 1);
+        assert!(extra[0].detail.contains("GPL-3.0"), "{}", extra[0].detail);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// The `const NOTICES_ROUTE` parse, including the two shapes that must not be mistaken for
+    /// the declaration.
+    #[test]
+    fn the_notices_route_is_read_off_its_const() {
+        let source = "//! const NOTICES_ROUTE: &str = \"/decoy\";\n\
+             use axum::Router;\n\
+             \n\
+             const NOTICES_ROUTE: &str = \"/third-party-notices\";\n";
+        assert_eq!(
+            const_str(source, "NOTICES_ROUTE"),
+            Some((4, "/third-party-notices".to_owned()))
+        );
+        assert_eq!(
+            const_str("let NOTICES_ROUTE = \"/x\";\n", "NOTICES_ROUTE"),
+            None
+        );
+        assert_eq!(
+            const_str("const NOTICES: &str = \"x\";\n", "NOTICES_ROUTE"),
+            None
+        );
+    }
+
+    /// Proves the URL rule fires. It has to be proved rather than observed green, because the
+    /// failure it guards against is itself invisible: the server answers every unmatched path
+    /// with the app shell, so a stale link returns 200 and a page.
+    #[test]
+    fn a_stale_notices_link_is_a_violation() {
+        let root = tempdir("notices-url");
+        let server = root.join("services/frontend/src");
+        let spa = root.join("web/frontend/src/components");
+        std::fs::create_dir_all(&server).unwrap();
+        std::fs::create_dir_all(&spa).unwrap();
+        let write = |dir: &Path, name: &str, route: &str| {
+            std::fs::write(
+                dir.join(name),
+                format!("const NOTICES_ROUTE: &str = \"{route}\";\n"),
+            )
+            .unwrap();
+        };
+
+        write(&server, "main.rs", "/third-party-notices");
+        write(&spa, "nav.rs", "/third-party-notices");
+        assert!(
+            the_notices_url_is_the_one_the_server_publishes(&root)
+                .unwrap()
+                .is_empty()
+        );
+
+        write(&spa, "nav.rs", "/licenses");
+        let findings = the_notices_url_is_the_one_the_server_publishes(&root).unwrap();
+        // Both halves are reported: either file could be the one that moved.
+        assert_eq!(findings.len(), 2);
+        assert!(findings[0].detail.contains("/licenses"));
+        assert!(findings[0].detail.contains("/third-party-notices"));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// A unique scratch directory for the two rules above, which read real paths.
+    fn tempdir(purpose: &str) -> PathBuf {
+        static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let unique = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "tankovault-repo-lint-{purpose}-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
     }
 
     /// The rules must pass against the tree they ship with. A rule that has never been run

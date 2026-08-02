@@ -7151,6 +7151,7 @@ dependencies = [
  "progenitor-impl",
  "proptest",
  "secrecy",
+ "serde",
  "serde_json",
  "syn 3.0.3",
  "tankovault-api",

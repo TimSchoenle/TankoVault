@@ -14,10 +14,11 @@ path = "src/main.rs"
 [dependencies]
 tankovault-db = { workspace = true }
 tankovault-domain = { workspace = true }
-tankovault-auth = { workspace = true }
-# The seed step hashes an admin password and `connect` takes a wrapped DSN.
+# The install steps themselves: shared with the shipped `bootstrap` image rather than
+# reimplemented, so "the first admin holds every permission" has one definition.
+tankovault-bootstrap = { workspace = true }
+# `connect` takes a wrapped DSN, and the seed hands the hasher a wrapped password and pepper.
 secrecy = { workspace = true }
-tankovault-adapters = { workspace = true }
 tankovault-api = { path = "../services/api" }
 tokio = { workspace = true }
 anyhow = { workspace = true }

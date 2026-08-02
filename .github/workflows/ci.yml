@@ -105,13 +105,16 @@ jobs:
           echo "full=$full" >> "$GITHUB_OUTPUT"
           echo "::notice::full run: $full (event: $EVENT)"
 
-          # Narrowed on pull requests: seven of the eight images are the same Dockerfile path with
-          # a different `BIN`, and `render` is the only one with its own runtime stage. All eight
-          # build on `main` and on the weekly run, so nothing ships unbuilt.
+          # Narrowed on pull requests: seven of the eight images are the same Dockerfile path
+          # with a different `BIN`, and `render` is the only one with its own runtime stage. All
+          # eight build on `main` and on the weekly run, so nothing ships unbuilt. `xtask` is not
+          # among them: the deploy blacklist (`[workspace.metadata.deploy.exclude]`, root
+          # `Cargo.toml`) keeps it out of every registry, and `repo-lint` fails if it appears
+          # here. The install steps a deployment runs are in `bootstrap`, which does ship.
           if [ "$EVENT" = "pull_request" ] && [ "$full" != "true" ]; then
             echo 'images=["api","render"]' >> "$GITHUB_OUTPUT"
           else
-            echo 'images=["api","worker","control-plane","notifier","sync","challenge-solver","render","xtask"]' >> "$GITHUB_OUTPUT"
+            echo 'images=["api","bootstrap","worker","control-plane","notifier","sync","challenge-solver","render"]' >> "$GITHUB_OUTPUT"
           fi
 
       # The only place that reads these manifests. It fails loudly rather than defaulting: a silent

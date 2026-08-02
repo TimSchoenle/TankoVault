@@ -89,15 +89,19 @@ services:
     shm_size: 1gb
     deploy: { resources: { limits: { memory: 2g } } }
 
-  # ---- Schema migrations + demo seed (runs once, then exits) -------------------------
+  # ---- Install steps (each runs once, then exits) ------------------------------------
+  # The `bootstrap` image, not `xtask`: these are the same steps a cluster runs, so the local
+  # stack exercises the artefact that ships rather than a task runner that never leaves the
+  # repository. `xtask migrate`/`xtask seed` still do this against a developer's own database
+  # and call the same implementation (`services/bootstrap`).
   migrate:
     build:
       <<: *build
-      args: { BIN: xtask }
+      args: { BIN: bootstrap }
     command: ["migrate"]
     <<: *hardening
     environment:
-      DATABASE_URL: *db-url
+      TANKOVAULT_DATABASE__URL: *db-url
     depends_on:
       postgres: { condition: service_healthy }
     restart: "no"
@@ -105,14 +109,27 @@ services:
   seed:
     build:
       <<: *build
-      args: { BIN: xtask }
-    command: ["seed"]
+      args: { BIN: bootstrap }
+    command: ["seed-admin"]
     <<: *hardening
     environment:
-      DATABASE_URL: *db-url
+      TANKOVAULT_DATABASE__URL: *db-url
       # Required: `changeme12345` is published here, so it is not a password.
       TANKOVAULT_SEED_ADMIN_PASSWORD: "${TANKOVAULT_SEED_ADMIN_PASSWORD:?set it in deploy/local.env — see deploy/local.env.example}"
+      # Must be the value the api runs with, or the account it creates can never log in.
       TANKOVAULT_AUTH__PASSWORD_PEPPER: "${TANKOVAULT_AUTH__PASSWORD_PEPPER:-}"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    restart: "no"
+
+  seed-providers:
+    build:
+      <<: *build
+      args: { BIN: bootstrap }
+    command: ["seed-providers"]
+    <<: *hardening
+    environment:
+      TANKOVAULT_DATABASE__URL: *db-url
     depends_on:
       migrate: { condition: service_completed_successfully }
     restart: "no"

@@ -1,0 +1,33 @@
+[package]
+name = "tankovault-bootstrap"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "One-shot installation steps: apply migrations, provision the first administrator, install the built-in provider presets."
+# Not published: this is a workspace-internal crate. Also what lets `cargo deny`
+# skip license-checking our own code.
+publish = false
+
+[[bin]]
+name = "bootstrap"
+path = "src/main.rs"
+
+[lib]
+name = "tankovault_bootstrap"
+path = "src/lib.rs"
+
+[dependencies]
+tankovault-config = { workspace = true }
+tankovault-db = { workspace = true }
+tankovault-domain = { workspace = true }
+# The admin step hashes a password; `connect` and the seed both take wrapped secrets.
+tankovault-auth = { workspace = true }
+secrecy = { workspace = true }
+tankovault-adapters = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+anyhow = { workspace = true }
+
+[lints]
+workspace = true

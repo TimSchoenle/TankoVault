@@ -58,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
 
     match cmd.as_str() {
         "migrate" => {
-            tankovault_db::migrate(&pool).await?;
+            tankovault_bootstrap::migrate(&pool).await?;
             println!("migrations applied");
         }
         "reset" => reset(&pool).await?,
@@ -409,7 +409,9 @@ async fn reset(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
 }
 
 async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
-    // Idempotent: ignore if the admin already exists.
+    // Same implementation the shipped `bootstrap` image runs (`services/bootstrap`), so the
+    // permission set a developer's admin gets cannot drift from a deployment's. What differs is
+    // deliberate and local to here: the password may be defaulted, and it is echoed.
     let password = SecretString::from(
         std::env::var("TANKOVAULT_SEED_ADMIN_PASSWORD")
             .unwrap_or_else(|_| "changeme12345".to_owned()),
@@ -420,58 +422,30 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
             .unwrap_or_default()
             .into_bytes(),
     );
-    let hash = tankovault_auth::hash_password(&password, &pepper)
-        .map_err(|e| anyhow::anyhow!("hash failed: {e}"))?;
-    match tankovault_db::repo::users::create(pool, "admin@tankovault.local", "admin", &hash).await {
-        Ok(u) => {
-            // The admin is provisioned by the operator, not through the email-confirmation
-            // flow, so mark its address verified — otherwise the login gate would lock it out
-            // whenever a mailer is configured.
-            tankovault_db::repo::users::mark_email_verified(pool, u.id).await?;
-
-            // Accounts otherwise get no permissions — registration must never mint privilege.
-            // The seed is the deliberate exception: without one account holding
-            // `users.permissions`, nobody could ever grant anything. `granted_by` is `None`:
-            // the installation granted these, not another account.
-            for permission in tankovault_domain::Permission::all() {
-                tankovault_db::repo::permissions::grant(pool, u.id, *permission, None).await?;
-            }
-            // Printed on purpose: this bootstrap command's whole output is the account you can
-            // now log in with, so `expose_secret` here is deliberate.
-            println!(
-                "seeded admin user {} with all {} permissions (password: {})",
-                u.username,
-                tankovault_domain::Permission::all().len(),
-                password.expose_secret(),
-            );
-        }
-        Err(e) if e.is_unique_violation() || matches!(e, tankovault_db::DbError::Conflict(_)) => {
+    let seed = tankovault_bootstrap::AdminSeed {
+        email: "admin@tankovault.local",
+        username: "admin",
+        password: &password,
+        pepper: &pepper,
+    };
+    match tankovault_bootstrap::seed_admin(pool, &seed).await? {
+        // Printed on purpose: this command's whole output is the account you can now log in
+        // with, on a local database, so `expose_secret` here is deliberate.
+        tankovault_bootstrap::AdminOutcome::Created(username) => println!(
+            "seeded admin user {username} with all {} permissions (password: {})",
+            tankovault_domain::Permission::all().len(),
+            password.expose_secret(),
+        ),
+        tankovault_bootstrap::AdminOutcome::AlreadyPresent => {
             println!("admin user already present; skipping");
         }
-        Err(e) => return Err(e.into()),
     }
 
-    // Built-in provider presets. Operators are responsible for the legality of crawling;
-    // disable or retarget any provider via the admin console.
-    for preset in tankovault_adapters::builtin_presets() {
-        match tankovault_db::repo::providers::create(
-            pool,
-            tankovault_db::repo::providers::NewProvider {
-                slug: preset.slug.to_owned(),
-                name: preset.name.to_owned(),
-                base_url: preset.base_url.to_owned(),
-                adapter: preset.adapter,
-                config: preset.config,
-                politeness: preset.politeness,
-            },
-        )
-        .await
-        {
-            Ok(p) => println!("seeded provider '{}' ({})", p.slug, p.id),
-            Err(tankovault_db::DbError::Conflict(_)) => {
-                println!("provider '{}' already present; skipping", preset.slug);
-            }
-            Err(e) => return Err(e.into()),
+    for outcome in tankovault_bootstrap::seed_providers(pool).await? {
+        if outcome.created {
+            println!("seeded provider '{}'", outcome.slug);
+        } else {
+            println!("provider '{}' already present; skipping", outcome.slug);
         }
     }
 

@@ -1,6 +1,6 @@
 # Container-structure-test contract for every non-browser backend service image built from
 # deploy/docker/Dockerfile (target `runtime`, --build-arg BIN=<api|worker|control-plane|
-# notifier|sync|challenge-solver|xtask>). All of these binaries share the same `scratch`
+# notifier|sync|challenge-solver|bootstrap>). All of these binaries share the same `scratch`
 # runtime stage, so one contract covers the lot: the only per-binary difference is which
 # service logic the identical entrypoint runs.
 #

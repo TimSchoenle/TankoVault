@@ -65,6 +65,11 @@ const SERVICES: &[Service] = &[
         src: "services/frontend/src",
         root: "Config",
     },
+    Service {
+        name: "bootstrap",
+        src: "services/bootstrap/src",
+        root: "Config",
+    },
 ];
 
 /// Trees scanned for `std::env::var("TANKOVAULT_…")`, which bypasses the layered config.

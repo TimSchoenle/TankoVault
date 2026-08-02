@@ -5172,6 +5172,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "tankovault-bootstrap"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "secrecy",
+ "serde",
+ "tankovault-adapters",
+ "tankovault-auth",
+ "tankovault-config",
+ "tankovault-db",
+ "tankovault-domain",
+ "tokio",
+]
+
+[[package]]
 name = "tankovault-bus"
 version = "0.1.0"
 dependencies = [
@@ -6985,9 +7000,8 @@ dependencies = [
  "secrecy",
  "serde_json",
  "syn 3.0.3",
- "tankovault-adapters",
  "tankovault-api",
- "tankovault-auth",
+ "tankovault-bootstrap",
  "tankovault-db",
  "tankovault-domain",
  "tokio",

@@ -6,9 +6,13 @@ Container build and local orchestration for TankoVault (design §19).
 - `docker/Dockerfile` — **every image, from one file**: a cargo-chef-cached multi-stage build
   that compiles all nine workspace binaries in a single `cargo` invocation and then hands each
   one to a thin runtime stage. Pick a backend service with `--build-arg BIN=<name>` (`api`,
-  `worker`, `control-plane`, `notifier`, `sync`, `challenge-solver`, `render`, `xtask`). Each
-  binary is compiled natively on Alpine as a **musl binary** and shipped on a bare `scratch`
-  image (no OS, no shell, no package manager — just the binary, the musl loader and `libgcc_s`
+  `worker`, `control-plane`, `notifier`, `sync`, `challenge-solver`, `render`, `bootstrap`).
+  `xtask` builds too, but is **never published**: the deploy blacklist
+  (`[workspace.metadata.deploy.exclude]` in the root `Cargo.toml`, enforced by `xtask
+  repo-lint`) holds it back, because it is the repository's task runner and carries `reset`.
+  The install steps a deployment actually needs are the `bootstrap` image
+  ([below](#installing-into-a-cluster)). Each binary is compiled natively on
+  Alpine as a **musl binary** and shipped on a bare `scratch` image (no OS, no shell, no package manager — just the binary, the musl loader and `libgcc_s`
   it resolves, a CA trust store, and a numeric nonroot user). It is dynamically rather than
   statically linked because `wreq`'s BoringSSL build script `dlopen`s libclang, which a
   `crt-static` build script cannot do; see the Dockerfile's builder stage. Two tiers need
@@ -22,8 +26,9 @@ Container build and local orchestration for TankoVault (design §19).
     cross-build was folded into the shared Alpine builder, which had been compiling the same
     dependency graph a second time for a binary the workspace already builds.
 - `docker-compose.yml` — the full end-to-end local stack: Postgres 17, Redis 7, NATS
-  (JetStream), FlareSolverr, a one-shot `migrate`+`seed`, every backend service, and the
-  web frontend. **This is the only supported deployment shape** — see [Kubernetes](#kubernetes)
+  (JetStream), FlareSolverr, the one-shot `migrate`/`seed`/`seed-providers` steps (the
+  `bootstrap` image, so the local stack exercises the artefact a cluster runs), every backend
+  service, and the web frontend. **This is the only supported deployment shape** — see [Kubernetes](#kubernetes)
   below.
 - `docker-compose.observability.yml` — optional overlay adding Prometheus, Grafana and a blackbox
   prober over the metrics every service already emits. Opt-in by design: a plain
@@ -163,3 +168,17 @@ exposes `/health` (liveness) and `/ready` (readiness with per-dependency detail)
 port and a Prometheus scrape on an isolated `9090`, schema migration is already a discrete
 one-shot step rather than something a service does at startup, and the control-plane scheduler
 already elects a leader through Redis — so a `Deployment` with `replicas > 1` is safe there.
+
+### Installing into a cluster
+
+The one-shot steps ship as their own image, `bootstrap`, so nothing published carries a
+destructive command:
+
+| Command | When | Needs |
+|---|---|---|
+| `bootstrap migrate` | Before every rollout, as a `Job` or `initContainer`. Idempotent. | `TANKOVAULT_DATABASE__URL` |
+| `bootstrap seed-admin` | Once, at install. Creates the first administrator — the only account privilege is ever minted for, since registration confers none. Create-only: re-running changes nothing. | `TANKOVAULT_SEED_ADMIN_PASSWORD`, and `TANKOVAULT_AUTH__PASSWORD_PEPPER` **exactly as the api has it** |
+| `bootstrap seed-providers` | Once, at install, if you want the built-in provider presets. Each can be disabled or retargeted from the admin console afterwards. | `TANKOVAULT_DATABASE__URL` |
+
+Resetting the schema is deliberately not available in any published image; `xtask reset` does
+it, from a checkout, behind `TANKOVAULT_CONFIRM_RESET=1`.

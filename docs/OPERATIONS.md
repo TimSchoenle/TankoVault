@@ -514,9 +514,11 @@ consumer and stops consuming; it recovers when it is replaced.
 ### How they are applied
 
 Migration is a **discrete deploy step, not something a service does at startup.** No
-`main.rs` calls `migrate()`; the reference stack runs a one-shot `xtask migrate` container
+`main.rs` calls `migrate()`; the reference stack runs a one-shot `bootstrap migrate` container
 with `restart: "no"`, and every service gates on it with
-`condition: service_completed_successfully`.
+`condition: service_completed_successfully`. In a cluster that step is the same image as a
+`Job` or `initContainer` — `deploy/README.md` §Installing into a cluster. `xtask migrate` is
+the same code path from a checkout, for a developer's own database.
 
 Keep it that way. A startup migration in a service with `replicas: 2` is a race, and the
 usual "helpful" refactor is to add one. (`sqlx::migrate::Migrator::run` does take a Postgres

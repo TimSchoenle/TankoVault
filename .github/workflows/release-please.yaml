@@ -156,6 +156,11 @@ jobs:
   # are applied once, by the `manifest` job below, to a manifest list referencing both digests.
   # That is what makes `:v1.2.3` a single multi-architecture reference rather than whichever
   # architecture happened to push last.
+  #
+  # `xtask` is absent on purpose — it is on the deploy blacklist
+  # (`[workspace.metadata.deploy.exclude]`, root `Cargo.toml`). `xtask repo-lint` holds both
+  # matrices below to that table, so neither an addition here nor a new service that never
+  # reaches it can pass unnoticed.
   build:
     name: ${{ matrix.bin }} (${{ matrix.arch }})
     needs: [release-please, gate]
@@ -168,7 +173,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        bin: [api, worker, control-plane, notifier, sync, challenge-solver, render, xtask, frontend]
+        bin: [api, bootstrap, worker, control-plane, notifier, sync, challenge-solver, render, frontend]
         arch: [amd64, arm64]
         # `include` entries that name only `arch` are merged into every combination with that
         # arch, which is how the runner label is attached without enumerating all eighteen.
@@ -345,7 +350,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        bin: [api, worker, control-plane, notifier, sync, challenge-solver, render, xtask, frontend]
+        bin: [api, bootstrap, worker, control-plane, notifier, sync, challenge-solver, render, frontend]
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0

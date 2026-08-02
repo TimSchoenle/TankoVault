@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
 # Every TankoVault image is built from this one file. Select the target service with `--target`
 # (`runtime` default, `runtime-browser` for render, `frontend` for the SPA server) and
-# `--build-arg BIN=<api|worker|control-plane|notifier|sync|challenge-solver|render|xtask>`.
+# `--build-arg BIN=<api|worker|control-plane|notifier|sync|challenge-solver|render|bootstrap>`.
 
 ARG RUST_VERSION=1.94
 # Passed through so BuildKit can clamp layer mtimes for reproducible images; empty is fine.
@@ -46,8 +46,10 @@ RUN --mount=type=cache,id=tankovault-backend-cargo,target=/cargo,sharing=shared 
 FROM cook AS builder
 COPY . .
 # Explicit list, cross-checked against the workspace by `xtask repo-lint` so a missed `[[bin]]`
-# fails here, not in a broken image.
-ARG SERVICE_BINS="api challenge-solver control-plane frontend notifier render sync worker xtask"
+# fails here, not in a broken image. Built is not the same as published: `xtask` is here because
+# the compose stack builds an image of it for `migrate`/`seed`, but the deploy blacklist
+# (`[workspace.metadata.deploy.exclude]`, root `Cargo.toml`) keeps it out of every registry.
+ARG SERVICE_BINS="api bootstrap challenge-solver control-plane frontend notifier render sync worker xtask"
 # `from=cook,source=/app/target` seeds the mount so a cold cache (CI's is always cold) starts from
 # `cook`'s output instead of rebuilding every dependency. `sharing=locked` lets concurrent builds
 # queue on cargo's target-dir lock rather than race it. `${flags}` is unquoted so word splitting

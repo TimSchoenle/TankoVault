@@ -24,12 +24,22 @@ members = [
     "services/challenge-solver",
     "services/render",
     "services/frontend",
+    "services/bootstrap",
     "xtask",
 ]
 # `web/frontend` (Dioxus SPA, built via `dx` against `wasm32`) and `fuzz` (needs nightly, while
 # `rust-toolchain.toml` pins stable) each need a toolchain this workspace doesn't have; `fuzz`
 # carries its own toolchain file and lockfile.
 exclude = ["web/frontend", "fuzz"]
+
+# Binaries that are built into an image but must never be published as one. The compose stack
+# builds `xtask` locally for its one-shot `migrate`/`seed` services, so it stays in the
+# Dockerfile's `SERVICE_BINS`; what it must not do is reach a registry. Nothing in a workflow
+# matrix says that, so `xtask repo-lint` reads this table and holds every image matrix under
+# `.github/workflows/` to it, in both directions. The value is the reason, quoted back in the
+# finding.
+[workspace.metadata.deploy.exclude]
+xtask = "the repository's task runner, not a service: its commands (migrate, seed, reset, openapi) act on a developer's own checkout and database"
 
 [workspace.package]
 version = "0.1.0"
@@ -86,6 +96,9 @@ tankovault-auth = { path = "crates/auth" }
 tankovault-email = { path = "crates/email" }
 tankovault-matcher = { path = "crates/matcher" }
 tankovault-bus = { path = "crates/bus" }
+# A service crate, unlike the rest here: `xtask` runs the same install steps against a
+# developer's database, and the one implementation lives with the binary that ships it.
+tankovault-bootstrap = { path = "services/bootstrap" }
 # Unused by any member today — `web/frontend` is excluded and uses its own path dep — but kept
 # as the one place the crate is named, for a future host-side consumer.
 tankovault-api-client = { path = "crates/api-client" }

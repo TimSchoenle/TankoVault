@@ -12,7 +12,8 @@ TankoVault onboards a source site in one of two ways (design §7):
    by slug in [`factory.rs`](../crates/adapters/src/factory.rs).
 
 The shipped presets live in [`presets.rs`](../crates/adapters/src/presets.rs)
-(`tankovault_adapters::builtin_presets()`), seeded by `xtask seed`. Every selector below was
+(`tankovault_adapters::builtin_presets()`), installed by `bootstrap seed-providers` (or
+`xtask seed` from a checkout). Every selector below was
 derived from **live markup fetched through the solver pipeline** and is pinned by fixture
 tests, so a provider layout change fails a test rather than corrupting production data.
 

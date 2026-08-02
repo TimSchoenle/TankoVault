@@ -58,13 +58,13 @@ than one that surfaces during a deploy.
 
 | Key | Services | Failure mode if unset |
 |---|---|---|
-| `TANKOVAULT_DATABASE__URL` | api, control-plane, worker, notifier, sync | Boot fails: figment reports a missing field. Note the error names `database.url`, not the environment spelling. |
+| `TANKOVAULT_DATABASE__URL` | api, control-plane, worker, notifier, sync, bootstrap | Boot fails: figment reports a missing field. Note the error names `database.url`, not the environment spelling. |
 | `TANKOVAULT_TELEMETRY__SERVICE_NAME` | all | Boot fails. The compose file sets it per service. |
 | `TANKOVAULT_NATS__URL` | control-plane, worker, notifier | Boot fails. **Optional for `api`**, where its absence only degrades `/v1/me/stream`. |
 | `TANKOVAULT_AUTH__JWT_SECRET` | api | Boot fails. Minimum 32 characters; a known placeholder is refused **in every profile**, not just production, because the previous default is published in this repository and every session signed with it is forgeable. |
 | `TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY` | sync | Boot fails. Base64 (standard alphabet) of exactly 32 bytes — `openssl rand -base64 32`. This key seals every user's AniList access and refresh tokens at rest; the previous fallback was 32 zero bytes. |
 | `TANKOVAULT_ANILIST__CLIENT_ID` / `__CLIENT_SECRET` / `__REDIRECT_URI` | sync | Boot fails. |
-| `TANKOVAULT_SEED_ADMIN_PASSWORD` | `xtask seed` | The seed step fails. |
+| `TANKOVAULT_SEED_ADMIN_PASSWORD` | bootstrap (`seed-admin`), `xtask seed` | The step fails. **`bootstrap` has no default**; `xtask seed` falls back to `changeme12345`, which is a known placeholder the api refuses — a local convenience that cannot survive into a deployment. |
 | `TANKOVAULT_INTERNAL__TOKEN` | api, control-plane, worker, sync, render, challenge-solver | **Under `TANKOVAULT_PROFILE=production` only**, boot fails. Elsewhere its absence leaves the internal tier unauthenticated so local development stays frictionless. When present it is length-checked (≥32) in every profile. `openssl rand -hex 32`. |
 | `TANKOVAULT_SOLVER__FLARESOLVERR_ENDPOINT` | challenge-solver | Boot fails. |
 
@@ -80,7 +80,7 @@ set in a TOML file.
 | `TANKOVAULT_PROFILE` | *(unset)* | The **only** value with an effect is `production` (case-insensitive). It turns on the production safety posture: `internal.token` becomes required, and `/scalar` + the OpenAPI document default to **off**. Nothing else reads it. Setting it to `staging`, `prod` or `dev` is the same as leaving it unset — a real trap, because `prod` looks like it should work. |
 | `TANKOVAULT_CONFIG` | `config.toml` | Path to the optional TOML layer. A missing file is not an error; a *misspelled path* is therefore also not an error. |
 | `RUST_LOG` | *(unset)* | Standard `EnvFilter` syntax. When set it **replaces** `TANKOVAULT_TELEMETRY__LOG_FILTER` entirely rather than merging with it. |
-| `DATABASE_URL` | — | Required by `xtask` (`migrate`, `reset`, `seed`, `sqlx-prepare`) only. The services use `TANKOVAULT_DATABASE__URL`; these two are not interchangeable. |
+| `DATABASE_URL` | — | Required by `xtask` (`migrate`, `reset`, `seed`, `sqlx-prepare`) only. The services **and the `bootstrap` image** use `TANKOVAULT_DATABASE__URL`; these two are not interchangeable. |
 | `TANKOVAULT_CONFIRM_RESET` | *(unset)* | Must be exactly `1` for `xtask reset`, which **drops and recreates the `public` schema**. Local development only. |
 | `SQLX_OFFLINE` | *(unset)* | Build-time, not runtime: resolves sqlx's compile-time-checked queries from the committed `.sqlx/` cache instead of a live database. |
 
@@ -348,6 +348,25 @@ security-header set is API-shaped: its `Content-Security-Policy: default-src 'no
 for a JSON API and fatal for an HTML document — it blocks the WASM bundle, so the app does not
 boot. The SPA sends its own policy instead. Offering the keys anyway would only expose settings
 that silently do nothing.
+
+### `bootstrap`
+
+Not a long-running service: a one-shot image (`bootstrap <migrate|seed-admin|seed-providers>`)
+that a deployment runs before a rollout and once at install. It reads `database` and nothing
+else from the shared blocks — no telemetry, no internal token, no JWT secret; a migration job
+holding the credential that signs sessions would be privilege it never uses.
+
+| Key | Default | Notes |
+|---|---|---|
+| `TANKOVAULT_SEED_ADMIN_EMAIL` | `admin@tankovault.local` | Address of the account `seed-admin` creates. |
+| `TANKOVAULT_SEED_ADMIN_USERNAME` | `admin` | |
+| `TANKOVAULT_SEED_ADMIN_PASSWORD` | *(required)* | Section 2. Not echoed to stdout, unlike `xtask seed` — a `Job`'s logs outlive the shell that started it. |
+| `TANKOVAULT_AUTH__PASSWORD_PEPPER` | *(empty)* | **Must be the value the api runs with.** The hash is peppered at rest, so seeding with one value and serving with another leaves an account whose correct password is rejected, with nothing in the logs naming the cause. Empty under `TANKOVAULT_PROFILE=production` is refused outright. |
+
+`seed-admin` is the one place in the system where privilege is minted rather than granted:
+registration never confers a permission, so without this account nobody could grant
+`users.permissions` to anyone. Both seed steps are create-only — re-running them leaves an
+existing installation exactly as it is, so a revoked permission stays revoked.
 
 ---
 

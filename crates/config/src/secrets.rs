@@ -166,8 +166,11 @@ impl Provider for FileLayers {
 /// Entries whose name begins with `.` are skipped, and so is anything that is not a regular
 /// file. Both are what makes a Kubernetes projected `Secret` volume work: it holds a `..data`
 /// symlink pointing at a timestamped directory, plus one symlink per key. The per-key symlinks
-/// must be followed, which is why this uses `entry.metadata()` — `symlink_metadata()` would
-/// classify every real key as "not a file" and silently yield an empty layer.
+/// must be followed, which is why this uses `fs::metadata` and **not** `DirEntry::metadata()`:
+/// despite the name the latter does *not* traverse symlinks — it carries `symlink_metadata`
+/// semantics — so it classifies every real key as "not a file" and silently yields an empty
+/// layer. That is not hypothetical: it is what shipped, and every service then booted on
+/// compiled defaults and died naming the first required field it was missing.
 fn read_secrets_dir(dir: &Path) -> Result<BTreeMap<String, FileValue>, ConfigError> {
     let entries = std::fs::read_dir(dir).map_err(|e| {
         ConfigError::Source(format!(
@@ -184,12 +187,14 @@ fn read_secrets_dir(dir: &Path) -> Result<BTreeMap<String, FileValue>, ConfigErr
         if name.starts_with('.') {
             continue;
         }
-        let is_file = entry.metadata().is_ok_and(|m| m.is_file());
+        let path = entry.path();
+        // Follows symlinks; see the note above. A dangling link yields `Err` and is skipped,
+        // which is the same outcome as before for a genuinely absent target.
+        let is_file = std::fs::metadata(&path).is_ok_and(|m| m.is_file());
         if !is_file {
             continue;
         }
 
-        let path = entry.path();
         let key = key_from_name(&name, &path)?;
         values.insert(
             key,
@@ -398,6 +403,15 @@ mod tests {
         jail.directory().join("secrets")
     }
 
+    /// A symlink, as the error type `figment::Jail` closures return: it has no
+    /// `From<std::io::Error>`, and `Jail` itself can only create regular files and directories.
+    #[cfg(unix)]
+    fn symlink(target: &str, link: &std::path::Path) -> figment::error::Result<()> {
+        std::os::unix::fs::symlink(target, link).map_err(|e| {
+            figment::Error::from(format!("symlinking {} -> {target}: {e}", link.display()))
+        })
+    }
+
     #[test]
     fn a_secrets_directory_file_supplies_a_nested_key() {
         jailed(|jail| {
@@ -442,6 +456,36 @@ mod tests {
             jail.create_dir("secrets/nested")?;
             jail.create_file("secrets/auth__jwt_secret", "from-the-volume")?;
             jail.set_env("TANKOVAULT_SECRETS_DIR", secrets_dir(jail).display());
+
+            let cfg: Sample = load().map_err(|e| e.to_string()).unwrap();
+            assert_eq!(cfg.auth.jwt_secret.expose_secret(), "from-the-volume");
+            Ok(())
+        });
+    }
+
+    /// The same layout as above, built the way the kubelet actually builds it: the keys are
+    /// **symlinks** into `..data`, not regular files.
+    ///
+    /// The test above pins the volume's *names* but writes the keys as real files, and that gap
+    /// is exactly what let the symlink bug ship — it stayed green while every service in the
+    /// cluster booted on compiled defaults, because `DirEntry::metadata()` reports a symlink as
+    /// "not a file" and the whole layer came back empty. Only a real symlink reproduces it.
+    #[cfg(unix)]
+    #[test]
+    fn keys_symlinked_into_dot_data_are_read() {
+        jailed(|jail| {
+            let data = "..2026_08_02_10_00_00";
+            jail.create_dir("secrets")?;
+            jail.create_dir(format!("secrets/{data}"))?;
+            jail.create_file(
+                format!("secrets/{data}/auth__jwt_secret"),
+                "from-the-volume",
+            )?;
+
+            let dir = secrets_dir(jail);
+            symlink(data, &dir.join("..data"))?;
+            symlink("..data/auth__jwt_secret", &dir.join("auth__jwt_secret"))?;
+            jail.set_env("TANKOVAULT_SECRETS_DIR", dir.display());
 
             let cfg: Sample = load().map_err(|e| e.to_string()).unwrap();
             assert_eq!(cfg.auth.jwt_secret.expose_secret(), "from-the-volume");

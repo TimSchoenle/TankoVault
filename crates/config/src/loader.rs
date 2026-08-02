@@ -129,7 +129,10 @@ pub(crate) fn assemble() -> Result<(Figment, FileLayers), ConfigError> {
 /// expanded to every `*.toml` directly inside it, sorted by name so a `10-base.toml` /
 /// `20-overrides.toml` pair merges in the order an operator reading the mount would predict.
 /// Dot-prefixed entries are skipped for the same reason as in [`crate::secrets`]: a Kubernetes
-/// `ConfigMap` volume is a directory of symlinks beside a `..data` directory.
+/// `ConfigMap` volume is a directory of symlinks beside a `..data` directory. For that same
+/// reason the regular-file test must go through `fs::metadata`, which follows symlinks, and not
+/// `DirEntry::metadata()`, which despite the name does not — under a `ConfigMap` mount the
+/// latter rejects every fragment and yields an empty config layer.
 fn toml_layers(path: &Path) -> Result<Vec<PathBuf>, ConfigError> {
     if !path.is_dir() {
         return Ok(vec![path.to_path_buf()]);
@@ -149,10 +152,10 @@ fn toml_layers(path: &Path) -> Result<Vec<PathBuf>, ConfigError> {
         if entry.file_name().to_string_lossy().starts_with('.') {
             continue;
         }
-        if !entry.metadata().is_ok_and(|m| m.is_file()) {
+        let file = entry.path();
+        if !std::fs::metadata(&file).is_ok_and(|m| m.is_file()) {
             continue;
         }
-        let file = entry.path();
         if file
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("toml"))
@@ -251,6 +254,54 @@ mod tests {
             let cfg: Sample = load().map_err(|e| e.to_string()).unwrap();
             assert_eq!(cfg.database.url.expose_secret(), "postgres://base/tv");
             assert_eq!(cfg.database.max_connections, 40);
+            Ok(())
+        });
+    }
+
+    /// A symlink, as the error type `figment::Jail` closures return: it has no
+    /// `From<std::io::Error>`, and `Jail` itself can only create regular files and directories.
+    #[cfg(unix)]
+    #[expect(
+        clippy::result_large_err,
+        reason = "figment::Jail::expect_with fixes the closure's error type"
+    )]
+    fn symlink(target: &str, link: &std::path::Path) -> figment::error::Result<()> {
+        std::os::unix::fs::symlink(target, link).map_err(|e| {
+            figment::Error::from(format!("symlinking {} -> {target}: {e}", link.display()))
+        })
+    }
+
+    /// The same directory, built the way a `ConfigMap` volume actually is: the fragments are
+    /// **symlinks** into `..data` rather than regular files.
+    ///
+    /// The test above writes them as real files, which is why it stayed green while every
+    /// service in the cluster loaded an empty config layer — `DirEntry::metadata()` does not
+    /// traverse symlinks and rejected every fragment. Only a real symlink reproduces the mount.
+    #[cfg(unix)]
+    #[test]
+    #[expect(
+        clippy::result_large_err,
+        reason = "figment::Jail::expect_with fixes the closure's error type"
+    )]
+    fn a_configmap_volume_of_symlinked_fragments_is_merged() {
+        figment::Jail::expect_with(|jail| {
+            jail.clear_env();
+            let data = "..2026_08_02_10_00_00";
+            jail.create_dir("conf.d")?;
+            jail.create_dir(format!("conf.d/{data}"))?;
+            jail.create_file(
+                format!("conf.d/{data}/config.toml"),
+                "[database]\nurl = \"postgres://volume/tv\"\nmax_connections = 7\n",
+            )?;
+
+            let dir = jail.directory().join("conf.d");
+            symlink(data, &dir.join("..data"))?;
+            symlink("..data/config.toml", &dir.join("config.toml"))?;
+            jail.set_env("TANKOVAULT_CONFIG", dir.display());
+
+            let cfg: Sample = load().map_err(|e| e.to_string()).unwrap();
+            assert_eq!(cfg.database.url.expose_secret(), "postgres://volume/tv");
+            assert_eq!(cfg.database.max_connections, 7);
             Ok(())
         });
     }

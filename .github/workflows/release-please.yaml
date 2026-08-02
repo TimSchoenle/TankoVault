@@ -397,7 +397,6 @@ jobs:
           tags: |
             type=raw,value=${{ needs.release-please.outputs.tag_name }}
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.tag_name }}
-            type=raw,value=latest
 
       # `imagetools create` takes the tag set and the source digests and writes one manifest
       # list per tag. `metadata-action` emits every tag for both registries, and each

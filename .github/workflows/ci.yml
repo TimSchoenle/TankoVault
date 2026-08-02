@@ -47,6 +47,9 @@ env:
   # Tool versions pinned in `run:` blocks rather than a manifest. The `renovate:` comments are the
   # only thing that makes them visible to Renovate — without one, a pin is never updated.
   #
+  # Fetch this one from the GitHub release, which is the source this pin tracks. The
+  # `storage.googleapis.com/container-structure-test` mirror the install steps used to read stopped
+  # being published after v1.16.0, so every version Renovate can propose 404s there.
   # renovate: datasource=github-releases depName=GoogleContainerTools/container-structure-test
   CONTAINER_STRUCTURE_TEST_VERSION: 1.22.1
   # promtool must be the Prometheus that will evaluate the rules, so this and
@@ -1025,10 +1028,13 @@ jobs:
       # trust store, and for the render tier the absence of root plus the presence of Chromium.
       - name: install container-structure-test
         run: |
-          curl -fsSL -o container-structure-test \
-            "https://storage.googleapis.com/container-structure-test/v${CONTAINER_STRUCTURE_TEST_VERSION}/container-structure-test-linux-amd64"
-          chmod +x container-structure-test
-          sudo mv container-structure-test /usr/local/bin/container-structure-test
+          base="https://github.com/GoogleContainerTools/container-structure-test/releases/download/v${CONTAINER_STRUCTURE_TEST_VERSION}"
+          asset="container-structure-test-linux-amd64"
+          cd "$RUNNER_TEMP"
+          curl -fsSL -O "${base}/${asset}" -O "${base}/checksums.txt"
+          grep "  ${asset}$" checksums.txt | sha256sum -c -
+          chmod +x "$asset"
+          sudo mv "$asset" /usr/local/bin/container-structure-test
 
       - name: structure-test ${{ matrix.bin }} image
         env:
@@ -1108,10 +1114,13 @@ jobs:
       # arm64 binary; the config files are architecture-independent.
       - name: install container-structure-test
         run: |
-          curl -fsSL -o container-structure-test \
-            "https://storage.googleapis.com/container-structure-test/v${CONTAINER_STRUCTURE_TEST_VERSION}/container-structure-test-linux-arm64"
-          chmod +x container-structure-test
-          sudo mv container-structure-test /usr/local/bin/container-structure-test
+          base="https://github.com/GoogleContainerTools/container-structure-test/releases/download/v${CONTAINER_STRUCTURE_TEST_VERSION}"
+          asset="container-structure-test-linux-arm64"
+          cd "$RUNNER_TEMP"
+          curl -fsSL -O "${base}/${asset}" -O "${base}/checksums.txt"
+          grep "  ${asset}$" checksums.txt | sha256sum -c -
+          chmod +x "$asset"
+          sudo mv "$asset" /usr/local/bin/container-structure-test
 
       - name: structure-test ${{ matrix.bin }} image
         env:
@@ -1177,10 +1186,13 @@ jobs:
       # entrypoint, the static-dir env var, and the server binary plus built SPA bundle.
       - name: install container-structure-test
         run: |
-          curl -fsSL -o container-structure-test \
-            "https://storage.googleapis.com/container-structure-test/v${CONTAINER_STRUCTURE_TEST_VERSION}/container-structure-test-linux-amd64"
-          chmod +x container-structure-test
-          sudo mv container-structure-test /usr/local/bin/container-structure-test
+          base="https://github.com/GoogleContainerTools/container-structure-test/releases/download/v${CONTAINER_STRUCTURE_TEST_VERSION}"
+          asset="container-structure-test-linux-amd64"
+          cd "$RUNNER_TEMP"
+          curl -fsSL -O "${base}/${asset}" -O "${base}/checksums.txt"
+          grep "  ${asset}$" checksums.txt | sha256sum -c -
+          chmod +x "$asset"
+          sudo mv "$asset" /usr/local/bin/container-structure-test
 
       - name: structure-test frontend image
         run: |

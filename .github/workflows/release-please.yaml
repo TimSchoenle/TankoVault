@@ -296,10 +296,13 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
         run: |
-          curl -fsSL -o container-structure-test \
-            "https://storage.googleapis.com/container-structure-test/v${CONTAINER_STRUCTURE_TEST_VERSION}/container-structure-test-linux-${ARCH}"
-          chmod +x container-structure-test
-          sudo mv container-structure-test /usr/local/bin/container-structure-test
+          base="https://github.com/GoogleContainerTools/container-structure-test/releases/download/v${CONTAINER_STRUCTURE_TEST_VERSION}"
+          asset="container-structure-test-linux-${ARCH}"
+          cd "$RUNNER_TEMP"
+          curl -fsSL -O "${base}/${asset}" -O "${base}/checksums.txt"
+          grep "  ${asset}$" checksums.txt | sha256sum -c -
+          chmod +x "$asset"
+          sudo mv "$asset" /usr/local/bin/container-structure-test
 
       # Two configs: the image's own contract plus the musl loader assertion, whose path is the
       # one part of the contract that differs by architecture.

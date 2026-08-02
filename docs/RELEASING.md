@@ -29,7 +29,7 @@ Nine images, each a `linux/amd64` + `linux/arm64` manifest list, to **both** reg
 
 | Docker Hub | GHCR |
 | --- | --- |
-| `timschoenle/tankovault-<bin>` | `ghcr.io/<owner>/<repo>/<bin>` |
+| `timschoenle/tankovault-<bin>` | `ghcr.io/<owner>/<repo>/<bin>`, case-folded |
 
 for `<bin>` in `api`, `bootstrap`, `worker`, `control-plane`, `notifier`, `sync`,
 `challenge-solver`, `render`, `frontend`. `xtask` is **not** among them — the deploy blacklist

@@ -270,9 +270,12 @@ jobs:
             echo "target=${target}"
             echo "cst=${cst}"
             echo "dockerhub=${DOCKERHUB_NAMESPACE}/tankovault-${BIN}"
-            echo "ghcr=${GHCR_REGISTRY}/${GITHUB_REPOSITORY}/${BIN}"
+            echo "ghcr=${GHCR_REGISTRY}/${GITHUB_REPOSITORY,,}/${BIN}"
           } >> "$GITHUB_OUTPUT"
-        # `GITHUB_REPOSITORY` is lowercase already for this account; GHCR rejects uppercase.
+        # `,,` folds the case: GHCR rejects an uppercase path and `GITHUB_REPOSITORY` carries the
+        # account's own casing (`TimSchoenle/TankoVault`). Workflow expressions have no lowercase
+        # function, which is why every GHCR reference in this file reads a shell-computed output
+        # rather than `${{ github.repository }}` directly.
 
       # Clamps image layer mtimes to the commit timestamp so a rebuild of the same commit is
       # byte-identical. A step output rather than `$GITHUB_ENV`, which is a mutable channel
@@ -459,13 +462,25 @@ jobs:
           pattern: digest-${{ matrix.bin }}-*
           merge-multiple: true
 
+      # Both names resolved once, for the same reason the `build` job resolves them in a shell
+      # step: the GHCR path has to be case-folded and no expression function can do it.
+      - name: resolve image names
+        id: names
+        env:
+          BIN: ${{ matrix.bin }}
+        run: |
+          {
+            echo "dockerhub=${DOCKERHUB_NAMESPACE}/tankovault-${BIN}"
+            echo "ghcr=${GHCR_REGISTRY}/${GITHUB_REPOSITORY,,}/${BIN}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: image metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: |
-            ${{ env.DOCKERHUB_NAMESPACE }}/tankovault-${{ matrix.bin }}
-            ${{ env.GHCR_REGISTRY }}/${{ github.repository }}/${{ matrix.bin }}
+            ${{ steps.names.outputs.dockerhub }}
+            ${{ steps.names.outputs.ghcr }}
           # release-please already decided the version; `type=raw` off its tag is the single
           # source of truth. `latest` follows it because every release-please release is a real
           # semver release on the default branch.
@@ -479,8 +494,8 @@ jobs:
       # content-addressed and therefore identical in both registries.
       - name: create the manifest lists
         env:
-          DOCKERHUB_IMAGE: ${{ env.DOCKERHUB_NAMESPACE }}/tankovault-${{ matrix.bin }}
-          GHCR_IMAGE: ${{ env.GHCR_REGISTRY }}/${{ github.repository }}/${{ matrix.bin }}
+          DOCKERHUB_IMAGE: ${{ steps.names.outputs.dockerhub }}
+          GHCR_IMAGE: ${{ steps.names.outputs.ghcr }}
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           set -euo pipefail
@@ -506,8 +521,8 @@ jobs:
       - name: resolve the manifest list digests
         id: digests
         env:
-          DOCKERHUB_IMAGE: ${{ env.DOCKERHUB_NAMESPACE }}/tankovault-${{ matrix.bin }}
-          GHCR_IMAGE: ${{ env.GHCR_REGISTRY }}/${{ github.repository }}/${{ matrix.bin }}
+          DOCKERHUB_IMAGE: ${{ steps.names.outputs.dockerhub }}
+          GHCR_IMAGE: ${{ steps.names.outputs.ghcr }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
           set -euo pipefail
@@ -525,7 +540,7 @@ jobs:
       - name: SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
-          image: ${{ env.GHCR_REGISTRY }}/${{ github.repository }}/${{ matrix.bin }}:${{ needs.release-please.outputs.tag_name }}
+          image: ${{ steps.names.outputs.ghcr }}:${{ needs.release-please.outputs.tag_name }}
           format: spdx-json
           artifact-name: sbom-${{ matrix.bin }}.spdx.json
           output-file: sbom-${{ matrix.bin }}.spdx.json
@@ -546,8 +561,8 @@ jobs:
       # the list references, not only the list itself.
       - name: sign the published digests
         env:
-          DOCKERHUB_IMAGE: ${{ env.DOCKERHUB_NAMESPACE }}/tankovault-${{ matrix.bin }}
-          GHCR_IMAGE: ${{ env.GHCR_REGISTRY }}/${{ github.repository }}/${{ matrix.bin }}
+          DOCKERHUB_IMAGE: ${{ steps.names.outputs.dockerhub }}
+          GHCR_IMAGE: ${{ steps.names.outputs.ghcr }}
           DOCKERHUB_DIGEST: ${{ steps.digests.outputs.dockerhub }}
           GHCR_DIGEST: ${{ steps.digests.outputs.ghcr }}
         run: |
@@ -557,8 +572,8 @@ jobs:
 
       - name: attest the SBOM against the published digests
         env:
-          DOCKERHUB_IMAGE: ${{ env.DOCKERHUB_NAMESPACE }}/tankovault-${{ matrix.bin }}
-          GHCR_IMAGE: ${{ env.GHCR_REGISTRY }}/${{ github.repository }}/${{ matrix.bin }}
+          DOCKERHUB_IMAGE: ${{ steps.names.outputs.dockerhub }}
+          GHCR_IMAGE: ${{ steps.names.outputs.ghcr }}
           DOCKERHUB_DIGEST: ${{ steps.digests.outputs.dockerhub }}
           GHCR_DIGEST: ${{ steps.digests.outputs.ghcr }}
           SBOM: sbom-${{ matrix.bin }}.spdx.json
@@ -588,9 +603,10 @@ jobs:
         env:
           TAG: ${{ needs.release-please.outputs.tag_name }}
           DOCKERHUB_NS: ${{ env.DOCKERHUB_NAMESPACE }}
-          GHCR_PREFIX: ${{ env.GHCR_REGISTRY }}/${{ github.repository }}
           PUBLISHED: ${{ needs.manifest.result }}
         run: |
+          # Case-folded to match what was actually pushed; see the `build` job's `params` step.
+          GHCR_PREFIX="${GHCR_REGISTRY}/${GITHUB_REPOSITORY,,}"
           {
             echo "## Release ${TAG}"
             echo

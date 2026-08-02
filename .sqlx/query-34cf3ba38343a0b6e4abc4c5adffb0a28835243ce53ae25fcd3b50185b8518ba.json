@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT series_id, candidate_id FROM merge_candidates WHERE outcome = 'distinct' ORDER BY updated_at ASC LIMIT $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "merge_candidates",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "candidate_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "merge_candidates",
+            "name": "candidate_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "34cf3ba38343a0b6e4abc4c5adffb0a28835243ce53ae25fcd3b50185b8518ba"
+}

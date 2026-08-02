@@ -85,6 +85,9 @@ struct SchedulerConfig {
     /// Open queue rows re-scored per sweep, least-recently-scored first.
     #[serde(default = "default_merge_sweep_requeue")]
     merge_sweep_requeue: i64,
+    /// Previously-distinct pairs reconsidered per sweep, least-recently-scored first.
+    #[serde(default = "default_merge_sweep_recheck")]
+    merge_sweep_recheck: i64,
     /// Automatic merges permitted in a single sweep — the only bound on a destructive
     /// background action. Without it, a bad threshold or normalization rule could collapse
     /// the whole catalogue between two scheduler ticks.
@@ -100,6 +103,7 @@ impl Default for SchedulerConfig {
             merge_sweep_interval_secs: default_merge_sweep_interval(),
             merge_sweep_pairs: default_merge_sweep_pairs(),
             merge_sweep_requeue: default_merge_sweep_requeue(),
+            merge_sweep_recheck: default_merge_sweep_recheck(),
             merge_sweep_max_auto_merges: default_merge_sweep_max_auto_merges(),
         }
     }
@@ -110,6 +114,7 @@ impl SchedulerConfig {
         dedupe::SweepBudget {
             pairs: self.merge_sweep_pairs,
             requeue: self.merge_sweep_requeue,
+            recheck: self.merge_sweep_recheck,
             max_auto_merges: self.merge_sweep_max_auto_merges,
         }
     }
@@ -125,6 +130,9 @@ fn default_merge_sweep_pairs() -> i64 {
     500
 }
 fn default_merge_sweep_requeue() -> i64 {
+    250
+}
+fn default_merge_sweep_recheck() -> i64 {
     250
 }
 fn default_merge_sweep_max_auto_merges() -> i64 {

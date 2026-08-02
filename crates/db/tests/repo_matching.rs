@@ -1253,24 +1253,26 @@ const fn plain(title: &'static str) -> Seed {
 /// pair — a unique index, a dismissal, the sweep's "have I seen this?" check — could be relied on.
 #[tokio::test]
 async fn recording_a_pair_twice_refreshes_one_row_in_either_order() {
-    use tankovault_db::repo::matching::record_merge_candidate;
+    use tankovault_db::repo::matching::{QueueOutcome, record_merge_candidate};
 
     let db = TestDb::spawn().await;
     let alpha = seed::provider(&db, "alpha").create().await;
     let a = ingest(&db, alpha, &plain("Berserk"), &[1.0]).await;
     let b = ingest(&db, alpha, &plain("Vinland Saga"), &[1.0]).await;
 
-    assert!(
+    assert_eq!(
         record_merge_candidate(&db.pool, a, b, 0.7, &["near_identical"], "first")
             .await
             .expect("record"),
-        "a new pair changes the queue"
+        QueueOutcome::Added,
+        "a new pair lengthens the queue"
     );
-    assert!(
+    assert_eq!(
         record_merge_candidate(&db.pool, b, a, 0.9, &["compact_identity"], "second")
             .await
             .expect("re-record reversed"),
-        "the same pair the other way round is the same pair, and refreshing it is a change"
+        QueueOutcome::Refreshed,
+        "the same pair the other way round is the same pair, re-scored rather than added"
     );
     assert_eq!(
         merge_candidate_count(&db).await,
@@ -1296,7 +1298,7 @@ async fn recording_a_pair_twice_refreshes_one_row_in_either_order() {
 /// durable; without either, this test fails by the queue containing an open row again.
 #[tokio::test]
 async fn a_dismissed_pair_is_not_resurrected_by_a_later_observation() {
-    use tankovault_db::repo::matching::record_merge_candidate;
+    use tankovault_db::repo::matching::{QueueOutcome, record_merge_candidate};
 
     let db = TestDb::spawn().await;
     let alpha = seed::provider(&db, "alpha").create().await;
@@ -1317,10 +1319,11 @@ async fn a_dismissed_pair_is_not_resurrected_by_a_later_observation() {
             .expect("dismiss")
     );
 
-    assert!(
-        !record_merge_candidate(&db.pool, a, b, 0.95, &["compact_identity"], "seen again")
+    assert_eq!(
+        record_merge_candidate(&db.pool, a, b, 0.95, &["compact_identity"], "seen again")
             .await
             .expect("re-record after dismissal"),
+        QueueOutcome::Unchanged,
         "re-observing a dismissed pair must report that it changed nothing"
     );
     assert!(
@@ -1427,6 +1430,176 @@ async fn the_duplicate_sweep_blocks_on_alternative_titles_too() {
         pairs.contains(&(english.min(romaji), english.max(romaji))),
         "a canonical title matching another series' synonym must be shortlisted, got {pairs:?}"
     );
+}
+
+/// Attach an alternative title to a series that already exists.
+async fn add_alt_title(db: &TestDb, series_id: SeriesId, title: &str) {
+    sqlx::query("INSERT INTO series_titles (series_id, title, normalized) VALUES ($1, $2, $3)")
+        .bind(series_id.as_uuid())
+        .bind(title)
+        .bind(normalize_title(title))
+        .execute(&db.pool)
+        .await
+        .expect("insert an alternative title directly");
+}
+
+/// **Regression: one title key held by thousands of series turned the shortlist quadratic.**
+///
+/// An adapter briefly scraped a Madara summary block's *labels* into `series_titles`, so 5 509
+/// series answered to the alternative title `Status`, 5 508 to `Alternative`, and so on. Blocking
+/// is an equality and equality alone bounds nothing: six such keys are `n·(n-1)/2` pairs each,
+/// which took the live shortlist from 4 352 pairs to 15 176 110 and pushed a byte-identical
+/// duplicate to position 8.9 million of a list the sweep reads 500 of. It was therefore
+/// unreachable, permanently, while looking for all the world like a scoring problem.
+#[tokio::test]
+async fn an_over_shared_title_key_is_not_a_blocking_key() {
+    use tankovault_db::repo::matching::find_duplicate_pairs;
+
+    let db = TestDb::spawn().await;
+    // Above MAX_KEY_FANOUT (16). Every canonical title is unique, so the clique can only come
+    // from the shared alias.
+    let clique: Vec<SeriesId> = {
+        let mut ids = Vec::new();
+        for i in 0..20 {
+            let id = insert_series_directly(&db, &format!("Unrelated Work {i}")).await;
+            add_alt_title(&db, id, "Status").await;
+            ids.push(id);
+        }
+        ids
+    };
+
+    // A real duplicate hiding inside the clique: two of its members also share a title that
+    // nothing else answers to.
+    add_alt_title(&db, clique[3], "Kimi No Na Wa").await;
+    add_alt_title(&db, clique[17], "Kimi No Na Wa").await;
+    let genuine = (clique[3].min(clique[17]), clique[3].max(clique[17]));
+
+    let pairs = find_duplicate_pairs(&db.pool, 500).await.expect("pairs");
+    assert_eq!(
+        pairs,
+        vec![genuine],
+        "only the selective key may block; `Status` would contribute 190 pairs here"
+    );
+}
+
+/// **Regression: the new-pair shortlist re-offered the same prefix on every run.**
+///
+/// It is ordered by `(lo, hi)` with a `LIMIT`, and it used to exclude only pairs an operator had
+/// *resolved* — so a pair queued for review was still open, came back in the same prefix an hour
+/// later, and displaced whatever sat behind it. The prefix never turned over; the only pairs that
+/// ever left it were the handful auto-merged per run. Anything past the budget was unreachable
+/// however obvious a duplicate it was.
+#[tokio::test]
+async fn the_shortlist_does_not_re_offer_a_pair_it_has_already_recorded() {
+    use tankovault_db::repo::matching::{
+        QueueOutcome, find_duplicate_pairs, open_merge_pairs, record_merge_candidate,
+    };
+
+    let db = TestDb::spawn().await;
+    let spaced = insert_series_directly(&db, "Spy X Family").await;
+    let squashed = insert_series_directly(&db, "Spyxfamily").await;
+    let pair = (spaced.min(squashed), spaced.max(squashed));
+
+    assert_eq!(
+        find_duplicate_pairs(&db.pool, 50).await.expect("pairs"),
+        vec![pair]
+    );
+
+    assert_eq!(
+        record_merge_candidate(&db.pool, spaced, squashed, 0.8, &["near_identical"], "test")
+            .await
+            .expect("queue"),
+        QueueOutcome::Added,
+    );
+    assert!(
+        find_duplicate_pairs(&db.pool, 50)
+            .await
+            .expect("pairs")
+            .is_empty(),
+        "an open pair is the requeue path's business, not the new-pair shortlist's"
+    );
+    assert_eq!(
+        open_merge_pairs(&db.pool, 50).await.expect("open"),
+        vec![pair],
+        "and the requeue path must be the one still holding it"
+    );
+}
+
+/// A scorer's `distinct` verdict keeps the pair out of the new-pair shortlist, stays revisitable,
+/// and never overwrites an operator's dismissal.
+///
+/// **Regression: the verdict used to delete the row**, so that a later sweep could reconsider the
+/// pair — right in intent, wrong in mechanism. It also made the verdict invisible to
+/// `find_duplicate_pairs`, which re-offered the pair immediately; combined with the `LIMIT` that
+/// is how the shortlist stalled. The three properties asserted here are the ones that have to
+/// hold simultaneously, and the last is the one that a naive "just record it" would break.
+#[tokio::test]
+async fn a_distinct_verdict_is_durable_revisitable_and_yields_to_an_operator() {
+    use tankovault_db::repo::matching::{
+        QueueOutcome, distinct_merge_pairs, find_duplicate_pairs, open_merge_pairs,
+        record_distinct_pair, record_merge_candidate, suppress_pair,
+    };
+
+    let db = TestDb::spawn().await;
+    let a = insert_series_directly(&db, "Kingdom of the Wind").await;
+    let b = insert_series_directly(&db, "Kingdomofthewind").await;
+    let pair = (a.min(b), a.max(b));
+
+    // Nothing was open, so nothing was withdrawn.
+    assert!(
+        !record_distinct_pair(&db.pool, a, b, 0.4, &["near_identical"])
+            .await
+            .expect("record distinct"),
+    );
+    assert!(
+        find_duplicate_pairs(&db.pool, 50)
+            .await
+            .expect("pairs")
+            .is_empty(),
+        "durable: the shortlist must not re-offer a pair it has already judged"
+    );
+    assert!(
+        open_merge_pairs(&db.pool, 50).await.expect("open").is_empty(),
+        "and it must not reach an operator, who has nothing to decide"
+    );
+    assert_eq!(
+        distinct_merge_pairs(&db.pool, 50).await.expect("recheck"),
+        vec![pair],
+        "revisitable: the recheck rotation is where it lives now"
+    );
+
+    // Enrichment changes the evidence and the pair becomes reviewable again.
+    assert_eq!(
+        record_merge_candidate(&db.pool, a, b, 0.8, &["compact_identity"], "sweep")
+            .await
+            .expect("requeue"),
+        QueueOutcome::Reopened,
+        "a scorer-distinct row must be reopenable, and reported as lengthening the queue"
+    );
+    assert_eq!(
+        open_merge_pairs(&db.pool, 50).await.expect("open"),
+        vec![pair]
+    );
+
+    // An operator decides. That verdict outranks every later re-score.
+    let operator = seed::user(&db, "operator").create().await;
+    suppress_pair(&db.pool, a, b, Some(operator))
+        .await
+        .expect("dismiss");
+    record_distinct_pair(&db.pool, a, b, 0.4, &["near_identical"])
+        .await
+        .expect("re-judge");
+    assert!(
+        record_merge_candidate(&db.pool, a, b, 0.9, &["compact_identity"], "sweep")
+            .await
+            .is_ok_and(|outcome| outcome == QueueOutcome::Unchanged),
+        "a dismissal must survive both a re-judgement and a re-queue"
+    );
+    let outcome: String = sqlx::query_scalar("SELECT outcome FROM merge_candidates")
+        .fetch_one(&db.pool)
+        .await
+        .expect("outcome");
+    assert_eq!(outcome, "dismissed");
 }
 
 /// **Regression: a merge used to destroy four tables' worth of user data.**

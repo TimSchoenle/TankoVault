@@ -153,8 +153,17 @@ pub struct MergeSweepView {
     /// Pairs merged without asking, because a structural identity rule fired *and* the score
     /// cleared the automatic-merge threshold.
     pub auto_merged: i64,
-    /// Pairs added to, or refreshed in, the review queue.
+    /// Pairs the sweep put in the review queue that had never been there.
+    ///
+    /// Counted apart from `requeued` because only these lengthen the queue: the sweep re-scores
+    /// rows that are already open on every run, and folding those into one "queued" number
+    /// reports a queue growing by hundreds when it grew by tens. Net change in queue length is
+    /// `queued + reopened - withdrawn`.
     pub queued: i64,
+    /// Rows already open that this sweep re-scored in place. The queue is no longer for these.
+    pub requeued: i64,
+    /// Pairs the scorer had closed as distinct that enrichment has brought back into review.
+    pub reopened: i64,
     /// Open queue rows removed because re-scoring with everything now known about both series
     /// put the pair below the review floor.
     pub withdrawn: i64,

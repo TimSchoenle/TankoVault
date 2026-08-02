@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH prior AS ( SELECT resolved, outcome FROM merge_candidates WHERE series_id = LEAST($2::uuid, $3::uuid) AND candidate_id = GREATEST($2::uuid, $3::uuid) ), upsert AS ( INSERT INTO merge_candidates (id, series_id, candidate_id, score, signals, reason) VALUES ($1, LEAST($2::uuid, $3::uuid), GREATEST($2::uuid, $3::uuid), $4, $5, $6) ON CONFLICT (series_id, candidate_id) DO UPDATE SET score = EXCLUDED.score, signals = EXCLUDED.signals, reason = EXCLUDED.reason, resolved = false, outcome = NULL, resolved_by = NULL, resolved_at = NULL, updated_at = now() WHERE NOT merge_candidates.resolved OR merge_candidates.outcome = 'distinct' RETURNING 1 AS touched ) SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM prior) THEN 'added' WHEN (SELECT NOT resolved FROM prior) THEN 'refreshed' WHEN (SELECT outcome FROM prior) = 'distinct' THEN 'reopened' ELSE 'unchanged' END AS \"outcome!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "outcome!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Float4",
+        "TextArray",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8b1d6bd4b9bec59a87371b19cb5785e601526f1385963292adca2d4d02315ecf"
+}

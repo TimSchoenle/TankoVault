@@ -190,10 +190,27 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
     Ok(buckets)
 }
 
+/// What [`record_merge_candidate`] did to the review queue.
+///
+/// The distinction is not cosmetic: [`Added`](Self::Added) and [`Reopened`](Self::Reopened) each
+/// make the queue one row longer, [`Refreshed`](Self::Refreshed) leaves its length alone, and a
+/// caller reporting the three as one number tells an operator the queue grew by the count of
+/// rows it merely re-scored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueueOutcome {
+    /// The pair had no row at all. The queue is one longer.
+    Added,
+    /// An open row was re-scored in place. The queue is the same length.
+    Refreshed,
+    /// A pair the *scorer* had closed as distinct is open again. The queue is one longer.
+    Reopened,
+    /// Resolved by an operator, or already merged — left untouched.
+    Unchanged,
+}
+
 /// Record — or refresh — an operator-review merge candidate for the pair `{a, b}`.
 ///
-/// Returns whether the open queue actually changed: `false` means the pair is already resolved
-/// and was left alone.
+/// Returns which of the four things in [`QueueOutcome`] happened.
 ///
 /// # Idempotent, and durably dismissed
 ///
@@ -202,11 +219,17 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
 /// pairs, and an operator's dismissal would not be durable — a later scan could re-insert a
 /// dismissed pair as a fresh open row.
 ///
-/// The pair is stored in canonical id order and upserted against
-/// `merge_candidates_pair_key`, with the update guarded by `NOT resolved`. Storage order is
-/// deliberately *not* merge direction: which series survives a merge is decided from which one
-/// carries more of the work (see [`MergeCandidateView::suggested_keep`]), not from which id
-/// sorts lower.
+/// The pair is stored in canonical id order and upserted against `merge_candidates_pair_key`.
+/// Storage order is deliberately *not* merge direction: which series survives a merge is decided
+/// from which one carries more of the work (see [`MergeCandidateView::suggested_keep`]), not from
+/// which id sorts lower.
+///
+/// The update is guarded so that only two states can be written over: an open row, and one the
+/// *scorer* previously closed as `distinct`. Reopening the latter is the point of
+/// [`record_distinct_pair`] keeping a row at all — a pair judged apart before enrichment gave
+/// both sides authors and synonyms has to be able to come back — while `dismissed`, `merged` and
+/// `auto_merged` stay untouchable, the first because a human decided it and the other two
+/// because the merge already happened.
 ///
 /// # Errors
 /// [`crate::DbError::Conflict`] when `a == b`, which the table's own check constraint would
@@ -219,23 +242,40 @@ pub async fn record_merge_candidate<'e, E: PgExecutor<'e>>(
     score: f32,
     signals: &[&str],
     reason: &str,
-) -> DbResult<bool> {
+) -> DbResult<QueueOutcome> {
     if a == b {
         return Err(crate::error::DbError::Conflict(
             "cannot queue a series against itself".to_owned(),
         ));
     }
     let signals: Vec<String> = signals.iter().map(|s| (*s).to_owned()).collect();
-    let changed = sqlx::query_scalar!(
-        "INSERT INTO merge_candidates (id, series_id, candidate_id, score, signals, reason) \
-         VALUES ($1, LEAST($2::uuid, $3::uuid), GREATEST($2::uuid, $3::uuid), $4, $5, $6) \
-         ON CONFLICT (series_id, candidate_id) DO UPDATE \
-            SET score = EXCLUDED.score, \
-                signals = EXCLUDED.signals, \
-                reason = EXCLUDED.reason, \
-                updated_at = now() \
-            WHERE NOT merge_candidates.resolved \
-         RETURNING id",
+    // `prior` reads the pre-insert snapshot, so it reports the state the upsert is about to
+    // replace; a data-modifying CTE runs whether or not the outer query selects from it.
+    let outcome = sqlx::query_scalar!(
+        "WITH prior AS ( \
+           SELECT resolved, outcome FROM merge_candidates \
+            WHERE series_id = LEAST($2::uuid, $3::uuid) \
+              AND candidate_id = GREATEST($2::uuid, $3::uuid) \
+         ), upsert AS ( \
+           INSERT INTO merge_candidates (id, series_id, candidate_id, score, signals, reason) \
+           VALUES ($1, LEAST($2::uuid, $3::uuid), GREATEST($2::uuid, $3::uuid), $4, $5, $6) \
+           ON CONFLICT (series_id, candidate_id) DO UPDATE \
+              SET score = EXCLUDED.score, \
+                  signals = EXCLUDED.signals, \
+                  reason = EXCLUDED.reason, \
+                  resolved = false, \
+                  outcome = NULL, \
+                  resolved_by = NULL, \
+                  resolved_at = NULL, \
+                  updated_at = now() \
+              WHERE NOT merge_candidates.resolved OR merge_candidates.outcome = 'distinct' \
+           RETURNING 1 AS touched \
+         ) \
+         SELECT CASE \
+            WHEN NOT EXISTS (SELECT 1 FROM prior) THEN 'added' \
+            WHEN (SELECT NOT resolved FROM prior) THEN 'refreshed' \
+            WHEN (SELECT outcome FROM prior) = 'distinct' THEN 'reopened' \
+            ELSE 'unchanged' END AS \"outcome!\"",
         Uuid::now_v7(),
         a.as_uuid(),
         b.as_uuid(),
@@ -243,9 +283,14 @@ pub async fn record_merge_candidate<'e, E: PgExecutor<'e>>(
         &signals,
         reason,
     )
-    .fetch_optional(exec)
+    .fetch_one(exec)
     .await?;
-    Ok(changed.is_some())
+    Ok(match outcome.as_str() {
+        "added" => QueueOutcome::Added,
+        "refreshed" => QueueOutcome::Refreshed,
+        "reopened" => QueueOutcome::Reopened,
+        _ => QueueOutcome::Unchanged,
+    })
 }
 
 /// A pending merge candidate enriched with everything an operator needs to judge it without
@@ -447,8 +492,21 @@ pub async fn suppress_pair<'e, E: PgExecutor<'e>>(
 /// A pair of series worth re-scoring, in canonical id order.
 pub type DuplicatePair = (SeriesId, SeriesId);
 
-/// Every pair of *existing* series whose titles collide on the whitespace-insensitive key,
-/// excluding pairs an operator has already resolved.
+/// How many distinct series may share one compact title key before [`find_duplicate_pairs`]
+/// stops blocking on it.
+///
+/// A key held by `n` series contributes `n·(n-1)/2` pairs, so this is the only thing standing
+/// between a shortlist and a quadratic one. Sixteen is far above any real duplicate cluster
+/// (the largest legitimate one observed is a single work listed by every provider at once) and
+/// far below the thousands that a mis-scraped label produces, so the two cases do not overlap
+/// and the exact value is not load-bearing.
+///
+/// Kept in step with the `HAVING count(*) > 16` in `migrations/0025_merge_sweep_progress.up.sql`,
+/// which applies the same rule once, destructively, to repair what a past adapter wrote.
+const MAX_KEY_FANOUT: i64 = 16;
+
+/// Every pair of *existing* series whose titles collide on the whitespace-insensitive key and
+/// that the sweep has not already recorded a verdict for.
 ///
 /// # Why blocking on the compact key
 ///
@@ -468,6 +526,26 @@ pub type DuplicatePair = (SeriesId, SeriesId);
 /// release years and alternative titles that the create-time path never had — before anything
 /// is queued, let alone merged.
 ///
+/// # Why an over-shared key is dropped
+///
+/// A blocking key is only cheap while it is selective, and equality gives no protection against
+/// one key being held by thousands of series: that is not a shortlist, it is an all-pairs clique
+/// with a `LIMIT` in front of it. Six such keys — `Status`, `Alternative`, `Genres`, `View`,
+/// `Rating`, `Release`, scraped as alternative titles out of a summary block's labels — took the
+/// live shortlist from 4 352 pairs to 15 176 110, and buried a byte-identical duplicate at
+/// position 8.9 million of a list the sweep reads 500 of. [`MAX_KEY_FANOUT`] is the ceiling, and
+/// the justification is independent of what produced the key: a title thousands of series answer
+/// to does not identify any of them.
+///
+/// # Why already-recorded pairs are excluded entirely
+///
+/// This is the *new-pair* shortlist, and it is ordered with a `LIMIT`, so it needs a progress
+/// guarantee. Excluding only resolved pairs did not give it one — a pair queued for review is
+/// still open, so it came back in the same prefix on the next run, forever. Every pair with a
+/// row of any kind is now this function's business no longer: the open ones are re-scored by
+/// [`open_merge_pairs`] and the scorer-distinct ones by [`distinct_merge_pairs`], each on its
+/// own budget and least-recently-scored first.
+///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
 pub async fn find_duplicate_pairs<'e, E: PgExecutor<'e>>(
@@ -481,23 +559,37 @@ pub async fn find_duplicate_pairs<'e, E: PgExecutor<'e>>(
     }
     let rows = sqlx::query_as!(
         Row,
-        "WITH by_canonical AS ( \
+        // `UNION` over (key, series_id) already deduplicates, so `count(*)` is the distinct
+        // series count without a second pass.
+        "WITH over_shared AS ( \
+           SELECT key FROM ( \
+             SELECT replace(normalized_title, ' ', '') AS key, id AS series_id \
+               FROM series WHERE normalized_title <> '' \
+             UNION \
+             SELECT replace(normalized, ' ', '') AS key, series_id \
+               FROM series_titles WHERE normalized <> '' \
+           ) k \
+           GROUP BY key HAVING count(*) > $2 \
+         ), by_canonical AS ( \
            SELECT a.id AS lo, b.id AS hi \
            FROM series a JOIN series b \
              ON replace(a.normalized_title, ' ', '') = replace(b.normalized_title, ' ', '') \
             AND a.id < b.id \
            WHERE a.normalized_title <> '' \
+             AND replace(a.normalized_title, ' ', '') NOT IN (SELECT key FROM over_shared) \
          ), by_alias AS ( \
            SELECT LEAST(s.id, st.series_id) AS lo, GREATEST(s.id, st.series_id) AS hi \
            FROM series s JOIN series_titles st \
              ON replace(st.normalized, ' ', '') = replace(s.normalized_title, ' ', '') \
            WHERE st.series_id <> s.id AND s.normalized_title <> '' \
+             AND replace(s.normalized_title, ' ', '') NOT IN (SELECT key FROM over_shared) \
          ), by_shared_alias AS ( \
            SELECT x.series_id AS lo, y.series_id AS hi \
            FROM series_titles x JOIN series_titles y \
              ON replace(x.normalized, ' ', '') = replace(y.normalized, ' ', '') \
             AND x.series_id < y.series_id \
            WHERE x.normalized <> '' \
+             AND replace(x.normalized, ' ', '') NOT IN (SELECT key FROM over_shared) \
          ), pairs AS ( \
            SELECT lo, hi FROM by_canonical \
            UNION SELECT lo, hi FROM by_alias \
@@ -506,11 +598,12 @@ pub async fn find_duplicate_pairs<'e, E: PgExecutor<'e>>(
          SELECT p.lo AS \"lo!\", p.hi AS \"hi!\" FROM pairs p \
          WHERE NOT EXISTS ( \
            SELECT 1 FROM merge_candidates mc \
-           WHERE mc.series_id = p.lo AND mc.candidate_id = p.hi AND mc.resolved \
+           WHERE mc.series_id = p.lo AND mc.candidate_id = p.hi \
          ) \
          ORDER BY p.lo, p.hi \
          LIMIT $1",
         limit,
+        MAX_KEY_FANOUT,
     )
     .fetch_all(exec)
     .await?;
@@ -719,28 +812,109 @@ pub async fn open_merge_pairs<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Drop an open queue row for a pair the sweep has re-judged as distinct.
+/// Record the scorer's verdict that a pair is **not** a duplicate, closing any open queue row
+/// for it. Returns whether a row was open before this call.
 ///
-/// Deleted rather than resolved: "distinct" here is the *scorer's* conclusion, not an
-/// operator's, and recording it as a dismissal would suppress the pair permanently on evidence
-/// that may change. Deleting lets a later sweep reconsider it.
+/// # Why this is a row rather than a deletion
+///
+/// It used to delete, so that a later sweep could reconsider the pair. Reconsidering it is
+/// right — "distinct" here is the *scorer's* conclusion, not an operator's, reached on evidence
+/// that enrichment keeps changing — but deletion is not how to get it. It also made the verdict
+/// invisible to [`find_duplicate_pairs`], which is ordered with a `LIMIT`: every distinct pair
+/// came straight back in the same prefix on the next run, and the shortlist never advanced past
+/// the pairs it had already judged. A row with `outcome = 'distinct'` is instead durable against
+/// the new-pair shortlist and revisited by [`distinct_merge_pairs`] on its own budget.
+///
+/// An operator's `dismissed` is never overwritten. The two look alike and are not: a dismissal
+/// is a human saying these are different works, and it must suppress the pair permanently, which
+/// is exactly what re-entering the recheck rotation would undo.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
-pub async fn withdraw_merge_candidate<'e, E: PgExecutor<'e>>(
+/// [`crate::DbError::Conflict`] when `a == b`; otherwise [`crate::DbError::Sqlx`].
+pub async fn record_distinct_pair<'e, E: PgExecutor<'e>>(
     exec: E,
     a: SeriesId,
     b: SeriesId,
+    score: f32,
+    signals: &[&str],
 ) -> DbResult<bool> {
-    let result = sqlx::query!(
-        "DELETE FROM merge_candidates \
-         WHERE series_id = LEAST($1::uuid, $2::uuid) AND candidate_id = GREATEST($1::uuid, $2::uuid) AND NOT resolved",
+    if a == b {
+        return Err(crate::error::DbError::Conflict(
+            "cannot judge a series against itself".to_owned(),
+        ));
+    }
+    let signals: Vec<String> = signals.iter().map(|s| (*s).to_owned()).collect();
+    // `prior` reads the pre-insert snapshot, so it reports the state the upsert is about to
+    // replace; a data-modifying CTE runs whether or not the outer query selects from it.
+    let was_open = sqlx::query_scalar!(
+        "WITH prior AS ( \
+           SELECT resolved FROM merge_candidates \
+            WHERE series_id = LEAST($2::uuid, $3::uuid) \
+              AND candidate_id = GREATEST($2::uuid, $3::uuid) \
+         ), upsert AS ( \
+           INSERT INTO merge_candidates \
+             (id, series_id, candidate_id, score, signals, reason, resolved, outcome, resolved_at) \
+           VALUES ($1, LEAST($2::uuid, $3::uuid), GREATEST($2::uuid, $3::uuid), $4, $5, \
+                   'duplicate sweep: below the review floor', true, 'distinct', now()) \
+           ON CONFLICT (series_id, candidate_id) DO UPDATE \
+              SET score = EXCLUDED.score, \
+                  signals = EXCLUDED.signals, \
+                  reason = EXCLUDED.reason, \
+                  resolved = true, \
+                  outcome = 'distinct', \
+                  resolved_at = now(), \
+                  updated_at = now() \
+              WHERE merge_candidates.outcome IS DISTINCT FROM 'dismissed' \
+           RETURNING 1 AS touched \
+         ) \
+         SELECT COALESCE((SELECT NOT resolved FROM prior), false) AS \"was_open!\"",
+        Uuid::now_v7(),
         a.as_uuid(),
         b.as_uuid(),
+        score,
+        &signals,
     )
-    .execute(exec)
+    .fetch_one(exec)
     .await?;
-    Ok(result.rows_affected() > 0)
+    Ok(was_open)
+}
+
+/// The pairs the scorer has judged distinct, least-recently-scored first, for the sweep to
+/// reconsider.
+///
+/// The counterpart to [`record_distinct_pair`] keeping the row: a verdict reached before both
+/// sides were enriched is a snapshot, not a fact, and re-scoring bumps `updated_at`, so draining
+/// this oldest-first is a round-robin over the whole set rather than a fixed prefix — which is
+/// the property [`find_duplicate_pairs`] lacked.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn distinct_merge_pairs<'e, E: PgExecutor<'e>>(
+    exec: E,
+    limit: i64,
+) -> DbResult<Vec<DuplicatePair>> {
+    #[derive(FromRow)]
+    struct Row {
+        series_id: Uuid,
+        candidate_id: Uuid,
+    }
+    let rows = sqlx::query_as!(
+        Row,
+        "SELECT series_id, candidate_id FROM merge_candidates \
+         WHERE outcome = 'distinct' ORDER BY updated_at ASC LIMIT $1",
+        limit,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            (
+                SeriesId::from_uuid(r.series_id),
+                SeriesId::from_uuid(r.candidate_id),
+            )
+        })
+        .collect())
 }
 
 /// What a normalized-key rebuild changed.

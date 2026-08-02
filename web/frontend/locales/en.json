@@ -307,7 +307,7 @@
       },
       "swap": "Swap",
       "sweep": "Run duplicate sweep",
-      "sweepDone": "Swept {examined} pairs: {merged} merged, {queued} queued, {withdrawn} withdrawn.",
+      "sweepDone": "Swept {examined} pairs: {merged} merged, {queued} added to the queue, {rescored} re-scored, {withdrawn} withdrawn.",
       "sweepFailed": "Sweep failed: {message}"
     },
     "noAutoRefresh": "this surface does not auto-refresh while you edit",

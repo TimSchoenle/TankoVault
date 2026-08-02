@@ -77,7 +77,11 @@ pub(super) fn MergeQueue() -> Element {
                             &[
                                 ("examined", &r.pairs_examined.to_string()),
                                 ("merged", &r.auto_merged.to_string()),
-                                ("queued", &r.queued.to_string()),
+                                // Newly queued and reopened both lengthen the queue; rescored
+                                // ones do not. Reporting them as one number told an operator
+                                // the queue had grown by the count of rows it merely re-read.
+                                ("queued", &(r.queued + r.reopened).to_string()),
+                                ("rescored", &r.requeued.to_string()),
                                 ("withdrawn", &r.withdrawn.to_string()),
                             ],
                         ));

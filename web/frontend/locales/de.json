@@ -307,7 +307,7 @@
       },
       "swap": "Tauschen",
       "sweep": "Duplikatlauf starten",
-      "sweepDone": "{examined} Paare geprüft: {merged} zusammengeführt, {queued} eingereiht, {withdrawn} zurückgezogen.",
+      "sweepDone": "{examined} Paare geprüft: {merged} zusammengeführt, {queued} neu eingereiht, {rescored} neu bewertet, {withdrawn} zurückgezogen.",
       "sweepFailed": "Duplikatlauf fehlgeschlagen: {message}"
     },
     "noAutoRefresh": "diese Ansicht aktualisiert sich beim Bearbeiten nicht selbst",

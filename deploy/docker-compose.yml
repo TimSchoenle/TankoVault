@@ -187,6 +187,13 @@ services:
       TANKOVAULT_DATABASE__URL: *db-url
       TANKOVAULT_NATS__URL: nats://nats:4222
       TANKOVAULT_REDIS__URL: redis://redis:6379 # singleton-scheduler leader election (design §12)
+      # Duplicate-sweep budgets. The defaults are sized for a catalogue in a steady state, where
+      # a sweep has a handful of pairs to judge; a first pass over an unswept catalogue is a
+      # different job, and the merge ceiling binds on every run until the backlog is gone. Raise
+      # both in deploy/local.env to drain it, then put them back — the ceiling is the only bound
+      # on how many series one background run may delete.
+      TANKOVAULT_SCHEDULER__MERGE_SWEEP_PAIRS: "${TANKOVAULT_SCHEDULER__MERGE_SWEEP_PAIRS:-500}"
+      TANKOVAULT_SCHEDULER__MERGE_SWEEP_MAX_AUTO_MERGES: "${TANKOVAULT_SCHEDULER__MERGE_SWEEP_MAX_AUTO_MERGES:-200}"
     depends_on:
       migrate: { condition: service_completed_successfully }
       nats: { condition: service_healthy }

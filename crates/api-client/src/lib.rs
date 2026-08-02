@@ -2783,6 +2783,8 @@ pub mod types {
     #[doc = "    \"distinct\","]
     #[doc = "    \"pairs_examined\","]
     #[doc = "    \"queued\","]
+    #[doc = "    \"reopened\","]
+    #[doc = "    \"requeued\","]
     #[doc = "    \"withdrawn\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
@@ -2807,7 +2809,17 @@ pub mod types {
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"queued\": {"]
-    #[doc = "      \"description\": \"Pairs added to, or refreshed in, the review queue.\","]
+    #[doc = "      \"description\": \"Pairs the sweep put in the review queue that had never been there.\\n\\nCounted apart from `requeued` because only these lengthen the queue: the sweep re-scores\\nrows that are already open on every run, and folding those into one \\\"queued\\\" number\\nreports a queue growing by hundreds when it grew by tens. Net change in queue length is\\n`queued + reopened - withdrawn`.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"reopened\": {"]
+    #[doc = "      \"description\": \"Pairs the scorer had closed as distinct that enrichment has brought back into review.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"requeued\": {"]
+    #[doc = "      \"description\": \"Rows already open that this sweep re-scored in place. The queue is no longer for these.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -2830,8 +2842,12 @@ pub mod types {
         pub distinct: i64,
         #[doc = "Pairs re-scored. The shortlist is produced by blocking on the whitespace-insensitive\ntitle key, so this is far smaller than the number of series."]
         pub pairs_examined: i64,
-        #[doc = "Pairs added to, or refreshed in, the review queue."]
+        #[doc = "Pairs the sweep put in the review queue that had never been there.\n\nCounted apart from `requeued` because only these lengthen the queue: the sweep re-scores\nrows that are already open on every run, and folding those into one \"queued\" number\nreports a queue growing by hundreds when it grew by tens. Net change in queue length is\n`queued + reopened - withdrawn`."]
         pub queued: i64,
+        #[doc = "Pairs the scorer had closed as distinct that enrichment has brought back into review."]
+        pub reopened: i64,
+        #[doc = "Rows already open that this sweep re-scored in place. The queue is no longer for these."]
+        pub requeued: i64,
         #[doc = "Open queue rows removed because re-scoring with everything now known about both series\nput the pair below the review floor."]
         pub withdrawn: i64,
     }
@@ -11271,6 +11287,8 @@ pub mod types {
             distinct: ::std::result::Result<i64, ::std::string::String>,
             pairs_examined: ::std::result::Result<i64, ::std::string::String>,
             queued: ::std::result::Result<i64, ::std::string::String>,
+            reopened: ::std::result::Result<i64, ::std::string::String>,
+            requeued: ::std::result::Result<i64, ::std::string::String>,
             withdrawn: ::std::result::Result<i64, ::std::string::String>,
         }
         impl ::std::default::Default for MergeSweepView {
@@ -11281,6 +11299,8 @@ pub mod types {
                     distinct: Err("no value supplied for distinct".to_string()),
                     pairs_examined: Err("no value supplied for pairs_examined".to_string()),
                     queued: Err("no value supplied for queued".to_string()),
+                    reopened: Err("no value supplied for reopened".to_string()),
+                    requeued: Err("no value supplied for requeued".to_string()),
                     withdrawn: Err("no value supplied for withdrawn".to_string()),
                 }
             }
@@ -11336,6 +11356,26 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for queued: {e}"));
                 self
             }
+            pub fn reopened<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reopened = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reopened: {e}"));
+                self
+            }
+            pub fn requeued<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.requeued = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for requeued: {e}"));
+                self
+            }
             pub fn withdrawn<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<i64>,
@@ -11358,6 +11398,8 @@ pub mod types {
                     distinct: value.distinct?,
                     pairs_examined: value.pairs_examined?,
                     queued: value.queued?,
+                    reopened: value.reopened?,
+                    requeued: value.requeued?,
                     withdrawn: value.withdrawn?,
                 })
             }
@@ -11370,6 +11412,8 @@ pub mod types {
                     distinct: Ok(value.distinct),
                     pairs_examined: Ok(value.pairs_examined),
                     queued: Ok(value.queued),
+                    reopened: Ok(value.reopened),
+                    requeued: Ok(value.requeued),
                     withdrawn: Ok(value.withdrawn),
                 }
             }

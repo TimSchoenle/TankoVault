@@ -136,6 +136,9 @@ jobs:
     name: ${{ matrix.bin }} (${{ matrix.arch }})
     needs: [release-please]
     if: needs.release-please.outputs.release_created == 'true'
+    environment:
+      name: release
+      deployment: false
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:
@@ -316,6 +319,9 @@ jobs:
     name: publish ${{ matrix.bin }}
     needs: [release-please, build]
     if: needs.release-please.outputs.release_created == 'true'
+    environment:
+      name: release
+      deployment: false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

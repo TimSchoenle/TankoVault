@@ -6,7 +6,6 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "package-name": "tankovault",
       "changelog-path": "CHANGELOG.md",
       "draft": false,
       "prerelease": false,

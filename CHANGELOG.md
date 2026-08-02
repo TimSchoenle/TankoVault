@@ -12,6 +12,23 @@ that was `OP-6` — `wreq-util` was GPL-3.0 and distributing the images is *conv
 resolved (see *Changed* below); what holds the push now is that this repository still has no
 `LICENSE`.
 
+## [0.2.1](https://github.com/TimSchoenle/TankoVault/compare/v0.2.0...v0.2.1) (2026-08-02)
+
+
+### Bug Fixes
+
+* release please not triggering release ([6abbebf](https://github.com/TimSchoenle/TankoVault/commit/6abbebfc089294a569521ffd11ac82dc30ac11b3))
+
+
+### CI
+
+* remove latest docker target ([7e7696d](https://github.com/TimSchoenle/TankoVault/commit/7e7696d3e69af122533923ceec018ee9de555e74))
+
+
+### Miscellaneous
+
+* lockfile update ([8f6efc6](https://github.com/TimSchoenle/TankoVault/commit/8f6efc62fe8dae73f5ca57f7c2d4ea5ec658c4d0))
+
 ## [0.2.0](https://github.com/TimSchoenle/TankoVault/compare/v0.1.0...v0.2.0) (2026-08-02)
 
 

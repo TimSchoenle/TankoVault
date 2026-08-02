@@ -42,7 +42,7 @@ exclude = ["web/frontend", "fuzz"]
 xtask = "the repository's task runner, not a service: its commands (migrate, seed, reset, openapi) act on a developer's own checkout and database"
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 authors = ["TankoVault contributors"]
 # Verified by the `msrv` CI job, not asserted: `sqlx 0.9` alone requires 1.94.0.

@@ -11,6 +11,7 @@ use axum::http::StatusCode;
 use axum::routing::post;
 use axum::{Json, Router};
 use serde::Deserialize;
+use std::sync::Arc;
 use std::time::Duration;
 use tankovault_bus::Bus;
 use tankovault_contracts::admin::ScanTriggeredView;
@@ -20,8 +21,8 @@ use tankovault_domain::{Feature, Provider, ProviderId, ScanMode, ScanRunId};
 use tankovault_service::health::PostgresCheck;
 use tankovault_service::problem::Problem;
 use tankovault_service::{
-    FeatureGate, Health, HttpStack, MetricsRegistry, PostgresFlagSource, RateLimiter,
-    RouteClassifier,
+    CancellationToken, FeatureGate, Health, HttpStack, MetricsRegistry, PostgresFlagSource,
+    RateLimiter, RouteClassifier,
 };
 
 #[derive(Debug, Deserialize)]
@@ -65,7 +66,9 @@ fn default_bind() -> String {
     "0.0.0.0:8081".to_owned()
 }
 
-#[derive(Debug, Deserialize)]
+// `Clone` so the scheduler loop can own a copy: the config now lives behind an `Arc` shared
+// with the reload supervisor, so it cannot be moved out of.
+#[derive(Debug, Clone, Deserialize)]
 struct SchedulerConfig {
     /// Seconds between fast-scan sweeps of all active providers. 0 disables.
     #[serde(default = "default_fast_interval")]
@@ -161,13 +164,36 @@ async fn main() -> anyhow::Result<()> {
         tankovault_service::run_healthcheck_and_exit(&cfg.bind_addr);
     }
 
-    let cfg: Config = tankovault_config::load()?;
-    tankovault_service::init_tracing(&cfg.telemetry)?;
-    let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    let boot = tankovault_config::load_watched::<Config>()?;
+    // Both are process-global and installed once, which is why `telemetry.*` and `metrics.*`
+    // are the two blocks a configuration reload cannot apply.
+    tankovault_service::init_tracing(&boot.value.telemetry)?;
+    let metrics = MetricsRegistry::install(&boot.value.metrics)?;
+    let shutdown = tankovault_service::install_shutdown();
+    // Outside the reloadable runtime so a reload does not rebind the scrape listener.
+    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
+
+    tankovault_service::run_reloading(boot, &shutdown, |cfg, generation| {
+        serve_once(cfg, metrics.clone(), generation)
+    })
+    .await
+}
+
+/// Build and run everything a configuration change rebuilds: the pool, the bus and Redis
+/// connections, the scheduler and aggregator loops, the router and the listener.
+///
+/// Returns when `shutdown` is cancelled — by the OS signal, or by the supervisor because the
+/// configuration changed and this runtime is being replaced. The background loops take the
+/// same token, so they stop with the runtime that spawned them rather than accumulating one
+/// scheduler per reload.
+async fn serve_once(
+    cfg: Arc<Config>,
+    metrics: MetricsRegistry,
+    shutdown: CancellationToken,
+) -> anyhow::Result<()> {
     // Resolved before anything binds: starting without a token would silently serve
     // privileged routes unauthenticated, so the production profile refuses to boot instead.
     let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
-    let shutdown = tankovault_service::install_shutdown();
 
     let pool = tankovault_db::connect(
         &cfg.database.url,
@@ -211,8 +237,9 @@ async fn main() -> anyhow::Result<()> {
     let sched_state = state.clone();
     let sched_leadership = leadership.clone();
     let sched_shutdown = shutdown.clone();
+    let sched_config = cfg.scheduler.clone();
     tokio::spawn(async move {
-        run_scheduler(sched_state, cfg.scheduler, sched_leadership, sched_shutdown).await;
+        run_scheduler(sched_state, sched_config, sched_leadership, sched_shutdown).await;
     });
 
     // Background progress aggregator: finalise runs as their tasks settle and relay one
@@ -236,8 +263,6 @@ async fn main() -> anyhow::Result<()> {
             async move { bus.ping().await.map_err(|e| e.to_string()) }
         })
         .build();
-
-    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
 
     let limiter = RateLimiter::from_config(&cfg.rate_limit, RouteClassifier::new(), None);
     let app = HttpStack::new(&cfg.security, metrics.clone())

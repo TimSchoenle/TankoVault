@@ -35,6 +35,7 @@ pub mod internal_auth;
 pub mod metrics;
 pub mod problem;
 pub mod ratelimit;
+pub mod reload;
 pub mod shutdown;
 pub mod telemetry;
 
@@ -47,7 +48,11 @@ pub use internal_auth::{INTERNAL_TOKEN_HEADER, InternalToken};
 pub use metrics::MetricsRegistry;
 pub use problem::{IntoProblem, Problem};
 pub use ratelimit::{RateLimiter, RouteClass, RouteClassifier};
+pub use reload::run as run_reloading;
 pub use shutdown::install_shutdown;
+// Re-exported so a service can name the token `run_reloading` hands its runtime without
+// taking a direct `tokio-util` dependency for one type.
+pub use tokio_util::sync::CancellationToken;
 pub use telemetry::init_tracing;
 
 #[cfg(feature = "db")]
@@ -68,4 +73,9 @@ pub enum ServiceError {
     /// The listener could not be bound, or the server exited with an I/O error.
     #[error("http server error: {0}")]
     Server(#[from] std::io::Error),
+    /// The configuration-reload watcher could not be installed. Fatal at boot for the same
+    /// reason the rest of these are: a service that silently never reloads is one whose
+    /// rotated credentials never take effect.
+    #[error("failed to watch configuration files: {0}")]
+    Watch(String),
 }

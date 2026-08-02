@@ -30,6 +30,7 @@ futures.workspace = true
 governor.workspace = true
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
+notify.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -51,6 +52,9 @@ fred = { workspace = true, optional = true, features = ["i-scripts"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
+# `Jail` for the reload tests: it sandboxes the environment *and* a temp directory, and
+# `std::env::set_var` is `unsafe` in edition 2024, which `unsafe_code = "forbid"` rules out.
+figment = { workspace = true, features = ["test"] }
 # `tests/prop_ratelimit.rs` (TEST P-07). Already in the lockfile via five other members, so
 # this adds no new resolution and nothing to `cargo deny`'s duplicate budget.
 proptest = { workspace = true }

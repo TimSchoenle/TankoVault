@@ -62,9 +62,16 @@ Serving the SPA and proxying `/v1/*` from one origin makes those calls resolve w
 cross-origin hop, and the proxy streams responses unbuffered so SSE frames flush immediately.
 
 ## Configuration
-Every service reads layered config via `tankovault-config`: optional TOML at `$TANKOVAULT_CONFIG`,
-then `TANKOVAULT_*` environment variables (`__` denotes nesting, e.g.
-`TANKOVAULT_DATABASE__URL`). The compose file sets these inline.
+Every service reads layered config via `tankovault-config`: optional TOML at `$TANKOVAULT_CONFIG`
+(a file, or a directory of `*.toml` fragments), then `TANKOVAULT_*` environment variables (`__`
+denotes nesting, e.g. `TANKOVAULT_DATABASE__URL`), then file-backed values —
+`$TANKOVAULT_SECRETS_DIR` and `TANKOVAULT_<KEY>_FILE`. The compose file sets these inline.
+
+The file layers are what the Kubernetes charts use: a `Secret` mounted as a volume keeps
+credentials out of the pod's environment, and a rotated file makes the service rebuild itself
+rather than requiring a restart. A key set by two of the last three layers fails the boot
+instead of being resolved by precedence — see
+[`docs/CONFIGURATION.md` §7](../docs/CONFIGURATION.md#7-secrets).
 
 The complete surface — every `TANKOVAULT_*` key, its default, and which service reads it — is
 [`docs/CONFIGURATION.md`](../docs/CONFIGURATION.md). The short version:

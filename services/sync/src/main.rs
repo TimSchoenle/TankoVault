@@ -25,8 +25,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use tankovault_service::health::PostgresCheck;
 use tankovault_service::{
-    FeatureGate, FeatureLayer, Health, HttpStack, MetricsRegistry, PostgresFlagSource, RateLimiter,
-    RouteClassifier, RouteFeatures,
+    CancellationToken, FeatureGate, FeatureLayer, Health, HttpStack, MetricsRegistry,
+    PostgresFlagSource, RateLimiter, RouteClassifier, RouteFeatures,
 };
 
 use engine::SyncEngine;
@@ -73,7 +73,9 @@ struct Config {
 }
 
 /// Metadata-priority + tokenless enrichment-worker settings.
-#[derive(Debug, Deserialize)]
+// `Clone` because the config now lives behind an `Arc` shared with the reload supervisor and
+// so cannot be moved out of.
+#[derive(Debug, Clone, Deserialize)]
 struct MetadataConfig {
     /// Per-field source authority order (default: `AniList` before the adapters).
     #[serde(default)]
@@ -104,7 +106,8 @@ impl Default for MetadataConfig {
     }
 }
 
-#[derive(Debug, Deserialize)]
+// `Clone`: see [`MetadataConfig`]. The `SecretString` fields clone their `Arc`, not the secret.
+#[derive(Debug, Clone, Deserialize)]
 struct AniListConfig {
     #[serde(deserialize_with = "string_or_number")]
     client_id: String,
@@ -301,13 +304,36 @@ async fn main() -> anyhow::Result<()> {
         tankovault_service::run_healthcheck_and_exit(&cfg.bind_addr);
     }
 
-    let cfg: Config = tankovault_config::load()?;
-    tankovault_service::init_tracing(&cfg.telemetry)?;
-    let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    let boot = tankovault_config::load_watched::<Config>()?;
+    // Both are process-global and installed once, which is why `telemetry.*` and `metrics.*`
+    // are the two blocks a configuration reload cannot apply.
+    tankovault_service::init_tracing(&boot.value.telemetry)?;
+    let metrics = MetricsRegistry::install(&boot.value.metrics)?;
+    let shutdown = tankovault_service::install_shutdown();
+    // Outside the reloadable runtime so a reload does not rebind the scrape listener.
+    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
+
+    tankovault_service::run_reloading(boot, &shutdown, |cfg, generation| {
+        serve_once(cfg, metrics.clone(), generation)
+    })
+    .await
+}
+
+/// Build and run everything a configuration change rebuilds: the pool, the token sealer, the
+/// provider clients, the background loops, the router and the listener.
+///
+/// Returns when `shutdown` is cancelled — by the OS signal, or by the supervisor because the
+/// configuration changed and this runtime is being replaced. A rotated `AniList` client secret
+/// takes effect here; rotating `anilist.token_encryption_key` does not re-seal what is already
+/// stored, so that one still needs the migration it always did.
+async fn serve_once(
+    cfg: Arc<Config>,
+    metrics: MetricsRegistry,
+    shutdown: CancellationToken,
+) -> anyhow::Result<()> {
     // Resolved before anything binds: production refuses to boot rather than silently serving
     // privileged routes without the token that guards them.
     let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
-    let shutdown = tankovault_service::install_shutdown();
 
     let pool = tankovault_db::connect(
         &cfg.database.url,
@@ -332,8 +358,8 @@ async fn main() -> anyhow::Result<()> {
     let secret = Sealer::from_base64_key(&cfg.anilist.token_encryption_key)
         .map_err(|e| anyhow::anyhow!("invalid anilist.token_encryption_key: {e}"))?;
     let default_policy = cfg.anilist.default_conflict_policy;
-    let metadata = cfg.metadata;
-    let providers = build_providers(cfg.anilist)?;
+    let metadata = cfg.metadata.clone();
+    let providers = build_providers(cfg.anilist.clone())?;
 
     let engine = Arc::new(SyncEngine::new(
         pool,
@@ -401,8 +427,6 @@ async fn main() -> anyhow::Result<()> {
         .expensive("/v1/sync/push-series")
         .expensive("/v1/sync/enrich");
     let limiter = RateLimiter::from_config(&cfg.rate_limit, classifier, None);
-
-    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
 
     let app = HttpStack::new(&cfg.security, metrics.clone())
         .with_rate_limit(limiter)

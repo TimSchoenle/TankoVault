@@ -20,8 +20,12 @@
 //! stay readable text rather than an opaque byte blob, and so mutation time isn't spent
 //! generating a prefix that `Env::prefixed` just discards.
 //!
-//! `TANKOVAULT_CONFIG` is filtered out: `load` reads it as a path to a TOML file, and a
-//! reproducer whose behaviour depends on a file elsewhere on the machine isn't a reproducer.
+//! The keys that make `load` read the filesystem are filtered out — `TANKOVAULT_CONFIG` (a TOML
+//! file or directory), `TANKOVAULT_SECRETS_DIR`, and anything ending `_FILE` (a path holding one
+//! value). A reproducer whose behaviour depends on a file elsewhere on the machine isn't a
+//! reproducer. The value *parsing* those layers feed is the same code this target already
+//! covers through the environment; what they add is I/O, which belongs in the unit tests in
+//! `crates/config/src/secrets.rs`.
 
 #![no_main]
 
@@ -110,8 +114,12 @@ fuzz_target!(|data: &str| {
                 continue;
             }
             let key = format!("TANKOVAULT_{suffix}");
-            // See the module doc: the TOML half is deliberately out of reach.
-            if key == "TANKOVAULT_CONFIG" {
+            // See the module doc: every layer that reads the filesystem is deliberately out of
+            // reach, so a crash always reproduces from the input alone.
+            if key == "TANKOVAULT_CONFIG"
+                || key == "TANKOVAULT_SECRETS_DIR"
+                || key.ends_with("_FILE")
+            {
                 continue;
             }
             jail.set_env(&key, value);

@@ -20,7 +20,7 @@ use tankovault_config::{DatabaseConfig, NatsConfig, TelemetryConfig};
 use tankovault_contracts::{ScanTaskMessage, TaskKind};
 use tankovault_fetch::{HttpChallengeSolver, InMemorySessionStore, SessionStore};
 use tankovault_service::health::PostgresCheck;
-use tankovault_service::{Health, HttpStack, MetricsRegistry};
+use tankovault_service::{CancellationToken, Health, HttpStack, MetricsRegistry};
 use tankovault_solver::ChallengeSolver;
 
 #[derive(Debug, Deserialize)]
@@ -105,11 +105,52 @@ async fn main() -> anyhow::Result<()> {
         tankovault_service::run_healthcheck_and_exit(&cfg.bind_addr);
     }
 
-    let cfg: Config = tankovault_config::load()?;
-    tankovault_service::init_tracing(&cfg.telemetry)?;
-    let metrics = MetricsRegistry::install(&cfg.metrics)?;
-    let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
+    let boot = tankovault_config::load_watched::<Config>()?;
+    // Both are process-global and installed once, which is why `telemetry.*` and `metrics.*`
+    // are the two blocks a configuration reload cannot apply.
+    tankovault_service::init_tracing(&boot.value.telemetry)?;
+    let metrics = MetricsRegistry::install(&boot.value.metrics)?;
     let shutdown = tankovault_service::install_shutdown();
+
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.as_slice() {
+        // A one-shot inline scan is a CLI invocation, not a served workload: no listener, no
+        // reload supervisor, and it exits when the scan does.
+        [cmd, slug, mode] if cmd == "scan" => {
+            let built = build(&boot.value).await?;
+            run_inline(&built.engine, slug, mode).await
+        }
+        [] => {
+            // Serve the metrics scrape on its own port when configured, keeping it off the
+            // request-facing ops listener. Outside the reloadable runtime so a reload does
+            // not rebind it.
+            tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
+            tankovault_service::run_reloading(boot, &shutdown, |cfg, generation| {
+                serve_once(cfg, metrics.clone(), generation)
+            })
+            .await
+        }
+        _ => {
+            eprintln!("usage: worker [scan <provider_slug> <full|fast>]");
+            std::process::exit(2);
+        }
+    }
+}
+
+/// Everything a scan needs, however the process was invoked.
+struct Built {
+    engine: Engine,
+    pool: tankovault_db::PgPool,
+    bus: Option<Bus>,
+    internal_token: Option<tankovault_service::InternalToken>,
+}
+
+/// Connect the dependencies and assemble the scan engine.
+///
+/// Shared by the one-shot CLI path and the served path so the two cannot drift into scanning
+/// with differently configured engines.
+async fn build(cfg: &Config) -> anyhow::Result<Built> {
+    let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
 
     let pool = tankovault_db::connect(
         &cfg.database.url,
@@ -149,32 +190,36 @@ async fn main() -> anyhow::Result<()> {
         cfg.matching.clone(),
     );
 
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    match args.as_slice() {
-        // A one-shot inline scan is a CLI invocation, not a served workload: no listener,
-        // and it exits when the scan does.
-        [cmd, slug, mode] if cmd == "scan" => run_inline(&engine, slug, mode).await,
-        [] => {
-            // Serve the metrics scrape on its own port when configured, keeping it off the
-            // request-facing ops listener.
-            tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
-            let engine = Arc::new(engine);
-            spawn_ops_listener(
-                &cfg,
-                &pool,
-                bus.as_ref(),
-                metrics,
-                Arc::clone(&engine),
-                internal_token,
-                shutdown.clone(),
-            );
-            run_consumer(&engine, &cfg.worker, shutdown).await
-        }
-        _ => {
-            eprintln!("usage: worker [scan <provider_slug> <full|fast>]");
-            std::process::exit(2);
-        }
-    }
+    Ok(Built {
+        engine,
+        pool,
+        bus,
+        internal_token,
+    })
+}
+
+/// Build and run everything a configuration change rebuilds: the pool, the bus connection, the
+/// scan engine, the ops listener and the consumer loop.
+///
+/// Returns when `shutdown` is cancelled — by the OS signal, or by the supervisor because the
+/// configuration changed and this runtime is being replaced.
+async fn serve_once(
+    cfg: Arc<Config>,
+    metrics: MetricsRegistry,
+    shutdown: CancellationToken,
+) -> anyhow::Result<()> {
+    let built = build(&cfg).await?;
+    let engine = Arc::new(built.engine);
+    spawn_ops_listener(
+        &cfg,
+        &built.pool,
+        built.bus.as_ref(),
+        metrics,
+        Arc::clone(&engine),
+        built.internal_token,
+        shutdown.clone(),
+    );
+    run_consumer(&engine, &cfg.worker, shutdown).await
 }
 
 /// Serve liveness, readiness and the metrics scrape alongside the consumer loop.

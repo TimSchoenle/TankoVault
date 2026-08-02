@@ -16,8 +16,18 @@ limiter buckets, what the audit sink records). This is the *surface*: the keys t
 Layered, lowest precedence first ([`crates/config/src/lib.rs`](../crates/config/src/lib.rs)):
 
 1. The `#[serde(default)]` value compiled into each field.
-2. A TOML file at `$TANKOVAULT_CONFIG` (default: `./config.toml`, silently skipped if absent).
+2. TOML at `$TANKOVAULT_CONFIG` (default: `./config.toml`, silently skipped if absent). If it
+   names a **directory**, every `*.toml` directly inside it is merged in file-name order, later
+   winning — a `ConfigMap` mounted as a set of fragments.
 3. Environment variables prefixed `TANKOVAULT_`.
+4. Files in `$TANKOVAULT_SECRETS_DIR`, one per key ([§7](#7-secrets)).
+5. `TANKOVAULT_<KEY>_FILE=/path`, which reads `<KEY>` from that path ([§7](#7-secrets)).
+
+**Layers 3, 4 and 5 are mutually exclusive per key.** A key supplied by two of them fails the
+boot, naming the key and both sources — it is not resolved by precedence. The failure that
+prevents is a half-migrated deployment where a stale environment variable shadows a mounted
+secret that has since been rotated: the service keeps working, on the old credential, and the
+discrepancy surfaces during an incident rather than during a deploy.
 
 **Nesting is `__` (two underscores).** A single underscore is part of a field name, not a
 separator, which is the single most common way to get this wrong:
@@ -28,6 +38,11 @@ separator, which is the single most common way to get this wrong:
 | `database.max_connections` | `TANKOVAULT_DATABASE__MAX_CONNECTIONS` |
 | `rate_limit.auth.per_minute` | `TANKOVAULT_RATE_LIMIT__AUTH__PER_MINUTE` |
 | `security.cors.allowed_origins` | `TANKOVAULT_SECURITY__CORS__ALLOWED_ORIGINS` |
+
+A file name in the secrets directory uses the same spelling minus the prefix, in any case:
+`auth__jwt_secret` is `auth.jwt_secret`. A `.` in a file name is **refused**, not treated as a
+separator — Kubernetes allows it in a `Secret` key, and `auth.jwt_secret` would otherwise look
+like it worked while nesting somewhere else.
 
 Lists and structured values are **JSON**, quoted as a single shell word:
 
@@ -78,7 +93,8 @@ set in a TOML file.
 | Key | Default | Meaning |
 |---|---|---|
 | `TANKOVAULT_PROFILE` | *(unset)* | The **only** value with an effect is `production` (case-insensitive). It turns on the production safety posture: `internal.token` becomes required, and `/scalar` + the OpenAPI document default to **off**. Nothing else reads it. Setting it to `staging`, `prod` or `dev` is the same as leaving it unset — a real trap, because `prod` looks like it should work. |
-| `TANKOVAULT_CONFIG` | `config.toml` | Path to the optional TOML layer. A missing file is not an error; a *misspelled path* is therefore also not an error. |
+| `TANKOVAULT_CONFIG` | `config.toml` | Path to the optional TOML layer — a file, or a directory whose `*.toml` entries are merged in name order. A missing file is not an error; a *misspelled path* is therefore also not an error. A named directory that cannot be read **is**. |
+| `TANKOVAULT_SECRETS_DIR` | *(unset)* | Directory of key-named files, one value per file — the shape a Kubernetes `Secret` mounted as a volume has. Unset disables the layer; set-but-unreadable fails the boot, because an operator who named it meant it and booting on defaults instead is the outcome worth avoiding. Entries starting with `.` and anything that is not a regular file are skipped, which is what makes a projected volume's `..data` layout work. |
 | `RUST_LOG` | *(unset)* | Standard `EnvFilter` syntax. When set it **replaces** `TANKOVAULT_TELEMETRY__LOG_FILTER` entirely rather than merging with it. |
 | `DATABASE_URL` | — | Required by `xtask` (`migrate`, `reset`, `seed`, `sqlx-prepare`) only. The services **and the `bootstrap` image** use `TANKOVAULT_DATABASE__URL`; these two are not interchangeable. |
 | `TANKOVAULT_CONFIRM_RESET` | *(unset)* | Must be exactly `1` for `xtask reset`, which **drops and recreates the `public` schema**. Local development only. |
@@ -388,9 +404,6 @@ existing installation exactly as it is, so a revoked permission stays revoked.
 
 ## 7. Secrets
 
-`deploy/local.env.example` is the template. Copy it to `deploy/local.env` (git-ignored) and
-pass `--env-file deploy/local.env`.
-
 ```bash
 openssl rand -hex 32      # TANKOVAULT_AUTH__JWT_SECRET, TANKOVAULT_INTERNAL__TOKEN
 openssl rand -base64 32   # TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY (must decode to 32 bytes)
@@ -399,6 +412,86 @@ openssl rand -base64 32   # TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY (must decod
 Placeholder values published in this repository are **refused at boot in every profile**, not
 only production. That is deliberate: a working default here would only move the failure to a
 point where it is harder to notice.
+
+### 7.1 From the environment (local development)
+
+`deploy/local.env.example` is the template. Copy it to `deploy/local.env` (git-ignored) and
+pass `--env-file deploy/local.env`.
+
+### 7.2 From files (Kubernetes, and anything else that mounts secrets)
+
+Prefer this everywhere it is available. A value in a process's environment is readable from
+`/proc/<pid>/environ` by anything sharing the namespace, is inherited by every child process,
+lands in crash dumps, and is printed by anything that dumps the environment. A mounted file is
+none of those, and it can be **rotated without restarting the process** (§7.3).
+
+A directory, which is what a `Secret` volume mount looks like:
+
+```bash
+kubectl create secret generic tankovault \
+  --from-literal=auth__jwt_secret="$(openssl rand -hex 32)" \
+  --from-literal=auth__password_pepper="$(openssl rand -hex 32)" \
+  --from-literal=internal__token="$(openssl rand -hex 32)" \
+  --from-literal=database__url='postgres://tankovault:…@postgres:5432/tankovault'
+```
+
+```yaml
+env:
+  - name: TANKOVAULT_SECRETS_DIR
+    value: /etc/tankovault/secrets
+volumeMounts:
+  - name: secrets
+    mountPath: /etc/tankovault/secrets
+    readOnly: true
+volumes:
+  - name: secrets
+    secret: { secretName: tankovault }
+```
+
+Or one path per key, which is what Docker Compose `secrets:` gives you:
+
+```yaml
+services:
+  api:
+    environment:
+      TANKOVAULT_AUTH__JWT_SECRET_FILE: /run/secrets/jwt
+    secrets: [jwt]
+secrets:
+  jwt: { file: ./jwt.txt }
+```
+
+The `_FILE` suffix works on any key in [§4](#4-shared-blocks) or [§5](#5-per-service-blocks) —
+it is a spelling rule, not a fixed list, which is why no table here enumerates those names. It
+does **not** work on the process-level keys in [§3](#3-process-level-keys): they are read before
+the layered config exists, so a `_FILE` naming one is refused rather than ignored.
+
+Two behaviours worth knowing:
+
+- **Trailing newlines are stripped**, and only those. `printf 'x\n' > f` and every text editor
+  add a newline nobody meant as part of the value. Spaces and tabs are kept, because a trailing
+  space can be a real character of a real password.
+- **File-sourced values are never parsed.** An environment variable goes through a TOML-ish
+  parse, so `TANKOVAULT_AUTH__JWT_SECRET=12345678` becomes a *number* and the boot fails with
+  "invalid type: integer, expected a string". The same secret in a file stays a string. Put
+  lists and numbers in the TOML layer, which parses them properly.
+
+### 7.3 Rotation without a restart
+
+Every long-running service watches the directories its configuration came from. When the
+kubelet updates a mounted `Secret` or `ConfigMap`, the service re-reads the whole configuration
+and **rebuilds its runtime**: the connection pool, the application state, the router, the
+listener and the background loops. In-flight requests drain before the replacement binds.
+
+- A reload that fails to read, or fails to build, **leaves the running service exactly as it
+  was** and logs the reason. A bad file write cannot take down a healthy pod.
+- Files that change but resolve to the same values rebuild nothing.
+- `telemetry.*` and `metrics.*` are the exception: the `tracing` subscriber and the metrics
+  recorder are process-global and installed once, so those two blocks still need a restart.
+- Rotating `auth.jwt_secret` **signs every user out** — sessions signed with the old key stop
+  verifying. Rotating `auth.password_pepper` makes every stored password fail to verify, and
+  rotating `anilist.token_encryption_key` does not re-seal tokens already at rest. Those three
+  are rotations with a migration, not drop-in replacements; the reload applies them faithfully
+  either way.
 
 ---
 

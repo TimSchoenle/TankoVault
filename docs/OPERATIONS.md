@@ -3,9 +3,11 @@
 Every backend service shares one runtime, `crates/service` (`tankovault-service`). This
 document is the operator-facing reference for what it provides and how to configure it.
 
-Configuration is layered (defaults → `$TANKOVAULT_CONFIG` TOML → `TANKOVAULT_*` env), so
-every key below has an environment form: nest with `__`, e.g. `rate_limit.auth.per_minute`
-→ `TANKOVAULT_RATE_LIMIT__AUTH__PER_MINUTE`. This document explains what the settings *mean*;
+Configuration is layered (defaults → `$TANKOVAULT_CONFIG` TOML → `TANKOVAULT_*` env →
+`$TANKOVAULT_SECRETS_DIR` files → `TANKOVAULT_<KEY>_FILE`), so every key below has an
+environment form: nest with `__`, e.g. `rate_limit.auth.per_minute`
+→ `TANKOVAULT_RATE_LIMIT__AUTH__PER_MINUTE`. The same spelling names a file in the secrets
+directory (`rate_limit__auth__per_minute`). This document explains what the settings *mean*;
 [`CONFIGURATION.md`](./CONFIGURATION.md) is the exhaustive key-by-key reference.
 
 ---

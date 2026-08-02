@@ -14,7 +14,9 @@ use tankovault_contracts::{ChapterDiscovered, UserNotification, subjects};
 use tankovault_db::PgPool;
 use tankovault_domain::Feature;
 use tankovault_service::health::PostgresCheck;
-use tankovault_service::{FeatureGate, Health, HttpStack, MetricsRegistry, PostgresFlagSource};
+use tankovault_service::{
+    CancellationToken, FeatureGate, Health, HttpStack, MetricsRegistry, PostgresFlagSource,
+};
 use time::OffsetDateTime;
 
 #[derive(Debug, Deserialize)]
@@ -54,11 +56,33 @@ async fn main() -> anyhow::Result<()> {
         tankovault_service::run_healthcheck_and_exit(&cfg.bind_addr);
     }
 
-    let cfg: Config = tankovault_config::load()?;
-    tankovault_service::init_tracing(&cfg.telemetry)?;
-    let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    let boot = tankovault_config::load_watched::<Config>()?;
+    // Both are process-global and installed once, which is why `telemetry.*` and `metrics.*`
+    // are the two blocks a configuration reload cannot apply.
+    tankovault_service::init_tracing(&boot.value.telemetry)?;
+    let metrics = MetricsRegistry::install(&boot.value.metrics)?;
     let shutdown = tankovault_service::install_shutdown();
+    // Own port keeps the scrape off the request-facing listener. Outside the reloadable
+    // runtime so a reload does not rebind it.
+    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
 
+    tankovault_service::run_reloading(boot, &shutdown, |cfg, generation| {
+        serve_once(cfg, metrics.clone(), generation)
+    })
+    .await
+}
+
+/// Build and run everything a configuration change rebuilds: the pool, the bus connection, the
+/// notification channels, the ops listener and the event consumer.
+///
+/// Returns when `shutdown` is cancelled — by the OS signal, or by the supervisor because the
+/// configuration changed and this runtime is being replaced. A rotated Discord or webhook URL
+/// takes effect here, on the rebuild, rather than at the next restart.
+async fn serve_once(
+    cfg: Arc<Config>,
+    metrics: MetricsRegistry,
+    shutdown: CancellationToken,
+) -> anyhow::Result<()> {
     let pool = tankovault_db::connect(
         &cfg.database.url,
         cfg.database.max_connections,
@@ -79,9 +103,6 @@ async fn main() -> anyhow::Result<()> {
             async move { bus.ping().await.map_err(|e| e.to_string()) }
         })
         .build();
-
-    // Own port keeps the scrape off the request-facing listener.
-    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
 
     let ops = HttpStack::new(&cfg.security, metrics.clone())
         .apply(axum::Router::new())

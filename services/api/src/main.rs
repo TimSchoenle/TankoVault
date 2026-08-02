@@ -5,7 +5,9 @@ use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
 use std::sync::Arc;
 use std::time::Duration;
 use tankovault_api::AppState;
-use tankovault_service::{Health, MetricsRegistry, PostgresAuditSink, health::PostgresCheck};
+use tankovault_service::{
+    CancellationToken, Health, MetricsRegistry, PostgresAuditSink, health::PostgresCheck,
+};
 
 #[derive(Debug, serde::Deserialize)]
 struct Config {
@@ -230,14 +232,41 @@ async fn main() -> anyhow::Result<()> {
         tankovault_service::run_healthcheck_and_exit(&cfg.bind_addr);
     }
 
-    let cfg: Config = tankovault_config::load()?;
-    tankovault_service::init_tracing(&cfg.telemetry)?;
+    let boot = tankovault_config::load_watched::<Config>()?;
+    // Both are process-global and installed once, which is why `telemetry.*` and `metrics.*`
+    // are the two blocks a configuration reload cannot apply.
+    tankovault_service::init_tracing(&boot.value.telemetry)?;
+    let metrics = MetricsRegistry::install(&boot.value.metrics)?;
+    let shutdown = tankovault_service::install_shutdown();
+    // Serve the metrics scrape on its own port when configured, keeping it off the
+    // request-facing listener. Outside the reloadable runtime so a reload does not rebind it.
+    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
 
+    tankovault_service::run_reloading(boot, &shutdown, |cfg, generation| {
+        serve_once(cfg, metrics.clone(), generation)
+    })
+    .await
+}
+
+/// Build and run everything a configuration change rebuilds: the pool, the broker and Redis
+/// connections, the mailer, the audit sink, the application state, the router and the listener.
+///
+/// Returns when `shutdown` is cancelled — by the OS signal, or by the supervisor because the
+/// configuration changed and this runtime is being replaced.
+///
+/// The secret validation runs here rather than in `main` deliberately: it has to hold for a
+/// *rotated* secret too, and a rotation that fails it leaves the previous runtime serving
+/// rather than taking the pod down. Note what a successful `auth.jwt_secret` rotation means —
+/// every session signed with the old key stops verifying, so every user is signed out. That is
+/// the correct behaviour for a compromised key and a surprising one otherwise.
+async fn serve_once(
+    cfg: Arc<Config>,
+    metrics: MetricsRegistry,
+    shutdown: CancellationToken,
+) -> anyhow::Result<()> {
     // Refuse to boot with a broken trust root: a production deployment must not serve a single
     // request against a missing or brute-forceable JWT secret.
     validate_auth_secrets(&cfg.auth, is_production())?;
-    let metrics = MetricsRegistry::install(&cfg.metrics)?;
-    let shutdown = tankovault_service::install_shutdown();
 
     let pool = tankovault_db::connect(
         &cfg.database.url,
@@ -291,19 +320,19 @@ async fn main() -> anyhow::Result<()> {
         refresh_ttl: time::Duration::days(cfg.auth.refresh_ttl_days),
         control_plane: tankovault_api::Upstream::new(
             internal_http.clone(),
-            cfg.control_plane_url,
+            cfg.control_plane_url.clone(),
             internal_token.clone(),
             "control-plane",
         ),
         sync: tankovault_api::Upstream::new(
             internal_http.clone(),
-            cfg.sync_url,
+            cfg.sync_url.clone(),
             internal_token.clone(),
             "sync",
         ),
         worker: tankovault_api::Upstream::new(
             internal_http_worker,
-            cfg.worker_url,
+            cfg.worker_url.clone(),
             internal_token,
             "worker",
         ),
@@ -314,16 +343,12 @@ async fn main() -> anyhow::Result<()> {
         cookie_secure: cfg.auth.cookie_secure,
         webauthn,
         mailer,
-        email_base_url: cfg.email.base_url,
+        email_base_url: cfg.email.base_url.clone(),
     };
 
     // Readiness reflects what the edge actually needs to serve: Postgres is required, and
     // NATS is not (its absence only disables the live stream, which already degrades).
     let health = Health::builder().check(PostgresCheck::new(pool)).build();
-
-    // Serve the metrics scrape on its own port when configured, keeping it off the
-    // request-facing listener.
-    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
 
     let app = tankovault_api::build_router(
         state,

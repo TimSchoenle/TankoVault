@@ -274,6 +274,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"]
 # `crates/service/src/telemetry.rs`, or not at all.
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
+# Filesystem watching for `crates/service/src/reload.rs`. Default features only: the optional
+# `serde`/`crossbeam-channel`/`flume` back-ends are for shapes this crate does not use — the
+# watcher hands events to a bounded `tokio::sync::mpsc` and coalesces them itself, because a
+# Kubernetes volume update fires several events for one logical change.
+notify = "8.2"
 
 
 # --- email ---

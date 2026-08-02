@@ -15,7 +15,9 @@ use axum::routing::post;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use tankovault_service::problem::Problem;
-use tankovault_service::{Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier};
+use tankovault_service::{
+    CancellationToken, Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier,
+};
 use tankovault_solver::ChallengeSolver;
 
 use crate::browser::{BrowserManager, RenderOptions};
@@ -61,13 +63,35 @@ async fn main() -> anyhow::Result<()> {
         tankovault_service::run_healthcheck_and_exit(&cfg.bind_addr);
     }
 
-    let cfg: Config = tankovault_config::load()?;
-    tankovault_service::init_tracing(&cfg.telemetry)?;
-    let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    let boot = tankovault_config::load_watched::<Config>()?;
+    // Both are process-global and installed once, which is why `telemetry.*` and `metrics.*`
+    // are the two blocks a configuration reload cannot apply.
+    tankovault_service::init_tracing(&boot.value.telemetry)?;
+    let metrics = MetricsRegistry::install(&boot.value.metrics)?;
+    let shutdown = tankovault_service::install_shutdown();
+    // Own port keeps the scrape off the request-facing listener. Outside the reloadable
+    // runtime so a reload does not rebind it.
+    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
+
+    tankovault_service::run_reloading(boot, &shutdown, |cfg, generation| {
+        serve_once(cfg, metrics.clone(), generation)
+    })
+    .await
+}
+
+/// Build and run everything a configuration change rebuilds: the browser manager, the solver,
+/// the router and the listener.
+///
+/// Returns when `shutdown` is cancelled — by the OS signal, or by the supervisor because the
+/// configuration changed and this runtime is being replaced.
+async fn serve_once(
+    cfg: Arc<Config>,
+    metrics: MetricsRegistry,
+    shutdown: CancellationToken,
+) -> anyhow::Result<()> {
     // Resolved before anything binds: starting without a token would silently serve
     // privileged routes unauthenticated, so the production profile refuses to boot instead.
     let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
-    let shutdown = tankovault_service::install_shutdown();
 
     let manager = Arc::new(BrowserManager::new(cfg.render.clone()));
     let solver = Arc::new(ChromiumSolver::new(
@@ -83,9 +107,6 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState { manager, solver };
     let limiter = RateLimiter::from_config(&cfg.rate_limit, RouteClassifier::new(), None);
-
-    // Own port keeps the scrape off the request-facing listener.
-    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
 
     let app = HttpStack::new(&cfg.security, metrics.clone())
         .with_rate_limit(limiter)

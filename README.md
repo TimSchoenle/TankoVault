@@ -134,9 +134,14 @@ Kubernetes is not implemented.
 
 ## Configuration
 
-Every service reads layered config via `tankovault-config`: optional TOML at `$TANKOVAULT_CONFIG`,
-overlaid by `TANKOVAULT_*` environment variables (`__` denotes nesting, e.g.
-`TANKOVAULT_DATABASE__URL`). The compose file sets dev defaults inline.
+Every service reads layered config via `tankovault-config`: optional TOML at `$TANKOVAULT_CONFIG`
+(a file or a directory of fragments), overlaid by `TANKOVAULT_*` environment variables (`__`
+denotes nesting, e.g. `TANKOVAULT_DATABASE__URL`), then by files — `$TANKOVAULT_SECRETS_DIR`
+and `TANKOVAULT_<KEY>_FILE`. The compose file sets dev defaults inline.
+
+Secrets should arrive as files rather than environment variables wherever the platform allows
+it: the file layers keep credentials out of `/proc/<pid>/environ` and out of every child
+process, and a service picks up a rotated file by rebuilding itself, with no restart.
 
 **[`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) is the complete reference** — every key, its
 default, which services read it, and the failure modes worth knowing (several are silent).

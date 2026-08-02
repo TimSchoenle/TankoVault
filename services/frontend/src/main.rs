@@ -6,6 +6,7 @@
 
 use std::net::SocketAddr;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
@@ -16,7 +17,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get};
 use serde::Deserialize;
 use tankovault_config::{MetricsConfig, SecurityConfig, TelemetryConfig};
-use tankovault_service::{Health, HttpStack, MetricsRegistry};
+use tankovault_service::{CancellationToken, Health, HttpStack, MetricsRegistry};
 use tower::ServiceBuilder;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
@@ -105,11 +106,33 @@ async fn main() -> anyhow::Result<()> {
         tankovault_service::run_healthcheck_and_exit(&cfg.bind_addr);
     }
 
-    let cfg: Config = tankovault_config::load()?;
-    tankovault_service::init_tracing(&cfg.telemetry)?;
-    let metrics = MetricsRegistry::install(&cfg.metrics)?;
+    let boot = tankovault_config::load_watched::<Config>()?;
+    // Both are process-global and installed once, which is why `telemetry.*` and `metrics.*`
+    // are the two blocks a configuration reload cannot apply.
+    tankovault_service::init_tracing(&boot.value.telemetry)?;
+    let metrics = MetricsRegistry::install(&boot.value.metrics)?;
     let shutdown = tankovault_service::install_shutdown();
+    // The scrape lives on its own listener (`TANKOVAULT_METRICS__LISTEN`), so the public
+    // port the browser reaches never serves it. Outside the reloadable runtime so a reload
+    // does not rebind it.
+    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
 
+    tankovault_service::run_reloading(boot, &shutdown, |cfg, generation| {
+        serve_once(cfg, metrics.clone(), generation)
+    })
+    .await
+}
+
+/// Build and run everything a configuration change rebuilds: the upstream client, the proxy
+/// state, the router and the listener.
+///
+/// Returns when `shutdown` is cancelled — by the OS signal, or by the supervisor because the
+/// configuration changed and this runtime is being replaced.
+async fn serve_once(
+    cfg: Arc<Config>,
+    metrics: MetricsRegistry,
+    shutdown: CancellationToken,
+) -> anyhow::Result<()> {
     // Decompression off so the response body forwards byte-for-byte alongside its
     // `Content-Encoding` header, rather than being silently decoded and shipped mismatched.
     let client = reqwest::Client::builder()
@@ -130,10 +153,6 @@ async fn main() -> anyhow::Result<()> {
         bind = %cfg.bind_addr,
         "frontend serving the SPA and proxying /v1/* to the api"
     );
-
-    // The scrape lives on its own listener (`TANKOVAULT_METRICS__LISTEN`), so the public
-    // port the browser reaches never serves it.
-    tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
 
     // No rate limiter here: one page load fetches the shell plus every hashed asset, so any
     // bucket tight enough to matter throttles a legit cold load. The API applies the limits

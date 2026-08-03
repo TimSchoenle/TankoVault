@@ -12,12 +12,15 @@ use tankovault_domain::UserId;
 /// round trip, so it can't interleave with concurrent writes).
 ///
 /// Credentials (password hash, session/OAuth tokens) are excluded — an export is a
-/// commonly-emailed file. The subject's own `audit_log` rows are projected, not dumped (no
-/// `detail`; `target` only when it names the subject), so an operator's export can't leak
-/// another subject's identity (Art. 15(4)).
+/// commonly-emailed file. Passkeys carry their metadata only: the serialised credential is the
+/// library's business, and `credential_id` is withheld because observing one is the first half
+/// of the registration-collision takeover `0022_passkeys.up.sql` blocks with its `UNIQUE`. The
+/// subject's own `audit_log` rows are projected, not dumped (no `detail`; `target` only when it
+/// names the subject), so an operator's export can't leak another subject's identity
+/// (Art. 15(4)).
 ///
 /// # Errors
-/// `Sqlx` only; an unknown `user_id` returns an empty document, not NotFound.
+/// `Sqlx` only; an unknown `user_id` returns an empty document, not `NotFound`.
 pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<Json> {
     let export = sqlx::query_scalar!(
         "SELECT json_build_object( \
@@ -25,6 +28,9 @@ pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
            'profile', (SELECT to_jsonb(u) - 'password_hash' FROM users u WHERE u.id = $1), \
            'sessions', (SELECT coalesce(json_agg(to_jsonb(r) - 'token_hash' ORDER BY r.created_at), '[]'::json) \
                           FROM refresh_tokens r WHERE r.user_id = $1), \
+           'passkeys', (SELECT coalesce(json_agg(to_jsonb(k) - 'credential' - 'credential_id' - 'user_id' \
+                                                 ORDER BY k.created_at), '[]'::json) \
+                          FROM user_passkeys k WHERE k.user_id = $1), \
            'watchlist', (SELECT coalesce(json_agg(to_jsonb(w) ORDER BY w.added_at), '[]'::json) \
                            FROM watchlist_entries w WHERE w.user_id = $1), \
            'read_progress', (SELECT coalesce(json_agg(to_jsonb(p) ORDER BY p.updated_at), '[]'::json) \
@@ -68,7 +74,7 @@ pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
 /// (pseudonymised, under legitimate interest, Art. 6(1)(f)) once the identity link is gone.
 ///
 /// # Errors
-/// `Sqlx` only; "no such user" is `Ok(false)`, not NotFound.
+/// `Sqlx` only; "no such user" is `Ok(false)`, not `NotFound`.
 pub async fn erase_user<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<bool> {
     let deleted = sqlx::query!("DELETE FROM users WHERE id = $1", user_id.as_uuid())
         .execute(exec)

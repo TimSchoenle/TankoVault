@@ -373,10 +373,12 @@ async fn clone_catalogue_template(base_url: &str, db_name: &str) {
 /// forbidding it outright is what stops one stray connection from failing every clone.
 async fn build_catalogue_template(base_url: &str, admin: &mut PgConnection) {
     let scratch = format!("tv_catalogue_building_{}", Uuid::new_v4().simple());
-    sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE \"{scratch}\"")))
-        .execute(&mut *admin)
-        .await
-        .expect("create the catalogue template scratch database");
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "CREATE DATABASE \"{scratch}\""
+    )))
+    .execute(&mut *admin)
+    .await
+    .expect("create the catalogue template scratch database");
 
     let pool = connect_pool(base_url, &scratch).await;
     tankovault_db::migrate(&pool)

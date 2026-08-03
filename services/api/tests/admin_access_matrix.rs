@@ -1,6 +1,6 @@
 //! The complete admin access-control matrix: every `/v1/admin` endpoint driven anonymous, holding
 //! every permission but the required one(s) (403, audited), and holding exactly it (not
-//! 401/403), reconciled against the published OpenAPI document. Gated behind the `integration`
+//! 401/403), reconciled against the published `OpenAPI` document. Gated behind the `integration`
 //! feature; requires Docker.
 #![cfg(feature = "integration")]
 
@@ -92,6 +92,22 @@ fn admin_gates() -> Vec<Gate> {
             path: "/v1/admin/merge-candidates/dismiss",
             required: &[Permission::MergeWrite],
             body: || Some(json!({ "id": ABSENT_A })),
+        },
+        Gate {
+            method: "POST",
+            template: "/v1/admin/merge-candidates/sweep",
+            path: "/v1/admin/merge-candidates/sweep",
+            required: &[Permission::MergeWrite],
+            // Forwarded to a control plane the harness points at `.invalid`, so the leg-3
+            // outcome is a `502` — after the permission check the matrix is here to assert.
+            body: empty,
+        },
+        Gate {
+            method: "POST",
+            template: "/v1/admin/matching/rebuild-keys",
+            path: "/v1/admin/matching/rebuild-keys",
+            required: &[Permission::MergeWrite],
+            body: empty,
         },
         // --- privacy queue ---
         Gate {

@@ -1,7 +1,7 @@
 //! The authenticated-tier access-control matrix — the other half of
 //! [`admin_access_matrix`](../admin_access_matrix.rs): every `/v1/me` route driven anonymous
 //! (401), suspended (403), and as an ordinary account (neither), reconciled against the
-//! published OpenAPI document. Gated behind the `integration` feature; requires Docker.
+//! published `OpenAPI` document. Gated behind the `integration` feature; requires Docker.
 #![cfg(feature = "integration")]
 
 use std::collections::BTreeSet;
@@ -108,6 +108,53 @@ fn me_gates() -> Vec<Gate> {
             "DELETE",
             "/v1/me/sessions/{id}",
             "/v1/me/sessions/00000000-0000-7000-8000-00000000000a",
+        ),
+        // --- passkeys (the management half; the sign-in half is unauthenticated by design) ---
+        get("/v1/me/passkeys", "/v1/me/passkeys"),
+        Gate {
+            body: || {
+                Some(json!({
+                    "current_password": "not-the-seeded-hash",
+                    "label": "matrix",
+                }))
+            },
+            admitted_leg_skipped: Some(
+                "answers 401 for a wrong `current_password`, which is the same status as \
+                 no session; the authenticated path is covered by passkeys.rs",
+            ),
+            ..gate(
+                "POST",
+                "/v1/me/passkeys/register/start",
+                "/v1/me/passkeys/register/start",
+            )
+        },
+        Gate {
+            // An unparseable credential is refused (400) before the ceremony is looked up, so the
+            // admitted leg neither needs a live ceremony nor hits the 401 an absent one answers.
+            body: || {
+                Some(json!({
+                    "ceremony_id": "00000000-0000-7000-8000-00000000000a",
+                    "credential": {},
+                }))
+            },
+            ..gate(
+                "POST",
+                "/v1/me/passkeys/register/finish",
+                "/v1/me/passkeys/register/finish",
+            )
+        },
+        Gate {
+            body: || Some(json!({ "label": "matrix" })),
+            ..gate(
+                "PATCH",
+                "/v1/me/passkeys/{id}",
+                "/v1/me/passkeys/00000000-0000-7000-8000-00000000000a",
+            )
+        },
+        gate(
+            "DELETE",
+            "/v1/me/passkeys/{id}",
+            "/v1/me/passkeys/00000000-0000-7000-8000-00000000000a",
         ),
         // --- notifications ---
         get("/v1/me/notifications", "/v1/me/notifications"),
@@ -325,6 +372,12 @@ fn covered_elsewhere() -> Vec<(&'static str, &'static str)> {
         "POST /v1/auth/verify-email",
         "POST /v1/auth/verify-email/resend",
     ];
+    // Sign-in with a passkey is credential-free on purpose — there is no session yet, and the
+    // challenge is deliberately identifier-free — so neither leg of this matrix applies.
+    let passkey_login = [
+        "POST /v1/auth/passkey/login/start",
+        "POST /v1/auth/passkey/login/finish",
+    ];
     auth.into_iter()
         .map(|op| {
             (
@@ -332,6 +385,11 @@ fn covered_elsewhere() -> Vec<(&'static str, &'static str)> {
                 "auth_flows.rs / auth_lifecycle.rs, with real credentials",
             )
         })
+        .chain(
+            passkey_login
+                .into_iter()
+                .map(|op| (op, "passkeys.rs, with real ceremonies")),
+        )
         .collect()
 }
 

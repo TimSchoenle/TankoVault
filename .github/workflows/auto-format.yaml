@@ -1,0 +1,65 @@
+name: auto-format
+
+# Runs `cargo fmt` on pull requests and commits the result, via the shared
+# `TimSchoenle/actions` Rust action.
+#
+# `ci.yml`'s `rustfmt` step is deliberately unconditional and takes seconds, so a formatting slip
+# can arrive in any commit and fail the whole `fmt + clippy` job — which then never reaches
+# `clippy` or `repository invariants`, the two steps after it. That is the failure this exists to
+# remove: on 2026-08-03 `main` went red on six `cargo fmt` diffs, and because `rustfmt` is the
+# first step, nothing downstream of it in that job had been evaluated at all.
+#
+# `auto-fix.yaml` also runs `cargo fmt`, so this is the fast path rather than the only one: it
+# needs no compile and finishes in about a minute, where `auto-fix` spends twenty building the
+# workspace under `--all-targets --all-features` for `clippy --fix`. A pull request whose only
+# problem is formatting is fixed here and never waits for that. They share a concurrency group,
+# so the redundancy costs a queued job, never a contended push, and `cargo fmt` is idempotent —
+# whichever runs second finds nothing to do.
+#
+# Scope is the host workspace only, matching the gate: `cargo fmt --all` stops at the workspace
+# boundary and `web/frontend` is a separate one, which `ci.yml` does not format-check either.
+# Widening this to the frontend would start enforcing a rule no gate states.
+
+on:
+  pull_request:
+
+# Shared with `update-lockfile.yaml`, and `cancel-in-progress: false` rather than the usual
+# `true`. Both workflows push a commit to the pull request's head branch, so two of them running
+# at once is a losing `git push` and a red job on a problem that does not exist — a release PR
+# carrying formatting drift would hit exactly that. Queueing is right for a job that writes:
+# cancelling one mid-push is worse than making it wait.
+concurrency:
+  group: pr-autocommit-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  auto-format:
+    name: cargo fmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Same guard as `update-lockfile.yaml`: forks cannot read the app secrets, and a fork PR must
+    # not be able to make this repository commit on its behalf.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions: {}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      # The shared action does its own checkout, toolchain install and commit. It mints a GitHub
+      # App token rather than using `GITHUB_TOKEN`, which matters for the same reason it does in
+      # `update-lockfile.yaml`: a push made with the default token does not trigger workflows, so
+      # the formatting fix would land without re-running the `rustfmt` step that wanted it.
+      #
+      # `ACTIONS_MAINTENANCE_*`, not `RELEASE_BOT_*`: those are `release` environment secrets, and
+      # naming that environment here would put a secret scope meant for publishing behind an
+      # every-pull-request job.
+      - name: Run cargo fmt and commit
+        uses: TimSchoenle/actions/actions/rust/auto-format@99164fcd01b2f6b4ef304f9897a80b8ef08fb5af # tag=actions-rust-auto-format-v1.1.8
+        with:
+          bot_app_id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
+          bot_private_key: ${{ secrets.ACTIONS_MAINTENANCE_PRIVATE_KEY }}
+          commit_message: "style: apply cargo fmt"

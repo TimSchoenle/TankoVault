@@ -5,22 +5,18 @@ one fires.
 
 Every service installs the shared Prometheus recorder from `crates/service` and serves the
 exposition on its own listener (`TANKOVAULT_METRICS__LISTEN`, default `0.0.0.0:9090`) so a scrape
-never touches the request-facing port. Until now nothing collected it. The collection side lives in
-[`deploy/observability/`](../deploy/observability/) and is started by an overlay:
+never touches the request-facing port.
 
-```bash
-docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.observability.yml \
-  --env-file deploy/local.env up -d
-```
+The **collection** side is not in this repository. The scrape config, the recording and alerting
+rules below, and the provisioned dashboard live in the chart that deploys them,
+[`TimSchoenle/helm-charts`](https://github.com/TimSchoenle/helm-charts) (`charts/tankovault`):
+`rules/` for the two rule files, `templates/prometheusrule.yaml`, `templates/servicemonitor.yaml`
+and `templates/grafanadashboard.yaml` for the wiring, and `tests/observability_test.yaml` for the
+gate. A `deploy/observability/` copy plus a compose overlay lived here until 2026-08-03; two sets
+of rules with only one of them deployed is how the deployed set goes stale.
 
-Grafana on <http://127.0.0.1:3001> (folder *TankoVault*), Prometheus on <http://127.0.0.1:9091>.
-Both are bound to loopback; the reasoning, and why this is an overlay rather than a compose
-profile, is at the top of `deploy/docker-compose.observability.yml`. A plain
-`docker compose -f deploy/docker-compose.yml up` is unchanged and starts nothing extra.
-
-`GRAFANA_ADMIN_PASSWORD` has no default and the overlay refuses to start without it, for the same
-reason the API refuses a placeholder JWT secret: Grafana's `admin`/`admin` is published in
-Grafana's own documentation, so it is not a password.
+This document stays here because it is about what the *code* emits and what each alert means —
+neither of which moves with the manifests. Every rule name below is the name in the chart.
 
 ---
 
@@ -119,7 +115,7 @@ closing it. So:
 
 ## 2. What is collected
 
-`deploy/observability/prometheus/prometheus.yml`, 15s scrape interval, 15 days retention.
+The chart's `ServiceMonitor`, 15s scrape interval; retention is the cluster Prometheus's.
 
 Eight per-service jobs on `<service>:9090`, plus Prometheus itself. Two deliberate asymmetries:
 
@@ -144,7 +140,7 @@ Eight per-service jobs on `<service>:9090`, plus Prometheus itself. Two delibera
 
 ### Recording rules
 
-`deploy/observability/prometheus/rules/tankovault-recording.rules.yml`, named
+`charts/tankovault/rules/tankovault-recording.rules.yml` in the chart repository, named
 `level:metric:operations`. They precompute per-service request rate, 4xx/5xx/429 splits, the 5xx
 ratio, p50/p95/p99 latency, per-route latency and error rate, rate-limit and feature-gate rates,
 scan tasks per provider and per tier, solve/render outcome rates and error ratios, replica counts
@@ -171,24 +167,13 @@ stanza to add when there is somewhere to send is in `prometheus.yml`.
 
 ### Validating a change
 
-`promtool` ships in the pinned Prometheus image, so no local install is needed:
+The rules live in the chart, so they are validated there: `TimSchoenle/helm-charts` runs
+`promtool` over `charts/tankovault/rules/` and asserts the rendered templates in
+`charts/tankovault/tests/observability_test.yaml`. A rule change is a pull request against that
+repository.
 
-```bash
-# Config, rule-file discovery and every expression's syntax.
-docker run --rm --entrypoint /bin/promtool \
-  -v "$PWD/deploy/observability/prometheus:/etc/prometheus:ro" prom/prometheus:v3.5.0 \
-  check config /etc/prometheus/prometheus.yml
-
-# Behaviour: the low-traffic guard and the fast-lane `unless` actually work.
-docker run --rm --entrypoint /bin/promtool \
-  -v "$PWD/deploy/observability/prometheus:/etc/prometheus:ro" prom/prometheus:v3.5.0 \
-  test rules /etc/prometheus/rules/tests/alerts.test.yml
-```
-
-The unit tests exist because `check rules` only proves the PromQL parses, and both bugs found while
-writing these rules parsed fine — see the header of `rules/tests/alerts.test.yml`. Prometheus is
-started with `--web.enable-lifecycle`, so an edited rule file can be applied without losing the
-TSDB: `curl -X POST http://127.0.0.1:9091/-/reload`.
+The unit tests exist because `check rules` only proves the PromQL parses, and both bugs found
+while writing these rules parsed fine.
 
 ---
 
@@ -207,7 +192,7 @@ the runbook.
 | `TankoVaultWorkerTargetsAbsent` | no worker replica discovered 5m | Scan tasks are queueing and nothing executes them. `docker compose ps worker`. The backlog is not lost — the work-queue stream drops a message on ack, not on consumer loss — but it drains as slowly as it filled. |
 | `TankoVaultWorkerFleetIncomplete` | fewer than the 2 declared replicas, 10m | Throughput halved, nothing broken. If it is not a deploy, look for a replica in a restart loop and check the 768m memory limit for an OOM during a large catalogue fan-out. |
 | `TankoVaultServiceNotReady` | `/ready` non-2xx for 5m | This is the dependency alarm. `curl -s http://<service>:<port>/ready \| jq` names the failing dependency — the body is per-dependency, so this is one command from a diagnosis. Postgres down = the postgres container. Postgres up but the check failing = **connection-pool exhaustion**; look for a slow query holding connections. NATS down = the scan pipeline and live notifications are both stalled. |
-| `TankoVaultReadinessProberDown` | `blackbox-exporter` down 10m | Readiness is unmonitored and `TankoVaultServiceNotReady` **cannot fire** while this holds. Restart it; if it will not start, check `deploy/observability/blackbox/blackbox.yml` parses. |
+| `TankoVaultReadinessProberDown` | `blackbox-exporter` down 10m | Readiness is unmonitored and `TankoVaultServiceNotReady` **cannot fire** while this holds. Restart it; if it will not start, check its prober config in the chart parses. |
 | `TankoVaultPrometheusRuleEvaluationFailing` | any rule group erroring 5m | A group is failing, so the series it produces are stale and alerts built on them are silently disarmed. Status → Rules names the group. This is the alert that keeps the others from failing quietly. |
 
 ### Request path
@@ -321,13 +306,15 @@ reading the code for bugs.
 
 ## 5. Files
 
+All of it is in [`TimSchoenle/helm-charts`](https://github.com/TimSchoenle/helm-charts), under
+`charts/tankovault/`:
+
 | Path | What it is |
 |---|---|
-| `deploy/docker-compose.observability.yml` | The overlay: `prometheus`, `grafana`, `blackbox-exporter`, `nats-exporter`. Pinned tags (digests recorded in comments), memory limits, `cap_drop: [ALL]`, `no-new-privileges`, `read_only` on all but Grafana, healthchecks, loopback-only published ports. |
-| `deploy/observability/prometheus/prometheus.yml` | Scrape config: eight per-service jobs, DNS discovery for `worker`, blackbox readiness probes, JetStream queue depth with the `provider`/`scan` relabelling. |
-| `deploy/observability/prometheus/rules/tankovault-recording.rules.yml` | 31 recording rules. |
-| `deploy/observability/prometheus/rules/tankovault-alerts.rules.yml` | 25 alerts, each with a stated threshold rationale. |
-| `deploy/observability/prometheus/rules/tests/alerts.test.yml` | `promtool test rules` cases for the two expressions whose label semantics are easy to get wrong. |
-| `deploy/observability/blackbox/blackbox.yml` | One prober module for `GET /ready`, with a 3s timeout chosen against the 2s per-dependency check bound. |
-| `deploy/observability/grafana/provisioning/` | Datasource (fixed uid, referenced by the dashboard) and dashboard provider. |
-| `deploy/observability/grafana/dashboards/tankovault-overview.json` | The dashboard: fleet, request path, edge policy, scan pipeline, fetch tier. |
+| `rules/tankovault-recording.rules.yml` | 31 recording rules. |
+| `rules/tankovault-alerts.rules.yml` | 25 alerts, each with a stated threshold rationale. |
+| `templates/prometheusrule.yaml` | Wraps both rule files as a `PrometheusRule`. |
+| `templates/servicemonitor.yaml` | The scrape config: per-service targets on `9090`. |
+| `templates/grafanadashboard.yaml` | Provisions the dashboard below. |
+| `dashboards/tankovault-overview.json` | The dashboard: fleet, request path, edge policy, scan pipeline, fetch tier. |
+| `tests/observability_test.yaml` | The gate over the rendered output. |

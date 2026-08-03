@@ -334,7 +334,7 @@ mod tests {
         );
     }
 
-    /// The two KunManga listings the user reported, scored the way the sweep scores them.
+    /// The two `KunManga` listings the user reported, scored the way the sweep scores them.
     ///
     /// One series' canonical title is byte-identical to the other's alternative title, which is
     /// `alias_identity` — structural, so the merge is permitted at all — and the year is within

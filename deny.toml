@@ -18,16 +18,10 @@ ignore = [
     # RUSTSEC-2024-0436 — `paste` unmaintained; compile-time-only proc macro, no runtime
     # surface, no fix available. Reviewed 2026-07-29; re-review 2026-10-29.
     "RUSTSEC-2024-0436",
-
-    # RUSTSEC-2025-0111 — `rustls-pemfile` unmaintained; reaches the graph only via
-    # `testcontainers` (dev-dependency, Docker-socket test harness only). Reviewed 2026-07-29;
-    # re-review 2026-10-29 or when testcontainers updates bollard.
-    "RUSTSEC-2025-0111",
-
-    # RUSTSEC-2025-0134 — "Tarmageddon": `tokio-tar` mis-parses PAX headers. Same path as above
-    # (`testcontainers`, dev-dependency only), no safe upgrade published. Reviewed 2026-07-29;
-    # re-review 2026-10-29.
-    "RUSTSEC-2025-0134",
+    # RUSTSEC-2025-0111 (`rustls-pemfile`) and RUSTSEC-2025-0134 ("Tarmageddon", `tokio-tar`)
+    # were here until 2026-08-03. Both arrived only through `testcontainers`/`bollard`, which
+    # has since dropped them; cargo-deny reported the entries as `advisory-not-detected`, so
+    # they went per this file's own rule rather than being re-dated.
 ]
 
 [licenses]
@@ -144,6 +138,21 @@ skip = [
 
     # Platform shims, present on any graph touching Windows or macOS bindings.
     { crate = "windows-sys" },
+    # The import-library family behind `windows-sys` (added 2026-08-03). Not a new decision —
+    # `windows-sys` above is already two copies, 0.52.0 under `ring` and 0.60.2 under `notify`,
+    # and these are that split reaching one level down. They became visible only when `notify`
+    # moved to a `windows-sys` new enough to pull `windows-targets` 0.53. Windows-only link
+    # stubs: nothing here is reachable in the Linux images that ship. Collapses when `ring`
+    # bumps its `windows-sys` floor, which is the only pin holding 0.52 in place.
+    { crate = "windows-targets" },
+    { crate = "windows_aarch64_gnullvm" },
+    { crate = "windows_aarch64_msvc" },
+    { crate = "windows_i686_gnu" },
+    { crate = "windows_i686_gnullvm" },
+    { crate = "windows_i686_msvc" },
+    { crate = "windows_x86_64_gnu" },
+    { crate = "windows_x86_64_gnullvm" },
+    { crate = "windows_x86_64_msvc" },
 ]
 
 [sources]

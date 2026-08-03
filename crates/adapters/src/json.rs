@@ -104,7 +104,7 @@ fn strip_tags(s: &str) -> String {
 /// [`MAX_CANDIDATES`].
 ///
 /// Single-pass and linear in body length — re-scanning to the end of the document from every
-/// `{` is a remotely triggerable quadratic DoS given the fetch stack's multi-MiB body cap.
+/// `{` is a remotely triggerable quadratic `DoS` given the fetch stack's multi-MiB body cap.
 fn collect_objects(doc: &str, out: &mut Vec<String>) {
     /// How many candidate openings to track at once — bounds the working set against a
     /// hostile body while staying above [`MAX_CANDIDATES`].

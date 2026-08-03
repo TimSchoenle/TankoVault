@@ -24,11 +24,6 @@
       "automerge": false
     },
     {
-      "description": "promtool (CI) and Prometheus (deploy overlay) must be the same version, or CI tests a different PromQL engine than the one that runs.",
-      "matchPackageNames": ["prom/prometheus"],
-      "groupName": "prometheus"
-    },
-    {
       "description": "One pull request for routine Cargo churn across all three workspaces (root, web/frontend, fuzz) instead of three streams of singletons.",
       "matchManagers": ["cargo"],
       "matchUpdateTypes": ["minor", "patch"],

@@ -323,7 +323,10 @@ async fn seed_readers(pool: &PgPool) {
 /// Both statements go over one connection because the setting is per-session; on a pool they
 /// would land on different ones and the `ANALYZE` would run at the default.
 async fn analyse(pool: &PgPool) {
-    let mut conn = pool.acquire().await.expect("acquire a connection to analyse");
+    let mut conn = pool
+        .acquire()
+        .await
+        .expect("acquire a connection to analyse");
     for statement in ["SET default_statistics_target = 1000", "ANALYZE"] {
         sqlx::query(sqlx::AssertSqlSafe(statement))
             .execute(&mut *conn)

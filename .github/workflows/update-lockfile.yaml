@@ -1,12 +1,19 @@
 name: update-lockfile
 
-# Keeps `Cargo.lock` in step with `Cargo.toml` on pull requests, and commits the result.
+# Keeps both lockfiles in step with `Cargo.toml` on pull requests, and commits the result.
 #
 # This exists for release-please and is **not optional**. `release-please-config.json` bumps
 # `$.workspace.package.version`, which every one of the 26 workspace members inherits via
 # `version.workspace = true`. That changes each member's recorded version in `Cargo.lock` —
 # and release-please does not update lockfiles for the `simple` strategy (see the reasoning
 # block in `release-please.yaml` for why `simple` and not `rust`).
+#
+# **Both** lockfiles, because `web/frontend` is a separate workspace that inherits nothing and
+# is therefore easy to forget. It depends on `crates/api-client` and `crates/domain` by path,
+# so those two carry the bumped version into `web/frontend/Cargo.lock` as surely as into the
+# host one — and this workflow updated only the host lockfile until 2026-08-03. Release #50
+# shipped a frontend lockfile still recording 0.4.1, which failed `cargo fetch --locked` and
+# took `lockfile integrity` and `third-party notices` down with it, on `main`, after merge.
 #
 # Left alone, the release pull request would carry a `Cargo.lock` that disagrees with the
 # manifests, and every `--locked` build in the repository fails: `xtask ci`, the `msrv` and
@@ -23,9 +30,13 @@ name: update-lockfile
 on:
   pull_request:
 
+# Shared with `auto-format.yaml`, which also commits to the pull request's head branch. Two jobs
+# pushing to one branch at once means a losing `git push` and a red job on a problem that does not
+# exist, so they queue instead of racing — `cancel-in-progress: false`, because cancelling a job
+# mid-push is worse than making it wait.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: pr-autocommit-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
 
 permissions: {}
 
@@ -90,20 +101,21 @@ jobs:
 
       # No BoringSSL toolchain is installed on purpose: `cargo update` resolves and rewrites the
       # lockfile without compiling anything, so none of `cmake`/`nasm`/`clang` is needed here.
-      - name: Sync Cargo.lock with the manifests
+      - name: Sync both lockfiles with the manifests
         id: sync
         run: |
           set -euo pipefail
           cargo update --workspace
-          if git diff --quiet -- Cargo.lock; then
+          cargo update --workspace --manifest-path web/frontend/Cargo.toml
+          if git diff --quiet -- Cargo.lock web/frontend/Cargo.lock; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Cargo.lock already in step with the manifests."
+            echo "Both lockfiles already in step with the manifests."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            git diff --stat -- Cargo.lock
+            git diff --stat -- Cargo.lock web/frontend/Cargo.lock
           fi
 
-      - name: Commit the updated lockfile
+      - name: Commit the updated lockfiles
         if: steps.sync.outputs.changed == 'true'
         env:
           # The GitHub Actions bot identity, so the commit is attributable to automation rather
@@ -114,6 +126,6 @@ jobs:
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
           set -euo pipefail
-          git add Cargo.lock
-          git commit -m "build: sync Cargo.lock with the workspace manifests"
+          git add Cargo.lock web/frontend/Cargo.lock
+          git commit -m "build: sync both Cargo.lock files with the workspace manifests"
           git push

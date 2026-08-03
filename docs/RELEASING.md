@@ -21,6 +21,7 @@ commit to main (conventional commits)
         └─ release-deps (2 legs: one `builder` compile per architecture)
               └─ build (18 legs: 9 images x amd64/arm64, native runners)
                     └─ manifest (9 jobs: manifest list per image, cosign sign, SBOM attest)
+                          └─ helm-release → chart bump PR against TimSchoenle/helm-charts
 ```
 
 ## What is published
@@ -38,6 +39,44 @@ for `<bin>` in `api`, `bootstrap`, `worker`, `control-plane`, `notifier`, `sync`
 
 Tags per release: `vX.Y.Z`, `X.Y` and `latest`. Every published manifest-list digest is signed
 with cosign keyless and carries an SPDX SBOM attestation.
+
+## The chart hand-off
+
+Publishing an image deploys nothing. The deployable chart lives in
+[`TimSchoenle/helm-charts`](https://github.com/TimSchoenle/helm-charts/tree/main/charts/tankovault),
+and `helm-release` is what connects the two: it pins all nine services to the digests this run
+published and opens a pull request there. A pull request and not a push — the chart repository
+gates its own releases, so this workflow proposes and that one decides.
+
+It runs after `manifest`, not after `build`, because what a chart pins has to be a digest that is
+signed and SBOM-attested, and `manifest` is where both happen. Each `manifest` leg exports its
+Docker Hub manifest-list digest as an artifact; `helm-release` collects the nine. Artifacts rather
+than job outputs because `manifest` is a matrix and a matrix job's `outputs` are last-writer-wins.
+
+The Docker Hub digest is the one used because the chart's `repository` values name Docker Hub.
+Both registries hold the same list digest — a manifest list is content-addressed, and both were
+assembled from the same two per-architecture digests — but a chart should pin the registry it
+actually pulls from.
+
+What the pull request changes:
+
+| Chart field | Value |
+| --- | --- |
+| `services.<camelCase>.image.tag`, `bootstrap.image.tag` | `vX.Y.Z@sha256:…` |
+| `appVersion` | `X.Y.Z` — **no** `v`; that is why `helm-release` reads release-please's `version` output and not `tag_name` |
+| `version` | the chart's own version, bumped by a patch |
+
+The chart's version is bumped by a patch regardless of how the application version moved: an
+application release does not change the chart's templates. A chart change is the chart
+repository's own release.
+
+The values keys are *derived* from the binary names (`control-plane` → `services.controlPlane`;
+`bootstrap` is a one-shot job and sits at the top level) rather than read from a table in the
+workflow. `xtask repo-lint` holds the two image matrices to the deploy blacklist, but it only
+recognises `bin: [...]` and `images=[...]` literals — a third hand-maintained list of the nine
+services would sit outside everything that keeps them in step. A key that does not already exist
+in the chart's `values.yaml` is an error inside the action, so a rename fails loudly there rather
+than silently skipping a service.
 
 ## Build caching
 
@@ -87,13 +126,14 @@ This is what the two former gates were waiting on:
 
 | Name | Kind | Used by |
 | --- | --- | --- |
-| `RELEASE_BOT_APP_ID`, `RELEASE_BOT_PRIVATE_KEY` | `release` environment secret | release-please, update-lockfile |
+| `RELEASE_BOT_APP_ID`, `RELEASE_BOT_PRIVATE_KEY` | `release` environment secret | release-please, update-lockfile, helm-release |
 | `ACTIONS_MAINTENANCE_APP_ID`, `ACTIONS_MAINTENANCE_PRIVATE_KEY` | repository secret | auto-merge |
 | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | `release` environment secret | image publish |
 
 Every job that reads one of these names an `environment: release` with `deployment: false` —
-`release-please`, `update-lockfile`, and both publish jobs, `build` and `manifest`. That is not
-optional and it fails quietly: a job that omits the environment reads the secret as an empty
+`release-please`, `update-lockfile`, `helm-release`, and both publish jobs, `build` and
+`manifest`. That is not optional and it fails quietly: a job that omits the environment reads the
+secret as an empty
 string, so `docker/login-action` reports "Username and password required" and
 `create-github-app-token` reports an empty `app-id`, neither of which names the environment as
 the cause. `deployment: false` keeps a secret scope from writing a deployment record per job.
@@ -105,6 +145,10 @@ outside GitHub's trust boundary, requires stored credentials.
 The App token is not a stylistic preference: a push made with `GITHUB_TOKEN` does not trigger
 workflows, so a release PR created or corrected by it would never run CI, and the required `ci`
 check could never pass.
+
+The release bot App also has to be **installed on `TimSchoenle/helm-charts`** with
+`contents: write` and `pull-requests: write`, or `helm-release` fails at token minting. That is
+an installation setting on the App, not a secret in this repository — nothing here can grant it.
 
 ## Why `release-type: simple` and not `rust`
 

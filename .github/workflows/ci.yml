@@ -475,20 +475,23 @@ jobs:
       # name is attacker-controlled text on a fork pull request, and interpolating it into a shell
       # command is how it becomes one.
       #
-      # `$RUNNER_TEMP`, not `/tmp`: the step below is a Docker container action and the runner
-      # mounts only the workspace, `RUNNER_TEMP` and the tool cache — a file in the host's `/tmp`
-      # is invisible there, while the step that wrote it reports success.
+      # Written into the workspace and passed as a *relative* path, exactly like `revision` below.
+      # The step after this is a Docker container action, and a host path does not survive the
+      # boundary: the runner does mount `RUNNER_TEMP`, but at `/github/runner_temp`, so a
+      # `${RUNNER_TEMP}/…` path resolves to nothing inside the container while the step that
+      # wrote it reports success. Being mounted is not the same as being at the same path. The
+      # workspace is the container's working directory, so a relative path needs no translation.
       - name: the base branch's spec
         env:
           BASE_REF: ${{ github.base_ref }}
-        run: git show "origin/${BASE_REF}:openapi.json" > "${RUNNER_TEMP}/base-openapi.json"
+        run: git show "origin/${BASE_REF}:openapi.json" > base-openapi.json
 
       # Pinned by digest: an action on a mutable ref is an unreviewed code change on every run.
       # Renovate moves the pin, and `renovate.json` keeps oasdiff explicitly enabled because its
       # 0.x versioning would otherwise park every minor on the dashboard.
       - uses: oasdiff/oasdiff-action/breaking@b7c3adeb54330db1903d27c61db520e5661ad55b # v0.1.11
         with:
-          base: ${{ runner.temp }}/base-openapi.json
+          base: base-openapi.json
           revision: openapi.json
           # `ERR` only: gating on oasdiff's warning level would fail every PR that adds a field.
           fail-on: ERR

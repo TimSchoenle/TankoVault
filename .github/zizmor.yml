@@ -14,6 +14,10 @@ rules:
       - ci.yml
       # Same action, same argument; shares `ci.yml`'s pin so there is one number to review.
       - update-lockfile.yaml
+      # Same again, and here the pinned toolchain is load-bearing rather than incidental:
+      # `xtask openapi` formats the generated client, so the rustfmt that runs must be the one
+      # `cargo fmt --check` will judge it with.
+      - auto-regenerate.yaml
 
   # Pinned to a `master` commit deliberately: the only release tag, `v1`, has not moved since
   # 2025-08 and predates the toolchains this workspace builds with. Still an immutable pin, and
@@ -22,3 +26,4 @@ rules:
     ignore:
       - ci.yml
       - update-lockfile.yaml
+      - auto-regenerate.yaml

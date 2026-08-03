@@ -1,0 +1,160 @@
+name: auto-regenerate
+
+# Regenerates the committed generated artefacts on pull requests and commits the result.
+#
+# Four files in this repository are generated, committed, and must not be hand-edited:
+# `openapi.json`, `crates/api-client/src/lib.rs`, `THIRD-PARTY-NOTICES` (ENGINEERING_GUIDE rule 6)
+# and `web/frontend/assets/main.css` (Tailwind output, committed so a build without Node works).
+# Three CI jobs — `openapi --check`, `notices drift` and `tailwind output is current` — fail when
+# they drift, but none fixes anything, so the failure is a red gate waiting on a human to run a
+# command whose output is fully determined by the tree.
+#
+# That gap is not hypothetical. release-please bumps `$.workspace.package.version`, which all
+# three artefacts record, and nothing regenerated them: release #50 landed on `main` with
+# `openapi.json` still reporting `0.4.1`, and `openapi --check` never even ran because `rustdoc`
+# failed earlier in the same job. Regeneration is mechanical and the bot's output is byte-identical
+# to a developer's, so a bot may do it — the same argument that justifies `auto-format.yaml`.
+#
+# This does **not** weaken review of API changes. `openapi breaking changes` still compares the
+# regenerated document against the base branch, so a change that breaks a client is still a red
+# gate; what stops being a red gate is *forgetting to run the generator*.
+#
+# All generators in one job on purpose: `xtask notices` needs only the lockfiles and the Tailwind
+# build needs only Node, but running them beside `xtask openapi` shares the one expensive compile
+# and produces a single commit rather than three workflows racing to push.
+
+on:
+  pull_request:
+    # The union of `ci.yml`'s `rust`, `notices` and `frontend` filters — the inputs the four
+    # artefacts are a function of. Directories, never `**/*.rs`, for the reason `ci.yml` gives:
+    # `web/frontend` is a separate workspace and a glob would silently couple the two.
+    paths:
+      - ".github/workflows/auto-regenerate.yaml"
+      - "crates/**"
+      - "services/**"
+      - "xtask/**"
+      - "migrations/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "rustfmt.toml"
+      - "openapi.json"
+      - "about.toml"
+      - "THIRD-PARTY-NOTICES"
+      - "web/frontend/**"
+
+# Shared with `auto-format.yaml` and `update-lockfile.yaml`. All three push to the pull request's
+# head branch, so they queue rather than race — see `update-lockfile.yaml` for the reasoning.
+concurrency:
+  group: pr-autocommit-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  regenerate:
+    name: regenerate generated artefacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Forks cannot read the app secrets, and a fork PR must not be able to make this repository
+    # commit on its behalf. Skipping is correct: a fork's drift is the author's to fix.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions: {}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      # A GitHub App token, not `GITHUB_TOKEN`: a push made with the default token does not trigger
+      # workflows, so the regenerated artefacts would land without re-running the checks that
+      # wanted them. `ACTIONS_MAINTENANCE_*` rather than `RELEASE_BOT_*` for the reason
+      # `auto-format.yaml` gives — those are `release` environment secrets.
+      - name: Generate Bot Token
+        id: generate_token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
+          private-key: ${{ secrets.ACTIONS_MAINTENANCE_PRIVATE_KEY }}
+          # Narrowed to the one permission this job uses (zizmor `github-app`): it commits three
+          # files to the PR branch, and `contents: write` is that and nothing else.
+          permission-contents: write
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.generate_token.outputs.token }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          persist-credentials: false
+
+      # The second reader of `rust-toolchain.toml`, after `ci.yml`'s `changes` job. The *number*
+      # still has one home; what is repeated is the two-line read, which cannot drift from the
+      # manifest because it is the manifest. `stable` would not do here as it does in
+      # `update-lockfile.yaml`: `xtask openapi` formats the generated client with rustfmt, and
+      # `cargo fmt --check` then judges it under the pinned toolchain.
+      - name: resolve the toolchain from its manifest
+        id: versions
+        run: |
+          set -euo pipefail
+          toolchain=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          if [ -z "$toolchain" ]; then
+            echo '::error::no channel = "…" line in rust-toolchain.toml'
+            exit 1
+          fi
+          echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
+          echo "::notice::toolchain $toolchain"
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+        with:
+          toolchain: ${{ steps.versions.outputs.toolchain }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          # Reads `main`'s cache, never writes one: this runs only on pull requests, and a PR
+          # populating the shared cache is how an unreviewed artefact reaches every other job.
+          save-if: "false"
+
+      # `wreq` compiles BoringSSL from C/C++ source; `xtask openapi` builds `tankovault-api`, so
+      # this job needs them exactly as `ci.yml`'s Rust jobs do.
+      - name: BoringSSL build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+
+      - uses: taiki-e/install-action@6a1bd70eaac3c8bdf093356838d7ee09fda951cf # v2.85.5
+        with:
+          tool: cargo-about
+
+      # `cargo-about` resolves licences from a fetched graph; both, because the notices document
+      # covers the frontend workspace too.
+      - name: fetch both dependency graphs
+        run: |
+          set -euo pipefail
+          cargo fetch --locked
+          cargo fetch --locked --manifest-path web/frontend/Cargo.toml
+
+      - name: regenerate the OpenAPI document and its client
+        run: cargo run -p xtask -- openapi
+
+      - name: regenerate THIRD-PARTY-NOTICES
+        run: cargo run -p xtask -- notices
+
+      # Same Node major as `ci.yml`'s `css` job, which is what judges the result.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      - name: rebuild the Tailwind output
+        working-directory: web/frontend
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run css:build
+
+      # Scoped to the four artefacts rather than the whole tree: nothing else in this job is meant
+      # to change, so anything that did is a bug to see in a red gate, not to commit silently.
+      - name: Commit the regenerated artefacts
+        uses: TimSchoenle/actions/actions/common/commit-changes@147b117c39eaa951bf8c326c5e2fa8553c8a8937 # tag=actions-common-commit-changes-v1.2.2
+        with:
+          commit_message: "build: regenerate the committed generated artefacts"
+          token: ${{ steps.generate_token.outputs.token }}
+          branch: ${{ github.event.pull_request.head.ref }}
+          file_pattern: "openapi.json crates/api-client/src/lib.rs THIRD-PARTY-NOTICES web/frontend/assets/main.css"

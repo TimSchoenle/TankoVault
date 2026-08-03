@@ -51,7 +51,7 @@ pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
                             div { style: "font-weight:600;", {i18n.t("console.solver.title")} }
                             // The back-end's product name, not a message.
                             div { class: "ik-mono ik-muted", style: "font-size:12px;",
-                                {i18n.args("console.solver.backend", &[("backend", "FlareSolverr")])}
+                                {i18n.args("console.solver.backend", &[("backend", "TRAWL")])}
                             }
                         }
                     }

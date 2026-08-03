@@ -81,7 +81,7 @@ than one that surfaces during a deploy.
 | `TANKOVAULT_ANILIST__CLIENT_ID` / `__CLIENT_SECRET` / `__REDIRECT_URI` | sync | Boot fails. |
 | `TANKOVAULT_SEED_ADMIN_PASSWORD` | bootstrap (`seed-admin`), `xtask seed` | The step fails. **`bootstrap` has no default**; `xtask seed` falls back to `changeme12345`, which is a known placeholder the api refuses — a local convenience that cannot survive into a deployment. |
 | `TANKOVAULT_INTERNAL__TOKEN` | api, control-plane, worker, sync, render, challenge-solver | **Under `TANKOVAULT_PROFILE=production` only**, boot fails. Elsewhere its absence leaves the internal tier unauthenticated so local development stays frictionless. When present it is length-checked (≥32) in every profile. `openssl rand -hex 32`. |
-| `TANKOVAULT_SOLVER__FLARESOLVERR_ENDPOINT` | challenge-solver | Boot fails. |
+| `TANKOVAULT_SOLVER__TRAWL_ENDPOINT` | challenge-solver | Boot fails. |
 
 ---
 
@@ -354,10 +354,10 @@ that can disagree.
 | Key | Default | Notes |
 |---|---|---|
 | `TANKOVAULT_BIND_ADDR` | `0.0.0.0:8090` | |
-| `TANKOVAULT_SOLVER__BACKEND` | `flaresolverr` | The only wired back-end today. |
-| `TANKOVAULT_SOLVER__FLARESOLVERR_ENDPOINT` | *(required)* | e.g. `http://flaresolverr:8191`. |
-| `TANKOVAULT_SOLVER__MAX_TIMEOUT_MS` | `60000` | |
-| `TANKOVAULT_SOLVER__SESSION_TTL_SECS` | `900` | |
+| `TANKOVAULT_SOLVER__BACKEND` | `trawl` | The only wired back-end today. |
+| `TANKOVAULT_SOLVER__TRAWL_ENDPOINT` | *(required)* | e.g. `http://trawl:8191`. The client posts TRAWL's native `POST /scrape`, not its FlareSolverr-compatible `/v1` — that endpoint answers with an empty `headers` object, which loses `Retry-After`. |
+| `TANKOVAULT_SOLVER__MAX_TIMEOUT_MS` | `60000` | Sent as TRAWL's `maxTimeout`; the HTTP client's own timeout sits 15s above it so TRAWL's budget is the one that expires. |
+| `TANKOVAULT_SOLVER__SESSION_TTL_SECS` | `900` | How long *this* deployment replays a solved session for. Distinct from TRAWL's own `SESSION_TTL_SECONDS` (its internal per-domain cookie jar, default 3600). |
 
 ### `render`
 

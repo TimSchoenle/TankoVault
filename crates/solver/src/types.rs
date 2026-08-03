@@ -93,7 +93,7 @@ pub enum SolveError {
     Malformed(String),
 }
 
-/// The pluggable bypass contract. Implementations: [`super::FlareSolverrSolver`]
+/// The pluggable bypass contract. Implementations: [`super::TrawlSolver`]
 /// (default), a headless-render back-end (the `render` service), or a custom solver.
 ///
 /// Keeping every back-end behind this one method is what makes the tier modular: the

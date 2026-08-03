@@ -195,10 +195,10 @@ trip. It previously did not, in three separate places:
    in front of it. The plain `429`, with its `Retry-After`, reaches the layers below intact.
 2. **Solving.** When a solve does happen, `SolvingFetcher` no longer synthesises `200` — it
    reports the solver's status and headers. But **the page outranks the report**:
-   `FlareSolverr` reports `200` for any navigation that completed, throttle notice included,
-   and sends no headers to contradict itself, so a body whose `<title>` is "Too Many Requests"
-   is read as `429` regardless of what the back-end claims. (The `render` back-end reports no
-   status at all, and relies on the same rule.)
+   a solver reports `200` for any navigation that completed, throttle notice included, and a
+   provider routinely serves one as a rendered page under a success status — so a body whose
+   `<title>` is "Too Many Requests" is read as `429` regardless of what the back-end claims.
+   (The `render` back-end reports no status at all, and relies on the same rule.)
 3. **Backoff.** `BackoffFetcher` waits out the individual request, preferring `Retry-After`.
 4. **Pace.** `RateLimitedFetcher` widens its own spacing for **every subsequent request** to
    that provider: +500 ms on the first signal, doubling per signal to a ceiling of 8 s,

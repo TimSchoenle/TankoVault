@@ -1,6 +1,6 @@
 //! An HTTP [`ChallengeSolver`] that delegates to the `challenge-solver` microservice.
 //!
-//! Workers hold one of these; the service fronts the real back-end (`FlareSolverr` by
+//! Workers hold one of these; the service fronts the real back-end (TRAWL by
 //! default). Keeping the solve behind the same trait means the worker-side pipeline is
 //! identical whether the solver runs in-process or over the network.
 

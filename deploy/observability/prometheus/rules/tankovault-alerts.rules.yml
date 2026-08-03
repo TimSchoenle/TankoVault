@@ -389,7 +389,7 @@ groups:
 
   - name: tankovault-fetch-tier
     rules:
-      # A solve failure is almost always the back end wholly broken (FlareSolverr down / Chromium
+      # A solve failure is almost always the back end wholly broken (TRAWL down / Chromium
       # failing to launch), which shows as near-100% errors, not drift — 0.5 clears provider quirks.
       - alert: TankoVaultChallengeSolvingFailing
         expr: job:solve_attempts_errors:ratio_rate15m > 0.5
@@ -400,9 +400,10 @@ groups:
           summary: "{{ $labels.job }} is failing {{ $value | humanizePercentage }} of solve attempts"
           description: >-
             Every challenge-protected provider stops being scannable while this holds, and the
-            scan tasks fail rather than queue. On `challenge-solver`, check the FlareSolverr
-            container (`docker compose logs --tail=50 flaresolverr`) — it is a third-party image
-            with no healthcheck, so it can be running and useless. On `render`, this is Chromium:
+            scan tasks fail rather than queue. On `challenge-solver`, check the TRAWL container
+            (`docker compose logs --tail=50 trawl`, and `curl -sf trawl:8191/health` for live
+            browser-pool capacity) — a saturated pool answers `429` and reads as a solve failure
+            here. On `render`, this is Chromium:
             check for OOM against the 2g memory limit and that `shm_size: 1gb` is still set, since
             Chrome fails in confusing ways with a small `/dev/shm`.
 

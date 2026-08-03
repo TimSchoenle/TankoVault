@@ -1,5 +1,5 @@
 //! Render service: headless-browser rendering for JS-heavy listing pages, and an
-//! alternate [`tankovault_solver::ChallengeSolver`] back-end for when `FlareSolverr` is
+//! alternate [`tankovault_solver::ChallengeSolver`] back-end for when TRAWL is
 //! unavailable.
 
 mod browser;

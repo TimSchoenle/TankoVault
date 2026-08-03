@@ -1,5 +1,5 @@
 //! Bot-management bypass service: exposes `POST /v1/solve` over a pluggable
-//! [`ChallengeSolver`] back-end (`FlareSolverr` by default).
+//! [`ChallengeSolver`] back-end (TRAWL by default).
 
 use serde::Deserialize;
 use std::sync::Arc;
@@ -7,7 +7,7 @@ use tankovault_config::TelemetryConfig;
 use tankovault_service::{
     CancellationToken, Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier,
 };
-use tankovault_solver::{ChallengeSolver, FlareSolverrSolver};
+use tankovault_solver::{ChallengeSolver, TrawlSolver};
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -38,19 +38,21 @@ fn default_bind() -> String {
 
 #[derive(Debug, Deserialize)]
 struct SolverBackendConfig {
-    /// Back-end selector; only `flaresolverr` is wired today.
+    /// Back-end selector; only `trawl` is wired today.
     #[serde(default = "default_backend")]
     backend: String,
-    /// `FlareSolverr` base endpoint, e.g. `http://flaresolverr:8191`.
-    flaresolverr_endpoint: String,
+    /// TRAWL base endpoint, e.g. `http://trawl:8191`.
+    trawl_endpoint: String,
     #[serde(default = "default_timeout")]
     max_timeout_ms: u64,
+    /// How long *this* deployment caches a solved session for. Independent of TRAWL's own
+    /// `SESSION_TTL_SECONDS`, which governs the cookie jar it replays internally.
     #[serde(default = "default_ttl")]
     session_ttl_secs: u64,
 }
 
 fn default_backend() -> String {
-    "flaresolverr".to_owned()
+    "trawl".to_owned()
 }
 fn default_timeout() -> u64 {
     60_000
@@ -104,8 +106,8 @@ async fn serve_once(
     let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
 
     let solver: Arc<dyn ChallengeSolver> = match cfg.solver.backend.as_str() {
-        "flaresolverr" => Arc::new(FlareSolverrSolver::new(
-            cfg.solver.flaresolverr_endpoint.clone(),
+        "trawl" => Arc::new(TrawlSolver::new(
+            cfg.solver.trawl_endpoint.clone(),
             cfg.solver.max_timeout_ms,
             cfg.solver.session_ttl_secs,
         )),
@@ -121,8 +123,9 @@ async fn serve_once(
         .with_internal_auth(internal_token)
         // Contract shared with `render` — see `tankovault_solver::http`.
         .apply(tankovault_solver::http::solver_router(state.solver))
-        // Readiness is just "listening": FlareSolverr is launched lazily and deliberately
-        // not probed, since a solve already degrades to `502` when it's unavailable.
+        // Readiness is just "listening": TRAWL has its own `/health` gate on the browser pool
+        // and is deliberately not probed from here, since a solve already degrades to `502`
+        // when it's unavailable.
         .merge(tankovault_service::ops_router(
             Health::builder().build(),
             metrics,

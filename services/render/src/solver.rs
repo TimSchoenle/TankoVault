@@ -1,5 +1,5 @@
 //! An alternate [`ChallengeSolver`] back-end that solves via a real headless browser instead
-//! of `FlareSolverr`; same contract, so the fetch pipeline can't tell which is in play.
+//! of TRAWL; same contract, so the fetch pipeline can't tell which is in play.
 
 use std::sync::Arc;
 

@@ -1,0 +1,86 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH matched AS ( SELECT s.id FROM series s WHERE s.normalized_title % $1 UNION SELECT st.series_id FROM series_titles st WHERE st.normalized % $1 ), ranked AS ( SELECT s.id, s.canonical_title, s.normalized_title, s.content_type, s.release_year, GREATEST( similarity(s.normalized_title, $1), COALESCE((SELECT MAX(similarity(st.normalized, $1)) FROM series_titles st WHERE st.series_id = s.id), 0) ) AS sim FROM series s JOIN matched m ON m.id = s.id ORDER BY sim DESC LIMIT $2 ) SELECT r.id AS series_id, r.canonical_title AS title, r.normalized_title, r.content_type::text AS \"content_type!\", r.release_year, (SELECT count(*) FROM series_sources ss WHERE ss.series_id = r.id) AS \"source_count!\", r.sim AS \"similarity!\" FROM ranked r ORDER BY r.sim DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "canonical_title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "normalized_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "normalized_title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "content_type!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "release_year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "release_year"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "source_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "similarity!",
+        "type_info": "Float4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "5c6262a8800de698ebce43fb4a75db07d68f0334b96396011613d1784b5e84f7"
+}

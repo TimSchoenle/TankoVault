@@ -41,24 +41,37 @@ pub async fn list_series<'e, E: PgExecutor<'e>>(
 
     let rows = if let Some(q) = query {
         // Matches canonical title, FTS vector, and alternative titles; ranks by best trigram
-        // similarity across all three.
+        // similarity across all three. The three predicates are a UNION of index-driven scans
+        // rather than an `OR` chain: an `EXISTS` under `OR` cannot become a semi-join, which
+        // costs the planner every index on `series` and leaves it scanning all of it (see
+        // `crate::repo::matching::find_candidates`).
         sqlx::query_as!(
             ListRow,
-            "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
-                    s.content_type AS \"content_type: ContentType\", \
-                    s.status AS \"status: SeriesStatus\", s.release_year, \
-                    s.created_at, s.updated_at, \
-                    (SELECT count(DISTINCT ss.provider_id) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\" \
-             FROM series s \
-             WHERE s.normalized_title % $1 OR s.search_vec @@ plainto_tsquery('simple', $1) \
-                OR EXISTS (SELECT 1 FROM series_titles st \
-                           WHERE st.series_id = s.id AND st.normalized % $1) \
-             ORDER BY GREATEST( \
+            "WITH matched AS ( \
+               SELECT s.id FROM series s WHERE s.normalized_title % $1 \
+               UNION \
+               SELECT s.id FROM series s WHERE s.search_vec @@ plainto_tsquery('simple', $1) \
+               UNION \
+               SELECT st.series_id FROM series_titles st WHERE st.normalized % $1 \
+             ), ranked AS ( \
+               SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
+                      s.content_type, s.status, s.release_year, s.created_at, s.updated_at, \
+                      GREATEST( \
                         similarity(s.normalized_title, $1), \
                         COALESCE((SELECT MAX(similarity(st.normalized, $1)) \
                                   FROM series_titles st WHERE st.series_id = s.id), 0) \
-                      ) DESC \
-             LIMIT $2",
+                      ) AS sim \
+               FROM series s JOIN matched m ON m.id = s.id \
+               ORDER BY sim DESC \
+               LIMIT $2 \
+             ) \
+             SELECT r.id, r.canonical_title, r.normalized_title, r.description, r.cover_url, \
+                    r.content_type AS \"content_type: ContentType\", \
+                    r.status AS \"status: SeriesStatus\", r.release_year, \
+                    r.created_at, r.updated_at, \
+                    (SELECT count(DISTINCT ss.provider_id) FROM series_sources ss WHERE ss.series_id = r.id) AS \"source_count!\" \
+             FROM ranked r \
+             ORDER BY r.sim DESC",
             q,
             limit,
         )

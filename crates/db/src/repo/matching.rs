@@ -57,24 +57,38 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
     }
     let rows = sqlx::query_as!(
         Row,
-        "SELECT s.id, s.normalized_title, s.content_type AS \"content_type: ContentType\", s.release_year, \
-                GREATEST( \
-                  similarity(s.normalized_title, $1), \
-                  COALESCE((SELECT MAX(similarity(st.normalized, $1)) \
-                            FROM series_titles st WHERE st.series_id = s.id), 0) \
-                ) AS \"sim!\", \
+        // The two trigram predicates are a UNION of index-driven scans, never `a % $1 OR EXISTS
+        // (… % $1)`: an `EXISTS` under `OR` cannot be pulled up into a semi-join, so the planner
+        // falls back to a sequential scan of `series` and evaluates `similarity` per row — 54k
+        // rows and ~450 ms measured, plus enough estimated cost to trigger 260 ms of pointless
+        // JIT. The `LIMIT` is likewise applied *before* the array aggregates so those run for the
+        // returned rows only, not for every row that cleared the threshold.
+        "WITH matched AS ( \
+           SELECT s.id FROM series s WHERE s.normalized_title % $1 \
+           UNION \
+           SELECT st.series_id FROM series_titles st WHERE st.normalized % $1 \
+         ), ranked AS ( \
+           SELECT s.id, s.normalized_title, s.content_type, s.release_year, \
+                  GREATEST( \
+                    similarity(s.normalized_title, $1), \
+                    COALESCE((SELECT MAX(similarity(st.normalized, $1)) \
+                              FROM series_titles st WHERE st.series_id = s.id), 0) \
+                  ) AS sim \
+           FROM series s JOIN matched m ON m.id = s.id \
+           ORDER BY sim DESC \
+           LIMIT $2 \
+         ) \
+         SELECT r.id, r.normalized_title, \
+                r.content_type AS \"content_type: ContentType\", r.release_year, \
+                r.sim AS \"sim!\", \
                 COALESCE((SELECT array_agg(st.normalized) FROM series_titles st \
-                 WHERE st.series_id = s.id), '{}') AS \"alt_titles!\", \
+                 WHERE st.series_id = r.id), '{}') AS \"alt_titles!\", \
                 COALESCE((SELECT array_agg(t.name) FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
-                 WHERE stg.series_id = s.id), '{}') AS \"tags!\", \
+                 WHERE stg.series_id = r.id), '{}') AS \"tags!\", \
                 COALESCE((SELECT array_agg(a.name) FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
-                 WHERE sa.series_id = s.id), '{}') AS \"authors!\" \
-         FROM series s \
-         WHERE s.normalized_title % $1 \
-            OR EXISTS (SELECT 1 FROM series_titles st \
-                       WHERE st.series_id = s.id AND st.normalized % $1) \
-         ORDER BY 5 DESC \
-         LIMIT $2",
+                 WHERE sa.series_id = r.id), '{}') AS \"authors!\" \
+         FROM ranked r \
+         ORDER BY r.sim DESC",
         normalized,
         limit,
     )
@@ -138,30 +152,37 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
     }
     let rows = sqlx::query_as!(
         Row,
+        // Same UNION-of-index-scans shape as `find_candidates`, and for the same reason; see the
+        // comment there. Here it is per lateral iteration, so the sequential scan it replaces was
+        // paid once per query title.
         "SELECT q.norm AS \"query_title!\", c.id, c.normalized_title, \
                 c.content_type AS \"content_type: ContentType\", c.release_year, \
                 c.sim AS \"sim!\", c.alt_titles AS \"alt_titles!\", \
                 c.tags AS \"tags!\", c.authors AS \"authors!\" \
          FROM UNNEST($1::text[]) AS q(norm) \
          CROSS JOIN LATERAL ( \
-           SELECT s.id, s.normalized_title, s.content_type, s.release_year, \
-                  GREATEST( \
-                    similarity(s.normalized_title, q.norm), \
-                    COALESCE((SELECT MAX(similarity(st.normalized, q.norm)) \
-                              FROM series_titles st WHERE st.series_id = s.id), 0) \
-                  ) AS sim, \
+           SELECT r.id, r.normalized_title, r.content_type, r.release_year, r.sim, \
                   COALESCE((SELECT array_agg(st.normalized) FROM series_titles st \
-                   WHERE st.series_id = s.id), '{}') AS alt_titles, \
+                   WHERE st.series_id = r.id), '{}') AS alt_titles, \
                   COALESCE((SELECT array_agg(t.name) FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
-                   WHERE stg.series_id = s.id), '{}') AS tags, \
+                   WHERE stg.series_id = r.id), '{}') AS tags, \
                   COALESCE((SELECT array_agg(a.name) FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
-                   WHERE sa.series_id = s.id), '{}') AS authors \
-           FROM series s \
-           WHERE s.normalized_title % q.norm \
-              OR EXISTS (SELECT 1 FROM series_titles st \
-                         WHERE st.series_id = s.id AND st.normalized % q.norm) \
-           ORDER BY sim DESC \
-           LIMIT $2 \
+                   WHERE sa.series_id = r.id), '{}') AS authors \
+           FROM ( \
+             SELECT s.id, s.normalized_title, s.content_type, s.release_year, \
+                    GREATEST( \
+                      similarity(s.normalized_title, q.norm), \
+                      COALESCE((SELECT MAX(similarity(st.normalized, q.norm)) \
+                                FROM series_titles st WHERE st.series_id = s.id), 0) \
+                    ) AS sim \
+             FROM series s \
+             JOIN ( SELECT s2.id FROM series s2 WHERE s2.normalized_title % q.norm \
+                    UNION \
+                    SELECT st2.series_id FROM series_titles st2 WHERE st2.normalized % q.norm \
+                  ) m ON m.id = s.id \
+             ORDER BY sim DESC \
+             LIMIT $2 \
+           ) r \
          ) c",
         normalized,
         limit,

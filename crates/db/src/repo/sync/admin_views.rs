@@ -269,21 +269,30 @@ pub async fn suggest_series_candidates<'e, E: PgExecutor<'e>>(
 ) -> DbResult<Vec<SeriesCandidateRow>> {
     let rows = sqlx::query_as!(
         SeriesCandidateRow,
-        "SELECT s.id AS series_id, s.canonical_title AS title, s.normalized_title, \
-                s.content_type::text AS \"content_type!\", s.release_year, \
-                (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) \
+        // UNION of two index-driven trigram scans rather than `% $1 OR EXISTS (… % $1)`; see
+        // `crate::repo::matching::find_candidates` for why the `OR` form scans `series` whole.
+        "WITH matched AS ( \
+           SELECT s.id FROM series s WHERE s.normalized_title % $1 \
+           UNION \
+           SELECT st.series_id FROM series_titles st WHERE st.normalized % $1 \
+         ), ranked AS ( \
+           SELECT s.id, s.canonical_title, s.normalized_title, s.content_type, s.release_year, \
+                  GREATEST( \
+                    similarity(s.normalized_title, $1), \
+                    COALESCE((SELECT MAX(similarity(st.normalized, $1)) \
+                              FROM series_titles st WHERE st.series_id = s.id), 0) \
+                  ) AS sim \
+           FROM series s JOIN matched m ON m.id = s.id \
+           ORDER BY sim DESC \
+           LIMIT $2 \
+         ) \
+         SELECT r.id AS series_id, r.canonical_title AS title, r.normalized_title, \
+                r.content_type::text AS \"content_type!\", r.release_year, \
+                (SELECT count(*) FROM series_sources ss WHERE ss.series_id = r.id) \
                     AS \"source_count!\", \
-                GREATEST( \
-                  similarity(s.normalized_title, $1), \
-                  COALESCE((SELECT MAX(similarity(st.normalized, $1)) \
-                            FROM series_titles st WHERE st.series_id = s.id), 0) \
-                ) AS \"similarity!\" \
-         FROM series s \
-         WHERE s.normalized_title % $1 \
-            OR EXISTS (SELECT 1 FROM series_titles st \
-                       WHERE st.series_id = s.id AND st.normalized % $1) \
-         ORDER BY 7 DESC \
-         LIMIT $2",
+                r.sim AS \"similarity!\" \
+         FROM ranked r \
+         ORDER BY r.sim DESC",
         normalized,
         limit,
     )

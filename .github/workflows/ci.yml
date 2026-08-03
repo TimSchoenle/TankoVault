@@ -69,6 +69,7 @@ jobs:
       images: ${{ steps.decide.outputs.images }}
       toolchain: ${{ steps.versions.outputs.toolchain }}
       msrv: ${{ steps.versions.outputs.msrv }}
+      buildcache: ${{ steps.buildcache.outputs.ref }}
       # Each is `true` on a full run, so a downstream job only tests its own filter. A skipped
       # filter step yields `''`, which is not `'true'`.
       rust: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.rust == 'true' }}
@@ -138,6 +139,15 @@ jobs:
           echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
           echo "msrv=$msrv" >> "$GITHUB_OUTPUT"
           echo "::notice::toolchain $toolchain, MSRV $msrv"
+
+      # Derived, never hard-coded, so a repository rename cannot leave the warm-ups writing one
+      # reference and the consumers reading another. Lowercased because a registry reference must
+      # be and `github.repository` keeps the owner's capitalisation.
+      - name: resolve the buildkit cache repository
+        id: buildcache
+        run: |
+          set -euo pipefail
+          echo "ref=ghcr.io/${GITHUB_REPOSITORY,,}/buildcache" >> "$GITHUB_OUTPUT"
 
       # Skipped on `schedule` and `workflow_dispatch`: those runs are already `full`, so every
       # consumer reads `true` regardless.
@@ -216,9 +226,26 @@ jobs:
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
           components: rustfmt, clippy
+      # Saver for the `check` group. `rust-cache` keys on `github.job` unless told otherwise, so
+      # every job here used to keep a private copy of one identical dependency graph: eleven
+      # caches of the same ~600 crates, none of which fit alongside the others. Jobs are grouped
+      # by the artefact cargo actually fingerprints instead — `check` is metadata-only
+      # (`clippy`/`check`, `RUSTFLAGS=-D warnings`), `build` is codegen, and `msrv`, `coverage`
+      # and the frontend workspace each fingerprint differently enough to need their own.
+      #
+      # Exactly one job per group writes. With several savers behind one key the content is
+      # whichever leg finished first — a check-only leg winning the race leaves the group's cache
+      # without the artefacts its other members came for. The rest carry `save-if: false`, which
+      # still restores.
+      #
+      # `cache-on-failure` because a job that compiled the whole graph and then failed a lint has
+      # produced exactly the artefacts the next run wants; throwing them away made a red `main`
+      # cost every later run a cold build.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          shared-key: check
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
 
       # `wreq` compiles BoringSSL from C/C++ source; installed explicitly rather than relying on
       # whatever the runner image ships.
@@ -261,9 +288,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
+      # Saver for the `build` group — the widest codegen build in the workflow, so what it stores
+      # covers `integration` and `mutants` too. See `lint` for why the groups exist.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          shared-key: build
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
 
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
@@ -318,7 +349,8 @@ jobs:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: check
+          save-if: false
 
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
@@ -382,9 +414,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
+      # `SQLX_OFFLINE=false` re-derives the workspace crates against the live database, but that is
+      # a workspace-crate fingerprint and `rust-cache` discards those anyway — the dependency
+      # graph this restores is the same one `check` stores.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: check
+          save-if: false
 
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
@@ -429,7 +465,8 @@ jobs:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: build
+          save-if: false
 
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
@@ -518,8 +555,12 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          # Its own group: a separate workspace with a separate lockfile, so it shares no
+          # dependency artefact with the host groups. Saves itself for the same reason.
           workspaces: web/frontend
+          shared-key: frontend
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
 
       # Host target: these are pure logic tests with no DOM dependency. Anything needing a DOM
       # would need wasm-bindgen-test.
@@ -624,9 +665,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
         with:
           toolchain: ${{ needs.changes.outputs.msrv }}
+      # Its own group, and it must stay that way: this leg builds on the MSRV compiler with
+      # `RUSTFLAGS` cleared, so every fingerprint below differs from the `check` group's. Sharing
+      # the key would hand it a cache it can only discard.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          shared-key: msrv
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
 
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
@@ -668,9 +714,14 @@ jobs:
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
           components: llvm-tools-preview
+      # Its own group. `cargo llvm-cov` injects `-C instrument-coverage`, which changes every
+      # dependency's fingerprint, so nothing the `build` group stores is reusable here and
+      # nothing this stores is reusable there.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          shared-key: coverage
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
       - uses: taiki-e/install-action@6a1bd70eaac3c8bdf093356838d7ee09fda951cf # v2.85.5
         with:
           tool: cargo-llvm-cov
@@ -718,9 +769,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
+      # Reads the `build` group and writes nothing: mutants rebuilds the same test binaries, and
+      # it is scheduled-only, so letting it save would hand the group a cache written once a week
+      # from a run nobody gates on.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: build
+          save-if: false
       - uses: taiki-e/install-action@6a1bd70eaac3c8bdf093356838d7ee09fda951cf # v2.85.5
         with:
           tool: cargo-mutants
@@ -801,9 +856,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
+      # Its own group, and small: this job compiles `xtask` and nothing else, so what it is really
+      # caching is the two extracted dependency graphs `cargo fetch` unpacks below. It answers to
+      # the `notices` filter, which the other groups' savers do not, so it cannot borrow one.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          shared-key: notices
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
       - uses: taiki-e/install-action@6a1bd70eaac3c8bdf093356838d7ee09fda951cf # v2.85.5
         with:
           tool: cargo-about
@@ -945,19 +1005,29 @@ jobs:
   # is identical and each leg is a cache hit plus a `COPY`. `cacheonly` because only the layers are
   # wanted.
   #
-  # The scope is **arch-qualified** because a BuildKit cache is not portable across architectures:
+  # The tag is **arch-qualified** because a BuildKit cache is not portable across architectures:
   # the `chef` base resolves to a different digest per platform, so every key downstream of it
   # differs and an amd64 export is a guaranteed miss on an arm64 build. `release-please.yaml`
-  # builds all nine images for both architectures and imports these scopes; while the scope was
+  # builds all nine images for both architectures and imports these tags; while the tag was
   # unqualified its nine arm64 legs silently got nothing and cooked ~600 crates each.
   #
   # `platforms` is stated rather than left to default to the host, here and at every consumer, so
   # the key a warm-up writes and the key a consumer looks up are visibly the same thing.
   #
-  # `cache-to` only off `main`. A cache written from a pull request is scoped to that PR's ref and
-  # is unreadable from anywhere else, yet still counts against the repository's 10 GB LRU budget —
-  # so exporting here evicted the `main` caches that every PR and every release actually reads.
-  # Pull requests keep *importing*: GitHub falls back to the base branch's scope.
+  # **`type=registry`, not `type=gha`.** These exports are the largest thing this repository
+  # caches — `mode=max` on both architectures held ~9.5 GB of a 10 GB Actions budget — and the
+  # budget is per repository and LRU, so they were evicting the Rust caches every other job here
+  # depends on and then being evicted in turn. GHCR is unmetered for public packages, is not
+  # LRU-evicted, and one tag is readable from pull requests, from `main` and from
+  # `release-please.yaml` without the ref scoping the Actions cache imposes. `image-manifest` and
+  # `oci-mediatypes` are both required: GHCR rejects the cache manifest BuildKit writes without
+  # them.
+  #
+  # `cache-to` only off `main`, because a registry tag has no ref scoping to protect it: a pull
+  # request exporting here would publish unreviewed layers into the tag every branch and every
+  # release then builds on. Pull requests keep *importing* — including forks, whose read-only
+  # token still pulls a public package, and whose miss is a slow build rather than a failure
+  # since BuildKit treats an unreadable `cache-from` as a warning.
   #
   # Deliberately **not** `needs: lint`. A warm-up is not a gate: nothing it produces reaches a
   # registry, and `docker`, `docker-arm64` and `docker-frontend` all still wait on `lint`. Gating
@@ -973,6 +1043,7 @@ jobs:
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
     permissions:
       contents: read # to check out the build context
+      packages: write # to export the layer cache to ghcr.io
     strategy:
       fail-fast: false
       matrix:
@@ -993,6 +1064,13 @@ jobs:
           persist-credentials: false
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: derive SOURCE_DATE_EPOCH
         id: epoch
@@ -1009,16 +1087,16 @@ jobs:
           push: false
           outputs: type=cacheonly
           provenance: false
-          cache-from: type=gha,scope=backend-deps-${{ matrix.arch }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,scope=backend-deps-{0},mode=max', matrix.arch) || '' }}
+          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}:backend-deps-{1},mode=max,compression=zstd,image-manifest=true,oci-mediatypes=true', needs.changes.outputs.buildcache, matrix.arch) || '' }}
 
   # The wasm half, warmed in the same shape as `docker-deps` and for the same reasons — read that
   # job's comment for the arch-qualified scope and the pull-request `cache-to` rule.
   #
-  # A separate job and scope rather than a `cache-to` on `docker-frontend`, because that image also
+  # A separate job and tag rather than a `cache-to` on `docker-frontend`, because that image also
   # consumes the Alpine `builder` — a `mode=max` export there would re-upload the whole backend
-  # cache under a second scope. The Actions cache is 10 GB per repository with LRU eviction, and
-  # duplicating the one layer that matters is exactly how it gets evicted.
+  # cache under a second tag. GHCR will hold it, but every consumer then pulls a second copy of
+  # the one chain it already has, so the duplication costs wall clock on every leg that imports.
   #
   # The arm64 leg warms a cache no job in *this* workflow reads: the frontend image is built for
   # amd64 only here. It exists for `release-please.yaml`, which publishes `frontend` for both
@@ -1034,6 +1112,7 @@ jobs:
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
     permissions:
       contents: read # to check out the build context
+      packages: write # to export the layer cache to ghcr.io
     strategy:
       fail-fast: false
       matrix:
@@ -1055,6 +1134,13 @@ jobs:
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
+      - name: log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: derive SOURCE_DATE_EPOCH
         id: epoch
         run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
@@ -1070,8 +1156,8 @@ jobs:
           push: false
           outputs: type=cacheonly
           provenance: false
-          cache-from: type=gha,scope=frontend-deps-${{ matrix.arch }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,scope=frontend-deps-{0},mode=max', matrix.arch) || '' }}
+          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:frontend-deps-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}:frontend-deps-{1},mode=max,compression=zstd,image-manifest=true,oci-mediatypes=true', needs.changes.outputs.buildcache, matrix.arch) || '' }}
 
   docker:
     name: docker build (${{ matrix.bin }})
@@ -1081,6 +1167,7 @@ jobs:
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
     permissions:
       contents: read # to check out the build context
+      packages: read # to import the layer cache from ghcr.io
     strategy:
       fail-fast: false
       matrix:
@@ -1099,6 +1186,13 @@ jobs:
           persist-credentials: false
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # Clamps layer mtimes to the commit timestamp so repeated builds of a commit are identical.
       - name: derive SOURCE_DATE_EPOCH
@@ -1128,10 +1222,11 @@ jobs:
           # by `docker-deps` in this same run at this same commit, which is what makes `COPY . .`
           # inside `builder` a hit; this leg's remaining work is one `COPY` onto `scratch`.
           #
-          # Do not add `cache-to`: `mode=max` re-exports imported layers too, so each leg uploaded
-          # its own copy of the multi-gigabyte `cook` layer. At 10 GB per repository with LRU
-          # eviction, that evicted `backend-deps` itself and the next run cooked ~600 crates cold.
-          cache-from: type=gha,scope=backend-deps-amd64
+          # Do not add `cache-to`: `mode=max` re-exports imported layers too, so each leg would
+          # upload its own copy of the multi-gigabyte `cook` layer. On the Actions cache that
+          # evicted `backend-deps` itself; on GHCR it instead makes every later import pull a
+          # duplicate chain, which is a slower gate for no benefit either way.
+          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
 
       # Enforces the image contract: non-root 1001:1001, the entrypoint, the baked-in binary and CA
       # trust store, and for the render tier the absence of root plus the presence of Chromium.
@@ -1189,6 +1284,7 @@ jobs:
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
     permissions:
       contents: read # to check out the build context
+      packages: read # to import the layer cache from ghcr.io
     strategy:
       fail-fast: false
       matrix:
@@ -1205,6 +1301,13 @@ jobs:
           persist-credentials: false
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: derive SOURCE_DATE_EPOCH
         id: epoch
@@ -1224,7 +1327,7 @@ jobs:
           load: true
           tags: tankovault-${{ matrix.bin }}:ci-arm64
           provenance: false
-          cache-from: type=gha,scope=backend-deps-arm64
+          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-arm64
 
       # The same image contract as the amd64 leg. `container-structure-test` ships a separate
       # arm64 binary; the config files are architecture-independent.
@@ -1261,6 +1364,7 @@ jobs:
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
     permissions:
       contents: read # to check out the build context
+      packages: read # to import the layer cache from ghcr.io
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -1273,6 +1377,13 @@ jobs:
           persist-credentials: false
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: derive SOURCE_DATE_EPOCH
         id: epoch
@@ -1292,12 +1403,12 @@ jobs:
           load: true
           tags: tankovault-frontend:ci
           provenance: false
-          # Import both warm-up scopes, write neither: a `mode=max` export here re-uploads imported
-          # layers too, putting a second copy of the backend chain into a 10 GB LRU cache and
-          # evicting the original.
+          # Import both warm-up tags, write neither: a `mode=max` export here re-uploads imported
+          # layers too, so it would publish a second copy of the whole backend chain under this
+          # image's own tag and every later import would pull it twice.
           cache-from: |
-            type=gha,scope=backend-deps-amd64
-            type=gha,scope=frontend-deps-amd64
+            type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
+            type=registry,ref=${{ needs.changes.outputs.buildcache }}:frontend-deps-amd64
 
       # Enforces the frontend image contract: non-root 1001:1001, the unprivileged 3000 port, the
       # entrypoint, the static-dir env var, and the server binary plus built SPA bundle.

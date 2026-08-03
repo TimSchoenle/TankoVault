@@ -16,6 +16,7 @@ use tankovault_test_support::TestDb;
 const EXPORTED: &[(&str, &str)] = &[
     ("users", "profile"),
     ("refresh_tokens", "sessions"),
+    ("user_passkeys", "passkeys"),
     ("watchlist_entries", "watchlist"),
     ("read_progress", "read_progress"),
     ("notifications", "notifications"),
@@ -39,6 +40,12 @@ const NOT_EXPORTED: &[(&str, &str)] = &[
     (
         "email_verification_tokens",
         "live credential material, same reasoning as password_reset_tokens",
+    ),
+    (
+        "webauthn_ceremonies",
+        "an in-flight challenge, deleted on use and expired within minutes — and the state it \
+         holds is the value the authenticator's response is verified against, which is the one \
+         thing that must never travel to the client (see 0022_passkeys.up.sql)",
     ),
     (
         "notification_dedup",

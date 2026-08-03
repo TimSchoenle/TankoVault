@@ -46,7 +46,7 @@ This is tracked, not secret. It is here because a deployment is affected by it t
 code change closes it:
 
 - **`SEC-2b` — renderer DNS rebinding.** The SSRF guard validates and re-resolves in-process, but
-  Chromium and FlareSolverr resolve independently, so a name that answers differently on a second
+  Chromium and TRAWL resolve independently, so a name that answers differently on a second
   lookup can still reach an internal address from the `render` tier. Closing it needs
   container-level egress restriction, not a patch.
 

@@ -87,11 +87,11 @@ impl<F> SolvingFetcher<F> {
 
 /// The status to report for a solved page.
 ///
-/// **The page outranks the report.** A solver back-end's status is second-hand and, for the
-/// default one, frequently invented: `FlareSolverr` reports `200` for any navigation that
-/// completed, throttle notice included, and returns no response headers to contradict it. A
+/// **The page outranks the report.** A solver back-end's status is second-hand, and a
+/// challenge-solving browser reports `200` for any navigation that completed — throttle notice
+/// included, since providers routinely serve one as a rendered page under a success status. A
 /// document that *is* the provider's "Too Many Requests" page is a `429` whatever the solver
-/// claims — and it is the only evidence left once the real status has been discarded upstream.
+/// claims, and on a back-end that reports no status at all it is the only evidence there is.
 ///
 /// Believing the report over the body is what let a rendered `429` travel all the way to an
 /// adapter as a successful fetch, where the only available verdict was "unparseable".
@@ -266,9 +266,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_throttle_page_outranks_a_solver_reported_200() {
-        // FlareSolverr reports 200 for any navigation that completed, and sends no headers to
-        // contradict it. Believing that over the page in front of us is what kept a rendered
-        // 429 arriving at adapters as content.
+        // A solver reports 200 for any navigation that completed, throttle notice included.
+        // Believing that over the page in front of us is what kept a rendered 429 arriving at
+        // adapters as content.
         let resp = solving_with(
             "<html lang=\"en\"><head><meta charset=\"utf-8\">\
              <title>Too Many Requests</title></head><body></body></html>",

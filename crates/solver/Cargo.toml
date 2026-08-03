@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "ChallengeSolver trait, fast challenge detection, and FlareSolverr back-end."
+description = "ChallengeSolver trait, fast challenge detection, and TRAWL back-end."
 # Not published: this is a workspace-internal crate. Also what lets `cargo deny`
 # skip license-checking our own code.
 publish = false
@@ -42,8 +42,8 @@ tankovault-service = { workspace = true, optional = true }
 [dev-dependencies]
 tokio = { workspace = true }
 proptest = { workspace = true }
-# A scriptable `FlareSolverr` for `flaresolverr.rs`, whose request payload and status/`message`
-# mapping were asserted by nothing (TEST F-09).
+# A scriptable TRAWL for `trawl.rs`, whose request payload and error-message mapping were
+# asserted by nothing (TEST F-09).
 wiremock = { workspace = true }
 
 [lints]

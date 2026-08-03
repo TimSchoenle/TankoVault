@@ -20,7 +20,7 @@ AniList sync on top.
 - **Domain-migration resilience** — stored links are relative paths resolved against the provider base
   URL at read time, so a site moving domains is a one-field change.
 - **Challenge bypass** — a cheap classifier detects Cloudflare / JS / Turnstile interstitials in
-  milliseconds and delegates to a pluggable challenge-solver service (FlareSolverr by default).
+  milliseconds and delegates to a pluggable challenge-solver service (TRAWL by default).
 - **User system** — watchlists, read progress, per-title notification opt-in, and back-sync to
   **AniList**.
 - **Operator console** — live scan progress, provider health, and adapter config editing.
@@ -50,7 +50,7 @@ flowchart TD
 | `worker` | Fetch + parse via adapters, upsert chapter/metadata deltas. |
 | `notifier` | New-chapter → user notification fan-out. |
 | `sync` | AniList push/pull. |
-| `challenge-solver` | Modular bot-management bypass tier (FlareSolverr-backed, pluggable). |
+| `challenge-solver` | Modular bot-management bypass tier (TRAWL-backed, pluggable). |
 | `render` | Optional headless-browser tier for JS-rendered provider pages. |
 | `frontend` | Serves the Dioxus WASM SPA and reverse-proxies `/v1/*` to the API. |
 
@@ -62,7 +62,7 @@ crates/
   db/           sqlx repositories and query modules
   adapters/     SourceAdapter trait + Madara/config-driven + custom adapters
   fetch/        Fetcher trait, browser emulation, rate limiting, caching, solver client
-  solver/       ChallengeSolver trait + detection + FlareSolverr/render back-ends
+  solver/       ChallengeSolver trait + detection + TRAWL/render back-ends
   contracts/    NATS message/event schemas (serde)
   auth/         password hashing, JWT, RBAC guards
   config/       layered, typed config loading (file + env)
@@ -120,7 +120,7 @@ http://localhost:8080 for tooling.
 | sync | 8083 |
 | render | 8084 |
 | challenge-solver | 8090 |
-| FlareSolverr | 8191 |
+| TRAWL | 8191 |
 
 Apply migrations only:
 

@@ -315,7 +315,7 @@ uses a **tab bar** (the current code stacks all panels — plan §7.8 introduces
    list, failed-task triage.
 3. **Providers**: table with inline-editable `base_url` (domain migration), adapter kind, state
    pill, scan/edit/disable actions, "Add provider".
-4. **Challenge & solver**: active back-end card (FlareSolverr), 7d solve-success, per-provider
+4. **Challenge & solver**: active back-end card (TRAWL), 7d solve-success, per-provider
    solve bars + "Re-solve".
 5. **Adapter test**: `providers.config` JSON textarea + "Test adapter (dry-run)" → parsed-sample
    panel side-by-side.

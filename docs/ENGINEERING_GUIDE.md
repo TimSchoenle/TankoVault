@@ -217,7 +217,7 @@ one. **[E]** CI's `secrets` job runs gitleaks over the history.
 Enforced by review and by the tests in `crates/domain`; the *call* cannot be enforced
 mechanically, which is why the policy lives in exactly one place and is easy to find.
 
-**Known gap, recorded rather than fixed:** Chrome and FlareSolverr resolve DNS independently of
+**Known gap, recorded rather than fixed:** Chrome and TRAWL resolve DNS independently of
 this guard, so the renderer tier needs `--host-resolver-rules` or an egress-restricted network
 namespace. See `SECURITY.md` and audit row SEC-2b.
 

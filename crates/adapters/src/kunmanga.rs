@@ -435,7 +435,7 @@ mod tests {
 
     #[test]
     fn parses_solver_wrapped_escaped_json() {
-        // FlareSolverr returns JSON as HTML-escaped text inside a <pre> block.
+        // A solver back-end returns JSON as HTML-escaped text inside a <pre> block.
         let body = concat!(
             "<html><head></head><body><pre>",
             "{&quot;success&quot;:true,&quot;data&quot;:{&quot;chapters&quot;:[",

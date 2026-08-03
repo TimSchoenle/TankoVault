@@ -26,7 +26,7 @@ Container build and local orchestration for TankoVault (design §19).
     cross-build was folded into the shared Alpine builder, which had been compiling the same
     dependency graph a second time for a binary the workspace already builds.
 - `docker-compose.yml` — the full end-to-end local stack: Postgres 17, Redis 7, NATS
-  (JetStream), FlareSolverr, the one-shot `migrate`/`seed`/`seed-providers` steps (the
+  (JetStream), TRAWL, the one-shot `migrate`/`seed`/`seed-providers` steps (the
   `bootstrap` image, so the local stack exercises the artefact a cluster runs), every backend
   service, and the web frontend. **This is the only supported deployment shape** — see [Kubernetes](#kubernetes)
   below.
@@ -52,7 +52,7 @@ Madara provider, then starts all services and the frontend.
 **Only port 3000 is published on the host.** Every other service listens on the compose network
 only; see the exposure note at the top of `docker-compose.yml` for why. In-network ports:
 api `8080`, control-plane `8081`, notifier `8082`, sync `8083`, render `8084`, worker (ops)
-`8085`, challenge-solver `8090`, FlareSolverr `8191`, and every backend's Prometheus scrape on
+`8085`, challenge-solver `8090`, TRAWL `8191`, and every backend's Prometheus scrape on
 `9090`.
 
 ### Why the frontend sits behind a proxy

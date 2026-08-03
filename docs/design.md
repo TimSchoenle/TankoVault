@@ -12,7 +12,7 @@ re-deciding architecture at every step.
 > downloads, stores, or serves chapter images or page content. It
 > performs **fast bot-management detection** (Cloudflare managed/JS challenges, Turnstile, and similar
 > interstitials) and, when one is detected, delegates the crawl to a dedicated, pluggable **challenge
-> solver microservice** (FlareSolverr by default) to obtain a valid session and proceed. The solver is
+> solver microservice** (TRAWL by default) to obtain a valid session and proceed. The solver is
 > a *modular, extensible* component behind a stable trait, so alternative back-ends can be swapped in
 > without touching the crawl pipeline. Where a provider exposes an official API, that path is still
 > preferred. See §9 for the exact detection/solve posture. Operators remain responsible for the
@@ -68,7 +68,7 @@ re-deciding architecture at every step.
 ### Goals (crawl resilience)
 - **Detect bot-management challenges fast** (a cheap classifier on status codes, headers, and body
   markers) so a challenged fetch is recognised in milliseconds rather than after a timeout.
-- **Bypass challenges through a dedicated solver microservice** (FlareSolverr by default) exposed
+- **Bypass challenges through a dedicated solver microservice** (TRAWL by default) exposed
   behind a `ChallengeSolver` trait, so the mechanism is modular and new solver back-ends can be added
   without changing the crawl pipeline or the adapters.
 
@@ -84,7 +84,7 @@ re-deciding architecture at every step.
 
 Eight deployable services plus shared libraries. Each is a separate binary in one Cargo workspace.
 The **challenge-solver** service is the new bot-management bypass tier: workers call it over HTTP when
-the fetch stack detects a challenge, and it fronts a pluggable solver back-end (FlareSolverr by
+the fetch stack detects a challenge, and it fronts a pluggable solver back-end (TRAWL by
 default) plus an optional headless-render fallback.
 
 ```
@@ -122,7 +122,7 @@ default) plus an optional headless-render fallback.
                           │
                   ┌───────┴────────────────────┐
                   │    Challenge-solver service    │  Modular bypass tier. Detects &
-                  │  (FlareSolverr-backed default; │  solves Cloudflare/JS/Turnstile
+                  │    (TRAWL-backed default;      │  solves Cloudflare/JS/Turnstile
                   │   pluggable ChallengeSolver)   │  challenges; returns cookies +
                   │   + optional headless fallback │  UA + solved HTML to the worker.
                   └──────────────────────────────┘
@@ -152,7 +152,7 @@ tankovault/
 │   ├── db/                         # sqlx repositories, migrations, query modules
 │   ├── adapters/                   # SourceAdapter trait + Madara/config-driven + custom adapters
 │   ├── fetch/                      # Fetcher trait, browser emulation, rate limiting, caching, solver client
-│   ├── solver/                     # ChallengeSolver trait + detection + FlareSolverr/render back-ends
+│   ├── solver/                     # ChallengeSolver trait + detection + TRAWL/render back-ends
 │   ├── contracts/                  # message/event schemas shared over NATS (serde)
 │   ├── auth/                       # password hashing, JWT, RBAC guards
 │   ├── config/                     # layered config loading (env + file), typed
@@ -164,7 +164,7 @@ tankovault/
 │   ├── worker/                     # scan worker
 │   ├── notifier/                   # notification fan-out
 │   ├── sync/                       # AniList sync
-│   ├── challenge-solver/           # bot-management bypass microservice (FlareSolverr-backed, pluggable)
+│   ├── challenge-solver/           # bot-management bypass microservice (TRAWL-backed, pluggable)
 │   └── render/                     # optional headless render microservice
 ├── web/
 │   └── frontend/                   # Dioxus app + Tailwind + assets
@@ -194,7 +194,7 @@ tankovault/
 | HTML parsing | **scraper** (`html5ever`) + `selectors` | CSS-selector driven; pairs with config-driven adapters. |
 | Headless render (optional) | **chromiumoxide** in the `render` service | For JS-rendered listing pages only; isolated service. |
 | Challenge detection | Cheap classifier in `fetch` (status/headers/body markers) | Recognises Cloudflare/JS/Turnstile interstitials in ms, before a solve is attempted. |
-| Challenge solving (bypass) | **FlareSolverr** (default) behind a `ChallengeSolver` trait in the `challenge-solver` service | Modular, extensible bypass tier; back-end swappable (FlareSolverr, headless fallback, or custom) without touching the crawl pipeline. |
+| Challenge solving (bypass) | **TRAWL** (default) behind a `ChallengeSolver` trait in the `challenge-solver` service | Modular, extensible bypass tier; back-end swappable (TRAWL, headless fallback, or custom) without touching the crawl pipeline. |
 | Frontend | **Dioxus 0.6+** (fullstack/WASM) + `dioxus-router` | Rust end-to-end, component model, signals for state. |
 | Styling | **TailwindCSS** (CLI build step) | Utility-first, tokenised design system. |
 | Auth | Argon2id (`argon2`) + JWT (`jsonwebtoken`) access + rotating refresh | Strong hashing, stateless access, revocable refresh. |
@@ -628,8 +628,8 @@ pub enum ChallengeKind { CloudflareJs, CloudflareManaged, Turnstile, GenericJsIn
   page it is a couple of cheap comparisons, so the happy path pays almost nothing. Only a positive
   hit triggers a solve.
 - **Solving is delegated, not hand-rolled.** `SolvingFetcher` calls the `challenge-solver` service
-  over HTTP. The default `ChallengeSolver` implementation is a **FlareSolverr** client
-  (`POST /v1/ (request.get)` with the target URL); the trait keeps the mechanism swappable for a
+  over HTTP. The default `ChallengeSolver` implementation is a **TRAWL** client
+  (`POST /scrape` with the target URL); the trait keeps the mechanism swappable for a
   headless-render solver or a custom back-end without changing the crawl pipeline or adapters.
 - **Sessions are cached and reused.** A successful solve yields `cf_clearance`/UA that are stored in
   Redis keyed by provider and replayed on subsequent requests, so one solve amortises across many
@@ -657,13 +657,13 @@ pub enum ChallengeKind { CloudflareJs, CloudflareManaged, Turnstile, GenericJsIn
 **On JS-rendered pages:** some providers render listings client-side. The optional `render` service
 runs a real headless browser (`chromiumoxide`) to obtain the rendered DOM for such pages. This is a
 normal rendering step, isolated in its own service and rate-limited like any other fetch, and it also
-serves as an alternate `ChallengeSolver` back-end when FlareSolverr is unavailable.
+serves as an alternate `ChallengeSolver` back-end when TRAWL is unavailable.
 
 **The `challenge-solver` service.** The bypass tier is its own microservice so the browser/solver
 runtime is isolated from the workers and scaled independently:
 - It exposes a small HTTP contract (`POST /v1/solve { url, provider, kind }` → `{ cookies, user_agent,
   html?, ttl }`) consumed by `SolvingFetcher`.
-- The default back-end is **FlareSolverr** (run as a sidecar/companion container); the service selects
+- The default back-end is **TRAWL** (run as a sidecar/companion container); the service selects
   a back-end via config, and the `ChallengeSolver` trait makes adding a new one (headless render, a
   commercial solver, a self-hosted alternative) a matter of implementing one method and registering it
   — **modular and extensible by construction**.
@@ -981,7 +981,7 @@ responsive masonry of 2:3 cards.
      provider health tiles (active/degraded/challenged/solving/blocked with reason) plus per-provider
      solve success-ratio and last-solve age.
    - **Challenge & solver panel**: which providers are currently challenged, the active solver back-end
-     (FlareSolverr/render/custom), solve latency/success charts, and a **"Re-solve now"** action that
+     (TRAWL/render/custom), solve latency/success charts, and a **"Re-solve now"** action that
      forces a fresh session for a provider.
    - **Providers**: table with `base_url` inline-editable (the **domain-migration** action — a single
      field, with a confirm dialog explaining every link will re-resolve).
@@ -1044,7 +1044,7 @@ responsive masonry of 2:3 cards.
   reached a dead end. `docs/IMPLEMENTATION_STATUS.md` carries the live status. When it is built,
   the shape below is still the intent, and most of its prerequisites already exist:
    - `api` and `worker` `HorizontalPodAutoscaler`-scaled (worker on queue depth, api on CPU/RPS).
-   - `challenge-solver` as its own Deployment with a **FlareSolverr** companion container; scaled
+   - `challenge-solver` as its own Deployment with a **TRAWL** companion container; scaled
      on solve queue depth/latency, with a modest CPU/memory floor (a headless browser is heavy).
    - `control-plane` scheduler under leader election — **already implemented**, through Redis, so
      `replicas > 1` is safe there today.
@@ -1055,7 +1055,7 @@ responsive masonry of 2:3 cards.
    - Config via env + mounted secrets (see `docs/CONFIGURATION.md`); Postgres/Redis/NATS as
      managed or in-cluster statefulsets; solver back-end (endpoint, timeouts, max concurrency) is
      config-driven so it can be swapped.
-- **Environments**: local (docker-compose with Postgres/Redis/NATS + FlareSolverr + seed data) is
+- **Environments**: local (docker-compose with Postgres/Redis/NATS + TRAWL + seed data) is
   the only one that exists. Staging and prod are intent, not deployments.
 - **CI**: fmt + clippy + `cargo deny` + `cargo audit` + unit/integration tests (including adapter
   fixture tests and a Postgres-backed repo test via `sqlx`'s test harness) + build all images.
@@ -1082,7 +1082,7 @@ Dioxus app: Discover, Series detail, auth, and the operator scan dashboard + pro
 **Phase 3 — Users & tracking + challenge bypass.**
 Watchlist, read progress, reading dashboard, notifications service + in-app notifications, fast-scan
 mode wired to notifications. Ship the `challenge-solver` service: `detect_challenge` + `SolvingFetcher`
-in the `fetch` stack, the `ChallengeSolver` trait with the FlareSolverr back-end, Redis session
+in the `fetch` stack, the `ChallengeSolver` trait with the TRAWL back-end, Redis session
 caching, and the console challenge/solver panel.
 
 **Phase 4 — Canonicalisation & multi-provider.**
@@ -1110,7 +1110,7 @@ Each phase ships a demoable increment; no phase depends on a later one.
 - Full scan and fast scan both run for ≥2 providers end-to-end; fast scan produces notifications only
   for genuinely new chapters above user progress.
 - A provider behind a bot-management challenge is **detected quickly and bypassed via the pluggable
-  solver** (FlareSolverr by default): the challenged fetch is routed through the `challenge-solver`
+  solver** (TRAWL by default): the challenged fetch is routed through the `challenge-solver`
   service, a solved session is cached and reused, and the crawl proceeds. `blocked` is reached only
   after the solver's retry budget is exhausted, and is surfaced with a clear console reason.
 - The solver is modular: swapping the `ChallengeSolver` back-end (via config) requires no change to
@@ -1131,7 +1131,7 @@ Each phase ships a demoable increment; no phase depends on a later one.
 1. Store relative paths, resolve at read time. One resolver, tested.
 2. Links and metadata only. No content, no images, no mirroring.
 3. Polite crawl by default; detect challenges fast and bypass them via the pluggable `ChallengeSolver`
-   (FlareSolverr default). `blocked` is the last resort, only after the solver's retries are exhausted.
+   (TRAWL default). `blocked` is the last resort, only after the solver's retries are exhausted.
 4. Every worker write is idempotent (`ON CONFLICT`), so at-least-once delivery is safe.
 5. Adapters own no transport; the fetch stack is injected and mockable.
 6. Config-driven adapters make the common provider a one-row insert; custom code is the exception.

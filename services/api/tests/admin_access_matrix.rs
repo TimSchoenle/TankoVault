@@ -1,6 +1,6 @@
 //! The complete admin access-control matrix: every `/v1/admin` endpoint driven anonymous, holding
 //! every permission but the required one(s) (403, audited), and holding exactly it (not
-//! 401/403), reconciled against the published OpenAPI document. Gated behind the `integration`
+//! 401/403), reconciled against the published `OpenAPI` document. Gated behind the `integration`
 //! feature; requires Docker.
 #![cfg(feature = "integration")]
 

@@ -1,7 +1,7 @@
 //! The authenticated-tier access-control matrix — the other half of
 //! [`admin_access_matrix`](../admin_access_matrix.rs): every `/v1/me` route driven anonymous
 //! (401), suspended (403), and as an ordinary account (neither), reconciled against the
-//! published OpenAPI document. Gated behind the `integration` feature; requires Docker.
+//! published `OpenAPI` document. Gated behind the `integration` feature; requires Docker.
 #![cfg(feature = "integration")]
 
 use std::collections::BTreeSet;

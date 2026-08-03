@@ -1115,6 +1115,12 @@ async fn merging_keeps_the_furthest_read_position() {
 /// Merging a series into itself would run every union statement against one row and then delete it,
 /// so the guard is what stops a mis-click from erasing a series outright; it is a `Conflict` rather
 /// than a silent no-op so the console can say why.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one merge scenario asserted from several angles against a single seeded graph; \
+              splitting it would re-seed a different graph per fragment and stop the \
+              candidate-resolution and self-merge guards being observed on the same rows"
+)]
 #[tokio::test]
 async fn merging_resolves_the_related_candidates_and_refuses_impossible_inputs() {
     let db = TestDb::spawn().await;

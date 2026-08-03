@@ -17,7 +17,7 @@ use tankovault_domain::UserId;
 /// another subject's identity (Art. 15(4)).
 ///
 /// # Errors
-/// `Sqlx` only; an unknown `user_id` returns an empty document, not NotFound.
+/// `Sqlx` only; an unknown `user_id` returns an empty document, not `NotFound`.
 pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<Json> {
     let export = sqlx::query_scalar!(
         "SELECT json_build_object( \
@@ -68,7 +68,7 @@ pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
 /// (pseudonymised, under legitimate interest, Art. 6(1)(f)) once the identity link is gone.
 ///
 /// # Errors
-/// `Sqlx` only; "no such user" is `Ok(false)`, not NotFound.
+/// `Sqlx` only; "no such user" is `Ok(false)`, not `NotFound`.
 pub async fn erase_user<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<bool> {
     let deleted = sqlx::query!("DELETE FROM users WHERE id = $1", user_id.as_uuid())
         .execute(exec)

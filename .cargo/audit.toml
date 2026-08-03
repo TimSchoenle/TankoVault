@@ -1,0 +1,27 @@
+# `cargo-audit` configuration — read by the `cargo-audit` CI job and by anyone running
+# `cargo audit` locally.
+#
+# This file exists because `deny.toml` could not do the job alone. `cargo deny check advisories`
+# and `cargo audit` consult the same RustSec database but read *different* configuration:
+# cargo-deny takes `[advisories] ignore` from `deny.toml`, cargo-audit takes it from here and
+# has never seen that file. So the reviewed exceptions applied to one gate and not the other,
+# and `cargo-audit` sat red on advisories `cargo-deny` had already accepted — a permanently
+# failing gate, which is the state in which a genuinely new advisory looks like the old ones.
+#
+# The list below must stay identical to `deny.toml`'s. That is not a convention: `xtask
+# repo-lint` fails if the two diverge, in either direction. Add, date and justify an exception
+# in both files or in neither.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071 — timing sidechannel in `rsa` 0.9.x, pulled in transitively by
+    # `jsonwebtoken`'s `rust_crypto` feature with no HMAC-only alternative and no fixed release.
+    # Not exploitable here: `crates/auth/src/token.rs` pins `Algorithm::HS256`, test-enforced,
+    # so no RSA path is ever entered. Reviewed 2026-07-29; re-review 2026-10-29 or if HS256 stops
+    # being the only accepted algorithm.
+    "RUSTSEC-2023-0071",
+
+    # RUSTSEC-2024-0436 — `paste` unmaintained; compile-time-only proc macro, no runtime
+    # surface, no fix available. Reviewed 2026-07-29; re-review 2026-10-29.
+    "RUSTSEC-2024-0436",
+]

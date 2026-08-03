@@ -686,7 +686,7 @@ mod tests {
         }
     }
 
-    /// Pins an AniList anomaly: the same media returned twice, a stale row and a fresh one.
+    /// Pins an `AniList` anomaly: the same media returned twice, a stale row and a fresh one.
     #[test]
     fn dedupe_keeps_freshest_occurrence_per_external_id() {
         let stale = entry("143056", 23.0, 1_654_724_356); // 2022-06-08

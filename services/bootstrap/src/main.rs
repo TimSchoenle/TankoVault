@@ -1,4 +1,4 @@
-//! One-shot installation steps for a deployed TankoVault, as a shipped image: `migrate` before
+//! One-shot installation steps for a deployed `TankoVault`, as a shipped image: `migrate` before
 //! a rollout, `seed-admin` and `seed-providers` once at install.
 //!
 //! Separate from `xtask` on purpose. `xtask` performs the same steps against a developer's own
@@ -30,8 +30,9 @@ struct Config {
     seed_admin_password: Option<SecretString>,
 }
 
-/// The one `auth` key this binary needs. Deliberately not [`tankovault_config::AuthConfig`]:
-/// that requires the JWT secret, which a migration job has no business holding.
+/// The one `auth` key this binary needs. Deliberately not the API service's own `AuthConfig`
+/// (`services/api/src/main.rs`), which requires the JWT secret a migration job has no business
+/// holding. Not a link: that type is private to another binary crate.
 #[derive(Debug, Default, Deserialize)]
 struct AuthConfig {
     password_pepper: Option<SecretString>,

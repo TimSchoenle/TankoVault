@@ -74,7 +74,10 @@ fn cached_queries() -> Vec<CachedQuery> {
         let doc: Value = serde_json::from_str(&raw).expect("parse a sqlx cache file");
         let describe = &doc["describe"];
         queries.push(CachedQuery {
-            sql: doc["query"].as_str().expect("cache entry has a query").into(),
+            sql: doc["query"]
+                .as_str()
+                .expect("cache entry has a query")
+                .into(),
             columns: describe["columns"]
                 .as_array()
                 .expect("cache entry has columns")
@@ -165,10 +168,7 @@ async fn plan_of(pool: &PgPool, query: &CachedQuery) -> Value {
 /// `raw_sql` sends the text as-is, which is what psql does and what makes this work.
 async fn generic_plan_of(pool: &PgPool, query: &CachedQuery) -> Value {
     // The committed cache's own text with a fixed prefix; no caller input anywhere in it.
-    let sql = sqlx::AssertSqlSafe(format!(
-        "EXPLAIN (GENERIC_PLAN, FORMAT JSON) {}",
-        query.sql
-    ));
+    let sql = sqlx::AssertSqlSafe(format!("EXPLAIN (GENERIC_PLAN, FORMAT JSON) {}", query.sql));
     let row = sqlx::raw_sql(sql)
         .fetch_one(pool)
         .await

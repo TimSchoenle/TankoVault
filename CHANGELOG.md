@@ -12,6 +12,45 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [1.0.0](https://github.com/TimSchoenle/TankoVault/compare/v0.4.1...v1.0.0) (2026-08-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* replace FlareSolverr with TRAWL as the solver back-end ([#55](https://github.com/TimSchoenle/TankoVault/issues/55))
+
+### Features
+
+* replace FlareSolverr with TRAWL as the solver back-end ([#55](https://github.com/TimSchoenle/TankoVault/issues/55)) ([646cd03](https://github.com/TimSchoenle/TankoVault/commit/646cd03309639ec19f43ebd1a601cf9e1a6fa98f))
+
+
+### Performance Improvements
+
+* improve slow SQL peformance ([c0c05d5](https://github.com/TimSchoenle/TankoVault/commit/c0c05d5d4d802c34d662b6300bf002f799239f9f))
+
+
+### Tests
+
+* add sql runtime cost tests ([9b66ce1](https://github.com/TimSchoenle/TankoVault/commit/9b66ce1d554e2511c1c84e7c2f3fac645ef0d953))
+
+
+### CI
+
+* propose the chart bump after a release publishes ([#54](https://github.com/TimSchoenle/TankoVault/issues/54)) ([e33bbc1](https://github.com/TimSchoenle/TankoVault/commit/e33bbc10a9f0129d9bad1e21a14b910da590166c))
+
+
+### Miscellaneous
+
+* **deps:** update actions/download-artifact action to v8 ([#40](https://github.com/TimSchoenle/TankoVault/issues/40)) ([70c0d6a](https://github.com/TimSchoenle/TankoVault/commit/70c0d6a6ff3d0e376ea1fb1a3406f6c7bee61812))
+* **deps:** update actions/download-artifact action to v8 ([#56](https://github.com/TimSchoenle/TankoVault/issues/56)) ([17e3482](https://github.com/TimSchoenle/TankoVault/commit/17e3482bc07c57b3d74c373e95fda7d51a464ed9))
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-auto-approve-renovate.yaml to vworkflows-maintenance-auto-approve-renovate-v1.4.17 ([#48](https://github.com/TimSchoenle/TankoVault/issues/48)) ([610b2c6](https://github.com/TimSchoenle/TankoVault/commit/610b2c694d8fb7635ced01cad69898bffee72559))
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-timed-auto-pr-approve.yaml to vworkflows-maintenance-timed-auto-pr-approve-v1.2.28 ([#53](https://github.com/TimSchoenle/TankoVault/issues/53)) ([a4d2b8b](https://github.com/TimSchoenle/TankoVault/commit/a4d2b8b0c2739d7c238e8a881f9f68f2285b1b7f))
+
+
+### Dependencies
+
+* **deps:** lock file maintenance ([#49](https://github.com/TimSchoenle/TankoVault/issues/49)) ([6ce45cf](https://github.com/TimSchoenle/TankoVault/commit/6ce45cf111880cbcca54b3b79e66f40ad4fed719))
+
 ## [0.4.1](https://github.com/TimSchoenle/TankoVault/compare/v0.4.0...v0.4.1) (2026-08-02)
 
 

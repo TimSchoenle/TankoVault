@@ -52,10 +52,6 @@ env:
   # being published after v1.16.0, so every version Renovate can propose 404s there.
   # renovate: datasource=github-releases depName=GoogleContainerTools/container-structure-test
   CONTAINER_STRUCTURE_TEST_VERSION: 1.22.1
-  # promtool must be the Prometheus that will evaluate the rules, so this and
-  # `deploy/docker-compose.observability.yml` are grouped into one Renovate PR.
-  # renovate: datasource=docker depName=prom/prometheus
-  PROMETHEUS_VERSION: v3.13.2
   # Must match the `sqlx` in `Cargo.lock`: a CLI from a different minor writes a query cache the
   # workspace then rejects.
   SQLX_CLI_VERSION: 0.9.0
@@ -79,7 +75,7 @@ jobs:
       frontend: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.frontend == 'true' }}
       docker: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.docker == 'true' }}
       notices: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.notices == 'true' }}
-      observability: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.observability == 'true' }}
+      compose: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.compose == 'true' }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -192,11 +188,9 @@ jobs:
               - *rust
               - 'deploy/docker/**'
               - 'web/frontend/**'
-            observability:
+            compose:
               - *workflows
-              - 'deploy/observability/**'
               - 'deploy/docker-compose.yml'
-              - 'deploy/docker-compose.observability.yml'
 
   lint:
     name: fmt + clippy
@@ -904,16 +898,16 @@ jobs:
         working-directory: web/frontend
         run: cargo metadata --locked --format-version 1 > /dev/null
 
-  # A rule file that fails to parse takes its whole group with it, silently disarming every alert
-  # built on it — reported on a page nobody visits until the incident those alerts existed for.
-  # `check rules` proves the PromQL parses; `test rules` proves it means what it claims, and is the
-  # gate that matters: both bugs found while writing these rules parsed fine.
-  observability:
-    name: prometheus rules
+  # The Prometheus rules, dashboards and their promtool tests were here until 2026-08-03. They now
+  # live in `TimSchoenle/helm-charts` (`charts/tankovault`), which is what actually deploys them,
+  # and are gated by that repository's own chart tests. What survives is the check that the
+  # deployable compose file still parses — that file did not move.
+  compose:
+    name: compose file is valid
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [changes]
-    if: needs.changes.outputs.observability == 'true'
+    if: needs.changes.outputs.compose == 'true'
     permissions:
       contents: read # to check out the config
     steps:
@@ -927,42 +921,19 @@ jobs:
         with:
           persist-credentials: false
 
-      # Same pinned image the deploy overlay runs, so promtool is the Prometheus that will evaluate
-      # these rules. That is why `PROMETHEUS_VERSION` and the overlay's tag are one Renovate group.
-      - name: promtool check config + rules
-        run: |
-          docker run --rm --entrypoint /bin/promtool \
-            -v "$PWD/deploy/observability/prometheus:/etc/prometheus:ro" \
-            "prom/prometheus:${PROMETHEUS_VERSION}" check config /etc/prometheus/prometheus.yml
-
-      - name: promtool unit tests
-        run: |
-          docker run --rm --entrypoint /bin/promtool \
-            -v "$PWD/deploy/observability/prometheus:/etc/prometheus:ro" \
-            "prom/prometheus:${PROMETHEUS_VERSION}" test rules /etc/prometheus/rules/tests/alerts.test.yml
-
-      # A malformed dashboard imports as an empty one rather than failing, so parse it here.
-      - name: dashboard JSON is well-formed
-        run: python3 -m json.tool deploy/observability/grafana/dashboards/tankovault-overview.json > /dev/null
-
-      # Catches a mis-merged overlay: an unresolvable anchor, a duplicated key, a colliding service.
+      # Catches an unresolvable anchor, a duplicated key, a colliding service.
       #
-      # One entry per `${VAR:?…}` in the two compose files, and the list is exhaustive on purpose:
+      # One entry per `${VAR:?…}` in the compose file, and the list is exhaustive on purpose:
       # `config` stops at the *first* unset required variable, so a missing entry here fails this
-      # job with a message about a secret rather than about the overlay it exists to check.
-      # `TANKOVAULT_INTERNAL__TOKEN` arrived with the internal-auth tier and was never added, which
-      # is why this gate has been red since — invisibly, because it only runs when an observability
-      # or compose path changes. To check: `grep -oE '\$\{[A-Z_]+:\?' deploy/docker-compose*.yml`.
-      - name: compose overlay merges
+      # job with a message about a secret rather than about the file it exists to check.
+      # To check: `grep -oE '\$\{[A-Z_]+:\?' deploy/docker-compose.yml`.
+      - name: compose file parses
         env:
-          GRAFANA_ADMIN_PASSWORD: ci-validation-only
           TANKOVAULT_AUTH__JWT_SECRET: ci-validation-only
           TANKOVAULT_SEED_ADMIN_PASSWORD: ci-validation-only
           TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY: ci-validation-only
           TANKOVAULT_INTERNAL__TOKEN: ci-validation-only
-        run: |
-          docker compose -f deploy/docker-compose.yml \
-            -f deploy/docker-compose.observability.yml config --quiet
+        run: docker compose -f deploy/docker-compose.yml config --quiet
 
   # The one compile every image below is built on. `cook` and `builder` are the entire wall clock
   # of an image build; everything above them is a `COPY` onto `scratch`.
@@ -1376,7 +1347,7 @@ jobs:
       - notices
       - audit
       - supply-chain
-      - observability
+      - compose
       - docker-deps
       - docker-wasm-deps
       - docker

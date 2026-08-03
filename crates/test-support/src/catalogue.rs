@@ -307,7 +307,23 @@ async fn seed_readers(pool: &PgPool) {
     .expect("seed audit log");
 }
 
-/// `ANALYZE` the whole database, so no table is left planning from defaults.
+/// `VACUUM` then `ANALYZE` the whole database, so no table is left planning from defaults.
+///
+/// # The `VACUUM` is load-bearing, and its absence is a race
+///
+/// A GIN index accepts inserts into a *pending list* and folds them into the tree later
+/// (`fastupdate`, on by default). `gincostestimate` reads the pending-list size from the index
+/// metapage **at plan time** and charges a page fetch for every page of it, because a scan
+/// really would have to read them all. Bulk-seeding this fixture leaves ~765 such pages, which
+/// adds ~765 to the estimated cost of *every* trigram index scan — enough that the planner
+/// prefers a sequential scan of `series_titles` (970) and the trigram assertions in
+/// `crates/db/tests/repo_query_plans.rs` fail.
+///
+/// Nothing in the fixture flushed that list, so whether it was still there when the plan was
+/// taken came down to whether autovacuum's 60-second naptime happened to fire first — which
+/// made the suite pass on a slow machine (the build takes ~150 s) and fail on a fast CI runner
+/// (~38 s). `VACUUM` flushes the list outright, which is also the state a production catalogue
+/// is in, autovacuum having long since run.
 ///
 /// `default_statistics_target = 1000` first, and it is doing real work rather than being
 /// thorough for its own sake. `ANALYZE` reads a *sample* — 300 rows per unit of the target — and
@@ -320,14 +336,14 @@ async fn seed_readers(pool: &PgPool) {
 /// on a cost needs headroom for that — see the `Budget` ceilings in
 /// `crates/db/tests/repo_query_plans.rs`.
 ///
-/// Both statements go over one connection because the setting is per-session; on a pool they
-/// would land on different ones and the `ANALYZE` would run at the default.
+/// All three statements go over one connection because the setting is per-session; on a pool
+/// they would land on different ones and the `ANALYZE` would run at the default.
 async fn analyse(pool: &PgPool) {
     let mut conn = pool
         .acquire()
         .await
         .expect("acquire a connection to analyse");
-    for statement in ["SET default_statistics_target = 1000", "ANALYZE"] {
+    for statement in ["SET default_statistics_target = 1000", "VACUUM", "ANALYZE"] {
         sqlx::query(sqlx::AssertSqlSafe(statement))
             .execute(&mut *conn)
             .await

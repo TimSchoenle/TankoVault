@@ -25,6 +25,7 @@
 //! This crate is a dev-dependency only; the DB-backed suites that use it are feature-gated
 //! (`integration`) so the default `cargo test --workspace` unit path stays green without Docker.
 
+mod catalogue;
 pub mod seed;
 
 use std::sync::Mutex;
@@ -84,15 +85,26 @@ pub fn bearer(user: UserId) -> String {
 /// lifetime of the test binary.
 static PG: OnceCell<PgContainer> = OnceCell::const_new();
 
-/// The Postgres image tag the harness runs. Pinned to a modern major so the schema's
-/// generated columns and trigram indexes apply exactly as they do in production; the
-/// testcontainers default is far too old for them.
-const POSTGRES_TAG: &str = "17-alpine";
+/// The Postgres image tag the harness runs.
+///
+/// **Track `deploy/docker-compose.yml`.** The planner is a major-version artefact, so a suite
+/// that asserts on query plans ([`TestDb::spawn_with_catalogue`]) proves nothing about
+/// production unless the majors match — and the schema's generated columns and trigram indexes
+/// need a modern major regardless, which the testcontainers default is not.
+const POSTGRES_TAG: &str = "18-alpine";
 
 /// The fixed name of the shared container. A *name* is what makes reuse possible: it is how
 /// `testcontainers` finds the already-running container instead of creating a second one, so
 /// every test binary and every run converge on the same instance. See [`shared_container`].
-const CONTAINER_NAME: &str = "tankovault-test-postgres";
+///
+/// The major is **part of the name**, and derived from [`POSTGRES_TAG`] rather than written out,
+/// because reuse attaches by name: a container built from an older tag would otherwise be found,
+/// started and reused forever after a bump, leaving the suite testing the very major it was
+/// meant to leave — silently, since nothing in the run names a version.
+fn container_name() -> String {
+    let major = POSTGRES_TAG.split('-').next().unwrap_or(POSTGRES_TAG);
+    format!("tankovault-test-postgres-{major}")
+}
 
 /// How old a `tv_test_*` database must be before the sweep drops it.
 ///
@@ -100,6 +112,21 @@ const CONTAINER_NAME: &str = "tankovault-test-postgres";
 /// fills". The whole integration suite is minutes, so an hour cannot catch a live database, and
 /// a leftover survives at most one further hour of idleness.
 const STALE_DB_AFTER: StdDuration = StdDuration::from_secs(60 * 60);
+
+/// The catalogue-fixture template database, cloned by [`TestDb::spawn_with_catalogue`].
+///
+/// **Bump the version suffix whenever [`catalogue`]'s generator changes.** The template is a
+/// cache keyed by this name and nothing else, so a stale one would otherwise be cloned by every
+/// later run. The name deliberately does not match the `tv_test_%` pattern
+/// [`sweep_stale_dbs`] drops: it is meant to outlive a run, and rebuilding it costs seconds.
+const CATALOGUE_TEMPLATE: &str = "tv_catalogue_template_v2";
+
+/// Advisory-lock key serialising catalogue-template creation and cloning across test binaries.
+///
+/// Two binaries starting together would otherwise both find the template missing and both try to
+/// build it. The lock also covers the clone, because `CREATE DATABASE … TEMPLATE` fails outright
+/// if anything else is touching the source.
+const CATALOGUE_LOCK: i64 = 0x7401_0CA7;
 
 /// A running Postgres container plus the base URL of its maintenance connection.
 struct PgContainer {
@@ -131,7 +158,8 @@ struct PgContainer {
 /// unbounded disk growth, which is why ARCH-6b was left open until both halves existed.
 ///
 /// Removing the container by hand is still always safe — the next run recreates it:
-/// `docker rm -f tankovault-test-postgres`.
+/// `docker rm -f tankovault-test-postgres-18`. That also discards the catalogue template
+/// [`TestDb::spawn_with_catalogue`] caches inside it, which the next run rebuilds.
 ///
 /// # Why it starts the container before asking for it (ARCH-6c)
 ///
@@ -152,7 +180,7 @@ async fn shared_container() -> &'static PgContainer {
         start_if_stopped();
         let container = Postgres::default()
             .with_tag(POSTGRES_TAG)
-            .with_container_name(CONTAINER_NAME)
+            .with_container_name(container_name())
             .with_reuse(ReuseDirective::Always)
             .start()
             .await
@@ -180,7 +208,7 @@ async fn shared_container() -> &'static PgContainer {
 /// `start()` that follows reports with a better message than this could.
 fn start_if_stopped() {
     let _ = std::process::Command::new("docker")
-        .args(["start", CONTAINER_NAME])
+        .args(["start", &container_name()])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status();
@@ -272,6 +300,107 @@ fn unix_secs() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
+/// A pool onto one test's database inside the shared container.
+async fn connect_pool(base_url: &str, db_name: &str) -> PgPool {
+    PgPoolOptions::new()
+        .max_connections(8)
+        .connect(&format!("{base_url}/{db_name}"))
+        .await
+        .expect("connect to isolated test database")
+}
+
+/// A connection to the container's maintenance database, for statements that cannot run inside
+/// a transaction or against the database they operate on.
+async fn maintenance_conn(base_url: &str) -> PgConnection {
+    PgConnection::connect(&format!("{base_url}/postgres"))
+        .await
+        .expect("connect to maintenance database")
+}
+
+/// Create `db_name` as a clone of the catalogue template, building the template first if this is
+/// the run that finds it missing.
+///
+/// Everything happens under [`CATALOGUE_LOCK`]; see there for why the clone is inside it too.
+async fn clone_catalogue_template(base_url: &str, db_name: &str) {
+    let mut admin = maintenance_conn(base_url).await;
+    sqlx::query("SELECT pg_advisory_lock($1)")
+        .bind(CATALOGUE_LOCK)
+        .execute(&mut admin)
+        .await
+        .expect("take the catalogue-template lock");
+
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)")
+            .bind(CATALOGUE_TEMPLATE)
+            .fetch_one(&mut admin)
+            .await
+            .expect("look up the catalogue template");
+    if !exists {
+        build_catalogue_template(base_url, &mut admin).await;
+    }
+
+    // Both names are generated here, not caller input, so asserting them safe is sound;
+    // `CREATE DATABASE` cannot bind parameters.
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "CREATE DATABASE \"{db_name}\" TEMPLATE \"{CATALOGUE_TEMPLATE}\""
+    )))
+    .execute(&mut admin)
+    .await
+    .expect("clone the catalogue template");
+
+    // Releasing explicitly rather than relying on the close below, so a later refactor that
+    // pools this connection cannot turn the lock into a deadlock that only shows up under `-j`.
+    sqlx::query("SELECT pg_advisory_unlock($1)")
+        .bind(CATALOGUE_LOCK)
+        .execute(&mut admin)
+        .await
+        .expect("release the catalogue-template lock");
+    admin.close().await.ok();
+}
+
+/// Build the catalogue template. Caller holds [`CATALOGUE_LOCK`].
+///
+/// # Why it seeds under a scratch name and renames
+///
+/// The template is a cache with no validity check beyond its name, so a seed that dies halfway —
+/// a cancelled `cargo test`, a container restart — must not leave a half-filled database sitting
+/// under the template name for every later run to clone. Under a scratch name a crash leaves
+/// litter that is merely ignored, and the rename is atomic, so the template name only ever
+/// appears once the fixture behind it is complete.
+///
+/// It ends `ALLOW_CONNECTIONS false` because `CREATE DATABASE … TEMPLATE` refuses to run while
+/// anything is connected to the source. Nothing needs to connect to the template again, and
+/// forbidding it outright is what stops one stray connection from failing every clone.
+async fn build_catalogue_template(base_url: &str, admin: &mut PgConnection) {
+    let scratch = format!("tv_catalogue_building_{}", Uuid::new_v4().simple());
+    sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE \"{scratch}\"")))
+        .execute(&mut *admin)
+        .await
+        .expect("create the catalogue template scratch database");
+
+    let pool = connect_pool(base_url, &scratch).await;
+    tankovault_db::migrate(&pool)
+        .await
+        .expect("run migrations against the catalogue template");
+    catalogue::seed(&pool).await;
+    // Awaited, not dropped: the rename below needs every session gone, and `close` is what
+    // waits for that.
+    pool.close().await;
+
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "ALTER DATABASE \"{scratch}\" RENAME TO \"{CATALOGUE_TEMPLATE}\""
+    )))
+    .execute(&mut *admin)
+    .await
+    .expect("publish the catalogue template");
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "ALTER DATABASE \"{CATALOGUE_TEMPLATE}\" WITH ALLOW_CONNECTIONS false"
+    )))
+    .execute(&mut *admin)
+    .await
+    .expect("seal the catalogue template");
+}
+
 /// An isolated, freshly-migrated database inside the shared container.
 ///
 /// Each instance owns its own database, so two tests running in parallel never observe each
@@ -292,9 +421,7 @@ impl TestDb {
 
         // `CREATE DATABASE` cannot run inside a transaction, so it goes over a plain
         // connection to the maintenance database rather than through the pool.
-        let mut admin = PgConnection::connect(&format!("{}/postgres", container.base_url))
-            .await
-            .expect("connect to maintenance database");
+        let mut admin = maintenance_conn(&container.base_url).await;
         // The database name is a generated UUID hex, not user input, so asserting it safe is
         // sound; `CREATE DATABASE` cannot bind parameters, hence the format.
         sqlx::query(sqlx::AssertSqlSafe(format!(
@@ -305,17 +432,33 @@ impl TestDb {
         .expect("create isolated test database");
         admin.close().await.ok();
 
-        let pool = PgPoolOptions::new()
-            .max_connections(8)
-            .connect(&format!("{}/{db_name}", container.base_url))
-            .await
-            .expect("connect to isolated test database");
+        let pool = connect_pool(&container.base_url, &db_name).await;
 
         tankovault_db::migrate(&pool)
             .await
             .expect("run migrations against the test database");
 
         Self { pool }
+    }
+
+    /// As [`TestDb::spawn`], but the database arrives already holding a production-shaped
+    /// workload — catalogue, chapters, readers and their watchlists — analysed.
+    ///
+    /// For suites that assert on **query plans**. Every planner choice is a cost comparison, so
+    /// an assertion is only meaningful where the fixture has the volume production has; see
+    /// [`catalogue`] for what it has to get right and what it deliberately scales down.
+    ///
+    /// The rows come from a `CREATE DATABASE … TEMPLATE` clone of a template built once per
+    /// container, so the per-test cost is a file copy (~200 ms) rather than a re-seed (~15 s) —
+    /// and the clone carries the template's statistics, which is what makes the copy plan like
+    /// the original.
+    pub async fn spawn_with_catalogue() -> Self {
+        let container = shared_container().await;
+        let db_name = format!("tv_test_{}_{}", unix_secs(), Uuid::new_v4().simple());
+        clone_catalogue_template(&container.base_url, &db_name).await;
+        Self {
+            pool: connect_pool(&container.base_url, &db_name).await,
+        }
     }
 
     /// Seed a user with the given username, capabilities and account status.

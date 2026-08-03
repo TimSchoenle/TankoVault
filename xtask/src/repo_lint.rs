@@ -32,9 +32,10 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(deploy_blacklist_is_honoured(root)?);
     findings.extend(notices_accept_every_allowed_licence(root)?);
     findings.extend(the_notices_url_is_the_one_the_server_publishes(root)?);
+    findings.extend(tests_run_the_production_postgres_major(root)?);
 
     if findings.is_empty() {
-        println!("repo-lint: 8 rules, no violations");
+        println!("repo-lint: 9 rules, no violations");
         return Ok(());
     }
 
@@ -526,6 +527,81 @@ fn the_notices_url_is_the_one_the_server_publishes(root: &Path) -> anyhow::Resul
     ])
 }
 
+/// **The integration harness must run production's Postgres major.** The query planner is a
+/// major-version artefact, so `crates/db/tests/repo_query_plans.rs` — which asserts that the
+/// trigram searches reach their GIN indexes instead of scanning the whole catalogue — proves
+/// nothing about production the moment the two majors diverge, and proves it silently, because
+/// no output of a green run names a version. Nothing else connects them: the harness tag is a
+/// Rust `const`, the deployed image is a digest-pinned line in the compose file, and a bump to
+/// either one alone is a perfectly ordinary-looking change.
+fn tests_run_the_production_postgres_major(root: &Path) -> anyhow::Result<Vec<Finding>> {
+    const RULE: &str = "tests-run-the-production-postgres-major";
+    const HARNESS: &str = "crates/test-support/src/lib.rs";
+    const COMPOSE: &str = "deploy/docker-compose.yml";
+
+    let harness_path = root.join(HARNESS);
+    let Ok(harness) = std::fs::read_to_string(&harness_path) else {
+        anyhow::bail!("repo-lint: cannot read {}", harness_path.display());
+    };
+    let Some((tag_line, tag)) = const_str(&harness, "POSTGRES_TAG") else {
+        anyhow::bail!(
+            "repo-lint: {} declares no `const POSTGRES_TAG: &str = \"…\"`; nothing else records \
+             which Postgres major the integration suites run",
+            harness_path.display()
+        );
+    };
+    let harness_major = major_of(&tag).unwrap_or(tag.as_str()).to_owned();
+
+    let compose_path = root.join(COMPOSE);
+    let Ok(compose) = std::fs::read_to_string(&compose_path) else {
+        anyhow::bail!("repo-lint: cannot read {}", compose_path.display());
+    };
+    let deployed = compose.lines().enumerate().find_map(|(index, line)| {
+        let trimmed = line.trim_start();
+        if is_comment(trimmed) {
+            return None;
+        }
+        let rest = trimmed.strip_prefix("image: postgres:")?;
+        Some((index + 1, major_of(rest)?.to_owned()))
+    });
+    let Some((compose_line, compose_major)) = deployed else {
+        anyhow::bail!(
+            "repo-lint: {} pins no `image: postgres:<tag>`; the rule cannot tell which major \
+             production runs",
+            compose_path.display()
+        );
+    };
+
+    if harness_major == compose_major {
+        return Ok(Vec::new());
+    }
+    Ok(vec![
+        Finding {
+            rule: RULE,
+            file: PathBuf::from(HARNESS),
+            line: tag_line,
+            detail: format!(
+                "tests run Postgres {harness_major}, production runs {compose_major} \
+                 ({COMPOSE}:{compose_line}); plan assertions are only evidence when they match"
+            ),
+        },
+    ])
+}
+
+/// The major version leading a Postgres image tag: `18` from `18-alpine`, from
+/// `18.4-alpine@sha256:…`, and from a bare `18`.
+///
+/// Split out so the shapes a digest pin and a Renovate bump produce can be tested without a
+/// filesystem — the `@sha256:` suffix is the one that looks like it would not parse.
+fn major_of(tag: &str) -> Option<&str> {
+    let major = tag
+        .trim_matches('"')
+        .split(['-', '.', '@'])
+        .next()?
+        .trim();
+    (!major.is_empty() && major.bytes().all(|b| b.is_ascii_digit())).then_some(major)
+}
+
 /// The value of a `const <name>: &str = "…";`, with its 1-based line number.
 ///
 /// Split out so the parse can be tested without a filesystem. Deliberately anchored on `const`:
@@ -858,6 +934,23 @@ fn is_credential(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The compose file pins images by digest, so the tag the rule has to read is
+    /// `18-alpine@sha256:…` rather than anything as tidy as `18`.
+    #[test]
+    fn a_postgres_major_survives_the_shapes_a_pin_produces() {
+        assert_eq!(major_of("18-alpine"), Some("18"));
+        assert_eq!(
+            major_of("18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d29"),
+            Some("18")
+        );
+        assert_eq!(major_of("18.4-alpine"), Some("18"));
+        assert_eq!(major_of("18"), Some("18"));
+        assert_eq!(major_of("\"17-alpine\""), Some("17"));
+        // Not a version: a floating tag pins nothing, so the rule must not read one as agreement.
+        assert_eq!(major_of("latest"), None);
+        assert_eq!(major_of(""), None);
+    }
 
     #[test]
     fn a_rules_own_documentation_does_not_trip_it() {

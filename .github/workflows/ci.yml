@@ -230,8 +230,10 @@ jobs:
       # every job here used to keep a private copy of one identical dependency graph: eleven
       # caches of the same ~600 crates, none of which fit alongside the others. Jobs are grouped
       # by the artefact cargo actually fingerprints instead — this group is metadata-only
-      # (`clippy`/`check`, `RUSTFLAGS=-D warnings`), `test` is codegen, and `msrv`, `coverage`
-      # and the frontend workspace each fingerprint differently enough to need their own.
+      # (`clippy`/`check`, `RUSTFLAGS=-D warnings`), `test` is codegen, and `features`, `msrv`,
+      # `coverage` and the frontend workspace each fingerprint differently enough to need their
+      # own. Sharing is only ever worth a cache where the members compile the same graph: the
+      # grouping below is what the measured job times supported, not what the shapes suggested.
       #
       # Exactly one job per group writes. With several savers behind one key the content is
       # whichever leg finished first — a check-only leg winning the race leaves the group's cache
@@ -353,10 +355,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
+      # Its own group, measured rather than assumed: `--all-features` resolves a wider dependency
+      # graph than any other job compiles, so sharing `lint` left this one rebuilding the
+      # difference and it went from 1m13s to 3m27s — the slowest of the seven and the run's new
+      # critical path. Consolidation is worth a cache only where the members' graphs match.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: lint
-          save-if: false
+          shared-key: features
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
 
       - name: BoringSSL build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev

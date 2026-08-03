@@ -93,6 +93,22 @@ fn admin_gates() -> Vec<Gate> {
             required: &[Permission::MergeWrite],
             body: || Some(json!({ "id": ABSENT_A })),
         },
+        Gate {
+            method: "POST",
+            template: "/v1/admin/merge-candidates/sweep",
+            path: "/v1/admin/merge-candidates/sweep",
+            required: &[Permission::MergeWrite],
+            // Forwarded to a control plane the harness points at `.invalid`, so the leg-3
+            // outcome is a `502` — after the permission check the matrix is here to assert.
+            body: empty,
+        },
+        Gate {
+            method: "POST",
+            template: "/v1/admin/matching/rebuild-keys",
+            path: "/v1/admin/matching/rebuild-keys",
+            required: &[Permission::MergeWrite],
+            body: empty,
+        },
         // --- privacy queue ---
         Gate {
             method: "GET",

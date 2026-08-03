@@ -226,11 +226,11 @@ jobs:
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
           components: rustfmt, clippy
-      # Saver for the `check` group. `rust-cache` keys on `github.job` unless told otherwise, so
+      # Saver for the `lint` group. `rust-cache` keys on `github.job` unless told otherwise, so
       # every job here used to keep a private copy of one identical dependency graph: eleven
       # caches of the same ~600 crates, none of which fit alongside the others. Jobs are grouped
-      # by the artefact cargo actually fingerprints instead — `check` is metadata-only
-      # (`clippy`/`check`, `RUSTFLAGS=-D warnings`), `build` is codegen, and `msrv`, `coverage`
+      # by the artefact cargo actually fingerprints instead — this group is metadata-only
+      # (`clippy`/`check`, `RUSTFLAGS=-D warnings`), `test` is codegen, and `msrv`, `coverage`
       # and the frontend workspace each fingerprint differently enough to need their own.
       #
       # Exactly one job per group writes. With several savers behind one key the content is
@@ -238,12 +238,18 @@ jobs:
       # without the artefacts its other members came for. The rest carry `save-if: false`, which
       # still restores.
       #
+      # **A group is named for the job that saves it**, never for its shape. A `shared-key` becomes
+      # the key segment `rust-cache` otherwise fills from `github.job`, so naming a group after its
+      # saver means the key is the one that job already wrote — the existing cache is inherited
+      # rather than orphaned. Naming this group `check` and the one below `build` cost 2.5 GB of
+      # current, already-populated cache that nothing could reach again until `main` rebuilt it.
+      #
       # `cache-on-failure` because a job that compiled the whole graph and then failed a lint has
       # produced exactly the artefacts the next run wants; throwing them away made a red `main`
       # cost every later run a cold build.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: check
+          shared-key: lint
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
 
@@ -288,11 +294,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
-      # Saver for the `build` group — the widest codegen build in the workflow, so what it stores
+      # Saver for the `test` group — the widest codegen build in the workflow, so what it stores
       # covers `integration` and `mutants` too. See `lint` for why the groups exist.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: build
+          shared-key: test
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
 
@@ -349,7 +355,7 @@ jobs:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: check
+          shared-key: lint
           save-if: false
 
       - name: BoringSSL build dependencies
@@ -419,7 +425,7 @@ jobs:
       # graph this restores is the same one `check` stores.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: check
+          shared-key: lint
           save-if: false
 
       - name: BoringSSL build dependencies
@@ -465,7 +471,7 @@ jobs:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: build
+          shared-key: test
           save-if: false
 
       - name: BoringSSL build dependencies
@@ -666,7 +672,7 @@ jobs:
         with:
           toolchain: ${{ needs.changes.outputs.msrv }}
       # Its own group, and it must stay that way: this leg builds on the MSRV compiler with
-      # `RUSTFLAGS` cleared, so every fingerprint below differs from the `check` group's. Sharing
+      # `RUSTFLAGS` cleared, so every fingerprint below differs from the `lint` group's. Sharing
       # the key would hand it a cache it can only discard.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -715,7 +721,7 @@ jobs:
           toolchain: ${{ needs.changes.outputs.toolchain }}
           components: llvm-tools-preview
       # Its own group. `cargo llvm-cov` injects `-C instrument-coverage`, which changes every
-      # dependency's fingerprint, so nothing the `build` group stores is reusable here and
+      # dependency's fingerprint, so nothing the `test` group stores is reusable here and
       # nothing this stores is reusable there.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -769,12 +775,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
-      # Reads the `build` group and writes nothing: mutants rebuilds the same test binaries, and
+      # Reads the `test` group and writes nothing: mutants rebuilds the same test binaries, and
       # it is scheduled-only, so letting it save would hand the group a cache written once a week
       # from a run nobody gates on.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: build
+          shared-key: test
           save-if: false
       - uses: taiki-e/install-action@6a1bd70eaac3c8bdf093356838d7ee09fda951cf # v2.85.5
         with:

@@ -78,7 +78,7 @@ permissions: {}
 
 # Must stay byte-identical to `ci.yml`'s. `rust-cache` hashes the `CARGO_*`/`RUST*` environment
 # into its key, so a workflow that leaves these unset looks up a different key from the one
-# `ci.yml`'s `check` group writes and compiles the workspace from cold on every pull request —
+# `ci.yml`'s `lint` group writes and compiles the workspace from cold on every pull request —
 # which is what this job did while it had no `env:` block at all. The `clippy --fix` step below
 # clears `RUSTFLAGS` for itself; see its comment for why that must not be done here.
 env:
@@ -146,11 +146,11 @@ jobs:
           toolchain: ${{ steps.versions.outputs.toolchain }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          # `ci.yml`'s `check` group, whose saver is its `lint` job: this compiles the same
-          # workspace with the same flags, and without naming the group it looked up a key
-          # derived from this job's own name — one nothing writes, because this workflow runs on
-          # pull requests only and so never executes on `main`. It restored nothing, every run.
-          shared-key: check
+          # The group `ci.yml`'s `lint` job writes: this compiles the same workspace with the same
+          # flags. Without naming it the lookup used a key derived from this job's own name — one
+          # nothing writes, because this workflow runs on pull requests only and so never executes
+          # on `main`. It restored nothing, on every run.
+          shared-key: lint
           # Reads `main`'s cache, never writes one: this runs only on pull requests, and a PR
           # populating the shared cache is how an unreviewed artefact reaches every other job.
           save-if: "false"

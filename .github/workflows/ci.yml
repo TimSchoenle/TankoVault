@@ -946,12 +946,20 @@ jobs:
         run: python3 -m json.tool deploy/observability/grafana/dashboards/tankovault-overview.json > /dev/null
 
       # Catches a mis-merged overlay: an unresolvable anchor, a duplicated key, a colliding service.
+      #
+      # One entry per `${VAR:?…}` in the two compose files, and the list is exhaustive on purpose:
+      # `config` stops at the *first* unset required variable, so a missing entry here fails this
+      # job with a message about a secret rather than about the overlay it exists to check.
+      # `TANKOVAULT_INTERNAL__TOKEN` arrived with the internal-auth tier and was never added, which
+      # is why this gate has been red since — invisibly, because it only runs when an observability
+      # or compose path changes. To check: `grep -oE '\$\{[A-Z_]+:\?' deploy/docker-compose*.yml`.
       - name: compose overlay merges
         env:
           GRAFANA_ADMIN_PASSWORD: ci-validation-only
           TANKOVAULT_AUTH__JWT_SECRET: ci-validation-only
           TANKOVAULT_SEED_ADMIN_PASSWORD: ci-validation-only
           TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY: ci-validation-only
+          TANKOVAULT_INTERNAL__TOKEN: ci-validation-only
         run: |
           docker compose -f deploy/docker-compose.yml \
             -f deploy/docker-compose.observability.yml config --quiet

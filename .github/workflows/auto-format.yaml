@@ -9,9 +9,12 @@ name: auto-format
 # remove: on 2026-08-03 `main` went red on six `cargo fmt` diffs, and because `rustfmt` is the
 # first step, nothing downstream of it in that job had been evaluated at all.
 #
-# Formatting is the one gate where fixing is fully mechanical and the fix is the same one a human
-# would make, so a bot may make it. Nothing else is auto-fixed here — a clippy or repo-lint
-# failure is a decision, and a bot that resolved those would be editing meaning, not layout.
+# `auto-fix.yaml` also runs `cargo fmt`, so this is the fast path rather than the only one: it
+# needs no compile and finishes in about a minute, where `auto-fix` spends twenty building the
+# workspace under `--all-targets --all-features` for `clippy --fix`. A pull request whose only
+# problem is formatting is fixed here and never waits for that. They share a concurrency group,
+# so the redundancy costs a queued job, never a contended push, and `cargo fmt` is idempotent —
+# whichever runs second finds nothing to do.
 #
 # Scope is the host workspace only, matching the gate: `cargo fmt --all` stops at the workspace
 # boundary and `web/frontend` is a separate one, which `ci.yml` does not format-check either.

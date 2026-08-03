@@ -1,6 +1,12 @@
-name: auto-regenerate
+name: auto-fix
 
-# Regenerates the committed generated artefacts on pull requests and commits the result.
+# Applies every mechanical fix this repository has on pull requests, and commits the result:
+# clippy's machine-applicable suggestions, `cargo fmt`, and the four generated artefacts.
+#
+# The dividing line is *determinism*, not convenience. Everything here has exactly one correct
+# output given the tree, so a bot's answer is byte-identical to a human's and there is nothing to
+# review in the diff it produces. What is deliberately absent is anything where the fix is a
+# choice — see the note on `repo-lint` at the bottom of this file.
 #
 # Four files in this repository are generated, committed, and must not be hand-edited:
 # `openapi.json`, `crates/api-client/src/lib.rs`, `THIRD-PARTY-NOTICES` (ENGINEERING_GUIDE rule 6)
@@ -19,9 +25,28 @@ name: auto-regenerate
 # regenerated document against the base branch, so a change that breaks a client is still a red
 # gate; what stops being a red gate is *forgetting to run the generator*.
 #
-# All generators in one job on purpose: `xtask notices` needs only the lockfiles and the Tailwind
-# build needs only Node, but running them beside `xtask openapi` shares the one expensive compile
-# and produces a single commit rather than three workflows racing to push.
+# Everything in one job on purpose, and in this order: `clippy --fix` rewrites source, `cargo fmt`
+# formats what it wrote, and only then are the artefacts regenerated from the result. Split across
+# workflows they would race to push, and the generators would run against pre-fix source.
+#
+# ---------------------------------------------------------------------------------------------
+# Why `xtask repo-lint` is not here, and must not be added
+# ---------------------------------------------------------------------------------------------
+# Every `repo-lint` rule is of the form "two artefacts that must agree, disagree" — a CSP and the
+# HTML it governs, the harness's Postgres major and production's, `deny.toml`'s advisory ignores
+# and `.cargo/audit.toml`'s. None of them carries the answer to *which side is wrong*, so an
+# automated fix would not be applying a known correction; it would be picking a side, and the side
+# a machine picks is whichever makes the build go green.
+#
+# For one rule that is not merely unsound but the exact failure it exists to prevent.
+# `csp-no-unsafe-eval` fires when code needs a directive the policy refuses. The green-making edit
+# is to widen the CSP — which ENGINEERING_GUIDE rule 1 forbids in as many words, because the SPA's
+# access token lives in memory and the policy is the ceiling on where an injected script could
+# send it. A bot that resolved that rule automatically would be a supply-chain downgrade wearing
+# the same commit message as a formatting fix.
+#
+# `too_many_lines` and the other suggestion-less clippy lints are excluded for the weaker version
+# of the same reason: no machine-applicable suggestion means no determined output.
 
 on:
   pull_request:
@@ -52,10 +77,12 @@ concurrency:
 permissions: {}
 
 jobs:
-  regenerate:
-    name: regenerate generated artefacts
+  fix:
+    name: apply the mechanical fixes
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Generous: this job compiles the workspace under `--all-targets --all-features` for
+    # `clippy --fix`, checks it again, and then builds `tankovault-api` for `xtask openapi`.
+    timeout-minutes: 60
     # Forks cannot read the app secrets, and a fork PR must not be able to make this repository
     # commit on its behalf. Skipping is correct: a fork's drift is the author's to fix.
     if: github.event.pull_request.head.repo.full_name == github.repository
@@ -131,6 +158,32 @@ jobs:
           cargo fetch --locked
           cargo fetch --locked --manifest-path web/frontend/Cargo.toml
 
+      # Only clippy's *machine-applicable* suggestions are applied — that is rustfix's contract,
+      # not a flag. A lint with no concrete replacement (`too_many_lines`, which wants a judgement
+      # about how to split a function) is left alone and stays a red `fmt + clippy`, which is the
+      # correct outcome: the fixable half stops costing a round trip, the half that needs a
+      # decision still gets one.
+      #
+      # No `-D warnings` in this job's environment, deliberately. Under it, an unfixable lint
+      # would abort the run before rustfix wrote anything, so the one lint nobody can automate
+      # would suppress the fixes for all the ones anybody can.
+      - name: apply clippy's machine-applicable fixes
+        run: |
+          set -euo pipefail
+          cargo clippy --fix --workspace --all-targets --all-features --allow-dirty --allow-staged
+
+      # `--fix` rewrites expressions without reformatting them, so this runs second and formats
+      # what it wrote. Doing it the other way round commits code that `cargo fmt --check` rejects.
+      - name: format the result
+        run: cargo fmt --all
+
+      # rustfix reverts a fix that does not compile, but it judges that per-crate and this
+      # workspace is 26 of them. A tree that no longer builds must not reach the commit step:
+      # failing here leaves the branch exactly as the author pushed it, which is recoverable,
+      # where a committed broken tree is a bot-authored regression to bisect.
+      - name: the fixed tree still compiles
+        run: cargo check --workspace --all-targets --all-features
+
       - name: regenerate the OpenAPI document and its client
         run: cargo run -p xtask -- openapi
 
@@ -149,12 +202,14 @@ jobs:
           npm ci
           npm run css:build
 
-      # Scoped to the four artefacts rather than the whole tree: nothing else in this job is meant
-      # to change, so anything that did is a bug to see in a red gate, not to commit silently.
-      - name: Commit the regenerated artefacts
+      # Scoped to source and the four artefacts rather than the whole tree. Nothing else in this
+      # job is meant to change — `npm ci` can touch `package-lock.json` and `cargo` can touch a
+      # lockfile — and those belong to `update-lockfile.yaml`, not here. Anything outside this
+      # list that changed is a bug to see in a red gate, not to commit silently.
+      - name: Commit the fixes
         uses: TimSchoenle/actions/actions/common/commit-changes@147b117c39eaa951bf8c326c5e2fa8553c8a8937 # tag=actions-common-commit-changes-v1.2.2
         with:
-          commit_message: "build: regenerate the committed generated artefacts"
+          commit_message: "style: apply the mechanical fixes (clippy --fix, fmt, regenerated artefacts)"
           token: ${{ steps.generate_token.outputs.token }}
           branch: ${{ github.event.pull_request.head.ref }}
-          file_pattern: "openapi.json crates/api-client/src/lib.rs THIRD-PARTY-NOTICES web/frontend/assets/main.css"
+          file_pattern: "crates services xtask fuzz openapi.json THIRD-PARTY-NOTICES web/frontend/src web/frontend/assets/main.css"

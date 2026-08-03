@@ -3,6 +3,7 @@ name: release-please
 # Release automation, end to end: release-please opens and maintains the release pull request,
 # and merging it tags the repository and publishes the nine service images for that tag as
 # multi-architecture manifests, signed and with an SBOM attested against the published digest.
+# `helm-release` then proposes the matching bump to the chart in `TimSchoenle/helm-charts`.
 #
 # ---------------------------------------------------------------------------------------------
 # Publishing is unconditional. It was not always.
@@ -81,6 +82,10 @@ env:
   # Kept in step with ci.yml's pin of the same tool; see the `renovate:` comment there.
   # renovate: datasource=github-releases depName=GoogleContainerTools/container-structure-test
   CONTAINER_STRUCTURE_TEST_VERSION: 1.22.1
+  # Where the deployable chart lives. It is a separate repository on purpose: the chart releases
+  # on its own cadence and its version is not this workspace's version.
+  HELM_REPO: TimSchoenle/helm-charts
+  CHART_PATH: charts/tankovault
 
 jobs:
   release-please:
@@ -97,6 +102,10 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
+      # `tag_name` carries the `v` and `version` does not, and the two are *not* interchangeable
+      # downstream: image tags are `vX.Y.Z`, a chart's `appVersion` is `X.Y.Z`.
+      version: ${{ steps.release.outputs.version }}
+      body: ${{ steps.release.outputs.body }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -533,6 +542,30 @@ jobs:
             echo "ghcr=${ghcr}"
           } >> "$GITHUB_OUTPUT"
 
+      # Handed to `helm-release` as an artifact, not a job output: this is a matrix of nine and
+      # `outputs` on a matrix job is last-writer-wins, so nine legs would deliver one digest.
+      #
+      # The Docker Hub digest is the one exported, because the chart's `repository` values name
+      # Docker Hub (`timschoenle/tankovault-<bin>`). Both registries hold the same list digest —
+      # a manifest list is content-addressed and both were assembled from the same two
+      # per-architecture digests — but a chart must pin the registry it actually pulls from.
+      - name: export the manifest list digest
+        env:
+          BIN: ${{ matrix.bin }}
+          DIGEST: ${{ steps.digests.outputs.dockerhub }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/list-digests
+          printf '%s' "$DIGEST" > "/tmp/list-digests/${BIN}"
+
+      - name: upload the manifest list digest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: list-digest-${{ matrix.bin }}
+          path: /tmp/list-digests/*
+          if-no-files-found: error
+          retention-days: 1
+
       # A `scratch` image defeats every package-manager-based scanner: there is no apt/apk
       # database, so a running container cannot be mapped back to its dependency set at all.
       # Syft reads the Rust binary's own metadata instead, which is the only way these images
@@ -582,13 +615,114 @@ jobs:
           cosign attest --yes --predicate "$SBOM" --type spdxjson "${DOCKERHUB_IMAGE}@${DOCKERHUB_DIGEST}"
           cosign attest --yes --predicate "$SBOM" --type spdxjson "${GHCR_IMAGE}@${GHCR_DIGEST}"
 
+  # The hand-off to the deployable chart: pin every service in `TimSchoenle/helm-charts` to the
+  # digest this run just published, and open a pull request there. It is a pull request and not a
+  # push because the chart repository gates its own releases — this job proposes, that repository
+  # decides.
+  #
+  # It runs after `manifest` and not after `build` deliberately: what a chart pins must be a
+  # digest that is signed and SBOM-attested, and `manifest` is where both happen.
+  helm-release:
+    name: Helm Release
+    needs: [release-please, manifest]
+    # Same guard as `build` and `manifest`, and it is what makes the "nine digests are present"
+    # assumption below sound: with `fail-fast: false` on `manifest`, a bare output test would let
+    # one failed leg through and this job would then bump the chart with that service still on the
+    # previous release's digest — a silently partial deployment, under a version that claims
+    # otherwise.
+    if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' }}
+    environment:
+      name: release
+      deployment: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Nothing here uses `GITHUB_TOKEN`: the artifacts belong to this same run, which the runner's
+    # own token covers, and the chart pull request is made with a token the action mints for the
+    # *charts* repository from the release bot's credentials.
+    permissions: {}
+    outputs:
+      pr_url: ${{ steps.chart.outputs.pr-url }}
+      chart_version: ${{ steps.chart.outputs.chart-version }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: download every published manifest list digest
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          path: /tmp/list-digests
+          pattern: list-digest-*
+          merge-multiple: true
+
+      # The values key is *derived* from the binary name rather than read from a table, so that
+      # adding a service to the matrices above does not also require editing a mapping here that
+      # nothing checks. `xtask repo-lint` holds the two image matrices to the deploy blacklist, but
+      # it only recognises `bin: [...]` and `images=[...]` literals — a third hand-maintained list
+      # of the nine services would be outside everything that enforces they stay in step.
+      #
+      # The chart nests the long-running services under `services.` and camel-cases their names;
+      # `bootstrap` is a one-shot job and sits at the top level. A key that does not already exist
+      # in `values.yaml` is an error in the action, so a naming drift fails loudly there.
+      - name: map each published digest onto its chart values key
+        id: images
+        env:
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(/tmp/list-digests/*)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::no manifest list digests were downloaded; nothing to pin the chart to"
+            exit 1
+          fi
+          images=$(
+            for file in "${files[@]}"; do
+              bin=$(basename "$file")
+              digest=$(cat "$file")
+              case "$digest" in
+                sha256:*) ;;
+                *) echo "::error::'${bin}' exported '${digest}', which is not a digest" >&2; exit 1 ;;
+              esac
+              case "$bin" in
+                bootstrap) key="bootstrap.image.tag" ;;
+                *) key="services.$(printf '%s' "$bin" | sed -E 's/-(.)/\U\1/g').image.tag" ;;
+              esac
+              jq -n --arg key "$key" --arg tag "$TAG" --arg digest "$digest" \
+                '{($key): {tag: $tag, digest: $digest}}'
+            done | jq -sc 'add'
+          )
+          echo "json=${images}" >> "$GITHUB_OUTPUT"
+
+      - name: open the chart update pull request
+        id: chart
+        uses: TimSchoenle/actions/actions/helm/update-chart-version@a9b52e270a60b696cb1c90f996f01977bf27a7c1 # tag=actions-helm-update-chart-version-v1.6.0
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          helm-repo: ${{ env.HELM_REPO }}
+          chart-path: ${{ env.CHART_PATH }}
+          images: ${{ steps.images.outputs.json }}
+          # `Chart.yaml` records `appVersion` without the `v` its image tags carry, so this is the
+          # one place `version` is correct and `tag_name` is not.
+          app-version: ${{ needs.release-please.outputs.version }}
+          # Explicit rather than left to the action's default: an application release does not
+          # change the chart's templates, so it is a patch of the chart regardless of whether the
+          # application bumped a major. A chart change is the chart repository's own release.
+          version-bump: patch
+          # The action sanitizes this — mentions and issue-closing keywords are neutralized — so
+          # the release notes can be carried across repositories without the chart pull request
+          # cross-linking or closing anything in this one.
+          changelog: ${{ needs.release-please.outputs.body }}
+
   # `always()`, so a release that tagged but failed to publish still gets a summary — which is the
   # reason the text below branches on `manifest`'s result rather than asserting nine images
   # shipped. It ran on `always()` and claimed a full publish unconditionally, so every way the
   # build path can fail produced a green-sounding summary under a tag with nothing behind it.
   summary:
     name: release summary
-    needs: [release-please, release-deps, build, manifest]
+    needs: [release-please, release-deps, build, manifest, helm-release]
     if: always() && needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -604,6 +738,9 @@ jobs:
           TAG: ${{ needs.release-please.outputs.tag_name }}
           DOCKERHUB_NS: ${{ env.DOCKERHUB_NAMESPACE }}
           PUBLISHED: ${{ needs.manifest.result }}
+          CHART: ${{ needs.helm-release.result }}
+          CHART_PR: ${{ needs.helm-release.outputs.pr_url }}
+          CHART_VERSION: ${{ needs.helm-release.outputs.chart_version }}
         run: |
           # Case-folded to match what was actually pushed; see the `build` job's `params` step.
           GHCR_PREFIX="${GHCR_REGISTRY}/${GITHUB_REPOSITORY,,}"
@@ -628,4 +765,14 @@ jobs:
               echo
               echo "SBOMs are attached to this run as artifacts (one per image, SPDX JSON)."
             fi
+            echo
+            # Reported separately from the publish: the chart bump can fail on its own — a rejected
+            # token, a values key the chart renamed — and that leaves published images with nothing
+            # deploying them, which is invisible from this repository otherwise.
+            case "$CHART" in
+              success) echo "Chart bump to \`${CHART_VERSION}\` proposed: ${CHART_PR}" ;;
+              skipped) echo "No chart bump was attempted (publishing did not complete)." ;;
+              *)       echo "The chart bump reported \`${CHART}\` — **the images are published but"
+                       echo "no chart update was opened**. Re-run this job, or bump the chart by hand." ;;
+            esac
           } >> "$GITHUB_STEP_SUMMARY"

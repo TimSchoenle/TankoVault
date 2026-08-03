@@ -117,15 +117,10 @@ async fn an_identifier_containing_an_at_sign_only_ever_resolves_as_an_email() {
     // Not `seed::user`: it writes one placeholder hash for every row, and the assertion below
     // is only worth making if the two rows carry *different* hashes — otherwise it holds just
     // as well when the lookup returns the squatter's credentials.
-    let victim = users::create(
-        &db.pool,
-        "victim@example.test",
-        "victim",
-        &a_hash("victim"),
-    )
-    .await
-    .expect("seed the victim")
-    .id;
+    let victim = users::create(&db.pool, "victim@example.test", "victim", &a_hash("victim"))
+        .await
+        .expect("seed the victim")
+        .id;
     users::create(
         &db.pool,
         "squatter@example.test",

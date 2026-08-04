@@ -16,29 +16,92 @@ use tokio_stream::StreamExt as _;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+/// Largest page size, matching `/v1/me/watchlist`'s ceiling.
+const MAX_LIMIT: i64 = 200;
+
+/// Highest accepted offset, for the same reason `/v1/me/watchlist` clamps its own.
+const MAX_OFFSET: i64 = 100_000;
+
+fn default_limit() -> i64 {
+    50
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct NotificationsParams {
+    /// Page size, clamped to `1..=200`.
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+    #[serde(default)]
+    pub offset: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct NotificationsView {
+    /// One page of the inbox, newest first. Free-form per notification kind: the notifier writes
+    /// an open `payload`, and pinning a schema here would drop every kind it has not shipped yet.
+    #[schema(value_type = Vec<serde_json::Value>)]
+    pub items: Vec<serde_json::Value>,
+    /// Notifications the caller has, in total — the pager's denominator.
+    pub total: i64,
+    /// Of those, how many are unread. Counted server-side on purpose: derived from `items` it is
+    /// only ever the unread count *of the loaded page*, which is what pinned the bell at 100.
+    pub unread: i64,
+}
+
 /// List notifications
+///
+/// A page of the caller's inbox, newest first, with the inbox-wide `total` and `unread`.
+///
+/// The body is an object rather than the bare array it used to be, for the same reason
+/// `/v1/me/watchlist` is: neither count is derivable from a page of items, and the frontend —
+/// the only consumer, and regenerated from this document — needs both to page and to keep the
+/// bell honest past the first page.
 #[utoipa::path(
     get,
     path = "/v1/me/notifications",
     tag = ME_NOTIFICATIONS_TAG,
+    params(NotificationsParams),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Up to 100 most recent notifications", body = serde_json::Value),
+        (status = 200, description = "A page of the caller's notifications", body = NotificationsView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn notifications(
     State(state): State<AppState>,
     user: AuthUser,
-) -> ApiResult<Json<serde_json::Value>> {
-    let list =
-        tankovault_db::repo::tracking::notifications_list(&state.pool, user.user_id, 100).await?;
-    Ok(Json(serde_json::to_value(list).unwrap_or_default()))
+    Query(params): Query<NotificationsParams>,
+) -> ApiResult<Json<NotificationsView>> {
+    let page = tankovault_db::repo::tracking::notifications_page(
+        &state.pool,
+        user.user_id,
+        params.limit.clamp(1, MAX_LIMIT),
+        params.offset.clamp(0, MAX_OFFSET),
+    )
+    .await?;
+    Ok(Json(NotificationsView {
+        items: page
+            .items
+            .into_iter()
+            .map(|n| serde_json::to_value(n).unwrap_or_default())
+            .collect(),
+        total: page.total,
+        unread: page.unread,
+    }))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct MarkRead {
+    /// The notifications to mark read. Ignored when `all` is set.
+    #[serde(default)]
     pub ids: Vec<Uuid>,
+    /// Mark the caller's whole inbox read, rather than the listed ids.
+    ///
+    /// A client only ever holds the page it loaded, so "mark all read" sent as a list of ids
+    /// marks one page and quietly leaves the rest unread.
+    #[serde(default)]
+    pub all: bool,
 }
 
 /// Mark notifications read
@@ -58,12 +121,13 @@ pub async fn mark_read(
     user: AuthUser,
     Json(body): Json<MarkRead>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let n = tankovault_db::repo::tracking::notifications_mark_read(
-        &state.pool,
-        user.user_id,
-        &body.ids,
-    )
-    .await?;
+    let n = if body.all {
+        tankovault_db::repo::tracking::notifications_mark_all_read(&state.pool, user.user_id)
+            .await?
+    } else {
+        tankovault_db::repo::tracking::notifications_mark_read(&state.pool, user.user_id, &body.ids)
+            .await?
+    };
     Ok(Json(serde_json::json!({ "marked": n })))
 }
 

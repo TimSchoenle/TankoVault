@@ -7,7 +7,7 @@
 
 use crate::api;
 use crate::components::{
-    async_list, AuthRequired, EmptyBox, SkeletonRows, TabBar, TabKind, UnreadBadge,
+    async_view, AuthRequired, EmptyBox, Pagination, SkeletonRows, TabBar, TabKind, UnreadBadge,
 };
 use crate::hooks::use_reload;
 use crate::i18n::{use_i18n, Translator};
@@ -17,6 +17,7 @@ use crate::state::use_session;
 use crate::util::iso_date;
 use crate::Route;
 use dioxus::prelude::*;
+use progenitor_client::ResponseValue;
 use uuid::Uuid;
 
 /// Filter tabs (`DESIGN_SPEC` §7.5), applied client-side to the loaded list.
@@ -130,10 +131,9 @@ fn id_of(notification: &Notification) -> Option<Uuid> {
         .and_then(|s| s.parse().ok())
 }
 
-fn unread_count(list: &[Notification]) -> i64 {
-    let count = list.iter().filter(|n| read_at(n).is_none()).count();
-    i64::try_from(count).unwrap_or(i64::MAX)
-}
+/// Rows per request. The inbox is paged rather than truncated: it used to arrive as one
+/// hard-capped batch, which is why a busy account's list and bell both sat at exactly 100.
+const PAGE_SIZE: usize = 50;
 
 #[component]
 pub(crate) fn Notifications() -> Element {
@@ -143,32 +143,39 @@ pub(crate) fn Notifications() -> Element {
     let badge = use_context::<UnreadBadge>();
     let reload = use_reload();
     let tab = use_signal(|| Tab::All);
+    let page = use_signal(|| 0usize);
 
     let notifications = use_resource(move || {
         reload.track();
         let client = api.client();
         let authed = session.is_authenticated();
+        let offset = i64::try_from(*page.read() * PAGE_SIZE).unwrap_or(0);
         async move {
             if !authed {
-                return Ok(Vec::new());
+                return Ok(NotificationsView {
+                    items: Vec::new(),
+                    total: 0,
+                    unread: 0,
+                });
             }
             client
                 .notifications()
+                .limit(i64::try_from(PAGE_SIZE).unwrap_or(50))
+                .offset(offset)
                 .send()
                 .await
-                .map(|r| match r.into_inner() {
-                    serde_json::Value::Array(items) => items,
-                    other => vec![other],
-                })
+                .map(ResponseValue::into_inner)
                 .map_err(|e| api::friendly_error(i18n, e))
         }
     });
 
-    // The SSE push is best-effort; this navigation-time recount is what keeps the rail badge honest.
+    // The SSE push is best-effort; this navigation-time recount is what keeps the rail badge
+    // honest. It takes the server's inbox-wide count, not this page's — counting the page is
+    // what pinned the badge at the page size.
     use_effect(move || {
         let mut count = badge.0;
-        if let Some(Ok(list)) = &*notifications.read_unchecked() {
-            count.set(unread_count(list));
+        if let Some(Ok(view)) = &*notifications.read_unchecked() {
+            count.set(view.unread);
         }
     });
 
@@ -177,23 +184,16 @@ pub(crate) fn Notifications() -> Element {
     }
 
     let mark_all = move |_| {
-        // Collect the ids and drop the borrow before awaiting.
-        let ids: Vec<Uuid> = match &*notifications.peek() {
-            Some(Ok(list)) => list
-                .iter()
-                .filter(|n| read_at(n).is_none())
-                .filter_map(id_of)
-                .collect(),
-            _ => Vec::new(),
-        };
-        if ids.is_empty() {
-            return;
-        }
         let client = api.client();
         spawn(async move {
+            // `all`, not the ids on screen: the reader asked for the inbox, and only one page
+            // of it is loaded.
             if client
                 .mark_read()
-                .body(MarkRead { ids })
+                .body(MarkRead {
+                    ids: Vec::new(),
+                    all: Some(true),
+                })
                 .send()
                 .await
                 .is_ok()
@@ -204,10 +204,14 @@ pub(crate) fn Notifications() -> Element {
     };
 
     let current = *tab.read();
-    let unread = match &*notifications.read_unchecked() {
-        Some(Ok(list)) => unread_count(list),
-        _ => 0,
+    let (unread, total) = match &*notifications.read_unchecked() {
+        Some(Ok(view)) => (view.unread, view.total),
+        _ => (0, 0),
     };
+    let pages = usize::try_from(total)
+        .unwrap_or(0)
+        .div_ceil(PAGE_SIZE)
+        .max(1);
 
     rsx! {
         div { class: "ik-page-head",
@@ -223,25 +227,30 @@ pub(crate) fn Notifications() -> Element {
         }
         TabBar { selected: tab }
         {
-            async_list(
+            async_view(
                 &notifications,
                 reload,
                 || rsx! { SkeletonRows { count: 5 } },
-                &i18n.t("notifications.empty"),
-                |items| {
-                    let filtered: Vec<&Notification> =
-                        items.iter().filter(|n| current.matches(n)).collect();
-                    if filtered.is_empty() {
+                |view| {
+                    if view.items.is_empty() {
                         return rsx! {
-                            EmptyBox { message: i18n.t("notifications.emptyFilter") }
+                            EmptyBox { message: i18n.t("notifications.empty") }
                         };
                     }
+                    let filtered: Vec<&Notification> =
+                        view.items.iter().filter(|n| current.matches(n)).collect();
                     rsx! {
+                        if filtered.is_empty() {
+                            EmptyBox { message: i18n.t("notifications.emptyFilter") }
+                        }
                         for (index , notification) in filtered.into_iter().enumerate() {
                             NotifRow {
                                 key: "{id_of(notification).map_or_else(|| index.to_string(), |id| id.to_string())}",
                                 notification: notification.clone(),
                             }
+                        }
+                        if pages > 1 {
+                            Pagination { page, pages, has_next: *page.read() + 1 < pages }
                         }
                     }
                 },
@@ -396,15 +405,5 @@ mod tests {
     #[test]
     fn falls_back_to_a_generic_line_when_there_is_no_kind_either() {
         assert_eq!(describe(&json!({})), (Line::Generic, None));
-    }
-
-    #[test]
-    fn counts_only_unread_rows() {
-        let list = vec![
-            json!({ "read_at": null }),
-            json!({ "read_at": "2026-07-25T00:00:00Z" }),
-            json!({}),
-        ];
-        assert_eq!(unread_count(&list), 2);
     }
 }

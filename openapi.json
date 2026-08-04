@@ -1034,7 +1034,12 @@
       },
       "MarkRead": {
         "properties": {
+          "all": {
+            "description": "Mark the caller's whole inbox read, rather than the listed ids.\n\nA client only ever holds the page it loaded, so \"mark all read\" sent as a list of ids\nmarks one page and quietly leaves the rest unread.",
+            "type": "boolean"
+          },
           "ids": {
+            "description": "The notifications to mark read. Ignored when `all` is set.",
             "items": {
               "format": "uuid",
               "type": "string"
@@ -1042,9 +1047,6 @@
             "type": "array"
           }
         },
-        "required": [
-          "ids"
-        ],
         "type": "object"
       },
       "MarkReadTo": {
@@ -1269,6 +1271,31 @@
         "description": "Identifies a notification.",
         "format": "uuid",
         "type": "string"
+      },
+      "NotificationsView": {
+        "properties": {
+          "items": {
+            "description": "One page of the inbox, newest first. Free-form per notification kind: the notifier writes\nan open `payload`, and pinning a schema here would drop every kind it has not shipped yet.",
+            "items": {},
+            "type": "array"
+          },
+          "total": {
+            "description": "Notifications the caller has, in total — the pager's denominator.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "unread": {
+            "description": "Of those, how many are unread. Counted server-side on purpose: derived from `items` it is\nonly ever the unread count *of the loaded page*, which is what pinned the bell at 100.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "unread"
+        ],
+        "type": "object"
       },
       "PasskeyChallenge": {
         "description": "The challenge, plus the handle the client echoes back to complete it.\n\n`options` is a W3C `PublicKeyCredentialRequestOptions` envelope, passed to\n`navigator.credentials.get()` verbatim. It is typed as an opaque JSON document here on\npurpose: the shape is the `WebAuthn` specification's, not this API's, and mirroring it into\nthe `OpenAPI` document would be this service publishing a second, hand-maintained copy of a\nstandard — the exact drift that made `/v1/me/sync/*` move its DTOs into\n`crates/contracts`. Both ends parse it with the *same* crate (`webauthn-rs-proto`, pinned to\none version in both workspaces), so there is nothing for the two to disagree about.",
@@ -3311,7 +3338,7 @@
       "name": ""
     },
     "title": "tankovault-api",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -7400,15 +7427,39 @@
     },
     "/v1/me/notifications": {
       "get": {
+        "description": "A page of the caller's inbox, newest first, with the inbox-wide `total` and `unread`.\n\nThe body is an object rather than the bare array it used to be, for the same reason\n`/v1/me/watchlist` is: neither count is derivable from a page of items, and the frontend —\nthe only consumer, and regenerated from this document — needs both to page and to keep the\nbell honest past the first page.",
         "operationId": "notifications",
+        "parameters": [
+          {
+            "description": "Page size, clamped to `1..=200`.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationsView"
+                }
               }
             },
-            "description": "Up to 100 most recent notifications"
+            "description": "A page of the caller's notifications"
           },
           "401": {
             "content": {

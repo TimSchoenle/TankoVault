@@ -34,16 +34,38 @@ pub(crate) fn Shell() -> Element {
     crate::title::use_document_title();
 
     let i18n = crate::i18n::use_i18n();
+    let route: Route = use_route();
     rsx! {
         div { class: "ik-app",
             // Skip link: without it, a keyboard reader re-tabs the ~10-stop rail on every route.
             a { class: "ik-skip", href: "#ik-content", {i18n.t("nav.skipToContent")} }
             Rail {}
-            main { class: "ik-main",
+            // `--measure` lands on `.ik-main`, not on the view root: the top bar and the footer
+            // are siblings of the content, so a value set inside the content could not reach
+            // them, and a chrome row measured differently from the list it acts on is the
+            // defect this layout exists to fix.
+            main { class: "ik-main", style: "--measure:{measure_for(&route)};",
                 TopBar {}
-                section { id: "ik-content", class: "ik-content", Outlet::<Route> {} }
+                section { id: "ik-content", class: "ik-content",
+                    div { class: "ik-measure", Outlet::<Route> {} }
+                }
             }
         }
+    }
+}
+
+/// The measured column width for a route (layout handoff §2.1).
+///
+/// A grid of covers and a paragraph of prose do not want the same width: the cover screens buy
+/// three or four more covers per row, the ledgers stay scannable, and the panel/prose screens
+/// stop stretching a 64ch paragraph across a 1600px column. `none` is a real `max-width`, which
+/// is how the console keeps its full-bleed opt-out.
+fn measure_for(route: &Route) -> &'static str {
+    match route {
+        Route::Home {} | Route::Discover {} | Route::Search { .. } => "1760px",
+        Route::Account {} | Route::AnilistCallback { .. } => "1120px",
+        Route::Console {} => "none",
+        _ => "1600px",
     }
 }
 

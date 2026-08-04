@@ -14,10 +14,15 @@ use std::collections::HashMap;
 
 use tankovault_db::PgPool;
 use tankovault_db::repo::recsys;
-use tankovault_domain::SeriesId;
+use tankovault_domain::{SeriesId, Tunable};
 use tankovault_recsys::{Basis, GramAccumulator};
+use tankovault_service::TunableSet;
 
 /// How much work one build may do, and how the index is shaped.
+///
+/// The split is §8.1's: [`Self::batch`] and [`Self::incremental_max`] change what the *server*
+/// consumes and come from configuration; everything else changes what a *reader* is shown and
+/// comes from the tuning registry.
 #[derive(Debug, Clone, Copy)]
 pub struct BuildBudget {
     /// Series per streamed batch. The only knob on peak memory in the streaming stages.
@@ -29,6 +34,69 @@ pub struct BuildBudget {
     pub dense_input_cap: i64,
     pub hnsw_m: i32,
     pub hnsw_ef_construction: i32,
+    /// Directions the projection solves for. Capped at the width `series_embedding` is declared
+    /// with; a narrower basis is zero-padded into the column, which costs nothing in a cosine.
+    pub embedding_dims: usize,
+}
+
+/// Everything a build reads out of the tuning registry, resolved once per run.
+///
+/// Read at the top of a build rather than per stage, so one run is built entirely under one set
+/// of values: a refresh landing between the projection and the priors would otherwise produce a
+/// generation that is internally inconsistent and impossible to reason about afterwards.
+#[derive(Debug, Clone, Copy)]
+pub struct BuildTuning {
+    pub budget: BuildBudget,
+    pub prior: PriorWeights,
+    /// Descriptive features a series needs before the model will recommend it.
+    pub min_features: i64,
+}
+
+impl BuildTuning {
+    /// Resolve the operator's tuning, taking the two configuration-side limits from `budget`.
+    #[must_use]
+    pub fn read(set: &TunableSet, batch: i64, incremental_max: i64) -> Self {
+        Self {
+            budget: BuildBudget {
+                batch,
+                incremental_max,
+                dense_input_cap: i64::try_from(tankovault_recsys::DENSE_INPUT_CAP)
+                    .unwrap_or(i64::MAX),
+                hnsw_m: set.get_i32(Tunable::BuildHnswM),
+                hnsw_ef_construction: set.get_i32(Tunable::BuildHnswEfConstruction),
+                embedding_dims: set
+                    .get_usize(Tunable::BuildEmbeddingDims)
+                    .min(tankovault_recsys::EMBEDDING_DIMS),
+            },
+            prior: PriorWeights {
+                watchers: set.get_f32(Tunable::PriorWeightWatchers),
+                external_score: set.get_f32(Tunable::PriorWeightExternalScore),
+                source_count: set.get_f32(Tunable::PriorWeightSourceCount),
+                velocity: set.get_f32(Tunable::PriorWeightVelocity),
+                watcher_confidence_k: set.get_f32(Tunable::PriorWatcherConfidenceK),
+            },
+            min_features: set.get_i64(Tunable::BuildMinFeatures),
+        }
+    }
+
+    /// The compiled defaults, for callers with no snapshot to hand.
+    #[must_use]
+    pub fn defaults(batch: i64, incremental_max: i64) -> Self {
+        Self::read(&TunableSet::defaults(), batch, incremental_max)
+    }
+}
+
+/// How the appeal prior blends its signals.
+#[derive(Debug, Clone, Copy)]
+pub struct PriorWeights {
+    pub watchers: f32,
+    pub external_score: f32,
+    pub source_count: f32,
+    /// Weight on recent release activity. Reserved: the builder has no velocity input yet and
+    /// writes zero, so raising this changes nothing until that signal lands.
+    pub velocity: f32,
+    /// Watcher count at which the watcher term reaches half its weight.
+    pub watcher_confidence_k: f32,
 }
 
 /// What a build did.
@@ -50,7 +118,7 @@ pub struct BuildReport {
 /// every stage is idempotent and writes under a generation, so the next run redoes it.
 pub async fn build(
     pool: &PgPool,
-    budget: BuildBudget,
+    tuning: BuildTuning,
     full: bool,
 ) -> anyhow::Result<Option<BuildReport>> {
     let Some(generation) = recsys::start_build(pool, full).await? else {
@@ -61,7 +129,7 @@ pub async fn build(
     // The claim is released *only* here. A build that returned early on an error without
     // finishing would leave `stage` stuck and every later run declining to start — a recommender
     // that silently stops updating and reports nothing wrong.
-    let outcome = run_stages(pool, budget, full, generation).await;
+    let outcome = run_stages(pool, tuning, full, generation).await;
     match &outcome {
         Ok(report) => {
             recsys::finish_build(
@@ -82,10 +150,11 @@ pub async fn build(
 
 async fn run_stages(
     pool: &PgPool,
-    budget: BuildBudget,
+    tuning: BuildTuning,
     full: bool,
     generation: i32,
 ) -> anyhow::Result<BuildReport> {
+    let budget = tuning.budget;
     let mut report = BuildReport {
         generation,
         ..BuildReport::default()
@@ -111,7 +180,7 @@ async fn run_stages(
         recsys::create_embedding_index(pool, budget.hnsw_m, budget.hnsw_ef_construction).await?;
 
         recsys::update_build_stage(pool, "full:priors", 0).await?;
-        prior_pass(pool, budget, generation, None).await?;
+        prior_pass(pool, tuning, generation, None).await?;
 
         recsys::delete_stale_generations(pool, generation).await?;
     } else {
@@ -130,7 +199,7 @@ async fn run_stages(
         report.series_built = i64::try_from(touched.len()).unwrap_or(i64::MAX);
         if !touched.is_empty() {
             extract_and_project(pool, budget, generation, &touched, &basis, &vocabulary).await?;
-            prior_pass(pool, budget, generation, Some(&touched)).await?;
+            prior_pass(pool, tuning, generation, Some(&touched)).await?;
         }
         // Cheap and idempotent: a deployment whose index build was interrupted gets it back on
         // the next incremental pass instead of waiting for the next full one.
@@ -313,7 +382,9 @@ async fn solve_basis(
 
     // Solving is pure CPU over a matrix that is already in memory; `spawn_blocking` keeps it off
     // the runtime that also serves this service's HTTP surface and drives its scheduler loops.
-    let dims = tankovault_recsys::EMBEDDING_DIMS;
+    let dims = budget
+        .embedding_dims
+        .clamp(1, tankovault_recsys::EMBEDDING_DIMS);
     let iterations = tankovault_recsys::BASIS_ITERATIONS;
     let basis = tokio::task::spawn_blocking(move || gram.basis(dims, iterations, 0x7461_6E6B))
         .await
@@ -473,7 +544,7 @@ fn predecessor_of(id: SeriesId) -> Option<SeriesId> {
 /// Recompute appeal priors, for the whole catalogue or for a named subset.
 async fn prior_pass(
     pool: &PgPool,
-    budget: BuildBudget,
+    tuning: BuildTuning,
     generation: i32,
     subset: Option<&[SeriesId]>,
 ) -> anyhow::Result<()> {
@@ -482,7 +553,7 @@ async fn prior_pass(
 
     let mut cursor: Option<SeriesId> = None;
     loop {
-        let ids = recsys::page_series_ids(pool, cursor, budget.batch).await?;
+        let ids = recsys::page_series_ids(pool, cursor, tuning.budget.batch).await?;
         let Some(last) = ids.last() else { break };
         cursor = Some(*last);
 
@@ -500,13 +571,16 @@ async fn prior_pass(
         }
 
         let ids: Vec<SeriesId> = rows.iter().map(|r| r.series_id).collect();
-        let priors: Vec<f32> = rows.iter().map(|r| prior_of(r)).collect();
+        let priors: Vec<f32> = rows.iter().map(|r| prior_of(r, &tuning.prior)).collect();
         let watchers: Vec<i32> = rows
             .iter()
             .map(|r| i32::try_from(r.watchers).unwrap_or(i32::MAX))
             .collect();
         let velocities: Vec<f32> = vec![0.0; rows.len()];
-        let recommendable: Vec<bool> = rows.iter().map(|r| is_recommendable(r)).collect();
+        let recommendable: Vec<bool> = rows
+            .iter()
+            .map(|r| is_recommendable(r, tuning.min_features))
+            .collect();
 
         recsys::write_priors(
             pool,
@@ -530,11 +604,12 @@ async fn prior_pass(
 /// The metadata bar counts *descriptive* features — tags and authors — not all of them. Status,
 /// decade and length come from columns every series has, so a bar counting those would admit a
 /// completely unenriched series on the strength of three facts that distinguish it from nothing.
-/// Two is the minimum that can place a series relative to another.
-fn is_recommendable(inputs: &recsys::PriorInputs) -> bool {
+/// `min_features` is the operator's, but the floor of one is not: at zero this admits every
+/// series in the catalogue, including those nothing describes at all.
+fn is_recommendable(inputs: &recsys::PriorInputs, min_features: i64) -> bool {
     inputs.has_active_source
         && inputs.chapters > 0
-        && inputs.descriptive_features >= 2
+        && inputs.descriptive_features >= min_features.max(1)
         && !inputs.is_adult
 }
 
@@ -544,25 +619,36 @@ fn is_recommendable(inputs: &recsys::PriorInputs) -> bool {
 /// outright: on a new deployment `watchers` is a handful of arbitrary early watchlists, and
 /// letting it dominate would rank the catalogue by the first three people to sign up. The
 /// remaining terms need no users at all.
-fn prior_of(inputs: &recsys::PriorInputs) -> f32 {
+fn prior_of(inputs: &recsys::PriorInputs, weights: &PriorWeights) -> f32 {
     #[expect(
         clippy::cast_precision_loss,
         reason = "counts are small and feed a saturating curve, not an exact computation"
     )]
     let saturate = |value: i64, knee: f32| -> f32 {
         let value = value.max(0) as f32;
-        value / (value + knee)
+        value / (value + knee.max(f32::EPSILON))
     };
+    // Rating and audience size ride on the one external-score weight rather than two: both are
+    // the same tracker's opinion of the same series, and a second knob whose only distinguishing
+    // property is which column it came from is a knob nobody can set meaningfully. Averaged
+    // where both exist, so a series with only one of them is not penalised for the gap.
     let score = inputs
         .external_score
-        .map_or(0.0, |value| (value / 100.0).clamp(0.0, 1.0));
+        .map(|value| (value / 100.0).clamp(0.0, 1.0));
     let popularity = inputs
         .external_popularity
-        .map_or(0.0, |value| saturate(i64::from(value), 20_000.0));
+        .map(|value| saturate(i64::from(value), 20_000.0));
+    let external = match (score, popularity) {
+        (Some(a), Some(b)) => 0.5 * (a + b),
+        (Some(only), None) | (None, Some(only)) => only,
+        (None, None) => 0.0,
+    };
 
-    let blended = 0.30 * saturate(inputs.watchers, 25.0)
-        + 0.30 * score
-        + 0.25 * popularity
-        + 0.15 * saturate(inputs.sources, 3.0);
+    // Velocity has no input yet — the builder writes zero into `series_prior.velocity` — so the
+    // weight is threaded through and contributes nothing until that signal lands.
+    let blended = weights.watchers * saturate(inputs.watchers, weights.watcher_confidence_k)
+        + weights.external_score * external
+        + weights.source_count * saturate(inputs.sources, 3.0)
+        + weights.velocity * 0.0;
     blended.clamp(0.0, 1.0)
 }

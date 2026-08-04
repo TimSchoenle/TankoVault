@@ -35,6 +35,45 @@ pub async fn read_build_state<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<BuildS
     Ok(state)
 }
 
+/// How much of the catalogue the live model actually covers.
+///
+/// The three counts are read together because the *gaps* between them are the diagnosis, not the
+/// absolute numbers: a large drop from extracted to embedded means a full build never finished,
+/// and a large drop from embedded to recommendable means `build.min_features` is excluding more
+/// than intended.
+#[derive(Debug, Clone, Copy, FromRow)]
+pub struct ModelCoverage {
+    /// Series in the catalogue, the denominator for everything below.
+    pub series_total: i64,
+    /// Series with an extracted feature vector.
+    pub with_features: i64,
+    /// Series with a projected embedding, and therefore reachable by neighbour retrieval.
+    pub with_embedding: i64,
+    /// Series the model is willing to recommend at all.
+    pub recommendable: i64,
+}
+
+/// Read the model's coverage of the catalogue.
+///
+/// One statement rather than four round trips, so the numbers the console compares against each
+/// other are read at one point in time — mid-build they would otherwise disagree by however long
+/// the calls took.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn read_model_coverage<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<ModelCoverage> {
+    let coverage = sqlx::query_as!(
+        ModelCoverage,
+        "SELECT (SELECT count(*) FROM series)                                AS \"series_total!\", \
+                (SELECT count(*) FROM series_features)                      AS \"with_features!\", \
+                (SELECT count(*) FROM series_embedding)                     AS \"with_embedding!\", \
+                (SELECT count(*) FROM series_prior WHERE recommendable)     AS \"recommendable!\"",
+    )
+    .fetch_one(exec)
+    .await?;
+    Ok(coverage)
+}
+
 /// Claim the build, advancing the generation, and return the generation claimed.
 ///
 /// The `WHERE stage = 'idle'` is the mutual exclusion: a build is a singleton, and two workers

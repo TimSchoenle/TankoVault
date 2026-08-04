@@ -36,6 +36,7 @@ pub struct TestConfig {
     rate_limit: RateLimitConfig,
     cookie_secure: bool,
     features: FeatureGate,
+    tunables: tankovault_service::TunableSet,
     webauthn: Option<tankovault_api::SharedRelyingParty>,
     legal: tankovault_config::LegalConfig,
 }
@@ -48,6 +49,7 @@ impl Default for TestConfig {
             // Matches production, so the suite exercises the real `__Host-refresh_token` shape.
             cookie_secure: true,
             features: FeatureGate::defaults(),
+            tunables: tankovault_service::TunableSet::defaults(),
             webauthn: Some(Arc::new(
                 tankovault_api::RelyingParty::from_config(Some("http://localhost"), None, None)
                     .expect("the harness origin builds a relying party")
@@ -120,6 +122,14 @@ impl TestConfig {
         self.features = FeatureGate::with_disabled(disabled);
         self
     }
+
+    /// Move named tuning values, so a test can prove a knob reaches the thing it configures
+    /// without going through the admin endpoint and a refresh.
+    #[must_use]
+    pub fn with_tunables(mut self, values: &[(tankovault_domain::Tunable, f64)]) -> Self {
+        self.tunables = tankovault_service::TunableSet::with_values(values);
+        self
+    }
 }
 
 /// The real router wired to an isolated database, ready to answer `oneshot` requests.
@@ -186,6 +196,7 @@ impl TestApp {
             stream_tickets: stream_tickets.clone(),
             audit: audit.clone(),
             features: cfg.features.clone(),
+            tunables: cfg.tunables.clone(),
             cookie_secure: cfg.cookie_secure,
             // A real relying party, so passkey routes answer their genuine statuses rather than
             // a blanket `503`. No test drives a browser, so nothing here verifies a signature —

@@ -1,0 +1,79 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.key, t.value, t.note, t.updated_at, u.username AS \"updated_by?: String\" FROM tunable_overrides t LEFT JOIN users u ON u.id = t.updated_by ORDER BY t.key",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tunable_overrides",
+            "name": "key"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "value",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "tunable_overrides",
+            "name": "value"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tunable_overrides",
+            "name": "note"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "tunable_overrides",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_by?: String",
+        "type_info": {
+          "Custom": {
+            "name": "citext",
+            "kind": "Simple"
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "070176057e20fe0019e2a2e13cddc1fc9d3cfd9d94be1df9a3c426948dad71eb"
+}

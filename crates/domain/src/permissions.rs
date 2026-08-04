@@ -52,6 +52,15 @@ pub enum Permission {
     #[serde(rename = "merge.write")]
     MergeWrite,
 
+    /// Read the recommender's tuning registry and its model-health figures.
+    #[serde(rename = "recsys.read")]
+    RecsysRead,
+    /// Change a tuning value, or trigger a model rebuild. Separated from `recsys.read`
+    /// because reading the panel is diagnostic and writing to it changes what every reader
+    /// on the deployment is shown.
+    #[serde(rename = "recsys.write")]
+    RecsysWrite,
+
     /// Read any user's linked accounts, series mappings and matching backlogs.
     #[serde(rename = "sync.admin.read")]
     SyncAdminRead,
@@ -119,6 +128,8 @@ impl Permission {
             Self::ScansRun,
             Self::MergeRead,
             Self::MergeWrite,
+            Self::RecsysRead,
+            Self::RecsysWrite,
             Self::SyncAdminRead,
             Self::SyncAdminWrite,
             Self::UsersRead,
@@ -151,6 +162,8 @@ impl Permission {
             Self::ScansRun => "scans.run",
             Self::MergeRead => "merge.read",
             Self::MergeWrite => "merge.write",
+            Self::RecsysRead => "recsys.read",
+            Self::RecsysWrite => "recsys.write",
             Self::SyncAdminRead => "sync.admin.read",
             Self::SyncAdminWrite => "sync.admin.write",
             Self::UsersRead => "users.read",
@@ -179,7 +192,9 @@ impl Permission {
             | Self::ProvidersState
             | Self::ProvidersTest => PermissionGroup::Providers,
             Self::ScansRead | Self::ScansRun => PermissionGroup::Scanning,
-            Self::MergeRead | Self::MergeWrite => PermissionGroup::Catalogue,
+            Self::MergeRead | Self::MergeWrite | Self::RecsysRead | Self::RecsysWrite => {
+                PermissionGroup::Catalogue
+            }
             Self::SyncAdminRead | Self::SyncAdminWrite => PermissionGroup::Sync,
             Self::UsersRead
             | Self::UsersWrite
@@ -211,6 +226,8 @@ impl Permission {
             Self::ScansRun => "Trigger scan runs.",
             Self::MergeRead => "View the series merge-candidate queue.",
             Self::MergeWrite => "Merge series and dismiss merge candidates.",
+            Self::RecsysRead => "View recommendation tuning and model health.",
+            Self::RecsysWrite => "Change recommendation tuning and trigger model rebuilds.",
             Self::SyncAdminRead => "View any user's linked trackers and series mappings.",
             Self::SyncAdminWrite => {
                 "Force sync pulls, pushes and unlinks, and repoint series mappings."
@@ -346,6 +363,7 @@ impl PermissionPreset {
                 Permission::ScansRun,
                 Permission::MergeRead,
                 Permission::MergeWrite,
+                Permission::RecsysRead,
                 Permission::SyncAdminRead,
                 Permission::SystemStats,
                 Permission::AuditRead,
@@ -491,7 +509,7 @@ mod tests {
     fn all_lists_every_variant() {
         // `all()` is hand-written and can drift from the enum; bump this count when adding
         // a variant, or a forgotten one slips through unnoticed.
-        assert_eq!(Permission::all().len(), 24);
+        assert_eq!(Permission::all().len(), 26);
     }
 
     #[test]
@@ -543,6 +561,7 @@ mod tests {
             Permission::PrivacyRead,
             Permission::PrivacyExport,
             Permission::FlagsWrite,
+            Permission::RecsysWrite,
             Permission::ProvidersDelete,
             Permission::ProvidersCreate,
             Permission::SyncAdminWrite,

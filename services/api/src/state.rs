@@ -13,7 +13,7 @@ use std::sync::Arc;
 use tankovault_auth::verify_access_token;
 use tankovault_db::PgPool;
 use tankovault_domain::{Permission, PermissionSet, UserId};
-use tankovault_service::{AuditEvent, AuditSink, FeatureGate};
+use tankovault_service::{AuditEvent, AuditSink, FeatureGate, TunableSet};
 
 /// Application state shared across handlers.
 #[derive(Clone)]
@@ -53,6 +53,10 @@ pub struct AppState {
     /// — because the flag-write handler has to refresh it, and `/v1/me/capabilities` has to
     /// report it.
     pub features: FeatureGate,
+    /// The recommender's tuning, resolved from the compiled registry plus stored overrides.
+    /// Held here for the same two reasons [`Self::features`] is: the tuning-write handler has
+    /// to refresh it, and the shelf reads it on every request.
+    pub tunables: TunableSet,
     /// Whether refresh cookies are marked `Secure` (true in production/TLS).
     pub cookie_secure: bool,
     /// The `WebAuthn` relying party, or `None` when this deployment configured no origin for

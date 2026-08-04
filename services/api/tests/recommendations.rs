@@ -12,25 +12,21 @@
 
 use axum::http::StatusCode;
 use serde_json::json;
-use tankovault_api_test_support::TestApp;
+use tankovault_api_test_support::{TestApp, TestConfig};
 use tankovault_config::MatchingConfig;
-use tankovault_control_plane::recsys::{BuildBudget, build};
+use tankovault_control_plane::recsys::{BuildTuning, build};
 use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert, ingest_series};
 use tankovault_db::repo::tracking::watchlist_upsert;
 use tankovault_domain::{
-    AccountStatus, ContentType, ProviderId, SeriesId, SeriesStatus, UserId, WatchStatus,
+    AccountStatus, ContentType, ProviderId, SeriesId, SeriesStatus, Tunable, UserId, WatchStatus,
     normalize_title,
 };
 use tankovault_test_support::seed;
 
-fn budget() -> BuildBudget {
-    BuildBudget {
-        batch: 4,
-        incremental_max: 100,
-        dense_input_cap: 64,
-        hnsw_m: 16,
-        hnsw_ef_construction: 64,
-    }
+fn budget() -> BuildTuning {
+    let mut tuning = BuildTuning::defaults(4, 100);
+    tuning.budget.dense_input_cap = 64;
+    tuning
 }
 
 struct Fixture {
@@ -386,5 +382,108 @@ async fn a_dropped_series_never_becomes_a_seed() {
     assert!(
         avoids.contains(&"romance"),
         "what the reader dropped must show up as something they avoid, got {avoids:?}"
+    );
+}
+
+/// **A tuning change has to reach the shelf.**
+///
+/// The bug this pins is §8.4's, in its most visible form: `recsys.serve.shelf_size` published in
+/// the console, stored, refreshed into the snapshot, and then quietly ignored because the handler
+/// still used a compiled constant. The operator sees the value saved, sees twelve items, and has
+/// no way to tell a broken knob from a knob that needs a rebuild.
+#[tokio::test]
+async fn the_shelf_size_tunable_decides_how_many_items_come_back() {
+    let app =
+        TestApp::spawn_with(TestConfig::new().with_tunables(&[(Tunable::ServeShelfSize, 3.0)]))
+            .await;
+    let (dungeon, _, user) = world(&app).await;
+    track(&app, user, dungeon[0], WatchStatus::Completed).await;
+
+    let (status, body) = app
+        .call(
+            "GET",
+            "/v1/me/recommendations",
+            Some(&app.bearer(user)),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        ids(&body).len() <= 3,
+        "the operator's shelf size must bound the response, got {} items",
+        ids(&body).len()
+    );
+
+    // And it is the ceiling, not merely the default: a caller asking for more does not get more.
+    let (_, body) = app
+        .call(
+            "GET",
+            "/v1/me/recommendations?limit=40",
+            Some(&app.bearer(user)),
+            None,
+        )
+        .await;
+    assert!(
+        ids(&body).len() <= 3,
+        "a query parameter must not walk past the operator's ceiling"
+    );
+}
+
+/// **Turning the affinity knobs must change what the profile is built from.**
+///
+/// The bug this pins: the affinity parameters threaded into `rebuild_profile` but not into the
+/// call that computes each row, so a deployment that had raised `plan to read` above `completed`
+/// would still seed from completions — a tuning page that reports success and changes nothing.
+#[tokio::test]
+async fn the_affinity_bases_decide_which_series_seeds() {
+    // Plan-to-read raised to the top and completion floored: the exact inversion of the shipped
+    // curve, so any surviving hard-coded base produces the opposite seed.
+    let app = TestApp::spawn_with(TestConfig::new().with_tunables(&[
+        (Tunable::AffinityBasePlanned, 1.0),
+        (Tunable::AffinityBaseCompleted, 0.01),
+    ]))
+    .await;
+    let (dungeon, romance, user) = world(&app).await;
+    track(&app, user, dungeon[0], WatchStatus::Completed).await;
+    track(&app, user, romance[0], WatchStatus::Planned).await;
+
+    let (status, body) = app
+        .call("GET", "/v1/me/taste", Some(&app.bearer(user)), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let seeds: Vec<&str> = body["seeds"]
+        .as_array()
+        .expect("seeds")
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect();
+    assert_eq!(
+        seeds.first(),
+        Some(&romance[0].to_string().as_str()),
+        "with `planned` weighted above `completed`, the planned series must seed first; got          {seeds:?}"
+    );
+}
+
+/// **The retrieval seed count has to bound the number of anchors actually used.**
+///
+/// Its whole purpose is trading tail latency for recall — one nearest-neighbour search per seed.
+/// A seed count that shaped the stored profile but not the searches would move neither.
+#[tokio::test]
+async fn the_seed_count_bounds_the_profile() {
+    let app =
+        TestApp::spawn_with(TestConfig::new().with_tunables(&[(Tunable::RetrievalSeeds, 2.0)]))
+            .await;
+    let (dungeon, _, user) = world(&app).await;
+    for series in &dungeon {
+        track(&app, user, *series, WatchStatus::Completed).await;
+    }
+
+    let (_, body) = app
+        .call("GET", "/v1/me/taste", Some(&app.bearer(user)), None)
+        .await;
+    assert_eq!(
+        body["seeds"].as_array().map(Vec::len),
+        Some(2),
+        "four completed series must yield exactly the two seeds the operator allowed"
     );
 }

@@ -12,48 +12,91 @@ use axum::extract::{Path, Query, State};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use tankovault_db::repo::recsys;
-use tankovault_domain::{SeriesId, UserId};
-use tankovault_recsys::{Candidate, Path as RetrievalPath};
+use tankovault_domain::{SeriesId, Tunable, UserId};
+use tankovault_recsys::{AffinityParams, Candidate, Path as RetrievalPath, PathWeights};
+use tankovault_service::TunableSet;
 use utoipa::{IntoParams, ToSchema};
 
 /// How many series shape the taste profile.
 ///
 /// Well above the seed count: the profile vector is a sum over all of them, and truncating it to
 /// the seeds would make the reader's *shape* identical to their twenty-five favourites rather
-/// than to their taste.
+/// than to their taste. Not a tunable — it is a property of what a profile *is*, not a value an
+/// operator trades anything against.
 const PROFILE_DEPTH: i64 = 200;
-
-/// Seeds used for nearest-neighbour retrieval.
-///
-/// The knob that trades tail latency for recall: each seed is one ANN search. Eight keeps the
-/// whole request inside the latency budget with room for the other paths.
-const SEEDS: usize = 8;
 
 /// Features kept in the profile's positive and negative vectors.
 const PROFILE_FEATURES: usize = 64;
 const NEGATIVE_FEATURES: usize = 32;
 
-/// Default and maximum shelf size.
-const DEFAULT_SHELF: i64 = 12;
-const MAX_SHELF: i64 = 60;
-
-/// How long a cached shelf may be served.
-const SHELF_TTL_SECS: f64 = 6.0 * 3600.0;
-
-/// How long a `not_interested` verdict suppresses a series.
-const FEEDBACK_DECAY_DAYS: i32 = 90;
-
-/// Candidates each retrieval path may contribute.
-const PER_SEED: i64 = 25;
-const PROFILE_CANDIDATES: i64 = 150;
-const EXACT_CANDIDATES: i64 = 100;
-const PRIOR_CANDIDATES: i64 = 60;
-
 /// Over-fetch factor for ANN scans, so post-filtering has candidates left to remove.
 const OVERFETCH: i64 = 6;
 
-/// Diversity caps.
-const MAX_PER_AUTHOR: usize = 2;
+/// Candidates the prior path may contribute.
+///
+/// Fixed rather than tunable: the prior is the backfill of last resort and its own weight already
+/// controls how much of the shelf it can take.
+const PRIOR_CANDIDATES: i64 = 60;
+
+/// Everything the request path reads out of the tuning registry, resolved once per request.
+///
+/// One read of the snapshot rather than a lock acquisition per candidate, and — more usefully —
+/// one place to look for what a request was actually configured with.
+struct ShelfTuning {
+    affinity: AffinityParams,
+    weights: PathWeights,
+    seeds: usize,
+    per_seed: i64,
+    profile_candidates: i64,
+    exact_candidates: i64,
+    candidate_cap: usize,
+    ef_search: i64,
+    negative_weight: f32,
+    diversity_lambda: f32,
+    max_per_author: usize,
+    /// Both the default shelf length and the ceiling on what a caller may ask for. One knob,
+    /// because the registry publishes one: an operator who wants shorter shelves means shorter
+    /// shelves, not a shorter default a query parameter can walk straight past.
+    shelf_size: i64,
+    shelf_ttl_secs: f64,
+    feedback_decay_days: i32,
+}
+
+impl ShelfTuning {
+    fn read(set: &TunableSet) -> Self {
+        Self {
+            affinity: AffinityParams {
+                base_completed: set.get_f32(Tunable::AffinityBaseCompleted),
+                base_reading: set.get_f32(Tunable::AffinityBaseReading),
+                base_paused: set.get_f32(Tunable::AffinityBasePaused),
+                base_planned: set.get_f32(Tunable::AffinityBasePlanned),
+                dropped_floor: set.get_f32(Tunable::AffinityDroppedFloor),
+                dropped_span: set.get_f32(Tunable::AffinityDroppedSpan),
+                engagement_knee: set.get_f32(Tunable::AffinityEngagementKnee),
+                recency_half_life_days: set.get_f32(Tunable::AffinityRecencyHalfLifeDays),
+                recency_floor: set.get_f32(Tunable::AffinityRecencyFloor),
+            },
+            weights: PathWeights {
+                seed: set.get_f32(Tunable::ScoreWeightKnn),
+                profile: set.get_f32(Tunable::ScoreWeightProfile),
+                prior: set.get_f32(Tunable::ScoreWeightPrior),
+                exact_premium: tankovault_recsys::ranking::EXACT_PREMIUM,
+            },
+            seeds: set.get_usize(Tunable::RetrievalSeeds),
+            per_seed: set.get_i64(Tunable::RetrievalAnnLimitPerSeed),
+            profile_candidates: set.get_i64(Tunable::RetrievalAnnLimitProfile),
+            exact_candidates: set.get_i64(Tunable::RetrievalExactFeatureLimit),
+            candidate_cap: set.get_usize(Tunable::RetrievalCandidateCap),
+            ef_search: set.get_i64(Tunable::RetrievalEfSearch),
+            negative_weight: set.get_f32(Tunable::ScoreWeightNegative),
+            diversity_lambda: set.get_f32(Tunable::DiversityLambda),
+            max_per_author: set.get_usize(Tunable::DiversityMaxPerAuthor),
+            shelf_size: set.get_i64(Tunable::ServeShelfSize),
+            shelf_ttl_secs: set.get(Tunable::ServeShelfTtlSeconds),
+            feedback_decay_days: set.get_i32(Tunable::ServeFeedbackDecayDays),
+        }
+    }
+}
 
 /// One recommended series and why it is here.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -108,24 +151,33 @@ pub async fn recommendations(
     Query(params): Query<ShelfParams>,
 ) -> ApiResult<Json<Vec<Recommendation>>> {
     let started = std::time::Instant::now();
-    let limit = params.limit.unwrap_or(DEFAULT_SHELF).clamp(1, MAX_SHELF);
-    let profile = ensure_profile(&state, user.user_id).await?;
+    let tuning = ShelfTuning::read(&state.tunables);
+    let limit = params
+        .limit
+        .unwrap_or(tuning.shelf_size)
+        .clamp(1, tuning.shelf_size);
+    let profile = ensure_profile(&state, user.user_id, &tuning).await?;
 
     // Served from cache only when it was built from *this* profile: a rebuild must invalidate the
     // shelf even if the clock has barely moved.
-    if let Some(cached) =
-        recsys::read_shelf(&state.pool, user.user_id, profile.built_at, SHELF_TTL_SECS).await?
+    if let Some(cached) = recsys::read_shelf(
+        &state.pool,
+        user.user_id,
+        profile.built_at,
+        tuning.shelf_ttl_secs,
+    )
+    .await?
         && let Ok(items) = serde_json::from_value::<Vec<Recommendation>>(cached)
     {
         let items: Vec<Recommendation> = items
             .into_iter()
-            .take(usize::try_from(limit).unwrap_or(12))
+            .take(usize::try_from(limit).unwrap_or(1))
             .collect();
         record_serve(started, "cached", items.len());
         return Ok(Json(items));
     }
 
-    let shelf = compute_shelf(&state, user.user_id, &profile, limit).await?;
+    let shelf = compute_shelf(&state, user.user_id, &profile, limit, &tuning).await?;
     if let Ok(items) = serde_json::to_value(&shelf) {
         recsys::write_shelf(&state.pool, user.user_id, &items, profile.built_at).await?;
     }
@@ -152,13 +204,17 @@ fn record_serve(started: std::time::Instant, path: &'static str, size: usize) {
 /// Lazily, on the read path, rather than on a background sweep: the profile is one indexed query
 /// over the reader's own rows, and a sweep would do that work for every account that never signs
 /// in.
-async fn ensure_profile(state: &AppState, user_id: UserId) -> ApiResult<recsys::TasteProfile> {
+async fn ensure_profile(
+    state: &AppState,
+    user_id: UserId,
+    tuning: &ShelfTuning,
+) -> ApiResult<recsys::TasteProfile> {
     if let Some(profile) = recsys::read_profile(&state.pool, user_id).await?
         && !profile.stale
     {
         return Ok(profile);
     }
-    rebuild_profile(state, user_id).await?;
+    rebuild_profile(state, user_id, tuning).await?;
     // The row is written by the rebuild, so its absence here would be a lost write rather than an
     // empty profile.
     recsys::read_profile(&state.pool, user_id)
@@ -167,7 +223,7 @@ async fn ensure_profile(state: &AppState, user_id: UserId) -> ApiResult<recsys::
 }
 
 /// Recompute affinity and the taste profile from the reader's watchlist and progress.
-async fn rebuild_profile(state: &AppState, user_id: UserId) -> ApiResult<()> {
+async fn rebuild_profile(state: &AppState, user_id: UserId, tuning: &ShelfTuning) -> ApiResult<()> {
     let interactions = recsys::reader_interactions(&state.pool, user_id).await?;
 
     let mut ids = Vec::with_capacity(interactions.len());
@@ -176,9 +232,13 @@ async fn rebuild_profile(state: &AppState, user_id: UserId) -> ApiResult<()> {
     let mut observed = Vec::with_capacity(interactions.len());
     for row in &interactions {
         ids.push(row.series_id);
-        affinities.push(tankovault_recsys::affinity(row.interaction));
+        affinities.push(tankovault_recsys::affinity(
+            row.interaction,
+            &tuning.affinity,
+        ));
         engagements.push(tankovault_recsys::affinity::engagement(
             row.interaction.chapters_read,
+            tuning.affinity.engagement_knee,
         ));
         observed.push(row.observed_at);
     }
@@ -223,7 +283,7 @@ async fn rebuild_profile(state: &AppState, user_id: UserId) -> ApiResult<()> {
     let seeds: Vec<SeriesId> = ranked
         .iter()
         .filter(|(_, affinity)| *affinity > 0.0)
-        .take(SEEDS)
+        .take(tuning.seeds)
         .map(|(id, _)| *id)
         .collect();
     let embedding = if seeds.is_empty() {
@@ -267,13 +327,19 @@ async fn compute_shelf(
     user_id: UserId,
     profile: &recsys::TasteProfile,
     limit: i64,
+    tuning: &ShelfTuning,
 ) -> ApiResult<Vec<Recommendation>> {
-    let suppressed = recsys::suppressed_series(&state.pool, user_id, FEEDBACK_DECAY_DAYS).await?;
-    let candidates = retrieve(state, profile, &suppressed).await?;
+    let suppressed =
+        recsys::suppressed_series(&state.pool, user_id, tuning.feedback_decay_days).await?;
+    let mut candidates = retrieve(state, profile, &suppressed, tuning).await?;
     if candidates.is_empty() {
         return Ok(Vec::new());
     }
-    rank_and_render(state, profile, candidates, limit).await
+    // The backstop on one request's cost, applied after retrieval rather than as a smaller limit
+    // on each path: the paths are bounded individually already, and shrinking one of them to fit
+    // a global budget would silently make that path's own knob mean something else.
+    candidates.truncate(tuning.candidate_cap);
+    rank_and_render(state, profile, candidates, limit, tuning).await
 }
 
 /// The four retrieval paths, each bounded and none growing with the catalogue.
@@ -281,21 +347,32 @@ async fn retrieve(
     state: &AppState,
     profile: &recsys::TasteProfile,
     suppressed: &[SeriesId],
+    tuning: &ShelfTuning,
 ) -> ApiResult<Vec<Candidate<SeriesId>>> {
     let mut candidates: Vec<Candidate<SeriesId>> = Vec::new();
 
+    // One connection for the whole of retrieval, because `hnsw.ef_search` is a session setting.
+    // Setting it "on the pool" would configure whichever connection served that one call and
+    // leave every search below running on a different one at whatever the last request left
+    // behind — a recall knob that appears to work and does nothing.
+    let mut conn = state.pool.acquire().await.map_err(|error| {
+        tracing::warn!(%error, "no connection available for recommendation retrieval");
+        ApiError::Internal
+    })?;
+    recsys::set_ef_search(&mut conn, tuning.ef_search).await?;
+
     // R1 — one ANN search per seed. The only path that can say "because you read X".
-    for seed in &profile.seeds {
-        let Some(embedding) = recsys::embedding_of(&state.pool, *seed).await? else {
+    for seed in profile.seeds.iter().take(tuning.seeds) {
+        let Some(embedding) = recsys::embedding_of(&mut *conn, *seed).await? else {
             continue;
         };
         let found = recsys::nearest_excluding(
-            &state.pool,
+            &mut *conn,
             &embedding,
             suppressed,
             false,
-            PER_SEED,
-            PER_SEED * OVERFETCH,
+            tuning.per_seed,
+            tuning.per_seed * OVERFETCH,
         )
         .await?;
         candidates.extend(found.into_iter().map(|n| Candidate {
@@ -309,12 +386,12 @@ async fn retrieve(
     // R2 — one search from the reader's centre of gravity. Catches what no single seed is near.
     if let Some(embedding) = profile.embedding.as_deref() {
         let found = recsys::nearest_excluding(
-            &state.pool,
+            &mut *conn,
             embedding,
             suppressed,
             false,
-            PROFILE_CANDIDATES,
-            PROFILE_CANDIDATES * OVERFETCH,
+            tuning.profile_candidates,
+            tuning.profile_candidates * OVERFETCH,
         )
         .await?;
         candidates.extend(found.into_iter().map(|n| Candidate {
@@ -327,11 +404,16 @@ async fn retrieve(
 
     // R3 — exact overlap on the reader's rarest features. This is the path that sees authors,
     // which the embedding cannot represent at all.
-    let rare = recsys::rarest_features(&state.pool, &profile.feature_ids, 8).await?;
-    if !rare.is_empty() {
-        let found =
-            recsys::exact_feature_matches(&state.pool, &rare, suppressed, false, EXACT_CANDIDATES)
-                .await?;
+    let rare = recsys::rarest_features(&mut *conn, &profile.feature_ids, 8).await?;
+    if !rare.is_empty() && tuning.exact_candidates > 0 {
+        let found = recsys::exact_feature_matches(
+            &mut *conn,
+            &rare,
+            suppressed,
+            false,
+            tuning.exact_candidates,
+        )
+        .await?;
         #[expect(
             clippy::cast_precision_loss,
             reason = "a shared-feature count is a small integer used as a ranking key"
@@ -346,7 +428,7 @@ async fn retrieve(
 
     // R5 — the popularity prior. Cold start, and backfill when the rest come up short.
     let suppressed_set: HashSet<SeriesId> = suppressed.iter().copied().collect();
-    let popular = recsys::top_by_prior(&state.pool, PRIOR_CANDIDATES).await?;
+    let popular = recsys::top_by_prior(&mut *conn, PRIOR_CANDIDATES).await?;
     candidates.extend(
         popular
             .into_iter()
@@ -374,8 +456,9 @@ async fn rank_and_render(
     profile: &recsys::TasteProfile,
     candidates: Vec<Candidate<SeriesId>>,
     limit: i64,
+    tuning: &ShelfTuning,
 ) -> ApiResult<Vec<Recommendation>> {
-    let ranked = tankovault_recsys::blend(&candidates);
+    let ranked = tankovault_recsys::blend(&candidates, &tuning.weights);
 
     // Everything needed to score the negative vector, diversify and explain, in one bounded read.
     let ids: Vec<SeriesId> = ranked.iter().map(|s| s.id).collect();
@@ -398,7 +481,8 @@ async fn rank_and_render(
         .into_iter()
         .map(|mut scored| {
             if let Some(vector) = vector_of.get(&scored.id) {
-                scored.score -= 0.5 * tankovault_recsys::cosine(&negative, vector);
+                scored.score -=
+                    tuning.negative_weight * tankovault_recsys::cosine(&negative, vector);
             }
             scored
         })
@@ -415,11 +499,11 @@ async fn rank_and_render(
     };
     let diversified = tankovault_recsys::diversify(
         &penalised,
-        usize::try_from(limit).unwrap_or(12) * 3,
-        tankovault_recsys::ranking::DIVERSITY_LAMBDA,
+        usize::try_from(limit).unwrap_or(1) * 3,
+        tuning.diversity_lambda,
         similarity,
     );
-    let capped = tankovault_recsys::cap_by(diversified, MAX_PER_AUTHOR, |id| {
+    let capped = tankovault_recsys::cap_by(diversified, tuning.max_per_author, |id| {
         vector_of.get(&id).and_then(|vector| {
             vector
                 .iter()
@@ -431,7 +515,7 @@ async fn rank_and_render(
 
     let chosen: Vec<tankovault_recsys::Scored<SeriesId>> = capped
         .into_iter()
-        .take(usize::try_from(limit).unwrap_or(12))
+        .take(usize::try_from(limit).unwrap_or(1))
         .collect();
     let chosen_ids: Vec<SeriesId> = chosen.iter().map(|s| s.id).collect();
     let summaries = recsys::summaries_in_order(&state.pool, &chosen_ids).await?;
@@ -562,7 +646,8 @@ pub struct TasteFeature {
     )
 )]
 pub async fn taste(State(state): State<AppState>, user: AuthUser) -> ApiResult<Json<TasteView>> {
-    let profile = ensure_profile(&state, user.user_id).await?;
+    let tuning = ShelfTuning::read(&state.tunables);
+    let profile = ensure_profile(&state, user.user_id, &tuning).await?;
 
     let mut wanted = profile.feature_ids.clone();
     wanted.extend(profile.neg_feature_ids.iter().copied());

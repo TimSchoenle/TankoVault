@@ -17,5 +17,6 @@ pub mod scans;
 pub mod stats;
 pub mod sync;
 pub mod tracking;
+pub mod tunables;
 pub mod user_admin;
 pub mod users;

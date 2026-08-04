@@ -39,6 +39,7 @@ disallowed-methods = [
     { path = "js_sys::Function::new_with_args", reason = "`new Function(...)`; see `dioxus::document::eval` above" },
     { path = "js_sys::Function::new_no_args", reason = "`new Function(...)`; see `dioxus::document::eval` above" },
     { path = "js_sys::eval", reason = "`eval(...)`; see `dioxus::document::eval` above" },
+    { path = "dioxus::document::Title", reason = "`dioxus-web` implements `set_title` as `eval(\"document.title = …\")`, so rendering it aborts the WASM instance under the served CSP. Use `crate::title`, which goes through `crate::browser::set_document_title`" },
 
     # ------------------------------------------------------------------------------------
     # XSS

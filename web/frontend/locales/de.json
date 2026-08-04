@@ -981,6 +981,12 @@
     "unknown": "—",
     "yearsAgo": "vor {count} J."
   },
+  "title": {
+    "app": "TankoVault — Manga-Tracker",
+    "search": "Suche: {query}",
+    "series": "Serie",
+    "template": "{page} — TankoVault"
+  },
   "topbar": {
     "searchPlaceholder": "Serien, Tags, Autoren suchen…",
     "unreadCount": {

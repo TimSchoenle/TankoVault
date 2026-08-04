@@ -5,6 +5,7 @@ use crate::components::{Shell, UnreadBadge};
 use crate::i18n::I18nRoot;
 use crate::state::capabilities::CapabilitySet;
 use crate::state::Session;
+use crate::title::PageTitle;
 use crate::views::{
     Account, AnilistCallback, Console, Discover, ForgotPassword, Home, Login, NotFound,
     Notifications, ResetPassword, Search, Series, VerifyEmail, Watchlist, WatchlistQuery,
@@ -64,6 +65,8 @@ pub(crate) fn App() -> Element {
     // so views don't need it threaded down.
     use_context_provider(CapabilitySet::new);
     use_context_provider(|| UnreadBadge(Signal::new(0)));
+    // Empty until a screen publishes a name only it knows; the route's own name covers the rest.
+    use_context_provider(PageTitle::new);
     crate::api::provide_api();
 
     rsx! {

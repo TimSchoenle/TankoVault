@@ -29,6 +29,9 @@ pub(crate) fn Shell() -> Element {
     use_token_refresh();
     use_capability_sync();
     use_live_notifications();
+    // Here rather than in each screen: the layout is the one component every route renders
+    // through, so no route can be added without a title.
+    crate::title::use_document_title();
 
     let i18n = crate::i18n::use_i18n();
     rsx! {

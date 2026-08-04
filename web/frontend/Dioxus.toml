@@ -2,7 +2,11 @@
 name = "tankovault"
 
 [web.app]
-title = "TankoVault — manga tracker"
+# Deliberately empty. `dx` *appends* this into the `<title>` already in `index.html` rather than
+# replacing it, so the shipped bundle read "TankoVault — manga trackerTankoVault — manga tracker";
+# removing the key instead appends `dx`'s own default. `index.html` owns the pre-boot title (see
+# the comment there) and `crate::title` owns it from first render on.
+title = ""
 # Base path when the SPA is served under a sub-path by the API/CDN.
 base_path = ""
 

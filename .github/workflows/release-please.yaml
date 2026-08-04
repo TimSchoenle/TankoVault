@@ -154,9 +154,12 @@ jobs:
   # importing the pre-bump `backend-deps-<arch>` is still worth doing: the `cook` layer is
   # version-invariant and hits, so this job's real work is the workspace compile alone.
   #
-  # Its own scope, not `backend-deps-<arch>`: `ci.yml` fires on this same push and its `docker-deps`
-  # exports to that scope concurrently. Sharing one would be the write race the `docker-deps`
+  # Its own tag, not `backend-deps-<arch>`: `ci.yml` fires on this same push and its `docker-deps`
+  # exports to that tag concurrently. Sharing one would be the write race the `docker-deps`
   # comment describes, and a release build must not be able to poison what CI reads.
+  #
+  # These tags live in GHCR rather than the Actions cache; `ci.yml`'s `docker-deps` carries the
+  # reasoning, and the two files have to agree because they read each other's tags.
   release-deps:
     name: warm the build cache (${{ matrix.arch }})
     needs: [release-please]
@@ -165,6 +168,7 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: read # to check out the build context
+      packages: write # to export the layer cache to ghcr.io
     strategy:
       fail-fast: false
       matrix:
@@ -186,6 +190,18 @@ jobs:
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
+      # Shell-computed for the case folding the `params` step below documents.
+      - name: resolve the buildkit cache repository
+        id: buildcache
+        run: echo "ref=${GHCR_REGISTRY}/${GITHUB_REPOSITORY,,}/buildcache" >> "$GITHUB_OUTPUT"
+
+      - name: log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: derive SOURCE_DATE_EPOCH
         id: epoch
         run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
@@ -205,9 +221,9 @@ jobs:
           outputs: type=cacheonly
           provenance: false
           cache-from: |
-            type=gha,scope=release-deps-${{ matrix.arch }}
-            type=gha,scope=backend-deps-${{ matrix.arch }}
-          cache-to: type=gha,scope=release-deps-${{ matrix.arch }},mode=max
+            type=registry,ref=${{ steps.buildcache.outputs.ref }}:release-deps-${{ matrix.arch }}
+            type=registry,ref=${{ steps.buildcache.outputs.ref }}:backend-deps-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ steps.buildcache.outputs.ref }}:release-deps-${{ matrix.arch }},mode=max,compression=zstd,image-manifest=true,oci-mediatypes=true
 
   # One leg per (image, architecture). Both architectures build **natively**: `wreq` compiles
   # BoringSSL from C/C++/assembly and an emulated build of it costs upwards of an hour per
@@ -280,6 +296,7 @@ jobs:
             echo "cst=${cst}"
             echo "dockerhub=${DOCKERHUB_NAMESPACE}/tankovault-${BIN}"
             echo "ghcr=${GHCR_REGISTRY}/${GITHUB_REPOSITORY,,}/${BIN}"
+            echo "buildcache=${GHCR_REGISTRY}/${GITHUB_REPOSITORY,,}/buildcache"
           } >> "$GITHUB_OUTPUT"
         # `,,` folds the case: GHCR rejects an uppercase path and `GITHUB_REPOSITORY` carries the
         # account's own casing (`TimSchoenle/TankoVault`). Workflow expressions have no lowercase
@@ -336,9 +353,9 @@ jobs:
           # is the `COPY`s onto `scratch`. `backend-deps-<arch>` stays as the fallback for the
           # layers the warm-up itself imported rather than rebuilt.
           cache-from: |
-            type=gha,scope=release-deps-${{ matrix.arch }}
-            type=gha,scope=backend-deps-${{ matrix.arch }}
-            ${{ matrix.bin == 'frontend' && format('type=gha,scope=frontend-deps-{0}', matrix.arch) || '' }}
+            type=registry,ref=${{ steps.params.outputs.buildcache }}:release-deps-${{ matrix.arch }}
+            type=registry,ref=${{ steps.params.outputs.buildcache }}:backend-deps-${{ matrix.arch }}
+            ${{ matrix.bin == 'frontend' && format('type=registry,ref={0}:frontend-deps-{1}', steps.params.outputs.buildcache, matrix.arch) || '' }}
 
       - name: install container-structure-test
         env:
@@ -387,15 +404,14 @@ jobs:
           # attestation layer carries build timestamps, which breaks byte-identical rebuilds.
           # The SBOM attested in the `manifest` job compensates.
           provenance: false
-          # Read only, and the same three scopes as the step above — this is a hit against the
+          # Read only, and the same three tags as the step above — this is a hit against the
           # local buildkit instance, so it re-exports and uploads rather than recompiling. Nine
-          # legs exporting `mode=max` would re-upload the whole imported layer chain and evict the
-          # caches ci.yml depends on; GitHub's Actions cache is 10 GB per repository with LRU
-          # eviction, and a release build is the one build that must not poison what CI reads.
+          # legs exporting `mode=max` would each re-upload the whole imported layer chain into a
+          # tag CI also reads, and a release build is the one build that must not poison that.
           cache-from: |
-            type=gha,scope=release-deps-${{ matrix.arch }}
-            type=gha,scope=backend-deps-${{ matrix.arch }}
-            ${{ matrix.bin == 'frontend' && format('type=gha,scope=frontend-deps-{0}', matrix.arch) || '' }}
+            type=registry,ref=${{ steps.params.outputs.buildcache }}:release-deps-${{ matrix.arch }}
+            type=registry,ref=${{ steps.params.outputs.buildcache }}:backend-deps-${{ matrix.arch }}
+            ${{ matrix.bin == 'frontend' && format('type=registry,ref={0}:frontend-deps-{1}', steps.params.outputs.buildcache, matrix.arch) || '' }}
 
       # The digest is what the `manifest` job assembles the list from. Written as an empty file
       # *named* for the digest, which is the conventional shape: artifact merging then yields one

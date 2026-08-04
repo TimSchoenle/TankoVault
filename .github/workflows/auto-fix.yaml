@@ -76,6 +76,15 @@ concurrency:
 
 permissions: {}
 
+# Must stay byte-identical to `ci.yml`'s. `rust-cache` hashes the `CARGO_*`/`RUST*` environment
+# into its key, so a workflow that leaves these unset looks up a different key from the one
+# `ci.yml`'s `lint` group writes and compiles the workspace from cold on every pull request —
+# which is what this job did while it had no `env:` block at all. The `clippy --fix` step below
+# clears `RUSTFLAGS` for itself; see its comment for why that must not be done here.
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
 jobs:
   fix:
     name: apply the mechanical fixes
@@ -137,6 +146,11 @@ jobs:
           toolchain: ${{ steps.versions.outputs.toolchain }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          # The group `ci.yml`'s `lint` job writes: this compiles the same workspace with the same
+          # flags. Without naming it the lookup used a key derived from this job's own name — one
+          # nothing writes, because this workflow runs on pull requests only and so never executes
+          # on `main`. It restored nothing, on every run.
+          shared-key: lint
           # Reads `main`'s cache, never writes one: this runs only on pull requests, and a PR
           # populating the shared cache is how an unreviewed artefact reaches every other job.
           save-if: "false"
@@ -167,7 +181,12 @@ jobs:
       # No `-D warnings` in this job's environment, deliberately. Under it, an unfixable lint
       # would abort the run before rustfix wrote anything, so the one lint nobody can automate
       # would suppress the fixes for all the ones anybody can.
+      #
+      # Cleared on this step alone rather than by omitting it from the workflow `env:`, which is
+      # what the cache key is computed from — see that block.
       - name: apply clippy's machine-applicable fixes
+        env:
+          RUSTFLAGS: ""
         run: |
           set -euo pipefail
           cargo clippy --fix --workspace --all-targets --all-features --allow-dirty --allow-staged

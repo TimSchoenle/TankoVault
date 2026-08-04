@@ -33,7 +33,10 @@ pub(crate) fn use_legal_sync() {
     // has to re-ask rather than keep the previous language's titles.
     let language = i18n.language();
 
-    let _ = use_resource(use_reactive!(|language| {
+    // Bound and unread: this resource writes into context rather than being read back, and it
+    // is a `use_resource` rather than a bare spawn so a language change re-runs it. `let _ =`
+    // would be a dropped future, which is a different and wrong thing.
+    let _fetch = use_resource(use_reactive!(|language| {
         let client = api.client();
         async move {
             let entries = client
@@ -41,7 +44,7 @@ pub(crate) fn use_legal_sync() {
                 .lang(language)
                 .send()
                 .await
-                .map(|response| response.into_inner())
+                .map(progenitor_client::ResponseValue::into_inner)
                 .unwrap_or_default();
             index.0.set(entries);
         }

@@ -50,13 +50,30 @@ pub(crate) fn Shell() -> Element {
                 section { id: "ik-content", class: "ik-content",
                     div { class: "ik-measure", Outlet::<Route> {} }
                 }
-                Footer {}
+                Footer { compact: is_compact(&route) }
             }
             // After `.ik-main`, not inside it: the bar is `position: fixed` at the viewport's
             // bottom edge below 820px and renders to nothing above it.
             BottomTabs {}
         }
     }
+}
+
+/// Whether this route gets the one-line footer instead of the five-column one.
+///
+/// The auth card and the console are both surfaces a full directory would outweigh — a 400px
+/// sign-in card with three columns of links under it, an operator console that is an
+/// application rather than a document. Chosen here rather than by the views so a route cannot
+/// end up rendering two footers, which is what happened when the auth view supplied its own.
+fn is_compact(route: &Route) -> bool {
+    matches!(
+        route,
+        Route::Login {}
+            | Route::VerifyEmail { .. }
+            | Route::ForgotPassword {}
+            | Route::ResetPassword { .. }
+            | Route::Console {}
+    )
 }
 
 /// The measured column width for a route (layout handoff §2.1).

@@ -481,7 +481,11 @@ async fn the_summary_ignores_the_filters_the_list_counts_apply() {
     .expect("filtered");
     assert_eq!(filtered.counts.all, 1, "list counts follow the search");
     assert_eq!(
-        watchlist_summary(&db.pool, user).await.expect("summary").counts.all,
+        watchlist_summary(&db.pool, user)
+            .await
+            .expect("summary")
+            .counts
+            .all,
         2,
         "the summary does not",
     );

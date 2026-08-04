@@ -161,7 +161,12 @@ mod tests {
         LegalDocument {
             sources: locales
                 .iter()
-                .map(|code| ((*code).to_owned(), PathBuf::from(format!("terms.{code}.md"))))
+                .map(|code| {
+                    (
+                        (*code).to_owned(),
+                        PathBuf::from(format!("terms.{code}.md")),
+                    )
+                })
                 .collect(),
             ..LegalDocument::default()
         }

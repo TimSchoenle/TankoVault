@@ -316,9 +316,9 @@ fn is_safe_href(href: &str) -> bool {
     let trimmed = href.trim_start();
     trimmed.starts_with('/')
         || trimmed.starts_with('#')
-        || ["https://", "http://", "mailto:"]
-            .iter()
-            .any(|scheme| trimmed.len() >= scheme.len() && trimmed[..scheme.len()].eq_ignore_ascii_case(scheme))
+        || ["https://", "http://", "mailto:"].iter().any(|scheme| {
+            trimmed.len() >= scheme.len() && trimmed[..scheme.len()].eq_ignore_ascii_case(scheme)
+        })
 }
 
 #[cfg(test)]

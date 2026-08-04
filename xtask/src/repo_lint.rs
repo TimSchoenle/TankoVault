@@ -1363,7 +1363,10 @@ mod tests {
         // of the declaration this rule is about, and reading it as one turned the whole gate
         // into a hard error the moment the constant gained a reader.
         assert_eq!(
-            const_str("pub(crate) const NOTICES_ROUTE: &str = \"/n\";\n", "NOTICES_ROUTE"),
+            const_str(
+                "pub(crate) const NOTICES_ROUTE: &str = \"/n\";\n",
+                "NOTICES_ROUTE"
+            ),
             Some((1, "/n".to_owned()))
         );
         assert_eq!(

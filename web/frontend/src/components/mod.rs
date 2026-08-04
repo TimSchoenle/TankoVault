@@ -3,9 +3,9 @@
 mod bottombar;
 mod confirm;
 mod cover;
-mod footer;
 mod data;
 mod feedback;
+mod footer;
 mod form;
 mod layout;
 mod nav;
@@ -16,13 +16,13 @@ mod topbar;
 
 pub(crate) use bottombar::BottomTabs;
 pub(crate) use confirm::{InlineConfirm, TypeToConfirm};
-pub(crate) use footer::Footer;
 pub(crate) use cover::{Cover, CoverCard};
 pub(crate) use data::{HealthPill, Kpi};
 pub(crate) use feedback::{
     async_block, async_block_list, async_list, async_view, AuthRequired, EmptyBox, ErrorBox,
     ErrorLine, OutcomeLine, SkeletonBlock, SkeletonGrid, SkeletonRows,
 };
+pub(crate) use footer::Footer;
 pub(crate) use form::{Field, ListSearch, SegControl, SliderRow};
 pub(crate) use layout::{ListFooter, NoSelection, PanelCard, Section};
 pub(crate) use pagination::{CompactPager, Pagination, Window};

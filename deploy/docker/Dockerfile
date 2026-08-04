@@ -142,6 +142,10 @@ RUN --mount=type=cache,id=tankovault-wasm-cargo-registry,target=/usr/local/cargo
 
 FROM cook-web AS wasm-builder
 WORKDIR /app
+# The short commit the footer's meta line shows. Empty by default — `build_info::commit()`
+# then omits the segment rather than printing "unknown", and a local build keeps a stable
+# cache key for this stage, which is the expensive one. CI passes the real value.
+ARG TANKOVAULT_COMMIT=""
 COPY . .
 # Located by path, not app name; requires exactly one `release` hit (a stale debug bundle once
 # shipped). `from=cook-web` seeds the mount so CI's always-cold cache starts from the cooked layer.
@@ -152,7 +156,7 @@ RUN --mount=type=cache,id=tankovault-wasm-cargo-registry,target=/usr/local/cargo
     --mount=type=cache,id=tankovault-wasm-target,target=/app/web/frontend/target,from=cook-web,source=/app/web/frontend/target \
     set -eu; \
     cd web/frontend; \
-    dx build --platform web --release; \
+    TANKOVAULT_COMMIT="${TANKOVAULT_COMMIT}" dx build --platform web --release; \
     matches="$(find target/dx -type d -path '*/release/web/public')"; \
     count="$(printf '%s\n' "$matches" | grep -c . || true)"; \
     if [ "$count" -ne 1 ]; then \

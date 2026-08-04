@@ -102,16 +102,16 @@ fn MoreSheet(on_close: EventHandler<()>) -> Element {
             div { class: "ik-sheet-grip" }
 
             if caps.has_feature(Feature::CatalogueSearch) {
-                {sheet_link(Route::Search { q: String::new() }, Icon::Search, i18n.t("nav.search"))}
+                {sheet_link(Route::Search { q: String::new() }, Icon::Search, &i18n.t("nav.search"))}
             }
             if caps.is_staff() {
-                {sheet_link(Route::Console {}, Icon::Console, i18n.t("nav.console"))}
+                {sheet_link(Route::Console {}, Icon::Console, &i18n.t("nav.console"))}
             }
             if session.is_authenticated() {
-                {sheet_link(Route::Account {}, Icon::Account, i18n.t("nav.account"))}
-                {sheet_link(Route::Account {}, Icon::Tune, i18n.t("account.tab.appearance"))}
+                {sheet_link(Route::Account {}, Icon::Account, &i18n.t("nav.account"))}
+                {sheet_link(Route::Account {}, Icon::Tune, &i18n.t("account.tab.appearance"))}
             } else {
-                {sheet_link(Route::Login {}, Icon::Account, i18n.t("common.signIn"))}
+                {sheet_link(Route::Login {}, Icon::Account, &i18n.t("common.signIn"))}
             }
 
             button {
@@ -195,7 +195,7 @@ fn legal_block(i18n: Translator) -> Element {
 }
 
 /// A routed row in the sheet.
-fn sheet_link(to: Route, icon: Icon, label: String) -> Element {
+fn sheet_link(to: Route, icon: Icon, label: &str) -> Element {
     rsx! {
         Link { to, class: "ik-sheet-row",
             Ic { icon, size: 19 }

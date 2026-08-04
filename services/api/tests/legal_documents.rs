@@ -27,7 +27,11 @@ impl Fixture {
         let dir = std::env::temp_dir().join(format!("tv-legal-{name}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("scratch dir");
         std::fs::write(dir.join("terms.en.md"), "# Terms\n\nEnglish body.\n").expect("en");
-        std::fs::write(dir.join("terms.de.md"), "# Bedingungen\n\nDeutscher Text.\n").expect("de");
+        std::fs::write(
+            dir.join("terms.de.md"),
+            "# Bedingungen\n\nDeutscher Text.\n",
+        )
+        .expect("de");
         Self { dir }
     }
 
@@ -93,7 +97,9 @@ async fn the_documents_are_readable_without_an_account() {
     assert_eq!(body["format"], "markdown");
     assert_eq!(body["title"], "Terms of Service");
     assert!(
-        body["body"].as_str().is_some_and(|b| b.contains("English body")),
+        body["body"]
+            .as_str()
+            .is_some_and(|b| b.contains("English body")),
         "the Markdown is served verbatim: {body}"
     );
 }

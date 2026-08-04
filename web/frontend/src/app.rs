@@ -2,9 +2,9 @@
 //! font faces.
 
 use crate::components::{Shell, UnreadBadge};
-use crate::state::legal::LegalIndex;
 use crate::i18n::I18nRoot;
 use crate::state::capabilities::CapabilitySet;
+use crate::state::legal::LegalIndex;
 use crate::state::Session;
 use crate::title::PageTitle;
 use crate::views::{

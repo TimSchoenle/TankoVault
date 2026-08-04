@@ -820,6 +820,12 @@ async fn attach_sources(pool: &PgPool, rows: Vec<CardRow>) -> DbResult<Vec<Watch
 /// The final `series_id` tiebreaker is not decoration: without it rows sharing a leading key —
 /// and with `unread` over 600 entries there are hundreds of ties — have no defined order, so
 /// two adjacent `OFFSET` pages can repeat one row and skip another.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one `query_as!` invocation: the length is the SQL literal and its bindings, and \
+              splitting a statement across helpers is exactly the drift the `--wl-cols` comment \
+              and the sort-key subquery both exist to prevent"
+)]
 async fn fetch_page(
     pool: &PgPool,
     user_id: UserId,
@@ -982,9 +988,6 @@ async fn fetch_sources(
     pool: &PgPool,
     series_ids: &[Uuid],
 ) -> DbResult<HashMap<SeriesId, Vec<WatchlistSource>>> {
-    if series_ids.is_empty() {
-        return Ok(HashMap::new());
-    }
     #[derive(FromRow)]
     struct Row {
         series_id: Uuid,
@@ -992,6 +995,10 @@ async fn fetch_sources(
         name: String,
         state: ProviderState,
         preferred: bool,
+    }
+
+    if series_ids.is_empty() {
+        return Ok(HashMap::new());
     }
     let rows = sqlx::query_as!(
         Row,

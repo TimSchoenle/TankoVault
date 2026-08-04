@@ -258,7 +258,11 @@ pub async fn legal_document(
     Query(params): Query<LegalParams>,
 ) -> ApiResult<Response> {
     let accepted = accepted_languages(&headers);
-    let doc = state.legal.config().document(&slug).ok_or(ApiError::NotFound)?;
+    let doc = state
+        .legal
+        .config()
+        .document(&slug)
+        .ok_or(ApiError::NotFound)?;
     // An external document has no body to serve; the index already told the client where to go,
     // and inventing a redirect here would hide that from a client that only reads this route.
     let locale = doc
@@ -279,7 +283,10 @@ pub async fn legal_document(
         body: cached.text.to_string(),
     };
     Ok((
-        [(ETAG, cached.etag), (CACHE_CONTROL, CACHE_POLICY.to_owned())],
+        [
+            (ETAG, cached.etag),
+            (CACHE_CONTROL, CACHE_POLICY.to_owned()),
+        ],
         Json(view),
     )
         .into_response())
@@ -407,7 +414,11 @@ mod tests {
         // that the write alone is not a reliable signal, so it is set explicitly.
         std::fs::write(&path, "second").expect("rewrite");
         let bumped = SystemTime::now() + std::time::Duration::from_secs(2);
-        std::fs::File::open(&path)
+        // Opened for **writing**: a read-only handle cannot set a file's timestamps on Windows,
+        // which fails as `PermissionDenied` rather than as anything about mtimes.
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
             .expect("open")
             .set_modified(bumped)
             .expect("touch");

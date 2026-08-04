@@ -85,13 +85,18 @@ pub fn bearer(user: UserId) -> String {
 /// lifetime of the test binary.
 static PG: OnceCell<PgContainer> = OnceCell::const_new();
 
-/// The Postgres image tag the harness runs.
+/// The Postgres image the harness runs.
 ///
 /// **Track `deploy/docker-compose.yml`.** The planner is a major-version artefact, so a suite
 /// that asserts on query plans ([`TestDb::spawn_with_catalogue`]) proves nothing about
 /// production unless the majors match — and the schema's generated columns and trigram indexes
 /// need a modern major regardless, which the testcontainers default is not.
-const POSTGRES_TAG: &str = "18-alpine";
+///
+/// The *name* is overridden as well as the tag: migration 0026 does `CREATE EXTENSION vector`,
+/// so stock `postgres` cannot run the migration set at all and every integration test would
+/// fail at schema setup rather than on anything it meant to assert.
+const POSTGRES_IMAGE: &str = "pgvector/pgvector";
+const POSTGRES_TAG: &str = "pg18";
 
 /// The fixed name of the shared container. A *name* is what makes reuse possible: it is how
 /// `testcontainers` finds the already-running container instead of creating a second one, so
@@ -101,6 +106,10 @@ const POSTGRES_TAG: &str = "18-alpine";
 /// because reuse attaches by name: a container built from an older tag would otherwise be found,
 /// started and reused forever after a bump, leaving the suite testing the very major it was
 /// meant to leave — silently, since nothing in the run names a version.
+///
+/// The move to pgvector (`18-alpine` → `pg18`) changes this string, which is the property that
+/// matters: a developer with a stock-Postgres container left over from before migration 0026
+/// gets a new one rather than a silent `CREATE EXTENSION vector` failure on every run.
 fn container_name() -> String {
     let major = POSTGRES_TAG.split('-').next().unwrap_or(POSTGRES_TAG);
     format!("tankovault-test-postgres-{major}")
@@ -179,6 +188,7 @@ async fn shared_container() -> &'static PgContainer {
     PG.get_or_init(|| async {
         start_if_stopped();
         let container = Postgres::default()
+            .with_name(POSTGRES_IMAGE)
             .with_tag(POSTGRES_TAG)
             .with_container_name(container_name())
             .with_reuse(ReuseDirective::Always)

@@ -25,7 +25,7 @@ Container build and local orchestration for TankoVault (design §19).
     same-origin API calls resolve without CORS. This was a second Dockerfile until its musl
     cross-build was folded into the shared Alpine builder, which had been compiling the same
     dependency graph a second time for a binary the workspace already builds.
-- `docker-compose.yml` — the full end-to-end local stack: Postgres 17, Redis 7, NATS
+- `docker-compose.yml` — the full end-to-end local stack: Postgres 18 (pgvector), Redis 8, NATS
   (JetStream), TRAWL, the one-shot `migrate`/`seed`/`seed-providers` steps (the
   `bootstrap` image, so the local stack exercises the artefact a cluster runs), every backend
   service, and the web frontend. **This is the only supported deployment shape** — see [Kubernetes](#kubernetes)
@@ -117,6 +117,27 @@ crate registry warm across local rebuilds. Refresh a pinned digest with
 ```bash
 docker compose -f deploy/docker-compose.yml run --rm migrate
 ```
+
+### Upgrading past migration 0026 — pgvector is required
+
+Migration `0026_recsys_signals` runs `CREATE EXTENSION vector`. From that release on, **the
+database must have [pgvector](https://github.com/pgvector/pgvector) available**; the migration
+fails loudly rather than degrading, because a recommender that silently returns nothing is worse
+than one that refuses to start.
+
+- **Using the compose stack:** nothing to do. The `postgres` service moved from
+  `postgres:18-alpine` to `pgvector/pgvector:pg18` — the same upstream Postgres major with the
+  extension preinstalled, same entrypoint and environment contract, so the existing `pgdata`
+  volume is reused in place. Pull the new image and bring the stack up.
+- **Running your own Postgres:** install the extension package for your platform *before*
+  applying migrations (`apt install postgresql-18-pgvector`, `CREATE EXTENSION vector`, or your
+  managed provider's equivalent — RDS, Cloud SQL and Azure Flexible Server all ship it behind an
+  allowlist setting). The migration only needs it to be installable; it issues the
+  `CREATE EXTENSION` itself.
+
+Rolling back drops the recommender's tables but deliberately leaves the extension in place —
+dropping it would cascade into every column typed by it, which is a worse outcome than an unused
+extension.
 
 ## Service wiring notes
 - **Redis** backs the control-plane's singleton-scheduler leader election

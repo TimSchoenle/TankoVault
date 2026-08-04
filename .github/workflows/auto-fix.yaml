@@ -21,6 +21,14 @@ name: auto-fix
 # failed earlier in the same job. Regeneration is mechanical and the bot's output is byte-identical
 # to a developer's, so a bot may do it — the same argument that justifies `auto-format.yaml`.
 #
+# The same bump reaches open pull requests by a second route, which is why this job merges the
+# base branch in before it regenerates anything. `ci.yml` judges the *merge* of a branch with its
+# base, not the branch itself, so a release on `main` stales artefacts inside a branch whose own
+# tree is perfectly self-consistent: regenerating on the head alone finds nothing to fix, and the
+# pull request stays red with `openapi.json is out of date` and no command its author can run.
+# Release 1.1.0 did exactly that to #62. Merging first makes the tree this job regenerates the
+# tree CI actually checks — the two were reading different trees, which is the whole bug.
+#
 # This does **not** weaken review of API changes. `openapi breaking changes` still compares the
 # regenerated document against the base branch, so a change that breaks a client is still a red
 # gate; what stops being a red gate is *forgetting to run the generator*.
@@ -54,7 +62,7 @@ on:
     # artefacts are a function of. Directories, never `**/*.rs`, for the reason `ci.yml` gives:
     # `web/frontend` is a separate workspace and a glob would silently couple the two.
     paths:
-      - ".github/workflows/auto-regenerate.yaml"
+      - ".github/workflows/auto-fix.yaml"
       - "crates/**"
       - "services/**"
       - "xtask/**"
@@ -123,6 +131,42 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           persist-credentials: false
+          # Full history: the step below merges the base branch, and a shallow clone has no
+          # merge base to do it against.
+          fetch-depth: 0
+
+      # See the note at the top of this file: everything below regenerates artefacts that record
+      # the workspace version, and `ci.yml` judges them on the merge with the base — so this job
+      # has to stand on that same tree or it regenerates a version CI never sees.
+      #
+      # The remote is re-pointed at an authenticated URL rather than checking out with
+      # `persist-credentials: true`: this way the credential in `.git/config` is the *narrowed*
+      # app token above (`contents: write`, nothing else) rather than the job's `GITHUB_TOKEN`,
+      # and it is the same token the commit step pushes with.
+      #
+      # A conflicting merge is a human's call, and aborting leaves the branch exactly as its
+      # author pushed it — which is recoverable, where a bot-resolved conflict is not.
+      - name: merge the base branch, which is the tree CI judges
+        env:
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags origin "$BASE_REF"
+          if git merge-base --is-ancestor FETCH_HEAD HEAD; then
+            echo "::notice::already contains $BASE_REF"
+            exit 0
+          fi
+          if ! git merge --no-edit FETCH_HEAD; then
+            git merge --abort
+            echo "::error::this branch conflicts with $BASE_REF and cannot be brought up to \
+            date automatically; merge or rebase it by hand, then push"
+            exit 1
+          fi
 
       # The second reader of `rust-toolchain.toml`, after `ci.yml`'s `changes` job. The *number*
       # still has one home; what is repeated is the two-line read, which cannot drift from the

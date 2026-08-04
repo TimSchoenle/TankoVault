@@ -74,7 +74,6 @@ pub(crate) fn Rail() -> Element {
 
             div { class: "ik-rail-spacer" }
             UserFooter {}
-            Notices {}
         }
     }
 }
@@ -145,27 +144,10 @@ pub(crate) fn tab_destinations(
 /// compile-time relationship to it; `xtask repo-lint` holds the two literals equal.
 pub(crate) const NOTICES_ROUTE: &str = "/third-party-notices";
 
-/// The reader's way to the licences of everything this bundle is built from.
-///
-/// A plain anchor, not a `Link`: the target is a document the server renders, not a route this
-/// app knows, and handing it to the client-side router would resolve it to the app shell.
-/// Placed in the rail rather than behind the account screen because a signed-out reader has
-/// received the same bundle and is owed the same notices.
-#[component]
-fn Notices() -> Element {
-    let i18n = use_i18n();
-    rsx! {
-        div { style: "padding: 8px 10px 10px;",
-            a {
-                class: "ik-link",
-                href: NOTICES_ROUTE,
-                target: "_blank",
-                rel: "noopener noreferrer",
-                {i18n.t("nav.notices")}
-            }
-        }
-    }
-}
+// The rail's own notices link retired with the footer, which carries it in its Open source
+// column on every screen and in the More sheet below 820px. The reason it was in the rail at
+// all — a signed-out reader has received the same bundle and is owed the same notices — is
+// unchanged and still met: the footer renders signed out.
 
 /// A kicker heading that groups rail destinations.
 #[component]

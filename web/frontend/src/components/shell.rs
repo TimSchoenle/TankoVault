@@ -3,7 +3,7 @@
 //! the silent token refresh and the live-notification subscription.
 
 use crate::api;
-use crate::components::{nav::Rail, topbar::TopBar, BottomTabs, UnreadBadge};
+use crate::components::{nav::Rail, topbar::TopBar, BottomTabs, Footer, UnreadBadge};
 use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::Route;
@@ -50,6 +50,7 @@ pub(crate) fn Shell() -> Element {
                 section { id: "ik-content", class: "ik-content",
                     div { class: "ik-measure", Outlet::<Route> {} }
                 }
+                Footer {}
             }
             // After `.ik-main`, not inside it: the bar is `position: fixed` at the viewport's
             // bottom edge below 820px and renders to nothing above it.

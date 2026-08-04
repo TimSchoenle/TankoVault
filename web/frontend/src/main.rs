@@ -6,6 +6,7 @@
 mod api;
 mod app;
 mod browser;
+mod build_info;
 mod components;
 mod hooks;
 mod i18n;

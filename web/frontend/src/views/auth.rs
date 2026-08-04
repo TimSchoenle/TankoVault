@@ -2,7 +2,7 @@
 //! is set as an httpOnly cookie by the API. On success we route to Discover.
 
 use crate::api;
-use crate::components::Field;
+use crate::components::{Field, Footer};
 use crate::hooks::use_busy;
 use crate::i18n::{use_i18n, Translator};
 use crate::icons::{Ic, Icon};
@@ -352,6 +352,7 @@ pub(crate) fn Login() -> Element {
                 {acceptance(i18n)}
             }
         }
+        Footer { compact: true }
     }
 }
 

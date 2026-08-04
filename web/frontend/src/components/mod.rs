@@ -3,6 +3,7 @@
 mod bottombar;
 mod confirm;
 mod cover;
+mod footer;
 mod data;
 mod feedback;
 mod form;
@@ -15,6 +16,7 @@ mod topbar;
 
 pub(crate) use bottombar::BottomTabs;
 pub(crate) use confirm::{InlineConfirm, TypeToConfirm};
+pub(crate) use footer::Footer;
 pub(crate) use cover::{Cover, CoverCard};
 pub(crate) use data::{HealthPill, Kpi};
 pub(crate) use feedback::{

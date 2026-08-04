@@ -57,6 +57,17 @@
   --jade-bright: #3da88f;
   --star: #cba43c;
 
+  /* Ink variants of the accent and the amber role: the same meaning, at a weight that is
+   * legible as *text on the ground* rather than as a fill or as text on a tint.
+   *
+   * In dark mode they are the tokens they alias and nothing changes. Warm Paper is where they
+   * earn their keep — `--acc3` measures 1.50:1 and `--star` 1.95:1 against the paper ground,
+   * so any new surface that put either on the ground was unreadable in the light theme while
+   * looking correct in the dark one it was designed in. Use these wherever an accent or amber
+   * word sits directly on `--bg`/`--rail`; `--acc3` on a tint stays right and is unchanged. */
+  --acc-ink: var(--acc3);
+  --star-ink: var(--star);
+
   /* Back-compat aliases (older screens / inline styles). */
   --vermilion: var(--acc);
   --ink-700: var(--border-ctl);
@@ -104,6 +115,13 @@
   --text-3: #4a4438;
   --muted: #6b6355;
   --faint: #8a8072;
+  /* Sub-tints the first light pass left as dark-mode blue-greys on warm paper. */
+  --faint-2: #7a6f5d;
+  --icon-off: #7d735f;
+  /* See `--acc-ink` above: `--acc-dk` is the accent's dark stop and every `[data-accent]`
+   * block defines it, so this resolves per accent without being re-declared per accent. */
+  --acc-ink: color-mix(in srgb, var(--acc-dk) 84%, #000);
+  --star-ink: #7a5c0c;
 }
 
 /* ---- Appearance knobs (DESIGN_SPEC §8) — CSS-variable swaps on <html>[data-*] ----
@@ -335,7 +353,7 @@ a { color: inherit; text-decoration: none; }
   color: var(--muted); cursor: pointer; position: relative;
 }
 .ik-tab-item svg { color: var(--icon-off); }
-.ik-tab-item.active { color: var(--acc3); }
+.ik-tab-item.active { color: var(--acc-ink); }
 .ik-tab-item.active svg { color: var(--acc); }
 .ik-tab-item:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
 .ik-tab-label { font-size: 10.5px; font-weight: 500; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -374,7 +392,7 @@ a { color: inherit; text-decoration: none; }
  * ========================================================================== */
 .ik-legal { max-width: 64ch; margin-inline: auto; }
 .ik-legal-meta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 11.5px; color: var(--faint); margin-bottom: 22px; }
-.ik-legal-locale { display: inline-flex; align-items: center; gap: 6px; color: var(--star); }
+.ik-legal-locale { display: inline-flex; align-items: center; gap: 6px; color: var(--star-ink); }
 
 .ik-prose { font-size: 15px; line-height: 1.75; color: var(--text-2); }
 .ik-prose p { margin: 0 0 16px; }

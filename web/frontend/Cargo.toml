@@ -96,6 +96,13 @@ uuid = { version = "1", features = ["serde", "js"] }
 # `dio-ssr`/`server` features are fullstack-only and would drag `http` and server functions into
 # a bundle that is a pure client-side SPA.
 i18nrs = { version = "0.1.9", default-features = false, features = ["dio"] }
+# Renders the operator's legal Markdown. `default-features = false` drops the `html` feature
+# deliberately: this crate is used as a *pull parser*, and its events are mapped straight onto
+# `rsx!` nodes. Nothing ever produces an HTML string, so there is no HTML for an operator's file
+# to inject and nothing to sanitise — `Event::Html` is rendered as literal text. A
+# markdown-to-HTML pipeline would need `dangerous_inner_html`, which is the one door this app
+# keeps shut (see `src/browser.rs` and the served CSP).
+pulldown-cmark = { version = "0.13.4", default-features = false }
 
 [features]
 default = ["web"]

@@ -29,6 +29,7 @@ pub(crate) fn Shell() -> Element {
     use_token_refresh();
     use_capability_sync();
     use_live_notifications();
+    crate::state::legal::use_legal_sync();
     // Here rather than in each screen: the layout is the one component every route renders
     // through, so no route can be added without a title.
     crate::title::use_document_title();
@@ -66,7 +67,7 @@ pub(crate) fn Shell() -> Element {
 fn measure_for(route: &Route) -> &'static str {
     match route {
         Route::Home {} | Route::Discover {} | Route::Search { .. } => "1760px",
-        Route::Account {} | Route::AnilistCallback { .. } => "1120px",
+        Route::Account {} | Route::AnilistCallback { .. } | Route::Legal { .. } => "1120px",
         Route::Console {} => "none",
         _ => "1600px",
     }

@@ -134,6 +134,7 @@
     }
   },
   "auth": {
+    "acceptance": "By creating an account you accept the {terms} and the {privacy}.",
     "badCredentials": "That email/username and password don't match an account. Check them and try again.",
     "confirmFirst": "Please confirm your email address before signing in. Check your inbox for the confirmation link.",
     "field": {
@@ -765,7 +766,19 @@
     "signInGate": "Sign in to see this."
   },
   "footer": {
-    "openSource": "Open source"
+    "apiHealthy": "api healthy",
+    "copyright": "© {year} Tim Schönle",
+    "dataRequests": "Data requests",
+    "deleteAccount": "Delete account",
+    "export": "Export your library",
+    "imprint": "Imprint",
+    "legal": "Legal",
+    "openSource": "Open source",
+    "privacy": "Data Policy",
+    "source": "Source code",
+    "tagline": "Track what you read, across every source that carries it.",
+    "terms": "Terms of Service",
+    "yourData": "Your data"
   },
   "greeting": {
     "afternoon": "Good afternoon",
@@ -794,6 +807,10 @@
       "reading": "Reading"
     },
     "welcome": "Welcome back, {name}"
+  },
+  "legal": {
+    "localeNote": "Only available in {locale}",
+    "updated": "Last updated {date}"
   },
   "nav": {
     "account": "Account",
@@ -989,6 +1006,7 @@
   },
   "title": {
     "app": "TankoVault — manga tracker",
+    "legal": "Legal",
     "search": "Search: {query}",
     "series": "Series",
     "template": "{page} — TankoVault"

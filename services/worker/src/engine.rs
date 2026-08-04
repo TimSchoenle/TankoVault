@@ -281,6 +281,14 @@ impl Engine {
             }
         }
 
+        if !outcome.new_chapters.is_empty() {
+            metrics::counter!(
+                "chapters_discovered_total",
+                "provider" => provider.slug.clone()
+            )
+            .increment(outcome.new_chapters.len() as u64);
+        }
+
         Ok(outcome.new_chapters.len())
     }
 
@@ -370,6 +378,7 @@ impl Engine {
                 "catalog walk stopped at the page safety cap while the catalogue still had more \
                  pages; increase worker.max_catalog_pages if this is a legitimately large site"
             );
+            catalog_truncated(&provider.slug);
         }
 
         // Phase 2 — enrich: fetch chapters + full metadata for every collected series.
@@ -519,6 +528,7 @@ impl Engine {
                              still had more pages; increase worker.max_catalog_pages if this is \
                              a legitimately large site"
                         );
+                        catalog_truncated(&provider.slug);
                     }
                 }
             }
@@ -708,6 +718,18 @@ fn drop_implausible(
 }
 
 /// Content hash over title + chapter (number, path) pairs, for cheap change detection.
+/// Record that a catalogue walk stopped at the page budget with pages still unread.
+///
+/// The warning beside each call site is the only other trace, and it has already been missed
+/// once in practice: a large provider was silently truncated for as long as nobody grepped.
+fn catalog_truncated(provider_slug: &str) {
+    metrics::counter!(
+        "scan_catalog_pages_truncated_total",
+        "provider" => provider_slug.to_owned()
+    )
+    .increment(1);
+}
+
 fn content_hash(meta: &SeriesMeta, chapters: &[ChapterMeta]) -> Vec<u8> {
     let mut h = Sha256::new();
     h.update(meta.title.as_bytes());

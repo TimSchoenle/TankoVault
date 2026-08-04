@@ -13,7 +13,7 @@
 //! # async fn example() -> Result<(), ServiceError> {
 //! # let router = axum::Router::new();
 //! # let security = Default::default();
-//! let metrics = MetricsRegistry::install(&Default::default())?;
+//! let metrics = MetricsRegistry::install(&Default::default(), "example")?;
 //! let shutdown = tankovault_service::install_shutdown();
 //! let health = Health::builder().build();
 //!

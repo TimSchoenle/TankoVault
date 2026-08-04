@@ -383,7 +383,11 @@ pub async fn enforce(State(layer): State<FeatureLayer>, req: Request, next: Next
     if let Some(feature) = required
         && !layer.gate.is_enabled(feature)
     {
-        metrics::counter!("http_feature_disabled_total", "feature" => feature.key()).increment(1);
+        metrics::counter!(
+            crate::metrics::names::FEATURE_DISABLED,
+            "feature" => feature.key()
+        )
+        .increment(1);
         tracing::debug!(feature = %feature, "refusing request for a disabled feature");
         return feature_disabled(feature);
     }

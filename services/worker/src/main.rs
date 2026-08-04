@@ -114,7 +114,8 @@ async fn main() -> anyhow::Result<()> {
     // Both are process-global and installed once, which is why `telemetry.*` and `metrics.*`
     // are the two blocks a configuration reload cannot apply.
     tankovault_service::init_tracing(&boot.value.telemetry)?;
-    let metrics = MetricsRegistry::install(&boot.value.metrics)?;
+    let metrics =
+        MetricsRegistry::install(&boot.value.metrics, &boot.value.telemetry.service_name)?;
     let shutdown = tankovault_service::install_shutdown();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -217,6 +218,7 @@ async fn serve_once(
     shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
     let built = build(&cfg).await?;
+    tankovault_service::metrics::spawn_pool_sampler(built.pool.clone(), shutdown.clone());
     let engine = Arc::new(built.engine);
     spawn_ops_listener(
         &cfg,
@@ -333,12 +335,20 @@ async fn run_consumer(
                 // whoever owns the message, and doing it at the loop means *every* task
                 // kind is covered — a 20k-entry catalogue page today, whatever runs long
                 // tomorrow — instead of each slow path having to remember.
+                let started = std::time::Instant::now();
                 let result = tankovault_bus::with_ack_heartbeat(
                     &msg,
                     tankovault_bus::TASK_ACK_HEARTBEAT,
                     handle_task(engine, &task),
                 )
                 .await;
+                metrics::histogram!(
+                    "scan_task_duration_seconds",
+                    "provider" => task.provider_slug.clone(),
+                    "scan" => task.mode.as_str(),
+                    "kind" => task.kind.as_str(),
+                )
+                .record(started.elapsed().as_secs_f64());
                 if let Err(e) = result {
                     let deliveries = tankovault_bus::delivery_count(&msg);
                     if is_retryable(&e) && deliveries < MAX_TASK_DELIVERIES {
@@ -361,8 +371,11 @@ async fn run_consumer(
                                  deadline lapses"
                             );
                         }
-                        // Left unsettled and uncounted: the run stays open for it, and the
+                        settled(&task, "requeued");
+                        // Left unsettled *for the run*: it stays open for this task, and the
                         // idempotent writes make the re-run a no-op for whatever it did do.
+                        // The counter still moves, because "retrying" is the disposition an
+                        // operator needs separated from "threw it away".
                         continue;
                     }
                     let next = if is_retryable(&e) {
@@ -376,12 +389,15 @@ async fn run_consumer(
                             .to_owned()
                     };
                     log_task_failure(&task, deliveries, &e, &next);
+                    settled(&task, "failed");
                     let _ = tankovault_db::repo::scans::fail_task(
                         &engine.pool,
                         task.task_id,
                         &e.to_string(),
                     )
                     .await;
+                } else {
+                    settled(&task, "completed");
                 }
                 // Republish progress after the task settles (done or failed) so the
                 // control-plane aggregator can finalise the run and the console can
@@ -470,6 +486,21 @@ fn describe_target(task: &ScanTaskMessage) -> String {
 /// what was being scanned, what the provider did about it, and whether anything will try
 /// again. `next` carries the third — the retry decision lives at the call site, because only
 /// there are the delivery count and the backoff known.
+/// Count a task reaching a terminal disposition.
+///
+/// Separate from `scan_tasks_served_total`, which a redelivery increments again: served
+/// conflates throughput with retries, and the permanent-failure rate — the number worth
+/// alerting on — is only derivable from `outcome="failed"` here.
+fn settled(task: &ScanTaskMessage, outcome: &'static str) {
+    metrics::counter!(
+        "scan_tasks_settled_total",
+        "provider" => task.provider_slug.clone(),
+        "scan" => task.mode.as_str(),
+        "outcome" => outcome,
+    )
+    .increment(1);
+}
+
 fn log_task_failure(task: &ScanTaskMessage, deliveries: u64, err: &anyhow::Error, next: &str) {
     tracing::warn!(
         provider = %task.provider_slug,

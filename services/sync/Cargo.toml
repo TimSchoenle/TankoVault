@@ -41,6 +41,7 @@ thiserror = { workspace = true }
 # Decodes the token-encryption key at boot to reject the published all-zero placeholder.
 base64 = { workspace = true }
 tracing = { workspace = true }
+metrics = { workspace = true }
 
 [features]
 # Opt-in: the reconciliation suite needs Docker (an ephemeral Postgres via the harness). Off by

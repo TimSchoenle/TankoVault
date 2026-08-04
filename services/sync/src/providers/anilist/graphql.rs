@@ -70,7 +70,7 @@ impl AniListClient {
     /// cached against the linked account so the UI can show "Connected as X").
     pub(crate) async fn viewer(&self, access_token: &SecretString) -> anyhow::Result<Viewer> {
         let data = self
-            .graphql(access_token, VIEWER_QUERY, serde_json::json!({}))
+            .graphql(access_token, "viewer", VIEWER_QUERY, serde_json::json!({}))
             .await?;
         let viewer = data
             .get("Viewer")
@@ -106,6 +106,7 @@ impl AniListClient {
             let data = self
                 .graphql(
                     access_token,
+                    "media_list",
                     MEDIA_LIST_QUERY,
                     serde_json::json!({
                         "userId": user_id,
@@ -137,7 +138,7 @@ impl AniListClient {
             "status": status.as_graphql(),
             "progress": progress,
         });
-        self.graphql(access_token, SAVE_ENTRY_MUTATION, vars)
+        self.graphql(access_token, "save_entry", SAVE_ENTRY_MUTATION, vars)
             .await?;
         Ok(())
     }
@@ -152,6 +153,7 @@ impl AniListClient {
         let Ok(data) = self
             .graphql(
                 access_token,
+                "search",
                 SEARCH_QUERY,
                 serde_json::json!({ "search": title }),
             )
@@ -172,7 +174,11 @@ impl AniListClient {
         media_id: i64,
     ) -> anyhow::Result<Option<MediaMetadata>> {
         let Ok(data) = self
-            .graphql_public(METADATA_QUERY, serde_json::json!({ "id": media_id }))
+            .graphql_public(
+                "metadata_by_id",
+                METADATA_QUERY,
+                serde_json::json!({ "id": media_id }),
+            )
             .await
         else {
             return Ok(None);
@@ -187,7 +193,11 @@ impl AniListClient {
         title: &str,
     ) -> anyhow::Result<Option<MediaMetadata>> {
         let Ok(data) = self
-            .graphql_public(METADATA_QUERY, serde_json::json!({ "search": title }))
+            .graphql_public(
+                "metadata_by_title",
+                METADATA_QUERY,
+                serde_json::json!({ "search": title }),
+            )
             .await
         else {
             return Ok(None);

@@ -236,6 +236,27 @@ pub async fn stream_ticket(
     }))
 }
 
+/// Holds one unit of `sse_streams_active` for the lifetime of a stream.
+///
+/// The gauge exists because these connections are close to invisible in the request metrics:
+/// `http_requests_total` and the latency histogram are recorded from a response, and an SSE
+/// response ends by the client disconnecting, which drops the middleware future before there
+/// is one. This is the only honest count of connected browsers.
+struct StreamGuard;
+
+impl StreamGuard {
+    fn enter() -> Self {
+        metrics::gauge!("sse_streams_active").increment(1.0);
+        Self
+    }
+}
+
+impl Drop for StreamGuard {
+    fn drop(&mut self) {
+        metrics::gauge!("sse_streams_active").decrement(1.0);
+    }
+}
+
 /// Live notification stream
 ///
 /// Server-Sent Events of live per-user notifications (design §14, §17.4). Authenticated by a
@@ -293,14 +314,27 @@ pub async fn stream(
             ApiError::Internal
         })?;
 
-    let events = subscriber.map(|msg| {
-        let event = match serde_json::from_slice::<UserNotification>(&msg.payload) {
-            Ok(notification) => Event::default()
+    // Held by the stream, so the decrement runs when the response future is dropped — which
+    // for SSE is the *normal* ending, the browser closing the tab. Same reason
+    // `http_requests_in_flight` uses a guard rather than a trailing statement.
+    let open = StreamGuard::enter();
+    let events = subscriber.map(move |msg| {
+        // Bound into the closure so the guard lives exactly as long as the stream does.
+        let _open = &open;
+        let (event, result) = match serde_json::from_slice::<UserNotification>(&msg.payload) {
+            Ok(notification) => match Event::default()
                 .event("notification")
                 .json_data(&notification)
-                .unwrap_or_else(|_| Event::default().comment("serialize error")),
-            Err(_) => Event::default().comment("undecodable notification"),
+            {
+                Ok(event) => (event, "ok"),
+                Err(_) => (Event::default().comment("serialize error"), "error"),
+            },
+            Err(_) => (
+                Event::default().comment("undecodable notification"),
+                "undecodable",
+            ),
         };
+        metrics::counter!("sse_events_pushed_total", "result" => result).increment(1);
         Ok(event)
     });
 

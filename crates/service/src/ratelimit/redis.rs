@@ -141,8 +141,11 @@ impl RateLimitStore for RedisStore {
                     class = class.as_str(),
                     "redis rate-limit check failed; allowing the request"
                 );
-                metrics::counter!("rate_limit_store_errors_total", "backend" => "redis")
-                    .increment(1);
+                metrics::counter!(
+                    crate::metrics::names::RATE_LIMIT_STORE_ERRORS,
+                    "backend" => "redis"
+                )
+                .increment(1);
                 RateLimitDecision::allow(policy.capacity(), 0)
             }
         }

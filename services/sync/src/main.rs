@@ -308,7 +308,8 @@ async fn main() -> anyhow::Result<()> {
     // Both are process-global and installed once, which is why `telemetry.*` and `metrics.*`
     // are the two blocks a configuration reload cannot apply.
     tankovault_service::init_tracing(&boot.value.telemetry)?;
-    let metrics = MetricsRegistry::install(&boot.value.metrics)?;
+    let metrics =
+        MetricsRegistry::install(&boot.value.metrics, &boot.value.telemetry.service_name)?;
     let shutdown = tankovault_service::install_shutdown();
     // Outside the reloadable runtime so a reload does not rebind the scrape listener.
     tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
@@ -341,6 +342,7 @@ async fn serve_once(
         cfg.database.acquire_timeout_secs,
     )
     .await?;
+    tankovault_service::metrics::spawn_pool_sampler(pool.clone(), shutdown.clone());
     // The engine takes ownership of the pool; readiness and the feature gate need their own.
     let health_pool = pool.clone();
     let flags_pool = pool.clone();

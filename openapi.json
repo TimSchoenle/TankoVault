@@ -1016,6 +1016,99 @@
         ],
         "type": "object"
       },
+      "LegalDocumentView": {
+        "description": "One document, in the locale that was actually served.",
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "format": {
+            "description": "Always `markdown`. Present so a future format is a value rather than a new endpoint.",
+            "type": "string"
+          },
+          "locale": {
+            "description": "The locale served, which is **not** necessarily the one requested — a reader asking for\nGerman and receiving the only available English text has to be told, or they conclude\nthe operator writes German like that.",
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "slug",
+          "locale",
+          "format",
+          "body"
+        ],
+        "type": "object"
+      },
+      "LegalIndexEntry": {
+        "description": "One entry in the index the footer renders.",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/LegalKind",
+            "description": "`inline` for a document this API serves, `external` for one hosted elsewhere."
+          },
+          "locales": {
+            "description": "The locales an `inline` document is published in.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "slug": {
+            "description": "The URL slug, and the key an operator configured this document under.",
+            "type": "string"
+          },
+          "title": {
+            "description": "The operator's title for the requested locale, when they set one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated": {
+            "description": "The \"last updated\" line, verbatim as configured.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "description": "Where to send the reader, for an `external` document.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "slug",
+          "kind",
+          "locales"
+        ],
+        "type": "object"
+      },
+      "LegalKind": {
+        "description": "Whether a document is served from here or hosted elsewhere.",
+        "enum": [
+          "inline",
+          "external"
+        ],
+        "type": "string"
+      },
       "LoginRequest": {
         "properties": {
           "login": {
@@ -1264,6 +1357,31 @@
         },
         "required": [
           "kind"
+        ],
+        "type": "object"
+      },
+      "NextUnread": {
+        "description": "The chapter a `Continue` button opens, and what the ledger's `Next unread` column shows.",
+        "properties": {
+          "number": {
+            "description": "The chapter number, parts included.",
+            "format": "double",
+            "type": "number"
+          },
+          "released_at": {
+            "type": "string"
+          },
+          "title": {
+            "description": "The provider's chapter title, when it publishes one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "number",
+          "released_at"
         ],
         "type": "object"
       },
@@ -3213,6 +3331,17 @@
               "null"
             ]
           },
+          "next_unread": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/NextUnread",
+                "description": "The lowest unread chapter, or `null` when the reader is caught up."
+              }
+            ]
+          },
           "notify": {
             "type": "boolean"
           },
@@ -3222,6 +3351,11 @@
               "string",
               "null"
             ]
+          },
+          "read_count": {
+            "description": "Whole chapters at or below the user's progress — the progress bar's numerator.\n\nNot [`Self::last_read_number`]: a catalogue with gaps makes the frontier larger than the\nnumber of chapters below it, so a bar drawn from the frontier reads past 100%.",
+            "format": "int64",
+            "type": "integer"
           },
           "series_id": {
             "$ref": "#/components/schemas/SeriesId"
@@ -3238,6 +3372,13 @@
           "source_degraded": {
             "description": "Whether the preferred source, or the provider behind it, is unhealthy.",
             "type": "boolean"
+          },
+          "sources": {
+            "description": "Every provider carrying this series, preferred first.",
+            "items": {
+              "$ref": "#/components/schemas/WatchlistSource"
+            },
+            "type": "array"
           },
           "status": {
             "$ref": "#/components/schemas/WatchStatus"
@@ -3264,10 +3405,57 @@
           "added_at",
           "series_title",
           "unread",
+          "read_count",
+          "sources",
           "total_chapters",
           "source_count",
           "source_degraded",
           "sync_excluded"
+        ],
+        "type": "object"
+      },
+      "WatchlistSource": {
+        "description": "One provider carrying a series, for the ledger's `Sources` column.",
+        "properties": {
+          "code": {
+            "description": "The provider slug — the monogram tile's letters and a stable client-side key.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "preferred": {
+            "description": "Whether this is the source `preferred_source_name` names.",
+            "type": "boolean"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ProviderState",
+            "description": "The effective state: the series-source's own, unless the provider behind it is worse."
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "state",
+          "preferred"
+        ],
+        "type": "object"
+      },
+      "WatchlistSummaryView": {
+        "description": "The whole watchlist at a glance, under no filters at all.",
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/WatchlistCounts"
+          },
+          "unread_total": {
+            "description": "Unread chapters across every tracked series, whatever its status.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "counts",
+          "unread_total"
         ],
         "type": "object"
       },
@@ -3300,6 +3488,13 @@
               "$ref": "#/components/schemas/WatchlistItem"
             },
             "type": "array"
+          },
+          "next_cursor": {
+            "description": "Pass back as `cursor` to fetch the next page; `null` at the end of the list.\n\nOpaque on purpose: it encodes the sort key the server ordered by, which changes shape\nwith `sort`, and a client that parsed it would break the first time an order was added.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "total": {
             "description": "Rows matching the whole filter, `status` included — the pager's denominator.",
@@ -7152,6 +7347,94 @@
         ]
       }
     },
+    "/v1/legal": {
+      "get": {
+        "description": "Only what this deployment actually publishes. An operator who configures no Imprint gets no\nImprint entry, so the footer renders no dead link rather than one that 404s.",
+        "operationId": "legal_index",
+        "parameters": [
+          {
+            "description": "Language code (`en`, `de`). Falls back to `Accept-Language`, then to the first locale\nthe operator configured.",
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LegalIndexEntry"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "The configured documents"
+          }
+        },
+        "summary": "List the legal documents",
+        "tags": [
+          "legal"
+        ]
+      }
+    },
+    "/v1/legal/{slug}": {
+      "get": {
+        "description": "The Markdown as the operator wrote it. Rendering — and sanitising the result — is the\nclient's job: this is operator input, not developer input, so it is never trusted as HTML.",
+        "operationId": "legal_document",
+        "parameters": [
+          {
+            "description": "Document slug",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Language code (`en`, `de`). Falls back to `Accept-Language`, then to the first locale\nthe operator configured.",
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalDocumentView"
+                }
+              }
+            },
+            "description": "The document in the served locale"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such document, or its file is unreadable"
+          }
+        },
+        "summary": "Get one legal document",
+        "tags": [
+          "legal"
+        ]
+      }
+    },
     "/v1/me": {
       "delete": {
         "description": "Erases the account and every row owned by it (GDPR Art. 17, right to erasure).\n\nAudit records of privileged actions the user performed are **retained in pseudonymised\nform**: the actor reference is nulled, so the record of what happened survives while\nthe link to a person does not. Documented on\n`tankovault_db::repo::privacy::erase_user`.\n\nAny of the user's own open data-subject requests are resolved as completed *before* the\ncascade, so the compliance record shows the erasure was carried out rather than leaving a\nrequest that appears abandoned.",
@@ -9464,6 +9747,15 @@
               "format": "int64",
               "type": "integer"
             }
+          },
+          {
+            "description": "Opaque token from a previous response's `next_cursor`; supersedes `offset`.\n\nKeyset, not offset: the watchlist is live — a chapter discovered between two requests\nreorders the default sort — and an `OFFSET` page over a shifting list repeats one row\nand skips another. `offset` stays accepted for callers that refetch a whole prefix\nrather than appending, which is immune to the same problem by construction.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -9615,6 +9907,43 @@
           }
         ],
         "summary": "Change many watchlist entries at once",
+        "tags": [
+          "me-watchlist"
+        ]
+      }
+    },
+    "/v1/me/watchlist/summary": {
+      "get": {
+        "description": "Per-status counts and the unread total over the **whole** watchlist, under no filters.\n\nSeparate from the list's `counts`, which drop only the `status` arm and keep the search,\nrecency and source filters: those answer \"how many would this tab show given what I have\ntyped\", while this answers \"how big is my library\" for surfaces that carry no filter state\nof their own — a tab badge, the More sheet, a signed-in header.",
+        "operationId": "watchlist_summary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistSummaryView"
+                }
+              }
+            },
+            "description": "Counts across the whole watchlist"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get the watchlist summary",
         "tags": [
           "me-watchlist"
         ]
@@ -10233,6 +10562,10 @@
     {
       "description": "Public catalogue browse/detail/chapters",
       "name": "series"
+    },
+    {
+      "description": "Operator-published legal documents; unauthenticated",
+      "name": "legal"
     },
     {
       "description": "The signed-in user's watchlist",

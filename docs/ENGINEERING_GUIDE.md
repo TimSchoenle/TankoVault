@@ -409,10 +409,20 @@ Everything that can fail, what owns it, and how to run it.
 | secrets in history | gitleaks | CI `secrets` job |
 | coverage floor | `xtask coverage-ratchet` | CI `coverage` job |
 | MSRV (1.94) | CI `msrv` job | — |
+| every published endpoint is classified by an access-control matrix | `me_access_matrix.rs`, `admin_access_matrix.rs` | `cargo test -p tankovault-api --features integration` (Docker) |
+| every SQL copy of the unread predicate agrees with `ReadProgress::covers` | `repo_tracking.rs` differential | `cargo test -p tankovault-db --features integration` (Docker) |
+| every cached query plans within the cost ceiling | `repo_query_plans.rs` | `cargo test -p tankovault-db --features integration` (Docker) |
 | **all of the offline ones, in CI's order** | `xtask ci` | `cargo run -p xtask -- ci` |
 
 `xtask ci` deliberately omits what needs Docker, a database, Node, promtool or the network.
-`xtask/src/ci.rs` says why for each.
+`xtask/src/ci.rs` says why for each. The Docker-gated rows above are the ones that most often
+turn a green local run red on the pull request — a new or renamed **published endpoint** has to
+gain a row in `me_gates()`, `public_gates()` or `covered_elsewhere()`, and no offline gate can
+say so. CI runs the set as:
+
+```
+cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features integration
+```
 
 ---
 

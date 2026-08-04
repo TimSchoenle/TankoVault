@@ -3,7 +3,7 @@
 use crate::components::UnreadBadge;
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
-use crate::state::capabilities::use_capabilities;
+use crate::state::capabilities::{use_capabilities, CapabilitySet};
 use crate::state::use_session;
 use crate::util::initial;
 use crate::views::WatchlistQuery;
@@ -74,38 +74,80 @@ pub(crate) fn Rail() -> Element {
 
             div { class: "ik-rail-spacer" }
             UserFooter {}
-            Notices {}
         }
     }
+}
+
+/// One routed destination in the bottom tab bar.
+///
+/// The set lives beside the rail it mirrors rather than in the bar's own module: these are the
+/// same navigation seen at two widths, and a destination added to one chrome and forgotten in
+/// the other is unreachable for half the readers.
+pub(crate) struct Destination {
+    pub(crate) route: Route,
+    /// The bar's label. German's `Benachrichtigungen` does not fit a fifth of a 390px viewport,
+    /// so the bar takes a shorter key rather than an ellipsis.
+    pub(crate) short: String,
+    pub(crate) icon: Icon,
+    /// The unread count to badge, or zero.
+    pub(crate) badge: i64,
+}
+
+/// The routed destinations the bottom tab bar draws, in bar order.
+///
+/// Feature-gated, not permission-gated: these four are deployment-level switches, so the bar is
+/// the same for every reader of a given instance and never reflows per user. Everything that
+/// *does* vary per reader — the console above all — lives in the **More** sheet instead.
+pub(crate) fn tab_destinations(
+    i18n: crate::i18n::Translator,
+    caps: &CapabilitySet,
+    unread: i64,
+) -> Vec<Destination> {
+    let mut out = vec![Destination {
+        route: Route::Home {},
+        short: i18n.t("nav.home"),
+        icon: Icon::Home,
+        badge: 0,
+    }];
+    if caps.has_feature(Feature::CatalogueBrowse) {
+        out.push(Destination {
+            route: Route::Discover {},
+            short: i18n.t("nav.discover"),
+            icon: Icon::Explore,
+            badge: 0,
+        });
+    }
+    if caps.has_feature(Feature::TrackingWatchlist) {
+        out.push(Destination {
+            route: Route::Watchlist {
+                query: WatchlistQuery::default(),
+            },
+            short: i18n.t("nav.watchlist"),
+            icon: Icon::Watchlist,
+            badge: 0,
+        });
+    }
+    if caps.has_feature(Feature::NotificationsInApp) {
+        out.push(Destination {
+            route: Route::Notifications {},
+            short: i18n.t("nav.alerts"),
+            icon: Icon::Notifications,
+            badge: unread,
+        });
+    }
+    out
 }
 
 /// The path `services/frontend` publishes the third-party licence notices at.
 ///
 /// Duplicated from that crate's `NOTICES_ROUTE` because this is a separate workspace with no
 /// compile-time relationship to it; `xtask repo-lint` holds the two literals equal.
-const NOTICES_ROUTE: &str = "/third-party-notices";
+pub(crate) const NOTICES_ROUTE: &str = "/third-party-notices";
 
-/// The reader's way to the licences of everything this bundle is built from.
-///
-/// A plain anchor, not a `Link`: the target is a document the server renders, not a route this
-/// app knows, and handing it to the client-side router would resolve it to the app shell.
-/// Placed in the rail rather than behind the account screen because a signed-out reader has
-/// received the same bundle and is owed the same notices.
-#[component]
-fn Notices() -> Element {
-    let i18n = use_i18n();
-    rsx! {
-        div { style: "padding: 8px 10px 10px;",
-            a {
-                class: "ik-link",
-                href: NOTICES_ROUTE,
-                target: "_blank",
-                rel: "noopener noreferrer",
-                {i18n.t("nav.notices")}
-            }
-        }
-    }
-}
+// The rail's own notices link retired with the footer, which carries it in its Open source
+// column on every screen and in the More sheet below 820px. The reason it was in the rail at
+// all — a signed-out reader has received the same bundle and is owed the same notices — is
+// unchanged and still met: the footer renders signed out.
 
 /// A kicker heading that groups rail destinations.
 #[component]

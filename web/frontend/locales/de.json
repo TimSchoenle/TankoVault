@@ -134,6 +134,7 @@
     }
   },
   "auth": {
+    "acceptance": "Mit dem Erstellen eines Kontos akzeptieren Sie die {terms} und den {privacy}.",
     "badCredentials": "E-Mail/Benutzername und Passwort passen zu keinem Konto. Bitte prüfe deine Eingaben und versuch es erneut.",
     "confirmFirst": "Bitte bestätige deine E-Mail-Adresse, bevor du dich anmeldest. Sieh in deinem Posteingang nach dem Bestätigungslink.",
     "field": {
@@ -764,6 +765,21 @@
     "failed": "Etwas ist schiefgelaufen: {message}",
     "signInGate": "Melde dich an, um das zu sehen."
   },
+  "footer": {
+    "apiHealthy": "API erreichbar",
+    "copyright": "© {year} Tim Schönle",
+    "dataRequests": "Datenauskunft",
+    "deleteAccount": "Konto löschen",
+    "export": "Bibliothek exportieren",
+    "imprint": "Impressum",
+    "legal": "Rechtliches",
+    "openSource": "Open Source",
+    "privacy": "Datenschutz",
+    "source": "Quellcode",
+    "tagline": "Verfolgen Sie, was Sie lesen — über jede Quelle hinweg, die es führt.",
+    "terms": "Nutzungsbedingungen",
+    "yourData": "Ihre Daten"
+  },
   "greeting": {
     "afternoon": "Guten Tag",
     "evening": "Guten Abend",
@@ -792,9 +808,14 @@
     },
     "welcome": "Willkommen zurück, {name}"
   },
+  "legal": {
+    "localeNote": "Nur auf {locale} verfügbar",
+    "updated": "Zuletzt aktualisiert am {date}"
+  },
   "nav": {
     "account": "Konto",
     "accountSettings": "Kontoeinstellungen",
+    "alerts": "Meldungen",
     "console": "Konsole",
     "discover": "Entdecken",
     "group": {
@@ -804,6 +825,8 @@
       "operator": "BETRIEB"
     },
     "home": "Start",
+    "language": "Sprache",
+    "more": "Mehr",
     "notices": "Open-Source-Hinweise",
     "notifications": "Benachrichtigungen",
     "railLabel": "Hauptnavigation",
@@ -983,6 +1006,7 @@
   },
   "title": {
     "app": "TankoVault — Manga-Tracker",
+    "legal": "Rechtliches",
     "search": "Suche: {query}",
     "series": "Serie",
     "template": "{page} — TankoVault"
@@ -1007,8 +1031,10 @@
     "chapterNo": "Kap. {number}",
     "clearSelection": "Auswahl aufheben",
     "col": {
+      "nextUnread": "Nächstes ungelesen",
       "progress": "Fortschritt",
       "released": "Erschienen",
+      "sources": "Quellen",
       "title": "Titel",
       "unread": "Ungelesen"
     },
@@ -1031,6 +1057,14 @@
     "markGroupIncomplete": "Lade erst die ganze Gruppe, bevor du sie als gelesen markierst.",
     "markGroupRead": "Gruppe als gelesen markieren",
     "markGroupTooBig": "Zu viele Titel auf einmal (Grenze {limit}).",
+    "moreSources": {
+      "one": "{count} weitere Quelle",
+      "other": "{count} weitere Quellen"
+    },
+    "moreUnread": {
+      "one": "+{count} weiteres ungelesen",
+      "other": "+{count} weitere ungelesen"
+    },
     "moveTo": "Verschieben nach {status}",
     "moveToPrompt": "Verschieben nach…",
     "mute": "Stummschalten",

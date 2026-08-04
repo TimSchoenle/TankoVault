@@ -2479,6 +2479,217 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "One document, in the locale that was actually served."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One document, in the locale that was actually served.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"body\","]
+    #[doc = "    \"format\","]
+    #[doc = "    \"locale\","]
+    #[doc = "    \"slug\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"body\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"format\": {"]
+    #[doc = "      \"description\": \"Always `markdown`. Present so a future format is a value rather than a new endpoint.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"locale\": {"]
+    #[doc = "      \"description\": \"The locale served, which is **not** necessarily the one requested — a reader asking for\\nGerman and receiving the only available English text has to be told, or they conclude\\nthe operator writes German like that.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"slug\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"title\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"updated\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct LegalDocumentView {
+        pub body: ::std::string::String,
+        #[doc = "Always `markdown`. Present so a future format is a value rather than a new endpoint."]
+        pub format: ::std::string::String,
+        #[doc = "The locale served, which is **not** necessarily the one requested — a reader asking for\nGerman and receiving the only available English text has to be told, or they conclude\nthe operator writes German like that."]
+        pub locale: ::std::string::String,
+        pub slug: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub title: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub updated: ::std::option::Option<::std::string::String>,
+    }
+    impl LegalDocumentView {
+        pub fn builder() -> builder::LegalDocumentView {
+            Default::default()
+        }
+    }
+    #[doc = "One entry in the index the footer renders."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One entry in the index the footer renders.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"kind\","]
+    #[doc = "    \"locales\","]
+    #[doc = "    \"slug\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"kind\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/LegalKind\""]
+    #[doc = "    },"]
+    #[doc = "    \"locales\": {"]
+    #[doc = "      \"description\": \"The locales an `inline` document is published in.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"slug\": {"]
+    #[doc = "      \"description\": \"The URL slug, and the key an operator configured this document under.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"title\": {"]
+    #[doc = "      \"description\": \"The operator's title for the requested locale, when they set one.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"updated\": {"]
+    #[doc = "      \"description\": \"The \\\"last updated\\\" line, verbatim as configured.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"url\": {"]
+    #[doc = "      \"description\": \"Where to send the reader, for an `external` document.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct LegalIndexEntry {
+        pub kind: LegalKind,
+        #[doc = "The locales an `inline` document is published in."]
+        pub locales: ::std::vec::Vec<::std::string::String>,
+        #[doc = "The URL slug, and the key an operator configured this document under."]
+        pub slug: ::std::string::String,
+        #[doc = "The operator's title for the requested locale, when they set one."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub title: ::std::option::Option<::std::string::String>,
+        #[doc = "The \"last updated\" line, verbatim as configured."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub updated: ::std::option::Option<::std::string::String>,
+        #[doc = "Where to send the reader, for an `external` document."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub url: ::std::option::Option<::std::string::String>,
+    }
+    impl LegalIndexEntry {
+        pub fn builder() -> builder::LegalIndexEntry {
+            Default::default()
+        }
+    }
+    #[doc = "Whether a document is served from here or hosted elsewhere."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Whether a document is served from here or hosted elsewhere.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"inline\","]
+    #[doc = "    \"external\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum LegalKind {
+        #[serde(rename = "inline")]
+        Inline,
+        #[serde(rename = "external")]
+        External,
+    }
+    impl ::std::fmt::Display for LegalKind {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Inline => f.write_str("inline"),
+                Self::External => f.write_str("external"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for LegalKind {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "inline" => Ok(Self::Inline),
+                "external" => Ok(Self::External),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for LegalKind {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for LegalKind {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for LegalKind {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
     #[doc = "`LoginRequest`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -2905,6 +3116,52 @@ pub mod types {
     }
     impl NewPrivacyRequest {
         pub fn builder() -> builder::NewPrivacyRequest {
+            Default::default()
+        }
+    }
+    #[doc = "The chapter a `Continue` button opens, and what the ledger's `Next unread` column shows."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The chapter a `Continue` button opens, and what the ledger's `Next unread` column shows.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"number\","]
+    #[doc = "    \"released_at\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"number\": {"]
+    #[doc = "      \"description\": \"The chapter number, parts included.\","]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    },"]
+    #[doc = "    \"released_at\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"title\": {"]
+    #[doc = "      \"description\": \"The provider's chapter title, when it publishes one.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct NextUnread {
+        #[doc = "The chapter number, parts included."]
+        pub number: f64,
+        pub released_at: ::std::string::String,
+        #[doc = "The provider's chapter title, when it publishes one."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub title: ::std::option::Option<::std::string::String>,
+    }
+    impl NextUnread {
+        pub fn builder() -> builder::NextUnread {
             Default::default()
         }
     }
@@ -7862,10 +8119,12 @@ pub mod types {
     #[doc = "  \"required\": ["]
     #[doc = "    \"added_at\","]
     #[doc = "    \"notify\","]
+    #[doc = "    \"read_count\","]
     #[doc = "    \"series_id\","]
     #[doc = "    \"series_title\","]
     #[doc = "    \"source_count\","]
     #[doc = "    \"source_degraded\","]
+    #[doc = "    \"sources\","]
     #[doc = "    \"status\","]
     #[doc = "    \"sync_excluded\","]
     #[doc = "    \"total_chapters\","]
@@ -7904,6 +8163,14 @@ pub mod types {
     #[doc = "      ],"]
     #[doc = "      \"format\": \"double\""]
     #[doc = "    },"]
+    #[doc = "    \"next_unread\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {},"]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/NextUnread\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"notify\": {"]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
@@ -7913,6 +8180,11 @@ pub mod types {
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"read_count\": {"]
+    #[doc = "      \"description\": \"Whole chapters at or below the user's progress — the progress bar's numerator.\\n\\nNot [`Self::last_read_number`]: a catalogue with gaps makes the frontier larger than the\\nnumber of chapters below it, so a bar drawn from the frontier reads past 100%.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"series_id\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
@@ -7929,6 +8201,13 @@ pub mod types {
     #[doc = "    \"source_degraded\": {"]
     #[doc = "      \"description\": \"Whether the preferred source, or the provider behind it, is unhealthy.\","]
     #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"sources\": {"]
+    #[doc = "      \"description\": \"Every provider carrying this series, preferred first.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/WatchlistSource\""]
+    #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"status\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/WatchStatus\""]
@@ -7965,10 +8244,14 @@ pub mod types {
         #[doc = "The highest chapter number known across all sources."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub latest_chapter_number: ::std::option::Option<f64>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub next_unread: ::std::option::Option<WatchlistItemNextUnread>,
         pub notify: bool,
         #[doc = "Display name of the provider this series is primarily carried by."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub preferred_source_name: ::std::option::Option<::std::string::String>,
+        #[doc = "Whole chapters at or below the user's progress — the progress bar's numerator.\n\nNot [`Self::last_read_number`]: a catalogue with gaps makes the frontier larger than the\nnumber of chapters below it, so a bar drawn from the frontier reads past 100%."]
+        pub read_count: i64,
         pub series_id: SeriesId,
         #[doc = "Embedded series title so the Watchlist renders without a per-row detail fetch\n(frontend §9.3, kills the N+1)."]
         pub series_title: ::std::string::String,
@@ -7976,6 +8259,8 @@ pub mod types {
         pub source_count: i64,
         #[doc = "Whether the preferred source, or the provider behind it, is unhealthy."]
         pub source_degraded: bool,
+        #[doc = "Every provider carrying this series, preferred first."]
+        pub sources: ::std::vec::Vec<WatchlistSource>,
         pub status: WatchStatus,
         #[doc = "Whether this series is opted out of external sync (design v2 §A.5)."]
         pub sync_excluded: bool,
@@ -7986,6 +8271,120 @@ pub mod types {
     }
     impl WatchlistItem {
         pub fn builder() -> builder::WatchlistItem {
+            Default::default()
+        }
+    }
+    #[doc = "`WatchlistItemNextUnread`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/NextUnread\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum WatchlistItemNextUnread {
+        Variant0(::serde_json::Value),
+        Variant1(NextUnread),
+    }
+    impl ::std::convert::From<::serde_json::Value> for WatchlistItemNextUnread {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<NextUnread> for WatchlistItemNextUnread {
+        fn from(value: NextUnread) -> Self {
+            Self::Variant1(value)
+        }
+    }
+    #[doc = "One provider carrying a series, for the ledger's `Sources` column."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One provider carrying a series, for the ledger's `Sources` column.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"code\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"preferred\","]
+    #[doc = "    \"state\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"code\": {"]
+    #[doc = "      \"description\": \"The provider slug — the monogram tile's letters and a stable client-side key.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"preferred\": {"]
+    #[doc = "      \"description\": \"Whether this is the source `preferred_source_name` names.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ProviderState\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct WatchlistSource {
+        #[doc = "The provider slug — the monogram tile's letters and a stable client-side key."]
+        pub code: ::std::string::String,
+        pub name: ::std::string::String,
+        #[doc = "Whether this is the source `preferred_source_name` names."]
+        pub preferred: bool,
+        pub state: ProviderState,
+    }
+    impl WatchlistSource {
+        pub fn builder() -> builder::WatchlistSource {
+            Default::default()
+        }
+    }
+    #[doc = "The whole watchlist at a glance, under no filters at all."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The whole watchlist at a glance, under no filters at all.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"counts\","]
+    #[doc = "    \"unread_total\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"counts\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/WatchlistCounts\""]
+    #[doc = "    },"]
+    #[doc = "    \"unread_total\": {"]
+    #[doc = "      \"description\": \"Unread chapters across every tracked series, whatever its status.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct WatchlistSummaryView {
+        pub counts: WatchlistCounts,
+        #[doc = "Unread chapters across every tracked series, whatever its status."]
+        pub unread_total: i64,
+    }
+    impl WatchlistSummaryView {
+        pub fn builder() -> builder::WatchlistSummaryView {
             Default::default()
         }
     }
@@ -8058,6 +8457,13 @@ pub mod types {
     #[doc = "        \"$ref\": \"#/components/schemas/WatchlistItem\""]
     #[doc = "      }"]
     #[doc = "    },"]
+    #[doc = "    \"next_cursor\": {"]
+    #[doc = "      \"description\": \"Pass back as `cursor` to fetch the next page; `null` at the end of the list.\\n\\nOpaque on purpose: it encodes the sort key the server ordered by, which changes shape\\nwith `sort`, and a client that parsed it would break the first time an order was added.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"total\": {"]
     #[doc = "      \"description\": \"Rows matching the whole filter, `status` included — the pager's denominator.\","]
     #[doc = "      \"type\": \"integer\","]
@@ -8073,6 +8479,9 @@ pub mod types {
         #[doc = "Newest band first; empty bands are omitted."]
         pub groups: ::std::vec::Vec<WatchlistGroup>,
         pub items: ::std::vec::Vec<WatchlistItem>,
+        #[doc = "Pass back as `cursor` to fetch the next page; `null` at the end of the list.\n\nOpaque on purpose: it encodes the sort key the server ordered by, which changes shape\nwith `sort`, and a client that parsed it would break the first time an order was added."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub next_cursor: ::std::option::Option<::std::string::String>,
         #[doc = "Rows matching the whole filter, `status` included — the pager's denominator."]
         pub total: i64,
     }
@@ -10820,6 +11229,244 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct LegalDocumentView {
+            body: ::std::result::Result<::std::string::String, ::std::string::String>,
+            format: ::std::result::Result<::std::string::String, ::std::string::String>,
+            locale: ::std::result::Result<::std::string::String, ::std::string::String>,
+            slug: ::std::result::Result<::std::string::String, ::std::string::String>,
+            title: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            updated: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for LegalDocumentView {
+            fn default() -> Self {
+                Self {
+                    body: Err("no value supplied for body".to_string()),
+                    format: Err("no value supplied for format".to_string()),
+                    locale: Err("no value supplied for locale".to_string()),
+                    slug: Err("no value supplied for slug".to_string()),
+                    title: Ok(Default::default()),
+                    updated: Ok(Default::default()),
+                }
+            }
+        }
+        impl LegalDocumentView {
+            pub fn body<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.body = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for body: {e}"));
+                self
+            }
+            pub fn format<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.format = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for format: {e}"));
+                self
+            }
+            pub fn locale<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.locale = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for locale: {e}"));
+                self
+            }
+            pub fn slug<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.slug = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for slug: {e}"));
+                self
+            }
+            pub fn title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for title: {e}"));
+                self
+            }
+            pub fn updated<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<LegalDocumentView> for super::LegalDocumentView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: LegalDocumentView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    body: value.body?,
+                    format: value.format?,
+                    locale: value.locale?,
+                    slug: value.slug?,
+                    title: value.title?,
+                    updated: value.updated?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::LegalDocumentView> for LegalDocumentView {
+            fn from(value: super::LegalDocumentView) -> Self {
+                Self {
+                    body: Ok(value.body),
+                    format: Ok(value.format),
+                    locale: Ok(value.locale),
+                    slug: Ok(value.slug),
+                    title: Ok(value.title),
+                    updated: Ok(value.updated),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct LegalIndexEntry {
+            kind: ::std::result::Result<super::LegalKind, ::std::string::String>,
+            locales: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            slug: ::std::result::Result<::std::string::String, ::std::string::String>,
+            title: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            updated: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            url: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for LegalIndexEntry {
+            fn default() -> Self {
+                Self {
+                    kind: Err("no value supplied for kind".to_string()),
+                    locales: Err("no value supplied for locales".to_string()),
+                    slug: Err("no value supplied for slug".to_string()),
+                    title: Ok(Default::default()),
+                    updated: Ok(Default::default()),
+                    url: Ok(Default::default()),
+                }
+            }
+        }
+        impl LegalIndexEntry {
+            pub fn kind<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::LegalKind>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kind = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kind: {e}"));
+                self
+            }
+            pub fn locales<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.locales = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for locales: {e}"));
+                self
+            }
+            pub fn slug<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.slug = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for slug: {e}"));
+                self
+            }
+            pub fn title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for title: {e}"));
+                self
+            }
+            pub fn updated<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated: {e}"));
+                self
+            }
+            pub fn url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for url: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<LegalIndexEntry> for super::LegalIndexEntry {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: LegalIndexEntry,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    kind: value.kind?,
+                    locales: value.locales?,
+                    slug: value.slug?,
+                    title: value.title?,
+                    updated: value.updated?,
+                    url: value.url?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::LegalIndexEntry> for LegalIndexEntry {
+            fn from(value: super::LegalIndexEntry) -> Self {
+                Self {
+                    kind: Ok(value.kind),
+                    locales: Ok(value.locales),
+                    slug: Ok(value.slug),
+                    title: Ok(value.title),
+                    updated: Ok(value.updated),
+                    url: Ok(value.url),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct LoginRequest {
             login: ::std::result::Result<::std::string::String, ::std::string::String>,
             password: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -11551,6 +12198,77 @@ pub mod types {
                 Self {
                     detail: Ok(value.detail),
                     kind: Ok(value.kind),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct NextUnread {
+            number: ::std::result::Result<f64, ::std::string::String>,
+            released_at: ::std::result::Result<::std::string::String, ::std::string::String>,
+            title: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for NextUnread {
+            fn default() -> Self {
+                Self {
+                    number: Err("no value supplied for number".to_string()),
+                    released_at: Err("no value supplied for released_at".to_string()),
+                    title: Ok(Default::default()),
+                }
+            }
+        }
+        impl NextUnread {
+            pub fn number<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.number = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for number: {e}"));
+                self
+            }
+            pub fn released_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.released_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for released_at: {e}"));
+                self
+            }
+            pub fn title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for title: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<NextUnread> for super::NextUnread {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NextUnread,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    number: value.number?,
+                    released_at: value.released_at?,
+                    title: value.title?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::NextUnread> for NextUnread {
+            fn from(value: super::NextUnread) -> Self {
+                Self {
+                    number: Ok(value.number),
+                    released_at: Ok(value.released_at),
+                    title: Ok(value.title),
                 }
             }
         }
@@ -16760,15 +17478,24 @@ pub mod types {
             >,
             latest_chapter_number:
                 ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
+            next_unread: ::std::result::Result<
+                ::std::option::Option<super::WatchlistItemNextUnread>,
+                ::std::string::String,
+            >,
             notify: ::std::result::Result<bool, ::std::string::String>,
             preferred_source_name: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            read_count: ::std::result::Result<i64, ::std::string::String>,
             series_id: ::std::result::Result<super::SeriesId, ::std::string::String>,
             series_title: ::std::result::Result<::std::string::String, ::std::string::String>,
             source_count: ::std::result::Result<i64, ::std::string::String>,
             source_degraded: ::std::result::Result<bool, ::std::string::String>,
+            sources: ::std::result::Result<
+                ::std::vec::Vec<super::WatchlistSource>,
+                ::std::string::String,
+            >,
             status: ::std::result::Result<super::WatchStatus, ::std::string::String>,
             sync_excluded: ::std::result::Result<bool, ::std::string::String>,
             total_chapters: ::std::result::Result<i64, ::std::string::String>,
@@ -16782,12 +17509,15 @@ pub mod types {
                     last_read_number: Ok(Default::default()),
                     latest_chapter_at: Ok(Default::default()),
                     latest_chapter_number: Ok(Default::default()),
+                    next_unread: Ok(Default::default()),
                     notify: Err("no value supplied for notify".to_string()),
                     preferred_source_name: Ok(Default::default()),
+                    read_count: Err("no value supplied for read_count".to_string()),
                     series_id: Err("no value supplied for series_id".to_string()),
                     series_title: Err("no value supplied for series_title".to_string()),
                     source_count: Err("no value supplied for source_count".to_string()),
                     source_degraded: Err("no value supplied for source_degraded".to_string()),
+                    sources: Err("no value supplied for sources".to_string()),
                     status: Err("no value supplied for status".to_string()),
                     sync_excluded: Err("no value supplied for sync_excluded".to_string()),
                     total_chapters: Err("no value supplied for total_chapters".to_string()),
@@ -16846,6 +17576,16 @@ pub mod types {
                 });
                 self
             }
+            pub fn next_unread<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::WatchlistItemNextUnread>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.next_unread = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for next_unread: {e}"));
+                self
+            }
             pub fn notify<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<bool>,
@@ -16864,6 +17604,16 @@ pub mod types {
                 self.preferred_source_name = value.try_into().map_err(|e| {
                     format!("error converting supplied value for preferred_source_name: {e}")
                 });
+                self
+            }
+            pub fn read_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.read_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for read_count: {e}"));
                 self
             }
             pub fn series_id<T>(mut self, value: T) -> Self
@@ -16904,6 +17654,16 @@ pub mod types {
                 self.source_degraded = value.try_into().map_err(|e| {
                     format!("error converting supplied value for source_degraded: {e}")
                 });
+                self
+            }
+            pub fn sources<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::WatchlistSource>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sources = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for sources: {e}"));
                 self
             }
             pub fn status<T>(mut self, value: T) -> Self
@@ -16958,12 +17718,15 @@ pub mod types {
                     last_read_number: value.last_read_number?,
                     latest_chapter_at: value.latest_chapter_at?,
                     latest_chapter_number: value.latest_chapter_number?,
+                    next_unread: value.next_unread?,
                     notify: value.notify?,
                     preferred_source_name: value.preferred_source_name?,
+                    read_count: value.read_count?,
                     series_id: value.series_id?,
                     series_title: value.series_title?,
                     source_count: value.source_count?,
                     source_degraded: value.source_degraded?,
+                    sources: value.sources?,
                     status: value.status?,
                     sync_excluded: value.sync_excluded?,
                     total_chapters: value.total_chapters?,
@@ -16979,16 +17742,155 @@ pub mod types {
                     last_read_number: Ok(value.last_read_number),
                     latest_chapter_at: Ok(value.latest_chapter_at),
                     latest_chapter_number: Ok(value.latest_chapter_number),
+                    next_unread: Ok(value.next_unread),
                     notify: Ok(value.notify),
                     preferred_source_name: Ok(value.preferred_source_name),
+                    read_count: Ok(value.read_count),
                     series_id: Ok(value.series_id),
                     series_title: Ok(value.series_title),
                     source_count: Ok(value.source_count),
                     source_degraded: Ok(value.source_degraded),
+                    sources: Ok(value.sources),
                     status: Ok(value.status),
                     sync_excluded: Ok(value.sync_excluded),
                     total_chapters: Ok(value.total_chapters),
                     unread: Ok(value.unread),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct WatchlistSource {
+            code: ::std::result::Result<::std::string::String, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            preferred: ::std::result::Result<bool, ::std::string::String>,
+            state: ::std::result::Result<super::ProviderState, ::std::string::String>,
+        }
+        impl ::std::default::Default for WatchlistSource {
+            fn default() -> Self {
+                Self {
+                    code: Err("no value supplied for code".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    preferred: Err("no value supplied for preferred".to_string()),
+                    state: Err("no value supplied for state".to_string()),
+                }
+            }
+        }
+        impl WatchlistSource {
+            pub fn code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.code = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for code: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn preferred<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.preferred = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for preferred: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::ProviderState>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistSource> for super::WatchlistSource {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistSource,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    code: value.code?,
+                    name: value.name?,
+                    preferred: value.preferred?,
+                    state: value.state?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistSource> for WatchlistSource {
+            fn from(value: super::WatchlistSource) -> Self {
+                Self {
+                    code: Ok(value.code),
+                    name: Ok(value.name),
+                    preferred: Ok(value.preferred),
+                    state: Ok(value.state),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct WatchlistSummaryView {
+            counts: ::std::result::Result<super::WatchlistCounts, ::std::string::String>,
+            unread_total: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for WatchlistSummaryView {
+            fn default() -> Self {
+                Self {
+                    counts: Err("no value supplied for counts".to_string()),
+                    unread_total: Err("no value supplied for unread_total".to_string()),
+                }
+            }
+        }
+        impl WatchlistSummaryView {
+            pub fn counts<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::WatchlistCounts>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.counts = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for counts: {e}"));
+                self
+            }
+            pub fn unread_total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.unread_total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for unread_total: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistSummaryView> for super::WatchlistSummaryView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistSummaryView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    counts: value.counts?,
+                    unread_total: value.unread_total?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistSummaryView> for WatchlistSummaryView {
+            fn from(value: super::WatchlistSummaryView) -> Self {
+                Self {
+                    counts: Ok(value.counts),
+                    unread_total: Ok(value.unread_total),
                 }
             }
         }
@@ -17058,6 +17960,10 @@ pub mod types {
             >,
             items:
                 ::std::result::Result<::std::vec::Vec<super::WatchlistItem>, ::std::string::String>,
+            next_cursor: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             total: ::std::result::Result<i64, ::std::string::String>,
         }
         impl ::std::default::Default for WatchlistView {
@@ -17066,6 +17972,7 @@ pub mod types {
                     counts: Err("no value supplied for counts".to_string()),
                     groups: Err("no value supplied for groups".to_string()),
                     items: Err("no value supplied for items".to_string()),
+                    next_cursor: Ok(Default::default()),
                     total: Err("no value supplied for total".to_string()),
                 }
             }
@@ -17101,6 +18008,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for items: {e}"));
                 self
             }
+            pub fn next_cursor<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.next_cursor = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for next_cursor: {e}"));
+                self
+            }
             pub fn total<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<i64>,
@@ -17121,6 +18038,7 @@ pub mod types {
                     counts: value.counts?,
                     groups: value.groups?,
                     items: value.items?,
+                    next_cursor: value.next_cursor?,
                     total: value.total?,
                 })
             }
@@ -17131,6 +18049,7 @@ pub mod types {
                     counts: Ok(value.counts),
                     groups: Ok(value.groups),
                     items: Ok(value.items),
+                    next_cursor: Ok(value.next_cursor),
                     total: Ok(value.total),
                 }
             }
@@ -17430,6 +18349,14 @@ impl Client {
     pub fn resend_verification(&self) -> builder::ResendVerification<'_> {
         builder::ResendVerification::new(self)
     }
+    #[doc = "List the legal documents\n\nOnly what this deployment actually publishes. An operator who configures no Imprint gets no\nImprint entry, so the footer renders no dead link rather than one that 404s.\n\nSends a `GET` request to `/v1/legal`\n\nArguments:\n- `lang`: Language code (`en`, `de`). Falls back to `Accept-Language`, then to the first locale\nthe operator configured.\n```ignore\nlet response = client.legal_index()\n    .lang(lang)\n    .send()\n    .await;\n```"]
+    pub fn legal_index(&self) -> builder::LegalIndex<'_> {
+        builder::LegalIndex::new(self)
+    }
+    #[doc = "Get one legal document\n\nThe Markdown as the operator wrote it. Rendering — and sanitising the result — is the\nclient's job: this is operator input, not developer input, so it is never trusted as HTML.\n\nSends a `GET` request to `/v1/legal/{slug}`\n\nArguments:\n- `slug`: Document slug\n- `lang`: Language code (`en`, `de`). Falls back to `Accept-Language`, then to the first locale\nthe operator configured.\n```ignore\nlet response = client.legal_document()\n    .slug(slug)\n    .lang(lang)\n    .send()\n    .await;\n```"]
+    pub fn legal_document(&self) -> builder::LegalDocument<'_> {
+        builder::LegalDocument::new(self)
+    }
     #[doc = "Delete my account\n\nErases the account and every row owned by it (GDPR Art. 17, right to erasure).\n\nAudit records of privileged actions the user performed are **retained in pseudonymised\nform**: the actor reference is nulled, so the record of what happened survives while\nthe link to a person does not. Documented on\n`tankovault_db::repo::privacy::erase_user`.\n\nAny of the user's own open data-subject requests are resolved as completed *before* the\ncascade, so the compliance record shows the erasure was carried out rather than leaving a\nrequest that appears abandoned.\n\nSends a `DELETE` request to `/v1/me`\n\n```ignore\nlet response = client.delete_account()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn delete_account(&self) -> builder::DeleteAccount<'_> {
         builder::DeleteAccount::new(self)
@@ -17598,7 +18525,7 @@ impl Client {
     pub fn sync_status(&self) -> builder::SyncStatus<'_> {
         builder::SyncStatus::new(self)
     }
-    #[doc = "Get the watchlist\n\nThe user's watchlist, filtered/sorted/paginated **server-side**, with the tab counts and\ngroup-header aggregates the list renders around it.\n\nThe body is an object rather than the bare `WatchlistItem[]` it used to be. That is a\nbreaking change, made deliberately: `total`, `counts` and `groups` cannot ride on response\nheaders without splitting one render into three requests, and the counts in particular are\n*not* derivable from `items` — they describe the tabs the caller is not looking at. The\nfrontend is the only consumer, and it is regenerated from this document.\n\nSends a `GET` request to `/v1/me/watchlist`\n\nArguments:\n- `limit`\n- `offset`\n- `order`: `asc | desc`. Defaults to whichever direction reads as \"most interesting first\" for the\nchosen sort — descending everywhere except `title`.\n- `q`: Free-text filter over title, alternative titles, tags and authors.\n- `released_since`: `24h | 7d | 30d`; absent (or `any`) means no recency constraint.\n\nA *window* token rather than an absolute instant, despite the name. The client would\nhave to compute the instant from its own clock, and a browser minutes ahead of the\nserver would filter out the very releases the \"last 24 hours\" option exists to show.\nThe server resolves the window against the clock the timestamps were written by.\n- `sort`: `released | unread | added | title | progress` (default `released`).\n- `source_issues`: Only rows whose preferred source is unhealthy.\n- `status`: `reading | planned | paused | completed | dropped`; absent means every status.\n- `unread_only`\n```ignore\nlet response = client.watchlist()\n    .limit(limit)\n    .offset(offset)\n    .order(order)\n    .q(q)\n    .released_since(released_since)\n    .sort(sort)\n    .source_issues(source_issues)\n    .status(status)\n    .unread_only(unread_only)\n    .send()\n    .await;\n```"]
+    #[doc = "Get the watchlist\n\nThe user's watchlist, filtered/sorted/paginated **server-side**, with the tab counts and\ngroup-header aggregates the list renders around it.\n\nThe body is an object rather than the bare `WatchlistItem[]` it used to be. That is a\nbreaking change, made deliberately: `total`, `counts` and `groups` cannot ride on response\nheaders without splitting one render into three requests, and the counts in particular are\n*not* derivable from `items` — they describe the tabs the caller is not looking at. The\nfrontend is the only consumer, and it is regenerated from this document.\n\nSends a `GET` request to `/v1/me/watchlist`\n\nArguments:\n- `cursor`: Opaque token from a previous response's `next_cursor`; supersedes `offset`.\n\nKeyset, not offset: the watchlist is live — a chapter discovered between two requests\nreorders the default sort — and an `OFFSET` page over a shifting list repeats one row\nand skips another. `offset` stays accepted for callers that refetch a whole prefix\nrather than appending, which is immune to the same problem by construction.\n- `limit`\n- `offset`\n- `order`: `asc | desc`. Defaults to whichever direction reads as \"most interesting first\" for the\nchosen sort — descending everywhere except `title`.\n- `q`: Free-text filter over title, alternative titles, tags and authors.\n- `released_since`: `24h | 7d | 30d`; absent (or `any`) means no recency constraint.\n\nA *window* token rather than an absolute instant, despite the name. The client would\nhave to compute the instant from its own clock, and a browser minutes ahead of the\nserver would filter out the very releases the \"last 24 hours\" option exists to show.\nThe server resolves the window against the clock the timestamps were written by.\n- `sort`: `released | unread | added | title | progress` (default `released`).\n- `source_issues`: Only rows whose preferred source is unhealthy.\n- `status`: `reading | planned | paused | completed | dropped`; absent means every status.\n- `unread_only`\n```ignore\nlet response = client.watchlist()\n    .cursor(cursor)\n    .limit(limit)\n    .offset(offset)\n    .order(order)\n    .q(q)\n    .released_since(released_since)\n    .sort(sort)\n    .source_issues(source_issues)\n    .status(status)\n    .unread_only(unread_only)\n    .send()\n    .await;\n```"]
     pub fn watchlist(&self) -> builder::Watchlist<'_> {
         builder::Watchlist::new(self)
     }
@@ -17609,6 +18536,10 @@ impl Client {
     #[doc = "Remove many watchlist entries at once\n\nSends a `DELETE` request to `/v1/me/watchlist/bulk`\n\n```ignore\nlet response = client.bulk_remove_watchlist()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn bulk_remove_watchlist(&self) -> builder::BulkRemoveWatchlist<'_> {
         builder::BulkRemoveWatchlist::new(self)
+    }
+    #[doc = "Get the watchlist summary\n\nPer-status counts and the unread total over the **whole** watchlist, under no filters.\n\nSeparate from the list's `counts`, which drop only the `status` arm and keep the search,\nrecency and source filters: those answer \"how many would this tab show given what I have\ntyped\", while this answers \"how big is my library\" for surfaces that carry no filter state\nof their own — a tab badge, the More sheet, a signed-in header.\n\nSends a `GET` request to `/v1/me/watchlist/summary`\n\n```ignore\nlet response = client.watchlist_summary()\n    .send()\n    .await;\n```"]
+    pub fn watchlist_summary(&self) -> builder::WatchlistSummary<'_> {
+        builder::WatchlistSummary::new(self)
     }
     #[doc = "Get one watchlist entry\n\nThe same enriched row the list renders, for a single series. The Series page used to answer\nthis by fetching the entire watchlist and scanning it — which stopped working the moment the\nlist paginated.\n\nSends a `GET` request to `/v1/me/watchlist/{series_id}`\n\nArguments:\n- `series_id`: Series id\n```ignore\nlet response = client.get_watchlist_entry()\n    .series_id(series_id)\n    .send()\n    .await;\n```"]
     pub fn get_watchlist_entry(&self) -> builder::GetWatchlistEntry<'_> {
@@ -22027,6 +22958,141 @@ pub mod builder {
             }
         }
     }
+    #[doc = "Builder for [`Client::legal_index`]\n\n[`Client::legal_index`]: super::Client::legal_index"]
+    #[derive(Debug, Clone)]
+    pub struct LegalIndex<'a> {
+        client: &'a super::Client,
+        lang: Result<Option<::std::string::String>, String>,
+    }
+    impl<'a> LegalIndex<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                lang: Ok(None),
+            }
+        }
+        pub fn lang<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.lang = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for lang failed".to_string()
+            });
+            self
+        }
+        #[doc = "Sends a `GET` request to `/v1/legal`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::LegalIndexEntry>>, Error<()>> {
+            let Self { client, lang } = self;
+            let lang = lang.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/legal", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("lang", &lang))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "legal_index",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::legal_document`]\n\n[`Client::legal_document`]: super::Client::legal_document"]
+    #[derive(Debug, Clone)]
+    pub struct LegalDocument<'a> {
+        client: &'a super::Client,
+        slug: Result<::std::string::String, String>,
+        lang: Result<Option<::std::string::String>, String>,
+    }
+    impl<'a> LegalDocument<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                slug: Err("slug was not initialized".to_string()),
+                lang: Ok(None),
+            }
+        }
+        pub fn slug<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.slug = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for slug failed".to_string()
+            });
+            self
+        }
+        pub fn lang<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.lang = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for lang failed".to_string()
+            });
+            self
+        }
+        #[doc = "Sends a `GET` request to `/v1/legal/{slug}`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::LegalDocumentView>, Error<types::ProblemDetails>> {
+            let Self { client, slug, lang } = self;
+            let slug = slug.map_err(Error::InvalidRequest)?;
+            let lang = lang.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/legal/{}",
+                client.baseurl,
+                encode_path(&slug.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("lang", &lang))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "legal_document",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
     #[doc = "Builder for [`Client::delete_account`]\n\n[`Client::delete_account`]: super::Client::delete_account"]
     #[derive(Debug, Clone)]
     pub struct DeleteAccount<'a> {
@@ -24895,6 +25961,7 @@ pub mod builder {
     #[derive(Debug, Clone)]
     pub struct Watchlist<'a> {
         client: &'a super::Client,
+        cursor: Result<Option<::std::string::String>, String>,
         limit: Result<Option<i64>, String>,
         offset: Result<Option<i64>, String>,
         order: Result<Option<::std::string::String>, String>,
@@ -24909,6 +25976,7 @@ pub mod builder {
         pub fn new(client: &'a super::Client) -> Self {
             Self {
                 client: client,
+                cursor: Ok(None),
                 limit: Ok(None),
                 offset: Ok(None),
                 order: Ok(None),
@@ -24919,6 +25987,15 @@ pub mod builder {
                 status: Ok(None),
                 unread_only: Ok(None),
             }
+        }
+        pub fn cursor<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.cursor = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for cursor failed".to_string()
+            });
+            self
         }
         pub fn limit<V>(mut self, value: V) -> Self
         where
@@ -25012,6 +26089,7 @@ pub mod builder {
         ) -> Result<ResponseValue<types::WatchlistView>, Error<types::ProblemDetails>> {
             let Self {
                 client,
+                cursor,
                 limit,
                 offset,
                 order,
@@ -25022,6 +26100,7 @@ pub mod builder {
                 status,
                 unread_only,
             } = self;
+            let cursor = cursor.map_err(Error::InvalidRequest)?;
             let limit = limit.map_err(Error::InvalidRequest)?;
             let offset = offset.map_err(Error::InvalidRequest)?;
             let order = order.map_err(Error::InvalidRequest)?;
@@ -25045,6 +26124,7 @@ pub mod builder {
                     ::reqwest::header::ACCEPT,
                     ::reqwest::header::HeaderValue::from_static("application/json"),
                 )
+                .query(&progenitor_client::QueryParam::new("cursor", &cursor))
                 .query(&progenitor_client::QueryParam::new("limit", &limit))
                 .query(&progenitor_client::QueryParam::new("offset", &offset))
                 .query(&progenitor_client::QueryParam::new("order", &order))
@@ -25231,6 +26311,53 @@ pub mod builder {
                 400u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::watchlist_summary`]\n\n[`Client::watchlist_summary`]: super::Client::watchlist_summary"]
+    #[derive(Debug, Clone)]
+    pub struct WatchlistSummary<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> WatchlistSummary<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/me/watchlist/summary`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::WatchlistSummaryView>, Error<types::ProblemDetails>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v1/me/watchlist/summary", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "watchlist_summary",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

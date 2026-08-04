@@ -750,6 +750,14 @@ fn const_str(source: &str, name: &str) -> Option<(usize, String)> {
         if is_comment(trimmed) {
             continue;
         }
+        // A visibility modifier is not part of the declaration this rule is about — the
+        // constant is the literal, whoever else may read it. Stripped rather than matched so
+        // `pub`, `pub(crate)` and a bare `const` all parse.
+        let trimmed = trimmed
+            .strip_prefix("pub(crate) ")
+            .or_else(|| trimmed.strip_prefix("pub(super) "))
+            .or_else(|| trimmed.strip_prefix("pub "))
+            .unwrap_or(trimmed);
         let Some(rest) = trimmed.strip_prefix("const ") else {
             continue;
         };
@@ -1562,6 +1570,20 @@ mod tests {
         assert_eq!(
             const_str("const NOTICES: &str = \"x\";\n", "NOTICES_ROUTE"),
             None
+        );
+        // The SPA's copy is `pub(crate)` so the footer can link it too. Visibility is not part
+        // of the declaration this rule is about, and reading it as one turned the whole gate
+        // into a hard error the moment the constant gained a reader.
+        assert_eq!(
+            const_str(
+                "pub(crate) const NOTICES_ROUTE: &str = \"/n\";\n",
+                "NOTICES_ROUTE"
+            ),
+            Some((1, "/n".to_owned()))
+        );
+        assert_eq!(
+            const_str("pub const NOTICES_ROUTE: &str = \"/n\";\n", "NOTICES_ROUTE"),
+            Some((1, "/n".to_owned()))
         );
     }
 

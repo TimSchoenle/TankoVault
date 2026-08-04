@@ -59,10 +59,21 @@ pub(crate) fn use_document_title() {
 
 /// The tab name for `route` alone, ignoring anything a screen has published.
 fn route_title(route: &Route, i18n: Translator) -> String {
-    let page = match route {
-        // The landing page is named for the product, not for a section of it — and matching the
-        // `<title>` in `index.html` means the tab doesn't visibly rename itself once WASM boots.
-        Route::Home {} => return i18n.t("title.app"),
+    // The landing page is named for the product, not for a section of it — and matching the
+    // `<title>` in `index.html` means the tab doesn't visibly rename itself once WASM boots.
+    if matches!(route, Route::Home {}) {
+        return i18n.t("title.app");
+    }
+    decorate(&page_name(route, i18n), i18n)
+}
+
+/// The screen's own name, undecorated.
+///
+/// The browser tab wants it with the brand appended; the small-viewport top bar, which replaces
+/// the rail's lit entry as the only "where am I", wants it bare.
+pub(crate) fn page_name(route: &Route, i18n: Translator) -> String {
+    match route {
+        Route::Home {} => i18n.t("nav.home"),
         Route::Discover {} => i18n.t("nav.discover"),
         Route::Series { .. } => i18n.t("title.series"),
         Route::Watchlist { .. } => i18n.t("nav.watchlist"),
@@ -77,9 +88,11 @@ fn route_title(route: &Route, i18n: Translator) -> String {
         Route::ForgotPassword {} => i18n.t("password.forgot.heading"),
         Route::ResetPassword { .. } => i18n.t("password.reset.heading"),
         Route::Console {} => i18n.t("nav.console"),
+        // Named generically until the document lands and publishes its own title through
+        // `PageTitle` — the slug is operator configuration, so the route cannot spell it.
+        Route::Legal { .. } => i18n.t("title.legal"),
         Route::NotFound { .. } => i18n.t("notFound.title"),
-    };
-    decorate(&page, i18n)
+    }
 }
 
 /// `"<screen> — TankoVault"`. The join and the brand live in the catalogue so a translation can

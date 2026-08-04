@@ -52,6 +52,50 @@ pub(super) fn continue_reading(item: &WatchlistItem) {
     });
 }
 
+/// How many carrier tiles fit the 132px `Sources` cell before the overflow count.
+const SOURCE_TILES: usize = 4;
+
+/// The carrier monograms for one row: preferred first and tinted, the rest neutral, anything
+/// past [`SOURCE_TILES`] folded into a `+n`.
+///
+/// The same 22px `.ik-mono-tile` the series page's chapter rows use, so a source is recognisable
+/// as the same thing on both screens.
+fn source_tiles(i18n: Translator, sources: &[WatchlistSource]) -> Element {
+    let shown = sources.len().min(SOURCE_TILES);
+    let overflow = sources.len() - shown;
+    rsx! {
+        for source in sources.iter().take(shown) {
+            span {
+                key: "{source.code}",
+                class: match (source.preferred, source.state == ProviderState::Active) {
+                    (true, true) => "ik-mono-tile pref",
+                    (true, false) => "ik-mono-tile pref off",
+                    (false, true) => "ik-mono-tile",
+                    (false, false) => "ik-mono-tile off",
+                },
+                title: "{source.name}",
+                {monogram(&source.code)}
+            }
+        }
+        if overflow > 0 {
+            span {
+                class: "ik-mono-tile more",
+                title: i18n.plural("watchlist.moreSources", i64::try_from(overflow).unwrap_or(0), &[]),
+                "+{overflow}"
+            }
+        }
+    }
+}
+
+/// Two characters of a provider slug, uppercased — what fits a 22px tile.
+fn monogram(code: &str) -> String {
+    code.chars()
+        .filter(|c| c.is_alphanumeric())
+        .take(2)
+        .collect::<String>()
+        .to_uppercase()
+}
+
 /// Find a row by id — the list is short enough (one page, a few hundred rows) that a scan
 /// beats an index kept in sync with every optimistic insert and removal.
 fn index_of(board: &Signal<Board>, series_id: SeriesId) -> Option<usize> {
@@ -425,6 +469,28 @@ pub(super) fn WatchRow(
                 }
             }
 
+            // Only rendered above 1500px (`.ik-wl-next` is display:none below the step), where
+            // the column answers "what would Continue actually open?" without a hover.
+            span { class: "ik-wl-next", role: "gridcell",
+                if let Some(next) = crate::models::next_unread(&item) {
+                    div { class: "ik-wl-next-ch",
+                        span { class: "num",
+                            {i18n.args("watchlist.chapterNo", &[("number", &chapter_number(next.number))])}
+                        }
+                        if let Some(title) = next.title.as_ref().filter(|t| !t.trim().is_empty()) {
+                            "{title}"
+                        }
+                    }
+                    if item.unread > 1 {
+                        div { class: "ik-wl-next-more",
+                            {i18n.plural("watchlist.moreUnread", item.unread - 1, &[])}
+                        }
+                    }
+                } else {
+                    span { class: "ik-faint", style: "font-size:12px;", {i18n.t("watchlist.upToDate")} }
+                }
+            }
+
             span { class: "ik-wl-progress", role: "gridcell",
                 div { class: "ik-mono ik-wl-count",
                     "{chapter_number(read)} / {thousands(total)}"
@@ -447,6 +513,10 @@ pub(super) fn WatchRow(
                         {i18n.args("watchlist.chapterNo", &[("number", &chapter_number(number))])}
                     }
                 }
+            }
+
+            span { class: "ik-wl-sources", role: "gridcell",
+                {source_tiles(i18n, &item.sources)}
             }
 
             span { class: "ik-wl-actions", role: "gridcell",

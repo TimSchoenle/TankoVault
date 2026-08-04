@@ -4,10 +4,11 @@
 use crate::api;
 use crate::components::Field;
 use crate::hooks::use_busy;
-use crate::i18n::use_i18n;
+use crate::i18n::{use_i18n, Translator};
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::capabilities::use_capabilities;
+use crate::state::legal::{legal_title, published};
 use crate::state::use_session;
 use crate::webauthn::{self, CeremonyError};
 use crate::wire::types::Feature;
@@ -346,7 +347,62 @@ pub(crate) fn Login() -> Element {
                 },
                 "{toggle_label}"
             }
+
+            if is_register {
+                {acceptance(i18n)}
+            }
         }
+    }
+}
+
+/// "By creating an account you accept the Terms of Service and the Data Policy."
+///
+/// The one place these two must be reachable *before* consent, which is why the API serves them
+/// unauthenticated. Rendered **only if both are configured**: an operator who publishes neither
+/// gets no sentence rather than one pointing nowhere, because a consent line that links a 404 is
+/// worse than no line at all.
+fn acceptance(i18n: Translator) -> Element {
+    let (Some(terms), Some(privacy)) = (published("terms"), published("privacy")) else {
+        return rsx! {};
+    };
+    // The sentence is one catalogue string with two placeholders, so a translation can reorder
+    // the clauses around the links; splitting it on the links would freeze English word order.
+    let template = i18n.t("auth.acceptance");
+    let (before, rest) = split_once_placeholder(&template, "{terms}");
+    let (between, after) = split_once_placeholder(&rest, "{privacy}");
+    rsx! {
+        p { class: "ik-muted", style: "font-size:12px;line-height:1.6;margin:14px 0 0;text-align:center;",
+            "{before}"
+            {legal_link(i18n, &terms)}
+            "{between}"
+            {legal_link(i18n, &privacy)}
+            "{after}"
+        }
+    }
+}
+
+/// Split `template` at `placeholder`, keeping the whole string when it is absent — a translation
+/// that dropped a placeholder loses a link, not the sentence.
+fn split_once_placeholder(template: &str, placeholder: &str) -> (String, String) {
+    template.split_once(placeholder).map_or_else(
+        || (template.to_owned(), String::new()),
+        |(head, tail)| (head.to_owned(), tail.to_owned()),
+    )
+}
+
+/// One document link, routed or external depending on how the operator published it.
+fn legal_link(i18n: Translator, entry: &LegalIndexEntry) -> Element {
+    let label = legal_title(i18n, &entry.slug, entry.title.as_deref());
+    match entry.kind {
+        LegalKind::External => {
+            let href = entry.url.clone().unwrap_or_default();
+            rsx! {
+                a { class: "ik-link", href: "{href}", target: "_blank", rel: "noopener noreferrer", "{label}" }
+            }
+        }
+        LegalKind::Inline => rsx! {
+            Link { to: Route::Legal { slug: entry.slug.clone() }, class: "ik-link", "{label}" }
+        },
     }
 }
 

@@ -64,6 +64,10 @@ pub(crate) enum Icon {
     Download,
     Delete,
     Flag,
+    /// The language control in the top bar and in the **More** sheet.
+    Language,
+    /// The footer's legal column and the `/legal/:slug` page head.
+    Gavel,
     // fallback
     Circle,
 }
@@ -198,6 +202,13 @@ fn path_for(icon: Icon) -> &'static str {
             r#"<path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12"/><path d="M10 11v6M14 11v6"/>"#
         }
         Icon::Flag => r#"<path d="M5 21V4"/><path d="M5 5h11l-2 3 2 3H5z"/>"#,
+        Icon::Gavel => {
+            r#"<path d="m14 4 6 6"/><path d="m17 7-6.5 6.5"/><path d="m10.5 3.5 4 4"/><path d="M3 21h9"/><path d="m6.5 17.5 5-5"/><path d="m4.5 15.5 4 4"/>"#
+        }
+        Icon::Language => {
+            r#"<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>"#
+        }
+
         Icon::Circle => r#"<circle cx="12" cy="12" r="4"/>"#,
     }
 }

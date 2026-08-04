@@ -11,6 +11,7 @@
 
 pub(crate) mod capabilities;
 mod jwt;
+pub(crate) mod legal;
 pub(crate) mod prefs;
 
 use dioxus::prelude::*;

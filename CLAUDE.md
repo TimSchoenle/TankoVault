@@ -36,6 +36,32 @@ database; config surface changed → update `docs/CONFIGURATION.md` (`cargo run 
 config-docs` prints the current surface); either `Cargo.lock` moved → `cargo run -p xtask --
 notices`, which needs `cargo-about` installed. The gates check these, they do not fix them.
 
+## What `xtask ci` cannot tell you
+
+`xtask ci` runs the **offline** gates only — no Docker, no database. CI runs more, and that gap
+is where a green local run still turns the pull request red.
+
+The one that actually bites: **a published endpoint you added, renamed or removed.**
+`services/api/tests/me_access_matrix.rs` and `admin_access_matrix.rs` reconcile the OpenAPI
+document against their access-control tables, so a route nobody classified fails with the
+operation id in the message. Writing the handler and regenerating `openapi.json` is *not*
+enough — the route also needs a row in `me_gates()`, `public_gates()` or `covered_elsewhere()`
+(that last one carries the reason and where it is covered instead). Both suites need Docker, so
+no offline gate mentions it:
+
+```
+cargo test -p tankovault-api --features integration --test me_access_matrix
+```
+
+The rule generalises: run the Docker-gated suite your change *touches*, not just the one you
+wrote. A new `query!` is `repo_query_plans` (an `EXPLAIN` sweep with a cost ceiling); a new
+`.gate(…)` is `feature_gating`; a fifth copy of the unread predicate is `repo_tracking`'s
+differential. CI's own command is the full set:
+
+```
+cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features integration
+```
+
 ## Nine rules you will otherwise break
 
 1. **Never widen a Content-Security-Policy to make code work.** Change the code. The SPA's access

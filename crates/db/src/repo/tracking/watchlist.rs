@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor, PgPool};
-use tankovault_domain::{SeriesId, UserId, WatchStatus, WatchlistEntry};
+use tankovault_domain::{ProviderState, SeriesId, UserId, WatchStatus, WatchlistEntry};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -268,6 +268,16 @@ pub struct WatchlistCard {
     pub last_read_number: Option<f64>,
     /// Distinct chapters strictly above the user's progress, across all sources.
     pub unread: i64,
+    /// Distinct whole chapters at or below the user's progress — the progress bar's numerator.
+    ///
+    /// Not [`Self::last_read_number`]: a catalogue with gaps (no chapter 5) makes the frontier
+    /// larger than the number of chapters that actually exist below it, so a bar drawn from the
+    /// frontier over [`Self::total_chapters`] reads past 100%. Counted with the same
+    /// `floor(number)` `DISTINCT` as the denominator, so the two are commensurable by
+    /// construction.
+    pub read_count: i64,
+    /// The lowest unread chapter, or `None` when the reader is caught up.
+    pub next_unread: Option<NextUnread>,
     /// Distinct whole chapters known across all sources — the progress denominator.
     ///
     /// Counted with the same `floor(number)` as [`Self::unread`], so a source publishing part
@@ -308,6 +318,39 @@ pub struct WatchlistCard {
     pub source_degraded: bool,
     /// Whether this series is opted out of external sync (design v2 §A.5).
     pub sync_excluded: bool,
+    /// Every provider carrying this series, preferred first.
+    ///
+    /// Empty on [`watchlist_page`] until [`attach_sources`] has run — it is a second statement
+    /// keyed on the page's ids rather than an aggregate folded into the row, because an
+    /// `array_agg` of four columns per row is paid for every row of every page whether or not
+    /// the viewport is wide enough to render it.
+    pub sources: Vec<WatchlistSource>,
+}
+
+/// The next chapter the reader has not read, for the ledger's `Next unread` column.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NextUnread {
+    /// The chapter number, parts included — `152.5` is a legitimate next read.
+    pub number: f64,
+    /// The provider's chapter title, when it publishes one.
+    pub title: Option<String>,
+    /// When it was discovered, matching [`WatchlistCard::latest_chapter_at`]'s clock.
+    pub released_at: OffsetDateTime,
+}
+
+/// One provider carrying a series, for the ledger's `Sources` column.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WatchlistSource {
+    /// The provider slug — the monogram tile's letters and a stable key for the client.
+    pub code: String,
+    pub name: String,
+    /// The *effective* state: the series-source's own, unless the provider behind it is worse.
+    ///
+    /// One value rather than two, because the reader's question is "can I read this here?" and
+    /// a healthy listing on a blocked provider answers it no.
+    pub state: ProviderState,
+    /// Whether this is the source [`WatchlistCard::preferred_source_name`] names.
+    pub preferred: bool,
 }
 
 /// How the watchlist list is ordered.
@@ -437,6 +480,10 @@ pub struct WatchlistFilter {
     pub order: WatchlistOrder,
     pub limit: i64,
     pub offset: i64,
+    /// Resume after this row instead of counting `offset` rows into the result.
+    ///
+    /// Takes precedence over [`Self::offset`] when set; the two are never combined.
+    pub cursor: Option<WatchlistCursor>,
 }
 
 impl Default for WatchlistFilter {
@@ -452,7 +499,37 @@ impl Default for WatchlistFilter {
             order: WatchlistOrder::default(),
             limit: 60,
             offset: 0,
+            cursor: None,
         }
+    }
+}
+
+/// Where a keyset page resumes: the sort key of the previous page's last row, plus its id.
+///
+/// **Read out of the row the database ordered on, never recomputed.** `progress` orders on
+/// `last_read_whole_number / total_chapters`, and a Rust copy of that expression would be a
+/// second definition of the sort order free to drift from the `ORDER BY` — which produces a page
+/// that silently repeats or skips rows rather than failing. [`fetch_page`] therefore selects the
+/// key it sorted by and hands it back.
+///
+/// The id is not decoration. Hundreds of rows tie on `unread` in a 600-entry list, and without
+/// a unique tiebreaker in both the order and the seek predicate a keyset page has the same
+/// repeat-and-skip defect as `OFFSET`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WatchlistCursor {
+    /// The numeric sort key, for every order but `title`.
+    pub num: Option<f64>,
+    /// The text sort key, for `title`.
+    pub text: Option<String>,
+    pub series_id: SeriesId,
+}
+
+impl WatchlistCursor {
+    /// Whether the row this cursor names had no sort key at all — a series with no chapters
+    /// under `released`, say. Such rows order last in **both** directions (`NULLS LAST`), so
+    /// only other keyless rows can follow one.
+    fn key_is_null(&self) -> bool {
+        self.num.is_none() && self.text.is_none()
     }
 }
 
@@ -563,6 +640,12 @@ pub struct WatchlistPage {
     /// Newest band first. Empty bands are omitted, so a list with nothing released this week
     /// renders `Today` then `Earlier`.
     pub groups: Vec<ReleaseGroup>,
+    /// Where the next keyset page resumes, or `None` at the end of the list.
+    ///
+    /// `None` when the page came back short of `limit`. A full page is not proof more rows
+    /// exist, so the last page of an exactly-divisible list costs one empty follow-up — which
+    /// is the cheap side of the trade against claiming the list ended when it had not.
+    pub next_cursor: Option<WatchlistCursor>,
 }
 
 /// The row `query_as!` fills for one page of the list.
@@ -576,13 +659,32 @@ struct CardRow {
     added_at: OffsetDateTime,
     last_read_number: Option<f64>,
     unread: i64,
+    read_count: i64,
     total_chapters: i64,
     latest_chapter_number: Option<f64>,
     latest_chapter_at: Option<OffsetDateTime>,
+    next_unread_number: Option<f64>,
+    next_unread_title: Option<String>,
+    next_unread_at: Option<OffsetDateTime>,
     preferred_source_name: Option<String>,
     source_count: i64,
     source_degraded: bool,
     sync_excluded: bool,
+    /// The key the statement ordered by, carried out so [`WatchlistCursor`] cannot recompute
+    /// it differently.
+    sort_num: Option<f64>,
+    sort_text: Option<String>,
+}
+
+impl CardRow {
+    /// The cursor that resumes immediately after this row.
+    fn cursor(&self) -> WatchlistCursor {
+        WatchlistCursor {
+            num: self.sort_num,
+            text: self.sort_text.clone(),
+            series_id: SeriesId::from_uuid(self.series_id),
+        }
+    }
 }
 
 impl From<CardRow> for WatchlistCard {
@@ -596,6 +698,17 @@ impl From<CardRow> for WatchlistCard {
             added_at: r.added_at,
             last_read_number: r.last_read_number,
             unread: r.unread,
+            read_count: r.read_count,
+            // The number and the timestamp come from the same row, so either both are present
+            // or the reader is caught up; a number without an instant cannot occur.
+            next_unread: r
+                .next_unread_number
+                .zip(r.next_unread_at)
+                .map(|(number, released_at)| NextUnread {
+                    number,
+                    title: r.next_unread_title,
+                    released_at,
+                }),
             total_chapters: r.total_chapters,
             latest_chapter_number: r.latest_chapter_number,
             latest_chapter_at: r.latest_chapter_at,
@@ -603,6 +716,7 @@ impl From<CardRow> for WatchlistCard {
             source_count: r.source_count,
             source_degraded: r.source_degraded,
             sync_excluded: r.sync_excluded,
+            sources: Vec::new(),
         }
     }
 }
@@ -663,12 +777,34 @@ pub async fn watchlist_page(
     }
     let total = groups.iter().map(|g| g.title_count).sum();
 
+    let next_cursor = (i64::try_from(rows.len()).unwrap_or(i64::MAX) >= filter.limit)
+        .then(|| rows.last().map(CardRow::cursor))
+        .flatten();
+
     Ok(WatchlistPage {
-        items: rows.into_iter().map(WatchlistCard::from).collect(),
+        items: attach_sources(pool, rows).await?,
         total,
         counts,
         groups,
+        next_cursor,
     })
+}
+
+/// Turn page rows into cards with their [`WatchlistCard::sources`] filled in.
+///
+/// The one place a `WatchlistCard` is built for a caller, so no path can hand out a card whose
+/// empty `sources` means "not loaded" rather than "no sources".
+async fn attach_sources(pool: &PgPool, rows: Vec<CardRow>) -> DbResult<Vec<WatchlistCard>> {
+    let ids: Vec<Uuid> = rows.iter().map(|r| r.series_id).collect();
+    let mut by_series = fetch_sources(pool, &ids).await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let mut card = WatchlistCard::from(row);
+            card.sources = by_series.remove(&card.series_id).unwrap_or_default();
+            card
+        })
+        .collect())
 }
 
 /// One page of matching rows, in the requested order.
@@ -684,26 +820,40 @@ pub async fn watchlist_page(
 /// The final `series_id` tiebreaker is not decoration: without it rows sharing a leading key —
 /// and with `unread` over 600 entries there are hundreds of ties — have no defined order, so
 /// two adjacent `OFFSET` pages can repeat one row and skip another.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one `query_as!` invocation: the length is the SQL literal and its bindings, and \
+              splitting a statement across helpers is exactly the drift the `--wl-cols` comment \
+              and the sort-key subquery both exist to prevent"
+)]
 async fn fetch_page(
     pool: &PgPool,
     user_id: UserId,
     filter: &WatchlistFilter,
     query: Option<&str>,
 ) -> DbResult<Vec<CardRow>> {
+    let cursor = filter.cursor.as_ref();
     let rows = sqlx::query_as!(
         CardRow,
         "SELECT q.series_id AS \"series_id!\", q.series_title AS \"series_title!\", q.cover_url, \
                 q.status AS \"status!: WatchStatus\", q.notify AS \"notify!\", \
                 q.added_at AS \"added_at!\", q.sync_excluded AS \"sync_excluded!\", \
-                q.last_read_number, q.unread AS \"unread!\", \
+                q.last_read_number, q.unread AS \"unread!\", q.read_count AS \"read_count!\", \
                 q.total_chapters AS \"total_chapters!\", q.latest_chapter_number, \
-                q.latest_chapter_at, q.preferred_source_name, \
-                q.source_count AS \"source_count!\", q.source_degraded AS \"source_degraded!\" \
+                q.latest_chapter_at, \
+                q.next_unread_number AS \"next_unread_number?\", \
+                q.next_unread_title AS \"next_unread_title?\", \
+                q.next_unread_at AS \"next_unread_at?\", q.preferred_source_name, \
+                q.source_count AS \"source_count!\", q.source_degraded AS \"source_degraded!\", \
+                q.sort_num, q.sort_text \
          FROM ( \
            SELECT w.series_id, s.canonical_title AS series_title, s.cover_url, w.status, \
                   w.notify, w.added_at, w.sync_excluded, \
                   rp.last_read_whole_number::float8 AS last_read_number, \
-                  ch.unread, ch.total_chapters, ch.latest_chapter_number, ch.latest_chapter_at, \
+                  ch.unread, ch.read_count, ch.total_chapters, ch.latest_chapter_number, \
+                  ch.latest_chapter_at, \
+                  nu.number AS next_unread_number, nu.title AS next_unread_title, \
+                  nu.discovered_at AS next_unread_at, \
                   src.preferred_source_name, src.source_count, src.source_degraded, \
                   CASE $7 \
                     WHEN 'released' THEN extract(epoch FROM ch.latest_chapter_at)::float8 \
@@ -725,11 +875,25 @@ async fn fetch_page(
                                  AND rp.last_read_part_number IS NOT NULL \
                                  AND c.number <= rp.last_read_part_number) \
                     ), 0) AS unread, \
+                    COALESCE(count(DISTINCT floor(c.number)) FILTER ( \
+                      WHERE floor(c.number) <= COALESCE(rp.last_read_whole_number, 0) \
+                    ), 0) AS read_count, \
                     max(c.number)::float8 AS latest_chapter_number, \
                     max(c.discovered_at) AS latest_chapter_at \
              FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
              WHERE ss.series_id = w.series_id \
            ) ch \
+           LEFT JOIN LATERAL ( \
+             SELECT c.number::float8 AS number, c.title, c.discovered_at \
+             FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+             WHERE ss.series_id = w.series_id \
+               AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
+               AND NOT (c.number <> floor(c.number) \
+                        AND rp.last_read_part_number IS NOT NULL \
+                        AND c.number <= rp.last_read_part_number) \
+             ORDER BY c.number, c.discovered_at, c.id \
+             LIMIT 1 \
+           ) nu ON true \
            CROSS JOIN LATERAL ( \
              SELECT count(DISTINCT ss.provider_id) AS source_count, \
                     (array_agg(p.name ORDER BY ss.chapter_count DESC, \
@@ -760,6 +924,22 @@ async fn fetch_page(
              AND (NOT $6::boolean OR src.source_degraded) \
              AND ($11::uuid IS NULL OR w.series_id = $11) \
          ) q \
+         WHERE NOT $12::boolean \
+            OR CASE WHEN $7 = 'title' THEN \
+                 (q.sort_text IS NULL AND NOT $15::boolean) \
+                 OR ($15 AND q.sort_text IS NULL AND q.series_id > $16::uuid) \
+                 OR (NOT $15 AND q.sort_text IS NOT NULL AND ( \
+                        ($8 = 'desc' AND q.sort_text < $14::text) \
+                     OR ($8 = 'asc'  AND q.sort_text > $14::text) \
+                     OR (q.sort_text = $14 AND q.series_id > $16::uuid))) \
+               ELSE \
+                 (q.sort_num IS NULL AND NOT $15::boolean) \
+                 OR ($15 AND q.sort_num IS NULL AND q.series_id > $16::uuid) \
+                 OR (NOT $15 AND q.sort_num IS NOT NULL AND ( \
+                        ($8 = 'desc' AND q.sort_num < $13::float8) \
+                     OR ($8 = 'asc'  AND q.sort_num > $13::float8) \
+                     OR (q.sort_num = $13 AND q.series_id > $16::uuid))) \
+               END \
          ORDER BY CASE WHEN $8 = 'asc'  THEN q.sort_num  END ASC  NULLS LAST, \
                   CASE WHEN $8 = 'desc' THEN q.sort_num  END DESC NULLS LAST, \
                   CASE WHEN $8 = 'asc'  THEN q.sort_text END ASC  NULLS LAST, \
@@ -775,12 +955,81 @@ async fn fetch_page(
         filter.sort.as_token(),
         filter.order.as_token(),
         filter.limit,
-        filter.offset,
+        // A cursor replaces the offset rather than adding to it: seeking past the row the
+        // caller named and *then* skipping N more would drop rows nobody asked to skip.
+        if cursor.is_some() { 0 } else { filter.offset },
         filter.series_id.map(SeriesId::as_uuid),
+        cursor.is_some(),
+        cursor.and_then(|c| c.num),
+        cursor.and_then(|c| c.text.as_deref()),
+        cursor.is_some_and(WatchlistCursor::key_is_null),
+        cursor.map_or_else(uuid::Uuid::nil, |c| c.series_id.as_uuid()),
     )
     .fetch_all(pool)
     .await?;
     Ok(rows)
+}
+
+/// Every provider carrying each of `series_ids`, preferred first.
+///
+/// A second statement keyed on the page's ids rather than an aggregate folded into
+/// [`fetch_page`]: the ledger only renders this column above 1500px, and four more `array_agg`
+/// columns per row are paid on every page whether or not anything reads them. Empty in, empty
+/// out — no statement is issued for an empty page.
+///
+/// The `preferred` flag repeats [`fetch_page`]'s ranking (`chapter_count`, then the most recent
+/// scan, then the slug) because the two must name the same source; a `Sources` column whose
+/// tinted tile disagrees with the row's own submeta is worse than an untinted one.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A series with no sources is
+/// simply absent from the map.
+async fn fetch_sources(
+    pool: &PgPool,
+    series_ids: &[Uuid],
+) -> DbResult<HashMap<SeriesId, Vec<WatchlistSource>>> {
+    #[derive(FromRow)]
+    struct Row {
+        series_id: Uuid,
+        code: String,
+        name: String,
+        state: ProviderState,
+        preferred: bool,
+    }
+
+    if series_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows = sqlx::query_as!(
+        Row,
+        "SELECT ss.series_id AS \"series_id!\", p.slug AS \"code!\", p.name AS \"name!\", \
+                CASE WHEN p.state <> 'active' THEN p.state ELSE ss.state END \
+                  AS \"state!: ProviderState\", \
+                (row_number() OVER (PARTITION BY ss.series_id \
+                                    ORDER BY ss.chapter_count DESC, \
+                                             ss.last_scanned_at DESC NULLS LAST, \
+                                             p.slug) = 1) AS \"preferred!\" \
+         FROM series_sources ss JOIN providers p ON p.id = ss.provider_id \
+         WHERE ss.series_id = ANY($1) \
+         ORDER BY ss.series_id, ss.chapter_count DESC, \
+                  ss.last_scanned_at DESC NULLS LAST, p.slug",
+        series_ids,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut out: HashMap<SeriesId, Vec<WatchlistSource>> = HashMap::new();
+    for row in rows {
+        out.entry(SeriesId::from_uuid(row.series_id))
+            .or_default()
+            .push(WatchlistSource {
+                code: row.code,
+                name: row.name,
+                state: row.state,
+                preferred: row.preferred,
+            });
+    }
+    Ok(out)
 }
 
 /// One series' watchlist row, enriched exactly as the list's rows are — or `None` when the
@@ -806,7 +1055,80 @@ pub async fn watchlist_card(
         ..WatchlistFilter::default()
     };
     let rows = fetch_page(pool, user_id, &filter, None).await?;
-    Ok(rows.into_iter().next().map(WatchlistCard::from))
+    Ok(attach_sources(pool, rows).await?.into_iter().next())
+}
+
+/// The whole watchlist at a glance: per-status counts and the unread total, under **no**
+/// filters at all.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WatchlistSummary {
+    pub counts: WatchlistCounts,
+    /// Unread chapters across every tracked series, whatever its status.
+    pub unread_total: i64,
+}
+
+/// The unfiltered shape of a user's watchlist.
+///
+/// Distinct from [`WatchlistPage::counts`], which drops only the `status` arm and keeps the
+/// search, recency and source filters: those answer "how many would this tab show *given what
+/// I have typed*", while this answers "how big is my library" for surfaces with no filter state
+/// of their own — a tab badge, a More sheet, a signed-in header.
+///
+/// One statement rather than [`fetch_counts`] with an empty filter: with no free-text arm there
+/// is no reason to join `series` at all, and the unread sum rides along in the same scan.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A user tracking nothing is a
+/// zeroed summary, not [`crate::DbError::NotFound`].
+pub async fn watchlist_summary<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+) -> DbResult<WatchlistSummary> {
+    #[derive(FromRow)]
+    struct Row {
+        status: WatchStatus,
+        n: i64,
+        degraded: i64,
+        unread: i64,
+    }
+    let rows = sqlx::query_as!(
+        Row,
+        "SELECT w.status AS \"status!: WatchStatus\", count(*) AS \"n!\", \
+                count(*) FILTER (WHERE src.source_degraded) AS \"degraded!\", \
+                COALESCE(sum(ch.unread), 0)::int8 AS \"unread!\" \
+         FROM watchlist_entries w \
+         LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
+         CROSS JOIN LATERAL ( \
+           SELECT COALESCE(count(DISTINCT floor(c.number)) FILTER ( \
+                    WHERE floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
+                      AND NOT (c.number <> floor(c.number) \
+                               AND rp.last_read_part_number IS NOT NULL \
+                               AND c.number <= rp.last_read_part_number) \
+                  ), 0) AS unread \
+           FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+           WHERE ss.series_id = w.series_id \
+         ) ch \
+         CROSS JOIN LATERAL ( \
+           SELECT COALESCE((array_agg(ss.state <> 'active' OR p.state <> 'active' \
+                                      ORDER BY ss.chapter_count DESC, \
+                                               ss.last_scanned_at DESC NULLS LAST, \
+                                               p.slug))[1], false) AS source_degraded \
+           FROM series_sources ss JOIN providers p ON p.id = ss.provider_id \
+           WHERE ss.series_id = w.series_id \
+         ) src \
+         WHERE w.user_id = $1 \
+         GROUP BY w.status",
+        user_id.as_uuid(),
+    )
+    .fetch_all(exec)
+    .await?;
+
+    let mut summary = WatchlistSummary::default();
+    for row in rows {
+        summary.counts.add(row.status, row.n, row.degraded);
+        summary.unread_total += row.unread;
+    }
+    Ok(summary)
 }
 
 /// How many entries sit at each status under every filter *but* `status`.

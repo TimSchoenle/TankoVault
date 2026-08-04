@@ -14,6 +14,7 @@ mod admin;
 mod audit;
 mod auth;
 mod error;
+mod legal;
 mod mailer;
 mod me;
 pub mod passkey;
@@ -26,6 +27,7 @@ mod upstream;
 mod views;
 
 use axum::Router;
+pub use legal::LegalDocs;
 pub use passkey::{RelyingParty, SharedRelyingParty};
 pub use state::AppState;
 use tankovault_config::{RateLimitConfig, SecurityConfig};
@@ -266,8 +268,13 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(series::tags))
         // public provider list for the Discover filter (§9.3)
         .routes(routes!(series::providers))
+        // Legal documents, deliberately unauthenticated: registering is the act of accepting
+        // the Terms, so the register form has to be able to link them to a signed-out reader.
+        .routes(routes!(legal::legal_index))
+        .routes(routes!(legal::legal_document))
         // me
         .routes(routes!(me::watchlist))
+        .routes(routes!(me::watchlist_summary))
         // Bulk before the `{series_id}` sibling for readability only — `matchit` prefers the
         // static segment regardless, and a `series_id` is a uuid, so `bulk` can never be one.
         .routes(routes!(

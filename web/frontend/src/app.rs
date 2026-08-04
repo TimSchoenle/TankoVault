@@ -4,10 +4,11 @@
 use crate::components::{Shell, UnreadBadge};
 use crate::i18n::I18nRoot;
 use crate::state::capabilities::CapabilitySet;
+use crate::state::legal::LegalIndex;
 use crate::state::Session;
 use crate::title::PageTitle;
 use crate::views::{
-    Account, AnilistCallback, Console, Discover, ForgotPassword, Home, Login, NotFound,
+    Account, AnilistCallback, Console, Discover, ForgotPassword, Home, Legal, Login, NotFound,
     Notifications, ResetPassword, Search, Series, VerifyEmail, Watchlist, WatchlistQuery,
 };
 use dioxus::prelude::*;
@@ -52,6 +53,11 @@ pub(crate) enum Route {
         ResetPassword { token: String },
         #[route("/console")]
         Console {},
+        // Operator-published documents. The slug set is configuration, not code — an
+        // operator can publish one this build has never heard of — so the segment is a
+        // free string and an unconfigured one is the API's 404, not a routing miss.
+        #[route("/legal/:slug")]
+        Legal { slug: String },
         #[route("/:..segments")]
         NotFound { segments: Vec<String> },
 }
@@ -65,6 +71,8 @@ pub(crate) fn App() -> Element {
     // so views don't need it threaded down.
     use_context_provider(CapabilitySet::new);
     use_context_provider(|| UnreadBadge(Signal::new(0)));
+    // Filled once by `Shell`; three surfaces read the same list.
+    use_context_provider(LegalIndex::new);
     // Empty until a screen publishes a name only it knows; the route's own name covers the rest.
     use_context_provider(PageTitle::new);
     crate::api::provide_api();

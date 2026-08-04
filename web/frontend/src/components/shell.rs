@@ -3,7 +3,7 @@
 //! the silent token refresh and the live-notification subscription.
 
 use crate::api;
-use crate::components::{nav::Rail, topbar::TopBar, UnreadBadge};
+use crate::components::{nav::Rail, topbar::TopBar, BottomTabs, Footer, UnreadBadge};
 use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::Route;
@@ -29,21 +29,65 @@ pub(crate) fn Shell() -> Element {
     use_token_refresh();
     use_capability_sync();
     use_live_notifications();
+    crate::state::legal::use_legal_sync();
     // Here rather than in each screen: the layout is the one component every route renders
     // through, so no route can be added without a title.
     crate::title::use_document_title();
 
     let i18n = crate::i18n::use_i18n();
+    let route: Route = use_route();
     rsx! {
         div { class: "ik-app",
             // Skip link: without it, a keyboard reader re-tabs the ~10-stop rail on every route.
             a { class: "ik-skip", href: "#ik-content", {i18n.t("nav.skipToContent")} }
             Rail {}
-            main { class: "ik-main",
+            // `--measure` lands on `.ik-main`, not on the view root: the top bar and the footer
+            // are siblings of the content, so a value set inside the content could not reach
+            // them, and a chrome row measured differently from the list it acts on is the
+            // defect this layout exists to fix.
+            main { class: "ik-main", style: "--measure:{measure_for(&route)};",
                 TopBar {}
-                section { id: "ik-content", class: "ik-content", Outlet::<Route> {} }
+                section { id: "ik-content", class: "ik-content",
+                    div { class: "ik-measure", Outlet::<Route> {} }
+                }
+                Footer { compact: is_compact(&route) }
             }
+            // After `.ik-main`, not inside it: the bar is `position: fixed` at the viewport's
+            // bottom edge below 820px and renders to nothing above it.
+            BottomTabs {}
         }
+    }
+}
+
+/// Whether this route gets the one-line footer instead of the five-column one.
+///
+/// The auth card and the console are both surfaces a full directory would outweigh — a 400px
+/// sign-in card with three columns of links under it, an operator console that is an
+/// application rather than a document. Chosen here rather than by the views so a route cannot
+/// end up rendering two footers, which is what happened when the auth view supplied its own.
+fn is_compact(route: &Route) -> bool {
+    matches!(
+        route,
+        Route::Login {}
+            | Route::VerifyEmail { .. }
+            | Route::ForgotPassword {}
+            | Route::ResetPassword { .. }
+            | Route::Console {}
+    )
+}
+
+/// The measured column width for a route (layout handoff §2.1).
+///
+/// A grid of covers and a paragraph of prose do not want the same width: the cover screens buy
+/// three or four more covers per row, the ledgers stay scannable, and the panel/prose screens
+/// stop stretching a 64ch paragraph across a 1600px column. `none` is a real `max-width`, which
+/// is how the console keeps its full-bleed opt-out.
+fn measure_for(route: &Route) -> &'static str {
+    match route {
+        Route::Home {} | Route::Discover {} | Route::Search { .. } => "1760px",
+        Route::Account {} | Route::AnilistCallback { .. } | Route::Legal { .. } => "1120px",
+        Route::Console {} => "none",
+        _ => "1600px",
     }
 }
 

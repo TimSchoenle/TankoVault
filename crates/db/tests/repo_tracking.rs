@@ -204,6 +204,22 @@ fn rust_unread_whole_count(progress: ReadProgress) -> i64 {
     i64::try_from(wholes.len()).expect("catalogue fits in i64")
 }
 
+/// Distinct **whole** chapters at or below the whole frontier — the progress bar's numerator.
+///
+/// Deliberately *not* the complement of [`rust_unread_whole_count`]: a whole chapter above the
+/// frontier whose every part the part frontier covers is in neither set, so `read + unread` can
+/// be less than the total. The bar under-reads in that case, which is the honest direction —
+/// the alternative is claiming a chapter is read because nothing in it is unread.
+fn rust_read_whole_count(progress: ReadProgress) -> i64 {
+    let mut wholes: Vec<f64> = CHAPTERS
+        .iter()
+        .map(|n| n.floor())
+        .filter(|&n| n <= progress.last_read_whole_number)
+        .collect();
+    wholes.dedup();
+    i64::try_from(wholes.len()).expect("catalogue fits in i64")
+}
+
 // ---------------------------------------------------------------------------
 // The differential
 // ---------------------------------------------------------------------------
@@ -297,6 +313,27 @@ async fn the_sql_and_the_rust_predicate_agree_on_every_chapter() {
             "watchlist_page unread count ({})",
             state.name
         );
+        // `next_unread` is a fifth copy of the predicate — a `LEFT JOIN LATERAL … LIMIT 1`
+        // rather than a `count(… ) FILTER`, so it can drift from the badge above it
+        // independently. A row reading "3 unread · next Ch 4" while the feed opens Ch 5 is
+        // exactly the TRACK-1 shape, one column over.
+        assert_eq!(
+            card.next_unread.as_ref().map(|n| n.number),
+            expected.first().copied(),
+            "watchlist_page next_unread must be the first unread chapter ({})",
+            state.name
+        );
+        assert_eq!(
+            card.read_count,
+            rust_read_whole_count(progress),
+            "watchlist_page read_count ({})",
+            state.name
+        );
+        assert!(
+            card.read_count + card.unread <= card.total_chapters,
+            "read + unread must never exceed the denominator they are drawn over ({})",
+            state.name
+        );
 
         // 4. The lifetime stats.
         let stats = me_stats(&db.pool, user).await.expect("stats");
@@ -306,6 +343,152 @@ async fn the_sql_and_the_rust_predicate_agree_on_every_chapter() {
             state.name
         );
     }
+}
+
+/// Keyset paging must visit every row exactly once, under every order the list offers.
+///
+/// # The bug this exists to stop
+///
+/// The seek predicate and the `ORDER BY` are two spellings of one ordering, and nothing but this
+/// test compares them. Get the direction, the `NULLS LAST` arm or the id tiebreaker wrong in one
+/// of them and the pages still come back full of plausible rows — just with one row repeated
+/// across a page boundary and another never shown at all. That is invisible in a page-sized
+/// assertion and invisible in production until a reader notices a title missing from a list they
+/// scrolled past.
+///
+/// The fixture is deliberately degenerate: `limit` is 2 against 7 series, several of which tie
+/// on `unread` and on `progress` (so the tiebreaker is load-bearing rather than decorative), and
+/// two carry no chapters at all (so every order has `NULL` keys to place last).
+#[tokio::test]
+async fn keyset_pages_visit_every_row_exactly_once() {
+    use tankovault_db::repo::tracking::{WatchlistOrder, WatchlistSort};
+
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "pager").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+
+    // Two with no chapters, three tied on chapter count, two distinct.
+    let fixture: &[(&str, &[f64])] = &[
+        ("Akira", &[]),
+        ("Berserk", &[1.0, 2.0]),
+        ("Chainsaw Man", &[1.0, 2.0]),
+        ("Dorohedoro", &[1.0, 2.0]),
+        ("Eden", &[1.0]),
+        ("Frieren", &[1.0, 2.0, 3.0]),
+        ("Goodnight Punpun", &[]),
+    ];
+    for (title, chapters) in fixture {
+        let series = a_series(&db, provider, title, chapters).await;
+        watchlist_upsert(&db.pool, user, series, WatchStatus::Reading, true)
+            .await
+            .expect("watchlist");
+    }
+
+    for sort in [
+        WatchlistSort::Released,
+        WatchlistSort::Unread,
+        WatchlistSort::Added,
+        WatchlistSort::Title,
+        WatchlistSort::Progress,
+    ] {
+        for order in [WatchlistOrder::Desc, WatchlistOrder::Asc] {
+            let base = WatchlistFilter {
+                sort,
+                order,
+                limit: 1000,
+                ..WatchlistFilter::default()
+            };
+            let whole: Vec<SeriesId> = watchlist_page(&db.pool, user, &base)
+                .await
+                .expect("unpaged")
+                .items
+                .iter()
+                .map(|c| c.series_id)
+                .collect();
+
+            let mut walked = Vec::new();
+            let mut cursor = None;
+            // Bounded so a seek predicate that never advances fails as a wrong list rather than
+            // hanging the suite.
+            for _ in 0..fixture.len() + 2 {
+                let page = watchlist_page(
+                    &db.pool,
+                    user,
+                    &WatchlistFilter {
+                        limit: 2,
+                        cursor: cursor.clone(),
+                        ..base.clone()
+                    },
+                )
+                .await
+                .expect("keyset page");
+                walked.extend(page.items.iter().map(|c| c.series_id));
+                match page.next_cursor {
+                    Some(next) => cursor = Some(next),
+                    None => break,
+                }
+            }
+
+            assert_eq!(
+                walked,
+                whole,
+                "keyset walk diverges from the unpaged order for {:?}/{:?}",
+                sort.as_token(),
+                order.as_token(),
+            );
+        }
+    }
+}
+
+/// The summary counts every tracked title, whatever the list is filtered to.
+///
+/// It exists precisely because the list's own `counts` cannot answer this: those keep the
+/// search, recency and source arms, so a reader who has typed into the filter box would see a
+/// library-size badge that shrinks as they type.
+#[tokio::test]
+async fn the_summary_ignores_the_filters_the_list_counts_apply() {
+    use tankovault_db::repo::tracking::watchlist_summary;
+
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "summariser").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+
+    let reading = a_series(&db, provider, "Berserk", &[1.0, 2.0]).await;
+    let dropped = a_series(&db, provider, "Claymore", &[1.0]).await;
+    watchlist_upsert(&db.pool, user, reading, WatchStatus::Reading, true)
+        .await
+        .expect("watchlist");
+    watchlist_upsert(&db.pool, user, dropped, WatchStatus::Dropped, true)
+        .await
+        .expect("watchlist");
+
+    let summary = watchlist_summary(&db.pool, user).await.expect("summary");
+    assert_eq!(summary.counts.all, 2);
+    assert_eq!(summary.counts.reading, 1);
+    assert_eq!(summary.counts.dropped, 1);
+    assert_eq!(summary.unread_total, 3, "two chapters plus one");
+
+    // The same account, seen through a search that matches one title, must not change it.
+    let filtered = watchlist_page(
+        &db.pool,
+        user,
+        &WatchlistFilter {
+            query: Some("Berserk".into()),
+            ..WatchlistFilter::default()
+        },
+    )
+    .await
+    .expect("filtered");
+    assert_eq!(filtered.counts.all, 1, "list counts follow the search");
+    assert_eq!(
+        watchlist_summary(&db.pool, user)
+            .await
+            .expect("summary")
+            .counts
+            .all,
+        2,
+        "the summary does not",
+    );
 }
 
 /// The notifier's "already read?" filter must be [`ReadProgress::covers`], not a comparison

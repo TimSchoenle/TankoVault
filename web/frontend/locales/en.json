@@ -134,6 +134,7 @@
     }
   },
   "auth": {
+    "acceptance": "By creating an account you accept the {terms} and the {privacy}.",
     "badCredentials": "That email/username and password don't match an account. Check them and try again.",
     "confirmFirst": "Please confirm your email address before signing in. Check your inbox for the confirmation link.",
     "field": {
@@ -764,6 +765,21 @@
     "failed": "Something went wrong: {message}",
     "signInGate": "Sign in to see this."
   },
+  "footer": {
+    "apiHealthy": "api healthy",
+    "copyright": "© {year} Tim Schönle",
+    "dataRequests": "Data requests",
+    "deleteAccount": "Delete account",
+    "export": "Export your library",
+    "imprint": "Imprint",
+    "legal": "Legal",
+    "openSource": "Open source",
+    "privacy": "Data Policy",
+    "source": "Source code",
+    "tagline": "Track what you read, across every source that carries it.",
+    "terms": "Terms of Service",
+    "yourData": "Your data"
+  },
   "greeting": {
     "afternoon": "Good afternoon",
     "evening": "Good evening",
@@ -792,9 +808,14 @@
     },
     "welcome": "Welcome back, {name}"
   },
+  "legal": {
+    "localeNote": "Only available in {locale}",
+    "updated": "Last updated {date}"
+  },
   "nav": {
     "account": "Account",
     "accountSettings": "Account settings",
+    "alerts": "Alerts",
     "console": "Console",
     "discover": "Discover",
     "group": {
@@ -804,6 +825,8 @@
       "operator": "OPERATOR"
     },
     "home": "Home",
+    "language": "Language",
+    "more": "More",
     "notices": "Open-source notices",
     "notifications": "Notifications",
     "railLabel": "Main",
@@ -983,6 +1006,7 @@
   },
   "title": {
     "app": "TankoVault — manga tracker",
+    "legal": "Legal",
     "search": "Search: {query}",
     "series": "Series",
     "template": "{page} — TankoVault"
@@ -1007,8 +1031,10 @@
     "chapterNo": "ch {number}",
     "clearSelection": "Clear selection",
     "col": {
+      "nextUnread": "Next unread",
       "progress": "Progress",
       "released": "Released",
+      "sources": "Sources",
       "title": "Title",
       "unread": "Unread"
     },
@@ -1031,6 +1057,14 @@
     "markGroupIncomplete": "Scroll to load the whole group before marking it read.",
     "markGroupRead": "Mark group read",
     "markGroupTooBig": "Too many titles to mark at once (limit {limit}).",
+    "moreSources": {
+      "one": "{count} more source",
+      "other": "{count} more sources"
+    },
+    "moreUnread": {
+      "one": "+{count} more unread",
+      "other": "+{count} more unread"
+    },
     "moveTo": "Move to {status}",
     "moveToPrompt": "Move to…",
     "mute": "Mute",

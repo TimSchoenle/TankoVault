@@ -1016,6 +1016,99 @@
         ],
         "type": "object"
       },
+      "LegalDocumentView": {
+        "description": "One document, in the locale that was actually served.",
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "format": {
+            "description": "Always `markdown`. Present so a future format is a value rather than a new endpoint.",
+            "type": "string"
+          },
+          "locale": {
+            "description": "The locale served, which is **not** necessarily the one requested — a reader asking for\nGerman and receiving the only available English text has to be told, or they conclude\nthe operator writes German like that.",
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "slug",
+          "locale",
+          "format",
+          "body"
+        ],
+        "type": "object"
+      },
+      "LegalIndexEntry": {
+        "description": "One entry in the index the footer renders.",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/LegalKind",
+            "description": "`inline` for a document this API serves, `external` for one hosted elsewhere."
+          },
+          "locales": {
+            "description": "The locales an `inline` document is published in.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "slug": {
+            "description": "The URL slug, and the key an operator configured this document under.",
+            "type": "string"
+          },
+          "title": {
+            "description": "The operator's title for the requested locale, when they set one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated": {
+            "description": "The \"last updated\" line, verbatim as configured.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "description": "Where to send the reader, for an `external` document.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "slug",
+          "kind",
+          "locales"
+        ],
+        "type": "object"
+      },
+      "LegalKind": {
+        "description": "Whether a document is served from here or hosted elsewhere.",
+        "enum": [
+          "inline",
+          "external"
+        ],
+        "type": "string"
+      },
       "LoginRequest": {
         "properties": {
           "login": {
@@ -7254,6 +7347,94 @@
         ]
       }
     },
+    "/v1/legal": {
+      "get": {
+        "description": "Only what this deployment actually publishes. An operator who configures no Imprint gets no\nImprint entry, so the footer renders no dead link rather than one that 404s.",
+        "operationId": "legal_index",
+        "parameters": [
+          {
+            "description": "Language code (`en`, `de`). Falls back to `Accept-Language`, then to the first locale\nthe operator configured.",
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LegalIndexEntry"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "The configured documents"
+          }
+        },
+        "summary": "List the legal documents",
+        "tags": [
+          "legal"
+        ]
+      }
+    },
+    "/v1/legal/{slug}": {
+      "get": {
+        "description": "The Markdown as the operator wrote it. Rendering — and sanitising the result — is the\nclient's job: this is operator input, not developer input, so it is never trusted as HTML.",
+        "operationId": "legal_document",
+        "parameters": [
+          {
+            "description": "Document slug",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Language code (`en`, `de`). Falls back to `Accept-Language`, then to the first locale\nthe operator configured.",
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalDocumentView"
+                }
+              }
+            },
+            "description": "The document in the served locale"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such document, or its file is unreadable"
+          }
+        },
+        "summary": "Get one legal document",
+        "tags": [
+          "legal"
+        ]
+      }
+    },
     "/v1/me": {
       "delete": {
         "description": "Erases the account and every row owned by it (GDPR Art. 17, right to erasure).\n\nAudit records of privileged actions the user performed are **retained in pseudonymised\nform**: the actor reference is nulled, so the record of what happened survives while\nthe link to a person does not. Documented on\n`tankovault_db::repo::privacy::erase_user`.\n\nAny of the user's own open data-subject requests are resolved as completed *before* the\ncascade, so the compliance record shows the erasure was carried out rather than leaving a\nrequest that appears abandoned.",
@@ -10381,6 +10562,10 @@
     {
       "description": "Public catalogue browse/detail/chapters",
       "name": "series"
+    },
+    {
+      "description": "Operator-published legal documents; unauthenticated",
+      "name": "legal"
     },
     {
       "description": "The signed-in user's watchlist",

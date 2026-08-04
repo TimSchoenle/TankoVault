@@ -37,6 +37,7 @@ pub struct TestConfig {
     cookie_secure: bool,
     features: FeatureGate,
     webauthn: Option<tankovault_api::SharedRelyingParty>,
+    legal: tankovault_config::LegalConfig,
 }
 
 impl Default for TestConfig {
@@ -52,6 +53,9 @@ impl Default for TestConfig {
                     .expect("the harness origin builds a relying party")
                     .expect("and is not empty"),
             )),
+            // Empty by default, which is what most deployments run: `/v1/legal` answers with an
+            // empty index rather than 404ing, and the footer publishes no Legal column.
+            legal: tankovault_config::LegalConfig::default(),
         }
     }
 }
@@ -67,6 +71,13 @@ impl TestConfig {
     #[must_use]
     pub fn with_mailer(mut self, mailer: Arc<dyn EmailService>) -> Self {
         self.mailer = mailer;
+        self
+    }
+
+    /// Publish a set of legal documents, as an operator's `[legal]` section would.
+    #[must_use]
+    pub fn with_legal(mut self, legal: tankovault_config::LegalConfig) -> Self {
+        self.legal = legal;
         self
     }
 
@@ -183,6 +194,7 @@ impl TestApp {
             webauthn: cfg.webauthn,
             mailer: cfg.mailer,
             email_base_url: "http://localhost".to_owned(),
+            legal: tankovault_api::LegalDocs::new(cfg.legal.clone()),
         };
 
         let router = tankovault_api::build_router(

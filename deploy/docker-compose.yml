@@ -203,6 +203,20 @@ services:
       TANKOVAULT_AUDIT__RECORD_IP: "false"
       TANKOVAULT_AUDIT__RECORD_USER_AGENT: "false"
       TANKOVAULT_AUDIT__RETENTION_DAYS: "365"
+      # Legal documents. `dir` roots the relative `sources` paths below, and the whole block is
+      # optional — an instance with no `[legal]` section publishes no Legal column rather than
+      # dead links. The mounted files are read on demand behind an mtime check, so correcting a
+      # policy is an edit and a reload of the page, not a restart.
+      #
+      # The samples say so in their first line. Replace them before anyone else uses the
+      # instance: no legal copy in this repository is legal advice or fit for a deployment.
+      TANKOVAULT_LEGAL__DIR: /etc/tankovault/legal
+      TANKOVAULT_LEGAL__DOCUMENTS: >-
+        {"terms":{"updated":"2026-08-04","sources":{"en":"terms.en.md","de":"terms.de.md"}},
+         "privacy":{"updated":"2026-08-04","sources":{"en":"privacy.en.md","de":"privacy.de.md"}}}
+    volumes:
+      # Read-only: the API serves these, it never writes them.
+      - ./legal:/etc/tankovault/legal:ro
     depends_on:
       migrate: { condition: service_completed_successfully }
       nats: { condition: service_healthy }

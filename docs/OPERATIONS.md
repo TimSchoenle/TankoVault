@@ -511,7 +511,40 @@ consumer and stops consuming; it recovers when it is replaced.
 
 ---
 
-## 8. Schema migrations
+## 8. Legal documents
+
+Terms of Service, Data Policy, Imprint and anything else this deployment is obliged to publish
+are **operator content**, configured under `[legal]` (docs/CONFIGURATION.md §4) and served
+unauthenticated at `GET /v1/legal` and `GET /v1/legal/{slug}`. The SPA's footer builds its Legal
+column from that index, so configuring a document publishes its link and removing one retracts
+it — there is no second place to edit.
+
+### Where the files live
+
+Wherever `TANKOVAULT_LEGAL__DIR` points, mounted read-only. The reference stack mounts
+`deploy/legal/` at `/etc/tankovault/legal`. Those checked-in files are **samples that say so in
+their first line** — they are not legal advice and not fit for a deployment. Replace them before
+anyone else uses the instance.
+
+### Editing does not need a restart
+
+Each file is read on demand and cached against its mtime, so an edit is visible to the next
+request that misses the five-minute `Cache-Control` window. Restarting only matters when the
+`[legal]` *section* changes — which documents exist, their slugs, locales or `updated` line —
+because that is configuration, not content.
+
+### Failure modes
+
+| What happened | What readers see |
+|---|---|
+| A document has neither `sources` nor `url`, or both | The API **refuses to boot**, naming the slug. Better than a footer link that permanently 404s. |
+| A configured file is missing or unreadable at request time | `404` for that document, one warning line naming the path. The rest of the index is unaffected. |
+| A file exceeds 1 MiB | `404` and an error line. The cap exists so a `source` pointed at a log file cannot become a response body. |
+| No `[legal]` section at all | An empty index; the footer publishes no Legal column, and the register form omits its "you accept …" line rather than linking nowhere. |
+
+---
+
+## 9. Schema migrations
 
 ### How they are applied
 

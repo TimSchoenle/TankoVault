@@ -2479,6 +2479,217 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "One document, in the locale that was actually served."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One document, in the locale that was actually served.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"body\","]
+    #[doc = "    \"format\","]
+    #[doc = "    \"locale\","]
+    #[doc = "    \"slug\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"body\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"format\": {"]
+    #[doc = "      \"description\": \"Always `markdown`. Present so a future format is a value rather than a new endpoint.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"locale\": {"]
+    #[doc = "      \"description\": \"The locale served, which is **not** necessarily the one requested — a reader asking for\\nGerman and receiving the only available English text has to be told, or they conclude\\nthe operator writes German like that.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"slug\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"title\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"updated\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct LegalDocumentView {
+        pub body: ::std::string::String,
+        #[doc = "Always `markdown`. Present so a future format is a value rather than a new endpoint."]
+        pub format: ::std::string::String,
+        #[doc = "The locale served, which is **not** necessarily the one requested — a reader asking for\nGerman and receiving the only available English text has to be told, or they conclude\nthe operator writes German like that."]
+        pub locale: ::std::string::String,
+        pub slug: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub title: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub updated: ::std::option::Option<::std::string::String>,
+    }
+    impl LegalDocumentView {
+        pub fn builder() -> builder::LegalDocumentView {
+            Default::default()
+        }
+    }
+    #[doc = "One entry in the index the footer renders."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One entry in the index the footer renders.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"kind\","]
+    #[doc = "    \"locales\","]
+    #[doc = "    \"slug\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"kind\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/LegalKind\""]
+    #[doc = "    },"]
+    #[doc = "    \"locales\": {"]
+    #[doc = "      \"description\": \"The locales an `inline` document is published in.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"slug\": {"]
+    #[doc = "      \"description\": \"The URL slug, and the key an operator configured this document under.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"title\": {"]
+    #[doc = "      \"description\": \"The operator's title for the requested locale, when they set one.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"updated\": {"]
+    #[doc = "      \"description\": \"The \\\"last updated\\\" line, verbatim as configured.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"url\": {"]
+    #[doc = "      \"description\": \"Where to send the reader, for an `external` document.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct LegalIndexEntry {
+        pub kind: LegalKind,
+        #[doc = "The locales an `inline` document is published in."]
+        pub locales: ::std::vec::Vec<::std::string::String>,
+        #[doc = "The URL slug, and the key an operator configured this document under."]
+        pub slug: ::std::string::String,
+        #[doc = "The operator's title for the requested locale, when they set one."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub title: ::std::option::Option<::std::string::String>,
+        #[doc = "The \"last updated\" line, verbatim as configured."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub updated: ::std::option::Option<::std::string::String>,
+        #[doc = "Where to send the reader, for an `external` document."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub url: ::std::option::Option<::std::string::String>,
+    }
+    impl LegalIndexEntry {
+        pub fn builder() -> builder::LegalIndexEntry {
+            Default::default()
+        }
+    }
+    #[doc = "Whether a document is served from here or hosted elsewhere."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Whether a document is served from here or hosted elsewhere.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"inline\","]
+    #[doc = "    \"external\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum LegalKind {
+        #[serde(rename = "inline")]
+        Inline,
+        #[serde(rename = "external")]
+        External,
+    }
+    impl ::std::fmt::Display for LegalKind {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Inline => f.write_str("inline"),
+                Self::External => f.write_str("external"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for LegalKind {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "inline" => Ok(Self::Inline),
+                "external" => Ok(Self::External),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for LegalKind {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for LegalKind {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for LegalKind {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
     #[doc = "`LoginRequest`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -11018,6 +11229,244 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct LegalDocumentView {
+            body: ::std::result::Result<::std::string::String, ::std::string::String>,
+            format: ::std::result::Result<::std::string::String, ::std::string::String>,
+            locale: ::std::result::Result<::std::string::String, ::std::string::String>,
+            slug: ::std::result::Result<::std::string::String, ::std::string::String>,
+            title: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            updated: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for LegalDocumentView {
+            fn default() -> Self {
+                Self {
+                    body: Err("no value supplied for body".to_string()),
+                    format: Err("no value supplied for format".to_string()),
+                    locale: Err("no value supplied for locale".to_string()),
+                    slug: Err("no value supplied for slug".to_string()),
+                    title: Ok(Default::default()),
+                    updated: Ok(Default::default()),
+                }
+            }
+        }
+        impl LegalDocumentView {
+            pub fn body<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.body = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for body: {e}"));
+                self
+            }
+            pub fn format<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.format = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for format: {e}"));
+                self
+            }
+            pub fn locale<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.locale = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for locale: {e}"));
+                self
+            }
+            pub fn slug<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.slug = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for slug: {e}"));
+                self
+            }
+            pub fn title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for title: {e}"));
+                self
+            }
+            pub fn updated<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<LegalDocumentView> for super::LegalDocumentView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: LegalDocumentView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    body: value.body?,
+                    format: value.format?,
+                    locale: value.locale?,
+                    slug: value.slug?,
+                    title: value.title?,
+                    updated: value.updated?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::LegalDocumentView> for LegalDocumentView {
+            fn from(value: super::LegalDocumentView) -> Self {
+                Self {
+                    body: Ok(value.body),
+                    format: Ok(value.format),
+                    locale: Ok(value.locale),
+                    slug: Ok(value.slug),
+                    title: Ok(value.title),
+                    updated: Ok(value.updated),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct LegalIndexEntry {
+            kind: ::std::result::Result<super::LegalKind, ::std::string::String>,
+            locales: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            slug: ::std::result::Result<::std::string::String, ::std::string::String>,
+            title: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            updated: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            url: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for LegalIndexEntry {
+            fn default() -> Self {
+                Self {
+                    kind: Err("no value supplied for kind".to_string()),
+                    locales: Err("no value supplied for locales".to_string()),
+                    slug: Err("no value supplied for slug".to_string()),
+                    title: Ok(Default::default()),
+                    updated: Ok(Default::default()),
+                    url: Ok(Default::default()),
+                }
+            }
+        }
+        impl LegalIndexEntry {
+            pub fn kind<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::LegalKind>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kind = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kind: {e}"));
+                self
+            }
+            pub fn locales<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.locales = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for locales: {e}"));
+                self
+            }
+            pub fn slug<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.slug = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for slug: {e}"));
+                self
+            }
+            pub fn title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for title: {e}"));
+                self
+            }
+            pub fn updated<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated: {e}"));
+                self
+            }
+            pub fn url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for url: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<LegalIndexEntry> for super::LegalIndexEntry {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: LegalIndexEntry,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    kind: value.kind?,
+                    locales: value.locales?,
+                    slug: value.slug?,
+                    title: value.title?,
+                    updated: value.updated?,
+                    url: value.url?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::LegalIndexEntry> for LegalIndexEntry {
+            fn from(value: super::LegalIndexEntry) -> Self {
+                Self {
+                    kind: Ok(value.kind),
+                    locales: Ok(value.locales),
+                    slug: Ok(value.slug),
+                    title: Ok(value.title),
+                    updated: Ok(value.updated),
+                    url: Ok(value.url),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct LoginRequest {
             login: ::std::result::Result<::std::string::String, ::std::string::String>,
             password: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -17900,6 +18349,14 @@ impl Client {
     pub fn resend_verification(&self) -> builder::ResendVerification<'_> {
         builder::ResendVerification::new(self)
     }
+    #[doc = "List the legal documents\n\nOnly what this deployment actually publishes. An operator who configures no Imprint gets no\nImprint entry, so the footer renders no dead link rather than one that 404s.\n\nSends a `GET` request to `/v1/legal`\n\nArguments:\n- `lang`: Language code (`en`, `de`). Falls back to `Accept-Language`, then to the first locale\nthe operator configured.\n```ignore\nlet response = client.legal_index()\n    .lang(lang)\n    .send()\n    .await;\n```"]
+    pub fn legal_index(&self) -> builder::LegalIndex<'_> {
+        builder::LegalIndex::new(self)
+    }
+    #[doc = "Get one legal document\n\nThe Markdown as the operator wrote it. Rendering — and sanitising the result — is the\nclient's job: this is operator input, not developer input, so it is never trusted as HTML.\n\nSends a `GET` request to `/v1/legal/{slug}`\n\nArguments:\n- `slug`: Document slug\n- `lang`: Language code (`en`, `de`). Falls back to `Accept-Language`, then to the first locale\nthe operator configured.\n```ignore\nlet response = client.legal_document()\n    .slug(slug)\n    .lang(lang)\n    .send()\n    .await;\n```"]
+    pub fn legal_document(&self) -> builder::LegalDocument<'_> {
+        builder::LegalDocument::new(self)
+    }
     #[doc = "Delete my account\n\nErases the account and every row owned by it (GDPR Art. 17, right to erasure).\n\nAudit records of privileged actions the user performed are **retained in pseudonymised\nform**: the actor reference is nulled, so the record of what happened survives while\nthe link to a person does not. Documented on\n`tankovault_db::repo::privacy::erase_user`.\n\nAny of the user's own open data-subject requests are resolved as completed *before* the\ncascade, so the compliance record shows the erasure was carried out rather than leaving a\nrequest that appears abandoned.\n\nSends a `DELETE` request to `/v1/me`\n\n```ignore\nlet response = client.delete_account()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn delete_account(&self) -> builder::DeleteAccount<'_> {
         builder::DeleteAccount::new(self)
@@ -22497,6 +22954,141 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 202u16 => Ok(ResponseValue::empty(response)),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::legal_index`]\n\n[`Client::legal_index`]: super::Client::legal_index"]
+    #[derive(Debug, Clone)]
+    pub struct LegalIndex<'a> {
+        client: &'a super::Client,
+        lang: Result<Option<::std::string::String>, String>,
+    }
+    impl<'a> LegalIndex<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                lang: Ok(None),
+            }
+        }
+        pub fn lang<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.lang = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for lang failed".to_string()
+            });
+            self
+        }
+        #[doc = "Sends a `GET` request to `/v1/legal`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::LegalIndexEntry>>, Error<()>> {
+            let Self { client, lang } = self;
+            let lang = lang.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/legal", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("lang", &lang))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "legal_index",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::legal_document`]\n\n[`Client::legal_document`]: super::Client::legal_document"]
+    #[derive(Debug, Clone)]
+    pub struct LegalDocument<'a> {
+        client: &'a super::Client,
+        slug: Result<::std::string::String, String>,
+        lang: Result<Option<::std::string::String>, String>,
+    }
+    impl<'a> LegalDocument<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                slug: Err("slug was not initialized".to_string()),
+                lang: Ok(None),
+            }
+        }
+        pub fn slug<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.slug = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for slug failed".to_string()
+            });
+            self
+        }
+        pub fn lang<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.lang = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for lang failed".to_string()
+            });
+            self
+        }
+        #[doc = "Sends a `GET` request to `/v1/legal/{slug}`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::LegalDocumentView>, Error<types::ProblemDetails>> {
+            let Self { client, slug, lang } = self;
+            let slug = slug.map_err(Error::InvalidRequest)?;
+            let lang = lang.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/legal/{}",
+                client.baseurl,
+                encode_path(&slug.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("lang", &lang))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "legal_document",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 _ => Err(Error::UnexpectedResponse(response)),
             }
         }

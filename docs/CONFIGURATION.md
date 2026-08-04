@@ -193,6 +193,27 @@ Read by `api` only — it is the sole service that performs privileged user-faci
 | `TANKOVAULT_AUDIT__RETENTION_DAYS` | `365` | `0` disables the sweep and keeps records forever — rarely what a GDPR-scoped deployment wants (Art. 5(1)(e)). |
 | `TANKOVAULT_AUDIT__SWEEP_INTERVAL_HOURS` | `24` | Ignored when retention is `0`. |
 
+### `legal` — operator-published legal documents
+
+Read by `api` only, which serves them unauthenticated at `GET /v1/legal` and
+`GET /v1/legal/{slug}`; the SPA's footer builds its Legal column from that index.
+
+Every deployment is a different operator under different law, the text changes without a release,
+and an Imprint is a statutory requirement in some jurisdictions and meaningless in others — so
+none of it is in the bundle. The whole block is optional: with no `[legal]` section the API
+returns an empty index and the footer publishes **no Legal column**, rather than links that 404.
+
+Files are read on demand behind an mtime check, so correcting a policy is an edit, not a restart.
+A file that disappears degrades to `404` and a warning, never a panic.
+
+| Key | Default | Notes |
+|---|---|---|
+| `TANKOVAULT_LEGAL__DIR` | *(unset)* | Root that relative `sources` paths resolve against. An absolute `source` wins over it, so a single absolute path in one variable works without also setting a root. |
+| `TANKOVAULT_LEGAL__DOCUMENTS` | `{}` | The published documents, **keyed by URL slug** — so an operator can publish a document this build has never heard of (`dmca`, `acceptable_use`) with no code change. Each value is `{ sources: { <locale>: <path> }, url, updated, title: { <locale>: <text> } }`. `sources` and `url` are mutually exclusive and one is required: a document with neither, or with both, is **refused at boot** naming the slug, because the alternative is a permanent 404 on a link the footer publishes from the same config. As a map it is one figment value, so it takes either a whole JSON object or the usual `__` nesting per leaf: `TANKOVAULT_LEGAL__DOCUMENTS__TERMS__SOURCES__EN=/etc/tankovault/legal/terms.en.md`. `updated` is free text shown verbatim — a file mtime is the wrong answer, since touching a file is not amending a policy. |
+
+`deploy/legal/` holds working samples that say so in their first line, mounted read-only by the
+reference compose file. They are not legal advice and not fit for a deployment; replace them.
+
 ### `features` — runtime feature-flag plumbing
 
 | Key | Default | Services | Notes |

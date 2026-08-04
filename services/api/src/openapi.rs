@@ -7,6 +7,7 @@ use utoipa::{Modify, OpenApi};
 
 pub const AUTH_TAG: &str = "auth";
 pub const SERIES_TAG: &str = "series";
+pub const LEGAL_TAG: &str = "legal";
 pub const ME_WATCHLIST_TAG: &str = "me-watchlist";
 pub const ME_PROGRESS_TAG: &str = "me-progress";
 pub const ME_DASHBOARD_TAG: &str = "me-dashboard";
@@ -61,6 +62,7 @@ impl Modify for SecurityAddon {
     tags(
         (name = AUTH_TAG, description = "Registration, login, session refresh/logout"),
         (name = SERIES_TAG, description = "Public catalogue browse/detail/chapters"),
+        (name = LEGAL_TAG, description = "Operator-published legal documents; unauthenticated"),
         (name = ME_WATCHLIST_TAG, description = "The signed-in user's watchlist"),
         (name = ME_PROGRESS_TAG, description = "Per-series reading progress"),
         (name = ME_DASHBOARD_TAG, description = "Feed, continue-reading, recommendations, stats"),

@@ -64,6 +64,9 @@ pub struct AppState {
     /// Public base URL of the web app, used to build absolute links inside emails
     /// (e.g. the password-reset link). No trailing slash.
     pub email_base_url: String,
+    /// The operator's legal documents, read through an mtime check. Empty is a working state:
+    /// the footer simply publishes no Legal column.
+    pub legal: crate::legal::LegalDocs,
 }
 
 /// Where a request came from, for the audit trail.

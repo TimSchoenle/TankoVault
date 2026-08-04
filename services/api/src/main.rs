@@ -51,6 +51,10 @@ struct Config {
     /// across every service in the internal tier.
     #[serde(default)]
     internal: tankovault_config::InternalAuthConfig,
+    /// Operator-published legal documents (Terms, Data Policy, Imprint, ...). An absent
+    /// section publishes nothing, which is a valid deployment.
+    #[serde(default)]
+    legal: tankovault_config::LegalConfig,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -267,6 +271,9 @@ async fn serve_once(
     // Refuse to boot with a broken trust root: a production deployment must not serve a single
     // request against a missing or brute-forceable JWT secret.
     validate_auth_secrets(&cfg.auth, is_production())?;
+    // A legal document with no file and no URL would 404 on a link the footer publishes from
+    // the same config that omitted it. Refusing to boot names the slug, which is the fix.
+    cfg.legal.validate()?;
 
     let pool = tankovault_db::connect(
         &cfg.database.url,
@@ -344,6 +351,7 @@ async fn serve_once(
         webauthn,
         mailer,
         email_base_url: cfg.email.base_url.clone(),
+        legal: tankovault_api::LegalDocs::new(cfg.legal.clone()),
     };
 
     // Readiness reflects what the edge actually needs to serve: Postgres is required, and

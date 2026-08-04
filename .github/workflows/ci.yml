@@ -397,7 +397,13 @@ jobs:
         # Digest-pinned: a floating tag is an unreviewed change to the database the `.sqlx` cache
         # is verified against, and the verification only means something against a known one.
         # Renovate moves the digest; `renovate.json` holds major bumps for a human.
-        image: postgres:18@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
+        #
+        # `pgvector/pgvector`, not stock `postgres`: this job re-derives the cache by applying
+        # every migration, and `0027_recsys_signals` runs `CREATE EXTENSION vector`. Stock
+        # Postgres cannot, so the job fails at schema setup having verified nothing. Same image
+        # as `deploy/docker-compose.yml` and the integration harness — `xtask repo-lint` holds all
+        # three to each other.
+        image: pgvector/pgvector:pg18@sha256:691673308c99d2161ba298736f3147f1f22d79de2fb7ec93ae9b4afcab870b62
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

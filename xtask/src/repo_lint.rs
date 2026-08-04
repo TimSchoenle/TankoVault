@@ -608,6 +608,14 @@ fn the_notices_url_is_the_one_the_server_publishes(root: &Path) -> anyhow::Resul
 /// dangerous direction: every test passes, because the tests can run `CREATE EXTENSION vector`,
 /// and the deployment then fails on its first migration. The reverse at least fails loudly and
 /// immediately. Only the silent direction needs a rule, but comparing the names catches both.
+///
+/// There are **three** copies of this decision, not two, and the third is the one nothing pointed
+/// at: CI's own service containers. The `sqlx offline cache` job pins a Postgres of its own and
+/// applies every migration to it. On the wrong image that job dies at `CREATE EXTENSION vector`
+/// having verified nothing, and it reports a missing extension rather than a wrong pin — so the
+/// obvious reading is "the migration is broken", not "this job runs a different database than
+/// production does". Every `image:` line under `.github/workflows/` naming a Postgres is held to
+/// the compose file too.
 fn tests_run_the_production_postgres_major(root: &Path) -> anyhow::Result<Vec<Finding>> {
     const RULE: &str = "tests-run-the-production-postgres-major";
     const HARNESS: &str = "crates/test-support/src/lib.rs";
@@ -663,7 +671,58 @@ fn tests_run_the_production_postgres_major(root: &Path) -> anyhow::Result<Vec<Fi
         );
     };
 
+    // CI's own service containers are a third copy of the same decision, and the one nothing
+    // pointed at. The `sqlx offline cache` job re-derives the query cache by applying every
+    // migration against a Postgres it pins itself; on stock `postgres` that fails at
+    // `CREATE EXTENSION vector` having verified nothing, and the failure names the extension
+    // rather than the pin, so it reads as a schema problem.
     let mut findings = Vec::new();
+    for entry in std::fs::read_dir(root.join(".github/workflows"))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let path = entry.path();
+        if !path
+            .extension()
+            .is_some_and(|ext| ext == "yml" || ext == "yaml")
+        {
+            continue;
+        }
+        let Ok(workflow) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        for (index, line) in workflow.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if is_comment(trimmed) {
+                continue;
+            }
+            let Some((name, tag)) = image_reference(trimmed) else {
+                continue;
+            };
+            if !POSTGRES_IMAGES.contains(&name) {
+                continue;
+            }
+            let workflow_name = path.file_name().map_or_else(
+                || path.display().to_string(),
+                |n| n.to_string_lossy().into(),
+            );
+            if name != compose_image || major_of(tag).is_none_or(|major| major != compose_major) {
+                findings.push(Finding {
+                    rule: RULE,
+                    file: PathBuf::from(format!(".github/workflows/{workflow_name}")),
+                    line: index + 1,
+                    detail: format!(
+                        "this job runs `{name}:{tag}`, production runs `{compose_image}` \
+                         {compose_major} ({COMPOSE}:{compose_line}); a job that applies the \
+                         migrations against a different Postgres verifies nothing about the one \
+                         that runs them"
+                    ),
+                });
+            }
+        }
+    }
+
     if harness_major != compose_major {
         findings.push(Finding {
             rule: RULE,

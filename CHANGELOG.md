@@ -12,6 +12,19 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [1.1.1](https://github.com/TimSchoenle/TankoVault/compare/v1.1.0...v1.1.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* **frontend:** per-page titles, background fill past the fold, no AniList pill — and page the notifications inbox ([#62](https://github.com/TimSchoenle/TankoVault/issues/62)) ([ec32688](https://github.com/TimSchoenle/TankoVault/commit/ec326889d9542d99231f515b348c7d51f0123a90))
+
+
+### Miscellaneous
+
+* **deps:** update timschoenle/actions/actions/common/commit-changes to vactions-common-commit-changes-v1.3.0 ([#64](https://github.com/TimSchoenle/TankoVault/issues/64)) ([dbacb87](https://github.com/TimSchoenle/TankoVault/commit/dbacb87069021fb5f97b324007a8cfbe6a00bca6))
+* **deps:** update timschoenle/actions/actions/rust/auto-format to vactions-rust-auto-format-v1.1.9 ([#63](https://github.com/TimSchoenle/TankoVault/issues/63)) ([c20efd0](https://github.com/TimSchoenle/TankoVault/commit/c20efd0e1101a684d283058201f95a892fbeccf6))
+
 ## [1.1.0](https://github.com/TimSchoenle/TankoVault/compare/v1.0.0...v1.1.0) (2026-08-04)
 
 

@@ -236,6 +236,7 @@ fn me_gates() -> Vec<Gate> {
         },
         // --- watchlist ---
         get("/v1/me/watchlist", "/v1/me/watchlist"),
+        get("/v1/me/watchlist/summary", "/v1/me/watchlist/summary"),
         get(
             "/v1/me/watchlist/{series_id}",
             "/v1/me/watchlist/00000000-0000-7000-8000-00000000000a",
@@ -335,10 +336,16 @@ fn me_gates() -> Vec<Gate> {
     ]
 }
 
-/// The catalogue tier: reachable with no session at all, by design.
+/// Reachable with no session at all, by design: the catalogue tier, and the legal documents.
 ///
 /// Asserted because the failure is silent otherwise — an `AuthUser` on a browse route breaks
 /// the front page for everyone, but a developer testing while signed in wouldn't notice.
+///
+/// The legal routes are here for a sharper reason than symmetry: **registering is the act of
+/// accepting the Terms**, so the register form has to link them to a caller who by definition
+/// has no account yet. Putting them behind the same auth layer as the rest of `/v1` is a
+/// one-line mistake that every other test in this file would pass, because everywhere else a
+/// `401` is the correct answer.
 fn public_gates() -> Vec<(&'static str, &'static str)> {
     vec![
         ("/v1/providers", "/v1/providers"),
@@ -352,6 +359,11 @@ fn public_gates() -> Vec<(&'static str, &'static str)> {
             "/v1/series/00000000-0000-7000-8000-00000000000a/chapters",
         ),
         ("/v1/tags", "/v1/tags"),
+        ("/v1/legal", "/v1/legal"),
+        // The harness publishes no documents, so this answers `404` — which is the point: a
+        // `404` is not a `401`, so the assertion still distinguishes "no such document" from
+        // "you must sign in to read the privacy policy".
+        ("/v1/legal/{slug}", "/v1/legal/terms"),
     ]
 }
 

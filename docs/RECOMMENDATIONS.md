@@ -345,7 +345,7 @@ cheap enough that precomputation buys nothing.
 
 Three migrations, in this order. They follow the `.up.sql`/`.down.sql` pair convention of 0021+.
 
-### 5.1 `0026_recsys_signals` — widen the vocabulary
+### 5.1 `0027_recsys_signals` — widen the vocabulary
 
 ```sql
 -- pgvector becomes a hard dependency of the deployment, not an optional accelerator.
@@ -384,7 +384,7 @@ ALTER TABLE series
 `series_tags.weight` is why this migration is first: it changes the meaning of an existing table
 that the enrichment path writes, and the feature extractor depends on it.
 
-### 5.2 `0027_recsys_item_model`
+### 5.2 `0028_recsys_item_model`
 
 ```sql
 -- Interned vocabulary. int4 ids, so a per-series vector stays small enough to live inline.
@@ -464,7 +464,7 @@ that table and every consequence of it. §9 is much shorter than it was.
 `series_features` keeps its own sparse vector as `int[]` + `real[]` — feature ids, not series ids,
 so nothing dangles. It is read only by primary key, for scoring and explanations.
 
-### 5.3 `0028_recsys_user_model`
+### 5.3 `0029_recsys_user_model`
 
 ```sql
 CREATE TABLE user_series_affinity (
@@ -514,8 +514,8 @@ each exists to solve a problem stated there rather than a storage problem:
 | Table | Migration | Defined in |
 |---|---|---|
 | `tunable_overrides` | `0029_recsys_tunables` | §8.5 |
-| `series_merges` | `0026_recsys_signals` — **lands in phase 0** | §9.2 |
-| `rec_repair_queue` | `0027_recsys_item_model` | §9.3 |
+| `series_merges` | `0027_recsys_signals` — **lands in phase 0** | §9.2 |
+| `rec_repair_queue` | `0028_recsys_item_model` | §9.3 |
 
 ---
 

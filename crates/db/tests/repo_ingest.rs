@@ -184,6 +184,49 @@ async fn a_listing_that_repeats_a_chapter_number_does_not_abort_the_batch() {
     );
 }
 
+/// Two chapter numbers that differ only past the fourth decimal are **one** row, because
+/// `chapters.number` is `numeric(10,4)`.
+///
+/// The bug: `DISTINCT ON` deduplicated on the raw `float8`, so both rows survived it, and the
+/// unique index then saw one key twice — "ON CONFLICT DO UPDATE command cannot affect row a
+/// second time", which aborts the statement and fails the entire scan batch, not just the odd
+/// chapter. The dedup key has to be the same cast expression the column stores.
+#[tokio::test]
+async fn chapter_numbers_that_round_to_one_value_do_not_abort_the_batch() {
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "ingest-rounding").create().await;
+
+    let outcome = ingest_series(
+        &db.pool,
+        &scanned(
+            provider,
+            vec![
+                chapter(1.000_01, Some("First spelling"), "/c/1-a"),
+                chapter(2.0, None, "/c/2"),
+                chapter(1.000_02, Some("Last spelling"), "/c/1-b"),
+            ],
+        ),
+        &MatchingConfig::default(),
+    )
+    .await
+    .expect("numbers that collide only after rounding must not abort the ingest");
+
+    let (title, count): (Option<String>, i64) = sqlx::query_as(
+        "SELECT max(c.title), count(*) FROM chapters c \
+          WHERE c.series_source_id = $1 AND c.number = 1",
+    )
+    .bind(outcome.source_id.as_uuid())
+    .fetch_one(&db.pool)
+    .await
+    .expect("the rounded chapter is there");
+    assert_eq!(count, 1, "1.00001 and 1.00002 are both chapter 1.0000");
+    assert_eq!(
+        title.as_deref(),
+        Some("Last spelling"),
+        "the last listing still wins, as it does for an exactly-repeated number"
+    );
+}
+
 /// An empty listing must be a no-op rather than a malformed statement — a provider whose
 /// chapter selector stopped matching produces exactly this.
 #[tokio::test]

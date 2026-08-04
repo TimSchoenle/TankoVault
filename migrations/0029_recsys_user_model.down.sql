@@ -1,4 +1,4 @@
--- Reverse of `0028_recsys_user_model.up.sql`.
+-- Reverse of `0029_recsys_user_model.up.sql`.
 --
 -- Affinity and the taste profile are derived and rebuild themselves from the watchlist and read
 -- progress. `recommendation_feedback` does **not**: a reader's "never show me this" exists

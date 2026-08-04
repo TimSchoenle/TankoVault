@@ -50,6 +50,13 @@ pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
            'recommendation_feedback', (SELECT coalesce(json_agg(to_jsonb(f) - 'user_id' \
                                                                 ORDER BY f.created_at), '[]'::json) \
                                          FROM recommendation_feedback f WHERE f.user_id = $1), \
+           /* What the subject was actually shown, as opposed to what could be inferred about \
+              them. A regenerating cache, which argues for leaving it out of an export — but not \
+              out of a subject access request, where which recommendations this system put in \
+              front of them is precisely the question being asked. */ \
+           'recommendation_shelf', (SELECT coalesce(json_agg(to_jsonb(r) - 'user_id' \
+                                                             ORDER BY r.built_at), '[]'::json) \
+                                      FROM user_recommendations r WHERE r.user_id = $1), \
            'linked_accounts', (SELECT coalesce(json_agg(to_jsonb(e) - 'access_token' - 'refresh_token' \
                                                         ORDER BY e.created_at), '[]'::json) \
                                  FROM external_accounts e WHERE e.user_id = $1), \

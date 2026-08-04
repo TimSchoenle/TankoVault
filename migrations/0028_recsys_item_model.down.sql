@@ -1,4 +1,4 @@
--- Reverse of `0027_recsys_item_model.up.sql`.
+-- Reverse of `0028_recsys_item_model.up.sql`.
 --
 -- Genuinely reversible, unlike 0026: every table here is derived from `series` and its link
 -- tables, so re-applying and rebuilding restores the same model. The only loss is the time the

@@ -195,6 +195,10 @@ impl TestApp {
             mailer: cfg.mailer,
             email_base_url: "http://localhost".to_owned(),
             legal: tankovault_api::LegalDocs::new(cfg.legal.clone()),
+            // Pass-through, not a short TTL: a test that seeds rows and reads a console rollup
+            // back must see its own writes.
+            system_stats: tankovault_api::Cached::uncached(),
+            provider_stats: tankovault_api::Cached::uncached(),
         };
 
         let router = tankovault_api::build_router(

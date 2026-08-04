@@ -1,4 +1,4 @@
--- Reverse of `0026_recsys_signals.up.sql`, as far as reversing it means anything.
+-- Reverse of `0027_recsys_signals.up.sql`, as far as reversing it means anything.
 --
 -- Dropping `series_merges` discards where every merged series went. That history cannot be
 -- recomputed — the absorbed rows are gone — so a re-application starts from an empty map and

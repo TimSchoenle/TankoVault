@@ -269,29 +269,29 @@ pub async fn suggest_series_candidates<'e, E: PgExecutor<'e>>(
 ) -> DbResult<Vec<SeriesCandidateRow>> {
     let rows = sqlx::query_as!(
         SeriesCandidateRow,
-        // UNION of two index-driven trigram scans rather than `% $1 OR EXISTS (… % $1)`; see
-        // `crate::repo::matching::find_candidates` for why the `OR` form scans `series` whole.
+        // UNION of two index-driven trigram scans rather than `% $1 OR EXISTS (… % $1)`, each
+        // branch carrying its own `similarity` so the ranking is a `max(…) GROUP BY` and not a
+        // correlated subquery per matched id; see `crate::repo::matching::find_candidates` for
+        // why the `OR` form scans `series` whole and why the two scorings are equivalent.
         "WITH matched AS ( \
-           SELECT s.id FROM series s WHERE s.normalized_title % $1 \
-           UNION \
-           SELECT st.series_id FROM series_titles st WHERE st.normalized % $1 \
+           SELECT s.id, similarity(s.normalized_title, $1) AS sim \
+             FROM series s WHERE s.normalized_title % $1 \
+           UNION ALL \
+           SELECT st.series_id, similarity(st.normalized, $1) \
+             FROM series_titles st WHERE st.normalized % $1 \
          ), ranked AS ( \
-           SELECT s.id, s.canonical_title, s.normalized_title, s.content_type, s.release_year, \
-                  GREATEST( \
-                    similarity(s.normalized_title, $1), \
-                    COALESCE((SELECT MAX(similarity(st.normalized, $1)) \
-                              FROM series_titles st WHERE st.series_id = s.id), 0) \
-                  ) AS sim \
-           FROM series s JOIN matched m ON m.id = s.id \
+           SELECT m.id, max(m.sim) AS sim \
+           FROM matched m \
+           GROUP BY m.id \
            ORDER BY sim DESC \
            LIMIT $2 \
          ) \
-         SELECT r.id AS series_id, r.canonical_title AS title, r.normalized_title, \
-                r.content_type::text AS \"content_type!\", r.release_year, \
+         SELECT s.id AS series_id, s.canonical_title AS title, s.normalized_title, \
+                s.content_type::text AS \"content_type!\", s.release_year, \
                 (SELECT count(*) FROM series_sources ss WHERE ss.series_id = r.id) \
                     AS \"source_count!\", \
                 r.sim AS \"similarity!\" \
-         FROM ranked r \
+         FROM ranked r JOIN series s ON s.id = r.id \
          ORDER BY r.sim DESC",
         normalized,
         limit,

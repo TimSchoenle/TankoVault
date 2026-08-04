@@ -397,17 +397,14 @@ mod tests {
         let ranked: Vec<Scored<u32>> = (0..40_u32)
             .map(|id| Scored {
                 id,
-                #[expect(
-                    clippy::cast_precision_loss,
-                    reason = "forty small integers are exact in f32"
-                )]
-                score: 1.0 - f32::from(u16::try_from(id).unwrap()) / 100.0,
+                score: 1.0 - f32::from(u16::try_from(id).expect("ids below 40")) / 100.0,
                 because: None,
                 path: Path::Seed,
             })
             .collect();
-        // Deterministic, asymmetric-looking but symmetric similarity, so the fold order matters.
-        let sim = |a: u32, b: u32| ((a * 7 + b * 7) % 13) as f32 / 13.0;
+        // Deterministic and symmetric, with enough spread that the fold order would show.
+        let sim =
+            |a: u32, b: u32| f32::from(u16::try_from((a * 7 + b * 7) % 13).unwrap_or(0)) / 13.0;
 
         let calls = std::cell::Cell::new(0_u32);
         let counted = |a, b| {
@@ -425,14 +422,20 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(index, candidate)| {
-                    let closest = naive.iter().map(|c| sim(candidate.id, *c)).fold(0.0, f32::max);
+                    let closest = naive
+                        .iter()
+                        .map(|c| sim(candidate.id, *c))
+                        .fold(0.0, f32::max);
                     (
                         index,
                         DIVERSITY_LAMBDA
                             .mul_add(candidate.score, -((1.0 - DIVERSITY_LAMBDA) * closest)),
                     )
                 })
-                .fold((0, f32::MIN), |acc, next| if next.1 > acc.1 { next } else { acc });
+                .fold(
+                    (0, f32::MIN),
+                    |acc, next| if next.1 > acc.1 { next } else { acc },
+                );
             naive.push(remaining.remove(best).id);
         }
 

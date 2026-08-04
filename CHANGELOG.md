@@ -12,6 +12,25 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [1.2.2](https://github.com/TimSchoenle/TankoVault/compare/v1.2.1...v1.2.2) (2026-08-04)
+
+
+### Bug Fixes
+
+* **ci:** sync the 1.2.1 generated artefacts and stop the release PR losing its own fixups ([#73](https://github.com/TimSchoenle/TankoVault/issues/73)) ([82322ab](https://github.com/TimSchoenle/TankoVault/commit/82322ab65538a7d9833162cc379d3737504a3dd7))
+
+## [1.2.1](https://github.com/TimSchoenle/TankoVault/compare/v1.2.0...v1.2.1) (2026-08-04)
+
+
+### Performance Improvements
+
+* take the console rollups off the request path, stop scoring trigram candidates row by row, and fix a batch-aborting chapter upsert ([#69](https://github.com/TimSchoenle/TankoVault/issues/69)) ([231d644](https://github.com/TimSchoenle/TankoVault/commit/231d6442b46d2c4ac96833700f9c2e243afa0505))
+
+
+### Miscellaneous
+
+* **deps:** update taiki-e/install-action action to v2.85.6 ([#71](https://github.com/TimSchoenle/TankoVault/issues/71)) ([e86c2f0](https://github.com/TimSchoenle/TankoVault/commit/e86c2f05e4183484b0b9c23665616180d388214d))
+
 ## [1.2.0](https://github.com/TimSchoenle/TankoVault/compare/v1.1.1...v1.2.0) (2026-08-04)
 
 

@@ -24,7 +24,7 @@ pub enum FeatureKind {
 }
 
 impl FeatureKind {
-    /// The token stored in `rec_features.kind`. Mirrors the SQL `CHECK` in migration 0027.
+    /// The token stored in `rec_features.kind`. Mirrors the SQL `CHECK` in migration 0028.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {

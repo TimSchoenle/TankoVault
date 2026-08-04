@@ -92,7 +92,7 @@ static PG: OnceCell<PgContainer> = OnceCell::const_new();
 /// production unless the majors match — and the schema's generated columns and trigram indexes
 /// need a modern major regardless, which the testcontainers default is not.
 ///
-/// The *name* is overridden as well as the tag: migration 0026 does `CREATE EXTENSION vector`,
+/// The *name* is overridden as well as the tag: migration 0027 does `CREATE EXTENSION vector`,
 /// so stock `postgres` cannot run the migration set at all and every integration test would
 /// fail at schema setup rather than on anything it meant to assert.
 const POSTGRES_IMAGE: &str = "pgvector/pgvector";
@@ -108,7 +108,7 @@ const POSTGRES_TAG: &str = "pg18";
 /// meant to leave — silently, since nothing in the run names a version.
 ///
 /// The move to pgvector (`18-alpine` → `pg18`) changes this string, which is the property that
-/// matters: a developer with a stock-Postgres container left over from before migration 0026
+/// matters: a developer with a stock-Postgres container left over from before migration 0027
 /// gets a new one rather than a silent `CREATE EXTENSION vector` failure on every run.
 fn container_name() -> String {
     let major = POSTGRES_TAG.split('-').next().unwrap_or(POSTGRES_TAG);

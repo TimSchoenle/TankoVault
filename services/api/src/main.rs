@@ -354,6 +354,8 @@ async fn serve_once(
         mailer,
         email_base_url: cfg.email.base_url.clone(),
         legal: tankovault_api::LegalDocs::new(cfg.legal.clone()),
+        system_stats: tankovault_api::Cached::new(tankovault_api::ADMIN_STATS_TTL),
+        provider_stats: tankovault_api::Cached::new(tankovault_api::ADMIN_STATS_TTL),
     };
 
     // Readiness reflects what the edge actually needs to serve: Postgres is required, and

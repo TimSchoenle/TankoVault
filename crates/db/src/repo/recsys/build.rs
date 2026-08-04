@@ -22,7 +22,7 @@ pub struct BuildState {
 /// Read the current build state.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; the row is created by migration 0027 and cannot be absent.
+/// [`crate::DbError::Sqlx`] only; the row is created by migration 0028 and cannot be absent.
 pub async fn read_build_state<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<BuildState> {
     let state = sqlx::query_as!(
         BuildState,

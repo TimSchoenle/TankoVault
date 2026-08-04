@@ -118,9 +118,9 @@ crate registry warm across local rebuilds. Refresh a pinned digest with
 docker compose -f deploy/docker-compose.yml run --rm migrate
 ```
 
-### Upgrading past migration 0026 — pgvector is required
+### Upgrading past migration 0027 — pgvector is required
 
-Migration `0026_recsys_signals` runs `CREATE EXTENSION vector`. From that release on, **the
+Migration `0027_recsys_signals` runs `CREATE EXTENSION vector`. From that release on, **the
 database must have [pgvector](https://github.com/pgvector/pgvector) available**; the migration
 fails loudly rather than degrading, because a recommender that silently returns nothing is worse
 than one that refuses to start.

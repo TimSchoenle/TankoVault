@@ -63,23 +63,34 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
         // rows and ~450 ms measured, plus enough estimated cost to trigger 260 ms of pointless
         // JIT. The `LIMIT` is likewise applied *before* the array aggregates so those run for the
         // returned rows only, not for every row that cleared the threshold.
+        //
+        // Each branch carries its own `similarity`, and `max(…) GROUP BY id` is what combines
+        // them. The obvious spelling — `GREATEST(similarity(s.normalized_title, $1), (SELECT
+        // MAX(similarity(st.normalized, $1)) …))` over the matched ids — runs a correlated scan
+        // of `series_titles` for **every** id the GIN indexes returned, before the `LIMIT`
+        // discards all but `$2` of them; on a broad title that is thousands of scans to keep ten
+        // rows, and it was 1.9–3.5 s in the slow-statement log.
+        //
+        // The scores are identical, not merely close, and the reason is worth keeping: `a % b`
+        // *is* `similarity(a,b) >= threshold`. A title omitted here is one that failed `%`, so it
+        // scored below the threshold — and the row only reached the union at all through a title
+        // that scored at or above it, so it can never have been the `GREATEST`. `UNION ALL`,
+        // because the `GROUP BY` already collapses the duplicates a `UNION` would have sorted for.
         "WITH matched AS ( \
-           SELECT s.id FROM series s WHERE s.normalized_title % $1 \
-           UNION \
-           SELECT st.series_id FROM series_titles st WHERE st.normalized % $1 \
+           SELECT s.id, similarity(s.normalized_title, $1) AS sim \
+             FROM series s WHERE s.normalized_title % $1 \
+           UNION ALL \
+           SELECT st.series_id, similarity(st.normalized, $1) \
+             FROM series_titles st WHERE st.normalized % $1 \
          ), ranked AS ( \
-           SELECT s.id, s.normalized_title, s.content_type, s.release_year, \
-                  GREATEST( \
-                    similarity(s.normalized_title, $1), \
-                    COALESCE((SELECT MAX(similarity(st.normalized, $1)) \
-                              FROM series_titles st WHERE st.series_id = s.id), 0) \
-                  ) AS sim \
-           FROM series s JOIN matched m ON m.id = s.id \
+           SELECT m.id, max(m.sim) AS sim \
+           FROM matched m \
+           GROUP BY m.id \
            ORDER BY sim DESC \
            LIMIT $2 \
          ) \
-         SELECT r.id, r.normalized_title, \
-                r.content_type AS \"content_type: ContentType\", r.release_year, \
+         SELECT s.id, s.normalized_title, \
+                s.content_type AS \"content_type: ContentType\", s.release_year, \
                 r.sim AS \"sim!\", \
                 COALESCE((SELECT array_agg(st.normalized) FROM series_titles st \
                  WHERE st.series_id = r.id), '{}') AS \"alt_titles!\", \
@@ -87,7 +98,7 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
                  WHERE stg.series_id = r.id), '{}') AS \"tags!\", \
                 COALESCE((SELECT array_agg(a.name) FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
                  WHERE sa.series_id = r.id), '{}') AS \"authors!\" \
-         FROM ranked r \
+         FROM ranked r JOIN series s ON s.id = r.id \
          ORDER BY r.sim DESC",
         normalized,
         limit,
@@ -152,9 +163,10 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
     }
     let rows = sqlx::query_as!(
         Row,
-        // Same UNION-of-index-scans shape as `find_candidates`, and for the same reason; see the
-        // comment there. Here it is per lateral iteration, so the sequential scan it replaces was
-        // paid once per query title.
+        // Same UNION-of-index-scans shape as `find_candidates`, scored the same way and for the
+        // same reasons; see the comment there. Here it is per lateral iteration, so the
+        // sequential scan it replaces was paid once per query title — and so was the correlated
+        // `MAX(similarity(…))` the `max(…) GROUP BY` now replaces.
         "SELECT q.norm AS \"query_title!\", c.id, c.normalized_title, \
                 c.content_type AS \"content_type: ContentType\", c.release_year, \
                 c.sim AS \"sim!\", c.alt_titles AS \"alt_titles!\", \
@@ -169,19 +181,19 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
                   COALESCE((SELECT array_agg(a.name) FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
                    WHERE sa.series_id = r.id), '{}') AS authors \
            FROM ( \
-             SELECT s.id, s.normalized_title, s.content_type, s.release_year, \
-                    GREATEST( \
-                      similarity(s.normalized_title, q.norm), \
-                      COALESCE((SELECT MAX(similarity(st.normalized, q.norm)) \
-                                FROM series_titles st WHERE st.series_id = s.id), 0) \
-                    ) AS sim \
-             FROM series s \
-             JOIN ( SELECT s2.id FROM series s2 WHERE s2.normalized_title % q.norm \
-                    UNION \
-                    SELECT st2.series_id FROM series_titles st2 WHERE st2.normalized % q.norm \
-                  ) m ON m.id = s.id \
-             ORDER BY sim DESC \
-             LIMIT $2 \
+             SELECT s.id, s.normalized_title, s.content_type, s.release_year, m.sim \
+             FROM ( SELECT u.id, max(u.sim) AS sim \
+                    FROM ( SELECT s2.id, similarity(s2.normalized_title, q.norm) AS sim \
+                             FROM series s2 WHERE s2.normalized_title % q.norm \
+                           UNION ALL \
+                           SELECT st2.series_id, similarity(st2.normalized, q.norm) \
+                             FROM series_titles st2 WHERE st2.normalized % q.norm \
+                         ) u \
+                    GROUP BY u.id \
+                    ORDER BY sim DESC \
+                    LIMIT $2 \
+                  ) m \
+             JOIN series s ON s.id = m.id \
            ) r \
          ) c",
         normalized,

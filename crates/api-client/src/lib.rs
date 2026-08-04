@@ -2520,11 +2520,13 @@ pub mod types {
     #[doc = r" ```json"]
     #[doc = "{"]
     #[doc = "  \"type\": \"object\","]
-    #[doc = "  \"required\": ["]
-    #[doc = "    \"ids\""]
-    #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"all\": {"]
+    #[doc = "      \"description\": \"Mark the caller's whole inbox read, rather than the listed ids.\\n\\nA client only ever holds the page it loaded, so \\\"mark all read\\\" sent as a list of ids\\nmarks one page and quietly leaves the rest unread.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
     #[doc = "    \"ids\": {"]
+    #[doc = "      \"description\": \"The notifications to mark read. Ignored when `all` is set.\","]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
     #[doc = "        \"type\": \"string\","]
@@ -2537,7 +2539,20 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct MarkRead {
+        #[doc = "Mark the caller's whole inbox read, rather than the listed ids.\n\nA client only ever holds the page it loaded, so \"mark all read\" sent as a list of ids\nmarks one page and quietly leaves the rest unread."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub all: ::std::option::Option<bool>,
+        #[doc = "The notifications to mark read. Ignored when `all` is set."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
         pub ids: ::std::vec::Vec<::uuid::Uuid>,
+    }
+    impl ::std::default::Default for MarkRead {
+        fn default() -> Self {
+            Self {
+                all: Default::default(),
+                ids: Default::default(),
+            }
+        }
     }
     impl MarkRead {
         pub fn builder() -> builder::MarkRead {
@@ -2948,6 +2963,52 @@ pub mod types {
     impl ::std::fmt::Display for NotificationId {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
             self.0.fmt(f)
+        }
+    }
+    #[doc = "`NotificationsView`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"items\","]
+    #[doc = "    \"total\","]
+    #[doc = "    \"unread\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"items\": {"]
+    #[doc = "      \"description\": \"One page of the inbox, newest first. Free-form per notification kind: the notifier writes\\nan open `payload`, and pinning a schema here would drop every kind it has not shipped yet.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {}"]
+    #[doc = "    },"]
+    #[doc = "    \"total\": {"]
+    #[doc = "      \"description\": \"Notifications the caller has, in total — the pager's denominator.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"unread\": {"]
+    #[doc = "      \"description\": \"Of those, how many are unread. Counted server-side on purpose: derived from `items` it is\\nonly ever the unread count *of the loaded page*, which is what pinned the bell at 100.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct NotificationsView {
+        #[doc = "One page of the inbox, newest first. Free-form per notification kind: the notifier writes\nan open `payload`, and pinning a schema here would drop every kind it has not shipped yet."]
+        pub items: ::std::vec::Vec<::serde_json::Value>,
+        #[doc = "Notifications the caller has, in total — the pager's denominator."]
+        pub total: i64,
+        #[doc = "Of those, how many are unread. Counted server-side on purpose: derived from `items` it is\nonly ever the unread count *of the loaded page*, which is what pinned the bell at 100."]
+        pub unread: i64,
+    }
+    impl NotificationsView {
+        pub fn builder() -> builder::NotificationsView {
+            Default::default()
         }
     }
     #[doc = "The challenge, plus the handle the client echoes back to complete it.\n\n`options` is a W3C `PublicKeyCredentialRequestOptions` envelope, passed to\n`navigator.credentials.get()` verbatim. It is typed as an opaque JSON document here on\npurpose: the shape is the `WebAuthn` specification's, not this API's, and mirroring it into\nthe `OpenAPI` document would be this service publishing a second, hand-maintained copy of a\nstandard — the exact drift that made `/v1/me/sync/*` move its DTOs into\n`crates/contracts`. Both ends parse it with the *same* crate (`webauthn-rs-proto`, pinned to\none version in both workspaces), so there is nothing for the two to disagree about."]
@@ -10814,16 +10875,28 @@ pub mod types {
         }
         #[derive(Clone, Debug)]
         pub struct MarkRead {
+            all: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             ids: ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
         }
         impl ::std::default::Default for MarkRead {
             fn default() -> Self {
                 Self {
-                    ids: Err("no value supplied for ids".to_string()),
+                    all: Ok(Default::default()),
+                    ids: Ok(Default::default()),
                 }
             }
         }
         impl MarkRead {
+            pub fn all<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.all = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for all: {e}"));
+                self
+            }
             pub fn ids<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::vec::Vec<::uuid::Uuid>>,
@@ -10840,12 +10913,18 @@ pub mod types {
             fn try_from(
                 value: MarkRead,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
-                Ok(Self { ids: value.ids? })
+                Ok(Self {
+                    all: value.all?,
+                    ids: value.ids?,
+                })
             }
         }
         impl ::std::convert::From<super::MarkRead> for MarkRead {
             fn from(value: super::MarkRead) -> Self {
-                Self { ids: Ok(value.ids) }
+                Self {
+                    all: Ok(value.all),
+                    ids: Ok(value.ids),
+                }
             }
         }
         #[derive(Clone, Debug)]
@@ -11472,6 +11551,75 @@ pub mod types {
                 Self {
                     detail: Ok(value.detail),
                     kind: Ok(value.kind),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct NotificationsView {
+            items:
+                ::std::result::Result<::std::vec::Vec<::serde_json::Value>, ::std::string::String>,
+            total: ::std::result::Result<i64, ::std::string::String>,
+            unread: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for NotificationsView {
+            fn default() -> Self {
+                Self {
+                    items: Err("no value supplied for items".to_string()),
+                    total: Err("no value supplied for total".to_string()),
+                    unread: Err("no value supplied for unread".to_string()),
+                }
+            }
+        }
+        impl NotificationsView {
+            pub fn items<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::serde_json::Value>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.items = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for items: {e}"));
+                self
+            }
+            pub fn total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for total: {e}"));
+                self
+            }
+            pub fn unread<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.unread = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for unread: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<NotificationsView> for super::NotificationsView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NotificationsView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    items: value.items?,
+                    total: value.total?,
+                    unread: value.unread?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::NotificationsView> for NotificationsView {
+            fn from(value: super::NotificationsView) -> Self {
+                Self {
+                    items: Ok(value.items),
+                    total: Ok(value.total),
+                    unread: Ok(value.unread),
                 }
             }
         }
@@ -16990,7 +17138,7 @@ pub mod types {
     }
 }
 #[derive(Clone, Debug)]
-#[doc = "Client for tankovault-api\n\nAxum HTTP edge: public read/write + admin, auth, resolved links, SSE.\n\nVersion: 1.0.0"]
+#[doc = "Client for tankovault-api\n\nAxum HTTP edge: public read/write + admin, auth, resolved links, SSE.\n\nVersion: 1.1.0"]
 pub struct Client {
     pub(crate) baseurl: String,
     pub(crate) client: reqwest::Client,
@@ -17028,7 +17176,7 @@ impl Client {
 }
 impl ClientInfo<()> for Client {
     fn api_version() -> &'static str {
-        "1.0.0"
+        "1.1.0"
     }
     fn baseurl(&self) -> &str {
         self.baseurl.as_str()
@@ -17310,7 +17458,7 @@ impl Client {
     pub fn put_notification_prefs(&self) -> builder::PutNotificationPrefs<'_> {
         builder::PutNotificationPrefs::new(self)
     }
-    #[doc = "List notifications\n\nSends a `GET` request to `/v1/me/notifications`\n\n```ignore\nlet response = client.notifications()\n    .send()\n    .await;\n```"]
+    #[doc = "List notifications\n\nA page of the caller's inbox, newest first, with the inbox-wide `total` and `unread`.\n\nThe body is an object rather than the bare array it used to be, for the same reason\n`/v1/me/watchlist` is: neither count is derivable from a page of items, and the frontend —\nthe only consumer, and regenerated from this document — needs both to page and to keep the\nbell honest past the first page.\n\nSends a `GET` request to `/v1/me/notifications`\n\nArguments:\n- `limit`: Page size, clamped to `1..=200`.\n- `offset`\n```ignore\nlet response = client.notifications()\n    .limit(limit)\n    .offset(offset)\n    .send()\n    .await;\n```"]
     pub fn notifications(&self) -> builder::Notifications<'_> {
         builder::Notifications::new(self)
     }
@@ -22242,16 +22390,48 @@ pub mod builder {
     #[derive(Debug, Clone)]
     pub struct Notifications<'a> {
         client: &'a super::Client,
+        limit: Result<Option<i64>, String>,
+        offset: Result<Option<i64>, String>,
     }
     impl<'a> Notifications<'a> {
         pub fn new(client: &'a super::Client) -> Self {
-            Self { client: client }
+            Self {
+                client: client,
+                limit: Ok(None),
+                offset: Ok(None),
+            }
+        }
+        pub fn limit<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i64>,
+        {
+            self.limit = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i64` for limit failed".to_string());
+            self
+        }
+        pub fn offset<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i64>,
+        {
+            self.offset = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i64` for offset failed".to_string());
+            self
         }
         #[doc = "Sends a `GET` request to `/v1/me/notifications`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
-            let Self { client } = self;
+        ) -> Result<ResponseValue<types::NotificationsView>, Error<types::ProblemDetails>> {
+            let Self {
+                client,
+                limit,
+                offset,
+            } = self;
+            let limit = limit.map_err(Error::InvalidRequest)?;
+            let offset = offset.map_err(Error::InvalidRequest)?;
             let url = format!("{}/v1/me/notifications", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
@@ -22266,6 +22446,8 @@ pub mod builder {
                     ::reqwest::header::ACCEPT,
                     ::reqwest::header::HeaderValue::from_static("application/json"),
                 )
+                .query(&progenitor_client::QueryParam::new("limit", &limit))
+                .query(&progenitor_client::QueryParam::new("offset", &offset))
                 .headers(header_map)
                 .build()?;
             let info = OperationInfo {

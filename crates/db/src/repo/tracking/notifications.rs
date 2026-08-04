@@ -53,14 +53,47 @@ pub async fn notifications_create_many<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// List a user's notifications, newest first.
+/// One page of a user's inbox, plus the two totals the page cannot be counted from.
+///
+/// `total` and `unread` describe the whole inbox, not this window. Deriving them from `items`
+/// is what capped both the list and the bell at whatever the page size happened to be.
+pub struct NotificationPage {
+    /// Newest first.
+    pub items: Vec<Notification>,
+    /// Notifications this user has, in total.
+    pub total: i64,
+    /// Of those, how many are unread.
+    pub unread: i64,
+}
+
+/// One page of a user's notifications, newest first, with the inbox-wide totals.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an empty inbox is an empty `Vec`.
-pub async fn notifications_list<'e, E: PgExecutor<'e>>(
+/// [`crate::DbError::Sqlx`] only; an empty inbox is an empty `Vec` and two zeroes.
+pub async fn notifications_page(
+    pool: &sqlx::PgPool,
+    user_id: UserId,
+    limit: i64,
+    offset: i64,
+) -> DbResult<NotificationPage> {
+    let (items, totals) = tokio::try_join!(
+        notifications_window(pool, user_id, limit, offset),
+        notifications_totals(pool, user_id),
+    )?;
+    let (total, unread) = totals;
+    Ok(NotificationPage {
+        items,
+        total,
+        unread,
+    })
+}
+
+/// The `[offset, offset + limit)` window of the inbox, newest first.
+async fn notifications_window<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
     limit: i64,
+    offset: i64,
 ) -> DbResult<Vec<Notification>> {
     #[derive(FromRow)]
     struct Row {
@@ -74,9 +107,10 @@ pub async fn notifications_list<'e, E: PgExecutor<'e>>(
     let rows = sqlx::query_as!(
         Row,
         "SELECT id, user_id, kind, payload AS \"payload: Json\", read_at, created_at FROM notifications \
-         WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
+         WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
         user_id.as_uuid(),
         limit,
+        offset,
     )
     .fetch_all(exec)
     .await?;
@@ -91,6 +125,22 @@ pub async fn notifications_list<'e, E: PgExecutor<'e>>(
             created_at: r.created_at,
         })
         .collect())
+}
+
+/// `(total, unread)` for the whole inbox, counted in one pass.
+async fn notifications_totals<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+) -> DbResult<(i64, i64)> {
+    let row = sqlx::query!(
+        "SELECT count(*) AS \"total!\", \
+                count(*) FILTER (WHERE read_at IS NULL) AS \"unread!\" \
+         FROM notifications WHERE user_id = $1",
+        user_id.as_uuid(),
+    )
+    .fetch_one(exec)
+    .await?;
+    Ok((row.total, row.unread))
 }
 
 /// Unread-notification counts for `user_ids`, grouped in one query. Users with no unread rows
@@ -118,6 +168,26 @@ pub async fn notifications_unread_counts<'e, E: PgExecutor<'e>>(
         .into_iter()
         .map(|r| (UserId::from_uuid(r.user_id), r.count))
         .collect())
+}
+
+/// Mark every unread notification this user has read, however many that is.
+///
+/// Not expressible as [`notifications_mark_read`] with a list of ids: the caller only ever holds
+/// the page it loaded, so "mark all read" driven from ids silently leaves the rest unread.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; an already-empty inbox is `0`.
+pub async fn notifications_mark_all_read<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+) -> DbResult<u64> {
+    let result = sqlx::query!(
+        "UPDATE notifications SET read_at = now() WHERE user_id = $1 AND read_at IS NULL",
+        user_id.as_uuid(),
+    )
+    .execute(exec)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 /// Mark the given notifications read (scoped to the owning user).

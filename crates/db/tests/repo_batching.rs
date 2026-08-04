@@ -83,12 +83,12 @@ async fn notifications_create_many_writes_one_row_per_user_and_counts_group() {
 
     // The returned id must belong to its paired user (SSE addressing depends on it).
     for (user, id) in &created {
-        let rows = tracking::notifications_list(&db.pool, *user, 10)
+        let page = tracking::notifications_page(&db.pool, *user, 10, 0)
             .await
             .expect("list notifications");
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].id, *id);
-        assert_eq!(rows[0].payload, payload);
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].id, *id);
+        assert_eq!(page.items[0].payload, payload);
     }
 
     let counts = tracking::notifications_unread_counts(&db.pool, &[a, b])
@@ -103,6 +103,57 @@ async fn notifications_create_many_writes_one_row_per_user_and_counts_group() {
         .await
         .expect("unread counts");
     assert!(!counts.contains_key(&c));
+}
+
+/// The window is a window, and the two totals count the inbox behind it.
+///
+/// `GET /v1/me/notifications` used to answer with a single hard-capped batch of 100 rows and no
+/// counts at all, so a reader with more than that saw exactly 100 rows, a notification bell stuck
+/// at 100, and no way to reach the rest. `total` and `unread` must therefore be counted from the
+/// table rather than from the page — deriving them from `items` reproduces the cap exactly.
+#[tokio::test]
+async fn notifications_page_windows_the_inbox_and_counts_all_of_it() {
+    let db = TestDb::spawn().await;
+    let reader = db.seed_user("reader", &[], AccountStatus::Active).await;
+    let other = db.seed_user("other", &[], AccountStatus::Active).await;
+
+    for n in 0..5 {
+        let payload = serde_json::json!({ "chapter_number": f64::from(n) });
+        tracking::notifications_create_many(&db.pool, &[reader, other], "new_chapter", &payload)
+            .await
+            .expect("create notifications");
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    for offset in [0, 2, 4] {
+        let page = tracking::notifications_page(&db.pool, reader, 2, offset)
+            .await
+            .expect("page notifications");
+        // Both counts describe the inbox, so they do not move as the window does.
+        assert_eq!(page.total, 5);
+        assert_eq!(page.unread, 5);
+        assert_eq!(page.items.len(), if offset == 4 { 1 } else { 2 });
+        seen.extend(page.items.iter().map(|n| n.id));
+    }
+    // Walking the offsets reaches every row exactly once — the point of paging over truncating.
+    assert_eq!(seen.len(), 5);
+
+    let marked = tracking::notifications_mark_all_read(&db.pool, reader)
+        .await
+        .expect("mark all read");
+    assert_eq!(marked, 5);
+
+    let page = tracking::notifications_page(&db.pool, reader, 2, 0)
+        .await
+        .expect("page notifications");
+    assert_eq!(page.unread, 0);
+    assert_eq!(page.total, 5);
+
+    // Scoped to its owner: "mark all read" must not reach across accounts.
+    let theirs = tracking::notifications_page(&db.pool, other, 2, 0)
+        .await
+        .expect("page notifications");
+    assert_eq!(theirs.unread, 5);
 }
 
 // Sync reconciliation prefetch and batch upserts

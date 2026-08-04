@@ -21,6 +21,7 @@ use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::use_session;
 use crate::util::chapter_number;
+use crate::Route;
 use chapters::{ChapterSection, OpenControl};
 use dioxus::prelude::*;
 use model::{
@@ -83,6 +84,17 @@ pub(crate) fn Series(id: String) -> Element {
                 .await
                 .map(ResponseValue::into_inner)
                 .map_err(|e| api::friendly_error(i18n, e))
+        }
+    });
+
+    // The one screen whose tab name the route cannot spell — it is in the payload, not the URL.
+    let page_title = use_context::<crate::title::PageTitle>();
+    use_effect(move || {
+        if let Some(Ok(loaded)) = &*detail.read() {
+            let route = Route::Series {
+                id: loaded.id.to_string(),
+            };
+            page_title.set(route, loaded.title.clone());
         }
     });
 

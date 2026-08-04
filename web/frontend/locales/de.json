@@ -981,9 +981,13 @@
     "unknown": "—",
     "yearsAgo": "vor {count} J."
   },
+  "title": {
+    "app": "TankoVault — Manga-Tracker",
+    "search": "Suche: {query}",
+    "series": "Serie",
+    "template": "{page} — TankoVault"
+  },
   "topbar": {
-    "anilistConnect": "AniList verbinden",
-    "anilistSynced": "Mit AniList synchronisiert",
     "searchPlaceholder": "Serien, Tags, Autoren suchen…",
     "unreadCount": {
       "one": "{count} ungelesene Benachrichtigung",

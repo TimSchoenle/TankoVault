@@ -177,7 +177,8 @@ Grouped by where they appear. Each maps to a Dioxus component in the plan.
   (circular avatar initial, username, status dot + `admin · synced`, settings gear → Account).
 - **Header** (`64px`, sticky, blurred): search input (`max 520px`, leading `search` icon,
   trailing `⌘K` kbd chip, placeholder `Search 8,420 series, tags, authors…`); flex spacer;
-  **"AniList synced"** pill (`cloud_done` jade icon); **notifications bell** with count badge.
+  **notifications bell** with count badge. (The header's "AniList synced" pill was removed —
+  link status belongs to Account → Sync, which is the surface that can act on it.)
 
 ### 6.2 Cards & rows
 - **Cover card** (discover/search): 2:3, type pill (TL), unread badge (TR), bottom scrim with

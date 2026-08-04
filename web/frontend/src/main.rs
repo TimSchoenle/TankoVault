@@ -13,6 +13,7 @@ mod icons;
 mod live;
 mod models;
 mod state;
+mod title;
 mod util;
 mod views;
 mod webauthn;

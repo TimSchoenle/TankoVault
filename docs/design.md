@@ -730,8 +730,8 @@ PUT    /v1/me/watchlist/:series_id       { status, notify }
 DELETE /v1/me/watchlist/:series_id
 PUT    /v1/me/progress/:series_id        { last_read_number }
 GET    /v1/me/feed                        -> new chapters across watchlist (the "reading" dashboard)
-GET    /v1/me/notifications
-POST   /v1/me/notifications/read          { ids }
+GET    /v1/me/notifications?limit&offset  -> { items, total, unread } (paged; counts are inbox-wide)
+POST   /v1/me/notifications/read          { ids } | { all: true }
 
 GET    /v1/me/sync/anilist/authorize
 GET    /v1/me/sync/anilist/callback

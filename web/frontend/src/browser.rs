@@ -66,6 +66,16 @@ pub(crate) fn set_document_language(tag: &str) {
     set_root_attribute("lang", tag);
 }
 
+/// Name the browser tab after the screen on display (see [`crate::title`]).
+///
+/// Not `document::Title`: `dioxus-web` implements it as `eval("document.title = …")`, which is
+/// the exact call the served CSP aborts the WASM instance over — see the module contract above.
+pub(crate) fn set_document_title(title: &str) {
+    if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+        document.set_title(title);
+    }
+}
+
 /// Leave the SPA for `url` — a real navigation, not a router push, for destinations outside
 /// this origin (e.g. an OAuth consent screen).
 pub(crate) fn navigate_to(url: &str) {

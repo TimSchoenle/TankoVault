@@ -1850,10 +1850,6 @@ enum Handling {
     Folded,
     /// Deliberately allowed to vanish with the absorbed row. The string is *why* — a reason
     /// somebody has to write down, which is the whole point of the distinction.
-    #[expect(
-        dead_code,
-        reason = "no column is deliberately cascaded yet; the arm is the vocabulary the next one needs"
-    )]
     Cascades(&'static str),
 }
 
@@ -1879,6 +1875,47 @@ const SERIES_REFERENCES: &[(&str, &str, Handling)] = &[
     ("merge_candidates", "series_id", Handling::Folded),
     ("merge_candidates", "candidate_id", Handling::Folded),
     ("series_merges", "survivor_id", Handling::Folded),
+    // The recommendation model. Every one of these is *derived* — a rebuild reproduces it from
+    // `series` and its link tables — so losing the absorbed series' rows is not only acceptable,
+    // it is the mechanism: the cascade is what makes a merged series unreachable from the index
+    // in the same transaction that deletes it, rather than at the next build.
+    //
+    // What is *not* automatic is the survivor, which absorbed the loser's tags and authors and
+    // therefore needs re-embedding. `merge_series` queues it; see `rec_repair_queue` below.
+    (
+        "series_features",
+        "series_id",
+        Handling::Cascades(
+            "derived from the series' tags, authors and scalars; the survivor is queued for re-extraction",
+        ),
+    ),
+    (
+        "series_embedding",
+        "series_id",
+        Handling::Cascades(
+            "derived from series_features; the cascade is what makes a merged series unreachable from the ANN index immediately",
+        ),
+    ),
+    (
+        "series_prior",
+        "series_id",
+        Handling::Cascades(
+            "derived appeal signals, recomputed for the whole catalogue by every build",
+        ),
+    ),
+    (
+        "series_cooccurrence",
+        "series_id",
+        Handling::Cascades(
+            "derived from reader lists; re-aggregated wholesale. Re-pointing would violate the series_id <> other_id CHECK for a (loser, survivor) pair and double-count support for every pair both shared",
+        ),
+    ),
+    (
+        "series_cooccurrence",
+        "other_id",
+        Handling::Cascades("the other half of the same pair; see series_cooccurrence.series_id"),
+    ),
+    ("rec_repair_queue", "series_id", Handling::Folded),
 ];
 
 /// **The guard on `merge_series`.**

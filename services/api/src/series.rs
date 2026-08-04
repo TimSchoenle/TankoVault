@@ -589,3 +589,167 @@ mod tests {
         assert!(group_sources_by_provider(&[]).is_empty());
     }
 }
+
+/// One similar series, with what it has in common.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SimilarSeries {
+    #[serde(flatten)]
+    pub series: SeriesSummary,
+    /// Cosine similarity in `[0, 1]`, as the index ranked it.
+    pub score: f32,
+    /// The features this shares with the seed, most explanatory first — the tag names a reader
+    /// would recognise, not feature ids.
+    pub shared: Vec<String>,
+}
+
+/// How many neighbours a single request may ask for.
+const MAX_SIMILAR: i64 = 50;
+
+/// Over-fetch factor for the ANN scan.
+///
+/// Filters (recommendable, adult, the seed itself) are applied *after* the index has ranked, so
+/// the scan has to return more than the caller wants or a deployment with many unrecommendable
+/// series quietly returns short pages. Four is generous for the default filter selectivity and
+/// still bounded.
+const SIMILAR_OVERFETCH: i64 = 4;
+
+/// Get similar series
+///
+/// Content-similar series, ranked by an approximate nearest-neighbour search over the
+/// recommendation model's embedding space, with the features each match shares with the seed.
+///
+/// Falls back to the catalogue's popularity prior when the seed has no embedding yet — a series
+/// added since the last model build, or a deployment that has never run one. An empty array
+/// means the model has never been built at all.
+#[utoipa::path(
+    get,
+    path = "/v1/series/{id}/similar",
+    tag = SERIES_TAG,
+    params(
+        ("id" = SeriesId, Path, description = "Series id"),
+        ("limit" = Option<i64>, Query, description = "How many to return (default 12, max 50)"),
+    ),
+    responses(
+        (status = 200, description = "Similar series, closest first", body = Vec<SimilarSeries>),
+        (status = 404, description = "Series not found", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn similar(
+    State(state): State<AppState>,
+    Path(id): Path<SeriesId>,
+    Query(params): Query<SimilarParams>,
+) -> ApiResult<Json<Vec<SimilarSeries>>> {
+    use tankovault_db::repo::{matching, recsys};
+
+    let limit = params.limit.unwrap_or(12).clamp(1, MAX_SIMILAR);
+
+    // A merged id must answer, not 404: automatic merges run continuously, so any id a client
+    // holds may have been absorbed since it was handed out.
+    let seed = match matching::resolve_merged_series(&state.pool, id).await? {
+        Some(survivor) => survivor,
+        None => id,
+    };
+    // Confirms the series exists at all, and turns an unknown id into a 404 rather than an
+    // empty list — the two mean different things to a caller.
+    tankovault_db::repo::catalog::get_series(&state.pool, seed).await?;
+
+    let Some(embedding) = recsys::embedding_of(&state.pool, seed).await? else {
+        return Ok(Json(fallback_to_prior(&state, seed, limit).await?));
+    };
+
+    let neighbours = recsys::nearest_neighbours(
+        &state.pool,
+        &embedding,
+        seed,
+        limit,
+        limit * SIMILAR_OVERFETCH,
+    )
+    .await?;
+    if neighbours.is_empty() {
+        return Ok(Json(fallback_to_prior(&state, seed, limit).await?));
+    }
+
+    let ids: Vec<SeriesId> = neighbours.iter().map(|n| n.series_id).collect();
+    let summaries = recsys::summaries_in_order(&state.pool, &ids).await?;
+
+    // The embedding says *that* these are close; only the sparse vectors say why. One bounded
+    // join over the seed plus its neighbours.
+    let mut vector_ids = vec![seed];
+    vector_ids.extend(ids.iter().copied());
+    let (vectors, features) = recsys::weighted_vectors(&state.pool, &vector_ids).await?;
+    let vector_of: HashMap<SeriesId, Vec<(i32, f32)>> = vectors.into_iter().collect();
+    let name_of: HashMap<i32, String> = features.into_iter().map(|f| (f.id, f.value)).collect();
+    let seed_vector = vector_of.get(&seed).cloned().unwrap_or_default();
+
+    let score_of: HashMap<SeriesId, f32> =
+        neighbours.iter().map(|n| (n.series_id, n.score)).collect();
+
+    let out = summaries
+        .into_iter()
+        .map(|item| {
+            let series_id = item.series.id;
+            let shared = vector_of
+                .get(&series_id)
+                .map(|other| tankovault_recsys::shared_features(&seed_vector, other, 3))
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|feature_id| name_of.get(&feature_id).cloned())
+                .collect();
+            SimilarSeries {
+                score: score_of.get(&series_id).copied().unwrap_or_default(),
+                shared,
+                series: SeriesSummary {
+                    id: series_id,
+                    title: item.series.canonical_title,
+                    cover_url: item.series.cover_url,
+                    content_type: item.series.content_type,
+                    status: item.series.status,
+                    source_count: item.source_count,
+                },
+            }
+        })
+        .collect();
+    Ok(Json(out))
+}
+
+/// Query parameters for [`similar`].
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct SimilarParams {
+    pub limit: Option<i64>,
+}
+
+/// The shelf when the model cannot answer: broadly appealing series, no explanation offered.
+///
+/// Returns an empty list rather than an error when the model has never been built. A caller
+/// cannot act on the difference, and a 500 for "the nightly job has not run yet" would take the
+/// series page down with it.
+async fn fallback_to_prior(
+    state: &AppState,
+    seed: SeriesId,
+    limit: i64,
+) -> ApiResult<Vec<SimilarSeries>> {
+    use tankovault_db::repo::recsys;
+
+    let ids: Vec<SeriesId> = recsys::top_by_prior(&state.pool, limit + 1)
+        .await?
+        .into_iter()
+        .filter(|id| *id != seed)
+        .take(usize::try_from(limit).unwrap_or(12))
+        .collect();
+    let summaries = recsys::summaries_in_order(&state.pool, &ids).await?;
+    Ok(summaries
+        .into_iter()
+        .map(|item| SimilarSeries {
+            score: 0.0,
+            shared: Vec::new(),
+            series: SeriesSummary {
+                id: item.series.id,
+                title: item.series.canonical_title,
+                cover_url: item.series.cover_url,
+                content_type: item.series.content_type,
+                status: item.series.status,
+                source_count: item.source_count,
+            },
+        })
+        .collect())
+}

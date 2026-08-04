@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id FROM series s LEFT JOIN series_features f ON f.series_id = s.id WHERE f.series_id IS NULL OR f.generation < $1 ORDER BY s.id LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a60cce90bf98bb0885402d886071862c4be1d671d0db5b4c2f0fdfc0e74c5c3a"
+}

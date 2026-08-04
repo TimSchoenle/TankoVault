@@ -1,9 +1,35 @@
 # Suggestion system — design
 
-Status: **phase 0 implemented; phases 1–4 proposed.**
+Status: **phases 0 and 1 implemented; phases 2–4 proposed.**
 
 | Phase | State |
 |---|---|
+| 0 — pgvector, widened signals, `series_merges`, the merge guard | **built** |
+| 1 — the item model: features, projection, embeddings, HNSW, `/v1/series/{id}/similar` | **built** |
+| 2 — the reader model, and replacing the stub endpoint | not started |
+| 2.5 — the `Tunable` registry and the console | not started |
+| 3 — collaboration and feedback | not started |
+
+**The stub recommender in `tracking::dashboard::recommendations` is untouched and still serving
+`/v1/me/recommendations`.** Nothing personalised exists yet; phase 1 ships the item model and the
+signed-out-visible similarity surface it supports.
+
+Where the built code diverges from what is written below, this document has been corrected to
+match the code. Two places where reality won an argument:
+
+- **The builder runs in `services/control-plane`, not `services/worker`** (§3.2). The service that
+  already holds the leader lock and already runs one standing catalogue-wide job is the one that
+  should run the second.
+- **Priors page ids and aggregate separately** (§6.7). Doing both in one statement put three
+  correlated aggregates on every row a generic plan thinks it might scan, and `repo_query_plans`
+  measured it at 1.8x the cost ceiling.
+
+Still not populated: the widened AniList signals. `tags.kind`, `series_tags.weight`,
+`series.is_adult`, `external_score` and `external_popularity` exist as columns and are read by the
+model; **nothing writes them yet**, so today's vocabulary is still genre-only. That is the single
+highest-value remaining change, and it needs no new code beyond the GraphQL selection (§2.2).
+
+---|---|
 | 0 — pgvector, widened signals, `series_merges`, the merge guard | **built** (§5.1, §9.2, §9.3, §9.6) |
 | 1 — the item model: features, SVD, embeddings, HNSW | not started |
 | 2 — the reader model, and replacing the stub endpoint | not started |
@@ -148,12 +174,11 @@ one explicit signal available and is folded in at §4.3.
 |---|---|---|
 | Feature extraction, weighting, similarity, top-K join, ranking, MMR | **new `crates/recsys`** | Pure functions over plain data. No `sqlx`, no `axum`. Proptest-able and benchable in isolation; the top-K join is the one piece that needs a criterion bench, and it cannot have one if it is welded to a repository. |
 | Reads and writes for every table in §5 | `crates/db/src/repo/recsys/{items,users,build}.rs` | Matches the existing `repo/` module split. |
-| The builder driver (staging, batching, progress) | `services/worker/src/recsys.rs` | Reuses the existing JetStream consumer, the pool, the health/metric wiring. |
-| Scheduling | `services/control-plane` | Already leader-elected; a rebuild must be a singleton. |
+| The builder, and its scheduling | `services/control-plane` (`src/recsys.rs`, behind a `[lib]` target so it is testable) | Already leader-elected, and already home to the one other standing catalogue-wide job. |
 | Serving | `services/api/src/me/recommendations.rs`, `services/api/src/series.rs` | — |
 | DTOs | `crates/contracts/src/me.rs`, `catalogue.rs` | Mandatory: repository row structs must not carry `ToSchema` (see that module's header). |
 
-### 3.2 Why the builder is in the worker and not its own service
+### 3.2 Why the builder is in the control plane
 
 Nothing in the pipeline is resident in proportion to the catalogue. Stage A streams batches;
 stages B, D and E execute entirely in the database; stage C holds a ~360 KB projection basis and
@@ -163,8 +188,13 @@ one batch, and hands the expensive part — the HNSW build — to Postgres. Ever
 That removes the objection that would otherwise have decided this. A separate `services/recsys`
 would be the tidier boundary, but it costs every self-hoster another container for a job that runs
 nightly, and the isolation it buys is isolation from a memory profile the builder does not have.
-Running it in the worker reuses the task queue and the leader-elected trigger with no new
-mechanism.
+
+**As built, it runs in `services/control-plane`** — not the worker, as an earlier draft said. A
+build is a singleton over the whole catalogue, and control-plane is already the service that holds
+the leader lock and already runs exactly one other standing catalogue-wide job, the duplicate
+sweep. Putting the second one behind the same lock reuses that mutual exclusion instead of
+inventing a parallel one in a service that has none. `rec_build_state`'s claim is the real
+exclusion; leadership just stops the wasted attempt.
 
 The real resource question moved with the work: **the memory that matters is now Postgres's**
 (`maintenance_work_mem` during the index build, and page cache to keep the graph hot), not the

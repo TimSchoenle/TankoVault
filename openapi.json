@@ -2599,6 +2599,35 @@
         ],
         "type": "object"
       },
+      "SimilarSeries": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SeriesSummary"
+          },
+          {
+            "properties": {
+              "score": {
+                "description": "Cosine similarity in `[0, 1]`, as the index ranked it.",
+                "format": "float",
+                "type": "number"
+              },
+              "shared": {
+                "description": "The features this shares with the seed, most explanatory first — the tag names a reader\nwould recognise, not feature ids.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "score",
+              "shared"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "One similar series, with what it has in common."
+      },
       "SourceDto": {
         "properties": {
           "chapter_count": {
@@ -10523,6 +10552,62 @@
           }
         ],
         "summary": "List a source's chapters",
+        "tags": [
+          "series"
+        ]
+      }
+    },
+    "/v1/series/{id}/similar": {
+      "get": {
+        "description": "Content-similar series, ranked by an approximate nearest-neighbour search over the\nrecommendation model's embedding space, with the features each match shares with the seed.\n\nFalls back to the catalogue's popularity prior when the seed has no embedding yet — a series\nadded since the last model build, or a deployment that has never run one. An empty array\nmeans the model has never been built at all.",
+        "operationId": "similar",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          },
+          {
+            "description": "How many to return (default 12, max 50)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SimilarSeries"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Similar series, closest first"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Series not found"
+          }
+        },
+        "summary": "Get similar series",
         "tags": [
           "series"
         ]

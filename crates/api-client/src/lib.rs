@@ -6355,6 +6355,61 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "One similar series, with what it has in common."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One similar series, with what it has in common.\","]
+    #[doc = "  \"allOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesSummary\""]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"score\","]
+    #[doc = "        \"shared\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"score\": {"]
+    #[doc = "          \"description\": \"Cosine similarity in `[0, 1]`, as the index ranked it.\","]
+    #[doc = "          \"type\": \"number\","]
+    #[doc = "          \"format\": \"float\""]
+    #[doc = "        },"]
+    #[doc = "        \"shared\": {"]
+    #[doc = "          \"description\": \"The features this shares with the seed, most explanatory first — the tag names a reader\\nwould recognise, not feature ids.\","]
+    #[doc = "          \"type\": \"array\","]
+    #[doc = "          \"items\": {"]
+    #[doc = "            \"type\": \"string\""]
+    #[doc = "          }"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SimilarSeries {
+        pub content_type: ContentType,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub cover_url: ::std::option::Option<::std::string::String>,
+        pub id: SeriesId,
+        #[doc = "Cosine similarity in `[0, 1]`, as the index ranked it."]
+        pub score: f32,
+        #[doc = "The features this shares with the seed, most explanatory first — the tag names a reader\nwould recognise, not feature ids."]
+        pub shared: ::std::vec::Vec<::std::string::String>,
+        pub source_count: i64,
+        pub status: SeriesStatus,
+        pub title: ::std::string::String,
+    }
+    impl SimilarSeries {
+        pub fn builder() -> builder::SimilarSeries {
+            Default::default()
+        }
+    }
     #[doc = "`SourceDto`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -15481,6 +15536,150 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct SimilarSeries {
+            content_type: ::std::result::Result<super::ContentType, ::std::string::String>,
+            cover_url: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+            score: ::std::result::Result<f32, ::std::string::String>,
+            shared: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            source_count: ::std::result::Result<i64, ::std::string::String>,
+            status: ::std::result::Result<super::SeriesStatus, ::std::string::String>,
+            title: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for SimilarSeries {
+            fn default() -> Self {
+                Self {
+                    content_type: Err("no value supplied for content_type".to_string()),
+                    cover_url: Ok(Default::default()),
+                    id: Err("no value supplied for id".to_string()),
+                    score: Err("no value supplied for score".to_string()),
+                    shared: Err("no value supplied for shared".to_string()),
+                    source_count: Err("no value supplied for source_count".to_string()),
+                    status: Err("no value supplied for status".to_string()),
+                    title: Err("no value supplied for title".to_string()),
+                }
+            }
+        }
+        impl SimilarSeries {
+            pub fn content_type<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::ContentType>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.content_type = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for content_type: {e}"));
+                self
+            }
+            pub fn cover_url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.cover_url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for cover_url: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::SeriesId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn score<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.score = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for score: {e}"));
+                self
+            }
+            pub fn shared<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.shared = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for shared: {e}"));
+                self
+            }
+            pub fn source_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.source_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for source_count: {e}"));
+                self
+            }
+            pub fn status<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::SeriesStatus>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.status = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for status: {e}"));
+                self
+            }
+            pub fn title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for title: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SimilarSeries> for super::SimilarSeries {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SimilarSeries,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    content_type: value.content_type?,
+                    cover_url: value.cover_url?,
+                    id: value.id?,
+                    score: value.score?,
+                    shared: value.shared?,
+                    source_count: value.source_count?,
+                    status: value.status?,
+                    title: value.title?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SimilarSeries> for SimilarSeries {
+            fn from(value: super::SimilarSeries) -> Self {
+                Self {
+                    content_type: Ok(value.content_type),
+                    cover_url: Ok(value.cover_url),
+                    id: Ok(value.id),
+                    score: Ok(value.score),
+                    shared: Ok(value.shared),
+                    source_count: Ok(value.source_count),
+                    status: Ok(value.status),
+                    title: Ok(value.title),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct SourceDto {
             chapter_count: ::std::result::Result<i32, ::std::string::String>,
             id: ::std::result::Result<super::SeriesSourceId, ::std::string::String>,
@@ -18576,6 +18775,10 @@ impl Client {
     #[doc = "List a source's chapters\n\nChapter list, newest first. When a valid access token is supplied the per-chapter `read`\nflag is populated from the user's progress (frontend §9.2 auth-scoped read-state);\nanonymous callers get the same list without read-state.\n\nSends a `GET` request to `/v1/series/{id}/chapters`\n\nArguments:\n- `id`: Series id\n- `source`: Which source to read chapters from. Defaults to the first source of the series.\n```ignore\nlet response = client.chapters()\n    .id(id)\n    .source(source)\n    .send()\n    .await;\n```"]
     pub fn chapters(&self) -> builder::Chapters<'_> {
         builder::Chapters::new(self)
+    }
+    #[doc = "Get similar series\n\nContent-similar series, ranked by an approximate nearest-neighbour search over the\nrecommendation model's embedding space, with the features each match shares with the seed.\n\nFalls back to the catalogue's popularity prior when the seed has no embedding yet — a series\nadded since the last model build, or a deployment that has never run one. An empty array\nmeans the model has never been built at all.\n\nSends a `GET` request to `/v1/series/{id}/similar`\n\nArguments:\n- `id`: Series id\n- `limit`: How many to return (default 12, max 50)\n```ignore\nlet response = client.similar()\n    .id(id)\n    .limit(limit)\n    .send()\n    .await;\n```"]
+    pub fn similar(&self) -> builder::Similar<'_> {
+        builder::Similar::new(self)
     }
     #[doc = "List all tags\n\nAll genres/tags in the catalogue (public).\n\nSends a `GET` request to `/v1/tags`\n\n```ignore\nlet response = client.tags()\n    .send()\n    .await;\n```"]
     pub fn tags(&self) -> builder::Tags<'_> {
@@ -27199,6 +27402,87 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "chapters",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::similar`]\n\n[`Client::similar`]: super::Client::similar"]
+    #[derive(Debug, Clone)]
+    pub struct Similar<'a> {
+        client: &'a super::Client,
+        id: Result<types::SeriesId, String>,
+        limit: Result<Option<i64>, String>,
+    }
+    impl<'a> Similar<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                limit: Ok(None),
+            }
+        }
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SeriesId>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `SeriesId` for id failed".to_string());
+            self
+        }
+        pub fn limit<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i64>,
+        {
+            self.limit = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i64` for limit failed".to_string());
+            self
+        }
+        #[doc = "Sends a `GET` request to `/v1/series/{id}/similar`"]
+        pub async fn send(
+            self,
+        ) -> Result<
+            ResponseValue<::std::vec::Vec<types::SimilarSeries>>,
+            Error<types::ProblemDetails>,
+        > {
+            let Self { client, id, limit } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let limit = limit.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/series/{}/similar",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("limit", &limit))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "similar",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

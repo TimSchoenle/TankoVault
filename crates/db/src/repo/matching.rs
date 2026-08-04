@@ -1305,6 +1305,21 @@ pub async fn merge_series(
     .execute(&mut *tx)
     .await?;
 
+    // The survivor absorbed the loser's tags and authors, so its feature digest has changed and
+    // its embedding is stale. Queued rather than recomputed here: re-embedding needs the
+    // projection basis, which is the builder's, and a merge must not block on it.
+    //
+    // The *loser's* model rows need nothing — they cascade with the series row below, which is
+    // what makes a merged series unreachable from the index in the same transaction that
+    // deletes it rather than at the next build.
+    sqlx::query!(
+        "INSERT INTO rec_repair_queue (series_id, reason) VALUES ($1, 'merged') \
+         ON CONFLICT (series_id) DO NOTHING",
+        keep,
+    )
+    .execute(&mut *tx)
+    .await?;
+
     // Where this series went. Written before the DELETE, so the forwarding record and the
     // disappearance are one atomic fact: there is no instant in which the row is gone and
     // nothing says where to look instead.

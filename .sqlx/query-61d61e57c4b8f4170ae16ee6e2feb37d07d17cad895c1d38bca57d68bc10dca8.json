@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, dense_index, idf FROM rec_features WHERE dense_index IS NOT NULL ORDER BY dense_index",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "rec_features",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "dense_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "rec_features",
+            "name": "dense_index"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "idf",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "rec_features",
+            "name": "idf"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "61d61e57c4b8f4170ae16ee6e2feb37d07d17cad895c1d38bca57d68bc10dca8"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO rec_repair_queue (series_id, reason) VALUES ($1, $2) ON CONFLICT (series_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e1503708637478bb153cdba5801054267b9de689e6be2716f9cc68843ee4be4f"
+}

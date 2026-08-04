@@ -358,6 +358,10 @@ fn public_gates() -> Vec<(&'static str, &'static str)> {
             "/v1/series/{id}/chapters",
             "/v1/series/00000000-0000-7000-8000-00000000000a/chapters",
         ),
+        (
+            "/v1/series/{id}/similar",
+            "/v1/series/00000000-0000-7000-8000-00000000000a/similar",
+        ),
         ("/v1/tags", "/v1/tags"),
         ("/v1/legal", "/v1/legal"),
         // The harness publishes no documents, so this answers `404` — which is the point: a

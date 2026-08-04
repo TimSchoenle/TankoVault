@@ -99,6 +99,13 @@ pub mod names {
     /// How long one duplicate sweep took.
     pub const MERGE_SWEEP_DURATION: &str = "merge_sweep_duration_seconds";
 
+    /// Series processed by a recommendation-model build, by stage and result.
+    pub const RECSYS_BUILD_SERIES: &str = "recsys_build_series_total";
+    /// How long one recommendation-model build took, by stage.
+    pub const RECSYS_BUILD_DURATION: &str = "recsys_build_duration_seconds";
+    /// Rows the recommendation model currently holds, by table.
+    pub const RECSYS_MODEL_SERIES: &str = "recsys_model_series";
+
     /// Chapter-discovered events the notifier consumed, by result.
     pub const NOTIFICATION_EVENTS: &str = "notification_events_total";
     /// How long one event's fan-out took.
@@ -342,6 +349,27 @@ pub const CATALOGUE: &[Metric] = &[
         unit: Unit::Seconds,
         emitted_by: "control-plane",
         help: "Time for one duplicate sweep.",
+    },
+    Metric {
+        name: names::RECSYS_BUILD_SERIES,
+        kind: Kind::Counter,
+        unit: Unit::Count,
+        emitted_by: "control-plane",
+        help: "Series processed by a recommendation-model build, labelled by stage (full/incremental) and result. A `failed` increment means the model stopped updating; pair it with recsys_model_series going flat.",
+    },
+    Metric {
+        name: names::RECSYS_BUILD_DURATION,
+        kind: Kind::Histogram(WORK_BUCKETS),
+        unit: Unit::Seconds,
+        emitted_by: "control-plane",
+        help: "Time for one recommendation-model build, by stage. A full build re-solves the projection over the whole catalogue and is expected in minutes; an incremental one touches only what changed.",
+    },
+    Metric {
+        name: names::RECSYS_MODEL_SERIES,
+        kind: Kind::Gauge,
+        unit: Unit::Count,
+        emitted_by: "control-plane",
+        help: "Series the recommendation model currently covers, by table. Flat while the catalogue grows means builds are failing or the scheduler is not leading anywhere.",
     },
     Metric {
         name: names::NOTIFICATION_EVENTS,

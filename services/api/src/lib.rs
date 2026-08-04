@@ -98,6 +98,10 @@ pub fn route_features() -> RouteFeatures {
     sync
         // --- public catalogue ---
         .gate("/v1/series", Feature::CatalogueBrowse)
+        // Longer prefix, so it wins over the browse gate above: similarity is the recommender's
+        // surface, and an operator who switches recommendations off must not be left with a
+        // "similar" rail served by a model they disabled.
+        .gate("/v1/series/{id}/similar", Feature::CatalogueRecommendations)
         .gate("/v1/tags", Feature::CatalogueBrowse)
         .gate("/v1/providers", Feature::CatalogueBrowse)
         // --- accounts ---
@@ -265,6 +269,7 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(series::list))
         .routes(routes!(series::detail))
         .routes(routes!(series::chapters))
+        .routes(routes!(series::similar))
         .routes(routes!(series::tags))
         // public provider list for the Discover filter (§9.3)
         .routes(routes!(series::providers))

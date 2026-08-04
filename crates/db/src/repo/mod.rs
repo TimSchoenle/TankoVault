@@ -12,6 +12,7 @@ pub mod matching;
 pub mod permissions;
 pub mod privacy;
 pub mod providers;
+pub mod recsys;
 pub mod scans;
 pub mod stats;
 pub mod sync;

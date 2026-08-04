@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, kind, value, idf FROM rec_features WHERE id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "rec_features",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "rec_features",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "value",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "rec_features",
+            "name": "value"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "idf",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "rec_features",
+            "name": "idf"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1cf205cd0b6bebb978c8924342676bb78e6690076ca3f710b4ed0d182d944a07"
+}

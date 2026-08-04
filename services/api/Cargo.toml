@@ -17,6 +17,7 @@ path = "src/main.rs"
 tankovault-config = { workspace = true }
 tankovault-service = { workspace = true, features = ["db", "redis"] }
 tankovault-db = { workspace = true }
+tankovault-recsys = { workspace = true }
 # `dns` supplies `ssrf::validate_and_resolve`, which `admin/providers.rs` needs before it
 # stores an operator-supplied `base_url` (SEC-5). It used to come from `tankovault-fetch` —
 # and `tankovault-adapters`, `tankovault-fetch` and `tankovault-solver` are all *gone* from

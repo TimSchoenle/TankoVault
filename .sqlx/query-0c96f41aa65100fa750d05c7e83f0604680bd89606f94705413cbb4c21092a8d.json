@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM series_features WHERE generation < $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0c96f41aa65100fa750d05c7e83f0604680bd89606f94705413cbb4c21092a8d"
+}

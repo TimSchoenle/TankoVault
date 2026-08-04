@@ -5191,6 +5191,7 @@ dependencies = [
  "tankovault-domain",
  "tankovault-email",
  "tankovault-matcher",
+ "tankovault-recsys",
  "tankovault-service",
  "tankovault-test-support",
  "thiserror 2.0.19",
@@ -5351,7 +5352,9 @@ dependencies = [
  "tankovault-db",
  "tankovault-domain",
  "tankovault-matcher",
+ "tankovault-recsys",
  "tankovault-service",
+ "tankovault-test-support",
  "time",
  "tokio",
  "tokio-util",
@@ -5369,6 +5372,7 @@ dependencies = [
  "sqlx",
  "tankovault-config",
  "tankovault-domain",
+ "tankovault-recsys",
  "tankovault-test-support",
  "thiserror 2.0.19",
  "time",
@@ -5480,6 +5484,15 @@ dependencies = [
  "tokio-util",
  "tracing",
  "wiremock",
+]
+
+[[package]]
+name = "tankovault-recsys"
+version = "1.2.0"
+dependencies = [
+ "proptest",
+ "sha2 0.11.0",
+ "tankovault-domain",
 ]
 
 [[package]]

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM rec_repair_queue WHERE series_id IN (SELECT series_id FROM rec_repair_queue ORDER BY enqueued_at LIMIT $1 FOR UPDATE SKIP LOCKED) RETURNING series_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "rec_repair_queue",
+            "name": "series_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b29b04dbb4c88440cab42e91ad9de9cbf6d064b6865dd107b8d5b55438715e12"
+}

@@ -6,6 +6,11 @@ mod aggregator;
 mod dedupe;
 mod leader;
 
+use tankovault_control_plane::recsys;
+use tankovault_service::metrics::names::{
+    RECSYS_BUILD_DURATION, RECSYS_BUILD_SERIES, RECSYS_MODEL_SERIES,
+};
+
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::post;
@@ -91,6 +96,26 @@ struct SchedulerConfig {
     /// Previously-distinct pairs reconsidered per sweep, least-recently-scored first.
     #[serde(default = "default_merge_sweep_recheck")]
     merge_sweep_recheck: i64,
+    /// Seconds between incremental recommendation-model builds. 0 disables.
+    ///
+    /// Frequent by default: an incremental pass re-embeds only what changed and inserts into a
+    /// live HNSW index, so the cost is proportional to catalogue churn rather than to the
+    /// catalogue.
+    #[serde(default = "default_recsys_incremental_interval")]
+    recsys_incremental_interval_secs: u64,
+    /// Seconds between full recommendation-model rebuilds. 0 disables.
+    ///
+    /// A full build re-solves the projection from the whole catalogue, which is what keeps the
+    /// idf and the embedding space current. Weekly: the incremental pass covers changed series,
+    /// so this exists for vocabulary drift rather than for freshness.
+    #[serde(default = "default_recsys_full_interval")]
+    recsys_full_interval_secs: u64,
+    /// Series per streamed batch in a model build.
+    #[serde(default = "default_recsys_batch")]
+    recsys_batch: i64,
+    /// Ceiling on how many series one incremental build may touch.
+    #[serde(default = "default_recsys_incremental_max")]
+    recsys_incremental_max: i64,
     /// Automatic merges permitted in a single sweep — the only bound on a destructive
     /// background action. Without it, a bad threshold or normalization rule could collapse
     /// the whole catalogue between two scheduler ticks.
@@ -108,6 +133,10 @@ impl Default for SchedulerConfig {
             merge_sweep_requeue: default_merge_sweep_requeue(),
             merge_sweep_recheck: default_merge_sweep_recheck(),
             merge_sweep_max_auto_merges: default_merge_sweep_max_auto_merges(),
+            recsys_incremental_interval_secs: default_recsys_incremental_interval(),
+            recsys_full_interval_secs: default_recsys_full_interval(),
+            recsys_batch: default_recsys_batch(),
+            recsys_incremental_max: default_recsys_incremental_max(),
         }
     }
 }
@@ -140,6 +169,22 @@ fn default_merge_sweep_recheck() -> i64 {
 }
 fn default_merge_sweep_max_auto_merges() -> i64 {
     200
+}
+
+const fn default_recsys_incremental_interval() -> u64 {
+    900
+}
+
+const fn default_recsys_full_interval() -> u64 {
+    604_800
+}
+
+const fn default_recsys_batch() -> i64 {
+    512
+}
+
+const fn default_recsys_incremental_max() -> i64 {
+    20_000
 }
 
 #[derive(Clone)]
@@ -447,6 +492,8 @@ async fn run_scheduler(
     if cfg.fast_interval_secs == 0
         && cfg.full_interval_secs == 0
         && cfg.merge_sweep_interval_secs == 0
+        && cfg.recsys_incremental_interval_secs == 0
+        && cfg.recsys_full_interval_secs == 0
     {
         tracing::info!("scheduler disabled");
         return;
@@ -454,6 +501,8 @@ async fn run_scheduler(
     let mut fast = interval_or_never(cfg.fast_interval_secs);
     let mut full = interval_or_never(cfg.full_interval_secs);
     let mut merge = interval_or_never(cfg.merge_sweep_interval_secs);
+    let mut recsys_incremental = interval_or_never(cfg.recsys_incremental_interval_secs);
+    let mut recsys_full = interval_or_never(cfg.recsys_full_interval_secs);
 
     loop {
         // Republished on every tick rather than on acquisition, so a replica that lost the
@@ -468,8 +517,81 @@ async fn run_scheduler(
             () = tick(&mut fast) => maybe_sweep(&state, &leadership, ScanMode::Fast).await,
             () = tick(&mut full) => maybe_sweep(&state, &leadership, ScanMode::Full).await,
             () = tick(&mut merge) => maybe_merge_sweep(&state, &leadership).await,
+            () = tick(&mut recsys_incremental) => {
+                maybe_recsys_build(&state, &cfg, &leadership, false).await;
+            }
+            () = tick(&mut recsys_full) => {
+                maybe_recsys_build(&state, &cfg, &leadership, true).await;
+            }
         }
     }
+}
+
+/// Runs a model build only when this replica holds leadership *and* recommendations are on.
+///
+/// Leadership matters for the same reason it does for the duplicate sweep, and for one more:
+/// a build claims `rec_build_state` and two replicas racing would have one of them do nothing
+/// while believing it had run. The claim is the real mutual exclusion; leadership keeps the
+/// wasted attempt from happening at all.
+async fn maybe_recsys_build(
+    state: &AppState,
+    cfg: &SchedulerConfig,
+    leadership: &leader::Leadership,
+    full: bool,
+) {
+    let kind = if full { "full" } else { "incremental" };
+    if !state.features.is_enabled(Feature::CatalogueRecommendations) {
+        tracing::debug!(
+            kind,
+            "skipping model build; recommendations are switched off"
+        );
+        return;
+    }
+    if !leadership.is_leader() {
+        tracing::debug!(kind, "skipping model build; not scheduler leader");
+        return;
+    }
+
+    let budget = recsys::BuildBudget {
+        batch: cfg.recsys_batch,
+        incremental_max: cfg.recsys_incremental_max,
+        dense_input_cap: i64::try_from(tankovault_recsys::DENSE_INPUT_CAP).unwrap_or(i64::MAX),
+        hnsw_m: 16,
+        hnsw_ef_construction: 64,
+    };
+    let started = std::time::Instant::now();
+    match recsys::build(&state.pool, budget, full).await {
+        Ok(Some(report)) => {
+            tracing::info!(
+                kind,
+                generation = report.generation,
+                series = report.series_built,
+                vocabulary = report.vocabulary,
+                dims = report.dense_dims,
+                "recommendation model built"
+            );
+            metrics::counter!(RECSYS_BUILD_SERIES, "stage" => kind, "result" => "built")
+                .increment(u64::try_from(report.series_built).unwrap_or(0));
+            // A gauge takes an `f64`; the count is an `i64` that cannot be negative, and a
+            // catalogue large enough to lose precision here is far past anything this build
+            // completes in a day.
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "series counts are far below f64's exact-integer range"
+            )]
+            metrics::gauge!(RECSYS_MODEL_SERIES, "table" => "series_embedding")
+                .set(report.series_built.max(0) as f64);
+        }
+        // Not a failure: another replica holds the claim and is doing this run's work.
+        Ok(None) => tracing::debug!(kind, "model build already in progress"),
+        Err(e) => {
+            tracing::warn!(kind, error = %e, "recommendation model build failed");
+            metrics::counter!(RECSYS_BUILD_SERIES, "stage" => kind, "result" => "failed")
+                .increment(1);
+        }
+    }
+    metrics::histogram!(RECSYS_BUILD_DURATION, "stage" => kind)
+        .record(started.elapsed().as_secs_f64());
 }
 
 /// Runs a duplicate sweep only when this replica holds leadership *and* automatic

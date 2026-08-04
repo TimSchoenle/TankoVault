@@ -13,6 +13,7 @@ publish = false
 # `sqlx` feature: derives `sqlx::Type` on the domain enums so the checked query
 # macros can bind/decode them as their native Postgres enum types.
 tankovault-domain = { workspace = true, features = ["sqlx"] }
+tankovault-recsys = { workspace = true }
 # Deliberately NOT `tankovault-matcher`, nor `tankovault-config` (ARCH-16 step 3): the
 # canonicalisation *decision* is made above this crate and reaches it through
 # `tankovault_domain::matching::Canonicaliser`. This crate reads the trigram candidates and

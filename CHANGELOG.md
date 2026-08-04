@@ -12,6 +12,24 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [1.1.0](https://github.com/TimSchoenle/TankoVault/compare/v1.0.0...v1.1.0) (2026-08-04)
+
+
+### Features
+
+* **ci:** publish only the images a release changed ([#61](https://github.com/TimSchoenle/TankoVault/issues/61)) ([4f3d4df](https://github.com/TimSchoenle/TankoVault/commit/4f3d4dffb61d2e807bbfd9634e9f691731ae2b38))
+
+
+### Bug Fixes
+
+* restore a green CI on main after the 1.0.0 release ([#57](https://github.com/TimSchoenle/TankoVault/issues/57)) ([f74446e](https://github.com/TimSchoenle/TankoVault/commit/f74446e843b7b2d9ae6fb89a2024a4d5683eebaa))
+* VACUUM the plan fixture so GIN costs stop racing autovacuum ([#60](https://github.com/TimSchoenle/TankoVault/issues/60)) ([cc3c6ae](https://github.com/TimSchoenle/TankoVault/commit/cc3c6ae1fa5f96c360df6b4d3c6549c1c935d1fd))
+
+
+### CI
+
+* move the layer cache to GHCR and group the Rust caches ([#59](https://github.com/TimSchoenle/TankoVault/issues/59)) ([36d6972](https://github.com/TimSchoenle/TankoVault/commit/36d6972ff1194498fc20ef0ff779af371d3dc661))
+
 ## [1.0.0](https://github.com/TimSchoenle/TankoVault/compare/v0.4.1...v1.0.0) (2026-08-03)
 
 

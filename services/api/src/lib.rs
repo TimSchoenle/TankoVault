@@ -268,6 +268,7 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(series::providers))
         // me
         .routes(routes!(me::watchlist))
+        .routes(routes!(me::watchlist_summary))
         // Bulk before the `{series_id}` sibling for readability only — `matchit` prefers the
         // static segment regardless, and a `series_id` is a uuid, so `bulk` can never be one.
         .routes(routes!(

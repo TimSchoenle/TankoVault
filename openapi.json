@@ -1267,6 +1267,31 @@
         ],
         "type": "object"
       },
+      "NextUnread": {
+        "description": "The chapter a `Continue` button opens, and what the ledger's `Next unread` column shows.",
+        "properties": {
+          "number": {
+            "description": "The chapter number, parts included.",
+            "format": "double",
+            "type": "number"
+          },
+          "released_at": {
+            "type": "string"
+          },
+          "title": {
+            "description": "The provider's chapter title, when it publishes one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "number",
+          "released_at"
+        ],
+        "type": "object"
+      },
       "NotificationId": {
         "description": "Identifies a notification.",
         "format": "uuid",
@@ -3213,6 +3238,17 @@
               "null"
             ]
           },
+          "next_unread": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/NextUnread",
+                "description": "The lowest unread chapter, or `null` when the reader is caught up."
+              }
+            ]
+          },
           "notify": {
             "type": "boolean"
           },
@@ -3222,6 +3258,11 @@
               "string",
               "null"
             ]
+          },
+          "read_count": {
+            "description": "Whole chapters at or below the user's progress — the progress bar's numerator.\n\nNot [`Self::last_read_number`]: a catalogue with gaps makes the frontier larger than the\nnumber of chapters below it, so a bar drawn from the frontier reads past 100%.",
+            "format": "int64",
+            "type": "integer"
           },
           "series_id": {
             "$ref": "#/components/schemas/SeriesId"
@@ -3238,6 +3279,13 @@
           "source_degraded": {
             "description": "Whether the preferred source, or the provider behind it, is unhealthy.",
             "type": "boolean"
+          },
+          "sources": {
+            "description": "Every provider carrying this series, preferred first.",
+            "items": {
+              "$ref": "#/components/schemas/WatchlistSource"
+            },
+            "type": "array"
           },
           "status": {
             "$ref": "#/components/schemas/WatchStatus"
@@ -3264,10 +3312,57 @@
           "added_at",
           "series_title",
           "unread",
+          "read_count",
+          "sources",
           "total_chapters",
           "source_count",
           "source_degraded",
           "sync_excluded"
+        ],
+        "type": "object"
+      },
+      "WatchlistSource": {
+        "description": "One provider carrying a series, for the ledger's `Sources` column.",
+        "properties": {
+          "code": {
+            "description": "The provider slug — the monogram tile's letters and a stable client-side key.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "preferred": {
+            "description": "Whether this is the source `preferred_source_name` names.",
+            "type": "boolean"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ProviderState",
+            "description": "The effective state: the series-source's own, unless the provider behind it is worse."
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "state",
+          "preferred"
+        ],
+        "type": "object"
+      },
+      "WatchlistSummaryView": {
+        "description": "The whole watchlist at a glance, under no filters at all.",
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/WatchlistCounts"
+          },
+          "unread_total": {
+            "description": "Unread chapters across every tracked series, whatever its status.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "counts",
+          "unread_total"
         ],
         "type": "object"
       },
@@ -3300,6 +3395,13 @@
               "$ref": "#/components/schemas/WatchlistItem"
             },
             "type": "array"
+          },
+          "next_cursor": {
+            "description": "Pass back as `cursor` to fetch the next page; `null` at the end of the list.\n\nOpaque on purpose: it encodes the sort key the server ordered by, which changes shape\nwith `sort`, and a client that parsed it would break the first time an order was added.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "total": {
             "description": "Rows matching the whole filter, `status` included — the pager's denominator.",
@@ -9464,6 +9566,15 @@
               "format": "int64",
               "type": "integer"
             }
+          },
+          {
+            "description": "Opaque token from a previous response's `next_cursor`; supersedes `offset`.\n\nKeyset, not offset: the watchlist is live — a chapter discovered between two requests\nreorders the default sort — and an `OFFSET` page over a shifting list repeats one row\nand skips another. `offset` stays accepted for callers that refetch a whole prefix\nrather than appending, which is immune to the same problem by construction.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -9615,6 +9726,43 @@
           }
         ],
         "summary": "Change many watchlist entries at once",
+        "tags": [
+          "me-watchlist"
+        ]
+      }
+    },
+    "/v1/me/watchlist/summary": {
+      "get": {
+        "description": "Per-status counts and the unread total over the **whole** watchlist, under no filters.\n\nSeparate from the list's `counts`, which drop only the `status` arm and keep the search,\nrecency and source filters: those answer \"how many would this tab show given what I have\ntyped\", while this answers \"how big is my library\" for surfaces that carry no filter state\nof their own — a tab badge, the More sheet, a signed-in header.",
+        "operationId": "watchlist_summary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistSummaryView"
+                }
+              }
+            },
+            "description": "Counts across the whole watchlist"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get the watchlist summary",
         "tags": [
           "me-watchlist"
         ]

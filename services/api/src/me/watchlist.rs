@@ -9,7 +9,7 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use serde::{Deserialize, Serialize};
 use tankovault_db::repo::tracking::{
-    BULK_ID_LIMIT, WatchlistFilter, WatchlistOrder, WatchlistSort,
+    BULK_ID_LIMIT, WatchlistCursor, WatchlistFilter, WatchlistOrder, WatchlistSort,
 };
 use tankovault_domain::{SeriesId, WatchStatus};
 use time::{Duration, OffsetDateTime};
@@ -39,6 +39,15 @@ pub struct WatchlistItem {
     pub last_read_number: Option<f64>,
     /// Unread chapters above the user's progress.
     pub unread: i64,
+    /// Whole chapters at or below the user's progress — the progress bar's numerator.
+    ///
+    /// Not [`Self::last_read_number`]: a catalogue with gaps makes the frontier larger than the
+    /// number of chapters below it, so a bar drawn from the frontier reads past 100%.
+    pub read_count: i64,
+    /// The lowest unread chapter, or `null` when the reader is caught up.
+    pub next_unread: Option<NextUnread>,
+    /// Every provider carrying this series, preferred first.
+    pub sources: Vec<WatchlistSource>,
     /// Distinct whole chapters known across all sources — the progress bar's denominator.
     pub total_chapters: i64,
     /// The highest chapter number known across all sources.
@@ -58,6 +67,30 @@ pub struct WatchlistItem {
     pub sync_excluded: bool,
 }
 
+/// The chapter a `Continue` button opens, and what the ledger's `Next unread` column shows.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct NextUnread {
+    /// The chapter number, parts included.
+    pub number: f64,
+    /// The provider's chapter title, when it publishes one.
+    pub title: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
+    pub released_at: time::OffsetDateTime,
+}
+
+/// One provider carrying a series, for the ledger's `Sources` column.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct WatchlistSource {
+    /// The provider slug — the monogram tile's letters and a stable client-side key.
+    pub code: String,
+    pub name: String,
+    /// The effective state: the series-source's own, unless the provider behind it is worse.
+    pub state: tankovault_domain::ProviderState,
+    /// Whether this is the source `preferred_source_name` names.
+    pub preferred: bool,
+}
+
 impl From<tankovault_db::repo::tracking::WatchlistCard> for WatchlistItem {
     fn from(c: tankovault_db::repo::tracking::WatchlistCard) -> Self {
         Self {
@@ -69,6 +102,22 @@ impl From<tankovault_db::repo::tracking::WatchlistCard> for WatchlistItem {
             cover_url: c.cover_url,
             last_read_number: c.last_read_number,
             unread: c.unread,
+            read_count: c.read_count,
+            next_unread: c.next_unread.map(|n| NextUnread {
+                number: n.number,
+                title: n.title,
+                released_at: n.released_at,
+            }),
+            sources: c
+                .sources
+                .into_iter()
+                .map(|s| WatchlistSource {
+                    code: s.code,
+                    name: s.name,
+                    state: s.state,
+                    preferred: s.preferred,
+                })
+                .collect(),
             total_chapters: c.total_chapters,
             latest_chapter_number: c.latest_chapter_number,
             latest_chapter_at: c.latest_chapter_at,
@@ -111,6 +160,68 @@ pub struct WatchlistView {
     pub counts: WatchlistCounts,
     /// Newest band first; empty bands are omitted.
     pub groups: Vec<WatchlistGroup>,
+    /// Pass back as `cursor` to fetch the next page; `null` at the end of the list.
+    ///
+    /// Opaque on purpose: it encodes the sort key the server ordered by, which changes shape
+    /// with `sort`, and a client that parsed it would break the first time an order was added.
+    pub next_cursor: Option<String>,
+}
+
+/// The whole watchlist at a glance, under no filters at all.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct WatchlistSummaryView {
+    pub counts: WatchlistCounts,
+    /// Unread chapters across every tracked series, whatever its status.
+    pub unread_total: i64,
+}
+
+/// The opaque `cursor` token's payload.
+///
+/// Serialised rather than spelled into the query string because the text key is a series title:
+/// arbitrary user-visible text with `&`, `=` and `#` in it, which a hand-built token would have
+/// to escape correctly on both sides.
+#[derive(Debug, Serialize, Deserialize)]
+struct CursorPayload {
+    /// The numeric sort key, for every order but `title`.
+    n: Option<f64>,
+    /// The text sort key, for `title`.
+    t: Option<String>,
+    i: uuid::Uuid,
+}
+
+/// Encode a repo cursor as the opaque token the client echoes back.
+fn encode_cursor(cursor: &WatchlistCursor) -> String {
+    use base64::Engine as _;
+    let payload = CursorPayload {
+        n: cursor.num,
+        t: cursor.text.clone(),
+        i: cursor.series_id.as_uuid(),
+    };
+    // `to_vec` cannot fail for this shape — every field is a plain scalar or `null`.
+    let json = serde_json::to_vec(&payload).unwrap_or_default();
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json)
+}
+
+/// Decode a client-supplied `cursor`, refusing a malformed one.
+///
+/// A `400` rather than a silent fall back to page one: a client that has mangled its cursor and
+/// is served the top of the list instead reads as "the list restarted", and an infinite scroll
+/// that restarts is a loop.
+fn decode_cursor(raw: Option<&str>) -> ApiResult<Option<WatchlistCursor>> {
+    use base64::Engine as _;
+    let Some(token) = raw.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    let bad = || ApiError::BadRequest("malformed cursor".into());
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(token)
+        .map_err(|_| bad())?;
+    let payload: CursorPayload = serde_json::from_slice(&bytes).map_err(|_| bad())?;
+    Ok(Some(WatchlistCursor {
+        num: payload.n,
+        text: payload.t,
+        series_id: SeriesId::from_uuid(payload.i),
+    }))
 }
 
 /// Query parameters for the watchlist list. All are optional; absent means "no constraint".
@@ -147,6 +258,14 @@ pub struct WatchlistParams {
     pub limit: i64,
     #[serde(default)]
     pub offset: i64,
+    /// Opaque token from a previous response's `next_cursor`; supersedes `offset`.
+    ///
+    /// Keyset, not offset: the watchlist is live — a chapter discovered between two requests
+    /// reorders the default sort — and an `OFFSET` page over a shifting list repeats one row
+    /// and skips another. `offset` stays accepted for callers that refetch a whole prefix
+    /// rather than appending, which is immune to the same problem by construction.
+    #[serde(default)]
+    pub cursor: Option<String>,
 }
 
 fn default_limit() -> i64 {
@@ -234,6 +353,7 @@ pub async fn watchlist(
         order,
         limit: params.limit.clamp(1, MAX_LIMIT),
         offset: params.offset.clamp(0, MAX_OFFSET),
+        cursor: decode_cursor(params.cursor.as_deref())?,
     };
 
     let page =
@@ -260,6 +380,45 @@ pub async fn watchlist(
                 chapter_count: g.chapter_count,
             })
             .collect(),
+        next_cursor: page.next_cursor.as_ref().map(encode_cursor),
+    }))
+}
+
+/// Get the watchlist summary
+///
+/// Per-status counts and the unread total over the **whole** watchlist, under no filters.
+///
+/// Separate from the list's `counts`, which drop only the `status` arm and keep the search,
+/// recency and source filters: those answer "how many would this tab show given what I have
+/// typed", while this answers "how big is my library" for surfaces that carry no filter state
+/// of their own — a tab badge, the More sheet, a signed-in header.
+#[utoipa::path(
+    get,
+    path = "/v1/me/watchlist/summary",
+    tag = ME_WATCHLIST_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Counts across the whole watchlist", body = WatchlistSummaryView),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn watchlist_summary(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<WatchlistSummaryView>> {
+    let summary =
+        tankovault_db::repo::tracking::watchlist_summary(&state.pool, user.user_id).await?;
+    Ok(Json(WatchlistSummaryView {
+        counts: WatchlistCounts {
+            reading: summary.counts.reading,
+            planned: summary.counts.planned,
+            paused: summary.counts.paused,
+            completed: summary.counts.completed,
+            dropped: summary.counts.dropped,
+            all: summary.counts.all,
+            source_issues: summary.counts.source_issues,
+        },
+        unread_total: summary.unread_total,
     }))
 }
 

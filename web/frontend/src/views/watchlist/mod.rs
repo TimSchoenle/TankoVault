@@ -215,6 +215,11 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
                     },
                     groups: Vec::new(),
                     total: 0,
+                    // Offset paging, not keyset: this list refetches the whole prefix on every
+                    // page rather than appending, which is immune to the shifting-list defect
+                    // the cursor exists to fix and cannot use a cursor to express "the first
+                    // 180 rows". The token is there for consumers that do append.
+                    next_cursor: None,
                 });
             }
             let mut builder = client

@@ -11,6 +11,7 @@ mod notifications;
 mod passkeys;
 mod privacy;
 mod progress;
+mod recommendations;
 mod sync;
 mod watchlist;
 
@@ -21,5 +22,6 @@ pub use notifications::*;
 pub use passkeys::*;
 pub use privacy::*;
 pub use progress::*;
+pub use recommendations::*;
 pub use sync::*;
 pub use watchlist::*;

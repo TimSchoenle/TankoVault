@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE user_taste_profile p SET stale = true WHERE EXISTS (SELECT 1 FROM user_series_affinity a WHERE a.user_id = p.user_id AND a.series_id IN ($1, $2))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3030fba2247afcb254271fa4c1808849e9a80a6afe914774e861e5b2353cf003"
+}

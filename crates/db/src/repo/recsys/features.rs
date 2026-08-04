@@ -454,3 +454,114 @@ pub async fn weighted_vectors<'e, E: PgExecutor<'e> + Copy>(
         .collect();
     Ok((weighted, rows))
 }
+
+/// The row [`exact_feature_matches`] reads.
+#[derive(FromRow)]
+struct ExactRow {
+    series_id: Uuid,
+    shared: i64,
+}
+
+/// A series matched by exact feature overlap, and how many of the asked-for features it carries.
+pub struct ExactMatch {
+    pub series_id: SeriesId,
+    pub shared: i64,
+}
+
+/// Series carrying any of a set of features, most overlap first.
+///
+/// **This is the path that recovers what the dense projection destroys.** Authors are excluded
+/// from the embedding entirely — a rank-128 approximation cannot represent a feature with a
+/// document frequency of three — so the single most reliable signal in the catalogue, "same
+/// author", is invisible to the ANN index. Here it is exact.
+///
+/// Callers must pass *rare* features only. The array-overlap operator is index-backed
+/// (`series_features_gin`), but a feature carried by a third of the catalogue matches a third of
+/// the catalogue, and no index makes that cheap.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn exact_feature_matches<'e, E: PgExecutor<'e>>(
+    exec: E,
+    features: &[i32],
+    exclude: &[SeriesId],
+    include_adult: bool,
+    limit: i64,
+) -> DbResult<Vec<ExactMatch>> {
+    let excluded: Vec<Uuid> = exclude.iter().copied().map(SeriesId::as_uuid).collect();
+
+    let rows = sqlx::query_as!(
+        ExactRow,
+        "SELECT f.series_id, \
+                cardinality(ARRAY(SELECT unnest(f.feature_ids) INTERSECT SELECT unnest($1::int[]))) \
+                  ::int8 AS \"shared!\" \
+         FROM series_features f \
+         JOIN series_prior p ON p.series_id = f.series_id AND p.recommendable \
+         JOIN series s ON s.id = f.series_id AND (NOT s.is_adult OR $3) \
+         WHERE f.feature_ids && $1::int[] \
+           AND NOT (f.series_id = ANY($2)) \
+         ORDER BY \"shared!\" DESC, f.series_id \
+         LIMIT $4",
+        features,
+        &excluded,
+        include_adult,
+        limit,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| ExactMatch {
+            series_id: SeriesId::from_uuid(r.series_id),
+            shared: r.shared,
+        })
+        .collect())
+}
+
+/// The rarest features in a vector, by idf, for the exact retrieval path.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn rarest_features<'e, E: PgExecutor<'e>>(
+    exec: E,
+    features: &[i32],
+    limit: i64,
+) -> DbResult<Vec<i32>> {
+    let rows = sqlx::query_scalar!(
+        "SELECT id FROM rec_features \
+          WHERE id = ANY($1) AND kind IN ('tag', 'author') \
+          ORDER BY doc_count ASC, id \
+          LIMIT $2",
+        features,
+        limit,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows)
+}
+
+/// Name a set of features, for a surface that shows them to a reader.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn feature_names<'e, E: PgExecutor<'e>>(
+    exec: E,
+    features: &[i32],
+) -> DbResult<Vec<FeatureRow>> {
+    let rows = sqlx::query_as!(
+        FeatRow,
+        "SELECT id, kind, value, idf FROM rec_features WHERE id = ANY($1)",
+        features,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|f| FeatureRow {
+            id: f.id,
+            kind: f.kind,
+            value: f.value,
+            idf: f.idf,
+        })
+        .collect())
+}

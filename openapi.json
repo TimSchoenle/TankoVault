@@ -823,6 +823,19 @@
         ],
         "type": "object"
       },
+      "FeedbackBody": {
+        "description": "A reader's verdict on a recommendation.",
+        "properties": {
+          "verdict": {
+            "description": "`not_interested` (decays) or `hide_forever` (does not).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict"
+        ],
+        "type": "object"
+      },
       "FlagView": {
         "description": "One feature as the control plane shows it.\n\nThe four booleans are not a struct that wants splitting: they answer four different\nquestions the page asks side by side — is it on, is that the shipped value, did someone\ndecide it, and can it be changed at all — and grouping any of them would only move the\nflattening into the client.",
         "properties": {
@@ -2043,6 +2056,71 @@
         ],
         "type": "object"
       },
+      "Recommendation": {
+        "description": "One recommended series and why it is here.",
+        "properties": {
+          "because_series_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SeriesId",
+                "description": "The series that produced this one, when a seed did."
+              }
+            ]
+          },
+          "because_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content_type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "cover_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "score": {
+            "format": "float",
+            "type": "number"
+          },
+          "series_id": {
+            "$ref": "#/components/schemas/SeriesId"
+          },
+          "shared": {
+            "description": "Features shared with `because_series_id`, most explanatory first.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "source_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SeriesStatus"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "series_id",
+          "title",
+          "content_type",
+          "status",
+          "source_count",
+          "score",
+          "shared"
+        ],
+        "type": "object"
+      },
       "RegisterRequest": {
         "properties": {
           "email": {
@@ -2958,6 +3036,65 @@
           "skipped"
         ],
         "type": "string"
+      },
+      "TasteFeature": {
+        "description": "One weighted feature in a taste profile.",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "weight": {
+            "format": "float",
+            "type": "number"
+          }
+        },
+        "required": [
+          "kind",
+          "value",
+          "weight"
+        ],
+        "type": "object"
+      },
+      "TasteView": {
+        "description": "The reader's own taste profile, rendered.",
+        "properties": {
+          "avoids": {
+            "description": "Features the reader has rejected, strongest first.",
+            "items": {
+              "$ref": "#/components/schemas/TasteFeature"
+            },
+            "type": "array"
+          },
+          "built_at": {
+            "description": "RFC 3339. A `String` rather than an `OffsetDateTime` because `utoipa` has no schema for\nthe latter, and the published contract should name the format either way.",
+            "example": "2026-08-04T12:00:00Z",
+            "type": "string"
+          },
+          "likes": {
+            "description": "Features the reader gravitates to, strongest first.",
+            "items": {
+              "$ref": "#/components/schemas/TasteFeature"
+            },
+            "type": "array"
+          },
+          "seeds": {
+            "description": "Series the profile was built from, in affinity order.",
+            "items": {
+              "$ref": "#/components/schemas/SeriesId"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "likes",
+          "avoids",
+          "seeds",
+          "built_at"
+        ],
+        "type": "object"
       },
       "TestAdapterRequest": {
         "properties": {
@@ -8724,21 +8861,35 @@
     },
     "/v1/me/recommendations": {
       "get": {
-        "description": "*Stub*: unwatched series sharing tags with the user's list (frontend §9.3). Falls back to\nthe most-recent catalog when the user has no tagged watchlist yet, so the shelf is never\nempty for signed-in users.",
+        "description": "A personalised shelf: content-similar to what the reader has finished or is deep into,\nfiltered against what they already track or have refused, diversified, and explained.\n\nFalls back to the catalogue's popularity prior for a reader with no history, and returns an\nempty array when the recommendation model has never been built.",
         "operationId": "recommendations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/SeriesSummary"
+                    "$ref": "#/components/schemas/Recommendation"
                   },
                   "type": "array"
                 }
               }
             },
-            "description": "Up to 12 recommended series"
+            "description": "The reader's shelf, best first"
           },
           "401": {
             "content": {
@@ -8757,6 +8908,67 @@
           }
         ],
         "summary": "Get \"because you read\" recommendations",
+        "tags": [
+          "me-dashboard"
+        ]
+      }
+    },
+    "/v1/me/recommendations/{series_id}/feedback": {
+      "post": {
+        "description": "Records that the reader does not want this series suggested. `not_interested` suppresses it\nfor ninety days; `hide_forever` does not expire. A stronger refusal is never softened by a\nlater weaker one.",
+        "operationId": "feedback",
+        "parameters": [
+          {
+            "description": "Series to suppress",
+            "in": "path",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Recorded"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "unknown verdict"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Dismiss a recommendation",
         "tags": [
           "me-dashboard"
         ]
@@ -9689,6 +9901,43 @@
         "summary": "Get link status for a provider",
         "tags": [
           "me-sync"
+        ]
+      }
+    },
+    "/v1/me/taste": {
+      "get": {
+        "description": "What the recommender believes about this reader, in their own terms. Exists so the profile is\ninspectable by the person it describes — and so a bad shelf can be diagnosed without anyone\nreading a watchlist.",
+        "operationId": "taste",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TasteView"
+                }
+              }
+            },
+            "description": "The reader's profile"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get the reader's taste profile",
+        "tags": [
+          "me-dashboard"
         ]
       }
     },

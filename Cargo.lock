@@ -5187,6 +5187,7 @@ dependencies = [
  "tankovault-bus",
  "tankovault-config",
  "tankovault-contracts",
+ "tankovault-control-plane",
  "tankovault-db",
  "tankovault-domain",
  "tankovault-email",

@@ -130,6 +130,7 @@ pub fn route_features() -> RouteFeatures {
         .gate("/v1/me/continue", Feature::TrackingFeed)
         .gate("/v1/me/stats", Feature::TrackingStats)
         .gate("/v1/me/recommendations", Feature::CatalogueRecommendations)
+        .gate("/v1/me/taste", Feature::CatalogueRecommendations)
         // --- notifications ---
         .gate("/v1/me/notifications", Feature::NotificationsInApp)
         .gate("/v1/me/stream", Feature::NotificationsLive)
@@ -301,6 +302,8 @@ fn documented_router() -> OpenApiRouter<AppState> {
         // reading dashboard + recommendations + stats (§9.3)
         .routes(routes!(me::continue_reading))
         .routes(routes!(me::recommendations))
+        .routes(routes!(me::feedback))
+        .routes(routes!(me::taste))
         .routes(routes!(me::stats))
         // capability probe the client gates its whole UI on
         .routes(routes!(me::capabilities))

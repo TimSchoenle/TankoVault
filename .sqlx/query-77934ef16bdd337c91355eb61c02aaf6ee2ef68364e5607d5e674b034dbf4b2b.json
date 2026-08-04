@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT items FROM user_recommendations WHERE user_id = $1 AND profile_at = $2 AND built_at > now() - make_interval(secs => $3)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "items",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "user_recommendations",
+            "name": "items"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "77934ef16bdd337c91355eb61c02aaf6ee2ef68364e5607d5e674b034dbf4b2b"
+}

@@ -77,6 +77,8 @@ async-trait = { workspace = true }
 integration = []
 
 [dev-dependencies]
+# The model builder, so the recommendation suite can build a real index to query.
+tankovault-control-plane = { path = "../control-plane" }
 # The in-process router harness. Split out of `crates/test-support` (ARCH-17) so that the
 # repository-layer suites no longer compile this service to run SQL tests.
 tankovault-api-test-support = { path = "test-support" }

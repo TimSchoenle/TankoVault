@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT series_id, affinity FROM user_series_affinity WHERE user_id = $1 ORDER BY abs(affinity) DESC, series_id LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "user_series_affinity",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "affinity",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "user_series_affinity",
+            "name": "affinity"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "6f5600dcbd82d66deba9f7b27cc4d58bcdbf8f62ce281dc27269b5be86b02a04"
+}

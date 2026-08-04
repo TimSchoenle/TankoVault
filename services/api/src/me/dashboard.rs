@@ -1,4 +1,6 @@
-//! Reading dashboard reads: continue-reading, recommendations, stats.
+//! Reading dashboard reads: continue-reading and lifetime stats.
+//!
+//! Recommendations moved to [`super::recommendations`] when they stopped being a stub.
 
 use crate::error::ApiResult;
 use crate::openapi::ME_DASHBOARD_TAG;
@@ -49,44 +51,6 @@ pub async fn continue_reading(
             last_read_number: c.last_read_number,
             next_number: c.next_number,
             unread: c.unread,
-        })
-        .collect();
-    Ok(Json(out))
-}
-
-/// Get "because you read" recommendations
-///
-/// *Stub*: unwatched series sharing tags with the user's list (frontend §9.3). Falls back to
-/// the most-recent catalog when the user has no tagged watchlist yet, so the shelf is never
-/// empty for signed-in users.
-#[utoipa::path(
-    get,
-    path = "/v1/me/recommendations",
-    tag = ME_DASHBOARD_TAG,
-    security(("bearer_auth" = [])),
-    responses(
-        (status = 200, description = "Up to 12 recommended series", body = Vec<crate::series::SeriesSummary>),
-        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-    )
-)]
-pub async fn recommendations(
-    State(state): State<AppState>,
-    user: AuthUser,
-) -> ApiResult<Json<Vec<crate::series::SeriesSummary>>> {
-    let mut items =
-        tankovault_db::repo::tracking::recommendations(&state.pool, user.user_id, 12).await?;
-    if items.is_empty() {
-        items = tankovault_db::repo::catalog::list_series(&state.pool, None, 12).await?;
-    }
-    let out = items
-        .into_iter()
-        .map(|it| crate::series::SeriesSummary {
-            id: it.series.id,
-            title: it.series.canonical_title,
-            cover_url: it.series.cover_url,
-            content_type: it.series.content_type,
-            status: it.series.status,
-            source_count: it.source_count,
         })
         .collect();
     Ok(Json(out))

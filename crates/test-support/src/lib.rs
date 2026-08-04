@@ -124,11 +124,18 @@ const STALE_DB_AFTER: StdDuration = StdDuration::from_secs(60 * 60);
 
 /// The catalogue-fixture template database, cloned by [`TestDb::spawn_with_catalogue`].
 ///
-/// **Bump the version suffix whenever [`catalogue`]'s generator changes.** The template is a
-/// cache keyed by this name and nothing else, so a stale one would otherwise be cloned by every
-/// later run. The name deliberately does not match the `tv_test_%` pattern
-/// [`sweep_stale_dbs`] drops: it is meant to outlive a run, and rebuilding it costs seconds.
-const CATALOGUE_TEMPLATE: &str = "tv_catalogue_template_v2";
+/// **Bump the version suffix whenever [`catalogue`]'s generator changes — or a migration does.**
+///
+/// The template caches a *migrated database with rows in it*, so both halves are part of what it
+/// caches, and this name is the entire cache key. Only the generator used to be named here, and
+/// that omission is a real trap: adding a migration leaves every later run cloning a template
+/// built before it, and the failure is `relation "…" does not exist` from a suite that has
+/// nothing to do with the change. Rebuilding costs seconds; a stale template costs an
+/// afternoon.
+///
+/// The name deliberately does not match the `tv_test_%` pattern [`sweep_stale_dbs`] drops: it is
+/// meant to outlive a run.
+const CATALOGUE_TEMPLATE: &str = "tv_catalogue_template_v3";
 
 /// Advisory-lock key serialising catalogue-template creation and cloning across test binaries.
 ///

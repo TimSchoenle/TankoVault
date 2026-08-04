@@ -17,15 +17,23 @@
 //! 4. [`similarity`] scores and explains a candidate pair exactly, against the sparse vectors the
 //!    embedding was derived from.
 //!
+//! The reader's half is two more modules, used by the request path rather than the builder:
+//! [`affinity`] turns watchlist status and reading depth into one number per series, and
+//! [`ranking`] blends the retrieval paths and diversifies the result.
+//!
 //! Retrieval itself is not here: it is an HNSW search, which belongs to Postgres.
 
+pub mod affinity;
 pub mod embedding;
 pub mod features;
+pub mod ranking;
 pub mod similarity;
 pub mod weighting;
 
+pub use affinity::{Interaction, affinity};
 pub use embedding::{Basis, GramAccumulator};
 pub use features::{FeatureKey, FeatureKind, SeriesFacts, digest, extract, length_bucket};
+pub use ranking::{Candidate, Path, Scored, blend, cap_by, diversify};
 pub use similarity::{cosine, shared_features};
 pub use weighting::{apply_idf, idf, normalise};
 

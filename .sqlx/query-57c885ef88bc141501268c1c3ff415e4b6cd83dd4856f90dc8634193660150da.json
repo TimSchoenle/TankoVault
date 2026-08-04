@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE user_taste_profile p SET stale = true WHERE EXISTS (SELECT 1 FROM watchlist_entries w WHERE w.user_id = p.user_id AND w.series_id = ANY($1))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "57c885ef88bc141501268c1c3ff415e4b6cd83dd4856f90dc8634193660150da"
+}

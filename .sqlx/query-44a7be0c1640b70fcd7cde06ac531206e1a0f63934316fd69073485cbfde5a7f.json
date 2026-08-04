@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT w.series_id, w.status AS \"status: WatchStatus\", COALESCE(floor(rp.last_read_whole_number), 0)::int8 AS \"chapters_read!\", GREATEST(w.updated_at, COALESCE(rp.updated_at, w.updated_at)) AS \"observed_at!\", (EXTRACT(EPOCH FROM (now() - GREATEST(w.updated_at, COALESCE(rp.updated_at, w.updated_at)))) / 86400.0)::float8 AS \"age_days!\" FROM watchlist_entries w LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id WHERE w.user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status: WatchStatus",
+        "type_info": {
+          "Custom": {
+            "name": "watch_status",
+            "kind": {
+              "Enum": [
+                "reading",
+                "planned",
+                "completed",
+                "dropped",
+                "paused"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "chapters_read!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "observed_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "age_days!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "44a7be0c1640b70fcd7cde06ac531206e1a0f63934316fd69073485cbfde5a7f"
+}

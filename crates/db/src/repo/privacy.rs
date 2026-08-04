@@ -37,6 +37,19 @@ pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
                                FROM read_progress p WHERE p.user_id = $1), \
            'notifications', (SELECT coalesce(json_agg(to_jsonb(n) ORDER BY n.created_at), '[]'::json) \
                                FROM notifications n WHERE n.user_id = $1), \
+           /* The recommendation profile. Derived from the watchlist, but disclosed separately \
+              because it is a *profile* in the GDPR sense: an inference about the subject, not a \
+              copy of what they entered. Art. 15(1)(h) asks for the logic, and the least this can \
+              do is show the values. */ \
+           'recommendation_affinity', (SELECT coalesce(json_agg(to_jsonb(a) - 'user_id' \
+                                                                ORDER BY a.affinity DESC), '[]'::json) \
+                                         FROM user_series_affinity a WHERE a.user_id = $1), \
+           'recommendation_profile', (SELECT coalesce(json_agg(to_jsonb(t) - 'user_id' - 'embedding'), \
+                                                      '[]'::json) \
+                                        FROM user_taste_profile t WHERE t.user_id = $1), \
+           'recommendation_feedback', (SELECT coalesce(json_agg(to_jsonb(f) - 'user_id' \
+                                                                ORDER BY f.created_at), '[]'::json) \
+                                         FROM recommendation_feedback f WHERE f.user_id = $1), \
            'linked_accounts', (SELECT coalesce(json_agg(to_jsonb(e) - 'access_token' - 'refresh_token' \
                                                         ORDER BY e.created_at), '[]'::json) \
                                  FROM external_accounts e WHERE e.user_id = $1), \

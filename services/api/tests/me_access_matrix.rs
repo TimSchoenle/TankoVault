@@ -185,6 +185,15 @@ fn me_gates() -> Vec<Gate> {
         get("/v1/me/continue", "/v1/me/continue"),
         get("/v1/me/feed", "/v1/me/feed"),
         get("/v1/me/recommendations", "/v1/me/recommendations"),
+        get("/v1/me/taste", "/v1/me/taste"),
+        Gate {
+            body: || Some(json!({ "verdict": "not_interested" })),
+            ..gate(
+                "POST",
+                "/v1/me/recommendations/{series_id}/feedback",
+                "/v1/me/recommendations/00000000-0000-7000-8000-00000000000a/feedback",
+            )
+        },
         get("/v1/me/stats", "/v1/me/stats"),
         // --- privacy (GDPR self-service) ---
         get("/v1/me/privacy/requests", "/v1/me/privacy/requests"),

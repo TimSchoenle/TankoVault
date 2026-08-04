@@ -1305,6 +1305,41 @@ pub async fn merge_series(
     .execute(&mut *tx)
     .await?;
 
+    // A reader's refusal is theirs, not the catalogue's, and must survive the catalogue deciding
+    // two rows were one. Folded **before** the delete, because the cascade would otherwise take
+    // it: without this, "never show me this again" is silently undone by an automatic merge the
+    // reader never saw. Same rule, and the same reasoning, as `series_sync_overrides` above.
+    //
+    // `hide_forever` wins either way: a stronger refusal must not be softened by a weaker one on
+    // the other side of the merge.
+    sqlx::query!(
+        "INSERT INTO recommendation_feedback (user_id, series_id, verdict, created_at) \
+         SELECT user_id, $1, verdict, created_at FROM recommendation_feedback \
+          WHERE series_id = $2 \
+         ON CONFLICT (user_id, series_id) DO UPDATE \
+            SET verdict = CASE \
+                  WHEN recommendation_feedback.verdict = 'hide_forever' \
+                    OR EXCLUDED.verdict = 'hide_forever' THEN 'hide_forever' \
+                  ELSE EXCLUDED.verdict END",
+        keep,
+        drop,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // Affinity and the taste profile are *derived* from the watchlist and read progress, which
+    // this transaction has already folded correctly. Merging the derived rows by hand is how the
+    // two diverge; marking the profiles stale makes them be recomputed from the folded truth.
+    sqlx::query!(
+        "UPDATE user_taste_profile p SET stale = true \
+          WHERE EXISTS (SELECT 1 FROM user_series_affinity a \
+                        WHERE a.user_id = p.user_id AND a.series_id IN ($1, $2))",
+        keep,
+        drop,
+    )
+    .execute(&mut *tx)
+    .await?;
+
     // The survivor absorbed the loser's tags and authors, so its feature digest has changed and
     // its embedding is stale. Queued rather than recomputed here: re-embedding needs the
     // projection basis, which is the builder's, and a merge must not block on it.

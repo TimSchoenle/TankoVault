@@ -1916,7 +1916,34 @@ const SERIES_REFERENCES: &[(&str, &str, Handling)] = &[
         Handling::Cascades("the other half of the same pair; see series_cooccurrence.series_id"),
     ),
     ("rec_repair_queue", "series_id", Handling::Folded),
+    // The reader model. Affinity is derived from the watchlist and read progress, both of which
+    // this transaction folds correctly a few statements earlier — so re-pointing it by hand is
+    // how the derived rows and their source diverge. `merge_series` marks the affected profiles
+    // stale instead, and they are recomputed from the folded truth.
+    (
+        "user_series_affinity",
+        "series_id",
+        Handling::Cascades(
+            "derived from watchlist_entries and read_progress, which are folded; affected taste profiles are marked stale and recomputed",
+        ),
+    ),
+    // The one table here that holds a *decision* rather than a derivation.
+    ("recommendation_feedback", "series_id", Handling::Folded),
 ];
+
+/// `user_taste_profile.seeds` is a `uuid[]` and therefore invisible to the enumeration above —
+/// no foreign key, and not named like a series id.
+///
+/// That is a deliberate blind spot with a deliberate answer: the array is a *cache* of the top of
+/// the affinity ordering, `merge_series` marks every affected profile stale, and a stale profile
+/// is rebuilt from scratch before it is next read. A dangling id in it therefore survives exactly
+/// until the next shelf request, and never reaches a reader.
+///
+/// Recorded here so the next person to add an array of series ids has to decide the same
+/// question rather than discover it. An array that is *not* rebuilt on staleness would need a
+/// real answer — which is the argument that kept the item model's neighbours out of arrays
+/// entirely (docs/RECOMMENDATIONS.md §5.2).
+const _ARRAY_COLUMNS_ARE_NOT_ENUMERATED: () = ();
 
 /// **The guard on `merge_series`.**
 ///

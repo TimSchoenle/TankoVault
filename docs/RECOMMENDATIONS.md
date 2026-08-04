@@ -1,9 +1,48 @@
 # Suggestion system — design
 
-Status: **phases 0 and 1 implemented; phases 2–4 proposed.**
+Status: **phases 0, 1 and 2 implemented; 2.5 and 3 proposed.**
 
 | Phase | State |
 |---|---|
+| 0 — pgvector, widened signal columns, `series_merges`, the merge guard | **built** |
+| 1 — the item model: features, projection, embeddings, HNSW, `/v1/series/{id}/similar` | **built** |
+| 2 — the reader model: affinity, taste profile, retrieval, ranking, `/v1/me/recommendations` | **built** |
+| 2.5 — the `Tunable` registry and the console | not started |
+| 3 — collaboration and feedback | partly built (feedback yes, co-occurrence no) |
+
+**The stub is gone.** `tracking::dashboard::recommendations` — the query that scored the whole
+catalogue against the reader's tags on every request — is deleted, along with its 700 000 plan
+budget. `/v1/me/recommendations` is now a real shelf.
+
+Where the built code diverges from what is written below, this document has been corrected to
+match the code. Four places where reality won an argument:
+
+- **The builder runs in `services/control-plane`, not `services/worker`** (§3.2).
+- **Priors page ids and aggregate separately** (§6.7) — doing both in one statement measured at
+  1.8x the plan-cost ceiling.
+- **Profile staleness is a database trigger, not a call at each write site.** The profile derives
+  from `watchlist_entries` and `read_progress`, which are written from a dozen places; a
+  convention that all of them must remember would be broken by the thirteenth, and the symptom is
+  a reader whose recommendations silently stop moving.
+- **The profile's dense vector is an unweighted mean of the seeds' embeddings**, not the
+  affinity-weighted one §4.2 describes. pgvector has no scalar multiply, so weighting would mean
+  parsing every vector back out of text in the request path to refine a value the seed selection
+  has largely already decided. Noted rather than hidden.
+
+Not built, and named so it is not mistaken for done:
+
+- **The widened AniList signals.** `tags.kind`, `series_tags.weight`, `series.is_adult`,
+  `external_score` and `external_popularity` exist as columns and are read by the model;
+  **nothing writes them**, so today's vocabulary is still genre-only. Highest-value remaining
+  change; needs no new code beyond the GraphQL selection (§2.2).
+- **Co-occurrence (retrieval path R4).** The table exists and the merge path handles it; nothing
+  populates it, so cross-reader signal contributes nothing yet. Correct on a small deployment
+  either way (§12.2).
+- **Every tunable.** Weights, bases and thresholds are still constants in the source. §8 is the
+  design for making them operator-editable, and it is deliberately after the ranker rather than
+  before it.
+
+---|---|
 | 0 — pgvector, widened signals, `series_merges`, the merge guard | **built** |
 | 1 — the item model: features, projection, embeddings, HNSW, `/v1/series/{id}/similar` | **built** |
 | 2 — the reader model, and replacing the stub endpoint | not started |

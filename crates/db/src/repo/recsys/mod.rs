@@ -17,6 +17,7 @@ mod build;
 mod embedding;
 mod features;
 mod prior;
+mod reader;
 
 pub use build::{
     BuildState, claim_repair_batch, delete_stale_generations, enqueue_repair, finish_build,
@@ -24,13 +25,20 @@ pub use build::{
     write_basis,
 };
 pub use embedding::{
-    Neighbour, create_embedding_index, embedding_of, nearest_neighbours, write_embeddings,
+    Neighbour, create_embedding_index, embedding_of, mean_embedding, nearest_excluding,
+    nearest_neighbours, write_embeddings,
 };
 pub use features::{
-    FeatureRow, InternedFeature, SeriesFactsRow, count_feature_documents, dense_vocabulary,
-    intern_features, list_series_facts, read_features, set_dense_indices, set_feature_stats,
-    total_feature_documents, weighted_vectors, write_series_features,
+    ExactMatch, FeatureRow, InternedFeature, SeriesFactsRow, count_feature_documents,
+    dense_vocabulary, exact_feature_matches, feature_names, intern_features, list_series_facts,
+    rarest_features, read_features, set_dense_indices, set_feature_stats, total_feature_documents,
+    weighted_vectors, write_series_features,
 };
 pub use prior::{
     PriorInputs, page_series_ids, prior_inputs_for, summaries_in_order, top_by_prior, write_priors,
+};
+pub use reader::{
+    ReaderInteraction, TasteProfile, mark_profile_stale, mark_profiles_stale_for_series,
+    read_profile, read_shelf, reader_interactions, record_feedback, replace_affinity,
+    suppressed_series, top_affinity, write_profile, write_shelf,
 };

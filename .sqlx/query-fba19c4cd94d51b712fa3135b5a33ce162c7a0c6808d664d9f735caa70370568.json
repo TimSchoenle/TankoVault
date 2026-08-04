@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO recommendation_feedback (user_id, series_id, verdict, created_at) SELECT user_id, $1, verdict, created_at FROM recommendation_feedback WHERE series_id = $2 ON CONFLICT (user_id, series_id) DO UPDATE SET verdict = CASE WHEN recommendation_feedback.verdict = 'hide_forever' OR EXCLUDED.verdict = 'hide_forever' THEN 'hide_forever' ELSE EXCLUDED.verdict END",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fba19c4cd94d51b712fa3135b5a33ce162c7a0c6808d664d9f735caa70370568"
+}

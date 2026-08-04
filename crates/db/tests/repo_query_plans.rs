@@ -303,29 +303,18 @@ struct Budget {
     reason: &'static str,
 }
 
-const BUDGETS: &[Budget] = &[
-    Budget {
-        label: "browse::list_series/count_series, optional-search variants",
-        matches: |query| {
-            query.sql.contains("$1::text IS NULL") && query.sql.contains("plainto_tsquery")
-        },
-        ceiling: 2_000_000.0,
-        reason: "still the `OR EXISTS` form. Their search term is optional — the predicate is \
+const BUDGETS: &[Budget] = &[Budget {
+    label: "browse::list_series/count_series, optional-search variants",
+    matches: |query| {
+        query.sql.contains("$1::text IS NULL") && query.sql.contains("plainto_tsquery")
+    },
+    ceiling: 2_000_000.0,
+    reason: "still the `OR EXISTS` form. Their search term is optional — the predicate is \
                  guarded by `$1::text IS NULL OR …`, because one statement serves a filtered \
                  browse with no search box — so a UNION of index scans cannot be substituted \
                  unconditionally: with no term there is nothing to union. Needs two statements \
                  or a different rewrite.",
-    },
-    Budget {
-        label: "tracking::dashboard recommendations",
-        matches: |query| query.sql.contains("liked_tags"),
-        ceiling: 700_000.0,
-        reason: "scores every series against the reader's tags, and computes the same correlated \
-                 `count(*) … IN (SELECT tag_id FROM liked_tags)` twice — once in the `WHERE \
-                 EXISTS`, once in the `ORDER BY` — before the LIMIT. Found by this audit rather \
-                 than by a slow-statement log.",
-    },
-];
+}];
 
 /// The budget covering `query`, if any.
 fn budget_for(query: &CachedQuery) -> Option<&'static Budget> {

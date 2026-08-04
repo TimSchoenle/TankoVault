@@ -97,6 +97,13 @@ pub async fn create_embedding_index(pool: &PgPool, m: i32, ef_construction: i32)
     Ok(())
 }
 
+/// The row both neighbour searches read.
+#[derive(FromRow)]
+struct NeighbourRow {
+    series_id: Uuid,
+    score: f64,
+}
+
 /// A retrieved neighbour and how close it is.
 pub struct Neighbour {
     pub series_id: SeriesId,
@@ -146,13 +153,8 @@ pub async fn nearest_neighbours<'e, E: PgExecutor<'e>>(
     limit: i64,
     overfetch: i64,
 ) -> DbResult<Vec<Neighbour>> {
-    #[derive(FromRow)]
-    struct Row {
-        series_id: Uuid,
-        score: f64,
-    }
     let rows = sqlx::query_as!(
-        Row,
+        NeighbourRow,
         "SELECT c.series_id, (1 - c.distance)::float8 AS \"score!\" \
          FROM ( \
            SELECT series_id, embedding <=> $1::text::halfvec(128) AS distance \
@@ -185,4 +187,89 @@ pub async fn nearest_neighbours<'e, E: PgExecutor<'e>>(
             score: r.score as f32,
         })
         .collect())
+}
+
+/// The nearest recommendable neighbours of a vector, excluding a whole set.
+///
+/// Same shape and the same constraint as [`nearest_neighbours`] — the ANN scan is a bare
+/// `ORDER BY … LIMIT` and every filter is applied outside it, or the planner abandons the index
+/// and sorts the table.
+///
+/// The exclusion set is the reader's: everything already tracked, plus everything refused. It is
+/// applied *after* the index has ranked, which is why `overfetch` matters more here than for the
+/// public similarity endpoint — a reader with a thousand-entry watchlist removes a thousand
+/// candidates, and an over-fetch that does not account for that returns a short shelf.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn nearest_excluding<'e, E: PgExecutor<'e>>(
+    exec: E,
+    embedding: &str,
+    exclude: &[SeriesId],
+    include_adult: bool,
+    limit: i64,
+    overfetch: i64,
+) -> DbResult<Vec<Neighbour>> {
+    let excluded: Vec<Uuid> = exclude.iter().copied().map(SeriesId::as_uuid).collect();
+
+    let rows = sqlx::query_as!(
+        NeighbourRow,
+        "SELECT c.series_id, (1 - c.distance)::float8 AS \"score!\" \
+         FROM ( \
+           SELECT series_id, embedding <=> $1::text::halfvec(128) AS distance \
+           FROM series_embedding \
+           ORDER BY embedding <=> $1::text::halfvec(128) \
+           LIMIT $5 \
+         ) c \
+         JOIN series_prior p ON p.series_id = c.series_id AND p.recommendable \
+         JOIN series s ON s.id = c.series_id AND (NOT s.is_adult OR $3) \
+         WHERE NOT (c.series_id = ANY($2)) \
+         ORDER BY c.distance \
+         LIMIT $4",
+        embedding,
+        &excluded,
+        include_adult,
+        limit,
+        overfetch,
+    )
+    .fetch_all(exec)
+    .await?;
+
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a cosine in [0,1] loses nothing meaningful as f32; the score is a ranking key"
+    )]
+    Ok(rows
+        .into_iter()
+        .map(|r| Neighbour {
+            series_id: SeriesId::from_uuid(r.series_id),
+            score: r.score as f32,
+        })
+        .collect())
+}
+
+/// The mean embedding of a set of series — the reader's centre of gravity.
+///
+/// An unweighted mean over seeds that are *already* the top of the affinity ordering, rather than
+/// an affinity-weighted one. The weighting would have to happen in Rust (pgvector has no scalar
+/// multiply), which means parsing every vector back out of text to compute something the seed
+/// selection has largely done already. If retrieval quality ever turns on this, the honest fix is
+/// a weighted mean in the builder, not a parse in the request path.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; a set with no embedded members is `Ok(None)`, which is the
+/// signal that profile-vector retrieval has nothing to search with yet.
+pub async fn mean_embedding<'e, E: PgExecutor<'e>>(
+    exec: E,
+    series_ids: &[SeriesId],
+) -> DbResult<Option<String>> {
+    let ids: Vec<Uuid> = series_ids.iter().copied().map(SeriesId::as_uuid).collect();
+    let literal = sqlx::query_scalar!(
+        "SELECT avg(embedding)::halfvec(128)::text \
+         FROM series_embedding WHERE series_id = ANY($1)",
+        &ids,
+    )
+    .fetch_one(exec)
+    .await?;
+    Ok(literal)
 }

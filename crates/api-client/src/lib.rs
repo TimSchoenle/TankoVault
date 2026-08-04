@@ -2147,6 +2147,36 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "A reader's verdict on a recommendation."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A reader's verdict on a recommendation.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"verdict\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"verdict\": {"]
+    #[doc = "      \"description\": \"`not_interested` (decays) or `hide_forever` (does not).\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct FeedbackBody {
+        #[doc = "`not_interested` (decays) or `hide_forever` (does not)."]
+        pub verdict: ::std::string::String,
+    }
+    impl FeedbackBody {
+        pub fn builder() -> builder::FeedbackBody {
+            Default::default()
+        }
+    }
     #[doc = "One feature as the control plane shows it.\n\nThe four booleans are not a struct that wants splitting: they answer four different\nquestions the page asks side by side — is it on, is that the shipped value, did someone\ndecide it, and can it be changed at all — and grouping any of them would only move the\nflattening into the client."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -4824,6 +4854,128 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "One recommended series and why it is here."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One recommended series and why it is here.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"content_type\","]
+    #[doc = "    \"score\","]
+    #[doc = "    \"series_id\","]
+    #[doc = "    \"shared\","]
+    #[doc = "    \"source_count\","]
+    #[doc = "    \"status\","]
+    #[doc = "    \"title\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"because_series_id\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {},"]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"because_title\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"content_type\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ContentType\""]
+    #[doc = "    },"]
+    #[doc = "    \"cover_url\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"score\": {"]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"float\""]
+    #[doc = "    },"]
+    #[doc = "    \"series_id\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    },"]
+    #[doc = "    \"shared\": {"]
+    #[doc = "      \"description\": \"Features shared with `because_series_id`, most explanatory first.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"source_count\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"status\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesStatus\""]
+    #[doc = "    },"]
+    #[doc = "    \"title\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct Recommendation {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub because_series_id: ::std::option::Option<RecommendationBecauseSeriesId>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub because_title: ::std::option::Option<::std::string::String>,
+        pub content_type: ContentType,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub cover_url: ::std::option::Option<::std::string::String>,
+        pub score: f32,
+        pub series_id: SeriesId,
+        #[doc = "Features shared with `because_series_id`, most explanatory first."]
+        pub shared: ::std::vec::Vec<::std::string::String>,
+        pub source_count: i64,
+        pub status: SeriesStatus,
+        pub title: ::std::string::String,
+    }
+    impl Recommendation {
+        pub fn builder() -> builder::Recommendation {
+            Default::default()
+        }
+    }
+    #[doc = "`RecommendationBecauseSeriesId`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum RecommendationBecauseSeriesId {
+        Variant0(::serde_json::Value),
+        Variant1(SeriesId),
+    }
+    impl ::std::convert::From<::serde_json::Value> for RecommendationBecauseSeriesId {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<SeriesId> for RecommendationBecauseSeriesId {
+        fn from(value: SeriesId) -> Self {
+            Self::Variant1(value)
+        }
+    }
     #[doc = "`RegisterRequest`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -7231,6 +7383,108 @@ pub mod types {
             value: ::std::string::String,
         ) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
+        }
+    }
+    #[doc = "One weighted feature in a taste profile."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One weighted feature in a taste profile.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"kind\","]
+    #[doc = "    \"value\","]
+    #[doc = "    \"weight\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"kind\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"value\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"weight\": {"]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"float\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct TasteFeature {
+        pub kind: ::std::string::String,
+        pub value: ::std::string::String,
+        pub weight: f32,
+    }
+    impl TasteFeature {
+        pub fn builder() -> builder::TasteFeature {
+            Default::default()
+        }
+    }
+    #[doc = "The reader's own taste profile, rendered."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The reader's own taste profile, rendered.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"avoids\","]
+    #[doc = "    \"built_at\","]
+    #[doc = "    \"likes\","]
+    #[doc = "    \"seeds\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"avoids\": {"]
+    #[doc = "      \"description\": \"Features the reader has rejected, strongest first.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/TasteFeature\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"built_at\": {"]
+    #[doc = "      \"description\": \"RFC 3339. A `String` rather than an `OffsetDateTime` because `utoipa` has no schema for\\nthe latter, and the published contract should name the format either way.\","]
+    #[doc = "      \"examples\": ["]
+    #[doc = "        \"2026-08-04T12:00:00Z\""]
+    #[doc = "      ],"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"likes\": {"]
+    #[doc = "      \"description\": \"Features the reader gravitates to, strongest first.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/TasteFeature\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"seeds\": {"]
+    #[doc = "      \"description\": \"Series the profile was built from, in affinity order.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct TasteView {
+        #[doc = "Features the reader has rejected, strongest first."]
+        pub avoids: ::std::vec::Vec<TasteFeature>,
+        #[doc = "RFC 3339. A `String` rather than an `OffsetDateTime` because `utoipa` has no schema for\nthe latter, and the published contract should name the format either way."]
+        pub built_at: ::std::string::String,
+        #[doc = "Features the reader gravitates to, strongest first."]
+        pub likes: ::std::vec::Vec<TasteFeature>,
+        #[doc = "Series the profile was built from, in affinity order."]
+        pub seeds: ::std::vec::Vec<SeriesId>,
+    }
+    impl TasteView {
+        pub fn builder() -> builder::TasteView {
+            Default::default()
         }
     }
     #[doc = "`TestAdapterBody`"]
@@ -10703,6 +10957,46 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct FeedbackBody {
+            verdict: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for FeedbackBody {
+            fn default() -> Self {
+                Self {
+                    verdict: Err("no value supplied for verdict".to_string()),
+                }
+            }
+        }
+        impl FeedbackBody {
+            pub fn verdict<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.verdict = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for verdict: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<FeedbackBody> for super::FeedbackBody {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: FeedbackBody,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    verdict: value.verdict?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::FeedbackBody> for FeedbackBody {
+            fn from(value: super::FeedbackBody) -> Self {
+                Self {
+                    verdict: Ok(value.verdict),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct FlagView {
             default_enabled: ::std::result::Result<bool, ::std::string::String>,
             description: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -14077,6 +14371,186 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct Recommendation {
+            because_series_id: ::std::result::Result<
+                ::std::option::Option<super::RecommendationBecauseSeriesId>,
+                ::std::string::String,
+            >,
+            because_title: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            content_type: ::std::result::Result<super::ContentType, ::std::string::String>,
+            cover_url: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            score: ::std::result::Result<f32, ::std::string::String>,
+            series_id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+            shared: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            source_count: ::std::result::Result<i64, ::std::string::String>,
+            status: ::std::result::Result<super::SeriesStatus, ::std::string::String>,
+            title: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for Recommendation {
+            fn default() -> Self {
+                Self {
+                    because_series_id: Ok(Default::default()),
+                    because_title: Ok(Default::default()),
+                    content_type: Err("no value supplied for content_type".to_string()),
+                    cover_url: Ok(Default::default()),
+                    score: Err("no value supplied for score".to_string()),
+                    series_id: Err("no value supplied for series_id".to_string()),
+                    shared: Err("no value supplied for shared".to_string()),
+                    source_count: Err("no value supplied for source_count".to_string()),
+                    status: Err("no value supplied for status".to_string()),
+                    title: Err("no value supplied for title".to_string()),
+                }
+            }
+        }
+        impl Recommendation {
+            pub fn because_series_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<super::RecommendationBecauseSeriesId>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.because_series_id = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for because_series_id: {e}")
+                });
+                self
+            }
+            pub fn because_title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.because_title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for because_title: {e}"));
+                self
+            }
+            pub fn content_type<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::ContentType>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.content_type = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for content_type: {e}"));
+                self
+            }
+            pub fn cover_url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.cover_url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for cover_url: {e}"));
+                self
+            }
+            pub fn score<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.score = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for score: {e}"));
+                self
+            }
+            pub fn series_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::SeriesId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series_id: {e}"));
+                self
+            }
+            pub fn shared<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.shared = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for shared: {e}"));
+                self
+            }
+            pub fn source_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.source_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for source_count: {e}"));
+                self
+            }
+            pub fn status<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::SeriesStatus>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.status = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for status: {e}"));
+                self
+            }
+            pub fn title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for title: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<Recommendation> for super::Recommendation {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: Recommendation,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    because_series_id: value.because_series_id?,
+                    because_title: value.because_title?,
+                    content_type: value.content_type?,
+                    cover_url: value.cover_url?,
+                    score: value.score?,
+                    series_id: value.series_id?,
+                    shared: value.shared?,
+                    source_count: value.source_count?,
+                    status: value.status?,
+                    title: value.title?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::Recommendation> for Recommendation {
+            fn from(value: super::Recommendation) -> Self {
+                Self {
+                    because_series_id: Ok(value.because_series_id),
+                    because_title: Ok(value.because_title),
+                    content_type: Ok(value.content_type),
+                    cover_url: Ok(value.cover_url),
+                    score: Ok(value.score),
+                    series_id: Ok(value.series_id),
+                    shared: Ok(value.shared),
+                    source_count: Ok(value.source_count),
+                    status: Ok(value.status),
+                    title: Ok(value.title),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct RegisterRequest {
             email: ::std::result::Result<::std::string::String, ::std::string::String>,
             password: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -16611,6 +17085,158 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct TasteFeature {
+            kind: ::std::result::Result<::std::string::String, ::std::string::String>,
+            value: ::std::result::Result<::std::string::String, ::std::string::String>,
+            weight: ::std::result::Result<f32, ::std::string::String>,
+        }
+        impl ::std::default::Default for TasteFeature {
+            fn default() -> Self {
+                Self {
+                    kind: Err("no value supplied for kind".to_string()),
+                    value: Err("no value supplied for value".to_string()),
+                    weight: Err("no value supplied for weight".to_string()),
+                }
+            }
+        }
+        impl TasteFeature {
+            pub fn kind<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kind = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kind: {e}"));
+                self
+            }
+            pub fn value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for value: {e}"));
+                self
+            }
+            pub fn weight<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.weight = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for weight: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<TasteFeature> for super::TasteFeature {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: TasteFeature,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    kind: value.kind?,
+                    value: value.value?,
+                    weight: value.weight?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::TasteFeature> for TasteFeature {
+            fn from(value: super::TasteFeature) -> Self {
+                Self {
+                    kind: Ok(value.kind),
+                    value: Ok(value.value),
+                    weight: Ok(value.weight),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct TasteView {
+            avoids:
+                ::std::result::Result<::std::vec::Vec<super::TasteFeature>, ::std::string::String>,
+            built_at: ::std::result::Result<::std::string::String, ::std::string::String>,
+            likes:
+                ::std::result::Result<::std::vec::Vec<super::TasteFeature>, ::std::string::String>,
+            seeds: ::std::result::Result<::std::vec::Vec<super::SeriesId>, ::std::string::String>,
+        }
+        impl ::std::default::Default for TasteView {
+            fn default() -> Self {
+                Self {
+                    avoids: Err("no value supplied for avoids".to_string()),
+                    built_at: Err("no value supplied for built_at".to_string()),
+                    likes: Err("no value supplied for likes".to_string()),
+                    seeds: Err("no value supplied for seeds".to_string()),
+                }
+            }
+        }
+        impl TasteView {
+            pub fn avoids<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::TasteFeature>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.avoids = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for avoids: {e}"));
+                self
+            }
+            pub fn built_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.built_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for built_at: {e}"));
+                self
+            }
+            pub fn likes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::TasteFeature>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.likes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for likes: {e}"));
+                self
+            }
+            pub fn seeds<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::SeriesId>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.seeds = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for seeds: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<TasteView> for super::TasteView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: TasteView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    avoids: value.avoids?,
+                    built_at: value.built_at?,
+                    likes: value.likes?,
+                    seeds: value.seeds?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::TasteView> for TasteView {
+            fn from(value: super::TasteView) -> Self {
+                Self {
+                    avoids: Ok(value.avoids),
+                    built_at: Ok(value.built_at),
+                    likes: Ok(value.likes),
+                    seeds: Ok(value.seeds),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct TestAdapterRequest {
             path: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -18652,9 +19278,13 @@ impl Client {
     pub fn mark_read_to(&self) -> builder::MarkReadTo<'_> {
         builder::MarkReadTo::new(self)
     }
-    #[doc = "Get \"because you read\" recommendations\n\n*Stub*: unwatched series sharing tags with the user's list (frontend §9.3). Falls back to\nthe most-recent catalog when the user has no tagged watchlist yet, so the shelf is never\nempty for signed-in users.\n\nSends a `GET` request to `/v1/me/recommendations`\n\n```ignore\nlet response = client.recommendations()\n    .send()\n    .await;\n```"]
+    #[doc = "Get \"because you read\" recommendations\n\nA personalised shelf: content-similar to what the reader has finished or is deep into,\nfiltered against what they already track or have refused, diversified, and explained.\n\nFalls back to the catalogue's popularity prior for a reader with no history, and returns an\nempty array when the recommendation model has never been built.\n\nSends a `GET` request to `/v1/me/recommendations`\n\n```ignore\nlet response = client.recommendations()\n    .limit(limit)\n    .send()\n    .await;\n```"]
     pub fn recommendations(&self) -> builder::Recommendations<'_> {
         builder::Recommendations::new(self)
+    }
+    #[doc = "Dismiss a recommendation\n\nRecords that the reader does not want this series suggested. `not_interested` suppresses it\nfor ninety days; `hide_forever` does not expire. A stronger refusal is never softened by a\nlater weaker one.\n\nSends a `POST` request to `/v1/me/recommendations/{series_id}/feedback`\n\nArguments:\n- `series_id`: Series to suppress\n- `body`\n```ignore\nlet response = client.feedback()\n    .series_id(series_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn feedback(&self) -> builder::Feedback<'_> {
+        builder::Feedback::new(self)
     }
     #[doc = "List active sessions\n\nThe caller's active login sessions (frontend §9.4).\n\nSends a `GET` request to `/v1/me/sessions`\n\n```ignore\nlet response = client.sessions()\n    .send()\n    .await;\n```"]
     pub fn sessions(&self) -> builder::Sessions<'_> {
@@ -18723,6 +19353,10 @@ impl Client {
     #[doc = "Get link status for a provider\n\nWhether the caller has a linked account at `provider`, plus the connected display name and\nmost recent sync time (Sync & integrations panel, header pill, Series tracking card).\nAlways `200`; an unlinked account reads `{ \"linked\": false }`. The body type is shared with\nthe sync service via `tankovault_contracts::sync`.\n\nSends a `GET` request to `/v1/me/sync/{provider}/status`\n\nArguments:\n- `provider`: Provider slug\n```ignore\nlet response = client.sync_status()\n    .provider(provider)\n    .send()\n    .await;\n```"]
     pub fn sync_status(&self) -> builder::SyncStatus<'_> {
         builder::SyncStatus::new(self)
+    }
+    #[doc = "Get the reader's taste profile\n\nWhat the recommender believes about this reader, in their own terms. Exists so the profile is\ninspectable by the person it describes — and so a bad shelf can be diagnosed without anyone\nreading a watchlist.\n\nSends a `GET` request to `/v1/me/taste`\n\n```ignore\nlet response = client.taste()\n    .send()\n    .await;\n```"]
+    pub fn taste(&self) -> builder::Taste<'_> {
+        builder::Taste::new(self)
     }
     #[doc = "Get the watchlist\n\nThe user's watchlist, filtered/sorted/paginated **server-side**, with the tab counts and\ngroup-header aggregates the list renders around it.\n\nThe body is an object rather than the bare `WatchlistItem[]` it used to be. That is a\nbreaking change, made deliberately: `total`, `counts` and `groups` cannot ride on response\nheaders without splitting one render into three requests, and the counts in particular are\n*not* derivable from `items` — they describe the tabs the caller is not looking at. The\nfrontend is the only consumer, and it is regenerated from this document.\n\nSends a `GET` request to `/v1/me/watchlist`\n\nArguments:\n- `cursor`: Opaque token from a previous response's `next_cursor`; supersedes `offset`.\n\nKeyset, not offset: the watchlist is live — a chapter discovered between two requests\nreorders the default sort — and an `OFFSET` page over a shifting list repeats one row\nand skips another. `offset` stays accepted for callers that refetch a whole prefix\nrather than appending, which is immune to the same problem by construction.\n- `limit`\n- `offset`\n- `order`: `asc | desc`. Defaults to whichever direction reads as \"most interesting first\" for the\nchosen sort — descending everywhere except `title`.\n- `q`: Free-text filter over title, alternative titles, tags and authors.\n- `released_since`: `24h | 7d | 30d`; absent (or `any`) means no recency constraint.\n\nA *window* token rather than an absolute instant, despite the name. The client would\nhave to compute the instant from its own clock, and a browser minutes ahead of the\nserver would filter out the very releases the \"last 24 hours\" option exists to show.\nThe server resolves the window against the clock the timestamps were written by.\n- `sort`: `released | unread | added | title | progress` (default `released`).\n- `source_issues`: Only rows whose preferred source is unhealthy.\n- `status`: `reading | planned | paused | completed | dropped`; absent means every status.\n- `unread_only`\n```ignore\nlet response = client.watchlist()\n    .cursor(cursor)\n    .limit(limit)\n    .offset(offset)\n    .order(order)\n    .q(q)\n    .released_since(released_since)\n    .sort(sort)\n    .source_issues(source_issues)\n    .status(status)\n    .unread_only(unread_only)\n    .send()\n    .await;\n```"]
     pub fn watchlist(&self) -> builder::Watchlist<'_> {
@@ -24960,19 +25594,34 @@ pub mod builder {
     #[derive(Debug, Clone)]
     pub struct Recommendations<'a> {
         client: &'a super::Client,
+        limit: Result<Option<i64>, String>,
     }
     impl<'a> Recommendations<'a> {
         pub fn new(client: &'a super::Client) -> Self {
-            Self { client: client }
+            Self {
+                client: client,
+                limit: Ok(None),
+            }
+        }
+        pub fn limit<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i64>,
+        {
+            self.limit = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i64` for limit failed".to_string());
+            self
         }
         #[doc = "Sends a `GET` request to `/v1/me/recommendations`"]
         pub async fn send(
             self,
         ) -> Result<
-            ResponseValue<::std::vec::Vec<types::SeriesSummary>>,
+            ResponseValue<::std::vec::Vec<types::Recommendation>>,
             Error<types::ProblemDetails>,
         > {
-            let Self { client } = self;
+            let Self { client, limit } = self;
+            let limit = limit.map_err(Error::InvalidRequest)?;
             let url = format!("{}/v1/me/recommendations", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
@@ -24987,6 +25636,7 @@ pub mod builder {
                     ::reqwest::header::ACCEPT,
                     ::reqwest::header::HeaderValue::from_static("application/json"),
                 )
+                .query(&progenitor_client::QueryParam::new("limit", &limit))
                 .headers(header_map)
                 .build()?;
             let info = OperationInfo {
@@ -24998,6 +25648,99 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::feedback`]\n\n[`Client::feedback`]: super::Client::feedback"]
+    #[derive(Debug, Clone)]
+    pub struct Feedback<'a> {
+        client: &'a super::Client,
+        series_id: Result<types::SeriesId, String>,
+        body: Result<types::builder::FeedbackBody, String>,
+    }
+    impl<'a> Feedback<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                series_id: Err("series_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn series_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SeriesId>,
+        {
+            self.series_id = value
+                .try_into()
+                .map_err(|_| "conversion to `SeriesId` for series_id failed".to_string());
+            self
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::FeedbackBody>,
+            <V as std::convert::TryInto<types::FeedbackBody>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `FeedbackBody` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::FeedbackBody) -> types::builder::FeedbackBody,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/recommendations/{series_id}/feedback`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+            let Self {
+                client,
+                series_id,
+                body,
+            } = self;
+            let series_id = series_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::FeedbackBody::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/me/recommendations/{}/feedback",
+                client.baseurl,
+                encode_path(&series_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "feedback",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -26146,6 +26889,52 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "sync_status",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::taste`]\n\n[`Client::taste`]: super::Client::taste"]
+    #[derive(Debug, Clone)]
+    pub struct Taste<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> Taste<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/me/taste`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::TasteView>, Error<types::ProblemDetails>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/me/taste", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "taste",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

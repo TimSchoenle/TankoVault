@@ -182,7 +182,11 @@ mod tests {
 
         assert_eq!(cache.get(counting(Arc::clone(&calls))).await, Ok(1));
         assert_eq!(cache.get(counting(Arc::clone(&calls))).await, Ok(1));
-        assert_eq!(calls.load(Ordering::SeqCst), 1, "one computation, two reads");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "one computation, two reads"
+        );
     }
 
     /// A stale read must answer from the snapshot it already has — the whole point is that the
@@ -209,9 +213,7 @@ mod tests {
         let cache = Cached::new(Duration::ZERO);
 
         assert_eq!(
-            cache
-                .get(|| std::future::ready(Ok::<_, String>(7)))
-                .await,
+            cache.get(|| std::future::ready(Ok::<_, String>(7))).await,
             Ok(7)
         );
         assert_eq!(

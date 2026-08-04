@@ -671,57 +671,8 @@ fn tests_run_the_production_postgres_major(root: &Path) -> anyhow::Result<Vec<Fi
         );
     };
 
-    // CI's own service containers are a third copy of the same decision, and the one nothing
-    // pointed at. The `sqlx offline cache` job re-derives the query cache by applying every
-    // migration against a Postgres it pins itself; on stock `postgres` that fails at
-    // `CREATE EXTENSION vector` having verified nothing, and the failure names the extension
-    // rather than the pin, so it reads as a schema problem.
-    let mut findings = Vec::new();
-    for entry in std::fs::read_dir(root.join(".github/workflows"))
-        .into_iter()
-        .flatten()
-        .flatten()
-    {
-        let path = entry.path();
-        if !path
-            .extension()
-            .is_some_and(|ext| ext == "yml" || ext == "yaml")
-        {
-            continue;
-        }
-        let Ok(workflow) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        for (index, line) in workflow.lines().enumerate() {
-            let trimmed = line.trim_start();
-            if is_comment(trimmed) {
-                continue;
-            }
-            let Some((name, tag)) = image_reference(trimmed) else {
-                continue;
-            };
-            if !POSTGRES_IMAGES.contains(&name) {
-                continue;
-            }
-            let workflow_name = path.file_name().map_or_else(
-                || path.display().to_string(),
-                |n| n.to_string_lossy().into(),
-            );
-            if name != compose_image || major_of(tag).is_none_or(|major| major != compose_major) {
-                findings.push(Finding {
-                    rule: RULE,
-                    file: PathBuf::from(format!(".github/workflows/{workflow_name}")),
-                    line: index + 1,
-                    detail: format!(
-                        "this job runs `{name}:{tag}`, production runs `{compose_image}` \
-                         {compose_major} ({COMPOSE}:{compose_line}); a job that applies the \
-                         migrations against a different Postgres verifies nothing about the one \
-                         that runs them"
-                    ),
-                });
-            }
-        }
-    }
+    let mut findings =
+        workflow_postgres_findings(root, RULE, &compose_image, &compose_major, compose_line);
 
     if harness_major != compose_major {
         findings.push(Finding {
@@ -825,6 +776,67 @@ fn advisory_ignores_agree(root: &Path) -> anyhow::Result<Vec<Finding>> {
         }
     }
     Ok(findings)
+}
+
+/// Every Postgres a workflow pins for itself, held to the compose file.
+///
+/// Split out of [`tests_run_the_production_postgres_major`] only for length; the reasoning lives
+/// in that function's documentation.
+fn workflow_postgres_findings(
+    root: &Path,
+    rule: &'static str,
+    compose_image: &str,
+    compose_major: &str,
+    compose_line: usize,
+) -> Vec<Finding> {
+    const COMPOSE: &str = "deploy/docker-compose.yml";
+    const POSTGRES_IMAGES: &[&str] = &["postgres", "pgvector/pgvector"];
+
+    let mut findings = Vec::new();
+    for entry in std::fs::read_dir(root.join(".github/workflows"))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let path = entry.path();
+        if !path
+            .extension()
+            .is_some_and(|ext| ext == "yml" || ext == "yaml")
+        {
+            continue;
+        }
+        let Ok(workflow) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let workflow_name = path.file_name().map_or_else(
+            || path.display().to_string(),
+            |n| n.to_string_lossy().into(),
+        );
+
+        for (index, line) in workflow.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if is_comment(trimmed) {
+                continue;
+            }
+            let Some((name, tag)) = image_reference(trimmed) else {
+                continue;
+            };
+            if !POSTGRES_IMAGES.contains(&name) {
+                continue;
+            }
+            if name != compose_image || major_of(tag).is_none_or(|major| major != compose_major) {
+                findings.push(Finding {
+                    rule,
+                    file: PathBuf::from(format!(".github/workflows/{workflow_name}")),
+                    line: index + 1,
+                    detail: format!(
+                        "this job runs `{name}:{tag}`, production runs `{compose_image}`                          {compose_major} ({COMPOSE}:{compose_line}); a job that applies the                          migrations against a different Postgres verifies nothing about the one                          that runs them"
+                    ),
+                });
+            }
+        }
+    }
+    findings
 }
 
 /// Split a compose `image: <repository>:<tag>[@<digest>]` line into repository and tag.

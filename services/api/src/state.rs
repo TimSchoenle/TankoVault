@@ -67,6 +67,11 @@ pub struct AppState {
     /// The operator's legal documents, read through an mtime check. Empty is a working state:
     /// the footer simply publishes no Legal column.
     pub legal: crate::legal::LegalDocs,
+    /// The console's system rollup, cached: it is a `count(*)` over every large table.
+    pub system_stats: Arc<crate::cache::Cached<tankovault_db::repo::stats::SystemStats>>,
+    /// The console's per-provider table, cached: it aggregates every chapter row by provider,
+    /// and two console tabs request it.
+    pub provider_stats: Arc<crate::cache::Cached<Vec<tankovault_db::repo::stats::ProviderStat>>>,
 }
 
 /// Where a request came from, for the audit trail.

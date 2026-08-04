@@ -13,6 +13,7 @@ pub mod openapi;
 mod admin;
 mod audit;
 mod auth;
+mod cache;
 mod error;
 mod legal;
 mod mailer;
@@ -27,6 +28,7 @@ mod upstream;
 mod views;
 
 use axum::Router;
+pub use cache::{ADMIN_STATS_TTL, Cached};
 pub use legal::LegalDocs;
 pub use passkey::{RelyingParty, SharedRelyingParty};
 pub use state::AppState;

@@ -91,6 +91,14 @@ pub async fn upsert_chapter<'e, E: PgExecutor<'e>>(
 /// `DISTINCT ON` avoids `ON CONFLICT DO UPDATE` aborting when a page lists one chapter number
 /// twice.
 ///
+/// **The `DISTINCT ON` key must stay the cast expression, not the raw `float8`.** The unique
+/// index is on `numeric(10,4)`, so two `float8` values that differ only past the fourth decimal
+/// are distinct to the dedup and identical to the constraint — both rows survive and the
+/// statement aborts with "ON CONFLICT DO UPDATE command cannot affect row a second time",
+/// failing the whole ingest batch. Same reason `ORDER BY` casts: `DISTINCT ON` requires its
+/// leading sort key to be the dedup expression, and `u.ord DESC` behind it is what makes the
+/// last listing of a repeated number win.
+///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; one bad chapter fails the whole batch. An empty `Vec` means
 /// either no input or a fully-converged re-scan — only `Err` means nothing was written.
@@ -116,12 +124,12 @@ pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
 
     let rows = sqlx::query!(
         "INSERT INTO chapters (id, series_source_id, number, volume, title, path, published_at) \
-         SELECT DISTINCT ON (u.number) \
+         SELECT DISTINCT ON (u.number::float8::numeric(10,4)) \
                 u.id, $2, u.number::float8::numeric(10,4), u.volume, u.title, u.path, u.published_at \
            FROM UNNEST($1::uuid[], $3::float8[], $4::int[], $5::text[], $6::text[], \
                        $7::timestamptz[]) \
                 WITH ORDINALITY AS u(id, number, volume, title, path, published_at, ord) \
-          ORDER BY u.number, u.ord DESC \
+          ORDER BY u.number::float8::numeric(10,4), u.ord DESC \
          ON CONFLICT (series_source_id, number) DO UPDATE \
             SET title = EXCLUDED.title, path = EXCLUDED.path, \
                 published_at = COALESCE(EXCLUDED.published_at, chapters.published_at) \

@@ -28,11 +28,17 @@ pub async fn system_stats(
     user: AuthUser,
 ) -> ApiResult<Json<tankovault_contracts::admin::SystemStatsView>> {
     user.require(Permission::SystemStats).await?;
-    Ok(Json(
-        tankovault_db::repo::stats::system_overview(&state.pool)
-            .await?
-            .into_view(),
-    ))
+    // Served from a snapshot: every column is a `count(*)` over a table this aggregates whole.
+    // See `crate::cache` for what the staleness buys.
+    let pool = state.pool.clone();
+    let overview = state
+        .system_stats
+        .get(move || {
+            let pool = pool.clone();
+            async move { tankovault_db::repo::stats::system_overview(&pool).await }
+        })
+        .await?;
+    Ok(Json(overview.into_view()))
 }
 
 /// Get the audit log

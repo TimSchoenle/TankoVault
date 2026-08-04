@@ -333,7 +333,16 @@ pub async fn provider_stats(
     user: AuthUser,
 ) -> ApiResult<Json<Vec<tankovault_contracts::admin::ProviderStatView>>> {
     user.require(Permission::ProvidersRead).await?;
-    let rows = tankovault_db::repo::stats::provider_stats(&state.pool).await?;
+    // Served from a snapshot: this groups every chapter row by provider, and the console's stats
+    // tab and providers tab both ask for it. See `crate::cache`.
+    let pool = state.pool.clone();
+    let rows = state
+        .provider_stats
+        .get(move || {
+            let pool = pool.clone();
+            async move { tankovault_db::repo::stats::provider_stats(&pool).await }
+        })
+        .await?;
     Ok(Json(rows.into_view()))
 }
 

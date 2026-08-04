@@ -78,6 +78,9 @@ impl Health {
     ///
     /// Checks run in parallel and each is bounded by [`CHECK_TIMEOUT`], so total probe
     /// latency is that timeout rather than its sum over dependencies.
+    ///
+    /// Also publishes the readiness gauges, so a probe is the only thing that has to run for
+    /// per-dependency health to be a metric.
     pub async fn report(&self) -> HealthReport {
         let probes = self.checks.iter().map(|check| async move {
             let name = check.name();
@@ -103,7 +106,9 @@ impl Health {
         } else {
             HealthStatus::Down
         };
-        HealthReport { status, checks }
+        let report = HealthReport { status, checks };
+        crate::metrics::record_readiness(&report);
+        report
     }
 }
 

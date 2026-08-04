@@ -24,6 +24,10 @@ governor = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+# The crawl tier is the one place a provider's behaviour towards us is observable, and it sits
+# below `tankovault-service` — so it records against the `metrics` facade directly. Names are
+# literals here for that reason, and `xtask repo-lint` holds them to the catalogue.
+metrics = { workspace = true }
 time = { workspace = true }
 rand = { workspace = true }
 futures = { workspace = true }

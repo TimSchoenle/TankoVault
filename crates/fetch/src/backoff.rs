@@ -88,6 +88,19 @@ impl<F: Fetcher> Fetcher for BackoffFetcher<F> {
                 server_directed = retry_after(&resp).is_some(),
                 "provider asked us to slow down; backing off"
             );
+            // The only externally visible trace of throttling: a backed-off scan still
+            // succeeds, just later, so nothing downstream reports it as anything but slow.
+            metrics::counter!(
+                "provider_backoff_waits_total",
+                "provider" => req.provider_slug.clone(),
+                "status" => resp.status.to_string(),
+            )
+            .increment(1);
+            metrics::histogram!(
+                "provider_backoff_wait_seconds",
+                "provider" => req.provider_slug.clone(),
+            )
+            .record(wait.as_secs_f64());
             tokio::time::sleep(wait).await;
         }
     }

@@ -107,7 +107,35 @@ impl BaseHttpFetcher {
 
 #[async_trait]
 impl Fetcher for BaseHttpFetcher {
+    /// Times and counts the request around [`Self::send`].
+    ///
+    /// This is the workspace's only choke point for provider traffic — every adapter, every
+    /// scan tier and both solver paths come through here — so it is where "is this provider
+    /// still answering us" becomes a number instead of a log line.
     async fn get(&self, req: FetchRequest) -> Result<FetchResponse, FetchError> {
+        let provider = req.provider_slug.clone();
+        let started = std::time::Instant::now();
+        let result = self.send(req).await;
+
+        let outcome = match &result {
+            Ok(resp) => status_class(resp.status),
+            Err(_) => "error",
+        };
+        metrics::counter!(
+            "provider_fetch_total",
+            "provider" => provider.clone(),
+            "outcome" => outcome,
+        )
+        .increment(1);
+        metrics::histogram!("provider_fetch_duration_seconds", "provider" => provider)
+            .record(started.elapsed().as_secs_f64());
+
+        result
+    }
+}
+
+impl BaseHttpFetcher {
+    async fn send(&self, req: FetchRequest) -> Result<FetchResponse, FetchError> {
         let url = Url::parse(&req.url).map_err(|_| FetchError::InvalidUrl(req.url.clone()))?;
         // Cheap pre-flight; the resolver enforces the address-range check at connect time.
         ssrf::validate_url(&url)?;
@@ -183,6 +211,21 @@ impl Fetcher for BaseHttpFetcher {
             body,
             from_cache: false,
         })
+    }
+}
+
+/// Fold a status into one of five label values.
+///
+/// The class, not the code: `provider_fetch_total` is already labelled by provider, and a
+/// provider crossed with every status a hostile or broken site can return is an unbounded
+/// label source for a distinction no panel makes.
+fn status_class(status: u16) -> &'static str {
+    match status {
+        200..=299 => "2xx",
+        300..=399 => "3xx",
+        400..=499 => "4xx",
+        500..=599 => "5xx",
+        _ => "other",
     }
 }
 

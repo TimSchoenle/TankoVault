@@ -13,6 +13,10 @@ use tankovault_domain::{Pacer, PacingPolicy};
 
 use crate::provider::OAuthTokens;
 
+/// Reported when throttling outlived the one retry. A constant because the metric label is
+/// derived from it: the message and the `rate_limited` classification must not drift apart.
+const RATE_LIMITED: &str = "AniList GraphQL rate-limited after retry";
+
 /// `AniList` API client. Cheap to share behind an `Arc`.
 pub(crate) struct AniListClient {
     http: reqwest::Client,
@@ -129,13 +133,18 @@ impl AniListClient {
     }
 
     /// Execute a GraphQL operation, returning the `data` object. Retries once on `429`.
+    ///
+    /// `operation` is the metric label. A `&'static str` chosen by the caller rather than
+    /// anything derived from `query`: a label taken from the request text is an unbounded
+    /// label source the moment a query is built dynamically.
     pub(super) async fn graphql(
         &self,
         access_token: &SecretString,
+        operation: &'static str,
         query: &str,
         variables: serde_json::Value,
     ) -> anyhow::Result<serde_json::Value> {
-        self.graphql_inner(Some(access_token), query, variables)
+        self.graphql_inner(Some(access_token), operation, query, variables)
             .await
     }
 
@@ -143,13 +152,37 @@ impl AniListClient {
     /// unauthenticated metadata endpoint (the tokenless enrichment path).
     pub(super) async fn graphql_public(
         &self,
+        operation: &'static str,
         query: &str,
         variables: serde_json::Value,
     ) -> anyhow::Result<serde_json::Value> {
-        self.graphql_inner(None, query, variables).await
+        self.graphql_inner(None, operation, query, variables).await
     }
 
     async fn graphql_inner(
+        &self,
+        access_token: Option<&SecretString>,
+        operation: &'static str,
+        query: &str,
+        variables: serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        let started = std::time::Instant::now();
+        let result = self.graphql_attempts(access_token, query, variables).await;
+
+        // Duration spans the paced wait as well as the request: what a user waiting on a sync
+        // feels is the whole thing, and the pacer is the part that moves under throttling.
+        metrics::histogram!("anilist_request_duration_seconds", "operation" => operation)
+            .record(started.elapsed().as_secs_f64());
+        metrics::counter!(
+            "anilist_requests_total",
+            "operation" => operation,
+            "result" => Self::anilist_result(&result),
+        )
+        .increment(1);
+        result
+    }
+
+    async fn graphql_attempts(
         &self,
         access_token: Option<&SecretString>,
         query: &str,
@@ -205,7 +238,20 @@ impl AniListClient {
                 .cloned()
                 .ok_or_else(|| anyhow!("AniList response missing `data`"));
         }
-        Err(anyhow!("AniList GraphQL rate-limited after retry"))
+        Err(anyhow!(RATE_LIMITED))
+    }
+
+    /// Classify a call for the `result` label.
+    ///
+    /// `rate_limited` is worth separating from `error`: it is not a fault in this deployment,
+    /// it widens every later request's gap, and it is the one outcome an operator answers by
+    /// waiting rather than by investigating.
+    fn anilist_result(result: &anyhow::Result<serde_json::Value>) -> &'static str {
+        match result {
+            Ok(_) => "ok",
+            Err(e) if e.to_string() == RATE_LIMITED => "rate_limited",
+            Err(_) => "error",
+        }
     }
 
     /// Wait for this client's next paced slot. Uses the shared [`tankovault_domain::Pacer`],
@@ -417,13 +463,14 @@ mod tests {
         client
             .graphql(
                 &SecretString::from("tok-1"),
+                "test",
                 "query {}",
                 serde_json::json!({}),
             )
             .await
             .expect("authenticated call");
         client
-            .graphql_public("query {}", serde_json::json!({}))
+            .graphql_public("test", "query {}", serde_json::json!({}))
             .await
             .expect("public call");
 
@@ -457,7 +504,7 @@ mod tests {
         mount_graphql_ok(&server).await;
 
         let data = client_for(&server, Duration::from_millis(1))
-            .graphql_public("query {}", serde_json::json!({}))
+            .graphql_public("test", "query {}", serde_json::json!({}))
             .await
             .expect("the retry succeeds");
 
@@ -485,7 +532,7 @@ mod tests {
             .await;
 
         let err = client_for(&server, Duration::from_millis(1))
-            .graphql_public("query {}", serde_json::json!({}))
+            .graphql_public("test", "query {}", serde_json::json!({}))
             .await
             .expect_err("two 429s exhaust the retry");
         let message = err.to_string();
@@ -515,13 +562,13 @@ mod tests {
 
         let client = client_for(&server, Duration::from_millis(1));
         client
-            .graphql_public("query {}", serde_json::json!({}))
+            .graphql_public("test", "query {}", serde_json::json!({}))
             .await
             .expect("the retry succeeds");
 
         let started = Instant::now();
         client
-            .graphql_public("query {}", serde_json::json!({}))
+            .graphql_public("test", "query {}", serde_json::json!({}))
             .await
             .expect("the later call succeeds");
         assert!(
@@ -540,13 +587,13 @@ mod tests {
 
         let client = client_for(&server, Duration::from_millis(1));
         client
-            .graphql_public("query {}", serde_json::json!({}))
+            .graphql_public("test", "query {}", serde_json::json!({}))
             .await
             .expect("first call");
 
         let started = Instant::now();
         client
-            .graphql_public("query {}", serde_json::json!({}))
+            .graphql_public("test", "query {}", serde_json::json!({}))
             .await
             .expect("second call");
         assert!(
@@ -571,7 +618,7 @@ mod tests {
 
         let started = Instant::now();
         client_for(&server, Duration::from_millis(1))
-            .graphql_public("query {}", serde_json::json!({}))
+            .graphql_public("test", "query {}", serde_json::json!({}))
             .await
             .expect("the retry succeeds");
         assert!(
@@ -598,6 +645,7 @@ mod tests {
         let err = client_for(&server, Duration::from_millis(1))
             .graphql(
                 &SecretString::from("stale"),
+                "test",
                 "query {}",
                 serde_json::json!({}),
             )
@@ -624,7 +672,7 @@ mod tests {
             .await;
 
         let data = client_for(&server, Duration::from_millis(1))
-            .graphql_public("query {}", serde_json::json!({}))
+            .graphql_public("test", "query {}", serde_json::json!({}))
             .await
             .expect("a null errors key is not an error");
         assert_eq!(data, serde_json::json!({ "ok": 1 }));
@@ -642,7 +690,7 @@ mod tests {
             .await;
 
         let err = client_for(&server, Duration::from_millis(1))
-            .graphql_public("query {}", serde_json::json!({}))
+            .graphql_public("test", "query {}", serde_json::json!({}))
             .await
             .expect_err("a response without data is an error");
         assert!(

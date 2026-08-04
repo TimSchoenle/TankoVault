@@ -81,9 +81,10 @@ comparison there for which mechanism a given switch belongs in.
 
 ```toml
 [metrics]
-enabled       = true       # false → no recorder is installed at all
+enabled       = true            # false → no recorder is installed at all
 route         = "/metrics"
-http_requests = true       # per-request counter/histogram/gauge
+listen        = "0.0.0.0:9090"  # own listener; null merges the scrape onto the primary port
+http_requests = true            # per-request counter/histogram/gauge
 ```
 
 `enabled = false` means the process-wide Prometheus recorder is never installed, so
@@ -95,22 +96,17 @@ instead of drawing a silently flat graph.
 `http_requests` is separate because the request histogram is the expensive part: a service
 can keep cheap domain counters while dropping per-route cardinality.
 
-Emitted metrics — the complete set, across every service:
+Emitted metrics are **not listed here.** The inventory is
+`tankovault_service::metrics::CATALOGUE` (`crates/service/src/metrics.rs`), which carries every
+metric's type, unit, help text and emitting services, and is what publishes the `# HELP`/`# TYPE`
+lines on the scrape. `xtask repo-lint` fails on any call site whose metric has no row there, and
+on any row nothing emits.
 
-| Metric | Type | Labels | Emitted by |
-|---|---|---|---|
-| `http_requests_total` | counter | `method`, `route`, `status` | the shared middleware |
-| `http_request_duration_seconds` | histogram | `method`, `route` | the shared middleware |
-| `http_requests_in_flight` | gauge | — | the shared middleware |
-| `http_rate_limited_total` | counter | `class` | the rate limiter |
-| `rate_limit_store_errors_total` | counter | `backend` | the Redis limiter backend |
-| `http_feature_disabled_total` | counter | `feature` | the feature-flag middleware (§4) |
-| `scan_tasks_served_total` | counter | `provider`, `scan` | `worker`, per lane (§7) |
-| `solve_attempts_total` | counter | `result` | `challenge-solver` **and** `render` |
-| `render_requests_total` | counter | `result` | `render` |
-
-This table was four rows short of what the workspace emits until OPS-8.3 enumerated the call
-sites; the last four were being emitted and documented nowhere.
+A hand-maintained copy lived in this file and drifted twice — it was four rows short until
+OPS-8.3 enumerated the call sites, and one row short again after that. A second list is how the
+first one goes stale, so there is now one list and a gate on it.
+[`OBSERVABILITY.md`](./OBSERVABILITY.md) groups the same metrics by concern with the label values
+and the operator notes.
 
 `route` is axum's **matched path** (`/v1/series/{id}`), never the concrete URI — an
 unrouted path is attacker-controlled and would otherwise be an unbounded label source, so

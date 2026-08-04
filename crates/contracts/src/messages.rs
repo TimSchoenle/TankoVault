@@ -23,6 +23,19 @@ pub enum TaskKind {
     LatestFeed,
 }
 
+impl TaskKind {
+    /// Stable lowercase name, matching the `scan_tasks.kind` column and used as a metric
+    /// label — so a rename here is a schema and a dashboard change, not just a rename.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::CatalogPage => "catalog_page",
+            Self::Series => "series",
+            Self::LatestFeed => "latest_feed",
+        }
+    }
+}
+
 /// A dispatched unit of work, published to `scan.tasks.<provider_slug>` and mirrored
 /// in the `scan_tasks` table.
 #[derive(Debug, Clone, Serialize, Deserialize)]

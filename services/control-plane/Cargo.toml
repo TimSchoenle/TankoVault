@@ -30,6 +30,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
+metrics = { workspace = true }
 time = { workspace = true }
 futures = { workspace = true }
 fred = { workspace = true }

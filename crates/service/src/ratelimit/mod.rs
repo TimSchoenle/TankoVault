@@ -411,7 +411,11 @@ pub async fn enforce(
 
     let decision = limiter.store.check(class, &key).await;
     if !decision.allowed {
-        metrics::counter!("http_rate_limited_total", "class" => class.as_str()).increment(1);
+        metrics::counter!(
+            crate::metrics::names::HTTP_RATE_LIMITED,
+            "class" => class.as_str()
+        )
+        .increment(1);
         tracing::warn!(
             class = class.as_str(),
             retry_after_secs = decision.retry_after.as_secs(),

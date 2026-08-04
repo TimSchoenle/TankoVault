@@ -4,8 +4,11 @@ What this deployment measures, what is collected, which alerts exist, and what t
 one fires.
 
 Every service installs the shared Prometheus recorder from `crates/service` and serves the
-exposition on its own listener (`TANKOVAULT_METRICS__LISTEN`, default `0.0.0.0:9090`) so a scrape
-never touches the request-facing port.
+exposition at `/metrics` on its own listener (`TANKOVAULT_METRICS__LISTEN`, default
+`0.0.0.0:9090`) so a scrape never touches the request-facing port. That listener carries the
+scrape and nothing else — the health probes stay on the service's primary port. `xtask repo-lint`
+holds every service to that wiring; it used to be convention, and a service that forgot
+`spawn_metrics_server` would have compiled, reported healthy and been silently unscrapable.
 
 The **collection** side is not in this repository. The scrape config, the recording and alerting
 rules below, and the provisioned dashboard live in the chart that deploys them,
@@ -22,23 +25,102 @@ neither of which moves with the manifests. Every rule name below is the name in 
 
 ## 1. What is measured
 
-This is the **complete** inventory — ten metrics, hand-verified against every `counter!`,
-`histogram!` and `gauge!` call site in the workspace. Nothing in the dashboards or rules queries
-anything outside this table, because a panel or an alert referencing a metric nobody emits is an
-operator believing they have coverage they do not have.
+The inventory is **not maintained here.** It lives in code, as
+`tankovault_service::metrics::CATALOGUE` (`crates/service/src/metrics.rs`): one row per metric,
+carrying its type, unit, `# HELP` text, histogram buckets and the services that emit it. That row
+is what publishes the `describe_*` at start-up, so the help text an operator reads on a Grafana
+panel is the same string a developer reads next to the call site.
 
-| Metric | Type | Labels | Emitted by | Present on |
-|---|---|---|---|---|
-| `http_requests_total` | counter | `method`, `route`, `status` | `crates/service/src/metrics.rs` | every service |
-| `http_request_duration_seconds` | histogram | `method`, `route` | `crates/service/src/metrics.rs` | every service |
-| `http_requests_in_flight` | gauge | — | `crates/service/src/metrics.rs` | every service |
-| `http_rate_limited_total` | counter | `class` (`global`/`auth`/`expensive`) | `crates/service/src/ratelimit/mod.rs` | services with a limiter |
-| `rate_limit_store_errors_total` | counter | `backend` (`redis`) | `crates/service/src/ratelimit/redis.rs` | services on the Redis backend |
-| `http_feature_disabled_total` | counter | `feature` | `crates/service/src/flags.rs` | `api`, `control-plane`, `sync`, `notifier` |
-| `scan_tasks_served_total` | counter | `provider`, `scan` (`full`/`fast`) | `services/worker/src/queue.rs` | `worker` |
-| `chapters_rejected_total` | counter | `provider` | `services/worker/src/engine.rs` | `worker` |
-| `solve_attempts_total` | counter | `result` (`ok`/`error`/`rejected`) | `crates/solver/src/http.rs` | `challenge-solver` **and** `render` |
-| `render_requests_total` | counter | `result` (`ok`/`error`/`rejected`) | `services/render/src/main.rs` | `render` |
+It is a gate, not a convention. `xtask repo-lint` resolves every `counter!`, `gauge!` and
+`histogram!` in the workspace back to the catalogue and fails on a metric that is emitted without
+a row, a row nothing emits, or a name that is neither a literal nor a `names::*` constant. This
+document previously claimed a hand-verified list and was wrong in two places at once — a row
+missing from `OPERATIONS.md`, and a `Present on` column asserting coverage on two services whose
+code cannot produce it. Hand-verification is what the rule replaces.
+
+The table below is therefore a **reading guide**, not the source of truth. Regenerate your
+mental model from `CATALOGUE` when they disagree.
+
+### Request path — every service
+
+| Metric | Type | Labels |
+|---|---|---|
+| `http_requests_total` | counter | `method`, `route`, `status` |
+| `http_request_duration_seconds` | histogram | `method`, `route` |
+| `http_requests_in_flight` | gauge | — |
+| `tankovault_build_info` | gauge | `service`, `version` |
+| `service_ready` | gauge | — |
+| `service_dependency_up` | gauge | `dependency` |
+
+`tankovault_build_info` is the one metric that names its emitter. Everything else stays
+unlabelled by service — `job` identifies the emitter — but a constant `1` carrying the version
+is what lets a panel annotate a deploy, and it gives even a service with no HTTP routes one
+series proving the scrape works. `service_ready` and `service_dependency_up` are written by
+`Health::report`, so they move only while something probes `/ready`: they answer *which
+dependency* failed, and `up`/`probe_success` remain the availability signals.
+
+### Edge policy
+
+| Metric | Type | Labels | Present on |
+|---|---|---|---|
+| `http_rate_limited_total` | counter | `class` (`global`/`auth`/`expensive`) | services with a limiter |
+| `rate_limit_store_errors_total` | counter | `backend` (`redis`) | services on the Redis backend |
+| `http_feature_disabled_total` | counter | `feature` | `api`, `sync` |
+| `auth_attempts_total` | counter | `operation`, `result` (`success`/`failure`/`denied`) | `api` |
+
+`http_feature_disabled_total` is emitted by `flags::enforce`, the HTTP middleware — and only
+`api` and `sync` mount it. `control-plane` and `notifier` consult `FeatureGate::is_enabled`
+directly inside background loops, which records nothing. The earlier claim that all four emit it
+was the defect that motivated the lint rule.
+
+### Database — `api`, `control-plane`, `worker`, `notifier`, `sync`
+
+| Metric | Type | Labels |
+|---|---|---|
+| `db_pool_connections` | gauge | `state` (`in_use`/`idle`) |
+| `db_pool_max_connections` | gauge | — |
+
+Sampled every 10s rather than recorded per checkout. `in_use / db_pool_max_connections` is pool
+saturation, and it climbs long before `/ready` fails — which is what made pool exhaustion a
+lagging indicator before.
+
+### Crawl tier — `worker`
+
+| Metric | Type | Labels |
+|---|---|---|
+| `provider_fetch_total` | counter | `provider`, `outcome` (`2xx`/`3xx`/`4xx`/`5xx`/`other`/`error`) |
+| `provider_fetch_duration_seconds` | histogram | `provider` |
+| `provider_backoff_waits_total` | counter | `provider`, `status` |
+| `provider_backoff_wait_seconds` | histogram | `provider` |
+
+`outcome` is the status **class**, not the code: crossed with `provider`, a hostile site's
+status codes would be an unbounded label source for a distinction no panel makes.
+
+### Scan pipeline
+
+| Metric | Type | Labels | Emitted by |
+|---|---|---|---|
+| `scan_runs_planned_total` | counter | `provider`, `scan`, `result` (`planned`/`duplicate`/`error`) | `control-plane` |
+| `scheduler_sweep_duration_seconds` | histogram | `scan` | `control-plane` |
+| `scheduler_leader` | gauge | — | `control-plane` |
+| `merge_sweep_actions_total` | counter | `action` | `control-plane` |
+| `merge_sweep_duration_seconds` | histogram | — | `control-plane` |
+| `scan_tasks_served_total` | counter | `provider`, `scan` (`full`/`fast`) | `worker` |
+| `scan_tasks_settled_total` | counter | `provider`, `scan`, `outcome` (`completed`/`requeued`/`failed`) | `worker` |
+| `scan_task_duration_seconds` | histogram | `provider`, `scan`, `kind` | `worker` |
+| `chapters_discovered_total` | counter | `provider` | `worker` |
+| `chapters_rejected_total` | counter | `provider` | `worker` |
+| `scan_catalog_pages_truncated_total` | counter | `provider` | `worker` |
+
+`sum(scheduler_leader)` over the `control-plane` job must be exactly `1`. `0` means nothing is
+planning scans — a failure that previously looked identical to an idle deployment, because the
+only evidence was a `debug` log line on the replicas that skipped.
+
+`scan_tasks_served_total` counts hand-outs and a redelivery increments it again, so it conflates
+throughput with retries; `scan_tasks_settled_total{outcome="failed"}` is the permanent-failure
+rate, and `outcome="requeued"` is the retry rate the broker's `num_redelivered` shows in
+progress. `chapters_discovered_total` is the pipeline's actual output — a fleet that is busy and
+flat here is doing work and finding nothing.
 
 `chapters_rejected_total` counts listing entries a scan refused to index because the source
 cannot plausibly have released them (see `chapter_outliers` in [`CONFIGURATION.md`](CONFIGURATION.md)).
@@ -46,6 +128,45 @@ A steady trickle is normal — it is what the rule exists for. A **step change o
 the signal worth acting on: either that site started publishing junk slugs, or an adapter change
 altered how its numbers parse and the rule is now discarding real chapters. The `warn` log at the
 same site carries the numbers, which is what tells the two apart.
+
+### Notifications
+
+| Metric | Type | Labels | Emitted by |
+|---|---|---|---|
+| `notification_events_total` | counter | `result` (`ok`/`error`) | `notifier` |
+| `notification_fanout_duration_seconds` | histogram | — | `notifier` |
+| `notifications_created_total` | counter | — | `notifier` |
+| `notifications_delivered_total` | counter | `channel`, `result` (`ok`/`error`/`skipped`) | `notifier` |
+| `notification_channel_duration_seconds` | histogram | `channel` | `notifier` |
+| `sse_streams_active` | gauge | — | `api` |
+| `sse_events_pushed_total` | counter | `result` (`ok`/`error`/`undecodable`) | `api` |
+
+Before these, `notifier` mounted the shared middleware over an **empty router** and so emitted
+nothing at all: its scrape answered `200` with an empty body, and the only thing distinguishing a
+notifier delivering everything from one delivering nothing was the broker's backlog.
+
+`sse_streams_active` exists because `http_requests_in_flight` cannot answer this honestly — see
+the cancellation note below.
+
+### Fetch tier
+
+| Metric | Type | Labels | Emitted by |
+|---|---|---|---|
+| `solve_attempts_total` | counter | `result` (`ok`/`error`/`rejected`) | `challenge-solver` **and** `render` |
+| `render_requests_total` | counter | `result` (`ok`/`error`/`rejected`) | `render` |
+
+### AniList — `sync`
+
+| Metric | Type | Labels |
+|---|---|---|
+| `anilist_requests_total` | counter | `operation`, `result` (`ok`/`error`/`rate_limited`) |
+| `anilist_request_duration_seconds` | histogram | `operation` |
+
+`operation` is a `&'static str` the caller passes (`viewer`, `media_list`, `save_entry`,
+`search`, `metadata_by_id`, `metadata_by_title`), never anything derived from the query text —
+a label taken from a request body is unbounded the moment a query is built dynamically.
+`rate_limited` is separated from `error` because it is not a fault in this deployment and it
+widens every later request's gap; it is the one outcome answered by waiting.
 
 One thing the services deliberately do **not** measure is how much work is *waiting*.
 `scan_tasks_served_total` counts tasks handed out, so from the worker's side a wedged pipeline and
@@ -71,11 +192,13 @@ blank. That is the symptom to recognise.
 
 Four properties of the service-emitted data shape everything downstream and are worth stating once:
 
-**There is no `service` label.** No metric carries the emitting service's name.
-`TANKOVAULT_TELEMETRY__SERVICE_NAME` is a *log* field, not a metric label. `job` — assigned by
-Prometheus, one job per service — is the only thing that says where a series came from. That is
-why `prometheus.yml` declares eight separate jobs rather than one job with a target list, and why
-collapsing them would silently destroy every per-service rule.
+**There is no `service` label, except on `tankovault_build_info`.** No *measurement* carries the
+emitting service's name. `TANKOVAULT_TELEMETRY__SERVICE_NAME` is a *log* field, and it reaches
+the metric stream at exactly one place: the constant `1` of `tankovault_build_info`, which exists
+to be joined against, not aggregated. `job` — assigned by Prometheus, one job per service —
+remains the only thing that says where a series came from. That is why `prometheus.yml` declares
+eight separate jobs rather than one job with a target list, and why collapsing them would
+silently destroy every per-service rule.
 
 **`solve_attempts_total` comes from two services.** The `/v1/solve` contract is defined once, in
 `crates/solver/src/http.rs`, and both `challenge-solver` and `render` mount it — so every rule over
@@ -271,24 +394,30 @@ Two, both labelled `grounding: baseline-needed` in the rule file:
 
 The honest half of this document. These are real, documented failure modes of this system that
 have **no metric**, so there is no rule for them and no panel — rather than an approximation that
-would read as coverage. Each names the smallest emission that would fix it, so the work is a
-call site rather than a design.
+would read as coverage.
+
+Six gaps were listed here when the collection layer shipped, deliberately unclosed at the time:
+instrumentation is a change to running services, and mixing it with the rules work would have
+meant shipping alerts over metrics nobody had watched in a real process. Five of the six are now
+closed by call sites (`provider_backoff_waits_total`, `notifications_delivered_total`,
+`scan_tasks_settled_total`, `scan_catalog_pages_truncated_total`, `db_pool_connections`), and the
+sixth — native readiness — is now `service_ready` / `service_dependency_up`, though
+`blackbox_exporter` remains the availability signal because a gauge inside a process cannot
+report that the process is gone.
+
+What is left:
 
 | Failure mode | Currently visible as | What would make it alertable |
 |---|---|---|
-| **Provider rate-limit backoff and 429 penalties** (`crates/fetch/src/backoff.rs`) | log lines only. A provider that has throttled the crawler into hour-long waits is invisible; scans simply take longer. | `provider_backoff_waits_total{provider,status}` and a histogram of the wait, at the one `tracing::warn!` site in `backoff.rs`. This is the largest gap of the four. |
-| **Email delivery failure** (ARCH-13) | **partly.** A relay that *hangs* is caught: the notifier acks only after fan-out, so the events backlog stops draining and `TankoVaultNotificationBacklogNotDraining` fires. A relay that **fails fast** is not — the notifier logs a `tracing::warn!` per channel, acks, and moves on, so delivery silently stops with a draining queue and no metric. | `notifications_delivered_total{channel,result}` at the point each channel returns. Also makes "up but delivering nothing" distinguishable from "nothing to deliver". |
-| **JetStream retry versus settle** (ARCH-14) | **partly**, and from the broker rather than the worker. `jetstream_consumer_num_redelivered` shows retries in progress per lane (`TankoVaultScanTaskRetryStorm`), which is the failure mode an operator feels. What is still missing is the *settle* half: how many tasks exhausted `MAX_TASK_DELIVERIES` and were recorded as permanently failed. `scan_tasks_served_total` counts tasks handed *out* and a redelivery increments it again, so throughput and retry remain conflated in that counter. | `scan_tasks_settled_total{provider,scan,outcome}` — acked / requeued / gave-up — at the three arms in `services/worker/src/main.rs`. The permanent-failure rate falls out of it, and the conflation disappears. |
-| **Scan fan-out truncation** | nothing. A catalogue larger than `max_catalog_pages` is silently truncated — this has already happened in practice on a large provider. | `scan_catalog_pages_truncated_total{provider}` at the point the page budget is hit. One counter, and "we have been quietly missing most of a provider's catalogue" stops being undetectable. |
-| **Database connection-pool saturation** | `/ready` flipping to `503`, i.e. `TankoVaultServiceNotReady` — but only once the pool is exhausted *enough* to fail a health check. Queueing short of that shows only as latency. | `sqlx::Pool` exposes `size()` and `num_idle()`; a periodic gauge pair `db_pool_connections{state}` would turn a symptom into a leading indicator. |
-| **Per-service readiness, natively** | only via `blackbox_exporter`, which is why it is in the overlay. | A `service_ready` gauge updated by the same `Health::report` the endpoint calls would remove a container from the stack and make readiness a first-class series. |
+| **Per-provider crawl budget exhaustion** | `provider_fetch_duration_seconds` widens and `provider_backoff_waits_total` climbs, so throttling is now visible — but the crawler's *own* rate limiter, the budget it chose before the provider ever pushed back, is not. A provider configured too conservatively looks identical to a fast one that is idle. | A counter at the `governor` wait in `crates/fetch/src/ratelimit.rs`, labelled by provider, plus the wait as a histogram. |
+| **Per-user sync outcomes** | `anilist_requests_total` covers the transport, not the reconciliation above it: a user whose entries fail to map produces successful API calls and no synced progress. | An outcome counter at the reconcile arms in `services/sync/src/engine/reconcile.rs`. Cardinality has to stay per-*outcome*, never per-user. |
+| **Email specifically, as against channels generally** | `notifications_delivered_total{channel="email"}` now separates a fast-failing relay from an idle one. What it cannot see is a relay that accepts the message and drops it — delivery, as against handoff. | Nothing in this process can. It needs the relay's own bounce reporting. |
 
-No metric was added to any service for this. Instrumentation is a change to running services and
-this work is the collection layer; mixing the two would have meant shipping rules over metrics that
-had never been observed in a real process. Where a gap could be closed **without** touching Rust it
-was — `blackbox_exporter` for readiness, `prometheus-nats-exporter` for queue depth and retries,
-both verified against live instances before a rule was written. What remains genuinely needs a call
-site, and is worth its own tracker row.
+The three metrics that were added and are *not* alerted on yet are deliberate:
+`chapters_discovered_total`, `scan_task_duration_seconds` and `db_pool_connections` need a
+baseline from a real deployment before a threshold on them is anything but invented — the same
+reason `TankoVaultConcurrencyUnusuallyHigh` carries `grounding: baseline-needed`. They are on the
+dashboard so the baseline accumulates; the rules come after.
 
 ### One defect this exercise did find and fix
 

@@ -53,6 +53,17 @@ pub(crate) async fn audit_anonymous(
     detail: &Value,
     outcome: AuditOutcome,
 ) {
+    // Every credential endpoint funnels through here, which makes it the one place the
+    // authentication outcome becomes a metric as well as a row. The audit log answers "who,
+    // when, from where" and needs a query; this answers "is something hammering us right now"
+    // and needs a graph. Both labels are `&'static str`, so neither is caller-controlled.
+    metrics::counter!(
+        "auth_attempts_total",
+        "operation" => action,
+        "result" => outcome.as_str(),
+    )
+    .increment(1);
+
     let mut event = AuditEvent::new(action)
         .target(target)
         .detail(detail.clone())

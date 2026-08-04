@@ -168,7 +168,8 @@ async fn main() -> anyhow::Result<()> {
     // Both are process-global and installed once, which is why `telemetry.*` and `metrics.*`
     // are the two blocks a configuration reload cannot apply.
     tankovault_service::init_tracing(&boot.value.telemetry)?;
-    let metrics = MetricsRegistry::install(&boot.value.metrics)?;
+    let metrics =
+        MetricsRegistry::install(&boot.value.metrics, &boot.value.telemetry.service_name)?;
     let shutdown = tankovault_service::install_shutdown();
     // Outside the reloadable runtime so a reload does not rebind the scrape listener.
     tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
@@ -201,6 +202,7 @@ async fn serve_once(
         cfg.database.acquire_timeout_secs,
     )
     .await?;
+    tankovault_service::metrics::spawn_pool_sampler(pool.clone(), shutdown.clone());
 
     let bus = Bus::connect(&cfg.nats.url).await?;
     bus.ensure_streams().await?;
@@ -392,6 +394,7 @@ async fn plan_run(
         // A task with this exact target already exists for the run (idempotent replan);
         // the run is already dispatched, so there is nothing further to publish.
         tracing::info!(%run_id, provider = %provider.slug, ?mode, "planned scan run (initial task already existed)");
+        planned(&provider.slug, mode, "duplicate");
         return Ok(run_id);
     };
     tankovault_db::repo::scans::add_total_tasks(&state.pool, run_id, 1).await?;
@@ -411,7 +414,24 @@ async fn plan_run(
         .await?;
 
     tracing::info!(%run_id, provider = %provider.slug, ?mode, "planned scan run");
+    planned(&provider.slug, mode, "planned");
     Ok(run_id)
+}
+
+/// Count one planning decision.
+///
+/// The upstream half of the scan pipeline: `scan_tasks_served_total` on the worker says work
+/// is being consumed, and only this says work is being *created*. A scheduler that is alive
+/// but planning nothing — a lost leader, a flag left off — is otherwise indistinguishable
+/// from an idle deployment.
+fn planned(provider_slug: &str, mode: ScanMode, result: &'static str) {
+    metrics::counter!(
+        "scan_runs_planned_total",
+        "provider" => provider_slug.to_owned(),
+        "scan" => mode.as_str(),
+        "result" => result,
+    )
+    .increment(1);
 }
 
 /// Periodic scheduler loop.
@@ -436,6 +456,10 @@ async fn run_scheduler(
     let mut merge = interval_or_never(cfg.merge_sweep_interval_secs);
 
     loop {
+        // Republished on every tick rather than on acquisition, so a replica that lost the
+        // lock without noticing still reports the truth. Summed over the job this must be
+        // exactly 1; 0 means nothing is planning scans and the pipeline is quietly stopped.
+        metrics::gauge!("scheduler_leader").set(f64::from(u8::from(leadership.is_leader())));
         tokio::select! {
             () = shutdown.cancelled() => {
                 tracing::info!("scheduler stopping");
@@ -462,17 +486,36 @@ async fn maybe_merge_sweep(state: &AppState, leadership: &leader::Leadership) {
         tracing::debug!("skipping duplicate sweep; not scheduler leader");
         return;
     }
+    let started = std::time::Instant::now();
     match dedupe::sweep(&state.pool, &state.matching, state.merge_budget, None).await {
-        Ok(report) => tracing::info!(
-            examined = report.pairs_examined,
-            auto_merged = report.auto_merged,
-            queued = report.queued,
-            withdrawn = report.withdrawn,
-            deferred = report.deferred,
-            "duplicate sweep complete"
-        ),
+        Ok(report) => {
+            tracing::info!(
+                examined = report.pairs_examined,
+                auto_merged = report.auto_merged,
+                queued = report.queued,
+                withdrawn = report.withdrawn,
+                deferred = report.deferred,
+                "duplicate sweep complete"
+            );
+            // `auto_merged` is the destructive one and the only arm bounded by the merge
+            // ceiling, so it is worth watching on its own rather than as a sweep total.
+            for (action, count) in [
+                ("examined", report.pairs_examined),
+                ("auto_merged", report.auto_merged),
+                ("queued", report.queued),
+                ("withdrawn", report.withdrawn),
+                ("deferred", report.deferred),
+            ] {
+                // The report's counts are `i64` and cannot be negative; a saturating
+                // conversion keeps a future signed field from wrapping into a huge counter
+                // jump, which on a monotonic counter reads as a reset.
+                metrics::counter!("merge_sweep_actions_total", "action" => action)
+                    .increment(u64::try_from(count).unwrap_or(0));
+            }
+        }
         Err(e) => tracing::warn!(error = %e, "duplicate sweep failed"),
     }
+    metrics::histogram!("merge_sweep_duration_seconds").record(started.elapsed().as_secs_f64());
 }
 
 /// Runs a sweep only when this replica holds scheduler leadership *and* scheduled scanning
@@ -499,6 +542,7 @@ async fn maybe_sweep(state: &AppState, leadership: &leader::Leadership, mode: Sc
 }
 
 async fn sweep(state: &AppState, mode: ScanMode) {
+    let started = std::time::Instant::now();
     let providers = match tankovault_db::repo::providers::list(&state.pool).await {
         Ok(p) => p,
         Err(e) => {
@@ -512,8 +556,11 @@ async fn sweep(state: &AppState, mode: ScanMode) {
     {
         if let Err(e) = plan_run(state, provider, mode).await {
             tracing::warn!(provider = %provider.slug, error = %e, "scheduler: plan failed");
+            planned(&provider.slug, mode, "error");
         }
     }
+    metrics::histogram!("scheduler_sweep_duration_seconds", "scan" => mode.as_str())
+        .record(started.elapsed().as_secs_f64());
 }
 
 fn interval_or_never(secs: u64) -> Option<tokio::time::Interval> {

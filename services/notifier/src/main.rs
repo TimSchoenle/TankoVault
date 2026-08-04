@@ -60,7 +60,8 @@ async fn main() -> anyhow::Result<()> {
     // Both are process-global and installed once, which is why `telemetry.*` and `metrics.*`
     // are the two blocks a configuration reload cannot apply.
     tankovault_service::init_tracing(&boot.value.telemetry)?;
-    let metrics = MetricsRegistry::install(&boot.value.metrics)?;
+    let metrics =
+        MetricsRegistry::install(&boot.value.metrics, &boot.value.telemetry.service_name)?;
     let shutdown = tankovault_service::install_shutdown();
     // Own port keeps the scrape off the request-facing listener. Outside the reloadable
     // runtime so a reload does not rebind it.
@@ -89,6 +90,7 @@ async fn serve_once(
         cfg.database.acquire_timeout_secs,
     )
     .await?;
+    tankovault_service::metrics::spawn_pool_sampler(pool.clone(), shutdown.clone());
     let bus = Bus::connect(&cfg.nats.url).await?;
     bus.ensure_streams().await?;
 
@@ -173,7 +175,13 @@ async fn run_consumer(
             let channels = Arc::clone(&channels);
             let features = features.clone();
             async move {
-                fan_out(&pool, &bus, &channels, &features, &event).await?;
+                let started = std::time::Instant::now();
+                let result = fan_out(&pool, &bus, &channels, &features, &event).await;
+                metrics::histogram!("notification_fanout_duration_seconds")
+                    .record(started.elapsed().as_secs_f64());
+                let outcome = if result.is_ok() { "ok" } else { "error" };
+                metrics::counter!("notification_events_total", "result" => outcome).increment(1);
+                result?;
                 Ok(tankovault_bus::Disposition::Ack)
             }
         },
@@ -237,6 +245,7 @@ async fn fan_out(
             &payload,
         )
         .await?;
+        metrics::counter!("notifications_created_total").increment(created.len() as u64);
 
         // The live push is a separate feature from the durable row: a deployment can keep the
         // notification list while shedding the SSE fan-out under load.
@@ -316,10 +325,37 @@ async fn dispatch_external(
                 channel = channel.name(),
                 "channel is switched off; skipping"
             );
+            delivered(channel.name(), "skipped");
             continue;
         }
-        if let Err(e) = channel.deliver(alert).await {
+        let started = std::time::Instant::now();
+        let result = channel.deliver(alert).await;
+        metrics::histogram!(
+            "notification_channel_duration_seconds",
+            "channel" => channel.name()
+        )
+        .record(started.elapsed().as_secs_f64());
+
+        if let Err(e) = result {
             tracing::warn!(channel = channel.name(), error = %e, "external delivery failed");
+            delivered(channel.name(), "error");
+        } else {
+            delivered(channel.name(), "ok");
         }
     }
+}
+
+/// Count one channel's delivery attempt.
+///
+/// The only signal a *fast-failing* relay produces. A relay that hangs stalls the consumer and
+/// shows up as an undraining backlog; one that refuses immediately is logged, acked and
+/// forgotten, so without this, "delivering nothing" and "nothing to deliver" are identical
+/// from outside the process.
+fn delivered(channel: &'static str, result: &'static str) {
+    metrics::counter!(
+        "notifications_delivered_total",
+        "channel" => channel,
+        "result" => result,
+    )
+    .increment(1);
 }

@@ -12,17 +12,19 @@ use tankovault_auth::Sealer;
 use tankovault_config::MatchingConfig;
 use tankovault_db::repo::catalog::{ScannedSeries, SeriesUpsert, ingest_series};
 use tankovault_db::repo::providers::{self, NewProvider};
-use tankovault_db::repo::{sync, tracking};
+use tankovault_db::repo::{recsys, sync, tracking};
 use tankovault_domain::MetadataPriority;
 use tankovault_domain::{
-    AccountStatus, AdapterKind, ContentType, Politeness, SeriesId, SeriesStatus, UserId,
-    WatchStatus, normalize_title,
+    AccountStatus, AdapterKind, ContentType, Politeness, ProviderId, SeriesId, SeriesStatus,
+    UserId, WatchStatus, normalize_title,
 };
 use tankovault_test_support::TestDb;
 
 use crate::engine::SyncEngine;
 use crate::mapping::ConflictPolicy;
-use crate::provider::{ExternalProvider, OAuthTokens, RemoteEntry, RemoteMetadata, Viewer};
+use crate::provider::{
+    ExternalProvider, OAuthTokens, RemoteEntry, RemoteMetadata, RemoteTag, Viewer,
+};
 
 /// The provider slug every test in this module links.
 const SLUG: &str = "fake";
@@ -126,6 +128,8 @@ struct Fixture {
     remote: Arc<FakeState>,
     user: UserId,
     series: SeriesId,
+    /// The local scraping provider, so a test can re-scrape the series the fixture ingested.
+    provider: ProviderId,
 }
 
 /// The local series' canonical title. Remote entries reuse it verbatim so the title matcher
@@ -209,7 +213,63 @@ impl Fixture {
             remote,
             user,
             series,
+            provider: provider_id,
         }
+    }
+
+    /// Re-scrape the fixture's series from the local adapter, carrying `tags`.
+    ///
+    /// Same provider and source path, so this converges on the same canonical series rather
+    /// than creating a second one.
+    async fn rescrape_with_tags(&self, tags: Vec<String>) {
+        ingest_series(
+            &self.db.pool,
+            &ScannedSeries {
+                provider_id: self.provider,
+                source_path: "/manga/solo-leveling".to_owned(),
+                provider_title: Some(TITLE.to_owned()),
+                meta: SeriesUpsert {
+                    canonical_title: TITLE.to_owned(),
+                    normalized_title: normalize_title(TITLE),
+                    description: None,
+                    cover_url: None,
+                    content_type: ContentType::Unknown,
+                    status: SeriesStatus::Unknown,
+                    release_year: None,
+                },
+                alt_titles: Vec::new(),
+                tags,
+                authors: Vec::new(),
+                chapters: Vec::new(),
+                content_hash: vec![2],
+            },
+            &MatchingConfig::default(),
+        )
+        .await
+        .expect("re-scrape local series");
+    }
+
+    /// The fixture series' tag links and adaptation source, read through the feature
+    /// extractor's own query rather than a hand-written one — this is the path the recommender
+    /// uses, so it is the path worth asserting on.
+    async fn recsys_facts(&self) -> (Vec<(String, f32)>, Option<String>) {
+        let facts = recsys::list_series_facts(&self.db.pool, None, 10)
+            .await
+            .expect("read series facts")
+            .into_iter()
+            .find(|r| r.series_id == self.series)
+            .expect("the fixture series has facts")
+            .facts;
+        (facts.tags, facts.source)
+    }
+
+    /// The appeal signals the prior is computed from, for the fixture series.
+    async fn prior_inputs(&self) -> recsys::PriorInputs {
+        recsys::prior_inputs_for(&self.db.pool, &[self.series])
+            .await
+            .expect("read prior inputs")
+            .pop()
+            .expect("the fixture series has prior inputs")
     }
 
     /// Put the series on the user's watchlist at `status` with whole-chapter `progress`.
@@ -295,13 +355,7 @@ fn remote_entry(
         metadata: RemoteMetadata {
             external_id: external_id.to_owned(),
             titles: vec![TITLE.to_owned()],
-            description: None,
-            cover_url: None,
-            start_year: None,
-            content_type: ContentType::Unknown,
-            series_status: SeriesStatus::Unknown,
-            tags: Vec::new(),
-            authors: Vec::new(),
+            ..RemoteMetadata::default()
         },
     }
 }
@@ -605,5 +659,123 @@ mod reconcile {
                 .is_some(),
             "the unmatched entry is kept for operator review"
         );
+    }
+}
+
+/// The widened recommendation signals, from a fetched list entry to the queries the recommender
+/// reads them back with.
+// Weights are `rank / 100` and IEEE division is correctly rounded, so each is bit-equal to the
+// decimal literal asserted against it.
+#[expect(
+    clippy::float_cmp,
+    reason = "asserts a tag weight is exactly the rank the fixture encodes"
+)]
+mod signals {
+    use super::*;
+
+    /// A remote entry carrying every widened signal, on the fixture series' title.
+    fn signal_rich_entry(external_id: &str) -> RemoteEntry {
+        let mut entry = remote_entry(external_id, WatchStatus::Reading, 5.0, STALE);
+        entry.metadata.tags = vec!["Action".to_owned()];
+        entry.metadata.themes = vec![
+            RemoteTag {
+                name: "Regression".to_owned(),
+                weight: 0.87,
+            },
+            RemoteTag {
+                name: "Dungeon".to_owned(),
+                weight: 0.6,
+            },
+        ];
+        entry.metadata.is_adult = Some(true);
+        entry.metadata.external_score = Some(84.0);
+        entry.metadata.external_popularity = Some(250_000);
+        entry.metadata.external_source = Some("web_novel".to_owned());
+        entry
+    }
+
+    /// A ranked upstream tag must reach `series_tags.weight` as that rank, and a genre must
+    /// reach it at full strength.
+    ///
+    /// The bug this pins: every column here existed and was read by the model for a whole phase
+    /// while nothing wrote any of them, so the recommender's vocabulary silently stayed the ~20
+    /// coarse genres and every tag weighed the same. A model reading a column no writer fills
+    /// fails as "the recommendations are bland", which points at the ranker, not at the sweep.
+    #[tokio::test]
+    async fn a_ranked_tag_reaches_the_recommender_with_its_rank_as_the_weight() {
+        let f = Fixture::spawn().await;
+        f.local_state(WatchStatus::Reading, 5.0).await;
+        f.map("m1").await;
+        f.set_list(vec![signal_rich_entry("m1")]);
+
+        f.engine.pull(SLUG, f.user, None).await.expect("pull");
+
+        let (mut tags, source) = f.recsys_facts().await;
+        tags.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            tags,
+            vec![
+                ("action".to_owned(), 1.0),
+                ("dungeon".to_owned(), 0.6),
+                ("regression".to_owned(), 0.87),
+            ]
+        );
+        assert_eq!(source.as_deref(), Some("web_novel"));
+    }
+
+    /// The adult flag and the appeal priors must reach the series row.
+    ///
+    /// The bug this pins: `is_adult` is the recommender's only hard content gate, and it
+    /// defaults to `false`. An unwritten gate is an open one, so this failing means adult series
+    /// are recommendable to every reader — a silent failure with no error anywhere.
+    #[tokio::test]
+    async fn the_adult_flag_and_appeal_signals_reach_the_series_row() {
+        let f = Fixture::spawn().await;
+        f.local_state(WatchStatus::Reading, 5.0).await;
+        f.map("m1").await;
+        f.set_list(vec![signal_rich_entry("m1")]);
+
+        f.engine.pull(SLUG, f.user, None).await.expect("pull");
+
+        let inputs = f.prior_inputs().await;
+        assert!(
+            inputs.is_adult,
+            "the adult gate must not stay at its default"
+        );
+        assert_eq!(inputs.external_score, Some(84.0));
+        assert_eq!(inputs.external_popularity, Some(250_000));
+    }
+
+    /// A later scrape must not flatten a rank the enrichment path already stored.
+    ///
+    /// The bug this pins: an adapter knows a tag's name and nothing else, so it writes weight
+    /// 1.0. With a plain `DO UPDATE` the two writers alternate on every sweep — the weight flaps
+    /// between 0.87 and 1.0, and because the feature digest moves with it, each flap re-embeds
+    /// the series for a change that carries no new information.
+    #[tokio::test]
+    async fn a_later_scrape_does_not_flatten_an_enriched_tag_weight() {
+        let f = Fixture::spawn().await;
+        f.local_state(WatchStatus::Reading, 5.0).await;
+        f.map("m1").await;
+        f.set_list(vec![signal_rich_entry("m1")]);
+        f.engine.pull(SLUG, f.user, None).await.expect("pull");
+
+        f.rescrape_with_tags(vec!["Regression".to_owned(), "Isekai".to_owned()])
+            .await;
+
+        let (tags, _) = f.recsys_facts().await;
+        let weight_of = |slug: &str| {
+            tags.iter()
+                .find(|(s, _)| s == slug)
+                .unwrap_or_else(|| panic!("{slug} is missing"))
+                .1
+        };
+        assert_eq!(
+            weight_of("regression"),
+            0.87,
+            "the scrape flattened the rank"
+        );
+        // A tag only the adapter knows is still added, at the only strength it can state.
+        assert_eq!(weight_of("isekai"), 1.0);
     }
 }

@@ -7,6 +7,14 @@ use tankovault_domain::SeriesId;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+/// The smallest weight a tag link may carry.
+///
+/// `series_tags_weight_check` enforces `weight > 0`, and `AniList` publishes tags with a rank of
+/// zero — a term somebody proposed and nobody upvoted. Flooring keeps the term (it is still
+/// evidence, just the weakest kind) where dropping it would silently narrow the vocabulary and a
+/// literal `0.0` would abort the transaction that carried it.
+pub const MIN_TAG_WEIGHT: f32 = 0.01;
+
 /// Minimal series row for the enrichment worker: enough to look up upstream and feed the
 /// priority resolver's current values.
 pub struct SeriesEnrichmentRow {
@@ -118,8 +126,18 @@ pub struct MetadataEnrichment<'a> {
     pub status: Option<&'a str>,
     /// Release year; only fills a series whose year is currently null.
     pub release_year: Option<i32>,
+    /// Whether upstream classifies the work as adult. `None` means "no opinion", which must not
+    /// clear a flag another source set — this is a content gate, and losing it is the failure
+    /// that shows adult series to readers who never opted in.
+    pub is_adult: Option<bool>,
+    /// Upstream's average score, 0..100. Overwritten when present: a score drifts, and a stale
+    /// one is worse than the current one.
+    pub external_score: Option<f32>,
+    pub external_popularity: Option<i32>,
+    /// What the work was adapted from (`original`, `light_novel`, …), lower-cased.
+    pub external_source: Option<&'a str>,
     pub alt_titles: &'a [(String, String)],
-    pub tags: &'a [String],
+    pub tags: &'a [TagLink<'a>],
     pub authors: &'a [String],
 }
 
@@ -149,6 +167,10 @@ pub async fn apply_enrichment(
                           THEN COALESCE($6::text::series_status, status) \
                           ELSE status END, \
             release_year = COALESCE(release_year, $5), \
+            is_adult = COALESCE($7, is_adult), \
+            external_score = COALESCE($8, external_score), \
+            external_popularity = COALESCE($9, external_popularity), \
+            external_source = COALESCE($10, external_source), \
             updated_at = now(), \
             metadata_checked_at = now() \
          WHERE id = $1",
@@ -158,6 +180,10 @@ pub async fn apply_enrichment(
         enrichment.content_type,
         enrichment.release_year,
         enrichment.status,
+        enrichment.is_adult,
+        enrichment.external_score,
+        enrichment.external_popularity,
+        enrichment.external_source,
     )
     .execute(&mut *tx)
     .await?;
@@ -232,8 +258,82 @@ fn slugify(name: &str) -> String {
     slug.trim_end_matches('-').to_owned()
 }
 
-/// Add genre/tag names to a series (idempotent, additive-only). Empty/unslugifiable names are
-/// skipped.
+/// The axis a tag lives on, mirroring the `tags.kind` `CHECK` in migration 0026.
+///
+/// `Genre` is the coarse twenty-term vocabulary every provider agrees on; `Theme` is
+/// `AniList`'s ~600-term descriptive one, where the link weight carries how strongly the term
+/// applies. The recommender weights the two differently, which is the whole reason the column
+/// exists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TagKind {
+    Genre,
+    Theme,
+    Demographic,
+    Derived,
+}
+
+impl TagKind {
+    /// The token stored in `tags.kind`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Genre => "genre",
+            Self::Theme => "theme",
+            Self::Demographic => "demographic",
+            Self::Derived => "derived",
+        }
+    }
+}
+
+/// Who supplied a tag link, stored in `series_tags.source`.
+///
+/// Precedence, not decoration: [`add_series_tags`] refuses to let a scraping adapter overwrite
+/// an `AniList` link, because the adapter has only a name where `AniList` has a rank.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TagSource {
+    /// A scraping adapter, which knows a name and nothing else. Its token is also spelled
+    /// literally in [`add_series_tags`]' conflict predicate — a rename must change both, or the
+    /// precedence rule stops matching and silently becomes last-writer-wins.
+    Provider,
+    AniList,
+}
+
+impl TagSource {
+    /// The token stored in `series_tags.source`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Provider => "provider",
+            Self::AniList => "anilist",
+        }
+    }
+}
+
+/// One tag attached to a series, with the strength and provenance the link table stores.
+#[derive(Debug, Clone, Copy)]
+pub struct TagLink<'a> {
+    pub name: &'a str,
+    pub kind: TagKind,
+    /// `(0, 1]`. Zero is not merely discouraged — `series_tags_weight_check` rejects it, so a
+    /// caller with a zero-ranked term must floor it or drop the term.
+    pub weight: f32,
+    pub source: TagSource,
+}
+
+impl<'a> TagLink<'a> {
+    /// A plain genre from a scraping adapter: wholly present, no rank to carry.
+    #[must_use]
+    pub const fn genre(name: &'a str) -> Self {
+        Self {
+            name,
+            kind: TagKind::Genre,
+            weight: 1.0,
+            source: TagSource::Provider,
+        }
+    }
+}
+
+/// Add tag links to a series (idempotent). Empty/unslugifiable names are skipped.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; unknown `series_id` is a foreign-key violation. All-empty
@@ -241,30 +341,62 @@ fn slugify(name: &str) -> String {
 pub async fn add_series_tags(
     conn: &mut sqlx::PgConnection,
     series_id: SeriesId,
-    tags: &[String],
+    tags: &[TagLink<'_>],
 ) -> DbResult<()> {
-    let (slugs, names) = dedup_by_slug(tags);
+    let mut seen = std::collections::HashSet::new();
+    let mut slugs = Vec::with_capacity(tags.len());
+    let mut names = Vec::with_capacity(tags.len());
+    let mut kinds = Vec::with_capacity(tags.len());
+    let mut weights = Vec::with_capacity(tags.len());
+    let mut sources = Vec::with_capacity(tags.len());
+    for tag in tags {
+        let slug = slugify(tag.name);
+        if slug.is_empty() || !seen.insert(slug.clone()) {
+            continue;
+        }
+        slugs.push(slug);
+        names.push(tag.name);
+        kinds.push(tag.kind.as_str());
+        // Clamped, not trusted: `series_tags_weight_check` rejects `weight <= 0`, and a whole
+        // enrichment transaction failing over one badly-ranked tag loses the rest of the batch.
+        weights.push(tag.weight.clamp(MIN_TAG_WEIGHT, 1.0));
+        sources.push(tag.source.as_str());
+    }
     if slugs.is_empty() {
         return Ok(());
     }
 
     // `DO NOTHING`, not `DO UPDATE`: a no-op update would still take a write lock on a
-    // globally-shared `tags` row, serializing concurrent ingests of the same genre.
+    // globally-shared `tags` row, serializing concurrent ingests of the same genre. The cost is
+    // that `kind` is first-writer-wins — a term already interned as a genre stays one — which is
+    // the right way round, since the coarse vocabulary is the one every provider agrees on.
     sqlx::query!(
-        "INSERT INTO tags (slug, name) SELECT * FROM UNNEST($1::text[], $2::text[]) \
+        "INSERT INTO tags (slug, name, kind) \
+         SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[]) \
          ON CONFLICT (slug) DO NOTHING",
         &slugs as &[String],
         &names as &[&str],
+        &kinds as &[&str],
     )
     .execute(&mut *conn)
     .await?;
 
+    // The `WHERE` on the conflict arm is the precedence rule: a source refreshes its own links,
+    // and `AniList` upgrades an adapter's bare genre to a ranked one, but the next scrape must
+    // not flatten that rank back to 1.0. Without it the weight flaps between the two writers on
+    // every sweep, and the digest churn re-embeds the whole catalogue for nothing.
     sqlx::query!(
-        "INSERT INTO series_tags (series_id, tag_id) \
-         SELECT $1, t.id FROM tags t WHERE t.slug = ANY($2::text[]) \
-         ON CONFLICT DO NOTHING",
+        "INSERT INTO series_tags (series_id, tag_id, weight, source) \
+         SELECT $1, t.id, u.weight, u.source \
+         FROM UNNEST($2::text[], $3::real[], $4::text[]) AS u(slug, weight, source) \
+         JOIN tags t ON t.slug = u.slug \
+         ON CONFLICT (series_id, tag_id) DO UPDATE \
+            SET weight = EXCLUDED.weight, source = EXCLUDED.source \
+          WHERE series_tags.source = EXCLUDED.source OR series_tags.source = 'provider'",
         series_id.as_uuid(),
         &slugs as &[String],
+        &weights as &[f32],
+        &sources as &[&str],
     )
     .execute(&mut *conn)
     .await?;
@@ -312,7 +444,7 @@ pub async fn add_series_authors(
 /// slug.
 ///
 /// De-duplication is required: a slug bound twice in one `UNNEST` insert is harmless, but the
-/// link statement would then attach the same `(series_id, tag_id)` pair twice.
+/// link statement would then attach the same `(series_id, author_id)` pair twice.
 fn dedup_by_slug(names: &[String]) -> (Vec<String>, Vec<&str>) {
     let mut seen = std::collections::HashSet::new();
     let mut slugs = Vec::with_capacity(names.len());

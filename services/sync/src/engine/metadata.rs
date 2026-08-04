@@ -2,7 +2,9 @@
 //! catalogue sweep and [`super::reconcile`] so both paths resolve [`MetadataPriority`] the same way.
 
 use tankovault_db::PgPool;
-use tankovault_db::repo::catalog::{MetadataEnrichment, SeriesEnrichmentRow};
+use tankovault_db::repo::catalog::{
+    MetadataEnrichment, SeriesEnrichmentRow, TagKind, TagLink, TagSource,
+};
 use tankovault_db::repo::{catalog, sync};
 use tankovault_domain::{
     ContentType, MetadataField, MetadataPriority, MetadataSource, SeriesId, SeriesStatus,
@@ -89,8 +91,12 @@ impl MetadataWriter {
                 content_type: content_type_token(meta.content_type),
                 status: series_status_token(meta.series_status),
                 release_year: meta.start_year,
+                is_adult: meta.is_adult,
+                external_score: meta.external_score,
+                external_popularity: meta.external_popularity,
+                external_source: meta.external_source.as_deref(),
                 alt_titles: &alt_titles,
-                tags: &meta.tags,
+                tags: &tag_links(meta),
                 authors: &meta.authors,
             },
         )
@@ -106,6 +112,33 @@ impl MetadataWriter {
         catalog::mark_metadata_checked(&self.pool, series_id).await?;
         Ok(())
     }
+}
+
+/// The two upstream vocabularies as one link list: coarse genres at full strength, then the
+/// provider's descriptive terms at their own rank.
+///
+/// Both land in `series_tags`, and `tags.kind` is what keeps them distinguishable afterwards —
+/// the recommender weights a 600-term theme very differently from a genre a third of the
+/// catalogue carries.
+fn tag_links(meta: &RemoteMetadata) -> Vec<TagLink<'_>> {
+    let mut links = Vec::with_capacity(meta.tags.len() + meta.themes.len());
+    for genre in &meta.tags {
+        links.push(TagLink {
+            name: genre,
+            kind: TagKind::Genre,
+            weight: 1.0,
+            source: TagSource::AniList,
+        });
+    }
+    for theme in &meta.themes {
+        links.push(TagLink {
+            name: &theme.name,
+            kind: TagKind::Theme,
+            weight: theme.weight,
+            source: TagSource::AniList,
+        });
+    }
+    links
 }
 
 /// The enum token for a content type, or `None` when upstream had no opinion.

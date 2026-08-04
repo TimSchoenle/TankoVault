@@ -182,7 +182,7 @@ mod tests {
     use super::{Ancestor, LocalSide, MergePlan, SeriesPlan, plan_merge, plan_series};
     use crate::mapping::{ConflictPolicy, MergeAction};
     use crate::provider::{RemoteEntry, RemoteMetadata};
-    use tankovault_domain::{ContentType, SeriesStatus, WatchStatus};
+    use tankovault_domain::WatchStatus;
     use time::OffsetDateTime;
 
     fn local(progress: f64, status: Option<WatchStatus>, updated_unix: i64) -> LocalSide {
@@ -204,13 +204,7 @@ mod tests {
             metadata: RemoteMetadata {
                 external_id: "1".to_owned(),
                 titles: vec!["t".to_owned()],
-                description: None,
-                cover_url: None,
-                start_year: None,
-                content_type: ContentType::Unknown,
-                series_status: SeriesStatus::Unknown,
-                tags: Vec::new(),
-                authors: Vec::new(),
+                ..RemoteMetadata::default()
             },
         }
     }

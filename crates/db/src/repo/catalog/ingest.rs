@@ -2,7 +2,7 @@
 //! genuinely new chapters for the `chapter.discovered` fan-out.
 
 use super::chapters::{ChapterUpsert, upsert_chapters};
-use super::enrichment::{add_series_authors, add_series_tags, add_series_titles};
+use super::enrichment::{TagLink, add_series_authors, add_series_tags, add_series_titles};
 use super::series::{SeriesUpsert, resolve_canonical_series, update_series_meta};
 use super::sources::{update_source_scan, upsert_source};
 use crate::error::DbResult;
@@ -54,7 +54,9 @@ pub async fn ingest_series(
         add_series_titles(&mut tx, series_id, &scanned.alt_titles).await?;
     }
     if !scanned.tags.is_empty() {
-        add_series_tags(&mut tx, series_id, &scanned.tags).await?;
+        // A scraped tag is a bare genre name: no rank to carry, so it is wholly present.
+        let links: Vec<TagLink<'_>> = scanned.tags.iter().map(|t| TagLink::genre(t)).collect();
+        add_series_tags(&mut tx, series_id, &links).await?;
     }
     if !scanned.authors.is_empty() {
         add_series_authors(&mut tx, series_id, &scanned.authors).await?;

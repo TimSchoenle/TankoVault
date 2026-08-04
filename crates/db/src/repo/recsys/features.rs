@@ -43,6 +43,7 @@ pub async fn list_series_facts<'e, E: PgExecutor<'e>>(
         content_type: ContentType,
         status: SeriesStatus,
         release_year: Option<i32>,
+        external_source: Option<String>,
         chapter_count: i64,
         tag_slugs: Vec<String>,
         tag_weights: Vec<f32>,
@@ -54,6 +55,7 @@ pub async fn list_series_facts<'e, E: PgExecutor<'e>>(
                 s.content_type AS \"content_type: ContentType\", \
                 s.status AS \"status: SeriesStatus\", \
                 s.release_year, \
+                s.external_source, \
                 COALESCE(ch.n, 0) AS \"chapter_count!\", \
                 COALESCE(tg.slugs, '{}') AS \"tag_slugs!\", \
                 COALESCE(tg.weights, '{}') AS \"tag_weights!\", \
@@ -96,6 +98,7 @@ pub async fn list_series_facts<'e, E: PgExecutor<'e>>(
                 tags: r.tag_slugs.into_iter().zip(r.tag_weights).collect(),
                 authors: r.author_slugs,
                 country: None,
+                source: r.external_source,
             },
         })
         .collect())
@@ -172,6 +175,7 @@ fn parse_kind(token: &str) -> Option<FeatureKind> {
         "status" => FeatureKind::Status,
         "decade" => FeatureKind::Decade,
         "length" => FeatureKind::Length,
+        "source" => FeatureKind::Source,
         _ => return None,
     })
 }

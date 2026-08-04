@@ -30,12 +30,27 @@ name: update-lockfile
 on:
   pull_request:
 
-# Shared with `auto-format.yaml`, which also commits to the pull request's head branch. Two jobs
-# pushing to one branch at once means a losing `git push` and a red job on a problem that does not
-# exist, so they queue instead of racing — `cancel-in-progress: false`, because cancelling a job
-# mid-push is worse than making it wait.
+# Its own group, **not** the `pr-autocommit-<pr>` one `auto-fix.yaml` and `auto-format.yaml`
+# share, and that separation is the whole point of this block.
+#
+# GitHub keeps at most *one* pending run per concurrency group. A third run entering a group that
+# already has one running and one pending does not queue behind them — it cancels the pending run
+# outright. All three of these workflows sat in `pr-autocommit-<pr>` until 2026-08-04, so every
+# event that fired all three silently lost one, and which one it lost was decided by run-creation
+# order rather than by anything a reader of these files can see.
+#
+# Release 1.2.1 is what it cost. `release-please` force-pushed its release commit at 16:17:50;
+# `auto-fix` was 3 minutes into a 33-minute run and held the group, `auto-format` took the pending
+# slot, and this workflow's run was cancelled 1 second after it was created. `Cargo.lock`,
+# `web/frontend/Cargo.lock` and `openapi.json` all merged to `main` still recording 1.2.0 against
+# a 1.2.1 manifest, and every `--locked` build failed — including the release images, which is a
+# tag with nothing published behind it.
+#
+# The push below is made race-safe instead, which is what the shared group was buying. See
+# `repo-lint`'s `concurrency-groups-hold-at-most-two-workflows`, which fails if a third workflow
+# joins any group again.
 concurrency:
-  group: pr-autocommit-${{ github.event.pull_request.number }}
+  group: pr-lockfile-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 permissions: {}
@@ -115,6 +130,14 @@ jobs:
             git diff --stat -- Cargo.lock web/frontend/Cargo.lock
           fi
 
+      # Retried rather than serialized by a shared concurrency group; the block at the top of this
+      # file says why the group is no longer shared. `auto-format.yaml` and `auto-fix.yaml` push to
+      # this same branch, so a rejected push is an ordinary outcome here, not a fault.
+      #
+      # Rebasing is sound because neither of them writes a lockfile — `auto-fix.yaml` says so in as
+      # many words where it lists what it regenerates — so the commit being replayed touches two
+      # files nothing else on the branch is editing. A conflict therefore means an assumption has
+      # changed, and the job stops loudly instead of resolving it.
       - name: Commit the updated lockfiles
         if: steps.sync.outputs.changed == 'true'
         env:
@@ -124,8 +147,23 @@ jobs:
           GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
           git add Cargo.lock web/frontend/Cargo.lock
           git commit -m "build: sync both Cargo.lock files with the workspace manifests"
-          git push
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:${BRANCH}"; then
+              exit 0
+            fi
+            echo "push rejected (attempt ${attempt}/3); replaying onto ${BRANCH} as it now stands"
+            if ! git pull --rebase origin "$BRANCH"; then
+              git rebase --abort || true
+              echo "::error::rebasing the lockfile sync onto ${BRANCH} conflicted; nothing else on"
+              echo "::error::this branch is supposed to write a lockfile — resolve it by hand"
+              exit 1
+            fi
+          done
+          echo "::error::could not push the lockfile sync after 3 attempts; ${BRANCH} is moving"
+          echo "::error::faster than this job can follow it"
+          exit 1

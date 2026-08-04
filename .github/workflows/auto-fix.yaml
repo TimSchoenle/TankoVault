@@ -76,8 +76,9 @@ on:
       - "THIRD-PARTY-NOTICES"
       - "web/frontend/**"
 
-# Shared with `auto-format.yaml` and `update-lockfile.yaml`. All three push to the pull request's
-# head branch, so they queue rather than race — see `update-lockfile.yaml` for the reasoning.
+# Shared with `auto-format.yaml`, and with nothing else. Both push to the pull request's head
+# branch, so they queue rather than race — see `auto-format.yaml` for the reasoning, and for why
+# a *third* member would be evicted rather than queued.
 concurrency:
   group: pr-autocommit-${{ github.event.pull_request.number }}
   cancel-in-progress: false

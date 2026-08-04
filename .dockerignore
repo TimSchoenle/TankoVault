@@ -51,6 +51,13 @@ mutants.out.old/
 docs/
 **/*.md
 
+# Release and dependency automation. No stage reads these, and leaving them in
+# the context made every release commit invalidate `builder`'s `COPY . .` for a
+# file nothing compiles. `xtask release-plan` classifies them the same way.
+release-please-config.json
+.release-please-manifest.json
+renovate.json
+
 # `LICENSE` is deliberately NOT excluded, unlike everything above it. PolyForm
 # Noncommercial's Notices clause requires the terms to reach anyone who gets a
 # copy of any part of the software, and a published image is a copy — so every

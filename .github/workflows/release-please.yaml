@@ -1,25 +1,41 @@
 name: release-please
 
 # Release automation, end to end: release-please opens and maintains the release pull request,
-# and merging it tags the repository and publishes the nine service images for that tag as
-# multi-architecture manifests, signed and with an SBOM attested against the published digest.
+# and merging it tags the repository and publishes the service images *that changed* for that tag
+# as multi-architecture manifests, signed and with an SBOM attested against the published digest.
 # `helm-release` then proposes the matching bump to the chart in `TimSchoenle/helm-charts`.
 #
 # ---------------------------------------------------------------------------------------------
-# Publishing is unconditional. It was not always.
+# A release publishes what changed, not everything. It did not always.
 # ---------------------------------------------------------------------------------------------
-# Every push/sign/attest step used to require the repository variable `ALLOW_IMAGE_PUBLISH`, and
-# the gate job that resolved it is gone along with the two reasons it existed. `OP-6` (GPL-3.0
-# `wreq-util`) was resolved on 2026-08-01 by upgrading to `wreq-util` 3.x, which is Apache-2.0;
-# `OPS-10.4` (no `LICENSE`) was resolved by adopting PolyForm Noncommercial 1.0.0 — the root
-# `LICENSE`, `license` under `[workspace.package]`, and a copy at `/LICENSE` in every runtime
-# stage of `deploy/docker/Dockerfile`, which the image contracts assert. Merging a release PR
-# now publishes, with nothing further for a human to decide.
+# All nine images used to be rebuilt, retagged and repinned on every release, whatever the
+# release contained — so a one-line fix in `notifier` rolled all nine Deployments, and a
+# documentation release rolled them for nothing.
 #
-# What that gate also did, incidentally, was structure-test the images: those steps ran on the
-# *non*-publishing branch. They are now on the publishing path, before the push, because that is
-# the only place the arm64 contract was ever checked for `frontend` and the six other `scratch`
-# services that `ci.yml`'s arm64 job does not cover.
+# The `plan` job below decides the set instead. `xtask release-plan` walks the workspace
+# dependency graph, so a change to `crates/domain` still reaches every image and a change to
+# `services/render` reaches one; the paths that are build inputs without belonging to a package
+# live in a table in `xtask/src/release_plan.rs`, and `repo-lint` fails if a top-level path
+# matches neither. Anything unrecognised counts as a change to everything: an unnecessary rebuild
+# costs runner minutes, a missed one ships stale code under a version that claims otherwise.
+#
+# Each image is diffed from **the tag it is currently published at**, resolved from the registry,
+# rather than from the previous release. That is what makes the decision self-healing: a leg that
+# failed at v1.0.1 is rebuilt at v1.0.2 instead of being skipped for good.
+#
+# Two consequences, both deliberate. A service that did not change has no `vX.Y.Z` tag for that
+# release, so its `latest` and `X.Y` stay at its last real build — the registry's tag set is the
+# record of which releases changed it, and the chart is the one complete reference surface.
+# And `release-please` still decides one version for the whole repository: its own job is
+# untouched, because per-component release-please attributes commits by path prefix and would
+# never see `crates/domain`.
+#
+# The escape hatch is the `RELEASE_REBUILD_ALL` repository variable, which makes `plan` select
+# every image without consulting a diff.
+#
+# The structure-test steps sit on the publishing path, before the push, because that is the only
+# place the arm64 contract is ever checked for `frontend` and the six other `scratch` services
+# that `ci.yml`'s arm64 job does not cover.
 #
 # ---------------------------------------------------------------------------------------------
 # Why `release-type: simple` in `release-please-config.json`, and not `rust`
@@ -44,15 +60,25 @@ name: release-please
 # ---------------------------------------------------------------------------------------------
 # The cache contract with `ci.yml`
 # ---------------------------------------------------------------------------------------------
-# Three scope families, all arch-qualified because a BuildKit cache does not cross architectures:
+# Three tag families on the GHCR `buildcache` repository, all arch-qualified because a BuildKit
+# cache does not cross architectures:
 #
 #   backend-deps-<arch>   written by `ci.yml`, off `main` only. Read here, never written.
 #   frontend-deps-<arch>  the same, for the wasm half. Read by the two `frontend` legs.
 #   release-deps-<arch>   written by `release-deps` below, at the release commit. Read by the legs.
 #
 # The third exists because this workflow and `ci.yml` both fire on the push that merges a release
-# PR, so the CI scopes are still at the *previous* commit when the legs start — and because two
-# workflows exporting `mode=max` into one scope concurrently is a write race, not a warm cache.
+# PR, so the CI tags are still at the *previous* commit when the legs start — and because two
+# workflows exporting `mode=max` into one tag concurrently is a write race, not a warm cache.
+#
+# `SERVICE_BINS` is narrowed to the planned set, which cuts a thin-LTO link per image that is not
+# being published. It is passed from one place — `plan`'s `service_bins` output — to the warm-up
+# and to both `build-push-action` calls in every leg, and those three have to stay the same
+# string: the value is part of the `builder` layer's cache key, so a warm-up cooked under a
+# different one is a cache the legs cannot read. It also no longer matches `ci.yml`'s default,
+# which costs nothing: the release commit rewrites `Cargo.toml` and `Cargo.lock`, so `builder`'s
+# `COPY . .` misses against `backend-deps-<arch>` regardless. `cook` sits above the ARG and still
+# hits.
 #
 # ---------------------------------------------------------------------------------------------
 # On the `${{ }}` discipline in this file
@@ -140,7 +166,144 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  # The warm-up the eighteen legs below are built on, one per architecture — the same job
+  # Which images this release has to publish, and which are already published and stay where they
+  # are. Everything downstream is a matrix over `images`.
+  plan:
+    name: plan the image set
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true'
+    # Required, not decorative: `DOCKERHUB_*` are `release` environment secrets, and a job that
+    # omits the environment reads them as empty strings — `docker/login-action` then reports
+    # "Username and password required" without naming the cause.
+    environment:
+      name: release
+      deployment: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # to check out the tree and diff it against each image's published tag
+    outputs:
+      images: ${{ steps.plan.outputs.images }}
+      service_bins: ${{ steps.plan.outputs.service_bins }}
+      any: ${{ steps.plan.outputs.any }}
+    env:
+      # This job builds one short-lived command-line program and throws the tree away; debug info
+      # and incremental artefacts are pure cost here. See the toolchain step for why there is no
+      # compilation cache to make them worth keeping.
+      CARGO_PROFILE_DEV_DEBUG: none
+      CARGO_INCREMENTAL: 0
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      # `fetch-depth: 0` for the tags and the history: the planner diffs each image from the tag
+      # it is published at, which a shallow clone does not contain.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: resolve the toolchain from its manifest
+        id: toolchain
+        run: |
+          set -euo pipefail
+          channel=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          if [ -z "$channel" ]; then
+            echo '::error::no channel = "…" line in rust-toolchain.toml'
+            exit 1
+          fi
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+
+      # No `Swatinem/rust-cache` here, deliberately, and it is the one place in this workflow
+      # where that costs something: `xtask` reaches the API crate, so building it compiles most of
+      # the backend from cold on every release. A cache would fix that and would also be a
+      # writable input to the job that decides what a signed release publishes — which is the
+      # cache-poisoning class zizmor audits for, in the one workflow that holds `packages: write`
+      # and `id-token: write`. Debug info is dropped instead, which is most of a dev-profile
+      # build's cost and none of its meaning for a program that prints three lines and exits.
+      - name: BoringSSL build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      # Docker Hub rather than GHCR because the chart pins Docker Hub, so that is the registry
+      # whose tag set has to be the record of what is published.
+      - name: log in to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # For each deployable binary, the newest release tag that actually exists in the registry.
+      # Since an unchanged service is not republished, a service's tag set *is* the list of
+      # releases that changed it, and its newest tag is the commit its published image was built
+      # from — which is exactly the base its next diff has to start at.
+      #
+      # The tag this run just created is skipped: nothing has been pushed to it yet, and the
+      # failed inspect would cost a round trip per image. A binary that resolves to nothing is
+      # left out of the document entirely, which the planner reads as "never published, rebuild".
+      - name: resolve each image's published tag
+        id: bases
+        if: vars.RELEASE_REBUILD_ALL != 'true'
+        env:
+          RELEASING: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          # `--all` here is not a decision, it is how the deployable set is asked for: the planner
+          # derives it from the Dockerfile's SERVICE_BINS minus the deploy blacklist, so no list
+          # of the services exists in this file. `GITHUB_OUTPUT` is redirected because this call
+          # is a query — only the step below may set the job's outputs.
+          bins=$(GITHUB_OUTPUT=/dev/null cargo run -q -p xtask -- release-plan --all | sed -n 's/^service_bins=//p')
+          # No `| head`: under `pipefail` an early-exiting reader SIGPIPEs `git tag` and turns a
+          # successful read into a failed step. The probe budget below is a counter instead.
+          tags=$(git tag --list 'v*' --sort=-v:refname)
+          bases='{}'
+          for bin in ${bins}; do
+            probed=0
+            for tag in ${tags}; do
+              # Nothing has been pushed to the tag this run just created, so probing it would cost
+              # one failed round trip per image and tell us nothing.
+              if [ "$tag" = "$RELEASING" ]; then
+                continue
+              fi
+              probed=$((probed + 1))
+              if [ "$probed" -gt 25 ]; then
+                echo "::warning::no published image found for ${bin} in the last ${probed} tags; it will be rebuilt"
+                break
+              fi
+              if docker buildx imagetools inspect \
+                   "docker.io/${DOCKERHUB_NAMESPACE}/tankovault-${bin}:${tag}" >/dev/null 2>&1; then
+                bases=$(printf '%s' "$bases" | jq -c --arg bin "$bin" --arg tag "$tag" '. + {($bin): $tag}')
+                echo "::notice::${bin} is published at ${tag}"
+                break
+              fi
+            done
+          done
+          printf '%s' "$bases" > "${RUNNER_TEMP}/bases.json"
+          echo "::notice::bases: ${bases}"
+
+      # `--all` short-circuits the diff entirely, for the release where the decision cannot be
+      # trusted and every image has to be rebuilt by hand.
+      - name: decide which images to publish
+        id: plan
+        env:
+          REBUILD_ALL: ${{ vars.RELEASE_REBUILD_ALL }}
+        run: |
+          set -euo pipefail
+          if [ "$REBUILD_ALL" = "true" ]; then
+            cargo run -q -p xtask -- release-plan --all
+          else
+            cargo run -q -p xtask -- release-plan "${RUNNER_TEMP}/bases.json"
+          fi
+
+  # The warm-up the legs below are built on, one per architecture — the same job
   # `ci.yml`'s `docker-deps` is, at the release commit, and it exists for the same reason: `cook`
   # and `builder` are the entire wall clock of an image build and `builder` takes no `ARG BIN`, so
   # one compile per architecture serves all nine images.
@@ -162,8 +325,8 @@ jobs:
   # reasoning, and the two files have to agree because they read each other's tags.
   release-deps:
     name: warm the build cache (${{ matrix.arch }})
-    needs: [release-please]
-    if: needs.release-please.outputs.release_created == 'true'
+    needs: [release-please, plan]
+    if: ${{ needs.release-please.outputs.release_created == 'true' && needs.plan.outputs.any == 'true' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:
@@ -207,15 +370,18 @@ jobs:
         run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
 
       # Build args and `platforms` must match the legs below exactly, or they look up a key this
-      # never wrote. `BIN` is deliberately absent: no stage up to `builder` reads it, which is what
-      # makes one warm-up serve nine images.
-      - name: cook dependency graph and compile every binary
+      # never wrote — `SERVICE_BINS` included, which is why all three read the same `plan` output.
+      # `BIN` is deliberately absent: no stage up to `builder` reads it, which is what makes one
+      # warm-up serve every planned image.
+      - name: cook dependency graph and compile the planned binaries
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: deploy/docker/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          build-args: SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
+          build-args: |
+            SERVICE_BINS=${{ needs.plan.outputs.service_bins }}
+            SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           target: builder
           push: false
           outputs: type=cacheonly
@@ -235,16 +401,17 @@ jobs:
   # That is what makes `:v1.2.3` a single multi-architecture reference rather than whichever
   # architecture happened to push last.
   #
-  # `xtask` is absent on purpose — it is on the deploy blacklist
-  # (`[workspace.metadata.deploy.exclude]`, root `Cargo.toml`). `xtask repo-lint` holds both
-  # matrices below to that table, so neither an addition here nor a new service that never
-  # reaches it can pass unnoticed.
+  # The matrix is `plan`'s output rather than a literal: that is what holds the published set to
+  # the Dockerfile's `SERVICE_BINS` minus the deploy blacklist
+  # (`[workspace.metadata.deploy.exclude]`, root `Cargo.toml`), which is where `xtask` is excluded.
+  # `repo-lint` fails if this file names its images literally again, because a literal would
+  # publish a hand-maintained list while every other gate stayed green.
   build:
     name: ${{ matrix.bin }} (${{ matrix.arch }})
-    needs: [release-please, release-deps]
+    needs: [release-please, plan, release-deps]
     # `!cancelled() && !failure()` rather than the bare output test: an explicit `if:` replaces the
     # implicit `success()`, so the bare form would publish images from a run whose warm-up failed.
-    if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' }}
+    if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' && needs.plan.outputs.any == 'true' }}
     environment:
       name: release
       deployment: false
@@ -256,10 +423,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        bin: [api, bootstrap, worker, control-plane, notifier, sync, challenge-solver, render, frontend]
+        bin: ${{ fromJSON(needs.plan.outputs.images) }}
         arch: [amd64, arm64]
         # `include` entries that name only `arch` are merged into every combination with that
-        # arch, which is how the runner label is attached without enumerating all eighteen.
+        # arch, which is how the runner label is attached without enumerating every leg.
         include:
           - arch: amd64
             runner: ubuntu-latest
@@ -344,6 +511,7 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           build-args: |
             BIN=${{ matrix.bin }}
+            SERVICE_BINS=${{ needs.plan.outputs.service_bins }}
             SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           push: false
           load: true
@@ -396,6 +564,7 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           build-args: |
             BIN=${{ matrix.bin }}
+            SERVICE_BINS=${{ needs.plan.outputs.service_bins }}
             SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           outputs: |
             type=image,name=docker.io/${{ steps.params.outputs.dockerhub }},push-by-digest=true,name-canonical=true,push=true
@@ -435,12 +604,12 @@ jobs:
   # registry, then sign and attest what was actually published.
   manifest:
     name: publish ${{ matrix.bin }}
-    needs: [release-please, build]
+    needs: [release-please, plan, build]
     # Same reason as `build`: a bare output test replaces the implicit `success()`, so with
     # `fail-fast: false` above a single failed leg still reached this job — and `imagetools create`
     # over whichever digests *did* upload publishes `:vX.Y.Z` as a single-architecture manifest
     # list. Tagging a half-built release is worse than not tagging one.
-    if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' }}
+    if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' && needs.plan.outputs.any == 'true' }}
     environment:
       name: release
       deployment: false
@@ -453,7 +622,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        bin: [api, bootstrap, worker, control-plane, notifier, sync, challenge-solver, render, frontend]
+        bin: ${{ fromJSON(needs.plan.outputs.images) }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -631,22 +800,27 @@ jobs:
           cosign attest --yes --predicate "$SBOM" --type spdxjson "${DOCKERHUB_IMAGE}@${DOCKERHUB_DIGEST}"
           cosign attest --yes --predicate "$SBOM" --type spdxjson "${GHCR_IMAGE}@${GHCR_DIGEST}"
 
-  # The hand-off to the deployable chart: pin every service in `TimSchoenle/helm-charts` to the
-  # digest this run just published, and open a pull request there. It is a pull request and not a
-  # push because the chart repository gates its own releases — this job proposes, that repository
-  # decides.
+  # The hand-off to the deployable chart: pin the services this run published in
+  # `TimSchoenle/helm-charts` to their new digests, and open a pull request there. It is a pull
+  # request and not a push because the chart repository gates its own releases — this job
+  # proposes, that repository decides.
   #
   # It runs after `manifest` and not after `build` deliberately: what a chart pins must be a
   # digest that is signed and SBOM-attested, and `manifest` is where both happen.
+  #
+  # Only the published services appear in `images`. The action updates the keys it is given and
+  # leaves the rest of `values.yaml` untouched, so a service that did not change keeps the exact
+  # `tag@digest` string it already had — which is what keeps its Deployment from rolling. The
+  # chart therefore carries a mix of versions on purpose; every entry is digest-pinned, so the
+  # mix is a record of when each service last changed rather than a drift.
   helm-release:
     name: Helm Release
-    needs: [release-please, manifest]
-    # Same guard as `build` and `manifest`, and it is what makes the "nine digests are present"
-    # assumption below sound: with `fail-fast: false` on `manifest`, a bare output test would let
-    # one failed leg through and this job would then bump the chart with that service still on the
-    # previous release's digest — a silently partial deployment, under a version that claims
-    # otherwise.
-    if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' }}
+    needs: [release-please, plan, manifest]
+    # Same guard as `build` and `manifest`. With `fail-fast: false` on `manifest`, a bare output
+    # test would let one failed leg through and this job would then propose a chart bump that
+    # claims a release which is missing one of its services. The digest count is checked against
+    # the plan below for the same reason, since `!failure()` alone no longer implies a full set.
+    if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' && needs.plan.outputs.any == 'true' }}
     environment:
       name: release
       deployment: false
@@ -673,10 +847,10 @@ jobs:
           merge-multiple: true
 
       # The values key is *derived* from the binary name rather than read from a table, so that
-      # adding a service to the matrices above does not also require editing a mapping here that
-      # nothing checks. `xtask repo-lint` holds the two image matrices to the deploy blacklist, but
-      # it only recognises `bin: [...]` and `images=[...]` literals — a third hand-maintained list
-      # of the nine services would be outside everything that enforces they stay in step.
+      # adding a service does not also require editing a mapping here that nothing checks. The
+      # image set itself comes from `plan`, which reads the Dockerfile and the deploy blacklist;
+      # a hand-maintained list of the services here would sit outside everything that keeps them
+      # in step.
       #
       # The chart nests the long-running services under `services.` and camel-cases their names;
       # `bootstrap` is a one-shot job and sits at the top level. A key that does not already exist
@@ -685,12 +859,18 @@ jobs:
         id: images
         env:
           TAG: ${{ needs.release-please.outputs.tag_name }}
+          PLANNED: ${{ needs.plan.outputs.images }}
         run: |
           set -euo pipefail
           shopt -s nullglob
           files=(/tmp/list-digests/*)
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "::error::no manifest list digests were downloaded; nothing to pin the chart to"
+          expected=$(printf '%s' "$PLANNED" | jq 'length')
+          # The plan is what says how many services this release publishes, so it is what the
+          # digest set has to match. Fewer means a `manifest` leg produced nothing and the chart
+          # would be bumped to a version whose image set is incomplete; more means the artifact
+          # pattern is picking up something this run did not plan.
+          if [ "${#files[@]}" -ne "$expected" ]; then
+            echo "::error::planned ${expected} image(s) but downloaded ${#files[@]} digest(s); a chart bump from a partial publish would claim a release that was never built"
             exit 1
           fi
           images=$(
@@ -733,12 +913,16 @@ jobs:
           changelog: ${{ needs.release-please.outputs.body }}
 
   # `always()`, so a release that tagged but failed to publish still gets a summary — which is the
-  # reason the text below branches on `manifest`'s result rather than asserting nine images
+  # reason the text below branches on `manifest`'s result rather than asserting the images
   # shipped. It ran on `always()` and claimed a full publish unconditionally, so every way the
   # build path can fail produced a green-sounding summary under a tag with nothing behind it.
+  #
+  # It also names which images were *not* published. With a narrowed release that is the only
+  # place the decision is visible: a reader has to be able to tell "notifier was unchanged" from
+  # "notifier was supposed to be built and silently was not".
   summary:
     name: release summary
-    needs: [release-please, release-deps, build, manifest, helm-release]
+    needs: [release-please, plan, release-deps, build, manifest, helm-release]
     if: always() && needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -753,6 +937,8 @@ jobs:
         env:
           TAG: ${{ needs.release-please.outputs.tag_name }}
           DOCKERHUB_NS: ${{ env.DOCKERHUB_NAMESPACE }}
+          PLANNED: ${{ needs.plan.outputs.images }}
+          PLAN_RESULT: ${{ needs.plan.result }}
           PUBLISHED: ${{ needs.manifest.result }}
           CHART: ${{ needs.helm-release.result }}
           CHART_PR: ${{ needs.helm-release.outputs.pr_url }}
@@ -760,26 +946,40 @@ jobs:
         run: |
           # Case-folded to match what was actually pushed; see the `build` job's `params` step.
           GHCR_PREFIX="${GHCR_REGISTRY}/${GITHUB_REPOSITORY,,}"
+          count=$(printf '%s' "${PLANNED:-[]}" | jq 'length' 2>/dev/null || echo 0)
+          names=$(printf '%s' "${PLANNED:-[]}" | jq -r 'join(", ")' 2>/dev/null || echo '')
           {
             echo "## Release ${TAG}"
             echo
-            if [ "$PUBLISHED" != "success" ]; then
-              echo "The tag exists, but publishing reported \`${PUBLISHED}\` — **no complete image"
-              echo "set was published for this tag**. Read the failed jobs in this run before"
+            if [ "$PLAN_RESULT" != "success" ]; then
+              echo "Planning reported \`${PLAN_RESULT}\` — **nothing was published for this tag**."
+              echo "Read the \`plan\` job before re-running."
+            elif [ "$count" -eq 0 ]; then
+              echo "**No image changed in this release.** Nothing was rebuilt, nothing was"
+              echo "republished, and no chart update was opened: every service stays on the digest"
+              echo "it was already deployed at, and the tag records the changelog alone."
+            elif [ "$PUBLISHED" != "success" ]; then
+              echo "The tag exists, but publishing reported \`${PUBLISHED}\` — **the ${count} planned"
+              echo "image(s) were not all published**. Read the failed jobs in this run before"
               echo "re-running; a partially pushed digest set is not a release."
             else
-              echo "Nine images **published** as \`linux/amd64\` + \`linux/arm64\` manifest lists to:"
+              echo "${count} image(s) **published** as \`linux/amd64\` + \`linux/arm64\` manifest lists:"
               echo
-              echo "- \`docker.io/${DOCKERHUB_NS}/tankovault-*\`"
-              echo "- \`${GHCR_PREFIX}/*\`"
+              echo "\`${names}\`"
               echo
-              echo "Each was structure-tested before it was pushed, signed with cosign (keyless) and"
-              echo "SBOM-attested against the published digest."
+              echo "to \`docker.io/${DOCKERHUB_NS}/tankovault-*\` and \`${GHCR_PREFIX}/*\`."
+              echo
+              echo "Every other service was unchanged, so it was not rebuilt and carries no"
+              echo "\`${TAG}\` tag — its published digest, and the chart entry pinning it, are"
+              echo "unchanged and its Deployment will not roll."
+              echo
+              echo "Each published image was structure-tested before it was pushed, signed with"
+              echo "cosign (keyless) and SBOM-attested against the published digest."
               echo
               echo "Licensed under PolyForm Noncommercial 1.0.0 — the terms ship inside every image"
               echo "at \`/LICENSE\`. Commercial use needs a separate licence from the copyright holder."
               echo
-              echo "SBOMs are attached to this run as artifacts (one per image, SPDX JSON)."
+              echo "SBOMs are attached to this run as artifacts (one per published image, SPDX JSON)."
             fi
             echo
             # Reported separately from the publish: the chart bump can fail on its own — a rejected
@@ -787,7 +987,7 @@ jobs:
             # deploying them, which is invisible from this repository otherwise.
             case "$CHART" in
               success) echo "Chart bump to \`${CHART_VERSION}\` proposed: ${CHART_PR}" ;;
-              skipped) echo "No chart bump was attempted (publishing did not complete)." ;;
+              skipped) echo "No chart bump was attempted (nothing was published, or publishing did not complete)." ;;
               *)       echo "The chart bump reported \`${CHART}\` — **the images are published but"
                        echo "no chart update was opened**. Re-run this job, or bump the chart by hand." ;;
             esac

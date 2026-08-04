@@ -2,7 +2,8 @@
 
 TankoVault releases are automated end to end by [release-please]. Nothing here is run by hand:
 you write conventional commits, release-please maintains a release pull request, and merging
-that pull request tags the repository and publishes nine multi-architecture images.
+that pull request tags the repository and publishes the multi-architecture images **that
+changed**.
 
 This document covers the parts that are not obvious from reading the workflow, and the two
 decisions a human still has to make.
@@ -18,39 +19,91 @@ commit to main (conventional commits)
      ci.yml               → the required `ci` check runs against the bumped tree
      auto-merge-release-please.yml → approves + merges after the delay
   └─ merge → release-please tags vX.Y.Z and creates the GitHub release
-        └─ release-deps (2 legs: one `builder` compile per architecture)
-              └─ build (18 legs: 9 images x amd64/arm64, native runners)
-                    └─ manifest (9 jobs: manifest list per image, cosign sign, SBOM attest)
-                          └─ helm-release → chart bump PR against TimSchoenle/helm-charts
+        └─ plan (xtask release-plan: which images changed since each one's published tag)
+              └─ release-deps (2 legs: one `builder` compile per architecture)
+                    └─ build (2 legs per planned image: amd64 + arm64, native runners)
+                          └─ manifest (1 job per planned image: list, cosign sign, SBOM attest)
+                                └─ helm-release → chart bump PR against TimSchoenle/helm-charts
 ```
+
+A release in which no image changed — a documentation or CI release — stops after `plan`:
+nothing is built, nothing is published, and no chart pull request is opened.
 
 ## What is published
 
-Nine images, each a `linux/amd64` + `linux/arm64` manifest list, to **both** registries:
+The images that changed, each a `linux/amd64` + `linux/arm64` manifest list, to **both**
+registries:
 
 | Docker Hub | GHCR |
 | --- | --- |
 | `timschoenle/tankovault-<bin>` | `ghcr.io/<owner>/<repo>/<bin>`, case-folded |
 
-for `<bin>` in `api`, `bootstrap`, `worker`, `control-plane`, `notifier`, `sync`,
-`challenge-solver`, `render`, `frontend`. `xtask` is **not** among them — the deploy blacklist
-(`[workspace.metadata.deploy.exclude]`, root `Cargo.toml`) keeps it out of every registry, and
-`xtask repo-lint` fails if it appears in either matrix.
+The publishable set is `<bin>` in `api`, `bootstrap`, `worker`, `control-plane`, `notifier`,
+`sync`, `challenge-solver`, `render`, `frontend`. It is not written down in the workflow: `xtask
+release-plan` derives it from the Dockerfile's `SERVICE_BINS` minus the deploy blacklist
+(`[workspace.metadata.deploy.exclude]`, root `Cargo.toml`), which is what keeps `xtask` — a task
+runner with a `reset` command — out of every registry. `repo-lint` fails if `release-please.yaml`
+starts naming its images literally again, because a literal would publish a hand-maintained list
+while every other gate stayed green.
 
-Tags per release: `vX.Y.Z`, `X.Y` and `latest`. Every published manifest-list digest is signed
-with cosign keyless and carries an SPDX SBOM attestation.
+Tags per published release: `vX.Y.Z`, `X.Y` and `latest`. Every published manifest-list digest is
+signed with cosign keyless and carries an SPDX SBOM attestation.
+
+**A service that did not change gets no tag for that release.** `timschoenle/tankovault-api:v1.0.1`
+does not exist if `api` was untouched in v1.0.1, and that service's `latest` and `X.Y` stay at its
+last real build. This is deliberate in both directions: it is what makes a registry's tag set the
+record of which releases changed each service — which is where the next release reads its diff
+base from — and it means **the chart is the only complete, uniform reference surface**. Deploy
+from the chart, not from a tag you assumed exists.
+
+## Which images a release rebuilds
+
+`xtask release-plan` decides, and it is unit-tested rather than written as shell in the workflow.
+
+Each image is diffed from *the tag it is currently published at*, resolved by asking Docker Hub
+which release tags exist for that repository — not from the previous release. A `manifest` leg
+that failed at v1.0.1 is therefore picked up at v1.0.2 instead of being skipped for good.
+
+A changed path reaches an image if:
+
+- it belongs to a workspace package that image is built from, following the `cargo metadata`
+  dependency graph (dev-dependencies excluded — they are never compiled for `cargo build --bin`);
+- or it is in the `RULES` table in [`xtask/src/release_plan.rs`](../xtask/src/release_plan.rs),
+  which covers the build inputs that belong to no package: `deploy/docker/`, `LICENSE`,
+  `THIRD-PARTY-NOTICES` and `.cargo/` reach every image; `migrations/` and `.sqlx/` belong to
+  `crates/db` because it embeds them; `openapi.json` belongs to `crates/api-client`;
+- or it is under `web/`, which reaches the `frontend` image alone. The SPA is a separate
+  workspace, so its manifest is read directly to find the host-workspace crates it depends on —
+  without that, a regenerated `api-client` would rebuild nothing at all.
+
+Two things it deliberately ignores. Documents, because no runtime stage copies one. And the
+workspace version: release-please rewrites `[workspace.package] version` in `Cargo.toml` and every
+member's version in `Cargo.lock` **on the release commit itself**, so read literally, every release
+changes every image and the whole mechanism becomes a no-op. Both files are compared with those
+versions masked. That is sound because no binary reads `CARGO_PKG_VERSION` — the version reaches an
+image only through the dependency list `cargo auditable` embeds, which is audit metadata, not
+behaviour. The consequence is that a carried-forward image's `cargo audit bin` output names the
+release it was built at, which is the truth about that binary.
+
+Anything the planner does not recognise counts as a change to **every** image, and says so in the
+log. `repo-lint`'s `build-inputs-are-classified` rule is what stops that from becoming the normal
+case: a new top-level path has to be given a verdict in `RULES` before it can reach `main`.
+
+To rebuild everything regardless — a toolchain change nothing in the tree records, a registry the
+planner cannot read — set the repository variable `RELEASE_REBUILD_ALL` to `true` before merging
+the release pull request.
 
 ## The chart hand-off
 
 Publishing an image deploys nothing. The deployable chart lives in
 [`TimSchoenle/helm-charts`](https://github.com/TimSchoenle/helm-charts/tree/main/charts/tankovault),
-and `helm-release` is what connects the two: it pins all nine services to the digests this run
-published and opens a pull request there. A pull request and not a push — the chart repository
+and `helm-release` is what connects the two: it pins the services this run published to their new
+digests and opens **one** pull request there. A pull request and not a push — the chart repository
 gates its own releases, so this workflow proposes and that one decides.
 
 It runs after `manifest`, not after `build`, because what a chart pins has to be a digest that is
 signed and SBOM-attested, and `manifest` is where both happen. Each `manifest` leg exports its
-Docker Hub manifest-list digest as an artifact; `helm-release` collects the nine. Artifacts rather
+Docker Hub manifest-list digest as an artifact; `helm-release` collects them. Artifacts rather
 than job outputs because `manifest` is a matrix and a matrix job's `outputs` are last-writer-wins.
 
 The Docker Hub digest is the one used because the chart's `repository` values name Docker Hub.
@@ -62,7 +115,7 @@ What the pull request changes:
 
 | Chart field | Value |
 | --- | --- |
-| `services.<camelCase>.image.tag`, `bootstrap.image.tag` | `vX.Y.Z@sha256:…` |
+| `services.<camelCase>.image.tag`, `bootstrap.image.tag` — **for the published services only** | `vX.Y.Z@sha256:…` |
 | `appVersion` | `X.Y.Z` — **no** `v`; that is why `helm-release` reads release-please's `version` output and not `tag_name` |
 | `version` | the chart's own version, bumped by a patch |
 
@@ -70,36 +123,77 @@ The chart's version is bumped by a patch regardless of how the application versi
 application release does not change the chart's templates. A chart change is the chart
 repository's own release.
 
+### Why a partial pin is the correct one
+
+`update-chart-version` writes the keys it is given and leaves the rest of `values.yaml` byte-for-
+byte alone. A service that did not change therefore keeps the exact `tag@digest` string it already
+had, its container image reference in the rendered Deployment is unchanged, and **Kubernetes does
+not roll it**. That is the whole point: a one-line fix in `notifier` restarts `notifier`.
+
+So the chart carries a mix of versions on purpose — `api` at `v1.0.0` beside `notifier` at
+`v1.0.1`, under `appVersion: 1.0.1`. Every entry is digest-pinned, so that mix is an accurate
+record of when each service last changed, not drift. `appVersion` names the release train.
+
+Two guards keep it from becoming drift for real:
+
+- `helm-release` compares the number of digest artifacts against the number of images `plan`
+  selected, and fails if they differ. Without it, `fail-fast: false` on `manifest` meant one
+  failed leg could produce a chart bump claiming a release that was never fully built. The old
+  "nine digests are present" reasoning no longer holds, so it was replaced with this.
+- A key that does not already exist in the chart's `values.yaml` is an error inside the action,
+  applied atomically across every key — so a rename fails loudly there rather than silently
+  skipping a service.
+
 The values keys are *derived* from the binary names (`control-plane` → `services.controlPlane`;
 `bootstrap` is a one-shot job and sits at the top level) rather than read from a table in the
-workflow. `xtask repo-lint` holds the two image matrices to the deploy blacklist, but it only
-recognises `bin: [...]` and `images=[...]` literals — a third hand-maintained list of the nine
-services would sit outside everything that keeps them in step. A key that does not already exist
-in the chart's `values.yaml` is an error inside the action, so a rename fails loudly there rather
-than silently skipping a service.
+workflow. The image set itself comes from `plan`; a hand-maintained list of the services in either
+place would sit outside everything that keeps them in step.
 
 ## Build caching
 
 `cook` and `builder` are the entire wall clock of an image build, and `builder` takes no
-`ARG BIN` — so one compile per architecture serves all nine images. Three arch-qualified BuildKit
-cache scopes carry it (a cache does not cross architectures; the `chef` base resolves to a
-different digest per platform, so every key downstream of it differs):
+`ARG BIN` — so one compile per architecture serves every image. Three arch-qualified BuildKit
+cache tags on the GHCR `buildcache` repository carry it (a cache does not cross architectures;
+the `chef` base resolves to a different digest per platform, so every key downstream of it
+differs):
 
-| Scope | Written by | Read by |
+| Tag | Written by | Read by |
 | --- | --- | --- |
 | `backend-deps-<arch>` | `ci.yml` `docker-deps`, off `main` only | every image build in both workflows |
 | `frontend-deps-<arch>` | `ci.yml` `docker-wasm-deps`, off `main` only | the `frontend` legs |
-| `release-deps-<arch>` | `release-please.yaml` `release-deps` | the 18 release legs |
+| `release-deps-<arch>` | `release-please.yaml` `release-deps` | the release legs |
 
 `release-deps` exists because both workflows fire on the push that merges the release PR, so the
-CI scopes are still at the previous commit when the release legs start — and the release commit
+CI tags are still at the previous commit when the release legs start — and the release commit
 changes `Cargo.toml`, `Cargo.lock` and `CHANGELOG.md`, which misses `builder`'s `COPY . .`.
-Without the warm-up all eighteen legs recompiled the workspace independently.
+Without the warm-up every leg recompiled the workspace independently.
 
-Two rules keep the 10 GB per-repository LRU budget from evicting the one layer that matters:
-pull requests import but never export (a PR-scoped cache is unreadable from anywhere else and
-still consumes the budget), and no image leg ever sets `cache-to` — `mode=max` re-exports
-imported layers, so each leg would upload its own copy of the multi-gigabyte `cook` layer.
+`SERVICE_BINS` is narrowed to the planned set, which drops a thin-LTO link (`codegen-units = 1`)
+for every image not being published. It comes from one place — `plan`'s `service_bins` output —
+and is passed to the warm-up and to both `build-push-action` calls in every leg. Those three have
+to stay the same string: the value is part of the `builder` layer's cache key, so a warm-up cooked
+under a different one is a cache the legs cannot read. It no longer matches `ci.yml`'s default,
+which costs nothing, because the release commit misses `backend-deps-<arch>`'s `COPY . .`
+regardless; `cook` sits above the ARG and still hits.
+
+The `plan` job has **no** compilation cache, and that is the one place the rule below costs
+something real: `xtask` reaches the API crate, so building it compiles most of the backend from
+cold on every release — minutes, in front of everything else. A `Swatinem/rust-cache` would remove
+that and would also make a writable cache an input to the job that decides what a signed release
+publishes, in the one workflow holding `packages: write` and `id-token: write`. That is the
+cache-poisoning class zizmor audits for, and it is not worth those minutes. The job drops debug
+info and incremental compilation instead (`CARGO_PROFILE_DEV_DEBUG: none`, `CARGO_INCREMENTAL: 0`),
+which is most of a dev-profile build's cost and none of its meaning for a program that prints three
+lines and exits.
+
+If that cold build ever becomes the release's long pole, the fix is to put `xtask`'s database and
+OpenAPI dependencies behind a default-on feature — `ci`, `repo-lint`, `coverage-ratchet`,
+`notices`, `config-docs` and `release-plan` need none of them — not to add a cache here.
+
+Two rules keep the warm layer from being trampled: pull requests import but never export, and no
+image leg ever sets `cache-to` — `mode=max` re-exports imported layers, so each leg would upload
+its own copy of the multi-gigabyte `cook` layer into a tag CI also reads. A release build is the
+one build that must not poison what CI reads.
 
 ## Licensing of what is published
 
@@ -128,10 +222,10 @@ This is what the two former gates were waiting on:
 | --- | --- | --- |
 | `RELEASE_BOT_APP_ID`, `RELEASE_BOT_PRIVATE_KEY` | `release` environment secret | release-please, update-lockfile, helm-release |
 | `ACTIONS_MAINTENANCE_APP_ID`, `ACTIONS_MAINTENANCE_PRIVATE_KEY` | repository secret | auto-merge |
-| `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | `release` environment secret | image publish |
+| `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | `release` environment secret | `plan` (reading the published tag set), image publish |
 
 Every job that reads one of these names an `environment: release` with `deployment: false` —
-`release-please`, `update-lockfile`, `helm-release`, and both publish jobs, `build` and
+`release-please`, `update-lockfile`, `helm-release`, `plan`, and both publish jobs, `build` and
 `manifest`. That is not optional and it fails quietly: a job that omits the environment reads the
 secret as an empty
 string, so `docker/login-action` reports "Username and password required" and
@@ -173,6 +267,26 @@ manifests, every `--locked` build fails (`xtask ci`, `msrv`, `supply-chain`, and
 Dockerfile's `cargo auditable build --release --locked`), and the PR can never go green. That is
 a deadlock, not a flaky failure.
 
+## Why one version, and not a release-please component per service
+
+Publishing only what changed is the job release-please's multi-package mode looks built for: nine
+`packages` entries, `separate-pull-requests: false` for a single pull request, a version and a
+changelog each. It is the wrong tool here, for one decisive reason and two expensive ones.
+
+The decisive one: **release-please attributes a commit to a component by path prefix.** A change
+under `crates/domain/` sits inside no service's directory, so it would release nothing — and every
+image that depends on it would silently stay on old code. That is precisely the failure the deploy
+blacklist and `repo-lint` exist to prevent, reintroduced at the level above. Deciding what changed
+needs the Cargo dependency graph, which release-please has no view of; `xtask release-plan` does,
+and it runs at publish time where that graph is available.
+
+The expensive ones: nine independent versions cannot come from `[workspace.package] version`, so
+every member would carry its own — undoing the reasoning in the section above — and `appVersion`
+would lose any single value to hold.
+
+So release-please keeps deciding *one* version for the repository, on its own unchanged job, and
+the publish path decides which images that version needs.
+
 ## Commit types that appear in the changelog
 
 `feat`, `fix`, `perf`, `revert`, `docs`, `refactor`, `test`, `style`, `ci`, `build`, `chore`,
@@ -186,6 +300,13 @@ cosign verify \
   --certificate-identity-regexp 'https://github\.com/<owner>/<repo>/\.github/workflows/release-please\.yaml@.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   timschoenle/tankovault-api:vX.Y.Z
+```
+
+`vX.Y.Z` here is a tag that service actually has. If it was not rebuilt for that release the tag
+does not exist — list what does, or read the digest out of the chart:
+
+```sh
+docker buildx imagetools inspect timschoenle/tankovault-api:latest
 ```
 
 ## What was replaced

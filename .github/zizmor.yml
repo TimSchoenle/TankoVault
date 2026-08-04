@@ -18,6 +18,9 @@ rules:
       # job runs `clippy --fix` and formats the generated client, so the clippy and rustfmt it
       # uses must be the ones `fmt + clippy` will then judge the result with.
       - auto-fix.yaml
+      # The `plan` job builds `xtask release-plan`, which decides which images the release
+      # publishes. Same action and same reasoning as above.
+      - release-please.yaml
 
   # Pinned to a `master` commit deliberately: the only release tag, `v1`, has not moved since
   # 2025-08 and predates the toolchains this workspace builds with. Still an immutable pin, and
@@ -27,3 +30,4 @@ rules:
       - ci.yml
       - update-lockfile.yaml
       - auto-fix.yaml
+      - release-please.yaml

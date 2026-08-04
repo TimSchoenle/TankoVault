@@ -7,6 +7,7 @@ mod config_docs;
 mod coverage;
 mod notices;
 mod prune_chapters;
+mod release_plan;
 mod repo_lint;
 
 use progenitor_impl::{GenerationSettings, Generator, InterfaceStyle, TypePatch};
@@ -26,6 +27,23 @@ async fn main() -> anyhow::Result<()> {
 
     if cmd == "repo-lint" {
         return repo_lint::run(workspace_root());
+    }
+
+    // `--all` is the escape hatch the release workflow reaches for when the rebuild decision
+    // cannot be trusted: a pin that would not resolve, or `RELEASE_REBUILD_ALL` set by hand.
+    if cmd == "release-plan" {
+        let argument = std::env::args().nth(2).unwrap_or_default();
+        if argument == "--all" {
+            return release_plan::run(workspace_root(), None, true);
+        }
+        if argument.is_empty() {
+            anyhow::bail!("usage: xtask release-plan <bases.json>|--all");
+        }
+        return release_plan::run(
+            workspace_root(),
+            Some(std::path::Path::new(&argument)),
+            false,
+        );
     }
 
     if cmd == "coverage-ratchet" {
@@ -79,7 +97,8 @@ async fn main() -> anyhow::Result<()> {
             eprintln!(
                 "unknown command {other:?}; usage: xtask \
                  <migrate|reset|seed|prune-chapters [--apply]|openapi [--check]|\
-                 config-docs [--check]|notices [--check]|sqlx-prepare [--check]>"
+                 config-docs [--check]|notices [--check]|sqlx-prepare [--check]|\
+                 release-plan <bases.json>|--all>"
             );
             std::process::exit(2);
         }

@@ -92,6 +92,12 @@ Note that `BIN` selects which *already-compiled* binary the runtime layer copies
 gets compiled: the `builder` stage builds all nine at once, so the second and subsequent images
 in a session are a `COPY` onto `scratch` and cost seconds.
 
+What decides "all nine" is `ARG SERVICE_BINS`, whose default is the full list. A release
+overrides it with the images that release actually publishes (`xtask release-plan`, see
+[docs/RELEASING.md](../docs/RELEASING.md)), which drops a thin-LTO link per image it is not
+building. `BIN` must be one of the names in `SERVICE_BINS`, or the final `COPY` has nothing to
+take.
+
 ### Reproducible & cached builds
 All base images are pinned by digest, cargo resolves against the committed `Cargo.lock`
 (`--locked`), and passing `SOURCE_DATE_EPOCH` clamps image layer timestamps so repeated

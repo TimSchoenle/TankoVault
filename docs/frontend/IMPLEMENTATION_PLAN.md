@@ -194,8 +194,8 @@ Home.
 - Search input (leading `Icon::Search`, trailing `⌘K` mono chip) — keep the Enter→
   `Search { q }` behavior; add a real `⌘K`/`Ctrl+K` global key handler focusing it.
 - Flex spacer.
-- **"AniList synced" pill** (`Icon::CloudDone`, jade) — **static/stub** until sync status has
-  an endpoint (`TODO(api): GET /v1/me/integrations`).
+- ~~**"AniList synced" pill**~~ — removed; link status lives in Account → Sync, the surface that
+  can act on it.
 - **Notifications bell** with the live unread badge (reuse `UnreadBadge` context) → links to
   `Notifications`.
 

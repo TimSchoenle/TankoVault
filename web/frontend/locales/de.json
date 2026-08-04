@@ -982,8 +982,6 @@
     "yearsAgo": "vor {count} J."
   },
   "topbar": {
-    "anilistConnect": "AniList verbinden",
-    "anilistSynced": "Mit AniList synchronisiert",
     "searchPlaceholder": "Serien, Tags, Autoren suchen…",
     "unreadCount": {
       "one": "{count} ungelesene Benachrichtigung",

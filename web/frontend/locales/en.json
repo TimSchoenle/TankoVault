@@ -982,8 +982,6 @@
     "yearsAgo": "{count}y ago"
   },
   "topbar": {
-    "anilistConnect": "Connect AniList",
-    "anilistSynced": "AniList synced",
     "searchPlaceholder": "Search series, tags, authors…",
     "unreadCount": {
       "one": "{count} unread notification",

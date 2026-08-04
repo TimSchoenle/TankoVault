@@ -764,6 +764,9 @@
     "failed": "Etwas ist schiefgelaufen: {message}",
     "signInGate": "Melde dich an, um das zu sehen."
   },
+  "footer": {
+    "openSource": "Open Source"
+  },
   "greeting": {
     "afternoon": "Guten Tag",
     "evening": "Guten Abend",
@@ -795,6 +798,7 @@
   "nav": {
     "account": "Konto",
     "accountSettings": "Kontoeinstellungen",
+    "alerts": "Meldungen",
     "console": "Konsole",
     "discover": "Entdecken",
     "group": {
@@ -804,6 +808,8 @@
       "operator": "BETRIEB"
     },
     "home": "Start",
+    "language": "Sprache",
+    "more": "Mehr",
     "notices": "Open-Source-Hinweise",
     "notifications": "Benachrichtigungen",
     "railLabel": "Hauptnavigation",

@@ -1,5 +1,6 @@
 //! Reusable Inkstone UI components (design §17.3/§17.4).
 
+mod bottombar;
 mod confirm;
 mod cover;
 mod data;
@@ -12,6 +13,7 @@ mod shell;
 mod tabs;
 mod topbar;
 
+pub(crate) use bottombar::BottomTabs;
 pub(crate) use confirm::{InlineConfirm, TypeToConfirm};
 pub(crate) use cover::{Cover, CoverCard};
 pub(crate) use data::{HealthPill, Kpi};

@@ -273,7 +273,14 @@ a { color: inherit; text-decoration: none; }
 }
 .ik-input::placeholder { color: var(--faint); }
 .ik-input:focus { border-color: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 25%, transparent); }
+/* Small viewports only (revealed in the ≤820px block): with the rail gone, the bar is the
+ * only thing left that says which screen you are on. */
+.ik-topbar-page { display: none; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.ik-topbar-page .nm { font-family: var(--font-display); font-weight: 600; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ik-brand-tile.sm { width: 30px; height: 30px; border-radius: 9px; box-shadow: none; }
 .ik-topbar-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+/* The ⌘K field's stand-in below 820px; `.wide-only` is its inverse. */
+.ik-bell.compact { display: none; }
 .ik-bell { position: relative; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; color: var(--text-3); border: 1px solid var(--border-ctl); background: var(--surface); }
 .ik-bell:hover { border-color: var(--acc); color: var(--text); }
 .ik-bell .dot { position: absolute; top: 5px; right: 6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--acc); color: #fff; font-family: var(--font-mono); font-size: 10px; display: grid; place-items: center; }

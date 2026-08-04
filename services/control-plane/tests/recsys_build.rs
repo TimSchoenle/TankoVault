@@ -12,7 +12,7 @@
 #![cfg(feature = "integration")]
 
 use tankovault_config::MatchingConfig;
-use tankovault_control_plane::recsys::{BuildBudget, build};
+use tankovault_control_plane::recsys::{BuildTuning, build};
 use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert, ingest_series};
 use tankovault_db::repo::matching::merge_series;
 use tankovault_db::repo::recsys;
@@ -21,14 +21,10 @@ use tankovault_test_support::{TestDb, seed};
 
 /// Small batches on purpose: the paging is part of what this exercises, and a batch larger than
 /// the fixture would walk the whole catalogue in one page and prove nothing about the cursor.
-fn budget() -> BuildBudget {
-    BuildBudget {
-        batch: 3,
-        incremental_max: 100,
-        dense_input_cap: 64,
-        hnsw_m: 16,
-        hnsw_ef_construction: 64,
-    }
+fn budget() -> BuildTuning {
+    let mut tuning = BuildTuning::defaults(3, 100);
+    tuning.budget.dense_input_cap = 64;
+    tuning
 }
 
 /// A series with the tags and authors that decide where it lands.

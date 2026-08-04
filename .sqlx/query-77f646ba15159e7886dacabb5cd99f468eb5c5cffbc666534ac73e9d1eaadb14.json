@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (SELECT count(*) FROM series)                                AS \"series_total!\", (SELECT count(*) FROM series_features)                      AS \"with_features!\", (SELECT count(*) FROM series_embedding)                     AS \"with_embedding!\", (SELECT count(*) FROM series_prior WHERE recommendable)     AS \"recommendable!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "with_features!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "with_embedding!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "recommendable!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "77f646ba15159e7886dacabb5cd99f468eb5c5cffbc666534ac73e9d1eaadb14"
+}

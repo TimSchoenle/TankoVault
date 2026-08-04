@@ -1,6 +1,7 @@
 //! Turning retrieved candidates into a shelf: blending the retrieval paths, then diversifying.
 
 use std::collections::HashMap;
+use tankovault_domain::Tunable;
 
 /// Which retrieval path produced a candidate.
 ///
@@ -19,19 +20,59 @@ pub enum Path {
     Prior,
 }
 
-impl Path {
-    /// The weight this path carries in the blend.
+/// How much each retrieval path carries in the blend, as an operator has it set.
+///
+/// Threaded in rather than read from a global for the same reason [`crate::AffinityParams`] is:
+/// [`blend`] is a pure function and has to be testable at settings other than the live one.
+///
+/// [`Default`] reads the compiled defaults out of [`Tunable`], so the registry the console edits
+/// is the only copy of these numbers.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PathWeights {
+    /// `recsys.score.weight.knn` — neighbours of a series the reader already likes.
+    pub seed: f32,
+    /// `recsys.score.weight.profile` — neighbours of the reader's centre of gravity.
+    pub profile: f32,
+    /// `recsys.score.weight.prior` — the catalogue's popularity.
+    pub prior: f32,
+    /// How far the exact-feature path sits above [`Self::seed`].
     ///
-    /// Ordering, not tuning: precision paths above recall paths, and the prior last because it
-    /// knows nothing about the reader. `Exact` sits at the top because sharing an author is close
-    /// to a certain recommendation and it is exactly what the dense space cannot see.
+    /// Ordering, not tuning, and therefore not in the registry: sharing an author is close to a
+    /// certain recommendation and it is precisely what the dense space cannot represent, so it
+    /// has to outrank a neighbour hit *whatever* the content weight is set to. Expressed as a
+    /// multiplier so that moving `weight.knn` moves both content paths together, which is what an
+    /// operator reaching for that knob means.
+    pub exact_premium: f32,
+}
+
+impl Default for PathWeights {
+    fn default() -> Self {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the score weights range over 0..=10"
+        )]
+        let at = |tunable: Tunable| tunable.default_value() as f32;
+        Self {
+            seed: at(Tunable::ScoreWeightKnn),
+            profile: at(Tunable::ScoreWeightProfile),
+            prior: at(Tunable::ScoreWeightPrior),
+            exact_premium: EXACT_PREMIUM,
+        }
+    }
+}
+
+/// The exact path's standing premium over the seed path; see [`PathWeights::exact_premium`].
+pub const EXACT_PREMIUM: f32 = 1.10;
+
+impl PathWeights {
+    /// The weight this set assigns to `path`.
     #[must_use]
-    pub const fn weight(self) -> f32 {
-        match self {
-            Self::Exact => 1.10,
-            Self::Seed => 1.00,
-            Self::Profile => 0.70,
-            Self::Prior => 0.25,
+    pub fn weight(&self, path: Path) -> f32 {
+        match path {
+            Path::Exact => self.seed * self.exact_premium,
+            Path::Seed => self.seed,
+            Path::Profile => self.profile,
+            Path::Prior => self.prior,
         }
     }
 }
@@ -72,6 +113,7 @@ pub struct Scored<Id> {
 #[must_use]
 pub fn blend<Id: Copy + Eq + std::hash::Hash + Ord>(
     candidates: &[Candidate<Id>],
+    weights: &PathWeights,
 ) -> Vec<Scored<Id>> {
     let mut best_of_path: HashMap<Path, f32> = HashMap::new();
     for candidate in candidates {
@@ -88,7 +130,7 @@ pub fn blend<Id: Copy + Eq + std::hash::Hash + Ord>(
             .copied()
             .filter(|value| *value > f32::EPSILON)
             .unwrap_or(1.0);
-        let contribution = candidate.path.weight() * (candidate.score / ceiling);
+        let contribution = weights.weight(candidate.path) * (candidate.score / ceiling);
 
         let entry = totals
             .entry(candidate.id)
@@ -96,7 +138,7 @@ pub fn blend<Id: Copy + Eq + std::hash::Hash + Ord>(
         entry.0 += contribution;
         // The explanation comes from the strongest single path, not the last one seen — otherwise
         // it depends on retrieval order, which is not a fact about the recommendation.
-        if candidate.path.weight() > entry.2.weight() {
+        if weights.weight(candidate.path) > weights.weight(entry.2) {
             entry.1 = candidate.because;
             entry.2 = candidate.path;
         }
@@ -116,11 +158,6 @@ pub fn blend<Id: Copy + Eq + std::hash::Hash + Ord>(
     scored.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.id.cmp(&b.id)));
     scored
 }
-
-/// How much the ranking is allowed to give up for variety, in `[0, 1]`.
-///
-/// 1.0 is pure relevance. Lower trades score for distance from what has already been picked.
-pub const DIVERSITY_LAMBDA: f32 = 0.7;
 
 /// Re-rank for variety: maximal marginal relevance.
 ///
@@ -237,10 +274,13 @@ mod tests {
     /// popularity ranking.
     #[test]
     fn a_paths_scale_does_not_decide_the_ranking() {
-        let ranked = blend(&[
-            candidate(1, Path::Seed, 0.9),
-            candidate(2, Path::Prior, 900.0),
-        ]);
+        let ranked = blend(
+            &[
+                candidate(1, Path::Seed, 0.9),
+                candidate(2, Path::Prior, 900.0),
+            ],
+            &PathWeights::default(),
+        );
         assert_eq!(
             ranked[0].id, 1,
             "the seed match must outrank the popular one despite a 1000x raw score"
@@ -250,40 +290,92 @@ mod tests {
     /// Agreement between paths is stronger evidence than either alone.
     #[test]
     fn a_candidate_found_by_several_paths_outranks_one_found_by_the_best_alone() {
-        let ranked = blend(&[
-            candidate(1, Path::Exact, 1.0),
-            candidate(2, Path::Seed, 1.0),
-            candidate(2, Path::Profile, 1.0),
-            candidate(2, Path::Exact, 1.0),
-        ]);
+        let ranked = blend(
+            &[
+                candidate(1, Path::Exact, 1.0),
+                candidate(2, Path::Seed, 1.0),
+                candidate(2, Path::Profile, 1.0),
+                candidate(2, Path::Exact, 1.0),
+            ],
+            &PathWeights::default(),
+        );
         assert_eq!(ranked[0].id, 2, "three agreeing paths must beat one");
     }
 
     /// The explanation must come from the strongest path, not from retrieval order.
     #[test]
     fn the_explanation_comes_from_the_strongest_path() {
-        let ranked = blend(&[
-            Candidate {
-                id: 7,
-                path: Path::Prior,
-                score: 1.0,
-                because: None,
-            },
-            Candidate {
-                id: 7,
-                path: Path::Exact,
-                score: 1.0,
-                because: Some(42),
-            },
-            Candidate {
-                id: 7,
-                path: Path::Profile,
-                score: 1.0,
-                because: Some(99),
-            },
-        ]);
+        let ranked = blend(
+            &[
+                Candidate {
+                    id: 7,
+                    path: Path::Prior,
+                    score: 1.0,
+                    because: None,
+                },
+                Candidate {
+                    id: 7,
+                    path: Path::Exact,
+                    score: 1.0,
+                    because: Some(42),
+                },
+                Candidate {
+                    id: 7,
+                    path: Path::Profile,
+                    score: 1.0,
+                    because: Some(99),
+                },
+            ],
+            &PathWeights::default(),
+        );
         assert_eq!(ranked[0].because, Some(42));
         assert_eq!(ranked[0].path, Path::Exact);
+    }
+
+    /// **Turning a path's weight down has to demote what that path found.**
+    ///
+    /// The bug this pins is §8.4's: a weight published in the tuning console that reaches no
+    /// arithmetic. The blend rank-normalises each path against its own best candidate, so a
+    /// weight that were dropped on the floor would leave the ranking looking entirely sensible
+    /// while every knob on this page did nothing.
+    #[test]
+    fn a_paths_weight_decides_which_path_wins() {
+        let candidates = [
+            candidate(1, Path::Seed, 1.0),
+            candidate(2, Path::Prior, 1.0),
+        ];
+
+        let shipped = blend(&candidates, &PathWeights::default());
+        assert_eq!(shipped[0].id, 1, "at the defaults the seed hit leads");
+
+        let prior_heavy = blend(
+            &candidates,
+            &PathWeights {
+                seed: 0.1,
+                prior: 5.0,
+                ..PathWeights::default()
+            },
+        );
+        assert_eq!(
+            prior_heavy[0].id, 2,
+            "raising the prior weight above the seed weight must reorder the shelf"
+        );
+    }
+
+    /// The exact path outranks the seed path at every content weight, because sharing an author
+    /// is a fact the dense space cannot represent at all.
+    #[test]
+    fn the_exact_path_keeps_its_premium_over_the_seed_path() {
+        for seed in [0.1_f32, 1.0, 9.9] {
+            let weights = PathWeights {
+                seed,
+                ..PathWeights::default()
+            };
+            assert!(
+                weights.weight(Path::Exact) > weights.weight(Path::Seed),
+                "exact must lead seed at weight {seed}"
+            );
+        }
     }
 
     /// Identical inputs must produce an identical shelf, every time.
@@ -295,17 +387,23 @@ mod tests {
             candidate(2, Path::Seed, 0.5),
         ];
         for _ in 0..10 {
-            let ids: Vec<u32> = blend(&input).into_iter().map(|s| s.id).collect();
+            let ids: Vec<u32> = blend(&input, &PathWeights::default())
+                .into_iter()
+                .map(|s| s.id)
+                .collect();
             assert_eq!(ids, vec![1, 2, 3]);
         }
     }
 
     #[test]
     fn a_degenerate_path_does_not_divide_by_zero() {
-        let ranked = blend(&[
-            candidate(1, Path::Prior, 0.0),
-            candidate(2, Path::Seed, 0.5),
-        ]);
+        let ranked = blend(
+            &[
+                candidate(1, Path::Prior, 0.0),
+                candidate(2, Path::Seed, 0.5),
+            ],
+            &PathWeights::default(),
+        );
         assert!(ranked.iter().all(|s| s.score.is_finite()));
         assert_eq!(ranked[0].id, 2);
     }
@@ -347,7 +445,12 @@ mod tests {
                 0.0
             }
         };
-        let picked = diversify(&ranked, 2, DIVERSITY_LAMBDA, similarity);
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the shipped lambda is a small ratio"
+        )]
+        let lambda = Tunable::DiversityLambda.default_value() as f32;
+        let picked = diversify(&ranked, 2, lambda, similarity);
         assert_eq!(picked[0].id, 1, "the best pick is still first");
         assert_eq!(
             picked[1].id, 4,
@@ -411,7 +514,14 @@ mod tests {
             calls.set(calls.get() + 1);
             sim(a, b)
         };
-        let picked = diversify(&ranked, 10, DIVERSITY_LAMBDA, counted);
+        // The shipped lambda, read out of the registry rather than a local constant: the two
+        // forms have to agree at the setting production actually runs.
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the shipped lambda is a small ratio"
+        )]
+        let lambda = Tunable::DiversityLambda.default_value() as f32;
+        let picked = diversify(&ranked, 10, lambda, counted);
         let incremental_calls = calls.get();
 
         // The naive form, written out here so the comparison is against something readable.
@@ -428,8 +538,7 @@ mod tests {
                         .fold(0.0, f32::max);
                     (
                         index,
-                        DIVERSITY_LAMBDA
-                            .mul_add(candidate.score, -((1.0 - DIVERSITY_LAMBDA) * closest)),
+                        lambda.mul_add(candidate.score, -((1.0 - lambda) * closest)),
                     )
                 })
                 .fold(

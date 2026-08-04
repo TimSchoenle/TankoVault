@@ -97,6 +97,30 @@ pub async fn create_embedding_index(pool: &PgPool, m: i32, ef_construction: i32)
     Ok(())
 }
 
+/// Set `hnsw.ef_search` for the searches that follow on this connection.
+///
+/// Takes a `&mut PgConnection`, not a pool, and that is the whole point: `SET` is per session, so
+/// setting it "on the pool" would configure whichever connection happened to serve the call and
+/// leave the searches that follow running on a different one at whatever the last caller left
+/// behind. A request that wants a recall setting has to hold the connection it searches on.
+///
+/// The value is clamped to what pgvector accepts rather than interpolated as given; see
+/// [`create_embedding_index`] for why an index parameter cannot be a bind parameter.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn set_ef_search(conn: &mut sqlx::PgConnection, ef_search: i64) -> DbResult<()> {
+    let ef_search = ef_search.clamp(1, 1000);
+    // `AssertSqlSafe` because `SET` takes no bind parameters. The audit it demands is the clamp
+    // above: nothing reaches the format string but a small integer.
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "SET hnsw.ef_search = {ef_search}"
+    )))
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
 /// The row both neighbour searches read.
 #[derive(FromRow)]
 struct NeighbourRow {

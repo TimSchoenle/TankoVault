@@ -304,6 +304,10 @@ async fn serve_once(
     // stored decisions, or a restart would briefly re-enable everything switched off.
     let features =
         tankovault_api::install_feature_gate(pool.clone(), &cfg.features, shutdown.clone()).await;
+    // Same timer, and awaited for the same reason: a shelf built from compiled defaults while
+    // the operator's tuning sits unread is a behaviour change nobody asked for.
+    let tunables =
+        tankovault_api::install_tunables(pool.clone(), &cfg.features, shutdown.clone()).await;
 
     // One client for every internal hop, with connect and request timeouts — without them, a
     // hung downstream leaks a task and a socket per request.
@@ -349,6 +353,7 @@ async fn serve_once(
         stream_tickets,
         audit,
         features,
+        tunables,
         cookie_secure: cfg.auth.cookie_secure,
         webauthn,
         mailer,

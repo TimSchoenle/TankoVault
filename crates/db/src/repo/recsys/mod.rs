@@ -20,13 +20,13 @@ mod prior;
 mod reader;
 
 pub use build::{
-    BuildState, claim_repair_batch, delete_stale_generations, enqueue_repair, finish_build,
-    list_stale_series, read_basis, read_build_state, repair_depth, start_build, update_build_stage,
-    write_basis,
+    BuildState, ModelCoverage, claim_repair_batch, delete_stale_generations, enqueue_repair,
+    finish_build, list_stale_series, read_basis, read_build_state, read_model_coverage,
+    repair_depth, start_build, update_build_stage, write_basis,
 };
 pub use embedding::{
     Neighbour, create_embedding_index, embedding_of, mean_embedding, nearest_excluding,
-    nearest_neighbours, write_embeddings,
+    nearest_neighbours, set_ef_search, write_embeddings,
 };
 pub use features::{
     ExactMatch, FeatureRow, InternedFeature, SeriesFactsRow, count_feature_documents,

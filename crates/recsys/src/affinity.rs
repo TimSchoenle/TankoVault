@@ -4,24 +4,67 @@
 //! reading depth, when either last moved. There is no rating column and this design does not add
 //! one: implicit feedback is sufficient and does not require asking users to do work.
 
-use tankovault_domain::WatchStatus;
+use tankovault_domain::{Tunable, WatchStatus};
 
-/// The reading depth at which a reader is treated as fully committed.
+/// The shape of the affinity curve, as an operator has it set.
 ///
-/// Depth is measured in *absolute chapters*, not as a fraction of the series. A fraction punishes
-/// the reader at chapter 300 of a 900-chapter ongoing for being two thirds from an end that does
-/// not exist yet, which is the opposite of what the data means. Past this knee more chapters add
-/// nothing to the *classification* — someone who has cleared sixty chapters has committed.
-pub const ENGAGEMENT_KNEE: f32 = 60.0;
-
-/// Half-life of the recency decay, in days.
-pub const RECENCY_HALF_LIFE_DAYS: f32 = 180.0;
-
-/// The floor the recency decay never falls through.
+/// Threaded in as a parameter rather than read from a global: these are pure functions, and a
+/// process-wide value would make them untestable at any setting but the live one — and would put
+/// a lock acquisition inside a loop over a reader's whole watchlist.
 ///
-/// An unfloored decay collapses a dormant reader's profile to noise. An all-time favourite read
-/// five years ago is still evidence about taste; it is simply weaker evidence than last week.
-pub const RECENCY_FLOOR: f32 = 0.30;
+/// [`Default`] reads the compiled defaults out of [`Tunable`], so there is no second copy of the
+/// numbers to drift from the registry the console edits.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AffinityParams {
+    /// Affinity for a finished series — the reference the others are read against.
+    pub base_completed: f32,
+    /// Base for a series currently being read, before depth scaling.
+    pub base_reading: f32,
+    /// Base for a paused series, before depth scaling.
+    pub base_paused: f32,
+    /// Base for a plan-to-read entry: intent, not taste, so it takes no depth scaling.
+    pub base_planned: f32,
+    /// Affinity for a series abandoned immediately. Negative.
+    pub dropped_floor: f32,
+    /// How far a fully committed reader claws back from [`Self::dropped_floor`].
+    pub dropped_span: f32,
+    /// Chapters at which a reader counts as fully committed.
+    ///
+    /// Depth is measured in *absolute chapters*, not as a fraction of the series. A fraction
+    /// punishes the reader at chapter 300 of a 900-chapter ongoing for being two thirds from an
+    /// end that does not exist yet, which is the opposite of what the data means.
+    pub engagement_knee: f32,
+    /// Days after which a signal counts half as much.
+    pub recency_half_life_days: f32,
+    /// The floor the recency decay never falls through.
+    ///
+    /// An unfloored decay collapses a dormant reader's profile to noise. An all-time favourite
+    /// read five years ago is still evidence about taste; it is simply weaker evidence than last
+    /// week.
+    pub recency_floor: f32,
+}
+
+impl Default for AffinityParams {
+    fn default() -> Self {
+        // Narrowing from the registry's `f64`: every one of these ranges is far inside `f32`.
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "affinity ranges are all within [-1, 3650]"
+        )]
+        let at = |tunable: Tunable| tunable.default_value() as f32;
+        Self {
+            base_completed: at(Tunable::AffinityBaseCompleted),
+            base_reading: at(Tunable::AffinityBaseReading),
+            base_paused: at(Tunable::AffinityBasePaused),
+            base_planned: at(Tunable::AffinityBasePlanned),
+            dropped_floor: at(Tunable::AffinityDroppedFloor),
+            dropped_span: at(Tunable::AffinityDroppedSpan),
+            engagement_knee: at(Tunable::AffinityEngagementKnee),
+            recency_half_life_days: at(Tunable::AffinityRecencyHalfLifeDays),
+            recency_floor: at(Tunable::AffinityRecencyFloor),
+        }
+    }
+}
 
 /// What a reader has done with a series.
 #[derive(Debug, Clone, Copy)]
@@ -38,7 +81,7 @@ pub struct Interaction {
 /// Logarithmic because the difference between chapter 3 and chapter 30 says far more about
 /// whether someone is invested than the difference between chapter 300 and chapter 330.
 #[must_use]
-pub fn engagement(chapters_read: i64) -> f32 {
+pub fn engagement(chapters_read: i64, knee: f32) -> f32 {
     if chapters_read <= 0 {
         return 0.0;
     }
@@ -47,14 +90,17 @@ pub fn engagement(chapters_read: i64) -> f32 {
         reason = "chapter counts are far below f32's exact-integer range at any plausible length"
     )]
     let read = chapters_read as f32;
-    (read + 1.0).ln() / (ENGAGEMENT_KNEE + 1.0).ln()
+    // The registry floors the knee at five, but a caller can construct params by hand; a knee at
+    // or below zero would divide by a non-positive logarithm and produce a sign flip rather than
+    // an error.
+    (read + 1.0).ln() / (knee.max(1.0) + 1.0).ln()
 }
 
 /// Exponential decay with a floor, so old favourites still count for something.
 #[must_use]
-pub fn recency(age_days: f32) -> f32 {
-    let decayed = 0.5_f32.powf(age_days.max(0.0) / RECENCY_HALF_LIFE_DAYS);
-    decayed.max(RECENCY_FLOOR)
+pub fn recency(age_days: f32, half_life_days: f32, floor: f32) -> f32 {
+    let decayed = 0.5_f32.powf(age_days.max(0.0) / half_life_days.max(f32::EPSILON));
+    decayed.max(floor)
 }
 
 /// The reader's affinity for one series.
@@ -76,18 +122,24 @@ pub fn recency(age_days: f32) -> f32 {
 /// a series someone actually read two hundred chapters of, so it sits below every status that
 /// implies contact with the work.
 #[must_use]
-pub fn affinity(interaction: Interaction) -> f32 {
-    let depth = engagement(interaction.chapters_read).clamp(0.0, 1.0);
-    let decay = recency(interaction.age_days);
+pub fn affinity(interaction: Interaction, params: &AffinityParams) -> f32 {
+    let depth = engagement(interaction.chapters_read, params.engagement_knee).clamp(0.0, 1.0);
+    let decay = recency(
+        interaction.age_days,
+        params.recency_half_life_days,
+        params.recency_floor,
+    );
 
     let base = match interaction.status {
-        WatchStatus::Completed => 1.0,
+        WatchStatus::Completed => params.base_completed,
         // Scaled by depth: someone two chapters into a series is telling you much less than
-        // someone two hundred chapters in, and both are "reading".
-        WatchStatus::Reading => 0.80 * depth.mul_add(0.6, 0.4),
-        WatchStatus::Paused => 0.35 * depth.mul_add(0.6, 0.4),
-        WatchStatus::Planned => 0.25,
-        WatchStatus::Dropped => depth.mul_add(0.50, -0.60),
+        // someone two hundred chapters in, and both are "reading". The 0.4 floor is the share a
+        // held series keeps regardless of depth, and is deliberately not a knob — it is what
+        // makes "reading" mean something at chapter one.
+        WatchStatus::Reading => params.base_reading * depth.mul_add(0.6, 0.4),
+        WatchStatus::Paused => params.base_paused * depth.mul_add(0.6, 0.4),
+        WatchStatus::Planned => params.base_planned,
+        WatchStatus::Dropped => depth.mul_add(params.dropped_span, params.dropped_floor),
     };
 
     (base * decay).clamp(-1.0, 1.0)
@@ -103,6 +155,24 @@ mod tests {
             chapters_read,
             age_days: 0.0,
         }
+    }
+
+    /// The shipped curve, read out of the registry the console edits.
+    fn shipped() -> AffinityParams {
+        AffinityParams::default()
+    }
+
+    fn affinity(interaction: Interaction) -> f32 {
+        super::affinity(interaction, &shipped())
+    }
+
+    fn engagement(chapters_read: i64) -> f32 {
+        super::engagement(chapters_read, shipped().engagement_knee)
+    }
+
+    fn recency(age_days: f32) -> f32 {
+        let p = shipped();
+        super::recency(age_days, p.recency_half_life_days, p.recency_floor)
     }
 
     /// **Dropping something after 150 chapters is not the same signal as dropping it after 3.**
@@ -180,7 +250,7 @@ mod tests {
         assert!(recency(180.0) < recency(0.0));
         assert!(recency(180.0) > recency(720.0));
         assert!(
-            recency(10_000.0) >= RECENCY_FLOOR,
+            recency(10_000.0) >= shipped().recency_floor,
             "decay must not fall through the floor"
         );
     }
@@ -203,6 +273,58 @@ mod tests {
             assert!(liked > 0.0, "a favourite stays positive at {age} days");
             assert!(hated < 0.0, "a rejection stays negative at {age} days");
         }
+    }
+
+    /// **Every knob on this curve has to move the number.**
+    ///
+    /// The bug this pins is §8.4's: a value published in the tuning console that reaches nothing.
+    /// An operator changes it, sees no difference, changes it again, and concludes the page is
+    /// broken — which is indistinguishable from the page actually being broken. One assertion per
+    /// field, because a parameter struct that is threaded through but only half consumed looks
+    /// wired from every angle except the output.
+    #[test]
+    fn changing_any_affinity_parameter_changes_the_number_it_names() {
+        let reading = Interaction {
+            status: WatchStatus::Reading,
+            chapters_read: 10,
+            age_days: 200.0,
+        };
+        let moved = |mutate: fn(&mut AffinityParams), interaction: Interaction| {
+            let mut params = shipped();
+            mutate(&mut params);
+            (super::affinity(interaction, &params) - super::affinity(interaction, &shipped())).abs()
+        };
+
+        assert!(moved(|p| p.base_reading = 0.2, reading) > 1e-4, "reading");
+        assert!(moved(|p| p.engagement_knee = 500.0, reading) > 1e-4, "knee");
+        assert!(
+            moved(|p| p.recency_half_life_days = 20.0, reading) > 1e-4,
+            "half-life"
+        );
+        assert!(
+            moved(|p| p.recency_floor = 0.9, reading) > 1e-4,
+            "recency floor"
+        );
+        assert!(
+            moved(|p| p.base_completed = 0.5, at(WatchStatus::Completed, 10)) > 1e-4,
+            "completed"
+        );
+        assert!(
+            moved(|p| p.base_paused = 0.1, at(WatchStatus::Paused, 10)) > 1e-4,
+            "paused"
+        );
+        assert!(
+            moved(|p| p.base_planned = 0.9, at(WatchStatus::Planned, 0)) > 1e-4,
+            "planned"
+        );
+        assert!(
+            moved(|p| p.dropped_floor = -0.1, at(WatchStatus::Dropped, 3)) > 1e-4,
+            "dropped floor"
+        );
+        assert!(
+            moved(|p| p.dropped_span = 0.05, at(WatchStatus::Dropped, 150)) > 1e-4,
+            "dropped span"
+        );
     }
 
     #[test]

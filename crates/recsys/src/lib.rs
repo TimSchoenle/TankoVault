@@ -30,10 +30,10 @@ pub mod ranking;
 pub mod similarity;
 pub mod weighting;
 
-pub use affinity::{Interaction, affinity};
+pub use affinity::{AffinityParams, Interaction, affinity};
 pub use embedding::{Basis, GramAccumulator};
 pub use features::{FeatureKey, FeatureKind, SeriesFacts, digest, extract, length_bucket};
-pub use ranking::{Candidate, Path, Scored, blend, cap_by, diversify};
+pub use ranking::{Candidate, Path, PathWeights, Scored, blend, cap_by, diversify};
 pub use similarity::{cosine, shared_features};
 pub use weighting::{apply_idf, idf, normalise};
 

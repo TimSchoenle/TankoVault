@@ -19,7 +19,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 use std::time::Duration;
 use tankovault_bus::Bus;
-use tankovault_contracts::admin::ScanTriggeredView;
+use tankovault_contracts::admin::{RecsysBuildMode, RecsysBuildView, ScanTriggeredView};
 use tankovault_contracts::{ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
 use tankovault_domain::{Feature, Provider, ProviderId, ScanMode, ScanRunId};
@@ -27,7 +27,7 @@ use tankovault_service::health::PostgresCheck;
 use tankovault_service::problem::Problem;
 use tankovault_service::{
     CancellationToken, FeatureGate, Health, HttpStack, MetricsRegistry, PostgresFlagSource,
-    RateLimiter, RouteClassifier,
+    PostgresTunableSource, RateLimiter, RouteClassifier, TunableSet,
 };
 
 #[derive(Debug, Deserialize)]
@@ -194,8 +194,16 @@ struct AppState {
     /// The operator's runtime switches, consulted per sweep rather than at boot so an
     /// incident-time toggle takes effect without a redeploy.
     features: FeatureGate,
+    /// The recommender's tuning, read at the start of each build so a change reaches the next
+    /// run without a redeploy.
+    tunables: TunableSet,
     /// The canonicalisation policy the duplicate sweep applies.
     matching: tankovault_config::MatchingConfig,
+    /// Series per streamed batch in a model build. Configuration, not tuning (§8.1): it moves
+    /// peak memory and nothing about the output.
+    recsys_batch: i64,
+    /// Ceiling on one incremental model build.
+    recsys_incremental_max: i64,
     /// How much work one duplicate sweep may do — including how many series it may delete.
     merge_budget: dedupe::SweepBudget,
 }
@@ -258,13 +266,22 @@ async fn serve_once(
     features
         .spawn_refresh(cfg.features.refresh_interval(), shutdown.clone())
         .await;
+    let tunables = TunableSet::new(std::sync::Arc::new(PostgresTunableSource::new(
+        pool.clone(),
+    )));
+    tunables
+        .spawn_refresh(cfg.features.refresh_interval(), shutdown.clone())
+        .await;
 
     let state = AppState {
         pool: pool.clone(),
         bus: bus.clone(),
         features,
+        tunables,
         matching: cfg.matching.clone(),
         merge_budget: cfg.scheduler.merge_budget(),
+        recsys_batch: cfg.scheduler.recsys_batch,
+        recsys_incremental_max: cfg.scheduler.recsys_incremental_max,
     };
 
     // Leader election: only the elected replica runs the scheduler sweeps.
@@ -319,6 +336,7 @@ async fn serve_once(
             Router::new()
                 .route("/internal/scans", post(trigger_scan))
                 .route("/internal/merge-sweep", post(trigger_merge_sweep))
+                .route("/internal/recsys-build", post(trigger_recsys_build))
                 .with_state(state),
         )
         .merge(tankovault_service::ops_router(health, metrics));
@@ -404,6 +422,57 @@ async fn trigger_merge_sweep(
         "duplicate sweep (on demand) complete"
     );
     Ok(Json(report))
+}
+
+/// Run one model build on demand — to apply a `next_build` tuning change, or to bring a model
+/// up to date after a long outage, without waiting for the schedule.
+///
+/// Not leader-gated (it runs on the replica asked) but still gated on
+/// `catalogue.recommendations`, since the switch has to hold at the component doing the work.
+/// The build's own claim is the mutual exclusion: a run that arrives while another holds it
+/// answers `started: false` rather than queueing behind it.
+async fn trigger_recsys_build(
+    State(state): State<AppState>,
+    Json(req): Json<RecsysBuildRequest>,
+) -> Result<Json<RecsysBuildView>, Problem> {
+    if !state.features.is_enabled(Feature::CatalogueRecommendations) {
+        return Err(Problem::new(
+            StatusCode::NOT_FOUND,
+            "feature_disabled",
+            "recommendations are switched off",
+        ));
+    }
+
+    let full = req.mode == RecsysBuildMode::Full;
+    let tuning = recsys::BuildTuning::read(
+        &state.tunables,
+        state.recsys_batch,
+        state.recsys_incremental_max,
+    );
+    let report = recsys::build(&state.pool, tuning, full)
+        .await
+        .map_err(internal)?;
+
+    let view = report.map_or_else(RecsysBuildView::default, |report| RecsysBuildView {
+        started: true,
+        generation: report.generation,
+        series_built: report.series_built,
+        vocabulary: report.vocabulary,
+        dense_dims: report.dense_dims,
+    });
+    tracing::info!(
+        full,
+        started = view.started,
+        generation = view.generation,
+        series = view.series_built,
+        "recommendation model build (on demand) complete"
+    );
+    Ok(Json(view))
+}
+
+#[derive(Debug, Deserialize)]
+struct RecsysBuildRequest {
+    mode: RecsysBuildMode,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -552,15 +621,13 @@ async fn maybe_recsys_build(
         return;
     }
 
-    let budget = recsys::BuildBudget {
-        batch: cfg.recsys_batch,
-        incremental_max: cfg.recsys_incremental_max,
-        dense_input_cap: i64::try_from(tankovault_recsys::DENSE_INPUT_CAP).unwrap_or(i64::MAX),
-        hnsw_m: 16,
-        hnsw_ef_construction: 64,
-    };
+    let tuning = recsys::BuildTuning::read(
+        &state.tunables,
+        cfg.recsys_batch,
+        cfg.recsys_incremental_max,
+    );
     let started = std::time::Instant::now();
-    match recsys::build(&state.pool, budget, full).await {
+    match recsys::build(&state.pool, tuning, full).await {
         Ok(Some(report)) => {
             tracing::info!(
                 kind,

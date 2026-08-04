@@ -21,6 +21,7 @@ pub const ADMIN_SYNC_TAG: &str = "admin-sync";
 pub const ADMIN_USERS_TAG: &str = "admin-users";
 pub const ADMIN_PRIVACY_TAG: &str = "admin-privacy";
 pub const ADMIN_FLAGS_TAG: &str = "admin-feature-flags";
+pub const ADMIN_RECSYS_TAG: &str = "admin-recommendations";
 pub const ADMIN_OVERVIEW_TAG: &str = "admin-overview";
 
 /// The bearer-JWT `Authorization` header accepted by [`crate::state::AuthUser`].
@@ -76,6 +77,7 @@ impl Modify for SecurityAddon {
         (name = ADMIN_USERS_TAG, description = "User directory, identity, suspension and permission grants"),
         (name = ADMIN_PRIVACY_TAG, description = "The GDPR data-subject request queue and its fulfilment"),
         (name = ADMIN_FLAGS_TAG, description = "Runtime feature flags — the deployment control plane"),
+        (name = ADMIN_RECSYS_TAG, description = "Recommendation model health, tuning and rebuilds"),
         (name = ADMIN_OVERVIEW_TAG, description = "System stats and audit log"),
     ),
     components(schemas(
@@ -101,6 +103,10 @@ impl Modify for SecurityAddon {
     tankovault_domain::PermissionPreset,
     tankovault_domain::Feature,
     tankovault_domain::FeatureGroup,
+    tankovault_domain::Tunable,
+    tankovault_domain::TunableGroup,
+    tankovault_domain::TunableKind,
+    tankovault_domain::Applies,
     // --- domain typed ids ---
     tankovault_domain::SeriesId,
     tankovault_domain::ChapterId,
@@ -206,6 +212,13 @@ impl Modify for SecurityAddon {
     // --- admin: feature flags ---
     crate::admin::FlagView,
     crate::admin::SetFlag,
+    // --- admin: the recommender's control plane ---
+    crate::admin::TunableView,
+    crate::admin::SetTunable,
+    crate::admin::ModelHealthView,
+    crate::admin::RebuildRequest,
+    tankovault_contracts::admin::RecsysBuildMode,
+    tankovault_contracts::admin::RecsysBuildView,
     // --- admin: privacy queue ---
     crate::admin::ResolveRequest,
     crate::admin::ExtendRequest,

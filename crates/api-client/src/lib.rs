@@ -501,6 +501,84 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "When a change to a tunable actually reaches a reader.\n\nThe console shows this on every row, because it is the most likely way this surface fails a\nuser: someone raises a value baked into stored model data, sees no change, raises it again,\nand concludes the page is broken — when the truth is that the old value is what is\nphysically stored."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"When a change to a tunable actually reaches a reader.\\n\\nThe console shows this on every row, because it is the most likely way this surface fails a\\nuser: someone raises a value baked into stored model data, sees no change, raises it again,\\nand concludes the page is broken — when the truth is that the old value is what is\\nphysically stored.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"immediately\","]
+    #[doc = "    \"next_build\","]
+    #[doc = "    \"next_full_build\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum Applies {
+        #[serde(rename = "immediately")]
+        Immediately,
+        #[serde(rename = "next_build")]
+        NextBuild,
+        #[serde(rename = "next_full_build")]
+        NextFullBuild,
+    }
+    impl ::std::fmt::Display for Applies {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Immediately => f.write_str("immediately"),
+                Self::NextBuild => f.write_str("next_build"),
+                Self::NextFullBuild => f.write_str("next_full_build"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for Applies {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "immediately" => Ok(Self::Immediately),
+                "next_build" => Ok(Self::NextBuild),
+                "next_full_build" => Ok(Self::NextFullBuild),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for Applies {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for Applies {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for Applies {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
     #[doc = "`AssignRemoteEntry`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -1770,7 +1848,8 @@ pub mod types {
     #[doc = "    \"admin.audit\","]
     #[doc = "    \"admin.stats\","]
     #[doc = "    \"admin.users\","]
-    #[doc = "    \"admin.feature_flags\""]
+    #[doc = "    \"admin.feature_flags\","]
+    #[doc = "    \"admin.recommendations\""]
     #[doc = "  ]"]
     #[doc = "}"]
     #[doc = r" ```"]
@@ -1866,6 +1945,8 @@ pub mod types {
         AdminUsers,
         #[serde(rename = "admin.feature_flags")]
         AdminFeatureFlags,
+        #[serde(rename = "admin.recommendations")]
+        AdminRecommendations,
     }
     impl ::std::fmt::Display for Feature {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -1909,6 +1990,7 @@ pub mod types {
                 Self::AdminStats => f.write_str("admin.stats"),
                 Self::AdminUsers => f.write_str("admin.users"),
                 Self::AdminFeatureFlags => f.write_str("admin.feature_flags"),
+                Self::AdminRecommendations => f.write_str("admin.recommendations"),
             }
         }
     }
@@ -1955,6 +2037,7 @@ pub mod types {
                 "admin.stats" => Ok(Self::AdminStats),
                 "admin.users" => Ok(Self::AdminUsers),
                 "admin.feature_flags" => Ok(Self::AdminFeatureFlags),
+                "admin.recommendations" => Ok(Self::AdminRecommendations),
                 _ => Err("invalid value".into()),
             }
         }
@@ -3112,6 +3195,149 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "The recommendation model's current state, as an operator needs it before touching anything."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The recommendation model's current state, as an operator needs it before touching anything.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"building\","]
+    #[doc = "    \"dense_dims\","]
+    #[doc = "    \"generation\","]
+    #[doc = "    \"repair_queue_depth\","]
+    #[doc = "    \"series_built\","]
+    #[doc = "    \"series_recommendable\","]
+    #[doc = "    \"series_total\","]
+    #[doc = "    \"series_with_embedding\","]
+    #[doc = "    \"series_with_features\","]
+    #[doc = "    \"stage\","]
+    #[doc = "    \"vocabulary\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"building\": {"]
+    #[doc = "      \"description\": \"Whether a build holds the claim right now.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"dense_dims\": {"]
+    #[doc = "      \"description\": \"Width of the dense space the model was built in.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"error\": {"]
+    #[doc = "      \"description\": \"How the last run ended, when it ended badly. The builder always releases its claim, so a\\nfailure shows up here rather than as a build that never finishes.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"finished_at\": {"]
+    #[doc = "      \"description\": \"RFC 3339. When the most recent run released the claim; absent while one is running.\","]
+    #[doc = "      \"examples\": ["]
+    #[doc = "        \"2026-08-04T12:04:00Z\""]
+    #[doc = "      ],"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"generation\": {"]
+    #[doc = "      \"description\": \"The live model generation. A full build takes the next one; an incremental build patches\\nthis one.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"repair_queue_depth\": {"]
+    #[doc = "      \"description\": \"Series queued for re-embedding, most often after a merge.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"series_built\": {"]
+    #[doc = "      \"description\": \"Series the last run wrote.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"series_recommendable\": {"]
+    #[doc = "      \"description\": \"Series the model is willing to recommend. A large gap below `series_with_embedding` means\\n`recsys.build.min_features` is excluding more than intended.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"series_total\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"series_with_embedding\": {"]
+    #[doc = "      \"description\": \"Series with a projected embedding, and so reachable by neighbour retrieval.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"series_with_features\": {"]
+    #[doc = "      \"description\": \"Series with an extracted feature vector.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"stage\": {"]
+    #[doc = "      \"description\": \"What the builder is doing. `idle` between runs.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"started_at\": {"]
+    #[doc = "      \"description\": \"RFC 3339. When the current or most recent run started.\","]
+    #[doc = "      \"examples\": ["]
+    #[doc = "        \"2026-08-04T12:00:00Z\""]
+    #[doc = "      ],"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"vocabulary\": {"]
+    #[doc = "      \"description\": \"Distinct features in the vocabulary.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct ModelHealthView {
+        #[doc = "Whether a build holds the claim right now."]
+        pub building: bool,
+        #[doc = "Width of the dense space the model was built in."]
+        pub dense_dims: i32,
+        #[doc = "How the last run ended, when it ended badly. The builder always releases its claim, so a\nfailure shows up here rather than as a build that never finishes."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub error: ::std::option::Option<::std::string::String>,
+        #[doc = "RFC 3339. When the most recent run released the claim; absent while one is running."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub finished_at: ::std::option::Option<::std::string::String>,
+        #[doc = "The live model generation. A full build takes the next one; an incremental build patches\nthis one."]
+        pub generation: i32,
+        #[doc = "Series queued for re-embedding, most often after a merge."]
+        pub repair_queue_depth: i64,
+        #[doc = "Series the last run wrote."]
+        pub series_built: i32,
+        #[doc = "Series the model is willing to recommend. A large gap below `series_with_embedding` means\n`recsys.build.min_features` is excluding more than intended."]
+        pub series_recommendable: i64,
+        pub series_total: i64,
+        #[doc = "Series with a projected embedding, and so reachable by neighbour retrieval."]
+        pub series_with_embedding: i64,
+        #[doc = "Series with an extracted feature vector."]
+        pub series_with_features: i64,
+        #[doc = "What the builder is doing. `idle` between runs."]
+        pub stage: ::std::string::String,
+        #[doc = "RFC 3339. When the current or most recent run started."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub started_at: ::std::option::Option<::std::string::String>,
+        #[doc = "Distinct features in the vocabulary."]
+        pub vocabulary: i32,
+    }
+    impl ModelHealthView {
+        pub fn builder() -> builder::ModelHealthView {
+            Default::default()
+        }
+    }
     #[doc = "`NewPrivacyRequest`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3612,6 +3838,8 @@ pub mod types {
     #[doc = "    \"scans.run\","]
     #[doc = "    \"merge.read\","]
     #[doc = "    \"merge.write\","]
+    #[doc = "    \"recsys.read\","]
+    #[doc = "    \"recsys.write\","]
     #[doc = "    \"sync.admin.read\","]
     #[doc = "    \"sync.admin.write\","]
     #[doc = "    \"users.read\","]
@@ -3663,6 +3891,10 @@ pub mod types {
         MergeRead,
         #[serde(rename = "merge.write")]
         MergeWrite,
+        #[serde(rename = "recsys.read")]
+        RecsysRead,
+        #[serde(rename = "recsys.write")]
+        RecsysWrite,
         #[serde(rename = "sync.admin.read")]
         SyncAdminRead,
         #[serde(rename = "sync.admin.write")]
@@ -3705,6 +3937,8 @@ pub mod types {
                 Self::ScansRun => f.write_str("scans.run"),
                 Self::MergeRead => f.write_str("merge.read"),
                 Self::MergeWrite => f.write_str("merge.write"),
+                Self::RecsysRead => f.write_str("recsys.read"),
+                Self::RecsysWrite => f.write_str("recsys.write"),
                 Self::SyncAdminRead => f.write_str("sync.admin.read"),
                 Self::SyncAdminWrite => f.write_str("sync.admin.write"),
                 Self::UsersRead => f.write_str("users.read"),
@@ -3736,6 +3970,8 @@ pub mod types {
                 "scans.run" => Ok(Self::ScansRun),
                 "merge.read" => Ok(Self::MergeRead),
                 "merge.write" => Ok(Self::MergeWrite),
+                "recsys.read" => Ok(Self::RecsysRead),
+                "recsys.write" => Ok(Self::RecsysWrite),
                 "sync.admin.read" => Ok(Self::SyncAdminRead),
                 "sync.admin.write" => Ok(Self::SyncAdminWrite),
                 "users.read" => Ok(Self::UsersRead),
@@ -4854,6 +5090,34 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "Which kind of build to run."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Which kind of build to run.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"mode\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"mode\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/RecsysBuildMode\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct RebuildRequest {
+        pub mode: RecsysBuildMode,
+    }
+    impl RebuildRequest {
+        pub fn builder() -> builder::RebuildRequest {
+            Default::default()
+        }
+    }
     #[doc = "One recommended series and why it is here."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -4974,6 +5238,139 @@ pub mod types {
     impl ::std::convert::From<SeriesId> for RecommendationBecauseSeriesId {
         fn from(value: SeriesId) -> Self {
             Self::Variant1(value)
+        }
+    }
+    #[doc = "Which kind of recommendation-model build to run.\n\nLives here rather than in either service because both sides of the internal hop parse it: the\nAPI validates the operator's request body and the control plane acts on it. A hand-mirrored\nsecond copy is the drift this crate exists to prevent."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Which kind of recommendation-model build to run.\\n\\nLives here rather than in either service because both sides of the internal hop parse it: the\\nAPI validates the operator's request body and the control plane acts on it. A hand-mirrored\\nsecond copy is the drift this crate exists to prevent.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"incremental\","]
+    #[doc = "    \"full\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum RecsysBuildMode {
+        #[serde(rename = "incremental")]
+        Incremental,
+        #[serde(rename = "full")]
+        Full,
+    }
+    impl ::std::fmt::Display for RecsysBuildMode {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Incremental => f.write_str("incremental"),
+                Self::Full => f.write_str("full"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for RecsysBuildMode {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "incremental" => Ok(Self::Incremental),
+                "full" => Ok(Self::Full),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for RecsysBuildMode {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for RecsysBuildMode {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for RecsysBuildMode {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    #[doc = "What one recommendation-model build did.\n\nReturned by `POST /v1/admin/recommendations/rebuild`, produced by the control plane that\nactually runs the build."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What one recommendation-model build did.\\n\\nReturned by `POST /v1/admin/recommendations/rebuild`, produced by the control plane that\\nactually runs the build.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"dense_dims\","]
+    #[doc = "    \"generation\","]
+    #[doc = "    \"series_built\","]
+    #[doc = "    \"started\","]
+    #[doc = "    \"vocabulary\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"dense_dims\": {"]
+    #[doc = "      \"description\": \"Width of the dense space it projected into.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"generation\": {"]
+    #[doc = "      \"description\": \"The generation the build wrote under.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"series_built\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"started\": {"]
+    #[doc = "      \"description\": \"`false` when another build already held the claim. The correct response is to wait for\\nit, not to retry: the other build is doing this one's work, and the remaining fields are\\nzero because this call did nothing.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"vocabulary\": {"]
+    #[doc = "      \"description\": \"Distinct features in the vocabulary the build saw.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct RecsysBuildView {
+        #[doc = "Width of the dense space it projected into."]
+        pub dense_dims: i64,
+        #[doc = "The generation the build wrote under."]
+        pub generation: i32,
+        pub series_built: i64,
+        #[doc = "`false` when another build already held the claim. The correct response is to wait for\nit, not to retry: the other build is doing this one's work, and the remaining fields are\nzero because this call did nothing."]
+        pub started: bool,
+        #[doc = "Distinct features in the vocabulary the build saw."]
+        pub vocabulary: i64,
+    }
+    impl RecsysBuildView {
+        pub fn builder() -> builder::RecsysBuildView {
+            Default::default()
         }
     }
     #[doc = "`RegisterRequest`"]
@@ -6463,6 +6860,45 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "A proposed new value for one tunable."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A proposed new value for one tunable.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"value\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"note\": {"]
+    #[doc = "      \"description\": \"Why. Optional, but it is the thing the next operator needs and the audit record does not\\nsurface on this page.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"value\": {"]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SetTunable {
+        #[doc = "Why. Optional, but it is the thing the next operator needs and the audit record does not\nsurface on this page."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub note: ::std::option::Option<::std::string::String>,
+        pub value: f64,
+    }
+    impl SetTunable {
+        pub fn builder() -> builder::SetTunable {
+            Default::default()
+        }
+    }
     #[doc = "`SetUserStatus`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -7659,6 +8095,634 @@ pub mod types {
     impl ::std::convert::From<ProviderId> for TriggerScanProviderId {
         fn from(value: ProviderId) -> Self {
             Self::Variant1(value)
+        }
+    }
+    #[doc = "One operator-tunable value in the recommendation pipeline.\n\nEvery value is transported and stored as `f64` regardless of what it means; the registry\nsupplies the typing and the readers clamp. A typed column per kind would buy nothing and\ncost a schema change per knob."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One operator-tunable value in the recommendation pipeline.\\n\\nEvery value is transported and stored as `f64` regardless of what it means; the registry\\nsupplies the typing and the readers clamp. A typed column per kind would buy nothing and\\ncost a schema change per knob.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"recsys.affinity.base.completed\","]
+    #[doc = "    \"recsys.affinity.base.reading\","]
+    #[doc = "    \"recsys.affinity.base.paused\","]
+    #[doc = "    \"recsys.affinity.base.planned\","]
+    #[doc = "    \"recsys.affinity.dropped.floor\","]
+    #[doc = "    \"recsys.affinity.dropped.span\","]
+    #[doc = "    \"recsys.affinity.engagement_knee\","]
+    #[doc = "    \"recsys.affinity.recency_half_life_days\","]
+    #[doc = "    \"recsys.affinity.recency_floor\","]
+    #[doc = "    \"recsys.affinity.external_score_weight\","]
+    #[doc = "    \"recsys.retrieval.seeds\","]
+    #[doc = "    \"recsys.retrieval.ef_search\","]
+    #[doc = "    \"recsys.retrieval.ann_limit_per_seed\","]
+    #[doc = "    \"recsys.retrieval.ann_limit_profile\","]
+    #[doc = "    \"recsys.retrieval.exact_feature_limit\","]
+    #[doc = "    \"recsys.retrieval.cooccurrence_seeds\","]
+    #[doc = "    \"recsys.retrieval.candidate_cap\","]
+    #[doc = "    \"recsys.score.weight.knn\","]
+    #[doc = "    \"recsys.score.weight.profile\","]
+    #[doc = "    \"recsys.score.weight.collaborative\","]
+    #[doc = "    \"recsys.score.weight.prior\","]
+    #[doc = "    \"recsys.score.weight.negative\","]
+    #[doc = "    \"recsys.score.cross_type_multiplier\","]
+    #[doc = "    \"recsys.score.cf_shrinkage_k\","]
+    #[doc = "    \"recsys.diversity.lambda\","]
+    #[doc = "    \"recsys.diversity.max_per_author\","]
+    #[doc = "    \"recsys.diversity.max_per_tag\","]
+    #[doc = "    \"recsys.prior.weight.watchers\","]
+    #[doc = "    \"recsys.prior.weight.external_score\","]
+    #[doc = "    \"recsys.prior.weight.source_count\","]
+    #[doc = "    \"recsys.prior.weight.velocity\","]
+    #[doc = "    \"recsys.prior.watcher_confidence_k\","]
+    #[doc = "    \"recsys.build.embedding_dims\","]
+    #[doc = "    \"recsys.build.hnsw_m\","]
+    #[doc = "    \"recsys.build.hnsw_ef_construction\","]
+    #[doc = "    \"recsys.build.min_features\","]
+    #[doc = "    \"recsys.cooccurrence.min_support\","]
+    #[doc = "    \"recsys.cooccurrence.max_list_entries\","]
+    #[doc = "    \"recsys.serve.shelf_size\","]
+    #[doc = "    \"recsys.serve.shelf_ttl_seconds\","]
+    #[doc = "    \"recsys.serve.feedback_decay_days\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum Tunable {
+        #[serde(rename = "recsys.affinity.base.completed")]
+        RecsysAffinityBaseCompleted,
+        #[serde(rename = "recsys.affinity.base.reading")]
+        RecsysAffinityBaseReading,
+        #[serde(rename = "recsys.affinity.base.paused")]
+        RecsysAffinityBasePaused,
+        #[serde(rename = "recsys.affinity.base.planned")]
+        RecsysAffinityBasePlanned,
+        #[serde(rename = "recsys.affinity.dropped.floor")]
+        RecsysAffinityDroppedFloor,
+        #[serde(rename = "recsys.affinity.dropped.span")]
+        RecsysAffinityDroppedSpan,
+        #[serde(rename = "recsys.affinity.engagement_knee")]
+        RecsysAffinityEngagementKnee,
+        #[serde(rename = "recsys.affinity.recency_half_life_days")]
+        RecsysAffinityRecencyHalfLifeDays,
+        #[serde(rename = "recsys.affinity.recency_floor")]
+        RecsysAffinityRecencyFloor,
+        #[serde(rename = "recsys.affinity.external_score_weight")]
+        RecsysAffinityExternalScoreWeight,
+        #[serde(rename = "recsys.retrieval.seeds")]
+        RecsysRetrievalSeeds,
+        #[serde(rename = "recsys.retrieval.ef_search")]
+        RecsysRetrievalEfSearch,
+        #[serde(rename = "recsys.retrieval.ann_limit_per_seed")]
+        RecsysRetrievalAnnLimitPerSeed,
+        #[serde(rename = "recsys.retrieval.ann_limit_profile")]
+        RecsysRetrievalAnnLimitProfile,
+        #[serde(rename = "recsys.retrieval.exact_feature_limit")]
+        RecsysRetrievalExactFeatureLimit,
+        #[serde(rename = "recsys.retrieval.cooccurrence_seeds")]
+        RecsysRetrievalCooccurrenceSeeds,
+        #[serde(rename = "recsys.retrieval.candidate_cap")]
+        RecsysRetrievalCandidateCap,
+        #[serde(rename = "recsys.score.weight.knn")]
+        RecsysScoreWeightKnn,
+        #[serde(rename = "recsys.score.weight.profile")]
+        RecsysScoreWeightProfile,
+        #[serde(rename = "recsys.score.weight.collaborative")]
+        RecsysScoreWeightCollaborative,
+        #[serde(rename = "recsys.score.weight.prior")]
+        RecsysScoreWeightPrior,
+        #[serde(rename = "recsys.score.weight.negative")]
+        RecsysScoreWeightNegative,
+        #[serde(rename = "recsys.score.cross_type_multiplier")]
+        RecsysScoreCrossTypeMultiplier,
+        #[serde(rename = "recsys.score.cf_shrinkage_k")]
+        RecsysScoreCfShrinkageK,
+        #[serde(rename = "recsys.diversity.lambda")]
+        RecsysDiversityLambda,
+        #[serde(rename = "recsys.diversity.max_per_author")]
+        RecsysDiversityMaxPerAuthor,
+        #[serde(rename = "recsys.diversity.max_per_tag")]
+        RecsysDiversityMaxPerTag,
+        #[serde(rename = "recsys.prior.weight.watchers")]
+        RecsysPriorWeightWatchers,
+        #[serde(rename = "recsys.prior.weight.external_score")]
+        RecsysPriorWeightExternalScore,
+        #[serde(rename = "recsys.prior.weight.source_count")]
+        RecsysPriorWeightSourceCount,
+        #[serde(rename = "recsys.prior.weight.velocity")]
+        RecsysPriorWeightVelocity,
+        #[serde(rename = "recsys.prior.watcher_confidence_k")]
+        RecsysPriorWatcherConfidenceK,
+        #[serde(rename = "recsys.build.embedding_dims")]
+        RecsysBuildEmbeddingDims,
+        #[serde(rename = "recsys.build.hnsw_m")]
+        RecsysBuildHnswM,
+        #[serde(rename = "recsys.build.hnsw_ef_construction")]
+        RecsysBuildHnswEfConstruction,
+        #[serde(rename = "recsys.build.min_features")]
+        RecsysBuildMinFeatures,
+        #[serde(rename = "recsys.cooccurrence.min_support")]
+        RecsysCooccurrenceMinSupport,
+        #[serde(rename = "recsys.cooccurrence.max_list_entries")]
+        RecsysCooccurrenceMaxListEntries,
+        #[serde(rename = "recsys.serve.shelf_size")]
+        RecsysServeShelfSize,
+        #[serde(rename = "recsys.serve.shelf_ttl_seconds")]
+        RecsysServeShelfTtlSeconds,
+        #[serde(rename = "recsys.serve.feedback_decay_days")]
+        RecsysServeFeedbackDecayDays,
+    }
+    impl ::std::fmt::Display for Tunable {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::RecsysAffinityBaseCompleted => f.write_str("recsys.affinity.base.completed"),
+                Self::RecsysAffinityBaseReading => f.write_str("recsys.affinity.base.reading"),
+                Self::RecsysAffinityBasePaused => f.write_str("recsys.affinity.base.paused"),
+                Self::RecsysAffinityBasePlanned => f.write_str("recsys.affinity.base.planned"),
+                Self::RecsysAffinityDroppedFloor => f.write_str("recsys.affinity.dropped.floor"),
+                Self::RecsysAffinityDroppedSpan => f.write_str("recsys.affinity.dropped.span"),
+                Self::RecsysAffinityEngagementKnee => {
+                    f.write_str("recsys.affinity.engagement_knee")
+                }
+                Self::RecsysAffinityRecencyHalfLifeDays => {
+                    f.write_str("recsys.affinity.recency_half_life_days")
+                }
+                Self::RecsysAffinityRecencyFloor => f.write_str("recsys.affinity.recency_floor"),
+                Self::RecsysAffinityExternalScoreWeight => {
+                    f.write_str("recsys.affinity.external_score_weight")
+                }
+                Self::RecsysRetrievalSeeds => f.write_str("recsys.retrieval.seeds"),
+                Self::RecsysRetrievalEfSearch => f.write_str("recsys.retrieval.ef_search"),
+                Self::RecsysRetrievalAnnLimitPerSeed => {
+                    f.write_str("recsys.retrieval.ann_limit_per_seed")
+                }
+                Self::RecsysRetrievalAnnLimitProfile => {
+                    f.write_str("recsys.retrieval.ann_limit_profile")
+                }
+                Self::RecsysRetrievalExactFeatureLimit => {
+                    f.write_str("recsys.retrieval.exact_feature_limit")
+                }
+                Self::RecsysRetrievalCooccurrenceSeeds => {
+                    f.write_str("recsys.retrieval.cooccurrence_seeds")
+                }
+                Self::RecsysRetrievalCandidateCap => f.write_str("recsys.retrieval.candidate_cap"),
+                Self::RecsysScoreWeightKnn => f.write_str("recsys.score.weight.knn"),
+                Self::RecsysScoreWeightProfile => f.write_str("recsys.score.weight.profile"),
+                Self::RecsysScoreWeightCollaborative => {
+                    f.write_str("recsys.score.weight.collaborative")
+                }
+                Self::RecsysScoreWeightPrior => f.write_str("recsys.score.weight.prior"),
+                Self::RecsysScoreWeightNegative => f.write_str("recsys.score.weight.negative"),
+                Self::RecsysScoreCrossTypeMultiplier => {
+                    f.write_str("recsys.score.cross_type_multiplier")
+                }
+                Self::RecsysScoreCfShrinkageK => f.write_str("recsys.score.cf_shrinkage_k"),
+                Self::RecsysDiversityLambda => f.write_str("recsys.diversity.lambda"),
+                Self::RecsysDiversityMaxPerAuthor => f.write_str("recsys.diversity.max_per_author"),
+                Self::RecsysDiversityMaxPerTag => f.write_str("recsys.diversity.max_per_tag"),
+                Self::RecsysPriorWeightWatchers => f.write_str("recsys.prior.weight.watchers"),
+                Self::RecsysPriorWeightExternalScore => {
+                    f.write_str("recsys.prior.weight.external_score")
+                }
+                Self::RecsysPriorWeightSourceCount => {
+                    f.write_str("recsys.prior.weight.source_count")
+                }
+                Self::RecsysPriorWeightVelocity => f.write_str("recsys.prior.weight.velocity"),
+                Self::RecsysPriorWatcherConfidenceK => {
+                    f.write_str("recsys.prior.watcher_confidence_k")
+                }
+                Self::RecsysBuildEmbeddingDims => f.write_str("recsys.build.embedding_dims"),
+                Self::RecsysBuildHnswM => f.write_str("recsys.build.hnsw_m"),
+                Self::RecsysBuildHnswEfConstruction => {
+                    f.write_str("recsys.build.hnsw_ef_construction")
+                }
+                Self::RecsysBuildMinFeatures => f.write_str("recsys.build.min_features"),
+                Self::RecsysCooccurrenceMinSupport => {
+                    f.write_str("recsys.cooccurrence.min_support")
+                }
+                Self::RecsysCooccurrenceMaxListEntries => {
+                    f.write_str("recsys.cooccurrence.max_list_entries")
+                }
+                Self::RecsysServeShelfSize => f.write_str("recsys.serve.shelf_size"),
+                Self::RecsysServeShelfTtlSeconds => f.write_str("recsys.serve.shelf_ttl_seconds"),
+                Self::RecsysServeFeedbackDecayDays => {
+                    f.write_str("recsys.serve.feedback_decay_days")
+                }
+            }
+        }
+    }
+    impl ::std::str::FromStr for Tunable {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "recsys.affinity.base.completed" => Ok(Self::RecsysAffinityBaseCompleted),
+                "recsys.affinity.base.reading" => Ok(Self::RecsysAffinityBaseReading),
+                "recsys.affinity.base.paused" => Ok(Self::RecsysAffinityBasePaused),
+                "recsys.affinity.base.planned" => Ok(Self::RecsysAffinityBasePlanned),
+                "recsys.affinity.dropped.floor" => Ok(Self::RecsysAffinityDroppedFloor),
+                "recsys.affinity.dropped.span" => Ok(Self::RecsysAffinityDroppedSpan),
+                "recsys.affinity.engagement_knee" => Ok(Self::RecsysAffinityEngagementKnee),
+                "recsys.affinity.recency_half_life_days" => {
+                    Ok(Self::RecsysAffinityRecencyHalfLifeDays)
+                }
+                "recsys.affinity.recency_floor" => Ok(Self::RecsysAffinityRecencyFloor),
+                "recsys.affinity.external_score_weight" => {
+                    Ok(Self::RecsysAffinityExternalScoreWeight)
+                }
+                "recsys.retrieval.seeds" => Ok(Self::RecsysRetrievalSeeds),
+                "recsys.retrieval.ef_search" => Ok(Self::RecsysRetrievalEfSearch),
+                "recsys.retrieval.ann_limit_per_seed" => Ok(Self::RecsysRetrievalAnnLimitPerSeed),
+                "recsys.retrieval.ann_limit_profile" => Ok(Self::RecsysRetrievalAnnLimitProfile),
+                "recsys.retrieval.exact_feature_limit" => {
+                    Ok(Self::RecsysRetrievalExactFeatureLimit)
+                }
+                "recsys.retrieval.cooccurrence_seeds" => Ok(Self::RecsysRetrievalCooccurrenceSeeds),
+                "recsys.retrieval.candidate_cap" => Ok(Self::RecsysRetrievalCandidateCap),
+                "recsys.score.weight.knn" => Ok(Self::RecsysScoreWeightKnn),
+                "recsys.score.weight.profile" => Ok(Self::RecsysScoreWeightProfile),
+                "recsys.score.weight.collaborative" => Ok(Self::RecsysScoreWeightCollaborative),
+                "recsys.score.weight.prior" => Ok(Self::RecsysScoreWeightPrior),
+                "recsys.score.weight.negative" => Ok(Self::RecsysScoreWeightNegative),
+                "recsys.score.cross_type_multiplier" => Ok(Self::RecsysScoreCrossTypeMultiplier),
+                "recsys.score.cf_shrinkage_k" => Ok(Self::RecsysScoreCfShrinkageK),
+                "recsys.diversity.lambda" => Ok(Self::RecsysDiversityLambda),
+                "recsys.diversity.max_per_author" => Ok(Self::RecsysDiversityMaxPerAuthor),
+                "recsys.diversity.max_per_tag" => Ok(Self::RecsysDiversityMaxPerTag),
+                "recsys.prior.weight.watchers" => Ok(Self::RecsysPriorWeightWatchers),
+                "recsys.prior.weight.external_score" => Ok(Self::RecsysPriorWeightExternalScore),
+                "recsys.prior.weight.source_count" => Ok(Self::RecsysPriorWeightSourceCount),
+                "recsys.prior.weight.velocity" => Ok(Self::RecsysPriorWeightVelocity),
+                "recsys.prior.watcher_confidence_k" => Ok(Self::RecsysPriorWatcherConfidenceK),
+                "recsys.build.embedding_dims" => Ok(Self::RecsysBuildEmbeddingDims),
+                "recsys.build.hnsw_m" => Ok(Self::RecsysBuildHnswM),
+                "recsys.build.hnsw_ef_construction" => Ok(Self::RecsysBuildHnswEfConstruction),
+                "recsys.build.min_features" => Ok(Self::RecsysBuildMinFeatures),
+                "recsys.cooccurrence.min_support" => Ok(Self::RecsysCooccurrenceMinSupport),
+                "recsys.cooccurrence.max_list_entries" => {
+                    Ok(Self::RecsysCooccurrenceMaxListEntries)
+                }
+                "recsys.serve.shelf_size" => Ok(Self::RecsysServeShelfSize),
+                "recsys.serve.shelf_ttl_seconds" => Ok(Self::RecsysServeShelfTtlSeconds),
+                "recsys.serve.feedback_decay_days" => Ok(Self::RecsysServeFeedbackDecayDays),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for Tunable {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for Tunable {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for Tunable {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    #[doc = "The console's grouping of tunables into sections."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The console's grouping of tunables into sections.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"affinity\","]
+    #[doc = "    \"retrieval\","]
+    #[doc = "    \"scoring\","]
+    #[doc = "    \"diversity\","]
+    #[doc = "    \"prior\","]
+    #[doc = "    \"build\","]
+    #[doc = "    \"cooccurrence\","]
+    #[doc = "    \"serving\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum TunableGroup {
+        #[serde(rename = "affinity")]
+        Affinity,
+        #[serde(rename = "retrieval")]
+        Retrieval,
+        #[serde(rename = "scoring")]
+        Scoring,
+        #[serde(rename = "diversity")]
+        Diversity,
+        #[serde(rename = "prior")]
+        Prior,
+        #[serde(rename = "build")]
+        Build,
+        #[serde(rename = "cooccurrence")]
+        Cooccurrence,
+        #[serde(rename = "serving")]
+        Serving,
+    }
+    impl ::std::fmt::Display for TunableGroup {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Affinity => f.write_str("affinity"),
+                Self::Retrieval => f.write_str("retrieval"),
+                Self::Scoring => f.write_str("scoring"),
+                Self::Diversity => f.write_str("diversity"),
+                Self::Prior => f.write_str("prior"),
+                Self::Build => f.write_str("build"),
+                Self::Cooccurrence => f.write_str("cooccurrence"),
+                Self::Serving => f.write_str("serving"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for TunableGroup {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "affinity" => Ok(Self::Affinity),
+                "retrieval" => Ok(Self::Retrieval),
+                "scoring" => Ok(Self::Scoring),
+                "diversity" => Ok(Self::Diversity),
+                "prior" => Ok(Self::Prior),
+                "build" => Ok(Self::Build),
+                "cooccurrence" => Ok(Self::Cooccurrence),
+                "serving" => Ok(Self::Serving),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for TunableGroup {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for TunableGroup {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for TunableGroup {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    #[doc = "What a tunable's number *means*, so the console can render and validate it sensibly.\n\nPurely presentational: every value is an `f64` on the wire and in the table regardless."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What a tunable's number *means*, so the console can render and validate it sensibly.\\n\\nPurely presentational: every value is an `f64` on the wire and in the table regardless.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"ratio\","]
+    #[doc = "    \"weight\","]
+    #[doc = "    \"count\","]
+    #[doc = "    \"days\","]
+    #[doc = "    \"seconds\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum TunableKind {
+        #[serde(rename = "ratio")]
+        Ratio,
+        #[serde(rename = "weight")]
+        Weight,
+        #[serde(rename = "count")]
+        Count,
+        #[serde(rename = "days")]
+        Days,
+        #[serde(rename = "seconds")]
+        Seconds,
+    }
+    impl ::std::fmt::Display for TunableKind {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Ratio => f.write_str("ratio"),
+                Self::Weight => f.write_str("weight"),
+                Self::Count => f.write_str("count"),
+                Self::Days => f.write_str("days"),
+                Self::Seconds => f.write_str("seconds"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for TunableKind {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "ratio" => Ok(Self::Ratio),
+                "weight" => Ok(Self::Weight),
+                "count" => Ok(Self::Count),
+                "days" => Ok(Self::Days),
+                "seconds" => Ok(Self::Seconds),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for TunableKind {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for TunableKind {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for TunableKind {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    #[doc = "One tuning value as the console shows it."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One tuning value as the console shows it.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"applies\","]
+    #[doc = "    \"default_value\","]
+    #[doc = "    \"description\","]
+    #[doc = "    \"group\","]
+    #[doc = "    \"key\","]
+    #[doc = "    \"kind\","]
+    #[doc = "    \"max\","]
+    #[doc = "    \"min\","]
+    #[doc = "    \"overridden\","]
+    #[doc = "    \"privacy_floor\","]
+    #[doc = "    \"title\","]
+    #[doc = "    \"value\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"applies\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/Applies\""]
+    #[doc = "    },"]
+    #[doc = "    \"default_value\": {"]
+    #[doc = "      \"description\": \"What this value ships as, so the page can show \\\"changed from default\\\" without the client\\ncarrying a copy of the registry.\","]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"description\": \"What the value does, written to be read immediately before someone changes production.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"group\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/TunableGroup\""]
+    #[doc = "    },"]
+    #[doc = "    \"key\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/Tunable\""]
+    #[doc = "    },"]
+    #[doc = "    \"kind\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/TunableKind\""]
+    #[doc = "    },"]
+    #[doc = "    \"max\": {"]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    },"]
+    #[doc = "    \"min\": {"]
+    #[doc = "      \"description\": \"Inclusive bounds. Enforced here, not only in the UI — a `curl` is not an attack.\","]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    },"]
+    #[doc = "    \"note\": {"]
+    #[doc = "      \"description\": \"Why it was last changed, if the operator said.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"overridden\": {"]
+    #[doc = "      \"description\": \"Whether an operator has explicitly decided this one.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"privacy_floor\": {"]
+    #[doc = "      \"description\": \"Whether [`Self::min`] is a privacy threshold rather than a taste decision. The console\\nsays so next to the field; the API refuses the write regardless.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"title\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"updated_at\": {"]
+    #[doc = "      \"description\": \"When it was last changed. Absent while the value is at its default.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"updated_by\": {"]
+    #[doc = "      \"description\": \"Username of the operator who last changed it; `None` once that account is erased.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"value\": {"]
+    #[doc = "      \"description\": \"The effective value: the override if there is one, else the compiled default — already\\nclamped, so it is exactly what the pipeline reads.\","]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct TunableView {
+        pub applies: Applies,
+        #[doc = "What this value ships as, so the page can show \"changed from default\" without the client\ncarrying a copy of the registry."]
+        pub default_value: f64,
+        #[doc = "What the value does, written to be read immediately before someone changes production."]
+        pub description: ::std::string::String,
+        pub group: TunableGroup,
+        pub key: Tunable,
+        pub kind: TunableKind,
+        pub max: f64,
+        #[doc = "Inclusive bounds. Enforced here, not only in the UI — a `curl` is not an attack."]
+        pub min: f64,
+        #[doc = "Why it was last changed, if the operator said."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub note: ::std::option::Option<::std::string::String>,
+        #[doc = "Whether an operator has explicitly decided this one."]
+        pub overridden: bool,
+        #[doc = "Whether [`Self::min`] is a privacy threshold rather than a taste decision. The console\nsays so next to the field; the API refuses the write regardless."]
+        pub privacy_floor: bool,
+        pub title: ::std::string::String,
+        #[doc = "When it was last changed. Absent while the value is at its default."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub updated_at: ::std::option::Option<::std::string::String>,
+        #[doc = "Username of the operator who last changed it; `None` once that account is erased."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub updated_by: ::std::option::Option<::std::string::String>,
+        #[doc = "The effective value: the override if there is one, else the compiled default — already\nclamped, so it is exactly what the pipeline reads."]
+        pub value: f64,
+    }
+    impl TunableView {
+        pub fn builder() -> builder::TunableView {
+            Default::default()
         }
     }
     #[doc = "One row of the admin Sync console's \"Assign queue\" — a canonical series that has **no**\nexternal mapping for the given provider yet, so an operator can review and assign one."]
@@ -12494,6 +13558,243 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct ModelHealthView {
+            building: ::std::result::Result<bool, ::std::string::String>,
+            dense_dims: ::std::result::Result<i32, ::std::string::String>,
+            error: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            finished_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            generation: ::std::result::Result<i32, ::std::string::String>,
+            repair_queue_depth: ::std::result::Result<i64, ::std::string::String>,
+            series_built: ::std::result::Result<i32, ::std::string::String>,
+            series_recommendable: ::std::result::Result<i64, ::std::string::String>,
+            series_total: ::std::result::Result<i64, ::std::string::String>,
+            series_with_embedding: ::std::result::Result<i64, ::std::string::String>,
+            series_with_features: ::std::result::Result<i64, ::std::string::String>,
+            stage: ::std::result::Result<::std::string::String, ::std::string::String>,
+            started_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            vocabulary: ::std::result::Result<i32, ::std::string::String>,
+        }
+        impl ::std::default::Default for ModelHealthView {
+            fn default() -> Self {
+                Self {
+                    building: Err("no value supplied for building".to_string()),
+                    dense_dims: Err("no value supplied for dense_dims".to_string()),
+                    error: Ok(Default::default()),
+                    finished_at: Ok(Default::default()),
+                    generation: Err("no value supplied for generation".to_string()),
+                    repair_queue_depth: Err("no value supplied for repair_queue_depth".to_string()),
+                    series_built: Err("no value supplied for series_built".to_string()),
+                    series_recommendable: Err(
+                        "no value supplied for series_recommendable".to_string()
+                    ),
+                    series_total: Err("no value supplied for series_total".to_string()),
+                    series_with_embedding: Err(
+                        "no value supplied for series_with_embedding".to_string()
+                    ),
+                    series_with_features: Err(
+                        "no value supplied for series_with_features".to_string()
+                    ),
+                    stage: Err("no value supplied for stage".to_string()),
+                    started_at: Ok(Default::default()),
+                    vocabulary: Err("no value supplied for vocabulary".to_string()),
+                }
+            }
+        }
+        impl ModelHealthView {
+            pub fn building<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.building = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for building: {e}"));
+                self
+            }
+            pub fn dense_dims<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.dense_dims = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for dense_dims: {e}"));
+                self
+            }
+            pub fn error<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.error = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for error: {e}"));
+                self
+            }
+            pub fn finished_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.finished_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for finished_at: {e}"));
+                self
+            }
+            pub fn generation<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.generation = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for generation: {e}"));
+                self
+            }
+            pub fn repair_queue_depth<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.repair_queue_depth = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for repair_queue_depth: {e}")
+                });
+                self
+            }
+            pub fn series_built<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_built = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series_built: {e}"));
+                self
+            }
+            pub fn series_recommendable<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_recommendable = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for series_recommendable: {e}")
+                });
+                self
+            }
+            pub fn series_total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series_total: {e}"));
+                self
+            }
+            pub fn series_with_embedding<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_with_embedding = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for series_with_embedding: {e}")
+                });
+                self
+            }
+            pub fn series_with_features<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_with_features = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for series_with_features: {e}")
+                });
+                self
+            }
+            pub fn stage<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stage = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stage: {e}"));
+                self
+            }
+            pub fn started_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.started_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for started_at: {e}"));
+                self
+            }
+            pub fn vocabulary<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vocabulary = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vocabulary: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<ModelHealthView> for super::ModelHealthView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ModelHealthView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    building: value.building?,
+                    dense_dims: value.dense_dims?,
+                    error: value.error?,
+                    finished_at: value.finished_at?,
+                    generation: value.generation?,
+                    repair_queue_depth: value.repair_queue_depth?,
+                    series_built: value.series_built?,
+                    series_recommendable: value.series_recommendable?,
+                    series_total: value.series_total?,
+                    series_with_embedding: value.series_with_embedding?,
+                    series_with_features: value.series_with_features?,
+                    stage: value.stage?,
+                    started_at: value.started_at?,
+                    vocabulary: value.vocabulary?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::ModelHealthView> for ModelHealthView {
+            fn from(value: super::ModelHealthView) -> Self {
+                Self {
+                    building: Ok(value.building),
+                    dense_dims: Ok(value.dense_dims),
+                    error: Ok(value.error),
+                    finished_at: Ok(value.finished_at),
+                    generation: Ok(value.generation),
+                    repair_queue_depth: Ok(value.repair_queue_depth),
+                    series_built: Ok(value.series_built),
+                    series_recommendable: Ok(value.series_recommendable),
+                    series_total: Ok(value.series_total),
+                    series_with_embedding: Ok(value.series_with_embedding),
+                    series_with_features: Ok(value.series_with_features),
+                    stage: Ok(value.stage),
+                    started_at: Ok(value.started_at),
+                    vocabulary: Ok(value.vocabulary),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct NewPrivacyRequest {
             detail: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -14371,6 +15672,44 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct RebuildRequest {
+            mode: ::std::result::Result<super::RecsysBuildMode, ::std::string::String>,
+        }
+        impl ::std::default::Default for RebuildRequest {
+            fn default() -> Self {
+                Self {
+                    mode: Err("no value supplied for mode".to_string()),
+                }
+            }
+        }
+        impl RebuildRequest {
+            pub fn mode<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::RecsysBuildMode>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.mode = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for mode: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<RebuildRequest> for super::RebuildRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RebuildRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self { mode: value.mode? })
+            }
+        }
+        impl ::std::convert::From<super::RebuildRequest> for RebuildRequest {
+            fn from(value: super::RebuildRequest) -> Self {
+                Self {
+                    mode: Ok(value.mode),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct Recommendation {
             because_series_id: ::std::result::Result<
                 ::std::option::Option<super::RecommendationBecauseSeriesId>,
@@ -14547,6 +15886,102 @@ pub mod types {
                     source_count: Ok(value.source_count),
                     status: Ok(value.status),
                     title: Ok(value.title),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct RecsysBuildView {
+            dense_dims: ::std::result::Result<i64, ::std::string::String>,
+            generation: ::std::result::Result<i32, ::std::string::String>,
+            series_built: ::std::result::Result<i64, ::std::string::String>,
+            started: ::std::result::Result<bool, ::std::string::String>,
+            vocabulary: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for RecsysBuildView {
+            fn default() -> Self {
+                Self {
+                    dense_dims: Err("no value supplied for dense_dims".to_string()),
+                    generation: Err("no value supplied for generation".to_string()),
+                    series_built: Err("no value supplied for series_built".to_string()),
+                    started: Err("no value supplied for started".to_string()),
+                    vocabulary: Err("no value supplied for vocabulary".to_string()),
+                }
+            }
+        }
+        impl RecsysBuildView {
+            pub fn dense_dims<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.dense_dims = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for dense_dims: {e}"));
+                self
+            }
+            pub fn generation<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.generation = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for generation: {e}"));
+                self
+            }
+            pub fn series_built<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_built = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series_built: {e}"));
+                self
+            }
+            pub fn started<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.started = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for started: {e}"));
+                self
+            }
+            pub fn vocabulary<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vocabulary = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vocabulary: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<RecsysBuildView> for super::RecsysBuildView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RecsysBuildView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    dense_dims: value.dense_dims?,
+                    generation: value.generation?,
+                    series_built: value.series_built?,
+                    started: value.started?,
+                    vocabulary: value.vocabulary?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::RecsysBuildView> for RecsysBuildView {
+            fn from(value: super::RecsysBuildView) -> Self {
+                Self {
+                    dense_dims: Ok(value.dense_dims),
+                    generation: Ok(value.generation),
+                    series_built: Ok(value.series_built),
+                    started: Ok(value.started),
+                    vocabulary: Ok(value.vocabulary),
                 }
             }
         }
@@ -15934,6 +17369,63 @@ pub mod types {
             fn from(value: super::SetProviderState) -> Self {
                 Self {
                     state: Ok(value.state),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SetTunable {
+            note: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            value: ::std::result::Result<f64, ::std::string::String>,
+        }
+        impl ::std::default::Default for SetTunable {
+            fn default() -> Self {
+                Self {
+                    note: Ok(Default::default()),
+                    value: Err("no value supplied for value".to_string()),
+                }
+            }
+        }
+        impl SetTunable {
+            pub fn note<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.note = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for note: {e}"));
+                self
+            }
+            pub fn value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for value: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SetTunable> for super::SetTunable {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SetTunable,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    note: value.note?,
+                    value: value.value?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SetTunable> for SetTunable {
+            fn from(value: super::SetTunable) -> Self {
+                Self {
+                    note: Ok(value.note),
+                    value: Ok(value.value),
                 }
             }
         }
@@ -17399,6 +18891,251 @@ pub mod types {
                 Self {
                     mode: Ok(value.mode),
                     provider_id: Ok(value.provider_id),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct TunableView {
+            applies: ::std::result::Result<super::Applies, ::std::string::String>,
+            default_value: ::std::result::Result<f64, ::std::string::String>,
+            description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            group: ::std::result::Result<super::TunableGroup, ::std::string::String>,
+            key: ::std::result::Result<super::Tunable, ::std::string::String>,
+            kind: ::std::result::Result<super::TunableKind, ::std::string::String>,
+            max: ::std::result::Result<f64, ::std::string::String>,
+            min: ::std::result::Result<f64, ::std::string::String>,
+            note: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            overridden: ::std::result::Result<bool, ::std::string::String>,
+            privacy_floor: ::std::result::Result<bool, ::std::string::String>,
+            title: ::std::result::Result<::std::string::String, ::std::string::String>,
+            updated_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            updated_by: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            value: ::std::result::Result<f64, ::std::string::String>,
+        }
+        impl ::std::default::Default for TunableView {
+            fn default() -> Self {
+                Self {
+                    applies: Err("no value supplied for applies".to_string()),
+                    default_value: Err("no value supplied for default_value".to_string()),
+                    description: Err("no value supplied for description".to_string()),
+                    group: Err("no value supplied for group".to_string()),
+                    key: Err("no value supplied for key".to_string()),
+                    kind: Err("no value supplied for kind".to_string()),
+                    max: Err("no value supplied for max".to_string()),
+                    min: Err("no value supplied for min".to_string()),
+                    note: Ok(Default::default()),
+                    overridden: Err("no value supplied for overridden".to_string()),
+                    privacy_floor: Err("no value supplied for privacy_floor".to_string()),
+                    title: Err("no value supplied for title".to_string()),
+                    updated_at: Ok(Default::default()),
+                    updated_by: Ok(Default::default()),
+                    value: Err("no value supplied for value".to_string()),
+                }
+            }
+        }
+        impl TunableView {
+            pub fn applies<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::Applies>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.applies = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for applies: {e}"));
+                self
+            }
+            pub fn default_value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.default_value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for default_value: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn group<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::TunableGroup>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.group = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for group: {e}"));
+                self
+            }
+            pub fn key<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::Tunable>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.key = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for key: {e}"));
+                self
+            }
+            pub fn kind<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::TunableKind>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kind = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kind: {e}"));
+                self
+            }
+            pub fn max<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.max = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for max: {e}"));
+                self
+            }
+            pub fn min<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.min = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for min: {e}"));
+                self
+            }
+            pub fn note<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.note = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for note: {e}"));
+                self
+            }
+            pub fn overridden<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.overridden = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for overridden: {e}"));
+                self
+            }
+            pub fn privacy_floor<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.privacy_floor = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for privacy_floor: {e}"));
+                self
+            }
+            pub fn title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for title: {e}"));
+                self
+            }
+            pub fn updated_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_at: {e}"));
+                self
+            }
+            pub fn updated_by<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_by = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_by: {e}"));
+                self
+            }
+            pub fn value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for value: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<TunableView> for super::TunableView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: TunableView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    applies: value.applies?,
+                    default_value: value.default_value?,
+                    description: value.description?,
+                    group: value.group?,
+                    key: value.key?,
+                    kind: value.kind?,
+                    max: value.max?,
+                    min: value.min?,
+                    note: value.note?,
+                    overridden: value.overridden?,
+                    privacy_floor: value.privacy_floor?,
+                    title: value.title?,
+                    updated_at: value.updated_at?,
+                    updated_by: value.updated_by?,
+                    value: value.value?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::TunableView> for TunableView {
+            fn from(value: super::TunableView) -> Self {
+                Self {
+                    applies: Ok(value.applies),
+                    default_value: Ok(value.default_value),
+                    description: Ok(value.description),
+                    group: Ok(value.group),
+                    key: Ok(value.key),
+                    kind: Ok(value.kind),
+                    max: Ok(value.max),
+                    min: Ok(value.min),
+                    note: Ok(value.note),
+                    overridden: Ok(value.overridden),
+                    privacy_floor: Ok(value.privacy_floor),
+                    title: Ok(value.title),
+                    updated_at: Ok(value.updated_at),
+                    updated_by: Ok(value.updated_by),
+                    value: Ok(value.value),
                 }
             }
         }
@@ -19025,6 +20762,26 @@ impl Client {
     #[doc = "Dry-run a provider's adapter\n\nDry-run the provider's adapter against the live site and return the parsed sample so\noperators can fix selectors without a deploy (design §11/§17). Bounded by a timeout;\nSSRF and rate limits are enforced by the injected fetch stack.\n\nThe body is deliberately free-form JSON: it is a diagnostic dump whose shape follows\nwhatever the adapter managed to parse, and the console renders it verbatim. It is still\ndeclared as a schema so the generated client can return it, rather than forcing callers\nonto an untyped side channel.\n\nSends a `POST` request to `/v1/admin/providers/{id}/test`\n\nArguments:\n- `id`: Provider id\n- `body`: Optional relative series path to also fetch metadata + chapters for\n```ignore\nlet response = client.test_adapter()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn test_adapter(&self) -> builder::TestAdapter<'_> {
         builder::TestAdapter::new(self)
+    }
+    #[doc = "Get recommendation model health\n\nGeneration, build state, catalogue coverage and repair-queue depth — what an operator needs\nbefore changing a tuning value, and the only way to tell an unbuilt model from a broken one.\n\nSends a `GET` request to `/v1/admin/recommendations/health`\n\n```ignore\nlet response = client.model_health()\n    .send()\n    .await;\n```"]
+    pub fn model_health(&self) -> builder::ModelHealth<'_> {
+        builder::ModelHealth::new(self)
+    }
+    #[doc = "Rebuild the recommendation model\n\nRuns a build now rather than waiting for the schedule. A `next_build` tuning change takes\neffect after an incremental run; a `next_full_build` one is baked into stored vectors and the\nindex, and needs `full`.\n\nThe build is a singleton over the whole catalogue, so this runs in the control plane behind\nthe same claim the scheduled runs take.\n\nSends a `POST` request to `/v1/admin/recommendations/rebuild`\n\n```ignore\nlet response = client.rebuild_model()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn rebuild_model(&self) -> builder::RebuildModel<'_> {
+        builder::RebuildModel::new(self)
+    }
+    #[doc = "List recommendation tunables\n\nEvery tuning value this build defines, with its effective value, its shipped default, the\nrange it may move inside, and who last changed it. Served from the compiled registry joined to\nthe stored overrides.\n\nSends a `GET` request to `/v1/admin/recommendations/tunables`\n\n```ignore\nlet response = client.list_tunables()\n    .send()\n    .await;\n```"]
+    pub fn list_tunables(&self) -> builder::ListTunables<'_> {
+        builder::ListTunables::new(self)
+    }
+    #[doc = "Set a recommendation tunable\n\nRecords an explicit decision for one value and applies it immediately on this replica; other\nreplicas pick it up on their next refresh tick. Whether a *reader* sees the difference on the\nnext request depends on the tunable's `applies`.\n\nSends a `PUT` request to `/v1/admin/recommendations/tunables/{key}`\n\nArguments:\n- `key`: Tunable key, e.g. `recsys.diversity.lambda`\n- `body`\n```ignore\nlet response = client.set_tunable()\n    .key(key)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn set_tunable(&self) -> builder::SetTunable<'_> {
+        builder::SetTunable::new(self)
+    }
+    #[doc = "Reset a recommendation tunable\n\nDrops the stored override so the value follows the compiled default. Distinct from writing\nthat same number, which records an operator decision that would survive a future change of the\ndefault.\n\nSends a `DELETE` request to `/v1/admin/recommendations/tunables/{key}`\n\nArguments:\n- `key`: Tunable key, e.g. `recsys.diversity.lambda`\n```ignore\nlet response = client.reset_tunable()\n    .key(key)\n    .send()\n    .await;\n```"]
+    pub fn reset_tunable(&self) -> builder::ResetTunable<'_> {
+        builder::ResetTunable::new(self)
     }
     #[doc = "List recent scan failures\n\nThe most recently failed scan tasks with their errors, for triaging stuck providers /\nbroken selectors (design §17.2.7).\n\nSends a `GET` request to `/v1/admin/scan-failures`\n\n```ignore\nlet response = client.scan_failures()\n    .send()\n    .await;\n```"]
     pub fn scan_failures(&self) -> builder::ScanFailures<'_> {
@@ -21096,6 +22853,349 @@ pub mod builder {
                     ResponseValue::from_response(response).await?,
                 )),
                 404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::model_health`]\n\n[`Client::model_health`]: super::Client::model_health"]
+    #[derive(Debug, Clone)]
+    pub struct ModelHealth<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> ModelHealth<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/recommendations/health`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ModelHealthView>, Error<types::ProblemDetails>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/admin/recommendations/health", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "model_health",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::rebuild_model`]\n\n[`Client::rebuild_model`]: super::Client::rebuild_model"]
+    #[derive(Debug, Clone)]
+    pub struct RebuildModel<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::RebuildRequest, String>,
+    }
+    impl<'a> RebuildModel<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::RebuildRequest>,
+            <V as std::convert::TryInto<types::RebuildRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `RebuildRequest` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::RebuildRequest) -> types::builder::RebuildRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/recommendations/rebuild`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::RecsysBuildView>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::RebuildRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/admin/recommendations/rebuild", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "rebuild_model",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                502u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::list_tunables`]\n\n[`Client::list_tunables`]: super::Client::list_tunables"]
+    #[derive(Debug, Clone)]
+    pub struct ListTunables<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> ListTunables<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/recommendations/tunables`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::TunableView>>, Error<types::ProblemDetails>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v1/admin/recommendations/tunables", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_tunables",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::set_tunable`]\n\n[`Client::set_tunable`]: super::Client::set_tunable"]
+    #[derive(Debug, Clone)]
+    pub struct SetTunable<'a> {
+        client: &'a super::Client,
+        key: Result<::std::string::String, String>,
+        body: Result<types::builder::SetTunable, String>,
+    }
+    impl<'a> SetTunable<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                key: Err("key was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn key<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.key = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for key failed".to_string()
+            });
+            self
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SetTunable>,
+            <V as std::convert::TryInto<types::SetTunable>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `SetTunable` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::SetTunable) -> types::builder::SetTunable,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `PUT` request to `/v1/admin/recommendations/tunables/{key}`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::TunableView>>, Error<types::ProblemDetails>>
+        {
+            let Self { client, key, body } = self;
+            let key = key.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::SetTunable::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/admin/recommendations/tunables/{}",
+                client.baseurl,
+                encode_path(&key.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .put(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "set_tunable",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::reset_tunable`]\n\n[`Client::reset_tunable`]: super::Client::reset_tunable"]
+    #[derive(Debug, Clone)]
+    pub struct ResetTunable<'a> {
+        client: &'a super::Client,
+        key: Result<::std::string::String, String>,
+    }
+    impl<'a> ResetTunable<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                key: Err("key was not initialized".to_string()),
+            }
+        }
+        pub fn key<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.key = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for key failed".to_string()
+            });
+            self
+        }
+        #[doc = "Sends a `DELETE` request to `/v1/admin/recommendations/tunables/{key}`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::TunableView>>, Error<types::ProblemDetails>>
+        {
+            let Self { client, key } = self;
+            let key = key.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/admin/recommendations/tunables/{}",
+                client.baseurl,
+                encode_path(&key.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "reset_tunable",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

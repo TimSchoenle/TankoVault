@@ -23,11 +23,17 @@ name: auto-format
 on:
   pull_request:
 
-# Shared with `update-lockfile.yaml`, and `cancel-in-progress: false` rather than the usual
-# `true`. Both workflows push a commit to the pull request's head branch, so two of them running
-# at once is a losing `git push` and a red job on a problem that does not exist — a release PR
-# carrying formatting drift would hit exactly that. Queueing is right for a job that writes:
-# cancelling one mid-push is worse than making it wait.
+# Shared with `auto-fix.yaml`, and `cancel-in-progress: false` rather than the usual `true`. Both
+# workflows push a commit to the pull request's head branch, so two of them running at once is a
+# losing `git push` and a red job on a problem that does not exist — a release PR carrying
+# formatting drift would hit exactly that. Queueing is right for a job that writes: cancelling one
+# mid-push is worse than making it wait.
+#
+# Two members, and it must stay two. GitHub keeps one *pending* run per group and cancels the
+# pending one when a third arrives, so a third workflow here would not queue — it would evict
+# whichever run happened to be waiting. `update-lockfile.yaml` was that third member until
+# 2026-08-04 and carries the account of what it cost; `repo-lint`'s
+# `concurrency-groups-hold-at-most-two-workflows` is what keeps the count honest.
 concurrency:
   group: pr-autocommit-${{ github.event.pull_request.number }}
   cancel-in-progress: false

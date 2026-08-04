@@ -15,7 +15,8 @@ commit to main (conventional commits)
   └─ release-please.yaml → opens/updates the release PR
         ├─ bumps [workspace.package] version in Cargo.toml
         └─ writes CHANGELOG.md
-     update-lockfile.yaml → syncs Cargo.lock on that PR, commits it
+     update-lockfile.yaml → syncs both Cargo.lock files on that PR, commits them
+     auto-fix.yaml        → regenerates openapi.json + the client at the new version, commits
      ci.yml               → the required `ci` check runs against the bumped tree
      auto-merge-release-please.yml → approves + merges after the delay
   └─ merge → release-please tags vX.Y.Z and creates the GitHub release
@@ -220,17 +221,23 @@ This is what the two former gates were waiting on:
 
 | Name | Kind | Used by |
 | --- | --- | --- |
-| `RELEASE_BOT_APP_ID`, `RELEASE_BOT_PRIVATE_KEY` | `release` environment secret | release-please, update-lockfile, helm-release |
-| `ACTIONS_MAINTENANCE_APP_ID`, `ACTIONS_MAINTENANCE_PRIVATE_KEY` | repository secret | auto-merge |
+| `RELEASE_BOT_APP_ID`, `RELEASE_BOT_PRIVATE_KEY` | `release` environment secret | release-please, helm-release |
+| `ACTIONS_MAINTENANCE_APP_ID`, `ACTIONS_MAINTENANCE_PRIVATE_KEY` | repository secret | auto-merge, auto-fix, auto-format, update-lockfile |
 | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | `release` environment secret | `plan` (reading the published tag set), image publish |
 
-Every job that reads one of these names an `environment: release` with `deployment: false` —
-`release-please`, `update-lockfile`, `helm-release`, `plan`, and both publish jobs, `build` and
+Every job that reads a **`release` environment** secret names `environment: release` with
+`deployment: false` — `release-please`, `helm-release`, `plan`, and both publish jobs, `build` and
 `manifest`. That is not optional and it fails quietly: a job that omits the environment reads the
 secret as an empty
 string, so `docker/login-action` reports "Username and password required" and
 `create-github-app-token` reports an empty `app-id`, neither of which names the environment as
 the cause. `deployment: false` keeps a secret scope from writing a deployment record per job.
+
+The maintenance pair is a **repository** secret and deliberately not an environment one. The three
+workflows that commit to a pull request branch — `auto-fix`, `auto-format`, `update-lockfile` —
+run on every pull request, and a secret scope that exists for publishing has no business sitting
+behind a job any pull request can start. `update-lockfile` named `environment: release` until
+2026-08-04; it now mints the maintenance bot like the other two.
 
 GHCR needs no secret at all: both the `build` and `manifest` jobs log in with the run's own
 `GITHUB_TOKEN`, which their `packages: write` permission covers. Only Docker Hub, which is
@@ -266,6 +273,20 @@ it is load-bearing: without it the release PR carries a lockfile that disagrees 
 manifests, every `--locked` build fails (`xtask ci`, `msrv`, `supply-chain`, and the
 Dockerfile's `cargo auditable build --release --locked`), and the PR can never go green. That is
 a deadlock, not a flaky failure.
+
+Two things make that harder than it sounds, and 1.2.1 hit both.
+
+**release-please rewrites the branch.** Every new commit on `main` while the release PR is open
+makes it force-push a single fresh release commit, discarding the bot commits that had fixed the
+branch. The regeneration workflows have to run again on the new head — and until 2026-08-04 they
+could not, because all three shared one concurrency group and GitHub keeps only one *pending* run
+per group. The third run was cancelled rather than queued, and it was the lockfile sync. Both
+lockfiles and `openapi.json` merged still recording 1.2.0. `repo-lint`'s
+`concurrency-groups-hold-at-most-two-workflows` now fails if a group grows a third member.
+
+**The gate only helps if it is waited for.** `lockfile integrity` reported the 1.2.1 drift
+correctly, 100 seconds before the pull request was merged by hand. Merging a release PR before
+the required `ci` check reports is what turns a red gate into a broken `main`.
 
 ## Why one version, and not a release-please component per service
 

@@ -2085,12 +2085,13 @@
               "null"
             ]
           },
+          "id": {
+            "$ref": "#/components/schemas/SeriesId",
+            "description": "`id`, not `series_id`, on purpose. This endpoint used to return `SeriesSummary`, and the\nSPA ships as its own image — so a deployed client always outlives a server change by some\nwindow. Keeping the name makes the new body a strict *superset* of the old one: every\nfield an older client reads is still there, and the additions are ignored. Renaming it\nwould have been a deserialization failure in somebody's browser, which is precisely what\nthe `openapi breaking changes` gate exists to catch."
+          },
           "score": {
             "format": "float",
             "type": "number"
-          },
-          "series_id": {
-            "$ref": "#/components/schemas/SeriesId"
           },
           "shared": {
             "description": "Features shared with `because_series_id`, most explanatory first.",
@@ -2111,7 +2112,7 @@
           }
         },
         "required": [
-          "series_id",
+          "id",
           "title",
           "content_type",
           "status",

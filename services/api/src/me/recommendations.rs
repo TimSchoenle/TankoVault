@@ -58,7 +58,13 @@ const MAX_PER_AUTHOR: usize = 2;
 /// One recommended series and why it is here.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Recommendation {
-    pub series_id: SeriesId,
+    /// `id`, not `series_id`, on purpose. This endpoint used to return `SeriesSummary`, and the
+    /// SPA ships as its own image — so a deployed client always outlives a server change by some
+    /// window. Keeping the name makes the new body a strict *superset* of the old one: every
+    /// field an older client reads is still there, and the additions are ignored. Renaming it
+    /// would have been a deserialization failure in somebody's browser, which is precisely what
+    /// the `openapi breaking changes` gate exists to catch.
+    pub id: SeriesId,
     pub title: String,
     pub cover_url: Option<String>,
     pub content_type: tankovault_domain::ContentType,
@@ -458,7 +464,7 @@ async fn rank_and_render(
                 })
                 .unwrap_or_default();
             Recommendation {
-                series_id: id,
+                id,
                 title: item.series.canonical_title,
                 cover_url: item.series.cover_url,
                 content_type: item.series.content_type,
@@ -470,7 +476,7 @@ async fn rank_and_render(
                 shared,
             }
         })
-        .filter(|r| title_of.contains_key(&r.series_id))
+        .filter(|r| title_of.contains_key(&r.id))
         .collect())
 }
 

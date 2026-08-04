@@ -143,7 +143,7 @@ fn ids(body: &serde_json::Value) -> Vec<String> {
     body.as_array()
         .expect("an array")
         .iter()
-        .map(|item| item["series_id"].as_str().expect("series_id").to_owned())
+        .map(|item| item["id"].as_str().expect("id").to_owned())
         .collect()
 }
 

@@ -4864,8 +4864,8 @@ pub mod types {
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"content_type\","]
+    #[doc = "    \"id\","]
     #[doc = "    \"score\","]
-    #[doc = "    \"series_id\","]
     #[doc = "    \"shared\","]
     #[doc = "    \"source_count\","]
     #[doc = "    \"status\","]
@@ -4895,12 +4895,12 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    },"]
     #[doc = "    \"score\": {"]
     #[doc = "      \"type\": \"number\","]
     #[doc = "      \"format\": \"float\""]
-    #[doc = "    },"]
-    #[doc = "    \"series_id\": {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
     #[doc = "    },"]
     #[doc = "    \"shared\": {"]
     #[doc = "      \"description\": \"Features shared with `because_series_id`, most explanatory first.\","]
@@ -4932,8 +4932,8 @@ pub mod types {
         pub content_type: ContentType,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub cover_url: ::std::option::Option<::std::string::String>,
+        pub id: SeriesId,
         pub score: f32,
-        pub series_id: SeriesId,
         #[doc = "Features shared with `because_series_id`, most explanatory first."]
         pub shared: ::std::vec::Vec<::std::string::String>,
         pub source_count: i64,
@@ -14385,8 +14385,8 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            id: ::std::result::Result<super::SeriesId, ::std::string::String>,
             score: ::std::result::Result<f32, ::std::string::String>,
-            series_id: ::std::result::Result<super::SeriesId, ::std::string::String>,
             shared: ::std::result::Result<
                 ::std::vec::Vec<::std::string::String>,
                 ::std::string::String,
@@ -14402,8 +14402,8 @@ pub mod types {
                     because_title: Ok(Default::default()),
                     content_type: Err("no value supplied for content_type".to_string()),
                     cover_url: Ok(Default::default()),
+                    id: Err("no value supplied for id".to_string()),
                     score: Err("no value supplied for score".to_string()),
-                    series_id: Err("no value supplied for series_id".to_string()),
                     shared: Err("no value supplied for shared".to_string()),
                     source_count: Err("no value supplied for source_count".to_string()),
                     status: Err("no value supplied for status".to_string()),
@@ -14454,6 +14454,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for cover_url: {e}"));
                 self
             }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::SeriesId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
             pub fn score<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<f32>,
@@ -14462,16 +14472,6 @@ pub mod types {
                 self.score = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for score: {e}"));
-                self
-            }
-            pub fn series_id<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<super::SeriesId>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.series_id = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for series_id: {e}"));
                 self
             }
             pub fn shared<T>(mut self, value: T) -> Self
@@ -14525,8 +14525,8 @@ pub mod types {
                     because_title: value.because_title?,
                     content_type: value.content_type?,
                     cover_url: value.cover_url?,
+                    id: value.id?,
                     score: value.score?,
-                    series_id: value.series_id?,
                     shared: value.shared?,
                     source_count: value.source_count?,
                     status: value.status?,
@@ -14541,8 +14541,8 @@ pub mod types {
                     because_title: Ok(value.because_title),
                     content_type: Ok(value.content_type),
                     cover_url: Ok(value.cover_url),
+                    id: Ok(value.id),
                     score: Ok(value.score),
-                    series_id: Ok(value.series_id),
                     shared: Ok(value.shared),
                     source_count: Ok(value.source_count),
                     status: Ok(value.status),

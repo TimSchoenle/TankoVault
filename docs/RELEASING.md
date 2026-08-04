@@ -221,17 +221,23 @@ This is what the two former gates were waiting on:
 
 | Name | Kind | Used by |
 | --- | --- | --- |
-| `RELEASE_BOT_APP_ID`, `RELEASE_BOT_PRIVATE_KEY` | `release` environment secret | release-please, update-lockfile, helm-release |
-| `ACTIONS_MAINTENANCE_APP_ID`, `ACTIONS_MAINTENANCE_PRIVATE_KEY` | repository secret | auto-merge |
+| `RELEASE_BOT_APP_ID`, `RELEASE_BOT_PRIVATE_KEY` | `release` environment secret | release-please, helm-release |
+| `ACTIONS_MAINTENANCE_APP_ID`, `ACTIONS_MAINTENANCE_PRIVATE_KEY` | repository secret | auto-merge, auto-fix, auto-format, update-lockfile |
 | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | `release` environment secret | `plan` (reading the published tag set), image publish |
 
-Every job that reads one of these names an `environment: release` with `deployment: false` —
-`release-please`, `update-lockfile`, `helm-release`, `plan`, and both publish jobs, `build` and
+Every job that reads a **`release` environment** secret names `environment: release` with
+`deployment: false` — `release-please`, `helm-release`, `plan`, and both publish jobs, `build` and
 `manifest`. That is not optional and it fails quietly: a job that omits the environment reads the
 secret as an empty
 string, so `docker/login-action` reports "Username and password required" and
 `create-github-app-token` reports an empty `app-id`, neither of which names the environment as
 the cause. `deployment: false` keeps a secret scope from writing a deployment record per job.
+
+The maintenance pair is a **repository** secret and deliberately not an environment one. The three
+workflows that commit to a pull request branch — `auto-fix`, `auto-format`, `update-lockfile` —
+run on every pull request, and a secret scope that exists for publishing has no business sitting
+behind a job any pull request can start. `update-lockfile` named `environment: release` until
+2026-08-04; it now mints the maintenance bot like the other two.
 
 GHCR needs no secret at all: both the `build` and `manifest` jobs log in with the run's own
 `GITHUB_TOKEN`, which their `packages: write` permission covers. Only Docker Hub, which is

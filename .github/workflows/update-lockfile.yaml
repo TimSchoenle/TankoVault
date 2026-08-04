@@ -46,9 +46,13 @@ on:
 # a 1.2.1 manifest, and every `--locked` build failed — including the release images, which is a
 # tag with nothing published behind it.
 #
-# The push below is made race-safe instead, which is what the shared group was buying. See
-# `repo-lint`'s `concurrency-groups-hold-at-most-two-workflows`, which fails if a third workflow
-# joins any group again.
+# What the shared group was buying — never losing a push to a concurrent one — the commit step
+# buys differently: it writes through the commit API against the head it read, so a race fails it
+# loudly, and the push that won the race re-triggers this workflow anyway. A visible, self-healing
+# failure is the trade for never being the run that is silently dropped.
+#
+# See `repo-lint`'s `concurrency-groups-hold-at-most-two-workflows`, which fails if a third
+# workflow joins any group again.
 concurrency:
   group: pr-lockfile-${{ github.event.pull_request.number }}
   cancel-in-progress: false
@@ -64,47 +68,42 @@ jobs:
     # commit on its behalf. Skipping is correct: a fork's lockfile drift is the author's to fix.
     if: github.event.pull_request.head.repo.full_name == github.repository
     permissions: {}
-    # `RELEASE_BOT_APP_ID` and `RELEASE_BOT_PRIVATE_KEY` are secrets of the `release`
-    # environment, not of the repository — the same pair `release-please.yaml` mints its token
-    # from, declared in one place so there is one app to rotate. A job that does not name the
-    # environment reads them as empty strings, and `create-github-app-token` then fails with
-    # "the 'client-id' (or deprecated 'app-id') input must be set to a non-empty string",
-    # which is what made this workflow red on every pull request. `deployment: false`: this is
-    # a secret scope, not a deployment, and a deployment record would show up in the timeline
-    # of every PR.
-    environment:
-      name: release
-      deployment: false
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
-      # A GitHub App token, not `GITHUB_TOKEN`: a push made with the default token does not
+      # A GitHub App token, not `GITHUB_TOKEN`: a commit made with the default token does not
       # trigger workflows, so the lockfile fix would land without re-running the checks that
       # need it — leaving the PR red on a problem that had already been solved.
+      #
+      # `ACTIONS_MAINTENANCE_*` rather than `RELEASE_BOT_*`, matching `auto-fix.yaml` and
+      # `auto-format.yaml`: those are `release` *environment* secrets, and this job runs on every
+      # pull request. Naming that environment here — which it did until 2026-08-04 — puts a secret
+      # scope that exists for publishing behind a job any pull request can start.
       - name: Generate Bot Token
         id: generate_token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
-          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          app-id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
+          private-key: ${{ secrets.ACTIONS_MAINTENANCE_PRIVATE_KEY }}
           # Narrowed to the one permission this job uses (zizmor `github-app`). By default the
           # minted token inherits *every* permission the app's installation holds, so a
           # compromised step here — a malicious build script reached through a dependency, say —
-          # would hold the release bot's full authority for the life of the token. It needs to
-          # push one commit to the PR branch; `contents: write` is that and nothing else.
+          # would hold the bot's full authority for the life of the token. It needs to commit two
+          # files to the PR branch; `contents: write` is that and nothing else.
           permission-contents: write
 
+      # `persist-credentials: false`: nothing here pushes over git. The commit step below writes
+      # through the GitHub API with the token above, so a credential left in `.git/config` would
+      # be reachable by every later step and used by none of them.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          token: ${{ steps.generate_token.outputs.token }}
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
-          fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Install Rust
         # The same pin as every `ci.yml` job, deliberately: two SHAs for one action are two
@@ -117,53 +116,36 @@ jobs:
       # No BoringSSL toolchain is installed on purpose: `cargo update` resolves and rewrites the
       # lockfile without compiling anything, so none of `cmake`/`nasm`/`clang` is needed here.
       - name: Sync both lockfiles with the manifests
-        id: sync
         run: |
           set -euo pipefail
           cargo update --workspace
           cargo update --workspace --manifest-path web/frontend/Cargo.toml
           if git diff --quiet -- Cargo.lock web/frontend/Cargo.lock; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Both lockfiles already in step with the manifests."
           else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
             git diff --stat -- Cargo.lock web/frontend/Cargo.lock
           fi
 
-      # Retried rather than serialized by a shared concurrency group; the block at the top of this
-      # file says why the group is no longer shared. `auto-format.yaml` and `auto-fix.yaml` push to
-      # this same branch, so a rejected push is an ordinary outcome here, not a fault.
+      # The same shared action `auto-fix.yaml` commits with, and for the same two reasons. It
+      # writes through the GraphQL commit API, so the commit is *verified* — a bot commit that
+      # `git log --show-signature` can attribute, which a locally-signed push from a runner cannot
+      # be without a key on the runner. And it reads the branch head immediately before writing and
+      # passes it as `expectedHeadOid`, so a push that lands in between fails this step loudly
+      # instead of being silently overwritten.
       #
-      # Rebasing is sound because neither of them writes a lockfile — `auto-fix.yaml` says so in as
-      # many words where it lists what it regenerates — so the commit being replayed touches two
-      # files nothing else on the branch is editing. A conflict therefore means an assumption has
-      # changed, and the job stops loudly instead of resolving it.
+      # Losing that race is self-healing rather than something to retry here: the push that won it
+      # is itself a `synchronize` event, so this workflow runs again on the head that now exists
+      # and syncs the lockfiles against it.
+      #
+      # `file_pattern` is the two lockfiles and nothing else. `cargo update` writes only those, so
+      # anything else that changed is a bug to see rather than to commit — the same reasoning
+      # `auto-fix.yaml` gives for its own list, which deliberately excludes the lockfiles.
+      #
+      # No `if:` guard: the action detects an unchanged tree itself and commits nothing.
       - name: Commit the updated lockfiles
-        if: steps.sync.outputs.changed == 'true'
-        env:
-          # The GitHub Actions bot identity, so the commit is attributable to automation rather
-          # than to whoever last touched the branch.
-          GIT_AUTHOR_NAME: github-actions[bot]
-          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
-          GIT_COMMITTER_NAME: github-actions[bot]
-          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
-          BRANCH: ${{ github.event.pull_request.head.ref }}
-        run: |
-          set -euo pipefail
-          git add Cargo.lock web/frontend/Cargo.lock
-          git commit -m "build: sync both Cargo.lock files with the workspace manifests"
-          for attempt in 1 2 3; do
-            if git push origin "HEAD:${BRANCH}"; then
-              exit 0
-            fi
-            echo "push rejected (attempt ${attempt}/3); replaying onto ${BRANCH} as it now stands"
-            if ! git pull --rebase origin "$BRANCH"; then
-              git rebase --abort || true
-              echo "::error::rebasing the lockfile sync onto ${BRANCH} conflicted; nothing else on"
-              echo "::error::this branch is supposed to write a lockfile — resolve it by hand"
-              exit 1
-            fi
-          done
-          echo "::error::could not push the lockfile sync after 3 attempts; ${BRANCH} is moving"
-          echo "::error::faster than this job can follow it"
-          exit 1
+        uses: TimSchoenle/actions/actions/common/commit-changes@e8af15f00459da30900d926bf8fbb9dea5a56495 # tag=actions-common-commit-changes-v1.3.0
+        with:
+          commit_message: "build: sync both Cargo.lock files with the workspace manifests"
+          token: ${{ steps.generate_token.outputs.token }}
+          branch: ${{ github.event.pull_request.head.ref }}
+          file_pattern: "Cargo.lock web/frontend/Cargo.lock"

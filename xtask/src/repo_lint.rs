@@ -30,13 +30,14 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(published_secrets_are_refused(root)?);
     findings.extend(dockerfile_ships_every_workspace_binary(root)?);
     findings.extend(deploy_blacklist_is_honoured(root)?);
+    findings.extend(build_inputs_are_classified(root)?);
     findings.extend(notices_accept_every_allowed_licence(root)?);
     findings.extend(the_notices_url_is_the_one_the_server_publishes(root)?);
     findings.extend(tests_run_the_production_postgres_major(root)?);
     findings.extend(advisory_ignores_agree(root)?);
 
     if findings.is_empty() {
-        println!("repo-lint: 10 rules, no violations");
+        println!("repo-lint: 11 rules, no violations");
         return Ok(());
     }
 
@@ -304,14 +305,17 @@ fn dockerfile_ships_every_workspace_binary(root: &Path) -> anyhow::Result<Vec<Fi
 /// must.** Being built is not the same as being shipped: `xtask` is compiled into an image the
 /// compose stack runs (`migrate`, `seed`), but it is the repository's task runner, and a
 /// registry is not where a command that resets a database belongs. Nothing in a workflow
-/// matrix records that distinction — the matrices are hand-maintained literals — so this reads
-/// `[workspace.metadata.deploy.exclude]` from the root manifest and checks every image matrix
-/// under `.github/workflows/` against it. Both directions, because each fails silently: an
-/// excluded binary in a matrix publishes what must not be published, and a
-/// `release-please.yaml` matrix missing a deployable binary releases nothing for a service
-/// nobody notices is absent until an operator pulls a tag that was never pushed. The two
-/// matrices in that workflow (`build`, then `manifest`) are checked separately: they are
-/// duplicated literals, and only one of them going stale is the likelier failure.
+/// matrix records that distinction, so this reads `[workspace.metadata.deploy.exclude]` from the
+/// root manifest and checks every image matrix under `.github/workflows/` against it: an excluded
+/// binary in a matrix publishes what must not be published, and a name the Dockerfile does not
+/// build fails at the final `COPY`.
+///
+/// The other direction — a deployable binary *missing* from the publish set — is no longer a
+/// matrix check, because `release-please.yaml` no longer carries one. It derives its set from
+/// `xtask release-plan`, which computes `SERVICE_BINS` minus this blacklist and so cannot omit a
+/// service by drifting. What that moves the risk to is the derivation being quietly replaced by a
+/// literal again, which would publish a hand-maintained list while every gate still passed; so
+/// the publish workflow is required to contain no literal image matrix and to invoke the planner.
 fn deploy_blacklist_is_honoured(root: &Path) -> anyhow::Result<Vec<Finding>> {
     const RULE: &str = "deploy-blacklist-is-honoured";
 
@@ -354,7 +358,6 @@ fn deploy_blacklist_is_honoured(root: &Path) -> anyhow::Result<Vec<Finding>> {
     let Ok(entries) = std::fs::read_dir(&workflows) else {
         anyhow::bail!("repo-lint: cannot read {}", workflows.display());
     };
-    let mut publish_matrices = 0_usize;
     for entry in entries.flatten() {
         let path = entry.path();
         if !path
@@ -367,14 +370,8 @@ fn deploy_blacklist_is_honoured(root: &Path) -> anyhow::Result<Vec<Finding>> {
         let Ok(workflow) = std::fs::read_to_string(&path) else {
             continue;
         };
-        // Only the publish workflow owes completeness. `ci.yml` narrows its matrix on pull
-        // requests on purpose, so a subset there is correct, not a missing release.
-        let publishes = path == publish;
         for (line, names) in image_matrices(&workflow) {
-            if publishes {
-                publish_matrices += 1;
-            }
-            for detail in matrix_violations(&built, &excluded, &names, publishes) {
+            for detail in matrix_violations(&built, &excluded, &names) {
                 findings.push(Finding {
                     rule: RULE,
                     file: path.clone(),
@@ -385,12 +382,79 @@ fn deploy_blacklist_is_honoured(root: &Path) -> anyhow::Result<Vec<Finding>> {
         }
     }
 
-    if publish_matrices == 0 {
+    let Ok(workflow) = std::fs::read_to_string(&publish) else {
+        anyhow::bail!("repo-lint: cannot read {}", publish.display());
+    };
+    for (line, _) in image_matrices(&workflow) {
+        findings.push(Finding {
+            rule: RULE,
+            file: publish.clone(),
+            line,
+            detail: "the publish workflow names its images literally; it must take them from \
+                     `xtask release-plan`, which is what holds the published set to SERVICE_BINS \
+                     minus the deploy blacklist"
+                .to_owned(),
+        });
+    }
+    if !workflow.contains("release-plan") {
+        findings.push(Finding {
+            rule: RULE,
+            file: publish,
+            line: 1,
+            detail: "the publish workflow never invokes `xtask release-plan`, so nothing decides \
+                     which images a release publishes"
+                .to_owned(),
+        });
+    }
+    Ok(findings)
+}
+
+/// **Every top-level path must be something `release-plan` can classify.** The planner decides
+/// which images a release rebuilds from the workspace dependency graph plus a table of the inputs
+/// that belong to no package (`RULES`, `xtask/src/release_plan.rs`). A new top-level entry that
+/// matches neither is the one failure that is silent in the dangerous direction: the planner
+/// treats it as a change to everything and says so on stderr, but nobody reads a release log that
+/// published successfully. This makes the omission fail on the pull request that introduces it,
+/// while the person who knows whether the new directory reaches an image is still looking.
+fn build_inputs_are_classified(root: &Path) -> anyhow::Result<Vec<Finding>> {
+    const RULE: &str = "build-inputs-are-classified";
+
+    let manifest_path = root.join("Cargo.toml");
+    let Ok(manifest) = std::fs::read_to_string(&manifest_path) else {
+        anyhow::bail!("repo-lint: cannot read {}", manifest_path.display());
+    };
+    let roots = crate::release_plan::member_roots(&manifest);
+    if roots.is_empty() {
         anyhow::bail!(
-            "repo-lint: {} declares no image matrix; the publish workflow cannot have been \
-             left without one",
-            publish.display()
+            "repo-lint: {} declares no `members = [...]`, so there is nothing to judge package \
+             ownership against",
+            manifest_path.display()
         );
+    }
+
+    let Ok(entries) = std::fs::read_dir(root) else {
+        anyhow::bail!("repo-lint: cannot read {}", root.display());
+    };
+    let mut findings = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // Not part of any build context and not a repository artefact.
+        if name == ".git" {
+            continue;
+        }
+        if crate::release_plan::top_level_is_classified(&name, &roots) {
+            continue;
+        }
+        findings.push(Finding {
+            rule: RULE,
+            file: entry.path(),
+            line: 1,
+            detail: format!(
+                "`{name}` belongs to no workspace member and matches no rule in \
+                 xtask/src/release_plan.rs. Add it to RULES — `Every` if a published image is \
+                 built from it, `Inert` if it cannot reach one"
+            ),
+        });
     }
     Ok(findings)
 }
@@ -743,8 +807,9 @@ fn toml_string_array(text: &str, table: &str, key: &str) -> Option<(usize, Vec<S
 /// The `SERVICE_BINS` value from a Dockerfile, with its 1-based line number.
 ///
 /// Split out so the parse can be tested against the forms that must and must not be recognised,
-/// without a filesystem.
-fn service_bins(dockerfile: &str) -> Option<(usize, Vec<String>)> {
+/// without a filesystem. Shared with `release-plan`, which derives the publishable set from the
+/// same declaration rather than from a list of its own.
+pub(crate) fn service_bins(dockerfile: &str) -> Option<(usize, Vec<String>)> {
     for (index, line) in dockerfile.lines().enumerate() {
         let Some(value) = line.trim().strip_prefix("ARG SERVICE_BINS=") else {
             continue;
@@ -786,15 +851,11 @@ fn bin_targets(manifest: &str) -> Vec<String> {
 
 /// What one image matrix gets wrong, as the detail text of each violation.
 ///
-/// Pure, so every direction can be tested without a workflow tree: a blacklisted name present,
-/// a name nothing builds, and — for a matrix that `publishes` — a deployable binary missing
-/// from it. A narrowed matrix that only *subsets* the deployable set is none of these.
-fn matrix_violations(
-    built: &[String],
-    excluded: &[Exclusion],
-    names: &[String],
-    publishes: bool,
-) -> Vec<String> {
+/// Pure, so both directions can be tested without a workflow tree: a blacklisted name present,
+/// and a name nothing builds. Completeness is deliberately not checked here — every remaining
+/// literal matrix is one that narrows on purpose (`ci.yml` on pull requests), and the publish
+/// workflow has no literal at all.
+fn matrix_violations(built: &[String], excluded: &[Exclusion], names: &[String]) -> Vec<String> {
     let mut details = Vec::new();
     for name in names {
         if let Some(entry) = excluded.iter().find(|entry| &entry.bin == name) {
@@ -809,25 +870,13 @@ fn matrix_violations(
             ));
         }
     }
-    if !publishes {
-        return details;
-    }
-    for bin in built {
-        if excluded.iter().any(|entry| &entry.bin == bin) || names.contains(bin) {
-            continue;
-        }
-        details.push(format!(
-            "`{bin}` is built and not on the deploy blacklist, but this publish matrix omits \
-             it — no image would ever be released for it"
-        ));
-    }
     details
 }
 
 /// One `[workspace.metadata.deploy.exclude]` entry: a binary that is built but never published.
-struct Exclusion {
+pub(crate) struct Exclusion {
     line: usize,
-    bin: String,
+    pub(crate) bin: String,
     reason: String,
 }
 
@@ -835,7 +884,7 @@ struct Exclusion {
 ///
 /// A line-based read of one known table, like the rest of this module: the entries are
 /// `<bin> = "<reason>"`, and the table ends at the next header.
-fn deploy_exclusions(manifest: &str) -> Vec<Exclusion> {
+pub(crate) fn deploy_exclusions(manifest: &str) -> Vec<Exclusion> {
     let mut out = Vec::new();
     let mut in_table = false;
     for (index, line) in manifest.lines().enumerate() {
@@ -1168,47 +1217,39 @@ mod tests {
         assert_eq!(matrices[1], (5, vec!["api".into(), "render".into()]));
     }
 
-    /// Each direction the blacklist has to hold in. The publishing half of this rule exists
-    /// because `xtask` — a task runner with a `reset` command — was in both release matrices
-    /// and would have been pushed to GHCR and Docker Hub under a version tag.
+    /// The rule exists because `xtask` — a task runner with a `reset` command — was in both
+    /// release matrices and would have been pushed to GHCR and Docker Hub under a version tag.
     #[test]
-    fn the_blacklist_is_enforced_in_both_directions() {
+    fn a_matrix_may_narrow_but_may_not_name_what_must_not_ship() {
         let built = ["api".to_owned(), "render".to_owned(), "xtask".to_owned()];
         let excluded = vec![Exclusion {
             line: 9,
             bin: "xtask".to_owned(),
             reason: "a task runner, not a service".to_owned(),
         }];
-        let publish = |names: &[&str]| {
+        let check = |names: &[&str]| {
             matrix_violations(
                 &built,
                 &excluded,
                 &names.iter().map(|n| (*n).to_owned()).collect::<Vec<_>>(),
-                true,
             )
         };
 
-        assert!(publish(&["api", "render"]).is_empty());
+        assert!(check(&["api", "render"]).is_empty());
 
-        let blacklisted = publish(&["api", "render", "xtask"]);
+        let blacklisted = check(&["api", "render", "xtask"]);
         assert_eq!(blacklisted.len(), 1);
         assert!(blacklisted[0].contains("a task runner, not a service"));
 
-        // A service that is built and not excluded, yet never published: silent, and only
-        // visible when someone pulls a tag that was never pushed.
-        let omitted = publish(&["api"]);
-        assert_eq!(omitted.len(), 1);
-        assert!(omitted[0].contains("`render`"));
-
-        // The same omission in a matrix that does not publish is `ci.yml` narrowing its build
-        // set on a pull request, which is deliberate.
+        // A subset is `ci.yml` narrowing its build set on a pull request, which is deliberate.
+        // Completeness of the *published* set is `release-plan`'s, not a matrix's.
         assert!(
-            matrix_violations(&built, &excluded, &["api".to_owned()], false).is_empty(),
-            "a non-publishing matrix may be any subset"
+            check(&["api"]).is_empty(),
+            "a literal matrix may be any subset"
         );
 
-        // A name no runtime stage could copy, in either kind of matrix.
-        assert_eq!(publish(&["api", "render", "typo"]).len(), 1);
+        // A name no runtime stage could copy.
+        assert_eq!(check(&["api", "render", "typo"]).len(), 1);
     }
 
     /// The array read has to be scoped to its table: `deny.toml` carries three keys beginning

@@ -22,12 +22,28 @@ pub(crate) use crate::wire::types::{
     SyncPullBody, SyncPushBody, SyncSettingsPatch, SystemStats, Tag, TestAdapterBody,
     TestAdapterRequest, TriggerScan, TriggerScanProviderId, UpdateProvider, UpsertMapping, UserId,
     VerifyEmailRequest, WatchStatus, WatchlistBulkIds, WatchlistBulkUpdate, WatchlistCounts,
-    WatchlistEntryViewEntry, WatchlistGroup, WatchlistItem, WatchlistUpsert, WatchlistView,
+    WatchlistEntryViewEntry, WatchlistGroup, WatchlistItem, WatchlistSource, WatchlistUpsert,
+    WatchlistView,
 };
 
 // `BulkResult` says nothing about what it is a result *of*; only the watchlist bulk bar and
 // the group-header mark-read call it.
 pub(crate) use crate::wire::types::BulkResult;
+
+pub(crate) use crate::wire::types::{NextUnread, WatchlistItemNextUnread};
+
+/// The chapter a row's `Continue` would open, or `None` when the reader is caught up.
+///
+/// `utoipa` renders `Option<T>` of a schema type as `oneOf: [null, $ref]`, which `progenitor`
+/// turns into an untagged two-variant enum whose null arm is a bare `serde_json::Value`. Every
+/// reader wants the same thing out of that, so the match lives here once rather than at each
+/// call site — the same shape `WatchlistEntryViewEntry` already has.
+pub(crate) fn next_unread(item: &WatchlistItem) -> Option<&NextUnread> {
+    match item.next_unread.as_ref() {
+        Some(WatchlistItemNextUnread::Variant1(next)) => Some(next),
+        _ => None,
+    }
+}
 
 // `SyncAccountStatus` (external-tracker link status) keeps its generated name so it can't be
 // confused with `AccountStatus` (user account active/suspended).

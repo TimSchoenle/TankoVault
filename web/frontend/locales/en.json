@@ -1013,8 +1013,10 @@
     "chapterNo": "ch {number}",
     "clearSelection": "Clear selection",
     "col": {
+      "nextUnread": "Next unread",
       "progress": "Progress",
       "released": "Released",
+      "sources": "Sources",
       "title": "Title",
       "unread": "Unread"
     },
@@ -1037,6 +1039,14 @@
     "markGroupIncomplete": "Scroll to load the whole group before marking it read.",
     "markGroupRead": "Mark group read",
     "markGroupTooBig": "Too many titles to mark at once (limit {limit}).",
+    "moreSources": {
+      "one": "{count} more source",
+      "other": "{count} more sources"
+    },
+    "moreUnread": {
+      "one": "+{count} more unread",
+      "other": "+{count} more unread"
+    },
     "moveTo": "Move to {status}",
     "moveToPrompt": "Move to…",
     "mute": "Mute",

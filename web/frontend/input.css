@@ -530,7 +530,26 @@ a { color: inherit; text-decoration: none; }
  * which is what used to make every "just nudge this column" change a
  * two-file edit with one of them forgotten.
  * ========================================================================== */
-:root { --wl-cols: 34px 1fr 176px 74px 128px 122px; }
+/* `minmax(0,1fr)`, not `1fr`: a bare `1fr` floors at min-content, so one long unbroken title
+ * pushed the fixed cells off the measured column instead of ellipsizing. */
+:root { --wl-cols: 34px minmax(0, 1fr) 190px 74px 150px 130px; }
+
+/* Above 1500px the extra width buys triage information rather than padding: the chapter the
+ * reader would open next, and which sources carry it. Both cells are in the DOM at every width
+ * and hidden below the step — rendering them conditionally would re-render every row on a
+ * window resize, for two cells. */
+.ik-wl-next, .ik-wl-sources { display: none; }
+@media (min-width: 1500px) {
+  :root { --wl-cols: 34px minmax(0, 1fr) 250px 190px 74px 150px 132px 130px; }
+  .ik-wl-next { display: block; min-width: 0; }
+  .ik-wl-sources { display: flex; align-items: center; gap: 4px; }
+}
+.ik-wl-next-ch { font-size: 12.5px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ik-wl-next-ch .num { font-family: var(--font-mono); color: var(--acc3); margin-right: 6px; }
+.ik-wl-next-more { font-size: 11px; color: var(--faint); margin-top: 2px; }
+/* A source in any non-`active` state is dimmed rather than recoloured: the row already carries
+   one amber warning, and six state colours in a 22px tile is noise, not information. */
+.ik-mono-tile.off { opacity: .45; }
 
 /* Status tabs. The active tab's bottom border is transparent so it merges into
    the toolbar below it rather than sitting in its own box. */
@@ -657,11 +676,11 @@ a { color: inherit; text-decoration: none; }
 /* Below the design's two-pane width the fixed cells stop fitting; the row keeps
    the title, the unread pill and the actions, which is the minimum that still
    answers "what do I read next?". */
+/* Class selectors, not `nth-child`: the header and the row share the track list, and every
+   column added between them shifted the indices in a rule nobody thought to re-count. */
 @media (max-width: 900px) {
   :root { --wl-cols: 34px 1fr 74px 96px; }
-  .ik-wl-head > :nth-child(3), .ik-wl-row > .ik-wl-progress { display: none; }
-  .ik-wl-head > :nth-child(5) { display: none; }
-  .ik-wl-row > .ik-wl-released { display: none; }
+  .ik-wl-progress, .ik-wl-released { display: none; }
 }
 
 /* ============================================================================

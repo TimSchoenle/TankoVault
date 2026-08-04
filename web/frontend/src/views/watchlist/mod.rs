@@ -388,12 +388,17 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
         } else if query.view == View::Grid {
             CoverGrid { items: snapshot.items.clone(), selected }
         } else {
+            // The header carries the row's cell classes so both are hidden by the same rule:
+            // the responsive block used to address the header by `nth-child`, which every
+            // column added between them silently shifted.
             div { class: "ik-wl-head", role: "row",
                 span {}
                 span { {i18n.t("watchlist.col.title")} }
-                span { {i18n.t("watchlist.col.progress")} }
+                span { class: "ik-wl-next", {i18n.t("watchlist.col.nextUnread")} }
+                span { class: "ik-wl-progress", {i18n.t("watchlist.col.progress")} }
                 span { style: "text-align:right;", {i18n.t("watchlist.col.unread")} }
                 {sort_header(i18n, &query, go)}
+                span { class: "ik-wl-sources", {i18n.t("watchlist.col.sources")} }
                 span {}
             }
             div {
@@ -521,7 +526,8 @@ fn sort_header(
     let mut go = go;
     rsx! {
         button {
-            class: if active { "ik-wl-sortcol on" } else { "ik-wl-sortcol" },
+            // `ik-wl-released` so the header cell is dropped by the same rule as the row cell.
+            class: if active { "ik-wl-sortcol ik-wl-released on" } else { "ik-wl-sortcol ik-wl-released" },
             r#type: "button",
             "aria-sort": match (active, order) {
                 (false, _) => "none",

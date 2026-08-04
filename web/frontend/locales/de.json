@@ -1013,8 +1013,10 @@
     "chapterNo": "Kap. {number}",
     "clearSelection": "Auswahl aufheben",
     "col": {
+      "nextUnread": "Nächstes ungelesen",
       "progress": "Fortschritt",
       "released": "Erschienen",
+      "sources": "Quellen",
       "title": "Titel",
       "unread": "Ungelesen"
     },
@@ -1037,6 +1039,14 @@
     "markGroupIncomplete": "Lade erst die ganze Gruppe, bevor du sie als gelesen markierst.",
     "markGroupRead": "Gruppe als gelesen markieren",
     "markGroupTooBig": "Zu viele Titel auf einmal (Grenze {limit}).",
+    "moreSources": {
+      "one": "{count} weitere Quelle",
+      "other": "{count} weitere Quellen"
+    },
+    "moreUnread": {
+      "one": "+{count} weiteres ungelesen",
+      "other": "+{count} weitere ungelesen"
+    },
     "moveTo": "Verschieben nach {status}",
     "moveToPrompt": "Verschieben nach…",
     "mute": "Stummschalten",

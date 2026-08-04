@@ -722,13 +722,67 @@ mod tests {
         }
     }
 
+    /// The catalogue has to reach the *exposition*, not just exist.
+    ///
+    /// Two failures this pins, both silent and both invisible in the source. A `describe_*`
+    /// that runs after the first measurement is dropped by the exporter, and the series then
+    /// appears on a dashboard with no `# HELP` at all. And a histogram whose buckets were not
+    /// registered on the builder renders as `# TYPE … summary` — still a working panel, but
+    /// carrying per-replica quantiles that no recording rule can aggregate, which is the exact
+    /// thing every latency rule in the chart depends on not happening.
+    #[test]
+    fn the_catalogue_reaches_the_exposition() {
+        let recorder = build_recorder_with_catalogue_buckets();
+        let handle = recorder.handle();
+        metrics::with_local_recorder(&recorder, || {
+            describe_all();
+            metrics::counter!(names::NOTIFICATIONS_DELIVERED, "channel" => "email").increment(1);
+            metrics::histogram!(names::SCAN_TASK_DURATION, "provider" => "p").record(42.0);
+        });
+        let rendered = handle.render();
+
+        assert!(
+            rendered.contains(&format!("# HELP {} ", names::NOTIFICATIONS_DELIVERED)),
+            "no HELP line for a described counter:\n{rendered}"
+        );
+        assert!(
+            rendered.contains(&format!("# TYPE {} histogram", names::SCAN_TASK_DURATION)),
+            "a catalogue histogram rendered as something other than a histogram:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("scan_task_duration_seconds_bucket"),
+            "no buckets emitted for a catalogue histogram:\n{rendered}"
+        );
+    }
+
+    /// The builder [`MetricsRegistry::install`] assembles, without installing it globally.
+    fn build_recorder_with_catalogue_buckets() -> metrics_exporter_prometheus::PrometheusRecorder {
+        let mut builder = PrometheusBuilder::new();
+        for metric in CATALOGUE {
+            if let Kind::Histogram(buckets) = metric.kind {
+                builder = builder
+                    .set_buckets_for_metric(Matcher::Full(metric.name.to_owned()), buckets)
+                    .expect("catalogue buckets should be accepted");
+            }
+        }
+        builder.build_recorder()
+    }
+
     /// Bug pinned: an inline decrement after `next.run(req).await` never ran on a dropped
     /// future, leaking one unit per abandoned SSE stream. Do not move it back inline.
     #[test]
     fn in_flight_gauge_is_released_when_the_request_future_is_dropped() {
         // A local recorder, so this test observes real gauge values without installing the
         // process-wide one the sibling tests assert is absent.
-        let recorder = PrometheusBuilder::new().build_recorder();
+        let mut builder = PrometheusBuilder::new();
+        for metric in CATALOGUE {
+            if let Kind::Histogram(buckets) = metric.kind {
+                builder = builder
+                    .set_buckets_for_metric(Matcher::Full(metric.name.to_owned()), buckets)
+                    .expect("buckets");
+            }
+        }
+        let recorder = builder.build_recorder();
         let handle = recorder.handle();
 
         metrics::with_local_recorder(&recorder, || {

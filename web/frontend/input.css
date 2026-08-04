@@ -112,8 +112,16 @@
 [data-cover="vivid"]   { --cover-fallback: radial-gradient(120% 120% at 20% 0%, hsl(16 74% 46%) 0%, hsl(206 80% 26%) 55%, hsl(206 72% 12%) 100%); }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; height: 100%; }
+html { margin: 0; padding: 0; height: 100%; }
+/* `min-height`, never `height`: at `height: 100%` the body's box stops at the fold, so every
+ * pixel below it was painted only via background propagation to the canvas — nothing on the page
+ * actually carried this colour past the first viewport, which is what readers saw as the
+ * background turning grey on scroll. `min-height` sizes the box to the content, so the fill is
+ * painted rather than inherited. */
 body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-body);

@@ -50,7 +50,10 @@ impl RemoteEntry {
 /// provider's public API, or carried on a [`RemoteEntry`] from a list sync. This is what fills
 /// in a local series' description, cover, alternative titles, content type, publication status,
 /// genres and credits.
-#[derive(Debug, Clone)]
+///
+/// `Default` is "upstream said nothing about any of it", which is what a caller that only cares
+/// about the reader's own position on a list wants for the other half of an entry.
+#[derive(Debug, Clone, Default)]
 pub(crate) struct RemoteMetadata {
     pub(crate) external_id: String,
     /// Candidate titles (primary first, then every alternative/synonym), non-blank only.
@@ -61,8 +64,29 @@ pub(crate) struct RemoteMetadata {
     pub(crate) content_type: ContentType,
     /// The work's publication status (ongoing/completed/…), not any reader's list status.
     pub(crate) series_status: SeriesStatus,
+    /// Coarse genres. The matcher's overlap signal, and the only tag vocabulary a scraping
+    /// adapter can also produce.
     pub(crate) tags: Vec<String>,
+    /// The provider's rich descriptive vocabulary, weighted. Persisted, never matched on.
+    pub(crate) themes: Vec<RemoteTag>,
     pub(crate) authors: Vec<String>,
+    /// Whether upstream classifies the work as adult. `None` is "no opinion" and leaves the
+    /// stored flag alone — a content gate must not be cleared by a provider that cannot see it.
+    pub(crate) is_adult: Option<bool>,
+    /// Upstream's average score, 0..100.
+    pub(crate) external_score: Option<f32>,
+    pub(crate) external_popularity: Option<i32>,
+    /// What the work was adapted from, lower-cased (`original`, `light_novel`, …).
+    pub(crate) external_source: Option<String>,
+}
+
+/// One weighted term from a provider's descriptive tag vocabulary.
+#[derive(Debug, Clone)]
+pub(crate) struct RemoteTag {
+    pub(crate) name: String,
+    /// `(0, 1]` — `AniList`'s `rank`/100, floored so it never reaches the zero the column's
+    /// `CHECK` rejects.
+    pub(crate) weight: f32,
 }
 
 /// An external tracker `SyncEngine` can link, pull from and push to. Implementors are stored as

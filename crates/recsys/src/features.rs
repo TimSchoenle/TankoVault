@@ -21,10 +21,14 @@ pub enum FeatureKind {
     Status,
     Decade,
     Length,
+    /// What the work was adapted from — `AniList`'s `source` (`original`, `light_novel`, …).
+    Source,
 }
 
 impl FeatureKind {
-    /// The token stored in `rec_features.kind`. Mirrors the SQL `CHECK` in migration 0028.
+    /// The token stored in `rec_features.kind`. Mirrors the `rec_features_kind_check` constraint,
+    /// which a later migration widens rather than replaces — so the constraint is named here and
+    /// the migration number is not.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -35,6 +39,7 @@ impl FeatureKind {
             Self::Status => "status",
             Self::Decade => "decade",
             Self::Length => "length",
+            Self::Source => "source",
         }
     }
 
@@ -64,7 +69,7 @@ impl FeatureKind {
             // arguments, so they stay separate arms.
             Self::Tag | Self::Author => 1.0,
             Self::ContentType => 0.6,
-            Self::Country | Self::Length => 0.4,
+            Self::Country | Self::Length | Self::Source => 0.4,
             Self::Status | Self::Decade => 0.25,
         }
     }
@@ -109,6 +114,8 @@ pub struct SeriesFacts {
     pub tags: Vec<(String, f32)>,
     pub authors: Vec<String>,
     pub country: Option<String>,
+    /// `AniList`'s `source`, lower-cased (`original`, `light_novel`, …).
+    pub source: Option<String>,
 }
 
 /// How long a series is, as a reader would describe it.
@@ -193,6 +200,12 @@ pub fn extract(facts: &SeriesFacts) -> Vec<(FeatureKey, f32)> {
             FeatureKind::Country.base_weight(),
         ));
     }
+    if let Some(source) = facts.source.as_ref().filter(|s| !s.is_empty()) {
+        out.push((
+            FeatureKey::new(FeatureKind::Source, source.to_lowercase()),
+            FeatureKind::Source.base_weight(),
+        ));
+    }
     if let Some(decade) = decade_of(facts.release_year) {
         out.push((
             FeatureKey::new(FeatureKind::Decade, decade),
@@ -267,6 +280,7 @@ mod tests {
             tags: vec![("action".to_owned(), 1.0), ("regression".to_owned(), 0.87)],
             authors: vec!["chugong".to_owned()],
             country: Some("KR".to_owned()),
+            source: Some("web_novel".to_owned()),
         }
     }
 
@@ -285,6 +299,7 @@ mod tests {
                 FeatureKind::Status,
                 FeatureKind::Decade,
                 FeatureKind::Length,
+                FeatureKind::Source,
             ]
             .into_iter()
             .collect()
@@ -306,6 +321,7 @@ mod tests {
             tags: Vec::new(),
             authors: Vec::new(),
             country: None,
+            source: None,
         };
         assert!(extract(&bare).is_empty());
         assert_eq!(decade_of(None), None);
@@ -399,6 +415,7 @@ mod tests {
             FeatureKind::Status,
             FeatureKind::Decade,
             FeatureKind::Length,
+            FeatureKind::Source,
         ] {
             assert!(kind.is_dense_eligible(), "{kind} must shape the embedding");
         }

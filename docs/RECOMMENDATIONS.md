@@ -29,12 +29,18 @@ match the code. Four places where reality won an argument:
   parsing every vector back out of text in the request path to refine a value the seed selection
   has largely already decided. Noted rather than hidden.
 
+- **The widened `AniList` signals are now written** (§2.2). The media selection carries `tags`,
+  `averageScore`, `popularity`, `isAdult` and `source`; the enrichment sweep persists them, so
+  `tags.kind`, `series_tags.weight`/`source`, `series.is_adult`, `external_score`,
+  `external_popularity` and `external_source` are populated by the path that already existed.
+  Two decisions the code makes and this document did not: spoiler- and adult-flagged tags are
+  **dropped at parse and never stored**, and a rank of zero is floored to `0.01` rather than
+  dropped. Both are argued in §2.2.
+
 Not built, and named so it is not mistaken for done:
 
-- **The widened AniList signals.** `tags.kind`, `series_tags.weight`, `series.is_adult`,
-  `external_score` and `external_popularity` exist as columns and are read by the model;
-  **nothing writes them**, so today's vocabulary is still genre-only. Highest-value remaining
-  change; needs no new code beyond the GraphQL selection (§2.2).
+- **`relations`** (§7.4's "next in the series" rail). Still unselected, so a direct sequel of a
+  tracked series can still reach the discovery shelf.
 - **Co-occurrence (retrieval path R4).** The table exists and the merge path handles it; nothing
   populates it, so cross-reader signal contributes nothing yet. Correct on a small deployment
   either way (§12.2).
@@ -150,30 +156,51 @@ exactly like the fixed version until the row count grows.
 | Description | `series.description`, `series.search_vec` | Weak signal, high noise. Low priority (§13). |
 | External lists | `sync_remote_entries` (AniList) | Second interaction source, **including entries with no local match** — which is a cold-start signal for series we do not carry. |
 
-### 2.2 Missing, and worth adding first
+### 2.2 The widened vocabulary — **built**
 
-The single biggest quality lever is not the algorithm — it is the feature vocabulary. Today
-`series_tags` holds **AniList genres only** (`genres` in
-`services/sync/src/providers/anilist/graphql.rs`), a vocabulary of roughly 20 terms. "Action" and
-"Fantasy" describe a third of the catalogue each; a recommender built on them cannot say anything
-specific, and its neighbour lists will be dominated by whatever is popular.
+The single biggest quality lever is not the algorithm — it is the feature vocabulary. Before this,
+`series_tags` held **AniList genres only**, roughly 20 terms of which "Action" and "Fantasy"
+describe a third of the catalogue each; a recommender built on them cannot say anything specific,
+and its neighbour lists are dominated by whatever is popular.
 
-Add to the AniList media selection — all free, same query, no extra requests:
+Both media selections in `services/sync/src/providers/anilist/graphql.rs` now carry — all free,
+same query, no extra requests:
 
 ```graphql
-tags { name rank isMediaSpoiler }   # ~600-term vocabulary, rank 0..100
-averageScore                        # quality prior
-popularity                          # appeal prior
-isAdult                             # a hard gate, not a feature
-source                              # ORIGINAL | LIGHT_NOVEL | WEB_NOVEL | ...
-relations { edges { relationType node { id } } }   # sequels/prequels/side stories (§11.4)
+tags { name rank isMediaSpoiler isAdult }   # ~600-term vocabulary, rank 0..100
+averageScore                                # quality prior
+popularity                                  # appeal prior
+isAdult                                     # a hard gate, not a feature
+source                                      # ORIGINAL | LIGHT_NOVEL | WEB_NOVEL | ...
 ```
 
 `tags` with `rank` turns a 20-term vocabulary into a ~600-term weighted one. That is the
 difference between "shares Action" and "shares Regression, Dungeon, Male Protagonist, Weak to
-Strong" — which is both a better neighbour and a usable explanation.
+Strong" — which is both a better neighbour and a usable explanation. Genres stay a separate list
+all the way through: only they feed the matcher, because a locally-scraped candidate carries four
+genres and could never carry twenty-five themes, and the overlap score would read that absence as
+disagreement.
 
-`isMediaSpoiler` tags are excluded from anything user-visible but kept for scoring.
+Backfill is the existing metadata sweep. There is no new sweep and no new write path — the tag
+link table gained `weight`/`kind`/`source` and `add_series_tags` carries them.
+
+**`relations` is still not selected.** It is what §7.4's "next in the series" rail needs, and
+until it lands a direct sequel of a tracked series can reach the discovery shelf.
+
+Three decisions the implementation makes, stated because each one costs something:
+
+- **Spoiler- and adult-flagged tags are dropped at parse and never stored.** `series_tags` has no
+  visibility column, so every reader of it — the series page's chips, the browse filters, the
+  matcher, and the recommender's own explanation (§7.5) — renders whatever it finds. Keeping the
+  tags "for scoring only" means remembering the exclusion in five places, and the one that forgets
+  spoils the work for a reader who never asked for it. This loses real recall on adult titles in
+  particular. Restoring them is a visibility column plus a predicate on every one of those reads.
+- **A rank of zero is floored to `0.01`, not dropped.** `series_tags_weight_check` rejects
+  `weight <= 0`, and an unvoted tag is still the weakest kind of evidence rather than none. A
+  literal zero would abort the transaction carrying the whole enrichment batch.
+- **A scraping adapter cannot overwrite an `AniList` link.** An adapter knows a tag's name and
+  nothing else, so it writes weight 1.0; without a precedence rule the two writers alternate on
+  every sweep and the feature digest churns, re-embedding the series for no new information.
 
 **Not present anywhere and not proposed:** an explicit rating. The product has no rating column
 and this design does not add one — implicit feedback (§4) is sufficient and does not require

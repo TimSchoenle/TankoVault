@@ -664,7 +664,7 @@ mod tests {
 
     use super::dedupe_latest_by_external_id;
     use crate::provider::{RemoteEntry, RemoteMetadata};
-    use tankovault_domain::{ContentType, SeriesStatus, WatchStatus};
+    use tankovault_domain::WatchStatus;
     use time::OffsetDateTime;
 
     fn entry(external_id: &str, progress: f64, updated_unix: i64) -> RemoteEntry {
@@ -675,13 +675,7 @@ mod tests {
             metadata: RemoteMetadata {
                 external_id: external_id.to_owned(),
                 titles: vec![format!("title-{external_id}")],
-                description: None,
-                cover_url: None,
-                start_year: None,
-                content_type: ContentType::Unknown,
-                series_status: SeriesStatus::Unknown,
-                tags: Vec::new(),
-                authors: Vec::new(),
+                ..RemoteMetadata::default()
             },
         }
     }

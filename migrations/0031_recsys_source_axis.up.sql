@@ -1,9 +1,9 @@
 -- The adaptation-source axis (docs/RECOMMENDATIONS.md §6.1).
 --
 -- `AniList`'s `source` — ORIGINAL, LIGHT_NOVEL, WEB_NOVEL, VIDEO_GAME and so on — is the one
--- signal in the widened media selection with nowhere to live: the other four land on columns
--- migration 0026 already added. Light-novel and web-novel adaptations cluster hard, and nothing
--- else in the vocabulary separates them from an original work.
+-- signal in the widened media selection with nowhere to live: the other four land on columns the
+-- recsys-signals migration already added. Light-novel and web-novel adaptations cluster hard,
+-- and nothing else in the vocabulary separates them from an original work.
 ALTER TABLE series ADD COLUMN IF NOT EXISTS external_source text;
 
 -- Deliberately unconstrained text: the value is upstream's enum, upstream extends it, and a

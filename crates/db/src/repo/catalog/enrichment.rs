@@ -258,7 +258,7 @@ fn slugify(name: &str) -> String {
     slug.trim_end_matches('-').to_owned()
 }
 
-/// The axis a tag lives on, mirroring the `tags.kind` `CHECK` in migration 0026.
+/// The axis a tag lives on, mirroring the `tags_kind_check` constraint.
 ///
 /// `Genre` is the coarse twenty-term vocabulary every provider agrees on; `Theme` is
 /// `AniList`'s ~600-term descriptive one, where the link weight carries how strongly the term

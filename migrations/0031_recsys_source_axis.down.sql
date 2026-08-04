@@ -1,4 +1,4 @@
--- Reverses 0030. Any `rec_features` row on the retired axis has to go first, or the narrowed
+-- Reverses 0031. Any `rec_features` row on the retired axis has to go first, or the narrowed
 -- CHECK cannot be validated.
 DELETE FROM rec_features WHERE kind = 'source';
 

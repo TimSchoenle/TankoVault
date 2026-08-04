@@ -191,18 +191,30 @@ pub struct MeStats {
 /// Compute a user's lifetime tracking stats in one round trip; both counts are floored to whole
 /// chapters.
 ///
+/// The three watchlist counts share one `count(…) FILTER` pass, held in a CTE that is referenced
+/// more than once and therefore materialised — three scalar subqueries over the same rows were
+/// three scans of them.
+///
 /// `unread` stays a global `DISTINCT`, not a per-series lateral like [`continue_reading`]'s —
-/// measured slower here despite being faster there; the rewrite is not universally right.
+/// measured slower here despite being faster there; the rewrite is not universally right. It
+/// leans on `chapters_source_floor_num_idx`, which carries `number` alongside `floor(number)`
+/// precisely so this predicate never leaves the index.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; tracking nothing gets zeros, not [`crate::DbError::NotFound`].
 pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<MeStats> {
     let stats = sqlx::query_as!(
         MeStats,
-        "SELECT \
-           (SELECT count(*) FROM watchlist_entries WHERE user_id = $1) AS \"tracking!\", \
-           (SELECT count(*) FROM watchlist_entries WHERE user_id = $1 AND status = 'reading') AS \"reading!\", \
-           (SELECT count(*) FROM watchlist_entries WHERE user_id = $1 AND status = 'completed') AS \"completed!\", \
+        "WITH watched AS ( \
+           SELECT count(*) AS tracking, \
+                  count(*) FILTER (WHERE status = 'reading') AS reading, \
+                  count(*) FILTER (WHERE status = 'completed') AS completed \
+           FROM watchlist_entries WHERE user_id = $1 \
+         ) \
+         SELECT \
+           (SELECT tracking FROM watched) AS \"tracking!\", \
+           (SELECT reading FROM watched) AS \"reading!\", \
+           (SELECT completed FROM watched) AS \"completed!\", \
            (SELECT COALESCE(sum(floor(last_read_whole_number)),0)::int8 FROM read_progress \
               WHERE user_id = $1) AS \"chapters_read!\", \
            (SELECT count(*) FROM ( \

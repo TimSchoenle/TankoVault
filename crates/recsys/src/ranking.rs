@@ -130,6 +130,19 @@ pub const DIVERSITY_LAMBDA: f32 = 0.7;
 ///
 /// `similarity` is asked only about pairs that are actually considered, so the caller can compute
 /// it from whatever it has (here, the sparse vectors) without materialising a full matrix.
+///
+/// # Cost
+///
+/// Each candidate carries a running maximum of its similarity to anything already picked, updated
+/// against the *one* newly picked item per round. That makes this `picks × candidates` calls to
+/// `similarity` — the textbook incremental form.
+///
+/// Recomputing the maximum from scratch each round instead, which reads more obviously correct, is
+/// `picks² × candidates`: at the shelf's real shape (~36 picks over ~2 000 candidates) that is 2.6
+/// million sparse-cosine evaluations on the request path against 72 thousand, and it is the
+/// difference between comfortably inside the latency budget and well outside it. The two are
+/// arithmetically identical — `max` is associative — and
+/// `the_running_maximum_agrees_with_recomputing_it` is what says so.
 #[must_use]
 pub fn diversify<Id: Copy + Eq, F>(
     ranked: &[Scored<Id>],
@@ -141,24 +154,36 @@ where
     F: FnMut(Id, Id) -> f32,
 {
     let lambda = lambda.clamp(0.0, 1.0);
+    // Bounded by the input before it reaches an allocation. Nothing can be picked that was not
+    // passed in, so a caller's `limit` — which on the request path originates in a query
+    // parameter — can never size the result above the slice it selects from.
+    let limit = limit.min(ranked.len());
+
     let mut remaining: Vec<&Scored<Id>> = ranked.iter().collect();
-    let mut picked: Vec<Scored<Id>> = Vec::with_capacity(limit.min(remaining.len()));
+    // Parallel to `remaining`: each entry is that candidate's greatest similarity to anything
+    // already picked. Zero while nothing is picked, which is what makes the first round a pure
+    // relevance ranking.
+    let mut closest: Vec<f32> = vec![0.0; remaining.len()];
+    let mut picked: Vec<Scored<Id>> = Vec::with_capacity(limit);
 
     while picked.len() < limit && !remaining.is_empty() {
         let mut best_index = 0;
         let mut best_value = f32::MIN;
         for (index, candidate) in remaining.iter().enumerate() {
-            let closest = picked
-                .iter()
-                .map(|chosen| similarity(candidate.id, chosen.id))
-                .fold(0.0_f32, f32::max);
-            let value = lambda.mul_add(candidate.score, -((1.0 - lambda) * closest));
+            let value = lambda.mul_add(candidate.score, -((1.0 - lambda) * closest[index]));
             if value > best_value {
                 best_value = value;
                 best_index = index;
             }
         }
-        picked.push(remaining.remove(best_index).clone());
+
+        let chosen = remaining.remove(best_index);
+        closest.remove(best_index);
+        // Folded against the newly picked item only; every earlier pick is already in `closest`.
+        for (index, candidate) in remaining.iter().enumerate() {
+            closest[index] = closest[index].max(similarity(candidate.id, chosen.id));
+        }
+        picked.push(chosen.clone());
     }
     picked
 }
@@ -358,6 +383,68 @@ mod tests {
         assert_eq!(
             picked.iter().map(|s| s.id).collect::<Vec<_>>(),
             vec![1, 2, 3]
+        );
+    }
+
+    /// **The running maximum must equal recomputing it, and must not cost the same.**
+    ///
+    /// `diversify` keeps each candidate's greatest similarity to anything already picked and folds
+    /// only the newest pick into it. The obvious implementation recomputes that maximum over every
+    /// pick each round — arithmetically identical, and quadratically more expensive in the number
+    /// of picks. This pins both halves: the same shelf, from far fewer calls.
+    #[test]
+    fn the_running_maximum_agrees_with_recomputing_it() {
+        let ranked: Vec<Scored<u32>> = (0..40_u32)
+            .map(|id| Scored {
+                id,
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "forty small integers are exact in f32"
+                )]
+                score: 1.0 - f32::from(u16::try_from(id).unwrap()) / 100.0,
+                because: None,
+                path: Path::Seed,
+            })
+            .collect();
+        // Deterministic, asymmetric-looking but symmetric similarity, so the fold order matters.
+        let sim = |a: u32, b: u32| ((a * 7 + b * 7) % 13) as f32 / 13.0;
+
+        let calls = std::cell::Cell::new(0_u32);
+        let counted = |a, b| {
+            calls.set(calls.get() + 1);
+            sim(a, b)
+        };
+        let picked = diversify(&ranked, 10, DIVERSITY_LAMBDA, counted);
+        let incremental_calls = calls.get();
+
+        // The naive form, written out here so the comparison is against something readable.
+        let mut remaining: Vec<&Scored<u32>> = ranked.iter().collect();
+        let mut naive: Vec<u32> = Vec::new();
+        while naive.len() < 10 && !remaining.is_empty() {
+            let (best, _) = remaining
+                .iter()
+                .enumerate()
+                .map(|(index, candidate)| {
+                    let closest = naive.iter().map(|c| sim(candidate.id, *c)).fold(0.0, f32::max);
+                    (
+                        index,
+                        DIVERSITY_LAMBDA
+                            .mul_add(candidate.score, -((1.0 - DIVERSITY_LAMBDA) * closest)),
+                    )
+                })
+                .fold((0, f32::MIN), |acc, next| if next.1 > acc.1 { next } else { acc });
+            naive.push(remaining.remove(best).id);
+        }
+
+        assert_eq!(
+            picked.iter().map(|s| s.id).collect::<Vec<_>>(),
+            naive,
+            "the incremental maximum must select exactly the same shelf"
+        );
+        assert!(
+            incremental_calls < 500,
+            "ten picks over forty candidates must stay near picks x candidates, not \
+             picks^2 x candidates; made {incremental_calls} calls"
         );
     }
 

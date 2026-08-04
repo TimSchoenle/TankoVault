@@ -18,7 +18,7 @@
 //!    embedding was derived from.
 //!
 //! The reader's half is two more modules, used by the request path rather than the builder:
-//! [`affinity`] turns watchlist status and reading depth into one number per series, and
+//! [`mod@affinity`] turns watchlist status and reading depth into one number per series, and
 //! [`ranking`] blends the retrieval paths and diversifies the result.
 //!
 //! Retrieval itself is not here: it is an HNSW search, which belongs to Postgres.

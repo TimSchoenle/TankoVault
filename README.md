@@ -215,7 +215,8 @@ client, and the i18n rules.
 - [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — every `TANKOVAULT_*` key and its default.
 - [`docs/PROVIDERS.md`](docs/PROVIDERS.md) — provider adapters.
 - [`docs/READING_PROGRESS_AND_SYNC.md`](docs/READING_PROGRESS_AND_SYNC.md) — progress and AniList sync.
-- [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) — production checklist.
+- [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) — closed; a record of the
+  readiness roadmap and what delivered it. Live status is in [`docs/audit/PROGRESS.md`](docs/audit/PROGRESS.md).
 - [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) — current status.
 - [`docs/audit/`](docs/audit/README.md) — full codebase audit (2026-07-29): findings and cleanup roadmap.
 - [`openapi.json`](openapi.json) — canonical REST API spec (also served at `/scalar`).

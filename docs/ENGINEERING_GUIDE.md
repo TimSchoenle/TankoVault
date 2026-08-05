@@ -464,7 +464,8 @@ Prefer the highest row that fits. A unit test beats a text scan; a compiler erro
 
 ### 6.3 Writing a `repo-lint` rule
 
-`xtask/src/repo_lint.rs`. Requirements, all of which the existing rules meet:
+`xtask/src/repo_lint/` — one module per artefact family, with `text.rs` holding the scanning
+primitives they share. Requirements, all of which the existing rules meet:
 
 1. **A doc comment saying what breaks if the rule is absent** — ideally the incident.
 2. **A test proving it fires.** A rule only ever seen green is indistinguishable from one whose
@@ -529,7 +530,7 @@ without having read it.
   updated when you change the surface behind them, because the artefacts are committed and
   rule 6 bans hand-editing them.
 - **When a gate fails, read the rule's doc comment before changing the rule.** Every rule in
-  `repo_lint.rs` and both `clippy.toml` files carries its reason inline.
+  `xtask/src/repo_lint/` and both `clippy.toml` files carries its reason inline.
 - **Report honestly, and report the scope.** If a suite fails, say so with the output. If you
   skipped a step, say which. Name the command you ran and say plainly that the full gate was
   not run — a passing `cargo check` must never read as a green CI run.

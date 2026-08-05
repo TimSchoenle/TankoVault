@@ -101,7 +101,7 @@ cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features inte
 ## When a gate fails
 
 Read the rule's doc comment before changing the rule. Every entry in `clippy.toml`,
-`web/frontend/clippy.toml` and `xtask/src/repo_lint.rs` carries its reason inline, and most of
+`web/frontend/clippy.toml` and `xtask/src/repo_lint/` carries its reason inline, and most of
 them exist because the shortcut you are about to take was taken once already.
 
 `cargo run -p xtask -- repo-lint` is the one that checks invariants no compiler sees: a CSP and

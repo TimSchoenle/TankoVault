@@ -37,7 +37,7 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(advisory_ignores_agree(root)?);
     findings.extend(every_metric_is_described(root)?);
     findings.extend(every_service_serves_metrics(root)?);
-    findings.extend(concurrency_groups_hold_at_most_two_workflows(root)?);
+    findings.extend(concurrency_groups_hold_one_workflow(root)?);
 
     if findings.is_empty() {
         println!("repo-lint: 14 rules, no violations");
@@ -1369,13 +1369,13 @@ fn every_service_serves_metrics(root: &Path) -> anyhow::Result<Vec<Finding>> {
     Ok(findings)
 }
 
-/// **No concurrency group may be shared by three or more workflows.** GitHub keeps at most *one*
-/// pending run per `concurrency.group`. A third run entering a group that already has one running
-/// and one pending does not queue behind them — it cancels the pending run outright. So a group
-/// with three members silently drops a run on every event that fires all three, and which run is
-/// dropped is decided by run-creation order: nothing a reader of the workflow files can see, and
-/// nothing that shows up as a failure. The dropped run is reported as `cancelled`, which is what
-/// a run that was superseded on purpose also looks like.
+/// **No concurrency group may be declared by more than one workflow.** GitHub keeps at most *one*
+/// pending run per `concurrency.group`. A run entering a group that already has one running and
+/// one pending does not queue behind them — it cancels the pending run outright. So a shared group
+/// silently drops a run on every event that fires its members twice, and which run is dropped is
+/// decided by run-creation order: nothing a reader of the workflow files can see, and nothing that
+/// shows up as a failure. The dropped run is reported as `cancelled`, which is what a run that was
+/// superseded on purpose also looks like.
 ///
 /// `auto-fix.yaml`, `auto-format.yaml` and `update-lockfile.yaml` shared `pr-autocommit-<pr>`
 /// until 2026-08-04. On release 1.2.1, `release-please` force-pushed its release commit while
@@ -1384,9 +1384,14 @@ fn every_service_serves_metrics(root: &Path) -> anyhow::Result<Vec<Finding>> {
 /// `web/frontend/Cargo.lock` and `openapi.json` reached `main` still recording 1.2.0 against a
 /// 1.2.1 manifest, and every `--locked` build failed — the release images included.
 ///
-/// Two is the largest safe number, so two is what this rule allows.
-fn concurrency_groups_hold_at_most_two_workflows(root: &Path) -> anyhow::Result<Vec<Finding>> {
-    const RULE: &str = "concurrency-groups-hold-at-most-two-workflows";
+/// Two members was the first answer and it was the same bug with a smaller constant. On release
+/// 1.3.0 (#76) release-please force-pushed twice in 33 seconds; `auto-fix` was cancelled on both
+/// events, `auto-format` — its one group-mate — survived, and `test (workspace)` failed with
+/// `openapi.json is out of date`. Workflows that must not lose a run therefore share nothing:
+/// `auto-fix.yaml` is now the single member of `pr-autocommit-<pr>`, and one is what this rule
+/// allows.
+fn concurrency_groups_hold_one_workflow(root: &Path) -> anyhow::Result<Vec<Finding>> {
+    const RULE: &str = "concurrency-groups-hold-one-workflow";
     const WORKFLOWS: &str = ".github/workflows";
 
     let dir = root.join(WORKFLOWS);
@@ -1424,7 +1429,7 @@ fn concurrency_groups_hold_at_most_two_workflows(root: &Path) -> anyhow::Result<
 
     let mut findings = Vec::new();
     for (group, mut members) in by_group {
-        if members.len() < 3 {
+        if members.len() < 2 {
             continue;
         }
         members.sort();
@@ -1436,8 +1441,8 @@ fn concurrency_groups_hold_at_most_two_workflows(root: &Path) -> anyhow::Result<
             line: *line,
             detail: format!(
                 "`{group}` is declared by {} workflows ({}); GitHub queues one pending run per \
-                 group and cancels the pending one when a third arrives, so every event that \
-                 fires all of them loses a run without reporting a failure",
+                 group and cancels the pending one when another arrives, so an event that fires \
+                 them more than once loses a run without reporting a failure",
                 members.len(),
                 names.join(", ")
             ),

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM user_series_affinity WHERE user_id = $1 AND series_id <> ALL($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "82a7334c417e41798bec8c52bb99ec3c324537ab5b6f10034c8746045ae1bc38"
+}

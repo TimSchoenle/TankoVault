@@ -178,8 +178,9 @@ You do not cut one by hand. Merging to `main` maintains a release pull request; 
 the repository and publishes nine multi-architecture images. Before touching `.github/workflows` or
 `deploy/docker`:
 
-- `Cargo.lock` is synced automatically on every pull request by `update-lockfile.yaml`. Expect a bot
-  commit called "sync Cargo.lock with the workspace manifests"; do not revert it.
+- Both `Cargo.lock` files, `cargo fmt`, clippy's machine-applicable fixes and the four generated
+  artefacts are applied automatically by `auto-fix.yaml` on any pull request that touches Rust.
+  Expect one bot commit called "style: apply the mechanical fixes (…)"; do not revert it.
 - The release build compiles natively for `linux/arm64` as well as `amd64`. Anything you add to the
   Dockerfile that names an architecture breaks half of it, and the amd64 CI leg will not tell you.
   `deploy/docker/Dockerfile`'s sysroot staging is the pattern to follow.

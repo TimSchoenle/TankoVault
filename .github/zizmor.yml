@@ -12,11 +12,10 @@ rules:
   superfluous-actions:
     ignore:
       - ci.yml
-      # Same action, same argument; shares `ci.yml`'s pin so there is one number to review.
-      - update-lockfile.yaml
-      # Same again, and here the pinned toolchain is load-bearing rather than incidental: that
+      # Same action, and here the pinned toolchain is load-bearing rather than incidental: that
       # job runs `clippy --fix` and formats the generated client, so the clippy and rustfmt it
-      # uses must be the ones `fmt + clippy` will then judge the result with.
+      # uses must be the ones `fmt + clippy` will then judge the result with. It shares `ci.yml`'s
+      # pin so there is one number to review.
       - auto-fix.yaml
       # The `plan` job builds `xtask release-plan`, which decides which images the release
       # publishes. Same action and same reasoning as above.
@@ -28,6 +27,5 @@ rules:
   stale-action-refs:
     ignore:
       - ci.yml
-      - update-lockfile.yaml
       - auto-fix.yaml
       - release-please.yaml

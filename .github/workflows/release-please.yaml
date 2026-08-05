@@ -54,8 +54,8 @@ name: release-please
 # `$.workspace.package.version` explicitly. One version, one place, no churn.
 #
 # The consequence is that `Cargo.lock` goes stale on the release PR — every member's recorded
-# version changes — which would break every `--locked` build. `update-lockfile.yaml` is what
-# keeps it in step; it is not optional.
+# version changes — which would break every `--locked` build. `auto-fix.yaml`'s lockfile sync is
+# what keeps it in step; it is not optional.
 #
 # ---------------------------------------------------------------------------------------------
 # The cache contract with `ci.yml`

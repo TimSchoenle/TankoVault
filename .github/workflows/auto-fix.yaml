@@ -1,41 +1,91 @@
 name: auto-fix
 
-# Applies every mechanical fix this repository has on pull requests, and commits the result:
-# clippy's machine-applicable suggestions, `cargo fmt`, and the four generated artefacts.
+# The **one** workflow that fixes a pull request mechanically and commits the result: both
+# lockfiles, clippy's machine-applicable suggestions, `cargo fmt`, and the four generated
+# artefacts — in one job, in one commit.
 #
-# The dividing line is *determinism*, not convenience. Everything here has exactly one correct
-# output given the tree, so a bot's answer is byte-identical to a human's and there is nothing to
-# review in the diff it produces. What is deliberately absent is anything where the fix is a
-# choice — see the note on `repo-lint` at the bottom of this file.
+# The dividing line for what belongs here is *determinism*, not convenience. Everything below has
+# exactly one correct output given the tree, so a bot's answer is byte-identical to a human's and
+# there is nothing to review in the diff it produces. What is deliberately absent is anything where
+# the fix is a choice — see the note on `repo-lint` at the bottom of this file.
 #
-# Four files in this repository are generated, committed, and must not be hand-edited:
-# `openapi.json`, `crates/api-client/src/lib.rs`, `THIRD-PARTY-NOTICES` (ENGINEERING_GUIDE rule 6)
-# and `web/frontend/assets/main.css` (Tailwind output, committed so a build without Node works).
-# Three CI jobs — `openapi --check`, `notices drift` and `tailwind output is current` — fail when
-# they drift, but none fixes anything, so the failure is a red gate waiting on a human to run a
-# command whose output is fully determined by the tree.
+# ---------------------------------------------------------------------------------------------
+# Why one workflow, and why it must stay one
+# ---------------------------------------------------------------------------------------------
+# This was three workflows — `auto-fix`, `auto-format` and `update-lockfile` — and the split was
+# the bug. GitHub keeps at most *one* pending run per `concurrency.group`: a run arriving at a
+# group that already has one running and one pending does not queue behind them, it cancels the
+# pending one. Workflows that commit to the same branch must share a group or they race, so the
+# split forced a choice between racing pushes and silently dropped runs.
+#
+# Both halves of that choice were paid for. All three shared `pr-autocommit-<pr>` until
+# 2026-08-04, and on release 1.2.1 the lockfile sync was the run that got dropped: both
+# `Cargo.lock` files and `openapi.json` merged to `main` still recording 1.2.0 against a 1.2.1
+# manifest, and every `--locked` build failed, release images included. Moving `update-lockfile`
+# to its own group left two members, which is no better in kind — release 1.3.0 (#76)
+# force-pushed twice in 33 seconds, `auto-fix` was cancelled on both events, `auto-format` took
+# the surviving slot, and `test (workspace)` failed with `openapi.json is out of date` on a
+# branch whose author had no command to run.
+#
+# Which of the two survived was decided by run-creation order: nothing a reader of these files
+# can see, and nothing that reports a failure — a dropped run is `cancelled`, exactly like one
+# superseded on purpose. One workflow in the group removes the choice rather than tuning it, and
+# `repo-lint`'s `concurrency-groups-hold-one-workflow` fails if a second one ever joins.
+#
+# The cost is real and accepted: `auto-format` finished in about a minute where this job spends
+# twenty-odd compiling the workspace under `--all-targets --all-features`, so a pull request whose
+# only problem is formatting now waits for the whole run. A slower fix that always happens beats a
+# fast one that a sibling can cancel.
+#
+# ---------------------------------------------------------------------------------------------
+# What it fixes, and why a bot may
+# ---------------------------------------------------------------------------------------------
+# Four files here are generated, committed, and must not be hand-edited: `openapi.json`,
+# `crates/api-client/src/lib.rs`, `THIRD-PARTY-NOTICES` (ENGINEERING_GUIDE rule 6) and
+# `web/frontend/assets/main.css` (Tailwind output, committed so a build without Node works). Three
+# CI jobs — `openapi --check`, `notices drift` and `tailwind output is current` — fail when they
+# drift, but none fixes anything, so the failure is a red gate waiting on a human to run a command
+# whose output is fully determined by the tree.
 #
 # That gap is not hypothetical. release-please bumps `$.workspace.package.version`, which all
 # three artefacts record, and nothing regenerated them: release #50 landed on `main` with
 # `openapi.json` still reporting `0.4.1`, and `openapi --check` never even ran because `rustdoc`
-# failed earlier in the same job. Regeneration is mechanical and the bot's output is byte-identical
-# to a developer's, so a bot may do it — the same argument that justifies `auto-format.yaml`.
+# failed earlier in the same job.
 #
-# The same bump reaches open pull requests by a second route, which is why this job merges the
-# base branch in before it regenerates anything. `ci.yml` judges the *merge* of a branch with its
+# The lockfile sync is load-bearing for the same reason and is **not optional**.
+# `release-please-config.json` bumps `$.workspace.package.version`, which every one of the 26
+# workspace members inherits via `version.workspace = true`, changing each member's recorded
+# version in `Cargo.lock` — and release-please does not update lockfiles for the `simple` strategy
+# (see the reasoning block in `release-please.yaml` for why `simple` and not `rust`). Left alone,
+# the release pull request carries a lockfile that disagrees with the manifests and every
+# `--locked` build in the repository fails: `xtask ci`, the `msrv` and `supply-chain` jobs, and the
+# Dockerfile's `cargo auditable build --release --locked`. The release PR could then never go
+# green, which is a deadlock rather than a flaky failure.
+#
+# **Both** lockfiles, because `web/frontend` is a separate workspace that inherits nothing and is
+# therefore easy to forget. It depends on `crates/api-client` and `crates/domain` by path, so those
+# two carry the bumped version into `web/frontend/Cargo.lock` as surely as into the host one — and
+# only the host lockfile was synced until 2026-08-03. Release #50 shipped a frontend lockfile still
+# recording 0.4.1, which failed `cargo fetch --locked` and took `lockfile integrity` and
+# `third-party notices` down with it, on `main`, after merge.
+#
+# The same version bump reaches open pull requests by a second route, which is why this job merges
+# the base branch in before it fixes anything. `ci.yml` judges the *merge* of a branch with its
 # base, not the branch itself, so a release on `main` stales artefacts inside a branch whose own
 # tree is perfectly self-consistent: regenerating on the head alone finds nothing to fix, and the
 # pull request stays red with `openapi.json is out of date` and no command its author can run.
-# Release 1.1.0 did exactly that to #62. Merging first makes the tree this job regenerates the
-# tree CI actually checks — the two were reading different trees, which is the whole bug.
+# Release 1.1.0 did exactly that to #62. Merging first makes the tree this job fixes the tree CI
+# actually checks — the two were reading different trees, which is the whole bug.
 #
 # This does **not** weaken review of API changes. `openapi breaking changes` still compares the
 # regenerated document against the base branch, so a change that breaks a client is still a red
 # gate; what stops being a red gate is *forgetting to run the generator*.
 #
-# Everything in one job on purpose, and in this order: `clippy --fix` rewrites source, `cargo fmt`
-# formats what it wrote, and only then are the artefacts regenerated from the result. Split across
-# workflows they would race to push, and the generators would run against pre-fix source.
+# Step order is load-bearing and is the reverse of the dependency arrows. The lockfiles are synced
+# first because `cargo fetch --locked` and every `--locked` build below fail against a lockfile that
+# disagrees with the manifests — which is precisely the state a release pull request arrives in.
+# Then `clippy --fix` rewrites source, `cargo fmt` formats what it wrote, and only then are the
+# artefacts regenerated from the result.
 #
 # ---------------------------------------------------------------------------------------------
 # Why `xtask repo-lint` is not here, and must not be added
@@ -58,9 +108,16 @@ name: auto-fix
 
 on:
   pull_request:
-    # The union of `ci.yml`'s `rust`, `notices` and `frontend` filters — the inputs the four
-    # artefacts are a function of. Directories, never `**/*.rs`, for the reason `ci.yml` gives:
-    # `web/frontend` is a separate workspace and a glob would silently couple the two.
+    # The union of `ci.yml`'s `rust`, `notices` and `frontend` filters — the inputs the two
+    # lockfiles and the four artefacts are a function of. Directories, never `**/*.rs`, for the
+    # reason `ci.yml` gives: `web/frontend` is a separate workspace and a glob would silently
+    # couple the two.
+    #
+    # `update-lockfile` and `auto-format` ran unfiltered on every pull request. They no longer
+    # need to: a manifest that could move either lockfile lives under `crates/**`, `services/**`,
+    # `xtask/**`, `web/frontend/**` or the root `Cargo.toml`, and a pull request that touches none
+    # of these has no Rust to format either. Running a twenty-minute compile on a docs-only change
+    # is what the filter buys back.
     paths:
       - ".github/workflows/auto-fix.yaml"
       - "crates/**"
@@ -76,9 +133,10 @@ on:
       - "THIRD-PARTY-NOTICES"
       - "web/frontend/**"
 
-# Shared with `auto-format.yaml`, and with nothing else. Both push to the pull request's head
-# branch, so they queue rather than race — see `auto-format.yaml` for the reasoning, and for why
-# a *third* member would be evicted rather than queued.
+# One workflow, one group — see the block above for what the two- and three-member versions of
+# this group cost. `cancel-in-progress: false` because this job writes: a run cancelled mid-push
+# is worse than one that waits, and with a single member the pending slot can no longer be taken
+# by a sibling, so the newest head always gets a run.
 concurrency:
   group: pr-autocommit-${{ github.event.pull_request.number }}
   cancel-in-progress: false
@@ -112,17 +170,23 @@ jobs:
           egress-policy: audit
 
       # A GitHub App token, not `GITHUB_TOKEN`: a push made with the default token does not trigger
-      # workflows, so the regenerated artefacts would land without re-running the checks that
-      # wanted them. `ACTIONS_MAINTENANCE_*` rather than `RELEASE_BOT_*` for the reason
-      # `auto-format.yaml` gives — those are `release` environment secrets.
+      # workflows, so the fixes would land without re-running the checks that wanted them —
+      # leaving the pull request red on a problem that has already been solved.
+      #
+      # `ACTIONS_MAINTENANCE_*` rather than `RELEASE_BOT_*`: those are `release` *environment*
+      # secrets, and this job runs on every pull request. Naming that environment here would put a
+      # secret scope that exists for publishing behind a job any pull request can start.
       - name: Generate Bot Token
         id: generate_token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
           private-key: ${{ secrets.ACTIONS_MAINTENANCE_PRIVATE_KEY }}
-          # Narrowed to the one permission this job uses (zizmor `github-app`): it commits three
-          # files to the PR branch, and `contents: write` is that and nothing else.
+          # Narrowed to the one permission this job uses (zizmor `github-app`). By default the
+          # minted token inherits *every* permission the app's installation holds, so a
+          # compromised step here — a malicious build script reached through a dependency, say —
+          # would hold the bot's full authority for the life of the token. It commits files to the
+          # PR branch, and `contents: write` is that and nothing else.
           permission-contents: write
 
       - name: Checkout
@@ -171,9 +235,9 @@ jobs:
 
       # The second reader of `rust-toolchain.toml`, after `ci.yml`'s `changes` job. The *number*
       # still has one home; what is repeated is the two-line read, which cannot drift from the
-      # manifest because it is the manifest. `stable` would not do here as it does in
-      # `update-lockfile.yaml`: `xtask openapi` formats the generated client with rustfmt, and
-      # `cargo fmt --check` then judges it under the pinned toolchain.
+      # manifest because it is the manifest. `stable` would not do here — as it did in the old
+      # `update-lockfile.yaml`, which compiled nothing: `xtask openapi` formats the generated
+      # client with rustfmt, and `cargo fmt --check` then judges it under the pinned toolchain.
       - name: resolve the toolchain from its manifest
         id: versions
         run: |
@@ -200,6 +264,26 @@ jobs:
           # populating the shared cache is how an unreviewed artefact reaches every other job.
           save-if: "false"
 
+      # First, and before anything that passes `--locked`. A release pull request arrives with
+      # manifests the lockfiles disagree with, so a `cargo fetch --locked` ahead of this step
+      # fails and takes every fix in this job down with it — the deadlock described at the top.
+      #
+      # `cargo update --workspace` rather than `cargo fetch`: it rewrites only the workspace
+      # members' entries and leaves every third-party pin alone. A release must not silently move
+      # dependency versions — that is what `supply-chain` and `deny` gate, and this runs before
+      # them. No BoringSSL toolchain is needed yet either; `cargo update` resolves and rewrites
+      # without compiling anything.
+      - name: sync both lockfiles with the manifests
+        run: |
+          set -euo pipefail
+          cargo update --workspace
+          cargo update --workspace --manifest-path web/frontend/Cargo.toml
+          if git diff --quiet -- Cargo.lock web/frontend/Cargo.lock; then
+            echo "Both lockfiles already in step with the manifests."
+          else
+            git diff --stat -- Cargo.lock web/frontend/Cargo.lock
+          fi
+
       # `wreq` compiles BoringSSL from C/C++ source; `xtask openapi` builds `tankovault-api`, so
       # this job needs them exactly as `ci.yml`'s Rust jobs do.
       - name: BoringSSL build dependencies
@@ -210,7 +294,8 @@ jobs:
           tool: cargo-about
 
       # `cargo-about` resolves licences from a fetched graph; both, because the notices document
-      # covers the frontend workspace too.
+      # covers the frontend workspace too. `--locked` is safe here only because the step above
+      # has already brought both lockfiles into step with the manifests.
       - name: fetch both dependency graphs
         run: |
           set -euo pipefail
@@ -238,6 +323,10 @@ jobs:
 
       # `--fix` rewrites expressions without reformatting them, so this runs second and formats
       # what it wrote. Doing it the other way round commits code that `cargo fmt --check` rejects.
+      #
+      # The host workspace only, matching the gate: `cargo fmt --all` stops at the workspace
+      # boundary and `web/frontend` is a separate one, which `ci.yml` does not format-check
+      # either. Widening this would start enforcing a rule no gate states.
       - name: format the result
         run: cargo fmt --all
 
@@ -266,14 +355,28 @@ jobs:
           npm ci
           npm run css:build
 
-      # Scoped to source and the four artefacts rather than the whole tree. Nothing else in this
-      # job is meant to change — `npm ci` can touch `package-lock.json` and `cargo` can touch a
-      # lockfile — and those belong to `update-lockfile.yaml`, not here. Anything outside this
-      # list that changed is a bug to see in a red gate, not to commit silently.
+      # One commit for every fix above, which is the point of this workflow existing once rather
+      # than three times: a reviewer sees a single bot commit, and there is no second push to lose
+      # a race with.
+      #
+      # The shared action writes through the GraphQL commit API, so the commit is *verified* — a
+      # bot commit that `git log --show-signature` can attribute, which a locally-signed push from
+      # a runner cannot be without a key on the runner. It reads the branch head immediately before
+      # writing and passes it as `expectedHeadOid`, so a push that lands in between fails this step
+      # loudly instead of being silently overwritten. Losing that race is self-healing: the push
+      # that won it is itself a `synchronize` event, so this workflow runs again on the head that
+      # now exists.
+      #
+      # `file_pattern` is scoped to source, the two lockfiles and the four artefacts rather than
+      # the whole tree. Nothing else in this job is meant to change — `npm ci` can touch
+      # `package-lock.json` — and anything outside this list that changed is a bug to see in a red
+      # gate, not to commit silently.
+      #
+      # No `if:` guard: the action detects an unchanged tree itself and commits nothing.
       - name: Commit the fixes
         uses: TimSchoenle/actions/actions/common/commit-changes@e8af15f00459da30900d926bf8fbb9dea5a56495 # tag=actions-common-commit-changes-v1.3.0
         with:
-          commit_message: "style: apply the mechanical fixes (clippy --fix, fmt, regenerated artefacts)"
+          commit_message: "style: apply the mechanical fixes (lockfiles, clippy --fix, fmt, regenerated artefacts)"
           token: ${{ steps.generate_token.outputs.token }}
           branch: ${{ github.event.pull_request.head.ref }}
-          file_pattern: "crates services xtask fuzz openapi.json THIRD-PARTY-NOTICES web/frontend/src web/frontend/assets/main.css"
+          file_pattern: "Cargo.lock web/frontend/Cargo.lock crates services xtask fuzz openapi.json THIRD-PARTY-NOTICES web/frontend/src web/frontend/assets/main.css"

@@ -12,6 +12,25 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [1.3.0](https://github.com/TimSchoenle/TankoVault/compare/v1.2.2...v1.3.0) (2026-08-05)
+
+
+### Features
+
+* **recsys:** the suggestion-system design, pgvector, and a guard on merges ([#72](https://github.com/TimSchoenle/TankoVault/issues/72)) ([5d8eaf4](https://github.com/TimSchoenle/TankoVault/commit/5d8eaf400d4b8663e483b5d020937cd5d051b846))
+
+
+### Performance Improvements
+
+* **dashboard:** read only the unread tail, and stop Postgres running on defaults ([#78](https://github.com/TimSchoenle/TankoVault/issues/78)) ([cebc25d](https://github.com/TimSchoenle/TankoVault/commit/cebc25d5ad42889806e81e994e73aa2bcc1ba147))
+
+
+### Miscellaneous
+
+* **deps:** update redis:8-alpine docker digest to 978f0e0 ([#77](https://github.com/TimSchoenle/TankoVault/issues/77)) ([432e966](https://github.com/TimSchoenle/TankoVault/commit/432e96633c913a62bc76dc48e316c0296436bcca))
+* **deps:** update taiki-e/install-action action to v2.85.7 ([#79](https://github.com/TimSchoenle/TankoVault/issues/79)) ([5edef72](https://github.com/TimSchoenle/TankoVault/commit/5edef72b0a18238519cc134e04a4c8b48d70a3ca))
+* **deps:** update zizmorcore/zizmor-action action to v0.6.2 ([#75](https://github.com/TimSchoenle/TankoVault/issues/75)) ([e3b2b77](https://github.com/TimSchoenle/TankoVault/commit/e3b2b77e5d3fa100ba6fdb0bbdb9b06bb8e264da))
+
 ## [1.2.2](https://github.com/TimSchoenle/TankoVault/compare/v1.2.1...v1.2.2) (2026-08-04)
 
 

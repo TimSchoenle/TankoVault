@@ -3,7 +3,7 @@
 
 mod error;
 
-pub(crate) use error::{error_status, friendly_error};
+pub(crate) use error::{error_status, friendly_error, problem_detail};
 
 use crate::state::Session;
 use dioxus::prelude::*;

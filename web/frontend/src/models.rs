@@ -12,25 +12,28 @@ use serde::{Deserialize, Serialize};
 pub(crate) use crate::wire::types::{
     AccountStatus, AdapterKind, AssignRemoteEntry, ChapterDto, ChapterRead, ConflictPolicy,
     ConflictRow, ContentType, ContinueItem, CreateProvider, DismissRequest, FeedEntry,
-    ForgotPasswordRequest, LegalDocumentView, LegalIndexEntry, LegalKind, LoginRequest, MarkRead,
-    MarkReadTo, MergeRequest, NotificationsView, PasskeyLoginRequest, PermissionPreset, Politeness,
-    PolitenessEmulation, ProblemDetails, ProfileUpdate, ProgressDto, ProgressUpdate, Provider,
-    ProviderId, ProviderInfo, ProviderStat, ProviderState, PublicProvider, RegisterRequest,
-    RequestKind, RequestStatus, ResendVerificationRequest, ResetPasswordRequest, ResolveConflict,
-    RunState, ScanMode, ScanRun, ScanRunProviderId, SeriesDetail, SeriesId, SeriesSourceId,
-    SeriesStatus, SeriesSummary, SetProviderState as SetProviderStateBody, SourceDto,
-    SuggestedMatch, SyncExcluded, SyncOpts, SyncPullBody, SyncPushBody, SyncSettingsPatch,
-    SystemStats, Tag, TestAdapterBody, TestAdapterRequest, TriggerScan, TriggerScanProviderId,
-    UpdateProvider, UpsertMapping, UserId, VerifyEmailRequest, WatchStatus, WatchlistBulkIds,
-    WatchlistBulkUpdate, WatchlistCounts, WatchlistEntryViewEntry, WatchlistGroup, WatchlistItem,
-    WatchlistSource, WatchlistUpsert, WatchlistView,
+    FeedbackBody, ForgotPasswordRequest, LegalDocumentView, LegalIndexEntry, LegalKind,
+    LoginRequest, MarkRead, MarkReadTo, MergeRequest, NotificationsView, PasskeyLoginRequest,
+    PermissionPreset, Politeness, PolitenessEmulation, ProblemDetails, ProfileUpdate, ProgressDto,
+    ProgressUpdate, Provider, ProviderId, ProviderInfo, ProviderStat, ProviderState,
+    PublicProvider, Recommendation, RegisterRequest, RequestKind, RequestStatus,
+    ResendVerificationRequest, ResetPasswordRequest, ResolveConflict, RunState, ScanMode, ScanRun,
+    ScanRunProviderId, SeriesDetail, SeriesId, SeriesSourceId, SeriesStatus, SeriesSummary,
+    SetProviderState as SetProviderStateBody, SimilarSeries, SourceDto, SuggestedMatch,
+    SyncExcluded, SyncOpts, SyncPullBody, SyncPushBody, SyncSettingsPatch, SystemStats, Tag,
+    TasteFeature, TasteView, TestAdapterBody, TestAdapterRequest, TriggerScan,
+    TriggerScanProviderId, UpdateProvider, UpsertMapping, UserId, VerifyEmailRequest, WatchStatus,
+    WatchlistBulkIds, WatchlistBulkUpdate, WatchlistCounts, WatchlistEntryViewEntry,
+    WatchlistGroup, WatchlistItem, WatchlistSource, WatchlistUpsert, WatchlistView,
 };
 
 // `BulkResult` says nothing about what it is a result *of*; only the watchlist bulk bar and
 // the group-header mark-read call it.
 pub(crate) use crate::wire::types::BulkResult;
 
-pub(crate) use crate::wire::types::{NextUnread, WatchlistItemNextUnread};
+pub(crate) use crate::wire::types::{
+    NextUnread, RecommendationBecauseSeriesId, WatchlistItemNextUnread,
+};
 
 /// The chapter a row's `Continue` would open, or `None` when the reader is caught up.
 ///
@@ -41,6 +44,18 @@ pub(crate) use crate::wire::types::{NextUnread, WatchlistItemNextUnread};
 pub(crate) fn next_unread(item: &WatchlistItem) -> Option<&NextUnread> {
     match item.next_unread.as_ref() {
         Some(WatchlistItemNextUnread::Variant1(next)) => Some(next),
+        _ => None,
+    }
+}
+
+/// The series a recommendation was drawn from, or `None` when no single seed produced it —
+/// the profile, exact-feature and popularity retrieval paths all answer `None`.
+///
+/// Same generated `oneOf: [null, $ref]` shape as [`next_unread`], unwrapped here for the same
+/// reason.
+pub(crate) fn because_series(item: &Recommendation) -> Option<SeriesId> {
+    match item.because_series_id {
+        Some(RecommendationBecauseSeriesId::Variant1(id)) => Some(id),
         _ => None,
     }
 }

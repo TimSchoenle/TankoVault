@@ -9,6 +9,7 @@ mod privacy;
 mod profile;
 mod security;
 mod sync;
+mod taste;
 
 pub(crate) use callback::AnilistCallback;
 
@@ -24,6 +25,7 @@ use dioxus::prelude::*;
 enum Panel {
     Profile,
     Appearance,
+    Taste,
     Security,
     Sync,
     Notifications,
@@ -35,6 +37,7 @@ impl TabKind for Panel {
         &[
             Self::Profile,
             Self::Appearance,
+            Self::Taste,
             Self::Security,
             Self::Sync,
             Self::Notifications,
@@ -47,6 +50,7 @@ impl TabKind for Panel {
         match self {
             Self::Profile => "account.tab.profile",
             Self::Appearance => "account.tab.appearance",
+            Self::Taste => "account.tab.taste",
             Self::Security => "account.tab.security",
             Self::Sync => "account.tab.sync",
             Self::Notifications => "account.tab.notifications",
@@ -61,6 +65,7 @@ impl Panel {
         match self {
             Self::Appearance => true,
             Self::Profile => caps.has_feature(Feature::AccountsProfile),
+            Self::Taste => caps.has_feature(Feature::CatalogueRecommendations),
             // Either half is enough; passkeys and sessions are independent features.
             Self::Security => {
                 caps.has_feature(Feature::AccountsSessions)
@@ -133,6 +138,7 @@ pub(crate) fn Account() -> Element {
         match current {
             Panel::Profile => rsx! { profile::ProfilePanel { name: name.clone(), tier: tier.clone() } },
             Panel::Appearance => rsx! { appearance::AppearancePanel {} },
+            Panel::Taste => rsx! { taste::TastePanel {} },
             Panel::Security => rsx! { security::SecurityPanel {} },
             Panel::Sync => rsx! { sync::SyncPanel {} },
             Panel::Notifications => rsx! { notifications::NotificationsPanel {} },

@@ -4,6 +4,7 @@
 //! faults into one enum; this maps it to a short sentence and, occasionally, the raw status code.
 
 use crate::i18n::Translator;
+use crate::wire::types::ProblemDetails;
 use progenitor_client::Error as ApiOpError;
 
 /// The HTTP status of a failed operation, when the failure was an error *response* rather
@@ -11,6 +12,23 @@ use progenitor_client::Error as ApiOpError;
 pub(crate) fn error_status<E>(err: &ApiOpError<E>) -> Option<u16> {
     match err {
         ApiOpError::ErrorResponse(response) => Some(response.status().as_u16()),
+        _ => None,
+    }
+}
+
+/// The server's own explanation of a refusal, when it sent one.
+///
+/// Only for operator surfaces whose 400s carry a rule rather than a validation slip: the
+/// recommendation console's tunables refuse a write with the *reason* — a privacy threshold, a
+/// range, or the cross-field rule that at least one score weight stays non-zero — and replacing
+/// that with "the request was rejected" would leave an operator retrying a value the server will
+/// never take. Reader-facing screens keep [`friendly_error`], which never shows server prose.
+pub(crate) fn problem_detail(err: &ApiOpError<ProblemDetails>) -> Option<String> {
+    match err {
+        ApiOpError::ErrorResponse(response) => {
+            let detail = response.detail.trim();
+            (!detail.is_empty()).then(|| detail.to_owned())
+        }
         _ => None,
     }
 }

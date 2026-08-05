@@ -130,7 +130,20 @@
       "privacy": "Privacy & data",
       "profile": "Profile",
       "security": "Security & sessions",
-      "sync": "Sync & integrations"
+      "sync": "Sync & integrations",
+      "taste": "Taste"
+    },
+    "taste": {
+      "avoids": "You steer clear of",
+      "built": "updated {date}",
+      "empty": "Nothing learned yet. Track and read a few series, and this builds itself.",
+      "intro": "What the recommender has learned about you, from the series you track and read. It shapes the “Because you read” shelf, and only you see it.",
+      "likes": "You gravitate to",
+      "seeds": {
+        "one": "Built from 1 series",
+        "other": "Built from {count} series"
+      },
+      "title": "Your taste profile"
     }
   },
   "auth": {
@@ -450,6 +463,58 @@
       "unavailable": "Could not load providers: {message}",
       "unblock": "Remove from blocklist"
     },
+    "recsys": {
+      "applies": {
+        "immediately": "Immediate",
+        "nextBuild": "Next build",
+        "nextFullBuild": "Full rebuild"
+      },
+      "bounds": "{min} – {max} · ships as {default}",
+      "changed": "Changed from default",
+      "changedBy": "{user} · {date}",
+      "generation": "generation {n}",
+      "group": {
+        "affinity": "Affinity",
+        "build": "Model build",
+        "cooccurrence": "Co-occurrence",
+        "diversity": "Diversity",
+        "prior": "Popularity prior",
+        "retrieval": "Retrieval",
+        "scoring": "Scoring",
+        "serving": "Serving"
+      },
+      "intro": "The recommendation model and the values it is built from. A change here alters what every reader on this deployment is shown.",
+      "kpi": {
+        "catalogue": "Catalogue",
+        "catalogueSub": "Series in total",
+        "embedded": "With an embedding",
+        "embeddedSub": "{features} with features",
+        "lastRun": "Last run wrote",
+        "lastRunSub": "Series written by the last build",
+        "recommendable": "Recommendable",
+        "recommendableSub": "{excluded} embedded but excluded",
+        "repairQueue": "Repair queue",
+        "repairQueueSub": "Queued for re-embedding",
+        "vocabulary": "Vocabulary",
+        "vocabularySub": "{dims} dimensions"
+      },
+      "lastBuilt": "built {date}",
+      "lastError": "The last build ended badly: {message}",
+      "notePlaceholder": "Why (optional)",
+      "outOfRange": "Outside the permitted range.",
+      "privacyFloor": "Privacy floor",
+      "privacyFloorHint": "The lower bound is an anonymity threshold, not a tuning limit. The API refuses anything below it however it is sent.",
+      "readOnly": "You can see this tuning, but not change it.",
+      "rebuildFull": "Full rebuild",
+      "rebuildFullHint": "Re-solve the projection and re-embed the catalogue. Needed for a value baked into the stored vectors.",
+      "rebuildIncremental": "Rebuild",
+      "rebuildIncrementalHint": "Patch the live generation. Enough for a value that applies on the next build.",
+      "resetHint": "Drop the override and follow the shipped default",
+      "saved": "Saved.",
+      "startedAt": "started {date}",
+      "tuning": "Tuning",
+      "valueLabel": "Value for {title}"
+    },
     "scans": {
       "active": "Active runs",
       "col": {
@@ -559,6 +624,7 @@
       "overview": "Overview",
       "privacy": "Privacy",
       "providers": "Providers",
+      "recommendations": "Recommendations",
       "solver": "Challenge & solver",
       "sync": "Sync",
       "users": "Users"
@@ -799,6 +865,13 @@
       "title": "New in your watchlist"
     },
     "recommendations": {
+      "askTitle": "Stop suggesting this?",
+      "because": "Because you read {title}",
+      "dismiss": "Dismiss {title}",
+      "hideForever": "Never again",
+      "hideForeverHint": "Hidden for good. This one does not expire.",
+      "notInterested": "Not interested",
+      "notInterestedHint": "Hidden for a while. It can come back later.",
       "title": "Because you read"
     },
     "stat": {
@@ -915,8 +988,6 @@
   },
   "series": {
     "addToWatchlist": "Add to watchlist",
-    "alsoFollow": "Readers also follow",
-    "alsoFollowSoon": "Recommendations arrive with the related-series endpoint.",
     "backup": "backup",
     "badLink": "That series link doesn't look right.",
     "by": "by {authors}",
@@ -961,6 +1032,10 @@
     "preferred": "preferred",
     "read": "Read",
     "signInToTrack": "Sign in to track this series.",
+    "similar": {
+      "empty": "Nothing close enough to suggest yet. This fills in as the recommendation model learns the catalogue.",
+      "title": "More like this"
+    },
     "sourceCount": "{count} src",
     "sources": {
       "one": "{count} source",

@@ -167,10 +167,10 @@ rather than erroring. Page size 24.
 **Series detail** — `.ik-hero-wrap` blurred backdrop; `186px` cover; type pill + status dot +
 year; display title; stat row; watchlist/notify actions. Body grid `1fr 340px`: synopsis +
 chapter list (mono `Ch N`, sub-chapter "part" rows indented under a collapsible toggle) on the
-left; "Read on" source cards (PRIMARY badge, `open_in_new`), Tracking card, "Readers also follow"
-slot on the right. Fields the API does not expose (rating, per-chapter read state, read-%) are
-**omitted, never fabricated**; related series is an honest placeholder pending
-`/v1/series/:id/related`.
+left; "Read on" source cards (PRIMARY badge, `open_in_new`), Tracking card, "More like this"
+rail on the right. Fields the API does not expose (rating, read-%) are **omitted, never
+fabricated**; the rail is `/v1/series/:id/similar` — content similarity from the recommendation
+model — and says so, because `/v1/series/:id/related` still does not exist.
 
 **Watchlist** — `.ik-board` kanban of status columns, HTML5 drag-and-drop between columns with
 `.ik-col.dragover` highlight, plus a per-card status `<select>` as the keyboard-operable
@@ -285,9 +285,10 @@ fetch is always visible and always retryable" property stops holding.
 2. Per-series cover hue derivation is missing (one global gradient instead).
 3. `docs/design.md` §17.1 still names Clash Display / Zodiak for display type; the code ships
    Bricolage Grotesque.
-4. Rating, per-chapter read state and read-% have no API and are omitted rather than faked;
-   related series is a placeholder.
+4. Rating and read-% have no API and are omitted rather than faked; a *relation* (a sequel) is
+   still unselectable, so the series sidebar offers similarity instead and names it that.
 5. Password change and 2FA are stated as unavailable rather than stubbed with dead controls.
 6. `ikspin` is declared in the spec but intentionally unused.
-7. Console tab count is **11**, not the spec's 8 (Sync admin, Feature flags, Privacy queue added).
+7. Console tab count is **12**, not the spec's 8 (Sync admin, Feature flags, Privacy queue and
+   Recommendations added).
 8. Account has **6** panels, not the spec's 5 (Privacy & data added).

@@ -6,11 +6,13 @@
 //! list concurrently and merges them ([`model`]), so each chapter row knows which sources carry
 //! it and where each would open.
 //!
-//! Fields the API does not expose are omitted rather than fabricated (no rating; related series
-//! is a placeholder pending `/v1/series/:id/related`).
+//! Fields the API does not expose are omitted rather than fabricated (no rating). The sidebar's
+//! [`similar`] rail is content similarity from the recommendation model, not a relation graph —
+//! a direct sequel is still something this screen cannot name.
 
 mod chapters;
 mod model;
+mod similar;
 mod tracking;
 
 use crate::api;
@@ -265,11 +267,7 @@ pub(crate) fn Series(id: String) -> Element {
                     reload_wl,
                     reload_progress,
                 }
-                div { class: "ik-sidebar-card",
-                    div { class: "ik-sec-lbl", style: "margin-bottom:10px;", {i18n.t("series.alsoFollow")} }
-                    // TODO(api) §9.3: needs GET /v1/series/:id/related.
-                    div { class: "ik-muted", style: "font-size:12.5px;", {i18n.t("series.alsoFollowSoon")} }
-                }
+                similar::SimilarRail { series_id: id }
             }
         }
     }

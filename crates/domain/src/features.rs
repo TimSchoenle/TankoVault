@@ -483,7 +483,8 @@ impl Feature {
                 "Cannot be switched off: it is the only way to switch anything back on."
             }
             Self::AdminRecommendations => {
-                "Off: the recommendation tuning and model-health surface closes. The                  recommender keeps building and serving on its stored values."
+                "Off: the recommendation tuning and model-health surface closes. The \
+                 recommender keeps building and serving on its stored values."
             }
         }
     }

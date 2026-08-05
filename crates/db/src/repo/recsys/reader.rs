@@ -76,40 +76,64 @@ pub async fn reader_interactions<'e, E: PgExecutor<'e>>(
 
 /// Replace the reader's affinity rows wholesale.
 ///
-/// Delete-then-insert rather than upsert: a series the reader removed from their watchlist has no
-/// row to update, and leaving the stale one behind would keep it seeding recommendations after
-/// they said they were done with it.
+/// Upsert-then-prune, in one transaction, and both halves of that are load-bearing.
+///
+/// *Prune*, because a series the reader removed from their watchlist has no row to update, and
+/// leaving the stale one behind would keep it seeding recommendations after they said they were
+/// done with it.
+///
+/// *Upsert first, and never delete-then-insert*, because the SPA opens several recommendation
+/// surfaces at once and each one rebuilds a stale profile: two rebuilds for the same reader run
+/// concurrently as a matter of course. Deleting first would give the second one a primary-key
+/// collision on every row it re-inserted — and, in the window before it committed, would show a
+/// concurrent reader an empty affinity table, which is indistinguishable from a reader who tracks
+/// nothing and caches as an empty shelf.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
-pub async fn replace_affinity<'e, E: PgExecutor<'e> + Copy>(
-    exec: E,
+/// [`crate::DbError::Sqlx`] only; a failure rolls back, so the reader keeps the affinity they had
+/// rather than losing it to a half-applied rebuild.
+pub async fn replace_affinity(
+    pool: &sqlx::PgPool,
     user_id: UserId,
     series_ids: &[SeriesId],
     affinities: &[f32],
     engagements: &[f32],
     observed: &[OffsetDateTime],
 ) -> DbResult<()> {
-    sqlx::query!(
-        "DELETE FROM user_series_affinity WHERE user_id = $1",
-        user_id.as_uuid()
-    )
-    .execute(exec)
-    .await?;
-
     let ids: Vec<Uuid> = series_ids.iter().copied().map(SeriesId::as_uuid).collect();
+    let mut tx = pool.begin().await?;
+
+    // `ORDER BY t.series_id` is the deadlock guard, not cosmetics: `reader_interactions` has no
+    // ordering of its own, so two concurrent rebuilds would otherwise take the same row locks in
+    // whatever order the planner handed them back, and each could hold what the other wants.
     sqlx::query!(
         "INSERT INTO user_series_affinity \
             (user_id, series_id, affinity, engagement, observed_at) \
-         SELECT $1, * FROM unnest($2::uuid[], $3::real[], $4::real[], $5::timestamptz[])",
+         SELECT $1, * FROM unnest($2::uuid[], $3::real[], $4::real[], $5::timestamptz[]) \
+              AS t(series_id, affinity, engagement, observed_at) \
+         ORDER BY t.series_id \
+         ON CONFLICT (user_id, series_id) DO UPDATE \
+            SET affinity    = EXCLUDED.affinity, \
+                engagement  = EXCLUDED.engagement, \
+                observed_at = EXCLUDED.observed_at",
         user_id.as_uuid(),
         &ids,
         affinities,
         engagements,
         observed,
     )
-    .execute(exec)
+    .execute(&mut *tx)
     .await?;
+
+    sqlx::query!(
+        "DELETE FROM user_series_affinity WHERE user_id = $1 AND series_id <> ALL($2)",
+        user_id.as_uuid(),
+        &ids,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
     Ok(())
 }
 

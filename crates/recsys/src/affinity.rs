@@ -80,6 +80,10 @@ pub struct Interaction {
 ///
 /// Logarithmic because the difference between chapter 3 and chapter 30 says far more about
 /// whether someone is invested than the difference between chapter 300 and chapter 330.
+///
+/// The saturation at 1 is part of the contract, not a rounding detail: the knee is *the* point at
+/// which a reader counts as fully committed, and `user_series_affinity.engagement` is constrained
+/// to `[0, 1]` on that basis. Anything past the knee is still just committed.
 #[must_use]
 pub fn engagement(chapters_read: i64, knee: f32) -> f32 {
     if chapters_read <= 0 {
@@ -93,7 +97,7 @@ pub fn engagement(chapters_read: i64, knee: f32) -> f32 {
     // The registry floors the knee at five, but a caller can construct params by hand; a knee at
     // or below zero would divide by a non-positive logarithm and produce a sign flip rather than
     // an error.
-    (read + 1.0).ln() / (knee.max(1.0) + 1.0).ln()
+    ((read + 1.0).ln() / (knee.max(1.0) + 1.0).ln()).min(1.0)
 }
 
 /// Exponential decay with a floor, so old favourites still count for something.
@@ -123,7 +127,7 @@ pub fn recency(age_days: f32, half_life_days: f32, floor: f32) -> f32 {
 /// implies contact with the work.
 #[must_use]
 pub fn affinity(interaction: Interaction, params: &AffinityParams) -> f32 {
-    let depth = engagement(interaction.chapters_read, params.engagement_knee).clamp(0.0, 1.0);
+    let depth = engagement(interaction.chapters_read, params.engagement_knee);
     let decay = recency(
         interaction.age_days,
         params.recency_half_life_days,
@@ -241,6 +245,30 @@ mod tests {
         assert!(engagement(60) > 0.99 && engagement(60) < 1.01);
         // Past the knee, more chapters barely move it.
         assert!((engagement(5_000) - engagement(1_000)).abs() < 0.6);
+    }
+
+    /// **Depth never exceeds 1, at any knee.**
+    ///
+    /// The bug: `engagement` was a bare `ln(read + 1) / ln(knee + 1)`, which passes 1 the moment a
+    /// reader goes past the knee — 199 chapters against the shipped knee of 60 gives 1.2888544.
+    /// `affinity` clamped its own copy, so the score stayed sane and nothing showed until the
+    /// value was *stored*: `user_series_affinity.engagement` is `CHECK (… <= 1)`, so every taste
+    /// profile rebuild for a reader with one long series 500'd, and the reader could never load
+    /// their recommendations at all.
+    ///
+    /// The whole knee range is swept because the ceiling is a property of the function, not of the
+    /// shipped default.
+    #[test]
+    fn engagement_stays_within_the_range_the_affinity_table_accepts() {
+        for knee in [5.0, 60.0, 1_000.0] {
+            for read in [1, 2, 59, 60, 61, 199, 5_000, i64::MAX] {
+                let depth = super::engagement(read, knee);
+                assert!(
+                    (0.0..=1.0).contains(&depth),
+                    "engagement({read}, {knee}) = {depth} is outside [0, 1]"
+                );
+            }
+        }
     }
 
     /// An old favourite is weaker evidence, never no evidence.

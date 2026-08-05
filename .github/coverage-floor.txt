@@ -1,21 +1,26 @@
-# Line-coverage floor for the `coverage` CI job, in per cent.
+# Line-coverage floor for the `coverage` CI job — the OFFLINE suite — in per cent.
 #
 # Enforced by `cargo run -p xtask -- coverage-ratchet`. One number; `#` comments and blank
 # lines are ignored.
+#
+# The integration measurement has its own floor in `.github/coverage-floor-integration.txt`,
+# taken by the `coverage-integration` job. The two numbers cover different test sets and are not
+# comparable — never move a value from one file to the other.
 #
 # WHAT IT MEASURES. The job runs `cargo llvm-cov --workspace --all-targets` **without**
 # `--features integration`, the same set every other fast job builds. So this is a floor on
 # what the *offline* suite reaches, and it deliberately excludes the 118 `crates/db`, 86
 # `services/api` and 55 `services/sync` integration tests, which need Docker and about fifteen
-# minutes of migrations.
+# minutes of migrations. Those are the sibling file's job.
 #
 # WHEN TO LOWER IT. There is one legitimate reason: code moved into a module the integration
 # suites cover, so this number fell while the code got no less tested. Lower it in the same
 # commit as the move and say so in the message.
 #
 # WHEN TO RAISE IT. Whenever the measured value has drifted a couple of points above it. The
-# job prints the headroom and suggests a new value once there is enough. A ratchet that only
-# ever holds its original line stops being a ratchet.
+# job prints the headroom and suggests a new value once there is enough, and since 2026-08-05
+# also writes both to the run summary, so the suggestion is on the run page rather than buried
+# in a log. A ratchet that only ever holds its original line stops being a ratchet.
 #
 # Baseline measured 2026-07-30 at 24.85% (regions 29.26%, functions 24.08%), set one point
 # below to absorb `proptest`'s entropy-seeded runs — the one source of run-to-run variation in
@@ -25,4 +30,9 @@
 # Re-measured at 29.15% (regions 33.78%, functions 27.67%) after TEST F-09's last axis landed:
 # 31 `wiremock` tests over four HTTP clients that had no test below the trait boundary at all.
 # Same one-point margin as the baseline, and the same reason for it.
+#
+# Not re-measured since 2026-07-31, across roughly twenty-five merged pull requests. A raise is
+# likely owed and is deliberately not taken here: raising a ratchet to a figure nobody measured
+# is the failure this file warns about above. Read the headroom the next `coverage` run prints
+# and raise it to what that run suggests.
 28.1

@@ -54,11 +54,10 @@ fn main() -> anyhow::Result<()> {
         );
     }
 
+    // `--integration` selects the second floor; bare, this still means the offline one.
     if cmd == "coverage-ratchet" {
-        let report = std::env::args()
-            .nth(2)
-            .unwrap_or_else(|| "target/llvm-cov/coverage.json".to_owned());
-        return coverage::run(workspace_root(), std::path::Path::new(&report));
+        let args: Vec<String> = std::env::args().skip(2).collect();
+        return coverage::run_cli(workspace_root(), &args);
     }
 
     if cmd == "config-docs" {
@@ -78,7 +77,7 @@ fn main() -> anyhow::Result<()> {
     {
         eprintln!(
             "unknown command {cmd:?} in a --no-default-features build; usage: xtask \
-             <repo-lint|install-hooks|coverage-ratchet [report.json]|\
+             <repo-lint|install-hooks|coverage-ratchet [--integration] [report.json]|\
              config-docs [--check]|notices [--check]|release-plan <bases.json>|--all>\n\
              ci, migrate, reset, seed, prune-chapters, openapi and sqlx-prepare need the \
              default `full` feature."

@@ -766,7 +766,8 @@ jobs:
   # floor answers "did this change make it worse". The floor is `.github/coverage-floor.txt`, which
   # is in the `rust` filter so editing it re-runs the measurement it describes. No
   # `continue-on-error` — a gate that cannot fail is a knob nobody should believe in. The
-  # measurement excludes `--features integration`, matching every other fast job.
+  # measurement excludes `--features integration`, matching every other fast job, which is why
+  # `coverage-integration` below exists and carries a separate floor.
   coverage:
     name: coverage ratchet
     runs-on: ubuntu-latest
@@ -811,8 +812,103 @@ jobs:
           cargo llvm-cov --workspace --all-targets --summary-only
           cargo llvm-cov report --json --summary-only --output-path target/llvm-cov/coverage.json
 
+      # Tee'd into the run summary so the "consider raising it" suggestion lands on the run page
+      # rather than only in a log nobody opens when the job is green — the floor file's own
+      # maintenance rule depends on somebody reading that line. `pipefail` is load-bearing: the
+      # default shell is `bash -e`, where `tee` supplies the pipeline's exit status and a
+      # regressed ratchet would report success.
       - name: compare against the committed floor
-        run: cargo run -p xtask -- coverage-ratchet
+        run: |
+          set -euo pipefail
+          status=0
+          cargo run -p xtask -- coverage-ratchet | tee "$RUNNER_TEMP/ratchet.txt" || status=$?
+          {
+            echo '### Coverage ratchet — offline suite'
+            echo '```'
+            cat "$RUNNER_TEMP/ratchet.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+  # The other half of the ratchet. `coverage` above builds without `--features integration`, so
+  # the 118 `crates/db`, 86 `services/api` and 55 `services/sync` tests never run there and code
+  # only they reach is not counted as covered by anything — a regression in it moves no number in
+  # CI at all. This job measures the same workspace with those suites on, against its own floor in
+  # `.github/coverage-floor-integration.txt`. Two files, never one: the values cover different
+  # test sets, so either substituted for the other is a gate that can never pass or never fail.
+  #
+  # Gated on `full` like `mutants`, and for its reason: Docker, the migrations and an instrumented
+  # build of the whole workspace is not a per-pull-request budget. Unlike `mutants` it is **not**
+  # `continue-on-error` — the outcome is a comparison against a committed number, not a function of
+  # how long the run got. The floor ships as the `unset` sentinel, so the first run reports what it
+  # measured and passes; committing that value is what arms the gate.
+  coverage-integration:
+    name: coverage ratchet (integration)
+    runs-on: ubuntu-latest
+    # Longer than the 45 of `coverage` and of `integration`: this leg is both of them at once, and
+    # `-C instrument-coverage` is paid on every dependency as well as on the suites it runs.
+    timeout-minutes: 90
+    needs: [changes]
+    if: needs.changes.outputs.full == 'true'
+    permissions:
+      contents: read # to check out the code
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+        with:
+          toolchain: ${{ needs.changes.outputs.toolchain }}
+          components: llvm-tools-preview
+      # Its own group, distinct from `coverage`: instrumented *and* built with a feature the other
+      # measurement does not enable, so every fingerprint differs from that group's. Nothing else
+      # reads this key, and the weekly `schedule` run is on `main`, so it is the writer as well as
+      # the reader.
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: coverage-integration
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
+      - uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60 # v2.85.7
+        with:
+          tool: cargo-llvm-cov
+
+      - name: BoringSSL build dependencies
+        uses: ./.github/actions/boringssl-deps
+
+      # Same scope as `coverage` so the two are about the same code, plus the feature. The suites
+      # stand their own Postgres up via testcontainers against the runner's Docker, exactly as the
+      # `integration` job does; inherited `SQLX_OFFLINE` still resolves the macros at compile time.
+      - name: cargo llvm-cov (integration)
+        run: |
+          mkdir -p target/llvm-cov
+          cargo llvm-cov --workspace --all-targets --features integration --summary-only
+          cargo llvm-cov report --json --summary-only \
+            --output-path target/llvm-cov/coverage-integration.json
+
+      # Reports on the summary either way — while the floor is `unset` that report *is* the
+      # deliverable, since it carries the number to commit. See the `coverage` job for why
+      # `pipefail` is not optional here.
+      - name: compare against the committed integration floor
+        run: |
+          set -euo pipefail
+          status=0
+          cargo run -p xtask -- coverage-ratchet --integration \
+            | tee "$RUNNER_TEMP/ratchet.txt" || status=$?
+          {
+            echo '### Coverage ratchet — integration suite'
+            echo '```'
+            cat "$RUNNER_TEMP/ratchet.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
 
   # What coverage cannot answer: a line executing is not a line anything asserted on. `cargo
   # mutants` rewrites one function body at a time and re-runs the tests; a surviving mutant is a
@@ -1542,6 +1638,7 @@ jobs:
       - secrets
       - msrv
       - coverage
+      - coverage-integration
       - mutants
       - deny
       - notices

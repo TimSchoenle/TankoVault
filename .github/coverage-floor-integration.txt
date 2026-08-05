@@ -1,0 +1,38 @@
+# Line-coverage floor for the `coverage-integration` CI job, in per cent.
+#
+# Enforced by `cargo run -p xtask -- coverage-ratchet --integration`. One number, or the word
+# `unset`; `#` comments and blank lines are ignored.
+#
+# NOT the same number as `.github/coverage-floor.txt`, and never interchangeable with it. That
+# file is the floor on the *offline* suite. This one is the floor on
+# `cargo llvm-cov --workspace --all-targets --features integration`, which additionally runs the
+# 118 `crates/db`, 86 `services/api` and 55 `services/sync` tests that need Docker — where the
+# bulk of this repository's real coverage lives. Expect this number to be substantially higher
+# than the offline one; copying a value from one file into the other produces either a gate that
+# can never pass or a gate that can never fail.
+#
+# WHAT IT MEASURES. The whole host workspace, every target, with the `integration` feature on, so
+# a regression in code only the Docker-backed suites reach moves this number. It moves nothing in
+# the offline floor, which is the blind spot this file exists to close.
+#
+# WHEN TO LOWER IT. Only when code was deleted, or a suite was deliberately retired. The offline
+# floor's one legitimate reason — "the drop is code the integration suites cover" — has no
+# counterpart here, because this measurement *is* those suites.
+#
+# WHEN TO RAISE IT. Whenever the measured value has drifted a couple of points above it. The job
+# prints the headroom and suggests a new value once there is enough, and writes both to the run
+# summary. A ratchet that only ever holds its original line stops being a ratchet.
+#
+# `unset` IS THE STARTING STATE, and the only non-numeric value accepted. While it is set the job
+# measures, prints what it found and enforces nothing; every other word is a parse error, so the
+# gate cannot be switched off by a typo. The sentinel is here because this measurement costs a
+# Docker Postgres, the migrations and an instrumented build of the whole workspace — nobody can
+# take it on a laptop in the time a change deserves, so the first value has to come from a real
+# CI run rather than from a guess. Replace the line below with what that run prints (it suggests
+# a value about a point under the measurement, absorbing `proptest`'s entropy-seeded runs), and
+# record the date and the measured figure here the way `.github/coverage-floor.txt` does.
+#
+# Only the `full` path measures this: the weekly `schedule` run, or `workflow_dispatch` with the
+# `full` input. So unlike the offline floor, editing this file does not re-measure it on a pull
+# request — the run that fills the sentinel in is the one that has to be read.
+unset

@@ -1,0 +1,246 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT canonical_title,\n                  description,\n                  cover_url,\n                  content_type AS \"content_type: ContentType\",\n                  status AS \"status: SeriesStatus\",\n                  release_year,\n                  title_source AS \"title_source: MetadataSource\",\n                  description_source AS \"description_source: MetadataSource\",\n                  cover_source AS \"cover_source: MetadataSource\",\n                  content_type_source AS \"content_type_source: MetadataSource\",\n                  status_source AS \"status_source: MetadataSource\",\n                  release_year_source AS \"release_year_source: MetadataSource\"\n           FROM series WHERE id = $1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "canonical_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "canonical_title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "cover_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "cover_url"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "content_type: ContentType",
+        "type_info": {
+          "Custom": {
+            "name": "content_type",
+            "kind": {
+              "Enum": [
+                "manga",
+                "manhwa",
+                "manhua",
+                "webtoon",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "content_type"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status: SeriesStatus",
+        "type_info": {
+          "Custom": {
+            "name": "series_status",
+            "kind": {
+              "Enum": [
+                "ongoing",
+                "completed",
+                "hiatus",
+                "cancelled",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "release_year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "release_year"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "title_source: MetadataSource",
+        "type_info": {
+          "Custom": {
+            "name": "metadata_source",
+            "kind": {
+              "Enum": [
+                "anilist",
+                "adapter"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "title_source"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "description_source: MetadataSource",
+        "type_info": {
+          "Custom": {
+            "name": "metadata_source",
+            "kind": {
+              "Enum": [
+                "anilist",
+                "adapter"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "description_source"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "cover_source: MetadataSource",
+        "type_info": {
+          "Custom": {
+            "name": "metadata_source",
+            "kind": {
+              "Enum": [
+                "anilist",
+                "adapter"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "cover_source"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "content_type_source: MetadataSource",
+        "type_info": {
+          "Custom": {
+            "name": "metadata_source",
+            "kind": {
+              "Enum": [
+                "anilist",
+                "adapter"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "content_type_source"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "status_source: MetadataSource",
+        "type_info": {
+          "Custom": {
+            "name": "metadata_source",
+            "kind": {
+              "Enum": [
+                "anilist",
+                "adapter"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "status_source"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "release_year_source: MetadataSource",
+        "type_info": {
+          "Custom": {
+            "name": "metadata_source",
+            "kind": {
+              "Enum": [
+                "anilist",
+                "adapter"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "release_year_source"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "6211b3292f8c4ee48f7432c7083497d27fba7a8af10754e67ba2c7ab4cea433a"
+}

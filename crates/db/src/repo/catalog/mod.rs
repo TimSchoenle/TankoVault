@@ -5,6 +5,7 @@ pub mod browse;
 pub mod chapters;
 pub mod enrichment;
 pub mod ingest;
+pub mod metadata;
 pub mod series;
 pub mod sources;
 
@@ -12,5 +13,6 @@ pub use browse::*;
 pub use chapters::*;
 pub use enrichment::*;
 pub use ingest::*;
+pub use metadata::*;
 pub use series::*;
 pub use sources::*;

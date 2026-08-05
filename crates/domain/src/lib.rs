@@ -33,7 +33,7 @@ pub use ids::{
     SeriesSourceId, TagId, UserId,
 };
 pub use link::{ResolveError, resolve_link};
-pub use metadata_priority::{MetadataField, MetadataPriority, MetadataSource};
+pub use metadata_priority::{MetadataField, MetadataPriority, MetadataSource, MetadataValue};
 pub use normalize::{compact_key, normalize_title};
 pub use pacing::{Pacer, PacingPolicy};
 pub use permissions::{

@@ -239,6 +239,35 @@ shared author credits, and vetoed outright when the two titles carry different n
 | `TANKOVAULT_MATCHING__AUTO_MERGE` | `0.97` | control-plane | At or above this — **and** only when a structural identity rule fired (identical titles, identical modulo whitespace, or an exact hit on a name the series already answers to) — the duplicate sweep merges two *already-existing* series without asking. A separate knob from `HIGH` because it governs a different act: `HIGH` files an incoming source, this one deletes a series row and the id it carries. A score alone never suffices; see `tankovault_matcher::adjudicate`. |
 | `TANKOVAULT_MATCHING__CANDIDATE_LIMIT` | `10` | worker, sync | Trigram candidates scored per query title. More costs a wider index scan and buys nothing once the true match is in the set. |
 
+### `metadata.priority` — which source owns each field
+
+Two writers put metadata on a `series` row: the worker's catalogue scan and external sync's
+enrichment pass. Both read this section, deliberately — the scan runs far more often, so a
+priority only sync consulted was no priority at all: every enriched description was overwritten
+by the next scrape, and `content_type`/`status` reverted to the `unknown` the adapters hardcode.
+
+Each list is highest-priority first, and the first source supplying a real value wins. A blank
+string, and an `unknown` content type or status, are absences rather than answers, so a source
+with no opinion never displaces one with an opinion. A source left out of a list is
+de-prioritised, not discarded: it still wins a field nothing else supplies.
+
+Which source wrote each stored value is recorded on the row (migration `0032`), which is what
+lets a later write honour the order at all. Values written before that migration count as
+`adapter` until the next enrichment pass corrects them.
+
+| Key | Default | Services | Notes |
+|---|---|---|---|
+| `TANKOVAULT_METADATA__PRIORITY__DESCRIPTION` | `["anilist","adapter"]` | worker, sync | The long-form description. |
+| `TANKOVAULT_METADATA__PRIORITY__TITLE` | `["anilist","adapter"]` | worker, sync | The canonical/display title. The loser is kept as an alternative title, so changing this never costs the catalogue a matching key. |
+| `TANKOVAULT_METADATA__PRIORITY__COVER` | `["anilist","adapter"]` | worker, sync | The cover image URL. |
+| `TANKOVAULT_METADATA__PRIORITY__CONTENT_TYPE` | `["anilist","adapter"]` | worker, sync | `manga`/`manhwa`/`manhua`/`webtoon`. No adapter has a usable selector for this today, so in practice only AniList ever supplies one. |
+| `TANKOVAULT_METADATA__PRIORITY__STATUS` | `["anilist","adapter"]` | worker, sync | Publication status of the work — not any reader's list status. |
+| `TANKOVAULT_METADATA__PRIORITY__RELEASE_YEAR` | `["anilist","adapter"]` | worker, sync | Year of first publication. |
+| `TANKOVAULT_METADATA__PRIORITY__DEFAULT` | `["anilist","adapter"]` | worker, sync | The fallback order for any field whose own list is explicitly empty. |
+
+Only `anilist` and `adapter` are accepted; anything else is a startup error rather than a
+silently ignored entry, so a typo cannot read as deliberate de-prioritisation.
+
 ### `chapter_outliers` — refusing implausible chapter numbers
 
 Aggregator sites publish listing entries that are not releases: a slug carrying a date
@@ -372,7 +401,6 @@ that can disagree.
 | `TANKOVAULT_METADATA__ENRICH_INTERVAL_SECS` | `3600` | |
 | `TANKOVAULT_METADATA__ENRICH_BATCH` | `200` | Series per database page. |
 | `TANKOVAULT_METADATA__ENRICH_MAX_SERIES` | `2000` | Upper bound per sweep. One `AniList` request each, paced by `TANKOVAULT_ANILIST__MIN_REQUEST_INTERVAL_MS`, so the default is ~23 min of work inside the hourly interval. Lower it if the sweep is crowding a shared rate-limit budget; raise it to walk a large catalogue sooner. |
-| `TANKOVAULT_METADATA__PRIORITY__DESCRIPTION` / `__TITLE` / `__COVER` / `__DEFAULT` | `["anilist","adapter"]` | Which source wins per field; `__DEFAULT` is the fallback order for fields without one of their own. Only `anilist` and `adapter` are accepted; anything else is a startup error rather than a silently ignored entry. |
 
 ### `challenge-solver`
 

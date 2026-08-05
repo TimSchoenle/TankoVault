@@ -18,8 +18,8 @@ use tankovault_control_plane::recsys::{BuildTuning, build};
 use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert, ingest_series};
 use tankovault_db::repo::tracking::watchlist_upsert;
 use tankovault_domain::{
-    AccountStatus, ContentType, ProviderId, SeriesId, SeriesStatus, Tunable, UserId, WatchStatus,
-    normalize_title,
+    AccountStatus, ContentType, MetadataPriority, ProviderId, SeriesId, SeriesStatus, Tunable,
+    UserId, WatchStatus, normalize_title,
 };
 use tankovault_test_support::seed;
 
@@ -107,6 +107,7 @@ async fn ingest(app: &TestApp, provider: ProviderId, fixture: &Fixture) -> Serie
             content_hash: vec![1],
         },
         &MatchingConfig::default(),
+        &MetadataPriority::default(),
     )
     .await
     .expect("ingest")

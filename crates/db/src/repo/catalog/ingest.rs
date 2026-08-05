@@ -3,11 +3,12 @@
 
 use super::chapters::{ChapterUpsert, upsert_chapters};
 use super::enrichment::{TagLink, add_series_authors, add_series_tags, add_series_titles};
-use super::series::{SeriesUpsert, resolve_canonical_series, update_series_meta};
+use super::metadata::merge_metadata;
+use super::series::{SeriesUpsert, resolve_canonical_series};
 use super::sources::{update_source_scan, upsert_source};
 use crate::error::DbResult;
 use tankovault_domain::matching::Canonicaliser;
-use tankovault_domain::{ProviderId, SeriesId, SeriesSourceId};
+use tankovault_domain::{MetadataPriority, MetadataSource, ProviderId, SeriesId, SeriesSourceId};
 
 /// A fully-scanned series ready to persist: canonical metadata, alternative titles,
 /// and the full chapter list, plus the content hash for change detection.
@@ -34,7 +35,9 @@ pub struct IngestOutcome {
 /// Persist a scanned series and its chapters in a single transaction. All writes are
 /// idempotent, so replaying under at-least-once delivery converges without false-new chapters.
 ///
-/// `canonicaliser` decides which series the scan belongs to; this function only writes.
+/// `canonicaliser` decides which series the scan belongs to; `priority` decides which of the
+/// scan's values are allowed to replace what another source already wrote. This function only
+/// writes.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; any failure rolls back the whole transaction, so a series
@@ -45,11 +48,19 @@ pub async fn ingest_series(
     pool: &sqlx::PgPool,
     scanned: &ScannedSeries,
     canonicaliser: &dyn Canonicaliser,
+    priority: &MetadataPriority,
 ) -> DbResult<IngestOutcome> {
     let mut tx = pool.begin().await?;
 
     let series_id = resolve_canonical_series(&mut tx, &scanned.meta, canonicaliser).await?;
-    update_series_meta(&mut *tx, series_id, &scanned.meta).await?;
+    merge_metadata(
+        &mut tx,
+        series_id,
+        MetadataSource::Adapter,
+        &scanned.meta.candidate(),
+        priority,
+    )
+    .await?;
     if !scanned.alt_titles.is_empty() {
         add_series_titles(&mut tx, series_id, &scanned.alt_titles).await?;
     }

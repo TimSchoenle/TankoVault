@@ -135,7 +135,7 @@ const STALE_DB_AFTER: StdDuration = StdDuration::from_secs(60 * 60);
 ///
 /// The name deliberately does not match the `tv_test_%` pattern [`sweep_stale_dbs`] drops: it is
 /// meant to outlive a run.
-const CATALOGUE_TEMPLATE: &str = "tv_catalogue_template_v6";
+const CATALOGUE_TEMPLATE: &str = "tv_catalogue_template_v7";
 
 /// Advisory-lock key serialising catalogue-template creation and cloning across test binaries.
 ///

@@ -179,6 +179,7 @@ impl Fixture {
                 content_hash: vec![1],
             },
             &MatchingConfig::default(),
+            &MetadataPriority::default(),
         )
         .await
         .expect("ingest local series")
@@ -244,6 +245,7 @@ impl Fixture {
                 content_hash: vec![2],
             },
             &MatchingConfig::default(),
+            &MetadataPriority::default(),
         )
         .await
         .expect("re-scrape local series");

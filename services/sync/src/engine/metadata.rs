@@ -3,13 +3,10 @@
 
 use tankovault_db::PgPool;
 use tankovault_db::repo::catalog::{
-    MetadataEnrichment, SeriesEnrichmentRow, TagKind, TagLink, TagSource,
+    MetadataCandidate, MetadataEnrichment, SeriesEnrichmentRow, TagKind, TagLink, TagSource,
 };
 use tankovault_db::repo::{catalog, sync};
-use tankovault_domain::{
-    ContentType, MetadataField, MetadataPriority, MetadataSource, SeriesId, SeriesStatus,
-    normalize_title,
-};
+use tankovault_domain::{MetadataPriority, SeriesId, normalize_title};
 use time::OffsetDateTime;
 
 use crate::provider::RemoteMetadata;
@@ -43,9 +40,9 @@ impl MetadataWriter {
         Ok(catalog::series_needing_metadata(&self.pool, &ids, stale_before).await?)
     }
 
-    /// Persist resolved provider metadata for `row`: cache the external-id mapping, fold in the
-    /// priority-resolved description/cover, gap-fill content type, publication status and
-    /// release year, and record every alternative title/synonym, genre and credit.
+    /// Persist resolved provider metadata for `row`: cache the external-id mapping, offer every
+    /// prioritised field to the merge, and record the upstream-only signals plus every
+    /// alternative title/synonym, genre and credit.
     pub(crate) async fn apply(
         &self,
         row: &SeriesEnrichmentRow,
@@ -53,23 +50,6 @@ impl MetadataWriter {
         meta: &RemoteMetadata,
     ) -> anyhow::Result<()> {
         sync::upsert_mapping(&self.pool, row.id, slug, &meta.external_id).await?;
-
-        // Description/cover follow the configured priority: the provider's value versus the
-        // value the scraping adapters already stored on the row.
-        let description = self.metadata_priority.resolve(
-            MetadataField::Description,
-            &[
-                (MetadataSource::AniList, meta.description.clone()),
-                (MetadataSource::Adapter, row.description.clone()),
-            ],
-        );
-        let cover = self.metadata_priority.resolve(
-            MetadataField::Cover,
-            &[
-                (MetadataSource::AniList, meta.cover_url.clone()),
-                (MetadataSource::Adapter, row.cover_url.clone()),
-            ],
-        );
 
         // Every alternative title the provider tracks (english/native/synonyms), normalized for
         // the trigram/merge/search indexes; blanks and duplicates are dropped downstream.
@@ -84,13 +64,17 @@ impl MetadataWriter {
             &self.pool,
             row.id,
             &MetadataEnrichment {
-                description: description.as_deref(),
-                cover_url: cover.as_deref(),
-                // Additive gap-fills only: never overwrite an adapter-determined value. `None`
-                // means "upstream had no opinion"; an `Unknown` token would look like a real answer.
-                content_type: content_type_token(meta.content_type),
-                status: series_status_token(meta.series_status),
-                release_year: meta.start_year,
+                // Offered, not imposed: `merge_metadata` decides each field against what the
+                // adapters stored and who stored it. An `Unknown` content type or status is
+                // upstream having no opinion and loses to any real value.
+                candidate: MetadataCandidate {
+                    canonical_title: meta.titles.first().map(String::as_str),
+                    description: meta.description.as_deref(),
+                    cover_url: meta.cover_url.as_deref(),
+                    content_type: Some(meta.content_type),
+                    status: Some(meta.series_status),
+                    release_year: meta.start_year,
+                },
                 is_adult: meta.is_adult,
                 external_score: meta.external_score,
                 external_popularity: meta.external_popularity,
@@ -99,6 +83,7 @@ impl MetadataWriter {
                 tags: &tag_links(meta),
                 authors: &meta.authors,
             },
+            &self.metadata_priority,
         )
         .await?;
         Ok(())
@@ -139,20 +124,4 @@ fn tag_links(meta: &RemoteMetadata) -> Vec<TagLink<'_>> {
         });
     }
     links
-}
-
-/// The enum token for a content type, or `None` when upstream had no opinion.
-fn content_type_token(content_type: ContentType) -> Option<&'static str> {
-    match content_type {
-        ContentType::Unknown => None,
-        other => Some(other.as_str()),
-    }
-}
-
-/// The enum token for a publication status, or `None` when upstream had no opinion.
-fn series_status_token(status: SeriesStatus) -> Option<&'static str> {
-    match status {
-        SeriesStatus::Unknown => None,
-        other => Some(other.as_str()),
-    }
 }

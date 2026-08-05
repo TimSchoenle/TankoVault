@@ -1,14 +1,19 @@
 # Suggestion system — design
 
-Status: **phases 0, 1 and 2 implemented; 2.5 and 3 proposed.**
+Status: **phases 0, 1, 2 and 2.5 implemented; 3 partly.**
 
 | Phase | State |
 |---|---|
 | 0 — pgvector, widened signal columns, `series_merges`, the merge guard | **built** |
 | 1 — the item model: features, projection, embeddings, HNSW, `/v1/series/{id}/similar` | **built** |
 | 2 — the reader model: affinity, taste profile, retrieval, ranking, `/v1/me/recommendations` | **built** |
-| 2.5 — the `Tunable` registry and the console | not started |
+| 2.5 — the `Tunable` registry and the console | **built** |
 | 3 — collaboration and feedback | partly built (feedback yes, co-occurrence no) |
+
+Every published surface now has a client. The SPA renders the shelf with its explanation and both
+refusals (Home), similarity beside a series (`views/series/similar.rs`), the reader's own profile
+(Account → Taste), and model health, the two rebuilds and the whole tuning registry (Console →
+Recommendations, gated on `recsys.read`/`recsys.write` and `admin.recommendations`).
 
 **The stub is gone.** `tracking::dashboard::recommendations` — the query that scored the whole
 catalogue against the reader's tags on every request — is deleted, along with its 700 000 plan
@@ -40,62 +45,18 @@ match the code. Four places where reality won an argument:
 Not built, and named so it is not mistaken for done:
 
 - **`relations`** (§7.4's "next in the series" rail). Still unselected, so a direct sequel of a
-  tracked series can still reach the discovery shelf.
+  tracked series can still reach the discovery shelf — and nothing in the SPA can name one. The
+  series sidebar's rail is `/v1/series/{id}/similar`, content similarity, and is worded as that
+  rather than as "what comes next".
 - **Co-occurrence (retrieval path R4).** The table exists and the merge path handles it; nothing
   populates it, so cross-reader signal contributes nothing yet. Correct on a small deployment
   either way (§12.2).
-- **Every tunable.** Weights, bases and thresholds are still constants in the source. §8 is the
-  design for making them operator-editable, and it is deliberately after the ranker rather than
-  before it.
 
----|---|
-| 0 — pgvector, widened signals, `series_merges`, the merge guard | **built** |
-| 1 — the item model: features, projection, embeddings, HNSW, `/v1/series/{id}/similar` | **built** |
-| 2 — the reader model, and replacing the stub endpoint | not started |
-| 2.5 — the `Tunable` registry and the console | not started |
-| 3 — collaboration and feedback | not started |
-
-**The stub recommender in `tracking::dashboard::recommendations` is untouched and still serving
-`/v1/me/recommendations`.** Nothing personalised exists yet; phase 1 ships the item model and the
-signed-out-visible similarity surface it supports.
-
-Where the built code diverges from what is written below, this document has been corrected to
-match the code. Two places where reality won an argument:
-
-- **The builder runs in `services/control-plane`, not `services/worker`** (§3.2). The service that
-  already holds the leader lock and already runs one standing catalogue-wide job is the one that
-  should run the second.
-- **Priors page ids and aggregate separately** (§6.7). Doing both in one statement put three
-  correlated aggregates on every row a generic plan thinks it might scan, and `repo_query_plans`
-  measured it at 1.8x the cost ceiling.
-
-Still not populated: the widened AniList signals. `tags.kind`, `series_tags.weight`,
-`series.is_adult`, `external_score` and `external_popularity` exist as columns and are read by the
-model; **nothing writes them yet**, so today's vocabulary is still genre-only. That is the single
-highest-value remaining change, and it needs no new code beyond the GraphQL selection (§2.2).
-
----|---|
-| 0 — pgvector, widened signals, `series_merges`, the merge guard | **built** (§5.1, §9.2, §9.3, §9.6) |
-| 1 — the item model: features, SVD, embeddings, HNSW | not started |
-| 2 — the reader model, and replacing the stub endpoint | not started |
-| 2.5 — the `Tunable` registry and the console | not started |
-| 3 — collaboration and feedback | not started |
-
-What phase 0 actually landed, against what this document specifies: the `vector` extension and
-the image move; `tags.kind`/`series_count`, `series_tags.weight`/`source`,
-`series.is_adult`/`external_score`/`external_popularity` as **columns only** — nothing populates
-them yet, because that is the AniList selection change in the same phase and it is *not* done;
-`series_merges` with path compression and both resolvers; and the differential test that holds
-`merge_series` to the schema.
-
-**The stub recommender in `tracking::dashboard::recommendations` is untouched and still serving.**
-Nothing below §5.1 exists in code.
-
-What exists today is a stub: `tracking::dashboard::recommendations` selects every series sharing
-one tag with anything on the watchlist and orders by the shared-tag count, computed twice — once
-in the `WHERE EXISTS`, once in the `ORDER BY` — before the `LIMIT`. It carries a 700 000 cost
-budget in `crates/db/tests/repo_query_plans.rs` and the API handler documents itself as a stub.
-At a catalogue of ~1M series that query reads the catalogue, per request, per user.
+What this replaced was a stub: `tracking::dashboard::recommendations` selected every series
+sharing one tag with anything on the watchlist and ordered by the shared-tag count, computed
+twice — once in the `WHERE EXISTS`, once in the `ORDER BY` — before the `LIMIT`. It carried a
+700 000 cost budget in `crates/db/tests/repo_query_plans.rs`. At a catalogue of ~1M series that
+query read the catalogue, per request, per user.
 
 The target this document designs for:
 

@@ -10,6 +10,7 @@ mod form;
 mod layout;
 mod nav;
 mod pagination;
+mod recommend;
 mod shell;
 mod tabs;
 mod topbar;
@@ -26,6 +27,7 @@ pub(crate) use footer::Footer;
 pub(crate) use form::{Field, ListSearch, SegControl, SliderRow};
 pub(crate) use layout::{ListFooter, NoSelection, PanelCard, Section};
 pub(crate) use pagination::{CompactPager, Pagination, Window};
+pub(crate) use recommend::RecCard;
 pub(crate) use shell::Shell;
 pub(crate) use tabs::{TabBar, TabKind};
 

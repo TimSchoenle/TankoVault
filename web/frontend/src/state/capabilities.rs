@@ -120,6 +120,7 @@ pub(crate) const CONSOLE_PERMISSIONS: &[Permission] = &[
     Permission::ProvidersRead,
     Permission::ScansRead,
     Permission::MergeRead,
+    Permission::RecsysRead,
     Permission::SyncAdminRead,
     Permission::UsersRead,
     Permission::AuditRead,

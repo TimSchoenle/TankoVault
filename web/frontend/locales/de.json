@@ -130,7 +130,20 @@
       "privacy": "Datenschutz",
       "profile": "Profil",
       "security": "Sicherheit & Sitzungen",
-      "sync": "Sync & Integrationen"
+      "sync": "Sync & Integrationen",
+      "taste": "Geschmack"
+    },
+    "taste": {
+      "avoids": "Du meidest",
+      "built": "Stand {date}",
+      "empty": "Noch nichts gelernt. Verfolge und lies ein paar Serien, dann baut sich das hier von selbst auf.",
+      "intro": "Was die Empfehlungen über dich gelernt haben — aus den Serien, die du verfolgst und liest. Es formt die Leiste „Weil du das gelesen hast“, und nur du siehst es.",
+      "likes": "Dich zieht es zu",
+      "seeds": {
+        "one": "Aus 1 Serie gebildet",
+        "other": "Aus {count} Serien gebildet"
+      },
+      "title": "Dein Geschmacksprofil"
     }
   },
   "auth": {
@@ -450,6 +463,58 @@
       "unavailable": "Anbieter konnten nicht geladen werden: {message}",
       "unblock": "Von der Blockliste nehmen"
     },
+    "recsys": {
+      "applies": {
+        "immediately": "Sofort",
+        "nextBuild": "Nächster Build",
+        "nextFullBuild": "Vollständiger Build"
+      },
+      "bounds": "{min} – {max} · ausgeliefert mit {default}",
+      "changed": "Vom Standard abweichend",
+      "changedBy": "{user} · {date}",
+      "generation": "Generation {n}",
+      "group": {
+        "affinity": "Affinität",
+        "build": "Modellbau",
+        "cooccurrence": "Gemeinsames Lesen",
+        "diversity": "Vielfalt",
+        "prior": "Beliebtheit",
+        "retrieval": "Kandidatensuche",
+        "scoring": "Bewertung",
+        "serving": "Ausspielung"
+      },
+      "intro": "Das Empfehlungsmodell und die Werte, aus denen es gebaut wird. Eine Änderung hier verändert, was jeder Leser dieser Installation zu sehen bekommt.",
+      "kpi": {
+        "catalogue": "Katalog",
+        "catalogueSub": "Serien insgesamt",
+        "embedded": "Mit Einbettung",
+        "embeddedSub": "{features} mit Merkmalen",
+        "lastRun": "Letzter Lauf schrieb",
+        "lastRunSub": "Vom letzten Build geschriebene Serien",
+        "recommendable": "Empfehlbar",
+        "recommendableSub": "{excluded} eingebettet, aber ausgeschlossen",
+        "repairQueue": "Reparaturschlange",
+        "repairQueueSub": "Warten auf Neueinbettung",
+        "vocabulary": "Vokabular",
+        "vocabularySub": "{dims} Dimensionen"
+      },
+      "lastBuilt": "gebaut {date}",
+      "lastError": "Der letzte Build ist fehlgeschlagen: {message}",
+      "notePlaceholder": "Warum (optional)",
+      "outOfRange": "Außerhalb des erlaubten Bereichs.",
+      "privacyFloor": "Datenschutzgrenze",
+      "privacyFloorHint": "Die Untergrenze ist eine Anonymitätsschwelle, kein Einstellwert. Die API lehnt niedrigere Werte ab, egal wie sie gesendet werden.",
+      "readOnly": "Du kannst diese Werte sehen, aber nicht ändern.",
+      "rebuildFull": "Vollständig neu bauen",
+      "rebuildFullHint": "Löst die Projektion neu und bettet den Katalog neu ein. Nötig für Werte, die in den gespeicherten Vektoren stecken.",
+      "rebuildIncremental": "Neu bauen",
+      "rebuildIncrementalHint": "Ergänzt die laufende Generation. Reicht für Werte, die beim nächsten Build greifen.",
+      "resetHint": "Überschreibung verwerfen und dem Auslieferungsstandard folgen",
+      "saved": "Gespeichert.",
+      "startedAt": "gestartet {date}",
+      "tuning": "Feineinstellung",
+      "valueLabel": "Wert für {title}"
+    },
     "scans": {
       "active": "Laufende Durchläufe",
       "col": {
@@ -559,6 +624,7 @@
       "overview": "Übersicht",
       "privacy": "Datenschutz",
       "providers": "Anbieter",
+      "recommendations": "Empfehlungen",
       "solver": "Challenge & Solver",
       "sync": "Sync",
       "users": "Benutzer"
@@ -799,6 +865,13 @@
       "title": "Neu auf deiner Merkliste"
     },
     "recommendations": {
+      "askTitle": "Das nicht mehr vorschlagen?",
+      "because": "Weil du {title} gelesen hast",
+      "dismiss": "{title} ausblenden",
+      "hideForever": "Nie wieder",
+      "hideForeverHint": "Dauerhaft ausgeblendet. Das läuft nicht ab.",
+      "notInterested": "Kein Interesse",
+      "notInterestedHint": "Eine Weile ausgeblendet. Kann später wiederkommen.",
       "title": "Weil du das gelesen hast"
     },
     "stat": {
@@ -915,8 +988,6 @@
   },
   "series": {
     "addToWatchlist": "Zur Merkliste hinzufügen",
-    "alsoFollow": "Leser folgen außerdem",
-    "alsoFollowSoon": "Empfehlungen kommen mit dem Endpunkt für verwandte Serien.",
     "backup": "Ausweichquelle",
     "badLink": "Dieser Serienlink sieht nicht richtig aus.",
     "by": "von {authors}",
@@ -961,6 +1032,10 @@
     "preferred": "bevorzugt",
     "read": "Gelesen",
     "signInToTrack": "Melde dich an, um diese Serie zu verfolgen.",
+    "similar": {
+      "empty": "Noch nichts Ähnliches gefunden. Das füllt sich, sobald das Empfehlungsmodell den Katalog kennt.",
+      "title": "Ähnliche Serien"
+    },
     "sourceCount": "{count} Qu.",
     "sources": {
       "one": "{count} Quelle",

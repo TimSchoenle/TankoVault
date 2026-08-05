@@ -4,14 +4,16 @@
 
 use crate::api;
 use crate::components::{
-    async_list, async_view, AuthRequired, Cover, CoverCard, SkeletonBlock, SkeletonRows,
+    async_list, async_view, AuthRequired, Cover, RecCard, SkeletonBlock, SkeletonRows,
 };
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
+use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::util::{chapter_number, greeting_key, iso_date};
+use crate::wire::types::Feature;
 use crate::Route;
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
@@ -21,6 +23,7 @@ pub(crate) fn Home() -> Element {
     let session = use_session();
     let i18n = use_i18n();
     let api = api::use_api();
+    let caps = use_capabilities();
     let reload = use_reload();
 
     // Each resource builds its client from the live session token, so the boot-time silent
@@ -82,11 +85,19 @@ pub(crate) fn Home() -> Element {
         }
     });
 
+    // Its own handle: dismissing a recommendation must refetch the shelf, and only the shelf —
+    // the feed, the stats and the continue rail are unaffected by that write.
+    let reload_recs = use_reload();
     let recommendations = use_resource(move || {
+        reload_recs.track();
         let client = api.client();
-        let authed = session.is_authenticated();
+        // Gated here as well as server-side: with the feature off the endpoint answers 404, and
+        // an error box under a "Because you read" heading reads as a fault rather than a
+        // deployment that does not offer recommendations.
+        let offered =
+            session.is_authenticated() && caps.has_feature(Feature::CatalogueRecommendations);
         async move {
-            if !authed {
+            if !offered {
                 return Ok(Vec::new());
             }
             client
@@ -181,7 +192,7 @@ pub(crate) fn Home() -> Element {
         {
             async_view(
                 &recommendations,
-                reload,
+                reload_recs,
                 || rsx! { SkeletonBlock { height: 96 } },
                 |items| {
                     if items.is_empty() {
@@ -193,23 +204,8 @@ pub(crate) fn Home() -> Element {
                             h2 { {i18n.t("home.recommendations.title")} }
                         }
                         div { class: "ik-grid",
-                            // `/v1/me/recommendations` returns `Recommendation`, a superset of
-                            // `SeriesSummary` carrying why each pick is here (`because_title`,
-                            // `shared`, `score`). The card renders the summary half; surfacing
-                            // the explanation needs card markup and therefore a design pass, so
-                            // the fields travel unused for now rather than being shown badly.
                             for item in items.iter().cloned() {
-                                CoverCard {
-                                    key: "{item.id}",
-                                    series: SeriesSummary {
-                                        id: item.id,
-                                        title: item.title,
-                                        cover_url: item.cover_url,
-                                        content_type: item.content_type,
-                                        status: item.status,
-                                        source_count: item.source_count,
-                                    },
-                                }
+                                RecCard { key: "{item.id}", item, reload: reload_recs }
                             }
                         }
                     }

@@ -11,6 +11,7 @@ mod merge;
 mod overview;
 mod privacy;
 mod providers;
+mod recommendations;
 mod scans;
 mod solver;
 mod stats;
@@ -62,6 +63,7 @@ impl RefreshTick {
 enum Entity {
     Overview,
     Merge,
+    Recommendations,
     Providers,
     Scans,
     Solver,
@@ -76,7 +78,10 @@ enum Entity {
 /// The rail's groups, in order, each with the entities it holds.
 const RAIL: &[(&str, &[Entity])] = &[
     ("console.group.system", &[Entity::Overview]),
-    ("console.group.catalogue", &[Entity::Merge]),
+    (
+        "console.group.catalogue",
+        &[Entity::Merge, Entity::Recommendations],
+    ),
     (
         "console.group.pipeline",
         &[
@@ -104,6 +109,7 @@ impl Entity {
         match self {
             Self::Overview => "console.tab.overview",
             Self::Merge => "console.tab.merge",
+            Self::Recommendations => "console.tab.recommendations",
             Self::Providers => "console.tab.providers",
             Self::Scans => "console.tab.liveScans",
             Self::Solver => "console.tab.solver",
@@ -121,6 +127,8 @@ impl Entity {
         match self {
             Self::Overview => Icon::Dashboard,
             Self::Merge => Icon::Merge,
+            // A tuning surface, not a discovery one: the operator's view of it is the knobs.
+            Self::Recommendations => Icon::Tune,
             Self::Providers => Icon::Layers,
             Self::Scans => Icon::Radar,
             Self::Solver => Icon::ShieldLock,
@@ -139,6 +147,7 @@ impl Entity {
         match self {
             Self::Overview => "overview",
             Self::Merge => "merge-queue",
+            Self::Recommendations => "recommendations",
             Self::Providers => "providers",
             Self::Scans => "scan-runs",
             Self::Solver => "solver",
@@ -161,6 +170,7 @@ impl Entity {
             Self::Providers | Self::Solver => (Permission::ProvidersRead, Feature::AdminProviders),
             Self::AdapterTest => (Permission::ProvidersTest, Feature::AdminAdapterTest),
             Self::Merge => (Permission::MergeRead, Feature::ScanningMergeQueue),
+            Self::Recommendations => (Permission::RecsysRead, Feature::AdminRecommendations),
             Self::Sync => (Permission::SyncAdminRead, Feature::AdminSync),
             Self::Users => (Permission::UsersRead, Feature::AdminUsers),
             Self::Flags => (Permission::FlagsRead, Feature::AdminFeatureFlags),
@@ -183,7 +193,10 @@ impl Entity {
     /// Whether this entity refetches from the shared tick. Work surfaces opt out — see the
     /// module docs.
     fn auto_refreshes(self) -> bool {
-        !matches!(self, Self::Providers | Self::Users | Self::Flags)
+        !matches!(
+            self,
+            Self::Providers | Self::Users | Self::Flags | Self::Recommendations
+        )
     }
 }
 
@@ -346,6 +359,11 @@ pub(crate) fn Console() -> Element {
         Entity::Merge => rsx! {
             div { class: "ik-cons-pane",
                 merge::MergeQueue {}
+            }
+        },
+        Entity::Recommendations => rsx! {
+            div { class: "ik-cons-pane",
+                recommendations::RecommendationsPanel {}
             }
         },
         Entity::Sync => rsx! {

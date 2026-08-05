@@ -85,13 +85,18 @@ pub fn bearer(user: UserId) -> String {
 /// lifetime of the test binary.
 static PG: OnceCell<PgContainer> = OnceCell::const_new();
 
-/// The Postgres image tag the harness runs.
+/// The Postgres image the harness runs.
 ///
 /// **Track `deploy/docker-compose.yml`.** The planner is a major-version artefact, so a suite
 /// that asserts on query plans ([`TestDb::spawn_with_catalogue`]) proves nothing about
 /// production unless the majors match — and the schema's generated columns and trigram indexes
 /// need a modern major regardless, which the testcontainers default is not.
-const POSTGRES_TAG: &str = "18-alpine";
+///
+/// The *name* is overridden as well as the tag: migration 0027 does `CREATE EXTENSION vector`,
+/// so stock `postgres` cannot run the migration set at all and every integration test would
+/// fail at schema setup rather than on anything it meant to assert.
+const POSTGRES_IMAGE: &str = "pgvector/pgvector";
+const POSTGRES_TAG: &str = "pg18";
 
 /// The fixed name of the shared container. A *name* is what makes reuse possible: it is how
 /// `testcontainers` finds the already-running container instead of creating a second one, so
@@ -101,6 +106,10 @@ const POSTGRES_TAG: &str = "18-alpine";
 /// because reuse attaches by name: a container built from an older tag would otherwise be found,
 /// started and reused forever after a bump, leaving the suite testing the very major it was
 /// meant to leave — silently, since nothing in the run names a version.
+///
+/// The move to pgvector (`18-alpine` → `pg18`) changes this string, which is the property that
+/// matters: a developer with a stock-Postgres container left over from before migration 0027
+/// gets a new one rather than a silent `CREATE EXTENSION vector` failure on every run.
 fn container_name() -> String {
     let major = POSTGRES_TAG.split('-').next().unwrap_or(POSTGRES_TAG);
     format!("tankovault-test-postgres-{major}")
@@ -115,11 +124,18 @@ const STALE_DB_AFTER: StdDuration = StdDuration::from_secs(60 * 60);
 
 /// The catalogue-fixture template database, cloned by [`TestDb::spawn_with_catalogue`].
 ///
-/// **Bump the version suffix whenever [`catalogue`]'s generator changes.** The template is a
-/// cache keyed by this name and nothing else, so a stale one would otherwise be cloned by every
-/// later run. The name deliberately does not match the `tv_test_%` pattern
-/// [`sweep_stale_dbs`] drops: it is meant to outlive a run, and rebuilding it costs seconds.
-const CATALOGUE_TEMPLATE: &str = "tv_catalogue_template_v2";
+/// **Bump the version suffix whenever [`catalogue`]'s generator changes — or a migration does.**
+///
+/// The template caches a *migrated database with rows in it*, so both halves are part of what it
+/// caches, and this name is the entire cache key. Only the generator used to be named here, and
+/// that omission is a real trap: adding a migration leaves every later run cloning a template
+/// built before it, and the failure is `relation "…" does not exist` from a suite that has
+/// nothing to do with the change. Rebuilding costs seconds; a stale template costs an
+/// afternoon.
+///
+/// The name deliberately does not match the `tv_test_%` pattern [`sweep_stale_dbs`] drops: it is
+/// meant to outlive a run.
+const CATALOGUE_TEMPLATE: &str = "tv_catalogue_template_v6";
 
 /// Advisory-lock key serialising catalogue-template creation and cloning across test binaries.
 ///
@@ -179,6 +195,7 @@ async fn shared_container() -> &'static PgContainer {
     PG.get_or_init(|| async {
         start_if_stopped();
         let container = Postgres::default()
+            .with_name(POSTGRES_IMAGE)
             .with_tag(POSTGRES_TAG)
             .with_container_name(container_name())
             .with_reuse(ReuseDirective::Always)

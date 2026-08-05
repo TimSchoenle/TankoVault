@@ -38,6 +38,7 @@ pub mod ratelimit;
 pub mod reload;
 pub mod shutdown;
 pub mod telemetry;
+pub mod tunables;
 
 pub use audit::{AuditEvent, AuditOutcome, AuditSink, NoopAuditSink};
 pub use flags::{FeatureGate, FeatureLayer, FlagSource, RouteFeatures};
@@ -54,11 +55,14 @@ pub use shutdown::install_shutdown;
 // taking a direct `tokio-util` dependency for one type.
 pub use telemetry::init_tracing;
 pub use tokio_util::sync::CancellationToken;
+pub use tunables::{TunableDefaultsOnly, TunableSet, TunableSource};
 
 #[cfg(feature = "db")]
 pub use audit::PostgresAuditSink;
 #[cfg(feature = "db")]
 pub use flags::PostgresFlagSource;
+#[cfg(feature = "db")]
+pub use tunables::PostgresTunableSource;
 
 /// Failures that prevent a service from starting. Every variant is fatal by construction;
 /// runtime failures of *optional* dependencies degrade elsewhere rather than abort here.

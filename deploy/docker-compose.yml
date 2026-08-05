@@ -49,7 +49,16 @@ services:
   postgres:
     # Stable major only (was `19beta2-alpine`): a beta catalog meant CI type-checked queries
     # against a moving target.
-    image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+    #
+    # `pgvector/pgvector`, not stock `postgres`: migration 0026 does `CREATE EXTENSION vector`
+    # and the recommender retrieves through an HNSW index, so the extension is a hard dependency
+    # of the deployment. This image is the official Postgres image with pgvector preinstalled —
+    # same major, same entrypoint, same environment contract, so nothing else here changes.
+    # It is Debian-based rather than Alpine; the memory limit below already accommodates that.
+    #
+    # Operators running their own Postgres must install pgvector before upgrading. See
+    # `deploy/README.md`.
+    image: pgvector/pgvector:pg18@sha256:691673308c99d2161ba298736f3147f1f22d79de2fb7ec93ae9b4afcab870b62
     deploy: { resources: { limits: { memory: 1g } } }
     environment:
       POSTGRES_USER: tankovault

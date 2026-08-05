@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series_features (series_id, feature_ids, weights, digest, generation) SELECT u.id, ARRAY(SELECT jsonb_array_elements_text(f.elem)::int), ARRAY(SELECT jsonb_array_elements_text(w.elem)::real), u.digest, $5 FROM unnest($1::uuid[], $4::bytea[]) WITH ORDINALITY AS u(id, digest, ord) JOIN LATERAL (SELECT ($2::jsonb -> (u.ord - 1)::int) AS elem) f ON true JOIN LATERAL (SELECT ($3::jsonb -> (u.ord - 1)::int) AS elem) w ON true ON CONFLICT (series_id) DO UPDATE SET feature_ids = EXCLUDED.feature_ids, weights     = EXCLUDED.weights, digest      = EXCLUDED.digest, generation  = EXCLUDED.generation, built_at    = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Jsonb",
+        "Jsonb",
+        "ByteaArray",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "daf6139cf49b083c7f27fa4500a4e768832b770aa1e21538764032ae14a88478"
+}

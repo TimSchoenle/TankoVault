@@ -71,6 +71,45 @@ fn admin_gates() -> Vec<Gate> {
             required: &[Permission::FlagsWrite],
             body: empty,
         },
+        // --- the recommender's control plane ---
+        Gate {
+            method: "GET",
+            template: "/v1/admin/recommendations/health",
+            path: "/v1/admin/recommendations/health",
+            required: &[Permission::RecsysRead],
+            body: empty,
+        },
+        Gate {
+            method: "GET",
+            template: "/v1/admin/recommendations/tunables",
+            path: "/v1/admin/recommendations/tunables",
+            required: &[Permission::RecsysRead],
+            body: empty,
+        },
+        Gate {
+            method: "PUT",
+            template: "/v1/admin/recommendations/tunables/{key}",
+            path: "/v1/admin/recommendations/tunables/recsys.diversity.lambda",
+            required: &[Permission::RecsysWrite],
+            // The shipped default, so this write changes nothing observable elsewhere.
+            body: || Some(json!({ "value": 0.7 })),
+        },
+        Gate {
+            method: "DELETE",
+            template: "/v1/admin/recommendations/tunables/{key}",
+            path: "/v1/admin/recommendations/tunables/recsys.diversity.lambda",
+            required: &[Permission::RecsysWrite],
+            body: empty,
+        },
+        Gate {
+            method: "POST",
+            template: "/v1/admin/recommendations/rebuild",
+            path: "/v1/admin/recommendations/rebuild",
+            required: &[Permission::RecsysWrite],
+            // Forwarded to a control plane the harness points at `.invalid`, so the leg-3
+            // outcome is a `502` — after the permission check the matrix is here to assert.
+            body: || Some(json!({ "mode": "incremental" })),
+        },
         // --- merge queue ---
         Gate {
             method: "GET",

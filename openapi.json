@@ -205,6 +205,15 @@
         ],
         "type": "object"
       },
+      "Applies": {
+        "description": "When a change to a tunable actually reaches a reader.\n\nThe console shows this on every row, because it is the most likely way this surface fails a\nuser: someone raises a value baked into stored model data, sees no change, raises it again,\nand concludes the page is broken — when the truth is that the old value is what is\nphysically stored.",
+        "enum": [
+          "immediately",
+          "next_build",
+          "next_full_build"
+        ],
+        "type": "string"
+      },
       "AssignRemoteEntry": {
         "properties": {
           "external_id": {
@@ -766,7 +775,8 @@
           "admin.audit",
           "admin.stats",
           "admin.users",
-          "admin.feature_flags"
+          "admin.feature_flags",
+          "admin.recommendations"
         ],
         "type": "string"
       },
@@ -820,6 +830,19 @@
           "provider_slug",
           "url",
           "discovered_at"
+        ],
+        "type": "object"
+      },
+      "FeedbackBody": {
+        "description": "A reader's verdict on a recommendation.",
+        "properties": {
+          "verdict": {
+            "description": "`not_interested` (decays) or `hide_forever` (does not).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict"
         ],
         "type": "object"
       },
@@ -1341,6 +1364,100 @@
         ],
         "type": "object"
       },
+      "ModelHealthView": {
+        "description": "The recommendation model's current state, as an operator needs it before touching anything.",
+        "properties": {
+          "building": {
+            "description": "Whether a build holds the claim right now.",
+            "type": "boolean"
+          },
+          "dense_dims": {
+            "description": "Width of the dense space the model was built in.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "error": {
+            "description": "How the last run ended, when it ended badly. The builder always releases its claim, so a\nfailure shows up here rather than as a build that never finishes.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "description": "RFC 3339. When the most recent run released the claim; absent while one is running.",
+            "example": "2026-08-04T12:04:00Z",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "generation": {
+            "description": "The live model generation. A full build takes the next one; an incremental build patches\nthis one.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "repair_queue_depth": {
+            "description": "Series queued for re-embedding, most often after a merge.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "series_built": {
+            "description": "Series the last run wrote.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "series_recommendable": {
+            "description": "Series the model is willing to recommend. A large gap below `series_with_embedding` means\n`recsys.build.min_features` is excluding more than intended.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "series_total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "series_with_embedding": {
+            "description": "Series with a projected embedding, and so reachable by neighbour retrieval.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "series_with_features": {
+            "description": "Series with an extracted feature vector.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "stage": {
+            "description": "What the builder is doing. `idle` between runs.",
+            "type": "string"
+          },
+          "started_at": {
+            "description": "RFC 3339. When the current or most recent run started.",
+            "example": "2026-08-04T12:00:00Z",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "vocabulary": {
+            "description": "Distinct features in the vocabulary.",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "generation",
+          "stage",
+          "building",
+          "series_built",
+          "vocabulary",
+          "dense_dims",
+          "series_total",
+          "series_with_features",
+          "series_with_embedding",
+          "series_recommendable",
+          "repair_queue_depth"
+        ],
+        "type": "object"
+      },
       "NewPrivacyRequest": {
         "properties": {
           "detail": {
@@ -1576,6 +1693,8 @@
           "scans.run",
           "merge.read",
           "merge.write",
+          "recsys.read",
+          "recsys.write",
           "sync.admin.read",
           "sync.admin.write",
           "users.read",
@@ -2040,6 +2159,129 @@
           "slug",
           "name",
           "series_count"
+        ],
+        "type": "object"
+      },
+      "RebuildRequest": {
+        "description": "Which kind of build to run.",
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/RecsysBuildMode",
+            "description": "`incremental` patches the live generation; `full` re-solves the projection basis and\nre-embeds the catalogue, which is what a `next_full_build` tunable needs."
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "Recommendation": {
+        "description": "One recommended series and why it is here.",
+        "properties": {
+          "because_series_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SeriesId",
+                "description": "The series that produced this one, when a seed did."
+              }
+            ]
+          },
+          "because_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content_type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "cover_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "$ref": "#/components/schemas/SeriesId",
+            "description": "`id`, not `series_id`, on purpose. This endpoint used to return `SeriesSummary`, and the\nSPA ships as its own image — so a deployed client always outlives a server change by some\nwindow. Keeping the name makes the new body a strict *superset* of the old one: every\nfield an older client reads is still there, and the additions are ignored. Renaming it\nwould have been a deserialization failure in somebody's browser, which is precisely what\nthe `openapi breaking changes` gate exists to catch."
+          },
+          "score": {
+            "format": "float",
+            "type": "number"
+          },
+          "shared": {
+            "description": "Features shared with `because_series_id`, most explanatory first.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "source_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SeriesStatus"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "content_type",
+          "status",
+          "source_count",
+          "score",
+          "shared"
+        ],
+        "type": "object"
+      },
+      "RecsysBuildMode": {
+        "description": "Which kind of recommendation-model build to run.\n\nLives here rather than in either service because both sides of the internal hop parse it: the\nAPI validates the operator's request body and the control plane acts on it. A hand-mirrored\nsecond copy is the drift this crate exists to prevent.",
+        "enum": [
+          "incremental",
+          "full"
+        ],
+        "type": "string"
+      },
+      "RecsysBuildView": {
+        "description": "What one recommendation-model build did.\n\nReturned by `POST /v1/admin/recommendations/rebuild`, produced by the control plane that\nactually runs the build.",
+        "properties": {
+          "dense_dims": {
+            "description": "Width of the dense space it projected into.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "generation": {
+            "description": "The generation the build wrote under.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "series_built": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "started": {
+            "description": "`false` when another build already held the claim. The correct response is to wait for\nit, not to retry: the other build is doing this one's work, and the remaining fields are\nzero because this call did nothing.",
+            "type": "boolean"
+          },
+          "vocabulary": {
+            "description": "Distinct features in the vocabulary the build saw.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "started",
+          "generation",
+          "series_built",
+          "vocabulary",
+          "dense_dims"
         ],
         "type": "object"
       },
@@ -2577,6 +2819,26 @@
         ],
         "type": "object"
       },
+      "SetTunable": {
+        "description": "A proposed new value for one tunable.",
+        "properties": {
+          "note": {
+            "description": "Why. Optional, but it is the thing the next operator needs and the audit record does not\nsurface on this page.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
       "SetUserStatus": {
         "properties": {
           "reason": {
@@ -2598,6 +2860,35 @@
           "status"
         ],
         "type": "object"
+      },
+      "SimilarSeries": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SeriesSummary"
+          },
+          {
+            "properties": {
+              "score": {
+                "description": "Cosine similarity in `[0, 1]`, as the index ranked it.",
+                "format": "float",
+                "type": "number"
+              },
+              "shared": {
+                "description": "The features this shares with the seed, most explanatory first — the tag names a reader\nwould recognise, not feature ids.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "score",
+              "shared"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "One similar series, with what it has in common."
       },
       "SourceDto": {
         "properties": {
@@ -2930,6 +3221,65 @@
         ],
         "type": "string"
       },
+      "TasteFeature": {
+        "description": "One weighted feature in a taste profile.",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "weight": {
+            "format": "float",
+            "type": "number"
+          }
+        },
+        "required": [
+          "kind",
+          "value",
+          "weight"
+        ],
+        "type": "object"
+      },
+      "TasteView": {
+        "description": "The reader's own taste profile, rendered.",
+        "properties": {
+          "avoids": {
+            "description": "Features the reader has rejected, strongest first.",
+            "items": {
+              "$ref": "#/components/schemas/TasteFeature"
+            },
+            "type": "array"
+          },
+          "built_at": {
+            "description": "RFC 3339. A `String` rather than an `OffsetDateTime` because `utoipa` has no schema for\nthe latter, and the published contract should name the format either way.",
+            "example": "2026-08-04T12:00:00Z",
+            "type": "string"
+          },
+          "likes": {
+            "description": "Features the reader gravitates to, strongest first.",
+            "items": {
+              "$ref": "#/components/schemas/TasteFeature"
+            },
+            "type": "array"
+          },
+          "seeds": {
+            "description": "Series the profile was built from, in affinity order.",
+            "items": {
+              "$ref": "#/components/schemas/SeriesId"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "likes",
+          "avoids",
+          "seeds",
+          "built_at"
+        ],
+        "type": "object"
+      },
       "TestAdapterRequest": {
         "properties": {
           "path": {
@@ -2980,6 +3330,166 @@
         },
         "required": [
           "mode"
+        ],
+        "type": "object"
+      },
+      "Tunable": {
+        "description": "One operator-tunable value in the recommendation pipeline.\n\nEvery value is transported and stored as `f64` regardless of what it means; the registry\nsupplies the typing and the readers clamp. A typed column per kind would buy nothing and\ncost a schema change per knob.",
+        "enum": [
+          "recsys.affinity.base.completed",
+          "recsys.affinity.base.reading",
+          "recsys.affinity.base.paused",
+          "recsys.affinity.base.planned",
+          "recsys.affinity.dropped.floor",
+          "recsys.affinity.dropped.span",
+          "recsys.affinity.engagement_knee",
+          "recsys.affinity.recency_half_life_days",
+          "recsys.affinity.recency_floor",
+          "recsys.affinity.external_score_weight",
+          "recsys.retrieval.seeds",
+          "recsys.retrieval.ef_search",
+          "recsys.retrieval.ann_limit_per_seed",
+          "recsys.retrieval.ann_limit_profile",
+          "recsys.retrieval.exact_feature_limit",
+          "recsys.retrieval.cooccurrence_seeds",
+          "recsys.retrieval.candidate_cap",
+          "recsys.score.weight.knn",
+          "recsys.score.weight.profile",
+          "recsys.score.weight.collaborative",
+          "recsys.score.weight.prior",
+          "recsys.score.weight.negative",
+          "recsys.score.cross_type_multiplier",
+          "recsys.score.cf_shrinkage_k",
+          "recsys.diversity.lambda",
+          "recsys.diversity.max_per_author",
+          "recsys.diversity.max_per_tag",
+          "recsys.prior.weight.watchers",
+          "recsys.prior.weight.external_score",
+          "recsys.prior.weight.source_count",
+          "recsys.prior.weight.velocity",
+          "recsys.prior.watcher_confidence_k",
+          "recsys.build.embedding_dims",
+          "recsys.build.hnsw_m",
+          "recsys.build.hnsw_ef_construction",
+          "recsys.build.min_features",
+          "recsys.cooccurrence.min_support",
+          "recsys.cooccurrence.max_list_entries",
+          "recsys.serve.shelf_size",
+          "recsys.serve.shelf_ttl_seconds",
+          "recsys.serve.feedback_decay_days"
+        ],
+        "type": "string"
+      },
+      "TunableGroup": {
+        "description": "The console's grouping of tunables into sections.",
+        "enum": [
+          "affinity",
+          "retrieval",
+          "scoring",
+          "diversity",
+          "prior",
+          "build",
+          "cooccurrence",
+          "serving"
+        ],
+        "type": "string"
+      },
+      "TunableKind": {
+        "description": "What a tunable's number *means*, so the console can render and validate it sensibly.\n\nPurely presentational: every value is an `f64` on the wire and in the table regardless.",
+        "enum": [
+          "ratio",
+          "weight",
+          "count",
+          "days",
+          "seconds"
+        ],
+        "type": "string"
+      },
+      "TunableView": {
+        "description": "One tuning value as the console shows it.",
+        "properties": {
+          "applies": {
+            "$ref": "#/components/schemas/Applies",
+            "description": "When a change to this value actually reaches a reader. The console shows it on every row:\na knob that needs a rebuild and does not say so is the surface's most likely failure."
+          },
+          "default_value": {
+            "description": "What this value ships as, so the page can show \"changed from default\" without the client\ncarrying a copy of the registry.",
+            "format": "double",
+            "type": "number"
+          },
+          "description": {
+            "description": "What the value does, written to be read immediately before someone changes production.",
+            "type": "string"
+          },
+          "group": {
+            "$ref": "#/components/schemas/TunableGroup"
+          },
+          "key": {
+            "$ref": "#/components/schemas/Tunable"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TunableKind"
+          },
+          "max": {
+            "format": "double",
+            "type": "number"
+          },
+          "min": {
+            "description": "Inclusive bounds. Enforced here, not only in the UI — a `curl` is not an attack.",
+            "format": "double",
+            "type": "number"
+          },
+          "note": {
+            "description": "Why it was last changed, if the operator said.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overridden": {
+            "description": "Whether an operator has explicitly decided this one.",
+            "type": "boolean"
+          },
+          "privacy_floor": {
+            "description": "Whether [`Self::min`] is a privacy threshold rather than a taste decision. The console\nsays so next to the field; the API refuses the write regardless.",
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When it was last changed. Absent while the value is at its default.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_by": {
+            "description": "Username of the operator who last changed it; `None` once that account is erased.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "description": "The effective value: the override if there is one, else the compiled default — already\nclamped, so it is exactly what the pipeline reads.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "key",
+          "group",
+          "title",
+          "description",
+          "kind",
+          "applies",
+          "value",
+          "default_value",
+          "min",
+          "max",
+          "overridden",
+          "privacy_floor"
         ],
         "type": "object"
       },
@@ -5126,6 +5636,320 @@
         "summary": "Dry-run a provider's adapter",
         "tags": [
           "admin-providers"
+        ]
+      }
+    },
+    "/v1/admin/recommendations/health": {
+      "get": {
+        "description": "Generation, build state, catalogue coverage and repair-queue depth — what an operator needs\nbefore changing a tuning value, and the only way to tell an unbuilt model from a broken one.",
+        "operationId": "model_health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelHealthView"
+                }
+              }
+            },
+            "description": "The model's current state"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get recommendation model health",
+        "tags": [
+          "admin-recommendations"
+        ]
+      }
+    },
+    "/v1/admin/recommendations/rebuild": {
+      "post": {
+        "description": "Runs a build now rather than waiting for the schedule. A `next_build` tuning change takes\neffect after an incremental run; a `next_full_build` one is baked into stored vectors and the\nindex, and needs `full`.\n\nThe build is a singleton over the whole catalogue, so this runs in the control plane behind\nthe same claim the scheduled runs take.",
+        "operationId": "rebuild_model",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RebuildRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecsysBuildView"
+                }
+              }
+            },
+            "description": "What the build did"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the control plane is unreachable"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Rebuild the recommendation model",
+        "tags": [
+          "admin-recommendations"
+        ]
+      }
+    },
+    "/v1/admin/recommendations/tunables": {
+      "get": {
+        "description": "Every tuning value this build defines, with its effective value, its shipped default, the\nrange it may move inside, and who last changed it. Served from the compiled registry joined to\nthe stored overrides.",
+        "operationId": "list_tunables",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TunableView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Every tunable and its current value"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List recommendation tunables",
+        "tags": [
+          "admin-recommendations"
+        ]
+      }
+    },
+    "/v1/admin/recommendations/tunables/{key}": {
+      "delete": {
+        "description": "Drops the stored override so the value follows the compiled default. Distinct from writing\nthat same number, which records an operator decision that would survive a future change of the\ndefault.",
+        "operationId": "reset_tunable",
+        "parameters": [
+          {
+            "description": "Tunable key, e.g. `recsys.diversity.lambda`",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TunableView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Every tunable and its value after the reset"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "unknown tunable"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Reset a recommendation tunable",
+        "tags": [
+          "admin-recommendations"
+        ]
+      },
+      "put": {
+        "description": "Records an explicit decision for one value and applies it immediately on this replica; other\nreplicas pick it up on their next refresh tick. Whether a *reader* sees the difference on the\nnext request depends on the tunable's `applies`.",
+        "operationId": "set_tunable",
+        "parameters": [
+          {
+            "description": "Tunable key, e.g. `recsys.diversity.lambda`",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetTunable"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TunableView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Every tunable and its value after the change"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "unknown tunable, a value outside its range, or a write that would zero every score weight"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Set a recommendation tunable",
+        "tags": [
+          "admin-recommendations"
         ]
       }
     },
@@ -8695,21 +9519,35 @@
     },
     "/v1/me/recommendations": {
       "get": {
-        "description": "*Stub*: unwatched series sharing tags with the user's list (frontend §9.3). Falls back to\nthe most-recent catalog when the user has no tagged watchlist yet, so the shelf is never\nempty for signed-in users.",
+        "description": "A personalised shelf: content-similar to what the reader has finished or is deep into,\nfiltered against what they already track or have refused, diversified, and explained.\n\nFalls back to the catalogue's popularity prior for a reader with no history, and returns an\nempty array when the recommendation model has never been built.",
         "operationId": "recommendations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/SeriesSummary"
+                    "$ref": "#/components/schemas/Recommendation"
                   },
                   "type": "array"
                 }
               }
             },
-            "description": "Up to 12 recommended series"
+            "description": "The reader's shelf, best first"
           },
           "401": {
             "content": {
@@ -8728,6 +9566,67 @@
           }
         ],
         "summary": "Get \"because you read\" recommendations",
+        "tags": [
+          "me-dashboard"
+        ]
+      }
+    },
+    "/v1/me/recommendations/{series_id}/feedback": {
+      "post": {
+        "description": "Records that the reader does not want this series suggested. `not_interested` suppresses it\nfor ninety days; `hide_forever` does not expire. A stronger refusal is never softened by a\nlater weaker one.",
+        "operationId": "feedback",
+        "parameters": [
+          {
+            "description": "Series to suppress",
+            "in": "path",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Recorded"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "unknown verdict"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Dismiss a recommendation",
         "tags": [
           "me-dashboard"
         ]
@@ -9663,6 +10562,43 @@
         ]
       }
     },
+    "/v1/me/taste": {
+      "get": {
+        "description": "What the recommender believes about this reader, in their own terms. Exists so the profile is\ninspectable by the person it describes — and so a bad shelf can be diagnosed without anyone\nreading a watchlist.",
+        "operationId": "taste",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TasteView"
+                }
+              }
+            },
+            "description": "The reader's profile"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get the reader's taste profile",
+        "tags": [
+          "me-dashboard"
+        ]
+      }
+    },
     "/v1/me/watchlist": {
       "get": {
         "description": "The user's watchlist, filtered/sorted/paginated **server-side**, with the tab counts and\ngroup-header aggregates the list renders around it.\n\nThe body is an object rather than the bare `WatchlistItem[]` it used to be. That is a\nbreaking change, made deliberately: `total`, `counts` and `groups` cannot ride on response\nheaders without splitting one render into three requests, and the counts in particular are\n*not* derivable from `items` — they describe the tabs the caller is not looking at. The\nfrontend is the only consumer, and it is regenerated from this document.",
@@ -10528,6 +11464,62 @@
         ]
       }
     },
+    "/v1/series/{id}/similar": {
+      "get": {
+        "description": "Content-similar series, ranked by an approximate nearest-neighbour search over the\nrecommendation model's embedding space, with the features each match shares with the seed.\n\nFalls back to the catalogue's popularity prior when the seed has no embedding yet — a series\nadded since the last model build, or a deployment that has never run one. An empty array\nmeans the model has never been built at all.",
+        "operationId": "similar",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          },
+          {
+            "description": "How many to return (default 12, max 50)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SimilarSeries"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Similar series, closest first"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Series not found"
+          }
+        },
+        "summary": "Get similar series",
+        "tags": [
+          "series"
+        ]
+      }
+    },
     "/v1/tags": {
       "get": {
         "description": "All genres/tags in the catalogue (public).",
@@ -10618,6 +11610,10 @@
     {
       "description": "Runtime feature flags — the deployment control plane",
       "name": "admin-feature-flags"
+    },
+    {
+      "description": "Recommendation model health, tuning and rebuilds",
+      "name": "admin-recommendations"
     },
     {
       "description": "System stats and audit log",

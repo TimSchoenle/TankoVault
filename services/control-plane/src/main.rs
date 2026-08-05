@@ -6,6 +6,11 @@ mod aggregator;
 mod dedupe;
 mod leader;
 
+use tankovault_control_plane::recsys;
+use tankovault_service::metrics::names::{
+    RECSYS_BUILD_DURATION, RECSYS_BUILD_SERIES, RECSYS_MODEL_SERIES,
+};
+
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::post;
@@ -14,7 +19,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 use std::time::Duration;
 use tankovault_bus::Bus;
-use tankovault_contracts::admin::ScanTriggeredView;
+use tankovault_contracts::admin::{RecsysBuildMode, RecsysBuildView, ScanTriggeredView};
 use tankovault_contracts::{ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
 use tankovault_domain::{Feature, Provider, ProviderId, ScanMode, ScanRunId};
@@ -22,7 +27,7 @@ use tankovault_service::health::PostgresCheck;
 use tankovault_service::problem::Problem;
 use tankovault_service::{
     CancellationToken, FeatureGate, Health, HttpStack, MetricsRegistry, PostgresFlagSource,
-    RateLimiter, RouteClassifier,
+    PostgresTunableSource, RateLimiter, RouteClassifier, TunableSet,
 };
 
 #[derive(Debug, Deserialize)]
@@ -91,6 +96,26 @@ struct SchedulerConfig {
     /// Previously-distinct pairs reconsidered per sweep, least-recently-scored first.
     #[serde(default = "default_merge_sweep_recheck")]
     merge_sweep_recheck: i64,
+    /// Seconds between incremental recommendation-model builds. 0 disables.
+    ///
+    /// Frequent by default: an incremental pass re-embeds only what changed and inserts into a
+    /// live HNSW index, so the cost is proportional to catalogue churn rather than to the
+    /// catalogue.
+    #[serde(default = "default_recsys_incremental_interval")]
+    recsys_incremental_interval_secs: u64,
+    /// Seconds between full recommendation-model rebuilds. 0 disables.
+    ///
+    /// A full build re-solves the projection from the whole catalogue, which is what keeps the
+    /// idf and the embedding space current. Weekly: the incremental pass covers changed series,
+    /// so this exists for vocabulary drift rather than for freshness.
+    #[serde(default = "default_recsys_full_interval")]
+    recsys_full_interval_secs: u64,
+    /// Series per streamed batch in a model build.
+    #[serde(default = "default_recsys_batch")]
+    recsys_batch: i64,
+    /// Ceiling on how many series one incremental build may touch.
+    #[serde(default = "default_recsys_incremental_max")]
+    recsys_incremental_max: i64,
     /// Automatic merges permitted in a single sweep — the only bound on a destructive
     /// background action. Without it, a bad threshold or normalization rule could collapse
     /// the whole catalogue between two scheduler ticks.
@@ -108,6 +133,10 @@ impl Default for SchedulerConfig {
             merge_sweep_requeue: default_merge_sweep_requeue(),
             merge_sweep_recheck: default_merge_sweep_recheck(),
             merge_sweep_max_auto_merges: default_merge_sweep_max_auto_merges(),
+            recsys_incremental_interval_secs: default_recsys_incremental_interval(),
+            recsys_full_interval_secs: default_recsys_full_interval(),
+            recsys_batch: default_recsys_batch(),
+            recsys_incremental_max: default_recsys_incremental_max(),
         }
     }
 }
@@ -142,6 +171,22 @@ fn default_merge_sweep_max_auto_merges() -> i64 {
     200
 }
 
+const fn default_recsys_incremental_interval() -> u64 {
+    900
+}
+
+const fn default_recsys_full_interval() -> u64 {
+    604_800
+}
+
+const fn default_recsys_batch() -> i64 {
+    512
+}
+
+const fn default_recsys_incremental_max() -> i64 {
+    20_000
+}
+
 #[derive(Clone)]
 struct AppState {
     pool: PgPool,
@@ -149,8 +194,16 @@ struct AppState {
     /// The operator's runtime switches, consulted per sweep rather than at boot so an
     /// incident-time toggle takes effect without a redeploy.
     features: FeatureGate,
+    /// The recommender's tuning, read at the start of each build so a change reaches the next
+    /// run without a redeploy.
+    tunables: TunableSet,
     /// The canonicalisation policy the duplicate sweep applies.
     matching: tankovault_config::MatchingConfig,
+    /// Series per streamed batch in a model build. Configuration, not tuning (§8.1): it moves
+    /// peak memory and nothing about the output.
+    recsys_batch: i64,
+    /// Ceiling on one incremental model build.
+    recsys_incremental_max: i64,
     /// How much work one duplicate sweep may do — including how many series it may delete.
     merge_budget: dedupe::SweepBudget,
 }
@@ -213,13 +266,22 @@ async fn serve_once(
     features
         .spawn_refresh(cfg.features.refresh_interval(), shutdown.clone())
         .await;
+    let tunables = TunableSet::new(std::sync::Arc::new(PostgresTunableSource::new(
+        pool.clone(),
+    )));
+    tunables
+        .spawn_refresh(cfg.features.refresh_interval(), shutdown.clone())
+        .await;
 
     let state = AppState {
         pool: pool.clone(),
         bus: bus.clone(),
         features,
+        tunables,
         matching: cfg.matching.clone(),
         merge_budget: cfg.scheduler.merge_budget(),
+        recsys_batch: cfg.scheduler.recsys_batch,
+        recsys_incremental_max: cfg.scheduler.recsys_incremental_max,
     };
 
     // Leader election: only the elected replica runs the scheduler sweeps.
@@ -274,6 +336,7 @@ async fn serve_once(
             Router::new()
                 .route("/internal/scans", post(trigger_scan))
                 .route("/internal/merge-sweep", post(trigger_merge_sweep))
+                .route("/internal/recsys-build", post(trigger_recsys_build))
                 .with_state(state),
         )
         .merge(tankovault_service::ops_router(health, metrics));
@@ -359,6 +422,57 @@ async fn trigger_merge_sweep(
         "duplicate sweep (on demand) complete"
     );
     Ok(Json(report))
+}
+
+/// Run one model build on demand — to apply a `next_build` tuning change, or to bring a model
+/// up to date after a long outage, without waiting for the schedule.
+///
+/// Not leader-gated (it runs on the replica asked) but still gated on
+/// `catalogue.recommendations`, since the switch has to hold at the component doing the work.
+/// The build's own claim is the mutual exclusion: a run that arrives while another holds it
+/// answers `started: false` rather than queueing behind it.
+async fn trigger_recsys_build(
+    State(state): State<AppState>,
+    Json(req): Json<RecsysBuildRequest>,
+) -> Result<Json<RecsysBuildView>, Problem> {
+    if !state.features.is_enabled(Feature::CatalogueRecommendations) {
+        return Err(Problem::new(
+            StatusCode::NOT_FOUND,
+            "feature_disabled",
+            "recommendations are switched off",
+        ));
+    }
+
+    let full = req.mode == RecsysBuildMode::Full;
+    let tuning = recsys::BuildTuning::read(
+        &state.tunables,
+        state.recsys_batch,
+        state.recsys_incremental_max,
+    );
+    let report = recsys::build(&state.pool, tuning, full)
+        .await
+        .map_err(internal)?;
+
+    let view = report.map_or_else(RecsysBuildView::default, |report| RecsysBuildView {
+        started: true,
+        generation: report.generation,
+        series_built: report.series_built,
+        vocabulary: report.vocabulary,
+        dense_dims: report.dense_dims,
+    });
+    tracing::info!(
+        full,
+        started = view.started,
+        generation = view.generation,
+        series = view.series_built,
+        "recommendation model build (on demand) complete"
+    );
+    Ok(Json(view))
+}
+
+#[derive(Debug, Deserialize)]
+struct RecsysBuildRequest {
+    mode: RecsysBuildMode,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -447,6 +561,8 @@ async fn run_scheduler(
     if cfg.fast_interval_secs == 0
         && cfg.full_interval_secs == 0
         && cfg.merge_sweep_interval_secs == 0
+        && cfg.recsys_incremental_interval_secs == 0
+        && cfg.recsys_full_interval_secs == 0
     {
         tracing::info!("scheduler disabled");
         return;
@@ -454,6 +570,8 @@ async fn run_scheduler(
     let mut fast = interval_or_never(cfg.fast_interval_secs);
     let mut full = interval_or_never(cfg.full_interval_secs);
     let mut merge = interval_or_never(cfg.merge_sweep_interval_secs);
+    let mut recsys_incremental = interval_or_never(cfg.recsys_incremental_interval_secs);
+    let mut recsys_full = interval_or_never(cfg.recsys_full_interval_secs);
 
     loop {
         // Republished on every tick rather than on acquisition, so a replica that lost the
@@ -468,8 +586,79 @@ async fn run_scheduler(
             () = tick(&mut fast) => maybe_sweep(&state, &leadership, ScanMode::Fast).await,
             () = tick(&mut full) => maybe_sweep(&state, &leadership, ScanMode::Full).await,
             () = tick(&mut merge) => maybe_merge_sweep(&state, &leadership).await,
+            () = tick(&mut recsys_incremental) => {
+                maybe_recsys_build(&state, &cfg, &leadership, false).await;
+            }
+            () = tick(&mut recsys_full) => {
+                maybe_recsys_build(&state, &cfg, &leadership, true).await;
+            }
         }
     }
+}
+
+/// Runs a model build only when this replica holds leadership *and* recommendations are on.
+///
+/// Leadership matters for the same reason it does for the duplicate sweep, and for one more:
+/// a build claims `rec_build_state` and two replicas racing would have one of them do nothing
+/// while believing it had run. The claim is the real mutual exclusion; leadership keeps the
+/// wasted attempt from happening at all.
+async fn maybe_recsys_build(
+    state: &AppState,
+    cfg: &SchedulerConfig,
+    leadership: &leader::Leadership,
+    full: bool,
+) {
+    let kind = if full { "full" } else { "incremental" };
+    if !state.features.is_enabled(Feature::CatalogueRecommendations) {
+        tracing::debug!(
+            kind,
+            "skipping model build; recommendations are switched off"
+        );
+        return;
+    }
+    if !leadership.is_leader() {
+        tracing::debug!(kind, "skipping model build; not scheduler leader");
+        return;
+    }
+
+    let tuning = recsys::BuildTuning::read(
+        &state.tunables,
+        cfg.recsys_batch,
+        cfg.recsys_incremental_max,
+    );
+    let started = std::time::Instant::now();
+    match recsys::build(&state.pool, tuning, full).await {
+        Ok(Some(report)) => {
+            tracing::info!(
+                kind,
+                generation = report.generation,
+                series = report.series_built,
+                vocabulary = report.vocabulary,
+                dims = report.dense_dims,
+                "recommendation model built"
+            );
+            metrics::counter!(RECSYS_BUILD_SERIES, "stage" => kind, "result" => "built")
+                .increment(u64::try_from(report.series_built).unwrap_or(0));
+            // A gauge takes an `f64`; the count is an `i64` that cannot be negative, and a
+            // catalogue large enough to lose precision here is far past anything this build
+            // completes in a day.
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "series counts are far below f64's exact-integer range"
+            )]
+            metrics::gauge!(RECSYS_MODEL_SERIES, "table" => "series_embedding")
+                .set(report.series_built.max(0) as f64);
+        }
+        // Not a failure: another replica holds the claim and is doing this run's work.
+        Ok(None) => tracing::debug!(kind, "model build already in progress"),
+        Err(e) => {
+            tracing::warn!(kind, error = %e, "recommendation model build failed");
+            metrics::counter!(RECSYS_BUILD_SERIES, "stage" => kind, "result" => "failed")
+                .increment(1);
+        }
+    }
+    metrics::histogram!(RECSYS_BUILD_DURATION, "stage" => kind)
+        .record(started.elapsed().as_secs_f64());
 }
 
 /// Runs a duplicate sweep only when this replica holds leadership *and* automatic

@@ -71,6 +71,9 @@ pub fn route_classifier() -> RouteClassifier {
         // title — the heaviest calls the console can make.
         .expensive("/v1/admin/merge-candidates/sweep")
         .expensive("/v1/admin/matching/rebuild-keys")
+        // A model rebuild walks the whole catalogue: the same class as a merge sweep, and for
+        // the same reason.
+        .expensive("/v1/admin/recommendations/rebuild")
         // Only mutating admin calls draw from the tight budget, so read-heavy console pages
         // aren't throttled for merely loading.
         .expensive_write("/v1/admin/scans")
@@ -100,6 +103,10 @@ pub fn route_features() -> RouteFeatures {
     sync
         // --- public catalogue ---
         .gate("/v1/series", Feature::CatalogueBrowse)
+        // Longer prefix, so it wins over the browse gate above: similarity is the recommender's
+        // surface, and an operator who switches recommendations off must not be left with a
+        // "similar" rail served by a model they disabled.
+        .gate("/v1/series/{id}/similar", Feature::CatalogueRecommendations)
         .gate("/v1/tags", Feature::CatalogueBrowse)
         .gate("/v1/providers", Feature::CatalogueBrowse)
         // --- accounts ---
@@ -128,6 +135,7 @@ pub fn route_features() -> RouteFeatures {
         .gate("/v1/me/continue", Feature::TrackingFeed)
         .gate("/v1/me/stats", Feature::TrackingStats)
         .gate("/v1/me/recommendations", Feature::CatalogueRecommendations)
+        .gate("/v1/me/taste", Feature::CatalogueRecommendations)
         // --- notifications ---
         .gate("/v1/me/notifications", Feature::NotificationsInApp)
         .gate("/v1/me/stream", Feature::NotificationsLive)
@@ -160,6 +168,7 @@ pub fn route_features() -> RouteFeatures {
         .gate("/v1/admin/users", Feature::AdminUsers)
         .gate("/v1/admin/permissions", Feature::AdminUsers)
         .gate("/v1/admin/feature-flags", Feature::AdminFeatureFlags)
+        .gate("/v1/admin/recommendations", Feature::AdminRecommendations)
 }
 
 /// Assemble the full route table and the shared middleware stack.
@@ -242,6 +251,23 @@ pub async fn install_feature_gate(
     gate
 }
 
+/// Load the deployment's tuning overrides and keep them fresh for the lifetime of the process.
+///
+/// Shares [`tankovault_config::FeaturesConfig`]'s interval rather than adding a second one: both
+/// snapshots answer "what did the operator decide", both are cheap single-table reads, and a
+/// second knob would only create a window where the two disagree.
+pub async fn install_tunables(
+    pool: tankovault_db::PgPool,
+    cfg: &tankovault_config::FeaturesConfig,
+    shutdown: tokio_util::sync::CancellationToken,
+) -> tankovault_service::TunableSet {
+    let set = tankovault_service::TunableSet::new(std::sync::Arc::new(
+        tankovault_service::PostgresTunableSource::new(pool),
+    ));
+    set.spawn_refresh(cfg.refresh_interval(), shutdown).await;
+    set
+}
+
 /// Registers every documented endpoint, shared by [`full_openapi`] and [`build_router`] so
 /// the two can never drift apart.
 #[expect(
@@ -267,6 +293,7 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(series::list))
         .routes(routes!(series::detail))
         .routes(routes!(series::chapters))
+        .routes(routes!(series::similar))
         .routes(routes!(series::tags))
         // public provider list for the Discover filter (§9.3)
         .routes(routes!(series::providers))
@@ -298,6 +325,8 @@ fn documented_router() -> OpenApiRouter<AppState> {
         // reading dashboard + recommendations + stats (§9.3)
         .routes(routes!(me::continue_reading))
         .routes(routes!(me::recommendations))
+        .routes(routes!(me::feedback))
+        .routes(routes!(me::taste))
         .routes(routes!(me::stats))
         // capability probe the client gates its whole UI on
         .routes(routes!(me::capabilities))
@@ -379,6 +408,12 @@ fn documented_router() -> OpenApiRouter<AppState> {
         // admin — the deployment control plane: every feature and its switch
         .routes(routes!(admin::list_flags))
         .routes(routes!(admin::set_flag, admin::reset_flag))
+        // admin — the recommender's control plane: model health, tuning, and the rebuild that
+        // makes a change to a build-time value take effect
+        .routes(routes!(admin::model_health))
+        .routes(routes!(admin::list_tunables))
+        .routes(routes!(admin::set_tunable, admin::reset_tunable))
+        .routes(routes!(admin::rebuild_model))
         // admin — the GDPR data-subject request queue and its fulfilment
         .routes(routes!(admin::list_privacy_queue))
         .routes(routes!(admin::claim_privacy_request))

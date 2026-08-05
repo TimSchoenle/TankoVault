@@ -1,5 +1,7 @@
-//! Read models for the Home surfaces: unread feed, continue-reading cards, lifetime stats and
-//! tag-overlap recommendations (frontend §9.3).
+//! Read models for the Home surfaces: unread feed, continue-reading cards and lifetime stats.
+//!
+//! Recommendations used to live here as a tag-overlap query that scored the whole catalogue on
+//! every request. They are now a model — see `repo::recsys` and `docs/RECOMMENDATIONS.md`.
 //!
 //! The unread predicate is spelled out 4× (3 here, 1 in [`watchlist`](super::watchlist)) as the
 //! negation of [`ReadProgress::covers`](super::ReadProgress::covers), because `sqlx` macros need
@@ -14,9 +16,8 @@
 //! ```
 
 use crate::error::DbResult;
-use crate::repo::catalog::SeriesListItem;
 use sqlx::{FromRow, PgExecutor};
-use tankovault_domain::{ContentType, Series, SeriesId, SeriesStatus, UserId};
+use tankovault_domain::{SeriesId, UserId};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -234,75 +235,4 @@ pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResu
     .fetch_one(exec)
     .await?;
     Ok(stats)
-}
-
-/// "Because you read" recommendations: untracked series sharing a tag with the watchlist, most
-/// shared tags first. Empty when the watchlist has no tags yet (API falls back to recent series).
-///
-/// # Errors
-/// [`crate::DbError::Sqlx`] only; must not be collapsed into the API's empty-case fallback.
-pub async fn recommendations<'e, E: PgExecutor<'e>>(
-    exec: E,
-    user_id: UserId,
-    limit: i64,
-) -> DbResult<Vec<SeriesListItem>> {
-    #[derive(FromRow)]
-    struct Row {
-        id: Uuid,
-        canonical_title: String,
-        normalized_title: String,
-        description: Option<String>,
-        cover_url: Option<String>,
-        content_type: ContentType,
-        status: SeriesStatus,
-        release_year: Option<i32>,
-        created_at: OffsetDateTime,
-        updated_at: OffsetDateTime,
-        source_count: i64,
-    }
-    let rows = sqlx::query_as!(
-        Row,
-        "WITH liked_tags AS ( \
-            SELECT DISTINCT stg.tag_id \
-            FROM series_tags stg \
-            JOIN watchlist_entries w ON w.series_id = stg.series_id \
-            WHERE w.user_id = $1 \
-         ) \
-         SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
-                s.content_type AS \"content_type: ContentType\", s.status AS \"status: SeriesStatus\", s.release_year, \
-                s.created_at, s.updated_at, \
-                (SELECT count(*) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\" \
-         FROM series s \
-         WHERE EXISTS (SELECT 1 FROM series_tags stg \
-                        WHERE stg.series_id = s.id AND stg.tag_id IN (SELECT tag_id FROM liked_tags)) \
-           AND NOT EXISTS (SELECT 1 FROM watchlist_entries w \
-                            WHERE w.user_id = $1 AND w.series_id = s.id) \
-         ORDER BY (SELECT count(*) FROM series_tags stg \
-                    WHERE stg.series_id = s.id \
-                      AND stg.tag_id IN (SELECT tag_id FROM liked_tags)) DESC, \
-                  s.updated_at DESC \
-         LIMIT $2",
-        user_id.as_uuid(),
-        limit,
-    )
-    .fetch_all(exec)
-    .await?;
-    Ok(rows
-        .into_iter()
-        .map(|r| SeriesListItem {
-            series: Series {
-                id: SeriesId::from_uuid(r.id),
-                canonical_title: r.canonical_title,
-                normalized_title: r.normalized_title,
-                description: r.description,
-                cover_url: r.cover_url,
-                content_type: r.content_type,
-                status: r.status,
-                release_year: r.release_year,
-                created_at: r.created_at,
-                updated_at: r.updated_at,
-            },
-            source_count: r.source_count,
-        })
-        .collect())
 }

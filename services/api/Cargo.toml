@@ -17,6 +17,7 @@ path = "src/main.rs"
 tankovault-config = { workspace = true }
 tankovault-service = { workspace = true, features = ["db", "redis"] }
 tankovault-db = { workspace = true }
+tankovault-recsys = { workspace = true }
 # `dns` supplies `ssrf::validate_and_resolve`, which `admin/providers.rs` needs before it
 # stores an operator-supplied `base_url` (SEC-5). It used to come from `tankovault-fetch` —
 # and `tankovault-adapters`, `tankovault-fetch` and `tankovault-solver` are all *gone* from
@@ -76,6 +77,8 @@ async-trait = { workspace = true }
 integration = []
 
 [dev-dependencies]
+# The model builder, so the recommendation suite can build a real index to query.
+tankovault-control-plane = { path = "../control-plane" }
 # The in-process router harness. Split out of `crates/test-support` (ARCH-17) so that the
 # repository-layer suites no longer compile this service to run SQL tests.
 tankovault-api-test-support = { path = "test-support" }

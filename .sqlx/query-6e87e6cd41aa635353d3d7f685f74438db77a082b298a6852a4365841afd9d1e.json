@@ -1,0 +1,107 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT feature_ids, weights, neg_feature_ids, neg_weights, seeds, embedding::text AS embedding, stale, built_at FROM user_taste_profile WHERE user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "feature_ids",
+        "type_info": "Int4Array",
+        "origin": {
+          "Table": {
+            "table": "user_taste_profile",
+            "name": "feature_ids"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "weights",
+        "type_info": "Float4Array",
+        "origin": {
+          "Table": {
+            "table": "user_taste_profile",
+            "name": "weights"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "neg_feature_ids",
+        "type_info": "Int4Array",
+        "origin": {
+          "Table": {
+            "table": "user_taste_profile",
+            "name": "neg_feature_ids"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "neg_weights",
+        "type_info": "Float4Array",
+        "origin": {
+          "Table": {
+            "table": "user_taste_profile",
+            "name": "neg_weights"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "seeds",
+        "type_info": "UuidArray",
+        "origin": {
+          "Table": {
+            "table": "user_taste_profile",
+            "name": "seeds"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "embedding",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "stale",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "user_taste_profile",
+            "name": "stale"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "built_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_taste_profile",
+            "name": "built_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false
+    ]
+  },
+  "hash": "6e87e6cd41aa635353d3d7f685f74438db77a082b298a6852a4365841afd9d1e"
+}

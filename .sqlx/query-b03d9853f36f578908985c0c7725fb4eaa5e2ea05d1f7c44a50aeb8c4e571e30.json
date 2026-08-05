@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE rec_features f SET doc_count = u.doc_count, idf = u.idf FROM unnest($1::int[], $2::int[], $3::real[]) AS u(id, doc_count, idf) WHERE f.id = u.id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4Array",
+        "Int4Array",
+        "Float4Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b03d9853f36f578908985c0c7725fb4eaa5e2ea05d1f7c44a50aeb8c4e571e30"
+}

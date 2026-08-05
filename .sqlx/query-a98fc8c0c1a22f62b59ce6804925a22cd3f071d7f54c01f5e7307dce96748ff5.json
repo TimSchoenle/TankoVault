@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_series_affinity (user_id, series_id, affinity, engagement, observed_at) SELECT $1, * FROM unnest($2::uuid[], $3::real[], $4::real[], $5::timestamptz[])",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "Float4Array",
+        "Float4Array",
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a98fc8c0c1a22f62b59ce6804925a22cd3f071d7f54c01f5e7307dce96748ff5"
+}

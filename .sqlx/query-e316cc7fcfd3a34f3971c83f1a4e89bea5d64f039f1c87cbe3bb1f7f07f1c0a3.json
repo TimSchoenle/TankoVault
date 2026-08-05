@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_recommendations (user_id, items, profile_at) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO UPDATE SET items = EXCLUDED.items, profile_at = EXCLUDED.profile_at, built_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e316cc7fcfd3a34f3971c83f1a4e89bea5d64f039f1c87cbe3bb1f7f07f1c0a3"
+}

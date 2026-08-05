@@ -1317,6 +1317,93 @@ pub async fn merge_series(
     .execute(&mut *tx)
     .await?;
 
+    // A reader's refusal is theirs, not the catalogue's, and must survive the catalogue deciding
+    // two rows were one. Folded **before** the delete, because the cascade would otherwise take
+    // it: without this, "never show me this again" is silently undone by an automatic merge the
+    // reader never saw. Same rule, and the same reasoning, as `series_sync_overrides` above.
+    //
+    // `hide_forever` wins either way: a stronger refusal must not be softened by a weaker one on
+    // the other side of the merge.
+    sqlx::query!(
+        "INSERT INTO recommendation_feedback (user_id, series_id, verdict, created_at) \
+         SELECT user_id, $1, verdict, created_at FROM recommendation_feedback \
+          WHERE series_id = $2 \
+         ON CONFLICT (user_id, series_id) DO UPDATE \
+            SET verdict = CASE \
+                  WHEN recommendation_feedback.verdict = 'hide_forever' \
+                    OR EXCLUDED.verdict = 'hide_forever' THEN 'hide_forever' \
+                  ELSE EXCLUDED.verdict END",
+        keep,
+        drop,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // Affinity and the taste profile are *derived* from the watchlist and read progress, which
+    // this transaction has already folded correctly. Merging the derived rows by hand is how the
+    // two diverge; marking the profiles stale makes them be recomputed from the folded truth.
+    sqlx::query!(
+        "UPDATE user_taste_profile p SET stale = true \
+          WHERE EXISTS (SELECT 1 FROM user_series_affinity a \
+                        WHERE a.user_id = p.user_id AND a.series_id IN ($1, $2))",
+        keep,
+        drop,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // The survivor absorbed the loser's tags and authors, so its feature digest has changed and
+    // its embedding is stale. Queued rather than recomputed here: re-embedding needs the
+    // projection basis, which is the builder's, and a merge must not block on it.
+    //
+    // The *loser's* model rows need nothing — they cascade with the series row below, which is
+    // what makes a merged series unreachable from the index in the same transaction that
+    // deletes it rather than at the next build.
+    sqlx::query!(
+        "INSERT INTO rec_repair_queue (series_id, reason) VALUES ($1, 'merged') \
+         ON CONFLICT (series_id) DO NOTHING",
+        keep,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // Where this series went. Written before the DELETE, so the forwarding record and the
+    // disappearance are one atomic fact: there is no instant in which the row is gone and
+    // nothing says where to look instead.
+    //
+    // Path compression, not a chain. When B is absorbed into C, every alias already pointing at
+    // B is re-pointed at C in the same statement, so the map stays exactly one hop deep forever
+    // and resolution is a single lookup. The alternative — walking A→B→C at read time — is both
+    // slower and able to spin on a cycle. Cycles cannot form here: the survivor always exists
+    // and the merged id is always deleted, so no id is ever on both sides.
+    //
+    // Compression runs before the insert. After it, the freshly written row would be a candidate
+    // for its own rewrite the next time this predicate changed.
+    sqlx::query!(
+        "UPDATE series_merges SET survivor_id = $1 WHERE survivor_id = $2",
+        keep,
+        drop,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // `DO UPDATE`, not `DO NOTHING`: if an id that already has a forwarding address is somehow
+    // merged again, the address must name where it went *this* time. `DO NOTHING` would keep a
+    // stale one.
+    sqlx::query!(
+        "INSERT INTO series_merges (merged_id, survivor_id, merged_by) \
+         VALUES ($1, $2, $3) \
+         ON CONFLICT (merged_id) DO UPDATE \
+            SET survivor_id = EXCLUDED.survivor_id, \
+                merged_at   = now(), \
+                merged_by   = EXCLUDED.merged_by",
+        drop,
+        keep,
+        actor.map(tankovault_domain::UserId::as_uuid),
+    )
+    .execute(&mut *tx)
+    .await?;
+
     // Delete the merged series; residual child rows cascade away.
     sqlx::query!("DELETE FROM series WHERE id = $1", drop)
         .execute(&mut *tx)
@@ -1324,4 +1411,57 @@ pub async fn merge_series(
 
     tx.commit().await?;
     Ok(())
+}
+
+/// Where a series went, if it was merged away.
+///
+/// Returns `None` for an id that is either still live or was never known — the caller cannot
+/// distinguish those and does not need to: both mean "no forwarding address".
+///
+/// One lookup, never a walk. [`merge_series`] path-compresses on write, so the map is exactly
+/// one hop deep and a recursive resolution here would be dead code that only appears correct.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; an unknown id is `Ok(None)`, not [`crate::DbError::NotFound`].
+pub async fn resolve_merged_series<'e, E: PgExecutor<'e>>(
+    exec: E,
+    merged_id: SeriesId,
+) -> DbResult<Option<SeriesId>> {
+    let survivor = sqlx::query_scalar!(
+        "SELECT survivor_id FROM series_merges WHERE merged_id = $1",
+        merged_id.as_uuid(),
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(survivor.map(SeriesId::from_uuid))
+}
+
+/// Resolve many ids at once, returning only those that actually moved.
+///
+/// The batch form exists because the request path resolves a reader's seeds together — a
+/// per-seed round trip would be twenty-five queries to discover that, usually, none of them
+/// moved.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn resolve_merged_series_batch<'e, E: PgExecutor<'e>>(
+    exec: E,
+    merged_ids: &[SeriesId],
+) -> DbResult<Vec<(SeriesId, SeriesId)>> {
+    let ids: Vec<Uuid> = merged_ids.iter().copied().map(SeriesId::as_uuid).collect();
+    let rows = sqlx::query!(
+        "SELECT merged_id, survivor_id FROM series_merges WHERE merged_id = ANY($1)",
+        &ids,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            (
+                SeriesId::from_uuid(r.merged_id),
+                SeriesId::from_uuid(r.survivor_id),
+            )
+        })
+        .collect())
 }

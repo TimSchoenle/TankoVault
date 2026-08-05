@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT basis, basis_input_dim, dense_dims FROM rec_build_state WHERE id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "basis",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "rec_build_state",
+            "name": "basis"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "basis_input_dim",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "rec_build_state",
+            "name": "basis_input_dim"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "dense_dims",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "rec_build_state",
+            "name": "dense_dims"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "fd4de66a62d6eb464120d0ba75d65b2e797559e1add51620827d538715a612c3"
+}

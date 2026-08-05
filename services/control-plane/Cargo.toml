@@ -9,6 +9,14 @@ description = "Scheduler + planner + orchestrator: expands runs into tasks and d
 # skip license-checking our own code.
 publish = false
 
+# A library as well as a binary, so the model builder can be driven by an integration test.
+# Without it the only entry point is a `main` that also wants Redis, NATS and an HTTP listener,
+# and the one stage worth testing end to end — a real build against a real catalogue — would
+# have no way in.
+[lib]
+name = "tankovault_control_plane"
+path = "src/lib.rs"
+
 [[bin]]
 name = "control-plane"
 path = "src/main.rs"
@@ -20,6 +28,7 @@ secrecy = { workspace = true }
 tankovault-service = { workspace = true, features = ["db"] }
 tokio-util = { workspace = true }
 tankovault-db = { workspace = true }
+tankovault-recsys = { workspace = true }
 tankovault-domain = { workspace = true }
 tankovault-bus = { workspace = true }
 tankovault-contracts = { workspace = true }
@@ -35,6 +44,14 @@ time = { workspace = true }
 futures = { workspace = true }
 fred = { workspace = true }
 uuid = { workspace = true }
+
+[dev-dependencies]
+tankovault-test-support = { path = "../../crates/test-support" }
+tankovault-config = { workspace = true }
+
+[features]
+# Opt-in: the model-build suite needs Docker.
+integration = []
 
 [lints]
 workspace = true

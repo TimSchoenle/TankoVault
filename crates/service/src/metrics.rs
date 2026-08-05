@@ -99,6 +99,17 @@ pub mod names {
     /// How long one duplicate sweep took.
     pub const MERGE_SWEEP_DURATION: &str = "merge_sweep_duration_seconds";
 
+    /// Series processed by a recommendation-model build, by stage and result.
+    pub const RECSYS_BUILD_SERIES: &str = "recsys_build_series_total";
+    /// How long one recommendation-model build took, by stage.
+    pub const RECSYS_BUILD_DURATION: &str = "recsys_build_duration_seconds";
+    /// Rows the recommendation model currently holds, by table.
+    pub const RECSYS_MODEL_SERIES: &str = "recsys_model_series";
+    /// Time to serve one personalised shelf, by whether it was cached.
+    pub const RECSYS_SERVE_DURATION: &str = "recsys_serve_duration_seconds";
+    /// How many series a served shelf contained.
+    pub const RECSYS_SHELF_SIZE: &str = "recsys_shelf_size";
+
     /// Chapter-discovered events the notifier consumed, by result.
     pub const NOTIFICATION_EVENTS: &str = "notification_events_total";
     /// How long one event's fan-out took.
@@ -342,6 +353,41 @@ pub const CATALOGUE: &[Metric] = &[
         unit: Unit::Seconds,
         emitted_by: "control-plane",
         help: "Time for one duplicate sweep.",
+    },
+    Metric {
+        name: names::RECSYS_BUILD_SERIES,
+        kind: Kind::Counter,
+        unit: Unit::Count,
+        emitted_by: "control-plane",
+        help: "Series processed by a recommendation-model build, labelled by stage (full/incremental) and result. A `failed` increment means the model stopped updating; pair it with recsys_model_series going flat.",
+    },
+    Metric {
+        name: names::RECSYS_BUILD_DURATION,
+        kind: Kind::Histogram(WORK_BUCKETS),
+        unit: Unit::Seconds,
+        emitted_by: "control-plane",
+        help: "Time for one recommendation-model build, by stage. A full build re-solves the projection over the whole catalogue and is expected in minutes; an incremental one touches only what changed.",
+    },
+    Metric {
+        name: names::RECSYS_MODEL_SERIES,
+        kind: Kind::Gauge,
+        unit: Unit::Count,
+        emitted_by: "control-plane",
+        help: "Series the recommendation model currently covers, by table. Flat while the catalogue grows means builds are failing or the scheduler is not leading anywhere.",
+    },
+    Metric {
+        name: names::RECSYS_SERVE_DURATION,
+        kind: Kind::Histogram(LATENCY_BUCKETS),
+        unit: Unit::Seconds,
+        emitted_by: "api",
+        help: "Time to serve one personalised shelf, labelled by whether it came from the cache. The computed path runs one ANN search per seed, so its tail is where the seed count shows up.",
+    },
+    Metric {
+        name: names::RECSYS_SHELF_SIZE,
+        kind: Kind::Histogram(&[0.0, 1.0, 3.0, 6.0, 12.0, 24.0, 60.0]),
+        unit: Unit::Count,
+        emitted_by: "api",
+        help: "Series in a served shelf. A rising share of zeroes is the earliest symptom of a broken or unbuilt model, and is invisible in the request latency.",
     },
     Metric {
         name: names::NOTIFICATION_EVENTS,

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO rec_repair_queue (series_id, reason) VALUES ($1, 'merged') ON CONFLICT (series_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "107d5ef5685369fb39e636a3cd03747a268c30d0666f9befc863cce1e81da154"
+}

@@ -40,7 +40,7 @@ use tankovault_db::repo::catalog::{
 };
 use tankovault_db::repo::matching::{
     MergeCandidateView, dismiss_merge_candidate, find_candidates, find_candidates_multi,
-    list_open_merge_candidates, merge_series,
+    list_open_merge_candidates, merge_series, resolve_merged_series, resolve_merged_series_batch,
 };
 use tankovault_db::repo::sync;
 use tankovault_db::repo::tracking::{
@@ -1810,4 +1810,302 @@ async fn rebuilding_the_keys_is_idempotent_and_repairs_a_stale_key() {
     assert_eq!(second.series_updated, 0, "a second pass must write nothing");
     assert_eq!(second.titles_updated, 0);
     assert_eq!(second.series_scanned, first.series_scanned);
+}
+
+// ---------------------------------------------------------------------------
+// Merges: the alias map, and the guard on `merge_series` itself
+// ---------------------------------------------------------------------------
+
+/// Three distinct works, so a merge in these tests is never also a *match* — the point under
+/// test is what the merge moves, not what the canonicaliser would have decided.
+const BERSERK: Seed = Seed {
+    title: "Berserk",
+    content_type: ContentType::Manga,
+    release_year: Some(1989),
+    tags: &["Action"],
+    authors: &["Kentaro Miura"],
+    alt_titles: &[],
+};
+const VINLAND: Seed = Seed {
+    title: "Vinland Saga",
+    content_type: ContentType::Manga,
+    release_year: Some(2005),
+    tags: &["Historical"],
+    authors: &["Makoto Yukimura"],
+    alt_titles: &[],
+};
+const MONSTER: Seed = Seed {
+    title: "Monster",
+    content_type: ContentType::Manga,
+    release_year: Some(1994),
+    tags: &["Psychological"],
+    authors: &["Naoki Urasawa"],
+    alt_titles: &[],
+};
+
+/// What [`merge_series`] does with one column that points at a series.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Handling {
+    /// Re-pointed, unioned or resolved onto the survivor inside the merge transaction.
+    Folded,
+    /// Deliberately allowed to vanish with the absorbed row. The string is *why* — a reason
+    /// somebody has to write down, which is the whole point of the distinction.
+    Cascades(&'static str),
+}
+
+/// Every column that points at `series(id)`, and what the merge does with it.
+///
+/// This is the hand-maintained half of
+/// [`every_column_pointing_at_a_series_is_folded_or_deliberately_cascaded`]; the schema is the
+/// other half. Adding a table with a `series_id` and nothing else makes that test fail until
+/// somebody decides which of these two this row is.
+const SERIES_REFERENCES: &[(&str, &str, Handling)] = &[
+    ("series_titles", "series_id", Handling::Folded),
+    ("series_tags", "series_id", Handling::Folded),
+    ("series_authors", "series_id", Handling::Folded),
+    ("series_sources", "series_id", Handling::Folded),
+    ("watchlist_entries", "series_id", Handling::Folded),
+    ("read_progress", "series_id", Handling::Folded),
+    ("notification_dedup", "series_id", Handling::Folded),
+    ("sync_mappings", "series_id", Handling::Folded),
+    ("sync_remote_entries", "series_id", Handling::Folded),
+    ("series_sync_overrides", "series_id", Handling::Folded),
+    ("sync_conflicts", "series_id", Handling::Folded),
+    ("sync_history", "series_id", Handling::Folded),
+    ("merge_candidates", "series_id", Handling::Folded),
+    ("merge_candidates", "candidate_id", Handling::Folded),
+    ("series_merges", "survivor_id", Handling::Folded),
+    // The recommendation model. Every one of these is *derived* — a rebuild reproduces it from
+    // `series` and its link tables — so losing the absorbed series' rows is not only acceptable,
+    // it is the mechanism: the cascade is what makes a merged series unreachable from the index
+    // in the same transaction that deletes it, rather than at the next build.
+    //
+    // What is *not* automatic is the survivor, which absorbed the loser's tags and authors and
+    // therefore needs re-embedding. `merge_series` queues it; see `rec_repair_queue` below.
+    (
+        "series_features",
+        "series_id",
+        Handling::Cascades(
+            "derived from the series' tags, authors and scalars; the survivor is queued for re-extraction",
+        ),
+    ),
+    (
+        "series_embedding",
+        "series_id",
+        Handling::Cascades(
+            "derived from series_features; the cascade is what makes a merged series unreachable from the ANN index immediately",
+        ),
+    ),
+    (
+        "series_prior",
+        "series_id",
+        Handling::Cascades(
+            "derived appeal signals, recomputed for the whole catalogue by every build",
+        ),
+    ),
+    (
+        "series_cooccurrence",
+        "series_id",
+        Handling::Cascades(
+            "derived from reader lists; re-aggregated wholesale. Re-pointing would violate the series_id <> other_id CHECK for a (loser, survivor) pair and double-count support for every pair both shared",
+        ),
+    ),
+    (
+        "series_cooccurrence",
+        "other_id",
+        Handling::Cascades("the other half of the same pair; see series_cooccurrence.series_id"),
+    ),
+    ("rec_repair_queue", "series_id", Handling::Folded),
+    // The reader model. Affinity is derived from the watchlist and read progress, both of which
+    // this transaction folds correctly a few statements earlier — so re-pointing it by hand is
+    // how the derived rows and their source diverge. `merge_series` marks the affected profiles
+    // stale instead, and they are recomputed from the folded truth.
+    (
+        "user_series_affinity",
+        "series_id",
+        Handling::Cascades(
+            "derived from watchlist_entries and read_progress, which are folded; affected taste profiles are marked stale and recomputed",
+        ),
+    ),
+    // The one table here that holds a *decision* rather than a derivation.
+    ("recommendation_feedback", "series_id", Handling::Folded),
+];
+
+/// `user_taste_profile.seeds` is a `uuid[]` and therefore invisible to the enumeration above —
+/// no foreign key, and not named like a series id.
+///
+/// That is a deliberate blind spot with a deliberate answer: the array is a *cache* of the top of
+/// the affinity ordering, `merge_series` marks every affected profile stale, and a stale profile
+/// is rebuilt from scratch before it is next read. A dangling id in it therefore survives exactly
+/// until the next shelf request, and never reaches a reader.
+///
+/// Recorded here so the next person to add an array of series ids has to decide the same
+/// question rather than discover it. An array that is *not* rebuilt on staleness would need a
+/// real answer — which is the argument that kept the item model's neighbours out of arrays
+/// entirely (docs/RECOMMENDATIONS.md §5.2).
+const _ARRAY_COLUMNS_ARE_NOT_ENUMERATED: () = ();
+
+/// **The guard on `merge_series`.**
+///
+/// `merge_series` is one long transaction that hand-folds every table holding a `series_id` and
+/// then deletes the absorbed row. Nothing in the type system relates that list to the schema, so
+/// a new table simply loses its rows on the next merge — silently, because a cascade and a
+/// deliberate decision produce identical output.
+///
+/// Merges are frequent here (`merge_candidates.outcome` admits `auto_merged`, and the duplicate
+/// sweep merges without an operator), so "silently, on some rows, eventually" means "constantly".
+///
+/// The test enumerates the schema two ways — every foreign key onto `series(id)`, and every
+/// column *named* like a series id, which catches a new table that forgot the key as well — and
+/// requires each to be classified. It asserts nothing about behaviour; it asserts that somebody
+/// thought about it.
+#[tokio::test]
+async fn every_column_pointing_at_a_series_is_folded_or_deliberately_cascaded() {
+    let db = TestDb::spawn().await;
+
+    let rows = sqlx::query_as::<_, (String, String)>(
+        "SELECT c.conrelid::regclass::text, a.attname \
+           FROM pg_constraint c \
+           JOIN unnest(c.conkey) AS k(attnum) ON true \
+           JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum \
+          WHERE c.contype = 'f' AND c.confrelid = 'series'::regclass \
+         UNION \
+         SELECT table_name, column_name \
+           FROM information_schema.columns \
+          WHERE table_schema = 'public' AND column_name LIKE '%series_id%'",
+    )
+    .fetch_all(&db.pool)
+    .await
+    .expect("enumerate the columns that point at a series");
+
+    let classified: std::collections::BTreeSet<(&str, &str)> = SERIES_REFERENCES
+        .iter()
+        .map(|(table, column, _)| (*table, *column))
+        .collect();
+    let live: std::collections::BTreeSet<(String, String)> = rows.into_iter().collect();
+
+    let unclassified: Vec<&(String, String)> = live
+        .iter()
+        .filter(|(table, column)| !classified.contains(&(table.as_str(), column.as_str())))
+        .collect();
+    assert!(
+        unclassified.is_empty(),
+        "these columns point at a series and nothing says what a merge does with them: \
+         {unclassified:?}\n\
+         Add each to `SERIES_REFERENCES` as `Handling::Folded` — and fold it in `merge_series` \
+         — or as `Handling::Cascades(reason)` if losing the rows with the absorbed series is \
+         genuinely correct. See docs/RECOMMENDATIONS.md §9.4."
+    );
+
+    let stale: Vec<(&str, &str)> = SERIES_REFERENCES
+        .iter()
+        .map(|(table, column, _)| (*table, *column))
+        .filter(|(table, column)| !live.contains(&((*table).to_owned(), (*column).to_owned())))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "`SERIES_REFERENCES` classifies columns the schema no longer has: {stale:?}. \
+         Delete the rows; a classification that matches nothing hides the next real one."
+    );
+
+    // `series_merges.merged_id` is deliberately in neither list: it names a row that has already
+    // been deleted, which is the entire purpose of the table, so it can carry no foreign key.
+    // Asserted rather than assumed — a well-meaning future migration "fixing" the missing key
+    // would make every merge fail on its own forwarding record.
+    let merged_id_has_fk: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM pg_constraint c \
+                          JOIN unnest(c.conkey) AS k(attnum) ON true \
+                          JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum \
+                         WHERE c.contype = 'f' AND c.conrelid = 'series_merges'::regclass \
+                           AND a.attname = 'merged_id')",
+    )
+    .fetch_one(&db.pool)
+    .await
+    .expect("inspect series_merges");
+    assert!(
+        !merged_id_has_fk,
+        "`series_merges.merged_id` must NOT reference `series(id)`: it names the row the merge \
+         just deleted, so a foreign key there makes every merge fail."
+    );
+}
+
+/// A merge records where the series went.
+///
+/// Before `series_merges` existed the absorbed row was deleted with no forwarding record, so
+/// every merged id became a hard 404 — for bookmarks, shared links, external references and any
+/// client holding a stale id. With the duplicate sweep merging automatically and continuously,
+/// that was not a rare case.
+#[tokio::test]
+async fn a_merge_records_where_the_series_went() {
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let keep = ingest(&db, alpha, &BERSERK, &[1.0]).await;
+    let drop = ingest(&db, beta, &VINLAND, &[1.0]).await;
+
+    merge_series(&db.pool, keep, drop, None, "merged")
+        .await
+        .expect("merge");
+
+    assert_eq!(
+        resolve_merged_series(&db.pool, drop)
+            .await
+            .expect("resolve"),
+        Some(keep),
+        "the absorbed id must forward to the survivor"
+    );
+    assert_eq!(
+        resolve_merged_series(&db.pool, keep)
+            .await
+            .expect("resolve"),
+        None,
+        "a live series has no forwarding address"
+    );
+}
+
+/// **Path compression: the alias map stays one hop deep.**
+///
+/// Merge B into C after A was already merged into B, and A must resolve straight to C. If
+/// `merge_series` only inserted its own row, A would still point at B — an id that no longer
+/// exists — and resolution would need a recursive walk that is both slower and able to spin on a
+/// cycle. The compression is one `UPDATE`; this test is what says it happened.
+#[tokio::test]
+async fn merging_a_survivor_repoints_the_aliases_that_pointed_at_it() {
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let gamma = seed::provider(&db, "gamma").create().await;
+
+    let a = ingest(&db, alpha, &VINLAND, &[1.0]).await;
+    let b = ingest(&db, beta, &BERSERK, &[1.0]).await;
+    let c = ingest(&db, gamma, &MONSTER, &[1.0]).await;
+
+    merge_series(&db.pool, b, a, None, "merged")
+        .await
+        .expect("merge a into b");
+    merge_series(&db.pool, c, b, None, "merged")
+        .await
+        .expect("merge b into c");
+
+    assert_eq!(
+        resolve_merged_series(&db.pool, a).await.expect("resolve a"),
+        Some(c),
+        "A was merged into B and B into C, so A must resolve directly to C in one hop"
+    );
+    assert_eq!(
+        resolve_merged_series(&db.pool, b).await.expect("resolve b"),
+        Some(c)
+    );
+
+    // The batch form is what the request path uses, and it must agree with the single lookup.
+    let mut batch = resolve_merged_series_batch(&db.pool, &[a, b, c])
+        .await
+        .expect("batch resolve");
+    batch.sort_by_key(|(from, _)| from.as_uuid());
+    let mut expected = vec![(a, c), (b, c)];
+    expected.sort_by_key(|(from, _)| from.as_uuid());
+    assert_eq!(
+        batch, expected,
+        "the batch form must resolve exactly the ids that moved, and no others"
+    );
 }

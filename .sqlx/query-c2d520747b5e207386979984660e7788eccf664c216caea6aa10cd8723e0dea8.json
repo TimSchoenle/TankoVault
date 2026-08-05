@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT series_id AS \"series_id!\" FROM watchlist_entries WHERE user_id = $1 UNION SELECT series_id FROM recommendation_feedback WHERE user_id = $1 AND (verdict = 'hide_forever' OR created_at > now() - make_interval(days => $2::int))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c2d520747b5e207386979984660e7788eccf664c216caea6aa10cd8723e0dea8"
+}

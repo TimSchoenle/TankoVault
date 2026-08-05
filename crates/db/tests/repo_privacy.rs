@@ -28,6 +28,17 @@ const EXPORTED: &[(&str, &str)] = &[
     ("audit_log", "audit_entries"),
     ("user_permissions", "permissions"),
     ("gdpr_requests", "privacy_requests"),
+    // The recommendation profile. Derived from the watchlist, but disclosed on its own because
+    // it is a *profile* in the GDPR sense — an inference about the subject rather than a copy of
+    // what they entered — and Art. 15(1)(h) asks about exactly that.
+    ("user_series_affinity", "recommendation_affinity"),
+    ("user_taste_profile", "recommendation_profile"),
+    ("recommendation_feedback", "recommendation_feedback"),
+    // What the subject was actually shown, not merely what could be inferred about them. It is a
+    // cache and regenerates itself, which is an argument for leaving it out of an *export* — but
+    // not an argument for leaving it out of a subject access request, where "which
+    // recommendations did this system put in front of me" is the question being asked.
+    ("user_recommendations", "recommendation_shelf"),
 ];
 
 /// Tables referencing a subject that are deliberately not exported, with the reason.

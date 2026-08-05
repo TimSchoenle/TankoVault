@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE rec_build_state SET basis = $1, basis_input_dim = $2, dense_dims = $3 WHERE id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dc4a936e9c7768560c273ce9fb7f9f0d68f4d4e52b94d6a03400ab928c74a469"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM series_embedding WHERE generation < $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b889e3fc1cc5c0cfa6bfa5129b343ba096318960bbcf25f3bc541eaf5ca59ea1"
+}

@@ -1,0 +1,18 @@
+[package]
+name = "tankovault-recsys"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Recommendation model: feature extraction, weighting, the dense projection, and scoring. No I/O."
+publish = false
+
+[dependencies]
+tankovault-domain = { path = "../domain" }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true

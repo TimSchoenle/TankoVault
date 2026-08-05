@@ -193,8 +193,23 @@ pub(crate) fn Home() -> Element {
                             h2 { {i18n.t("home.recommendations.title")} }
                         }
                         div { class: "ik-grid",
-                            for series in items.iter().cloned() {
-                                CoverCard { key: "{series.id}", series }
+                            // `/v1/me/recommendations` returns `Recommendation`, a superset of
+                            // `SeriesSummary` carrying why each pick is here (`because_title`,
+                            // `shared`, `score`). The card renders the summary half; surfacing
+                            // the explanation needs card markup and therefore a design pass, so
+                            // the fields travel unused for now rather than being shown badly.
+                            for item in items.iter().cloned() {
+                                CoverCard {
+                                    key: "{item.id}",
+                                    series: SeriesSummary {
+                                        id: item.id,
+                                        title: item.title,
+                                        cover_url: item.cover_url,
+                                        content_type: item.content_type,
+                                        status: item.status,
+                                        source_count: item.source_count,
+                                    },
+                                }
                             }
                         }
                     }

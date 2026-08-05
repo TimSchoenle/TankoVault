@@ -36,6 +36,8 @@ const MEDIA_LIST_QUERY: &str = "\
                   title { romaji english native } \
                   synonyms \
                   genres \
+                  tags { name rank isMediaSpoiler isAdult } \
+                  averageScore popularity isAdult source \
                   staff(sort: RELEVANCE, perPage: 5) { edges { node { name { full } } } } } \
         } } \
       } \
@@ -52,6 +54,10 @@ const SEARCH_QUERY: &str = "query ($search: String) { Media(search: $search, typ
 
 /// The full public media-metadata fragment (no user token required). Shared by the id- and
 /// title-keyed public lookups, which differ only in which variable they bind.
+///
+/// `genres` and `tags` are two different vocabularies: ~20 coarse terms every provider agrees
+/// on, and `AniList`'s ~600 descriptive ones with a 0-100 `rank`. The recommender needs the
+/// second and weights it by that rank, so they stay distinguishable all the way to the database.
 const METADATA_QUERY: &str = "\
     query ($id: Int, $search: String) { \
       Media(id: $id, search: $search, type: MANGA) { \
@@ -61,6 +67,8 @@ const METADATA_QUERY: &str = "\
         title { romaji english native } \
         synonyms \
         genres \
+        tags { name rank isMediaSpoiler isAdult } \
+        averageScore popularity isAdult source \
         staff(sort: RELEVANCE, perPage: 5) { edges { node { name { full } } } } \
       } \
     }";

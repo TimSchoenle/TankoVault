@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_taste_profile (user_id, feature_ids, weights, neg_feature_ids, neg_weights, seeds, embedding, stale, built_at) VALUES ($1, $2, $3, $4, $5, $6, $7::text::halfvec(128), false, now()) ON CONFLICT (user_id) DO UPDATE SET feature_ids     = EXCLUDED.feature_ids, weights         = EXCLUDED.weights, neg_feature_ids = EXCLUDED.neg_feature_ids, neg_weights     = EXCLUDED.neg_weights, seeds           = EXCLUDED.seeds, embedding       = EXCLUDED.embedding, stale           = false, built_at        = now() RETURNING built_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "built_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_taste_profile",
+            "name": "built_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4Array",
+        "Float4Array",
+        "Int4Array",
+        "Float4Array",
+        "UuidArray",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f6f0ec39f648abdd318722855eb68824b202debc974438b5c78264ac814c0865"
+}

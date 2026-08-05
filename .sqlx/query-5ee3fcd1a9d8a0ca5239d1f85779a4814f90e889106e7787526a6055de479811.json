@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series_merges (merged_id, survivor_id, merged_by) VALUES ($1, $2, $3) ON CONFLICT (merged_id) DO UPDATE SET survivor_id = EXCLUDED.survivor_id, merged_at   = now(), merged_by   = EXCLUDED.merged_by",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5ee3fcd1a9d8a0ca5239d1f85779a4814f90e889106e7787526a6055de479811"
+}

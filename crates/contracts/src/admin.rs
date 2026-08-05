@@ -140,6 +140,40 @@ pub struct MergeCandidateView {
     pub updated_at: OffsetDateTime,
 }
 
+/// Which kind of recommendation-model build to run.
+///
+/// Lives here rather than in either service because both sides of the internal hop parse it: the
+/// API validates the operator's request body and the control plane acts on it. A hand-mirrored
+/// second copy is the drift this crate exists to prevent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RecsysBuildMode {
+    /// Patch the live generation: the repair queue, then whatever it has not reached.
+    Incremental,
+    /// Re-solve the projection basis and re-embed the catalogue. What a `next_full_build` tuning
+    /// change needs before it means anything.
+    Full,
+}
+
+/// What one recommendation-model build did.
+///
+/// Returned by `POST /v1/admin/recommendations/rebuild`, produced by the control plane that
+/// actually runs the build.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, ToSchema)]
+pub struct RecsysBuildView {
+    /// `false` when another build already held the claim. The correct response is to wait for
+    /// it, not to retry: the other build is doing this one's work, and the remaining fields are
+    /// zero because this call did nothing.
+    pub started: bool,
+    /// The generation the build wrote under.
+    pub generation: i32,
+    pub series_built: i64,
+    /// Distinct features in the vocabulary the build saw.
+    pub vocabulary: i64,
+    /// Width of the dense space it projected into.
+    pub dense_dims: i64,
+}
+
 /// What one duplicate-reconciliation sweep did.
 ///
 /// Returned by `POST /v1/admin/merge-candidates/sweep` and logged by the scheduled sweep, so an

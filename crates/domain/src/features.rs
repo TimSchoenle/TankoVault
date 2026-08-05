@@ -145,6 +145,10 @@ pub enum Feature {
     /// The feature-flag control plane itself; see [`Feature::is_locked`].
     #[serde(rename = "admin.feature_flags")]
     AdminFeatureFlags,
+    /// The recommender's operator console: model health, the tuning registry, and the
+    /// rebuild controls.
+    #[serde(rename = "admin.recommendations")]
+    AdminRecommendations,
 }
 
 impl Feature {
@@ -191,6 +195,7 @@ impl Feature {
             Self::AdminStats,
             Self::AdminUsers,
             Self::AdminFeatureFlags,
+            Self::AdminRecommendations,
         ]
     }
 
@@ -238,6 +243,7 @@ impl Feature {
             Self::AdminStats => "admin.stats",
             Self::AdminUsers => "admin.users",
             Self::AdminFeatureFlags => "admin.feature_flags",
+            Self::AdminRecommendations => "admin.recommendations",
         }
     }
 
@@ -308,7 +314,8 @@ impl Feature {
             | Self::AdminAudit
             | Self::AdminStats
             | Self::AdminUsers
-            | Self::AdminFeatureFlags => FeatureGroup::Operations,
+            | Self::AdminFeatureFlags
+            | Self::AdminRecommendations => FeatureGroup::Operations,
         }
     }
 
@@ -355,6 +362,7 @@ impl Feature {
             Self::AdminStats => "System statistics",
             Self::AdminUsers => "User administration",
             Self::AdminFeatureFlags => "Feature flags",
+            Self::AdminRecommendations => "Recommendation console",
         }
     }
 
@@ -474,6 +482,9 @@ impl Feature {
             Self::AdminFeatureFlags => {
                 "Cannot be switched off: it is the only way to switch anything back on."
             }
+            Self::AdminRecommendations => {
+                "Off: the recommendation tuning and model-health surface closes. The                  recommender keeps building and serving on its stored values."
+            }
         }
     }
 }
@@ -558,7 +569,7 @@ mod tests {
 
     #[test]
     fn all_lists_every_variant() {
-        assert_eq!(Feature::all().len(), 39);
+        assert_eq!(Feature::all().len(), 40);
     }
 
     #[test]

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO tags (slug, name, kind) SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[]) ON CONFLICT (slug) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b6815c75dcfdd84bb39860b2379a754fb626831d18d323ad97aac417f5b89b7c"
+}

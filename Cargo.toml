@@ -12,6 +12,7 @@ members = [
     "crates/auth",
     "crates/email",
     "crates/matcher",
+    "crates/recsys",
     "crates/bus",
     "crates/api-client",
     "crates/test-support",
@@ -96,6 +97,7 @@ tankovault-adapters = { path = "crates/adapters" }
 tankovault-auth = { path = "crates/auth" }
 tankovault-email = { path = "crates/email" }
 tankovault-matcher = { path = "crates/matcher" }
+tankovault-recsys = { path = "crates/recsys" }
 tankovault-bus = { path = "crates/bus" }
 # A service crate, unlike the rest here: `xtask` runs the same install steps against a
 # developer's database, and the one implementation lives with the binary that ships it.

@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT series_id, feature_ids, weights FROM series_features WHERE series_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series_features",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "feature_ids",
+        "type_info": "Int4Array",
+        "origin": {
+          "Table": {
+            "table": "series_features",
+            "name": "feature_ids"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "weights",
+        "type_info": "Float4Array",
+        "origin": {
+          "Table": {
+            "table": "series_features",
+            "name": "weights"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "9250655eeaab094d92f086470de752df57879e4ace786de24480aaf437fb8581"
+}

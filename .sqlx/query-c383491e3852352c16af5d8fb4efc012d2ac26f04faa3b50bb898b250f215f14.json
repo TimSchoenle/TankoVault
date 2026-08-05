@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series_tags (series_id, tag_id, weight, source) SELECT $1, t.id, u.weight, u.source FROM UNNEST($2::text[], $3::real[], $4::text[]) AS u(slug, weight, source) JOIN tags t ON t.slug = u.slug ON CONFLICT (series_id, tag_id) DO UPDATE SET weight = EXCLUDED.weight, source = EXCLUDED.source WHERE series_tags.source = EXCLUDED.source OR series_tags.source = 'provider'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "Float4Array",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c383491e3852352c16af5d8fb4efc012d2ac26f04faa3b50bb898b250f215f14"
+}

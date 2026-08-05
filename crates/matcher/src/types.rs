@@ -9,7 +9,7 @@ pub struct Thresholds {
     pub high: f32,
     pub low: f32,
     /// At or above this score — **and** only with a structural identity signal — two series
-    /// that already exist separately are merged without asking. See [`adjudicate`].
+    /// that already exist separately are merged without asking. See [`adjudicate`](crate::adjudicate).
     pub auto_merge: f32,
 }
 

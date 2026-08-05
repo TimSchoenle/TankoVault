@@ -36,7 +36,7 @@ use uuid::Uuid;
 /// `ON DELETE CASCADE`, so every row naming `drop_id` is removed by the `DELETE FROM series` that
 /// follows regardless. What matters — and what `repo_matching.rs` asserts — is that no *unresolved*
 /// candidate is left naming a series that no longer exists, because
-/// [`list_open_merge_candidates`] inner-joins both sides and such a row would silently vanish from
+/// [`list_open_merge_candidates`](super::list_open_merge_candidates) inner-joins both sides and such a row would silently vanish from
 /// the operator's queue while staying open in the table.
 ///
 /// # Errors

@@ -33,7 +33,7 @@ pub fn best_assessment(query: &Query, candidates: &[Candidate]) -> Option<(Serie
 ///
 /// Which is why the bar is two-part rather than a number. A score alone can reach the automatic
 /// threshold on nothing but fuzzy similarity, and two genuinely different works with similar
-/// names are precisely the pairs that do. [`MatchSignals::is_structural`] means the titles are
+/// names are precisely the pairs that do. [`MatchSignals::is_structural`](crate::MatchSignals::is_structural) means the titles are
 /// *the same string* under a rule designed to be conservative — identical, identical modulo
 /// whitespace, or an exact hit on a name the series already answers to — and only then does the
 /// score decide.

@@ -15,8 +15,8 @@ pub fn score(query: &Query, candidate: &Candidate) -> f32 {
 
 /// Score a candidate **and** report which rules produced the score.
 ///
-/// The signals are not diagnostics: [`Decision::Ambiguous`] carries them into the merge queue's
-/// stored reason, the operator console renders them as badges, and [`adjudicate`] refuses to
+/// The signals are not diagnostics: [`Decision::Ambiguous`](crate::Decision::Ambiguous) carries them into the merge queue's
+/// stored reason, the operator console renders them as badges, and [`adjudicate`](crate::adjudicate) refuses to
 /// merge anything automatically without [`MatchSignals::is_structural`]. A caller that only
 /// wants the number can use [`score`].
 #[must_use]

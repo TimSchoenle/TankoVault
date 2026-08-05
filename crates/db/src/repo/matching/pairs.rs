@@ -229,7 +229,7 @@ pub async fn series_match_facts<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// The trigram similarity of each given pair, computed exactly as [`find_candidates`] computes
+/// The trigram similarity of each given pair, computed exactly as [`find_candidates`](super::find_candidates) computes
 /// it: canonical against canonical, and each side's alternative titles against the other's
 /// canonical title, taking the best.
 ///

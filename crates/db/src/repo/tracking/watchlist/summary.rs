@@ -17,7 +17,7 @@ pub struct WatchlistSummary {
 
 /// The unfiltered shape of a user's watchlist.
 ///
-/// Distinct from [`WatchlistPage::counts`], which drops only the `status` arm and keeps the
+/// Distinct from [`WatchlistPage::counts`](super::WatchlistPage::counts), which drops only the `status` arm and keeps the
 /// search, recency and source filters: those answer "how many would this tab show *given what
 /// I have typed*", while this answers "how big is my library" for surfaces with no filter state
 /// of their own — a tab badge, a More sheet, a signed-in header.

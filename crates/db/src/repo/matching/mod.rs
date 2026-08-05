@@ -26,8 +26,8 @@
 //! surfaced 59 pairs with byte-identical compact titles that the create-time path had never
 //! queued at all.
 //!
-//! One module per stage: [`candidates`] and [`pairs`] find them, [`queue`] holds the ambiguous
-//! ones for an operator, [`merge`] executes the decision, and [`keys`] maintains the normalized
+//! One module per stage: `candidates` and `pairs` find them, `queue` holds the ambiguous
+//! ones for an operator, `merge` executes the decision, and `keys` maintains the normalized
 //! title keys the first two read.
 
 mod candidates;

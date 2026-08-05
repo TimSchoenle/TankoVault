@@ -9,7 +9,7 @@
 //! request however loudly the console says it was saved.
 //!
 //! The registry itself — the [`Tunable`] variants and [`Tunable::spec`] — stays in one file
-//! on purpose; see the `expect` on `spec` for why. [`taxonomy`] holds the classifying enums.
+//! on purpose; see the `expect` on `spec` for why. `taxonomy` holds the classifying enums.
 
 mod taxonomy;
 

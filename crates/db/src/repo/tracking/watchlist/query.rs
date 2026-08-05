@@ -43,8 +43,8 @@ pub struct WatchlistCard {
     pub latest_chapter_number: Option<f64>,
     /// When the newest chapter was discovered, across all sources.
     ///
-    /// `discovered_at`, not `published_at`: [`feed`](super::dashboard::feed) and
-    /// [`continue_reading`](super::dashboard::continue_reading) both order on `discovered_at`,
+    /// `discovered_at`, not `published_at`: [`feed`](crate::repo::tracking::dashboard::feed) and
+    /// [`continue_reading`](crate::repo::tracking::dashboard::continue_reading) both order on `discovered_at`,
     /// and `published_at` is null for every provider that does not print a date. Ordering the
     /// watchlist on anything else would put a row at the top of "Today" that the feed — one
     /// click away, over the same chapters — dates to last year.
@@ -70,7 +70,7 @@ pub struct WatchlistCard {
     pub sync_excluded: bool,
     /// Every provider carrying this series, preferred first.
     ///
-    /// Empty on [`watchlist_page`] until [`attach_sources`] has run — it is a second statement
+    /// Empty on [`watchlist_page`](super::watchlist_page) until `attach_sources` has run — it is a second statement
     /// keyed on the page's ids rather than an aggregate folded into the row, because an
     /// `array_agg` of four columns per row is paid for every row of every page whether or not
     /// the viewport is wide enough to render it.
@@ -209,7 +209,7 @@ impl std::str::FromStr for WatchlistOrder {
 pub struct WatchlistFilter {
     /// Narrow to a single series.
     ///
-    /// Not a list filter — it exists so [`watchlist_card`] can reuse this statement instead of
+    /// Not a list filter — it exists so [`watchlist_card`](super::watchlist_card) can reuse this statement instead of
     /// growing a fifth hand-written copy of the unread predicate, which is the drift the
     /// `unread_predicate_agrees_everywhere` test exists to catch.
     pub series_id: Option<SeriesId>,
@@ -259,7 +259,7 @@ impl Default for WatchlistFilter {
 /// **Read out of the row the database ordered on, never recomputed.** `progress` orders on
 /// `last_read_whole_number / total_chapters`, and a Rust copy of that expression would be a
 /// second definition of the sort order free to drift from the `ORDER BY` — which produces a page
-/// that silently repeats or skips rows rather than failing. [`fetch_page`] therefore selects the
+/// that silently repeats or skips rows rather than failing. `fetch_page` therefore selects the
 /// key it sorted by and hands it back.
 ///
 /// The id is not decoration. Hundreds of rows tie on `unread` in a 600-entry list, and without

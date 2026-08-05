@@ -92,8 +92,8 @@ impl From<CardRow> for WatchlistCard {
 /// (`floor(number)`) so part releases don't inflate it.
 ///
 /// The unread filter is the fourth copy of the predicate documented on
-/// [`dashboard`](super::dashboard); it must stay the negation of
-/// [`ReadProgress::covers`](super::ReadProgress::covers), or this badge disagrees with the feed
+/// [`dashboard`](crate::repo::tracking::dashboard); it must stay the negation of
+/// [`ReadProgress::covers`](crate::repo::tracking::ReadProgress::covers), or this badge disagrees with the feed
 /// that links to the same chapters. `repo_tracking`'s `unread_predicate_agrees_everywhere` test
 /// is what holds the four together.
 ///
@@ -119,7 +119,7 @@ impl From<CardRow> for WatchlistCard {
 /// `LEFT JOIN` with `last_read_number: None` and its full chapter count as `unread`, which is a
 /// valid row rather than a missing one; a tracked series with no chapters at all comes back
 /// with `total_chapters: 0` and `latest_chapter_at: None`, and bands as
-/// [`ReleaseBucket::Earlier`].
+/// [`ReleaseBucket::Earlier`](super::ReleaseBucket::Earlier).
 pub async fn watchlist_page(
     pool: &PgPool,
     user_id: UserId,

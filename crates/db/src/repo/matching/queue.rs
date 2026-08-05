@@ -41,7 +41,7 @@ pub enum QueueOutcome {
 ///
 /// The update is guarded so that only two states can be written over: an open row, and one the
 /// *scorer* previously closed as `distinct`. Reopening the latter is the point of
-/// [`record_distinct_pair`] keeping a row at all — a pair judged apart before enrichment gave
+/// [`record_distinct_pair`](super::record_distinct_pair) keeping a row at all — a pair judged apart before enrichment gave
 /// both sides authors and synonyms has to be able to come back — while `dismissed`, `merged` and
 /// `auto_merged` stay untouchable, the first because a human decided it and the other two
 /// because the merge already happened.
@@ -153,7 +153,7 @@ pub struct MergeCandidateView {
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable. An empty queue is an empty
 /// `Vec`. Note that both series are inner-joined, so a candidate naming a deleted series
-/// disappears from this list without being resolved — see the note on [`merge_series`].
+/// disappears from this list without being resolved — see the note on [`merge_series`](super::merge_series).
 pub async fn list_open_merge_candidates<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,

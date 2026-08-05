@@ -1,8 +1,8 @@
 //! The watchlist: which series a user tracks, at what status, and the enriched card the
 //! Watchlist board renders.
 //!
-//! [`entries`] owns membership, [`query`] the sort/filter vocabulary a board request speaks,
-//! [`page`] the assembly of a card page, and [`summary`] the counts beside it.
+//! `entries` owns membership, `query` the sort/filter vocabulary a board request speaks,
+//! `page` the assembly of a card page, and `summary` the counts beside it.
 
 mod entries;
 mod page;

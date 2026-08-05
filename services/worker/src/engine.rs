@@ -14,7 +14,7 @@ use tankovault_contracts::{ChapterDiscovered, ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
 use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert};
 use tankovault_domain::chapter_outliers::{OutlierPolicy, implausible_indices};
-use tankovault_domain::{Provider, ProviderId, normalize_title};
+use tankovault_domain::{MetadataPriority, Provider, ProviderId, normalize_title};
 use tankovault_fetch::{Fetcher, ProviderFetchConfig, SessionStore, build_provider_fetcher};
 use tankovault_solver::ChallengeSolver;
 use time::OffsetDateTime;
@@ -40,6 +40,11 @@ pub(crate) struct Engine {
     /// Held here, not defaulted in the repository, so this path and external sync answer
     /// "is this the same series?" the same way.
     pub(crate) matching: MatchingConfig,
+    /// Which source owns each metadata field a scan also supplies.
+    ///
+    /// Held here for the same reason as [`Self::matching`]: sync writes these columns too, and
+    /// a priority only one writer consults is last-writer-wins with extra steps.
+    pub(crate) metadata_priority: MetadataPriority,
     /// Which scraped chapter numbers the source cannot plausibly have released.
     pub(crate) outliers: OutlierPolicy,
     /// One fetch stack per provider, keyed by the politeness settings it was built from.
@@ -93,6 +98,7 @@ struct CachedFetcher {
 pub(crate) struct EngineSettings {
     pub(crate) max_catalog_pages: u32,
     pub(crate) matching: MatchingConfig,
+    pub(crate) metadata_priority: MetadataPriority,
     pub(crate) outliers: OutlierPolicy,
 }
 
@@ -117,6 +123,7 @@ impl Engine {
             worker_id,
             max_catalog_pages: settings.max_catalog_pages,
             matching: settings.matching,
+            metadata_priority: settings.metadata_priority,
             outliers: settings.outliers,
             fetchers: Arc::default(),
         }
@@ -247,9 +254,13 @@ impl Engine {
             content_hash: hash,
         };
 
-        let outcome =
-            tankovault_db::repo::catalog::ingest_series(&self.pool, &scanned, &self.matching)
-                .await?;
+        let outcome = tankovault_db::repo::catalog::ingest_series(
+            &self.pool,
+            &scanned,
+            &self.matching,
+            &self.metadata_priority,
+        )
+        .await?;
 
         if let Some(bus) = &self.bus {
             // One indexing pass, then a lookup per new chapter — an O(n) scan per new

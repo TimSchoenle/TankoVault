@@ -50,6 +50,10 @@ struct Config {
     /// same (ARCH-16).
     #[serde(default)]
     matching: tankovault_config::MatchingConfig,
+    /// Which source owns each metadata field. Shared with external sync, which writes the same
+    /// columns: a scan that ignored it overwrote every enriched description on its next pass.
+    #[serde(default)]
+    metadata: tankovault_config::MetadataPriorityConfig,
     /// Which scraped chapter numbers a scan refuses to index. Sources publish stray entries
     /// numbered from dates, years and title text; left in, one of them becomes the series'
     /// latest chapter.
@@ -195,6 +199,7 @@ async fn build(cfg: &Config) -> anyhow::Result<Built> {
         EngineSettings {
             max_catalog_pages: cfg.worker.max_catalog_pages,
             matching: cfg.matching.clone(),
+            metadata_priority: cfg.metadata.priority.clone(),
             outliers: cfg.chapter_outliers.policy(),
         },
     );

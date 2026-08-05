@@ -48,7 +48,8 @@ use tankovault_db::repo::tracking::{
     watchlist_upsert,
 };
 use tankovault_domain::{
-    ContentType, ProviderId, SeriesId, SeriesStatus, UserId, WatchStatus, normalize_title,
+    ContentType, MetadataPriority, ProviderId, SeriesId, SeriesStatus, UserId, WatchStatus,
+    normalize_title,
 };
 use tankovault_test_support::{TestDb, seed};
 
@@ -107,6 +108,7 @@ async fn ingest(db: &TestDb, provider_id: ProviderId, seed: &Seed, chapters: &[f
             content_hash: vec![1],
         },
         &MatchingConfig::default(),
+        &MetadataPriority::default(),
     )
     .await
     .expect("ingest series")

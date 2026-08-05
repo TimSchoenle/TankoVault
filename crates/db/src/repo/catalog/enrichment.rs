@@ -1,9 +1,10 @@
 //! Metadata enrichment: the sweep's work list, folding resolved upstream metadata into a
 //! series, and the alternative-title / tag / author link tables it writes.
 
+use super::metadata::{MetadataCandidate, merge_metadata};
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
-use tankovault_domain::SeriesId;
+use tankovault_domain::{MetadataPriority, MetadataSource, SeriesId};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -15,13 +16,14 @@ use uuid::Uuid;
 /// literal `0.0` would abort the transaction that carried it.
 pub const MIN_TAG_WEIGHT: f32 = 0.01;
 
-/// Minimal series row for the enrichment worker: enough to look up upstream and feed the
-/// priority resolver's current values.
+/// Minimal series row for the enrichment worker: enough to look the series up upstream.
+///
+/// Carries no current field values on purpose — [`super::merge_metadata`] reads those under the
+/// row lock when the answer comes back, which is seconds of upstream latency later. Resolving
+/// priority against a value read here would decide against one a concurrent scan has replaced.
 pub struct SeriesEnrichmentRow {
     pub id: SeriesId,
     pub canonical_title: String,
-    pub description: Option<String>,
-    pub cover_url: Option<String>,
 }
 
 /// The shared row shape behind the two enrichment work-list queries.
@@ -29,8 +31,6 @@ pub struct SeriesEnrichmentRow {
 struct EnrichmentRow {
     id: Uuid,
     canonical_title: String,
-    description: Option<String>,
-    cover_url: Option<String>,
 }
 
 impl From<EnrichmentRow> for SeriesEnrichmentRow {
@@ -38,8 +38,6 @@ impl From<EnrichmentRow> for SeriesEnrichmentRow {
         Self {
             id: SeriesId::from_uuid(r.id),
             canonical_title: r.canonical_title,
-            description: r.description,
-            cover_url: r.cover_url,
         }
     }
 }
@@ -60,7 +58,7 @@ pub async fn list_series_for_enrichment<'e, E: PgExecutor<'e>>(
 ) -> DbResult<Vec<SeriesEnrichmentRow>> {
     let rows = sqlx::query_as!(
         EnrichmentRow,
-        "SELECT id, canonical_title, description, cover_url FROM series \
+        "SELECT id, canonical_title FROM series \
          WHERE metadata_checked_at IS NULL OR metadata_checked_at < $2 \
          ORDER BY metadata_checked_at ASC NULLS FIRST, id ASC \
          LIMIT $1",
@@ -72,8 +70,8 @@ pub async fn list_series_for_enrichment<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
-/// Which of `series_ids` have not had metadata attempted since `stale_before`, with the current
-/// locally-stored values the priority resolver needs. One statement for the whole set.
+/// Which of `series_ids` have not had metadata attempted since `stale_before`. One statement for
+/// the whole set.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; unknown ids are absent from the result.
@@ -84,7 +82,7 @@ pub async fn series_needing_metadata<'e, E: PgExecutor<'e>>(
 ) -> DbResult<Vec<SeriesEnrichmentRow>> {
     let rows = sqlx::query_as!(
         EnrichmentRow,
-        "SELECT id, canonical_title, description, cover_url FROM series \
+        "SELECT id, canonical_title FROM series \
          WHERE id = ANY($1::uuid[]) \
            AND (metadata_checked_at IS NULL OR metadata_checked_at < $2)",
         series_ids,
@@ -117,15 +115,8 @@ pub async fn mark_metadata_checked<'e, E: PgExecutor<'e>>(
 /// A batch of metadata to fold into an existing series. `None` leaves a field untouched;
 /// titles/tags/authors are additive.
 pub struct MetadataEnrichment<'a> {
-    pub description: Option<&'a str>,
-    pub cover_url: Option<&'a str>,
-    /// Content-type token (e.g. `manga`/`manhwa`); only fills a currently-`unknown` series.
-    pub content_type: Option<&'a str>,
-    /// Publication-status token; only fills a currently-`unknown` series, same reason as
-    /// `content_type`.
-    pub status: Option<&'a str>,
-    /// Release year; only fills a series whose year is currently null.
-    pub release_year: Option<i32>,
+    /// The fields another source can also supply, resolved under the operator's priority.
+    pub candidate: MetadataCandidate<'a>,
     /// Whether upstream classifies the work as adult. `None` means "no opinion", which must not
     /// clear a flag another source set — this is a content gate, and losing it is the failure
     /// that shows adult series to readers who never opted in.
@@ -141,45 +132,40 @@ pub struct MetadataEnrichment<'a> {
     pub authors: &'a [String],
 }
 
-/// Apply an enrichment batch to a series in one transaction: overwrite description/cover,
-/// gap-fill content type/status/year, and additively record titles/tags/authors. Idempotent.
+/// Apply an enrichment batch to a series in one transaction: fold the prioritised fields in
+/// through [`merge_metadata`], record the upstream-only signals, and additively record
+/// titles/tags/authors. Idempotent.
 ///
 /// Also stamps `metadata_checked_at`, so a successful enrichment leaves the sweep's work list
 /// the same way a fruitless lookup does (see [`list_series_for_enrichment`]).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an unrecognised `content_type`/`status` token errors rather
-/// than being silently dropped. An erased `series_id` is a no-op `Ok(())`.
+/// [`crate::DbError::Sqlx`] only; an erased `series_id` is a no-op `Ok(())`.
 pub async fn apply_enrichment(
     pool: &sqlx::PgPool,
     series_id: SeriesId,
     enrichment: &MetadataEnrichment<'_>,
+    priority: &MetadataPriority,
 ) -> DbResult<()> {
     let mut tx = pool.begin().await?;
+    merge_metadata(
+        &mut tx,
+        series_id,
+        MetadataSource::AniList,
+        &enrichment.candidate,
+        priority,
+    )
+    .await?;
+    // The fields no adapter can supply, so nothing to resolve: upstream is the only source.
     sqlx::query!(
         "UPDATE series SET \
-            description = COALESCE($2, description), \
-            cover_url = COALESCE($3, cover_url), \
-            content_type = CASE WHEN content_type = 'unknown' \
-                                THEN COALESCE($4::text::content_type, content_type) \
-                                ELSE content_type END, \
-            status = CASE WHEN status = 'unknown' \
-                          THEN COALESCE($6::text::series_status, status) \
-                          ELSE status END, \
-            release_year = COALESCE(release_year, $5), \
-            is_adult = COALESCE($7, is_adult), \
-            external_score = COALESCE($8, external_score), \
-            external_popularity = COALESCE($9, external_popularity), \
-            external_source = COALESCE($10, external_source), \
-            updated_at = now(), \
+            is_adult = COALESCE($2, is_adult), \
+            external_score = COALESCE($3, external_score), \
+            external_popularity = COALESCE($4, external_popularity), \
+            external_source = COALESCE($5, external_source), \
             metadata_checked_at = now() \
          WHERE id = $1",
         series_id.as_uuid(),
-        enrichment.description,
-        enrichment.cover_url,
-        enrichment.content_type,
-        enrichment.release_year,
-        enrichment.status,
         enrichment.is_adult,
         enrichment.external_score,
         enrichment.external_popularity,

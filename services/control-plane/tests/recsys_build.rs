@@ -16,7 +16,9 @@ use tankovault_control_plane::recsys::{BuildTuning, build};
 use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert, ingest_series};
 use tankovault_db::repo::matching::merge_series;
 use tankovault_db::repo::recsys;
-use tankovault_domain::{ContentType, ProviderId, SeriesId, SeriesStatus, normalize_title};
+use tankovault_domain::{
+    ContentType, MetadataPriority, ProviderId, SeriesId, SeriesStatus, normalize_title,
+};
 use tankovault_test_support::{TestDb, seed};
 
 /// Small batches on purpose: the paging is part of what this exercises, and a batch larger than
@@ -112,6 +114,7 @@ async fn ingest(db: &TestDb, provider: ProviderId, fixture: &Fixture) -> SeriesI
             content_hash: vec![1],
         },
         &MatchingConfig::default(),
+        &MetadataPriority::default(),
     )
     .await
     .expect("ingest series")

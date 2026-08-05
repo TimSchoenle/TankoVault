@@ -4,7 +4,9 @@
 use crate::error::{DbError, DbResult};
 use sqlx::{FromRow, PgExecutor};
 use tankovault_domain::matching::{Canonicaliser, Decision, Query};
-use tankovault_domain::{ContentType, Series, SeriesId, SeriesStatus};
+use tankovault_domain::{
+    ContentType, MetadataSource, MetadataValue, Series, SeriesId, SeriesStatus,
+};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -17,6 +19,21 @@ pub struct SeriesUpsert {
     pub content_type: ContentType,
     pub status: SeriesStatus,
     pub release_year: Option<i32>,
+}
+
+impl SeriesUpsert {
+    /// This scan's offer for the prioritised fields, for [`super::merge_metadata`].
+    #[must_use]
+    pub fn candidate(&self) -> super::MetadataCandidate<'_> {
+        super::MetadataCandidate {
+            canonical_title: Some(&self.canonical_title),
+            description: self.description.as_deref(),
+            cover_url: self.cover_url.as_deref(),
+            content_type: Some(self.content_type),
+            status: Some(self.status),
+            release_year: self.release_year,
+        }
+    }
 }
 
 #[derive(FromRow)]
@@ -113,10 +130,15 @@ pub async fn resolve_canonical_series(
 /// Insert a fresh canonical series from scanned metadata, returning its new id.
 async fn create_series(conn: &mut sqlx::PgConnection, meta: &SeriesUpsert) -> DbResult<SeriesId> {
     let id = SeriesId::new();
+    // Provenance is stamped only where the adapter actually said something: a stub carries a
+    // title and nothing else, and claiming authorship of its placeholders would let them
+    // outrank a real value under an adapter-first order.
+    let attributed = |present: bool| present.then_some(MetadataSource::Adapter);
     sqlx::query!(
         "INSERT INTO series (id, canonical_title, normalized_title, description, \
-         cover_url, content_type, status, release_year) \
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+         cover_url, content_type, status, release_year, title_source, description_source, \
+         cover_source, content_type_source, status_source, release_year_source) \
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
         id.as_uuid(),
         &meta.canonical_title,
         &meta.normalized_title,
@@ -125,46 +147,24 @@ async fn create_series(conn: &mut sqlx::PgConnection, meta: &SeriesUpsert) -> Db
         meta.content_type as ContentType,
         meta.status as SeriesStatus,
         meta.release_year,
+        attributed(meta.canonical_title.is_answer()) as Option<MetadataSource>,
+        attributed(
+            meta.description
+                .as_deref()
+                .is_some_and(MetadataValue::is_answer)
+        ) as Option<MetadataSource>,
+        attributed(
+            meta.cover_url
+                .as_deref()
+                .is_some_and(MetadataValue::is_answer)
+        ) as Option<MetadataSource>,
+        attributed(meta.content_type.is_answer()) as Option<MetadataSource>,
+        attributed(meta.status.is_answer()) as Option<MetadataSource>,
+        attributed(meta.release_year.is_some()) as Option<MetadataSource>,
     )
     .execute(&mut *conn)
     .await?;
     Ok(id)
-}
-
-/// Refresh metadata on an existing series, coalescing new non-null values over old.
-///
-/// `COALESCE`s are one-directional: a re-scan that stops reporting a description/cover keeps
-/// the stored one, so a broken provider page doesn't blank the catalogue. `canonical_title`,
-/// `content_type` and `status` are not coalesced — the newest scan owns those outright.
-///
-/// # Errors
-/// [`crate::DbError::Sqlx`] only; unknown `id` matches nothing and is still `Ok(())`.
-pub async fn update_series_meta<'e, E: PgExecutor<'e>>(
-    exec: E,
-    id: SeriesId,
-    meta: &SeriesUpsert,
-) -> DbResult<()> {
-    sqlx::query!(
-        "UPDATE series SET \
-            canonical_title = $2, \
-            description = COALESCE($3, description), \
-            cover_url = COALESCE($4, cover_url), \
-            content_type = $5, \
-            status = $6, \
-            release_year = COALESCE($7, release_year), \
-            updated_at = now() \
-         WHERE id = $1",
-        id.as_uuid(),
-        &meta.canonical_title,
-        meta.description.as_deref(),
-        meta.cover_url.as_deref(),
-        meta.content_type as ContentType,
-        meta.status as SeriesStatus,
-        meta.release_year,
-    )
-    .execute(exec)
-    .await?;
-    Ok(())
 }
 
 /// Fetch one canonical series by id.

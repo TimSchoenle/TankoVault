@@ -1,0 +1,113 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE series SET canonical_title = COALESCE($2, canonical_title), normalized_title = COALESCE($3, normalized_title), title_source = COALESCE($4, title_source), description = COALESCE($5, description), description_source = COALESCE($6, description_source), cover_url = COALESCE($7, cover_url), cover_source = COALESCE($8, cover_source), content_type = COALESCE($9, content_type), content_type_source = COALESCE($10, content_type_source), status = COALESCE($11, status), status_source = COALESCE($12, status_source), release_year = COALESCE($13, release_year), release_year_source = COALESCE($14, release_year_source), updated_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        {
+          "Custom": {
+            "name": "metadata_source",
+            "kind": {
+              "Enum": [
+                "anilist",
+                "adapter"
+              ]
+            }
+          }
+        },
+        "Text",
+        {
+          "Custom": {
+            "name": "metadata_source",
+            "kind": {
+              "Enum": [
+                "anilist",
+                "adapter"
+              ]
+            }
+          }
+        },
+        "Text",
+        {
+          "Custom": {
+            "name": "metadata_source",
+            "kind": {
+              "Enum": [
+                "anilist",
+                "adapter"
+              ]
+            }
+          }
+        },
+        {
+          "Custom": {
+            "name": "content_type",
+            "kind": {
+              "Enum": [
+                "manga",
+                "manhwa",
+                "manhua",
+                "webtoon",
+                "unknown"
+              ]
+            }
+          }
+        },
+        {
+          "Custom": {
+            "name": "metadata_source",
+            "kind": {
+              "Enum": [
+                "anilist",
+                "adapter"
+              ]
+            }
+          }
+        },
+        {
+          "Custom": {
+            "name": "series_status",
+            "kind": {
+              "Enum": [
+                "ongoing",
+                "completed",
+                "hiatus",
+                "cancelled",
+                "unknown"
+              ]
+            }
+          }
+        },
+        {
+          "Custom": {
+            "name": "metadata_source",
+            "kind": {
+              "Enum": [
+                "anilist",
+                "adapter"
+              ]
+            }
+          }
+        },
+        "Int4",
+        {
+          "Custom": {
+            "name": "metadata_source",
+            "kind": {
+              "Enum": [
+                "anilist",
+                "adapter"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "074b011c1f7ebf9beb3ac9d6ff489840f8bf870c523de92979aafda4faba774f"
+}

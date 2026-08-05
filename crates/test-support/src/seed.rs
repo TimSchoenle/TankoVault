@@ -24,8 +24,8 @@ use tankovault_db::repo::catalog::{
 use tankovault_db::repo::providers::{self, NewProvider};
 use tankovault_db::repo::users;
 use tankovault_domain::{
-    AdapterKind, ContentType, Politeness, ProviderId, SeriesId, SeriesStatus, UserId,
-    normalize_title,
+    AdapterKind, ContentType, MetadataPriority, Politeness, ProviderId, SeriesId, SeriesStatus,
+    UserId, normalize_title,
 };
 
 /// Start building a provider identified by `slug`.
@@ -332,6 +332,7 @@ impl<'a> SeriesBuilder<'a> {
                 content_hash: self.content_hash,
             },
             &MatchingConfig::default(),
+            &MetadataPriority::default(),
         )
         .await
         .expect("seed series")

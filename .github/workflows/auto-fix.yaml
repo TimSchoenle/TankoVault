@@ -32,10 +32,13 @@ name: auto-fix
 # superseded on purpose. One workflow in the group removes the choice rather than tuning it, and
 # `repo-lint`'s `concurrency-groups-hold-one-workflow` fails if a second one ever joins.
 #
-# The cost is real and accepted: `auto-format` finished in about a minute where this job spends
-# twenty-odd compiling the workspace under `--all-targets --all-features`, so a pull request whose
-# only problem is formatting now waits for the whole run. A slower fix that always happens beats a
-# fast one that a sibling can cancel.
+# The cost is real and accepted: `auto-format` finished in about a minute where this job compiles
+# the workspace for `clippy --fix`, so a pull request whose only problem is formatting waits for
+# the whole run. A slower fix that always happens beats a fast one that a sibling can cancel.
+#
+# Accepted is not the same as unmeasured. That cost was twenty-odd minutes until 2026-08-05, and
+# almost none of it was work: the `clippy --fix` step's flags disagreed with the cache the job
+# restores, so it rebuilt the entire dependency graph every run — see that step for the numbers.
 #
 # ---------------------------------------------------------------------------------------------
 # What it fixes, and why a bot may
@@ -120,6 +123,7 @@ on:
     # is what the filter buys back.
     paths:
       - ".github/workflows/auto-fix.yaml"
+      - ".github/actions/**"
       - "crates/**"
       - "services/**"
       - "xtask/**"
@@ -143,11 +147,12 @@ concurrency:
 
 permissions: {}
 
-# Must stay byte-identical to `ci.yml`'s. `rust-cache` hashes the `CARGO_*`/`RUST*` environment
-# into its key, so a workflow that leaves these unset looks up a different key from the one
-# `ci.yml`'s `lint` group writes and compiles the workspace from cold on every pull request —
-# which is what this job did while it had no `env:` block at all. The `clippy --fix` step below
-# clears `RUSTFLAGS` for itself; see its comment for why that must not be done here.
+# Must stay byte-identical to `ci.yml`'s, and no step below may override it. `rust-cache` hashes
+# the `CARGO_*`/`RUST*` environment into its key, so a workflow that leaves these unset looks up a
+# different key from the one `ci.yml`'s `lint` group writes and compiles the workspace from cold on
+# every pull request — which is what this job did while it had no `env:` block at all. Cargo then
+# hashes `RUSTFLAGS` into every *unit* fingerprint on top of that, so a step that clears it
+# discards the restored cache just as thoroughly; see the `clippy --fix` step for what that cost.
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
@@ -156,8 +161,9 @@ jobs:
   fix:
     name: apply the mechanical fixes
     runs-on: ubuntu-latest
-    # Generous: this job compiles the workspace under `--all-targets --all-features` for
-    # `clippy --fix`, checks it again, and then builds `tankovault-api` for `xtask openapi`.
+    # Generous: this job compiles the workspace under `--all-targets` for `clippy --fix`, checks it
+    # again, and then builds `tankovault-api` for `xtask openapi`. Generous is not a budget to
+    # spend — a run approaching it means something is rebuilding what the cache already holds.
     timeout-minutes: 60
     # Forks cannot read the app secrets, and a fork PR must not be able to make this repository
     # commit on its behalf. Skipping is correct: a fork's drift is the author's to fix.
@@ -212,6 +218,7 @@ jobs:
       # A conflicting merge is a human's call, and aborting leaves the branch exactly as its
       # author pushed it — which is recoverable, where a bot-resolved conflict is not.
       - name: merge the base branch, which is the tree CI judges
+        id: base
         env:
           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
@@ -222,6 +229,9 @@ jobs:
           git remote set-url origin \
             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch --no-tags origin "$BASE_REF"
+          # Recorded before the merge and before the early exit below, because the step after this
+          # one diffs against it and both paths out of here have to leave it set.
+          echo "sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
           if git merge-base --is-ancestor FETCH_HEAD HEAD; then
             echo "::notice::already contains $BASE_REF"
             exit 0
@@ -231,6 +241,41 @@ jobs:
             echo "::error::this branch conflicts with $BASE_REF and cannot be brought up to \
             date automatically; merge or rebase it by hand, then push"
             exit 1
+          fi
+
+      # `clippy --fix` rewrites `.rs` files and nothing else, and what it would rewrite is a
+      # function of the sources, `clippy.toml` and the compiler — so a branch that touches none of
+      # those has nothing for it to find, and compiling the workspace to prove that is the most
+      # expensive thing this job does.
+      #
+      # That is the release pull request's case exactly. release-please changes
+      # `$.workspace.package.version`, a CHANGELOG and a manifest; a version bump cannot introduce
+      # or silence a lint, yet #83 spent 7m22s in `clippy --fix` finding the nothing it was always
+      # going to find. Both lockfiles and the four generated artefacts *do* record that version,
+      # so every other step still runs: this skips the compile, not the fix.
+      #
+      # Manifests are deliberately absent from the list. A feature added in a `Cargo.toml` can in
+      # principle expose `cfg`-gated code carrying a lint, and this job will then not fix it — a
+      # red `fmt + clippy` and one command for the author, which is already what happens for every
+      # lint with no machine-applicable suggestion. Including manifests would put the release pull
+      # request, the case this exists for, straight back on the slow path.
+      #
+      # `rustfmt.toml` is absent for a different reason: `cargo fmt` below is unconditional, so a
+      # change to it is already acted on.
+      - name: decide whether clippy has anything to look at
+        id: scope
+        env:
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only "${BASE_SHA}...HEAD")
+          if printf '%s\n' "$changed" | grep -qE '\.rs$' \
+            || printf '%s\n' "$changed" | grep -qE '(^|/)(clippy|rust-toolchain)\.toml$'; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Rust sources changed on this branch; clippy --fix will run"
+          else
+            echo "rust=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::no Rust sources changed on this branch; skipping clippy --fix"
           fi
 
       # The second reader of `rust-toolchain.toml`, after `ci.yml`'s `changes` job. The *number*
@@ -285,9 +330,10 @@ jobs:
           fi
 
       # `wreq` compiles BoringSSL from C/C++ source; `xtask openapi` builds `tankovault-api`, so
-      # this job needs them exactly as `ci.yml`'s Rust jobs do.
+      # this job needs them exactly as `ci.yml`'s Rust jobs do — and via the same action, which
+      # exists because this job is where an unbounded `apt-get` stalled for 20m47s.
       - name: BoringSSL build dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+        uses: ./.github/actions/boringssl-deps
 
       - uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60 # v2.85.7
         with:
@@ -308,18 +354,27 @@ jobs:
       # correct outcome: the fixable half stops costing a round trip, the half that needs a
       # decision still gets one.
       #
-      # No `-D warnings` in this job's environment, deliberately. Under it, an unfixable lint
-      # would abort the run before rustfix wrote anything, so the one lint nobody can automate
-      # would suppress the fixes for all the ones anybody can.
+      # An unfixable lint must not abort the run before rustfix has written anything, or the one
+      # lint nobody can automate suppresses the fixes for all the ones anybody can. `--cap-lints`
+      # is what buys that. It is emphatically **not** `RUSTFLAGS: ""`, which is what this step set
+      # until 2026-08-05: cargo hashes `RUSTFLAGS` into the fingerprint of every unit it builds,
+      # dependencies included, so clearing it meant the `lint` cache this job restores matched
+      # nothing and the step rebuilt the whole graph — BoringSSL from C source among it — on every
+      # run, while `save-if: false` means it never writes a cache of its own to warm the next one.
+      # Measured on one commit, one runner, one cache: `ci.yml`'s `fmt + clippy` step took 35s,
+      # this one 7m45s. A `--` argument reaches the workspace crates only, and `rust-cache`
+      # discards workspace artefacts anyway, so the ceiling is free where the env variable was not.
       #
-      # Cleared on this step alone rather than by omitting it from the workflow `env:`, which is
-      # what the cache key is computed from — see that block.
+      # `--all-features` went for the same reason. It resolves a wider graph than the `lint` cache
+      # holds — which is why `ci.yml`'s `features` job has a key of its own — and the gate this
+      # step exists to satisfy is `cargo clippy --workspace --all-targets`. Rewriting code no
+      # clippy gate judges is not worth a cold build of everything.
       - name: apply clippy's machine-applicable fixes
-        env:
-          RUSTFLAGS: ""
+        if: steps.scope.outputs.rust == 'true'
         run: |
           set -euo pipefail
-          cargo clippy --fix --workspace --all-targets --all-features --allow-dirty --allow-staged
+          cargo clippy --fix --workspace --all-targets --allow-dirty --allow-staged \
+            -- --cap-lints=warn
 
       # `--fix` rewrites expressions without reformatting them, so this runs second and formats
       # what it wrote. Doing it the other way round commits code that `cargo fmt --check` rejects.
@@ -334,8 +389,17 @@ jobs:
       # workspace is 26 of them. A tree that no longer builds must not reach the commit step:
       # failing here leaves the branch exactly as the author pushed it, which is recoverable,
       # where a committed broken tree is a bot-authored regression to bisect.
+      #
+      # Same shape as the step above, for the same cache reason: it verifies what rustfix actually
+      # rewrote, and rustfix no longer looks at feature-gated code the `lint` cache does not cover.
+      # `ci.yml`'s `features` job is what compiles the workspace under `--all-features`.
+      #
+      # Skipped with the step it guards. This checks rustfix's output, so with rustfix skipped
+      # there is nothing here that `xtask openapi` below does not already compile — and `cargo fmt`
+      # cannot produce a tree that stops building.
       - name: the fixed tree still compiles
-        run: cargo check --workspace --all-targets --all-features
+        if: steps.scope.outputs.rust == 'true'
+        run: cargo check --workspace --all-targets
 
       - name: regenerate the OpenAPI document and its client
         run: cargo run -p xtask -- openapi

@@ -8,6 +8,61 @@ use crate::models::*;
 use crate::views::console::{adapter_label_key, ADAPTER_KINDS};
 use dioxus::prelude::*;
 
+/// Why the form would not submit, as the operator has to be told.
+enum Rejected {
+    /// The catalogue key of a self-contained message.
+    Message(&'static str),
+    /// The adapter config did not parse; the serde message names the offending position.
+    BadConfig(String),
+}
+
+impl Rejected {
+    fn wording(self, i18n: crate::i18n::Translator) -> String {
+        match self {
+            Self::Message(key) => i18n.t(key),
+            Self::BadConfig(detail) => {
+                i18n.args("console.providers.badConfig", &[("message", &detail)])
+            }
+        }
+    }
+}
+
+/// Assemble the registration body from the form's raw fields.
+///
+/// # Errors
+///
+/// [`Rejected`] when a required field is blank, the config is not JSON, or the adapter token
+/// is one this build does not know.
+fn registration(
+    slug: &str,
+    name: &str,
+    base_url: &str,
+    adapter: &str,
+    config: &str,
+) -> Result<CreateProvider, Rejected> {
+    let parsed = serde_json::from_str::<serde_json::Value>(config)
+        .map_err(|e| Rejected::BadConfig(e.to_string()))?;
+    let (slug, name, base_url) = (slug.trim(), name.trim(), base_url.trim());
+    if slug.is_empty() || name.is_empty() || base_url.is_empty() {
+        return Err(Rejected::Message("console.providers.missingFields"));
+    }
+    // The generated `FromStr`, not a local `match` with a `_ => Custom` arm: the token can only
+    // have come from the picker below, so an unparseable one is a bug in this file rather than
+    // a user's mistake — and defaulting to `Custom` is how that bug used to reach the database
+    // as a silently mis-registered provider (FRONTEND F10).
+    let adapter = adapter
+        .parse::<AdapterKind>()
+        .map_err(|_| Rejected::Message("console.providers.missingFields"))?;
+    Ok(CreateProvider {
+        slug: slug.to_owned(),
+        name: name.to_owned(),
+        base_url: base_url.to_owned(),
+        adapter,
+        config: Some(parsed),
+        politeness: None,
+    })
+}
+
 /// Register a provider. Politeness is left at the polite server defaults and tuned afterwards
 /// from the provider's own inspector.
 #[component]
@@ -27,46 +82,22 @@ pub(super) fn CreateProviderForm(reload: Reload, on_done: EventHandler<()>) -> E
             return;
         }
         outcome.set(None);
-        let parsed = match serde_json::from_str::<serde_json::Value>(&config.peek()) {
-            Ok(value) => value,
-            Err(e) => {
-                outcome.set(Some(Err(i18n.args(
-                    "console.providers.badConfig",
-                    &[("message", &e.to_string())],
-                ))));
+        let body = match registration(
+            &slug.peek(),
+            &name.peek(),
+            &base_url.peek(),
+            &adapter.peek(),
+            &config.peek(),
+        ) {
+            Ok(body) => body,
+            Err(rejected) => {
+                outcome.set(Some(Err(rejected.wording(i18n))));
                 busy.release();
                 return;
             }
         };
-        let (s, n, b) = (
-            slug.peek().trim().to_owned(),
-            name.peek().trim().to_owned(),
-            base_url.peek().trim().to_owned(),
-        );
-        if s.is_empty() || n.is_empty() || b.is_empty() {
-            outcome.set(Some(Err(i18n.t("console.providers.missingFields"))));
-            busy.release();
-            return;
-        }
-        // The generated `FromStr`, not a local `match` with a `_ => Custom` arm: the token can
-        // only have come from the picker below, so an unparseable one is a bug in this file
-        // rather than a user's mistake — and defaulting to `Custom` is how that bug used to
-        // reach the database as a silently mis-registered provider (FRONTEND F10).
-        let Ok(kind) = adapter.peek().parse::<AdapterKind>() else {
-            outcome.set(Some(Err(i18n.t("console.providers.missingFields"))));
-            busy.release();
-            return;
-        };
         let client = api.client();
         spawn(async move {
-            let body = CreateProvider {
-                slug: s,
-                name: n,
-                base_url: b,
-                adapter: kind,
-                config: Some(parsed),
-                politeness: None,
-            };
             match client.create_provider().body(body).send().await {
                 Ok(_) => {
                     slug.set(String::new());
@@ -161,5 +192,82 @@ pub(super) fn CreateProviderForm(reload: Reload, on_done: EventHandler<()>) -> E
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ok(adapter: &str) -> Result<CreateProvider, Rejected> {
+        registration(
+            "  acme-scans ",
+            " Acme Scans ",
+            " https://acmescans.example ",
+            adapter,
+            r#"{"list":"/series"}"#,
+        )
+    }
+
+    /// An adapter token the picker cannot have produced must refuse the form.
+    ///
+    /// The defect this closes (FRONTEND F10): the token was parsed with a `_ =>
+    /// AdapterKind::Custom` arm, so one wrong character registered the provider as `Custom` —
+    /// a form that looked like it worked, producing a provider that scans nothing.
+    #[test]
+    fn an_unknown_adapter_token_is_refused_rather_than_registered_as_custom() {
+        assert!(matches!(ok("madarra"), Err(Rejected::Message(_))));
+        assert!(matches!(ok(""), Err(Rejected::Message(_))));
+        assert_eq!(
+            ok("madara").ok().map(|body| body.adapter),
+            Some(AdapterKind::Madara)
+        );
+    }
+
+    /// The three identity fields are trimmed before they are checked *and* before they are
+    /// sent: a slug that is only spaces is missing, and a slug with a trailing space is a
+    /// different provider from the one the operator meant to type.
+    #[test]
+    fn the_identity_fields_are_trimmed_and_a_blank_one_is_missing() {
+        let body = ok("generic_config").ok().expect("the form is complete");
+        assert_eq!(body.slug, "acme-scans");
+        assert_eq!(body.name, "Acme Scans");
+        assert_eq!(body.base_url, "https://acmescans.example");
+
+        for blank in ["", "   "] {
+            assert!(matches!(
+                registration(blank, "n", "https://b", "generic_config", "{}"),
+                Err(Rejected::Message(_))
+            ));
+            assert!(matches!(
+                registration("s", blank, "https://b", "generic_config", "{}"),
+                Err(Rejected::Message(_))
+            ));
+            assert!(matches!(
+                registration("s", "n", blank, "generic_config", "{}"),
+                Err(Rejected::Message(_))
+            ));
+        }
+    }
+
+    /// A config that is not JSON reports the parser's own position, which is the only thing
+    /// that makes a mistyped adapter config findable in a full page of it.
+    #[test]
+    fn an_unparseable_config_carries_the_parser_message() {
+        let Err(Rejected::BadConfig(detail)) =
+            registration("s", "n", "https://b", "generic_config", "{ nope }")
+        else {
+            panic!("a malformed config must be refused as a config error");
+        };
+        assert!(!detail.is_empty());
+    }
+
+    /// Politeness is never guessed here: the server's own defaults are the polite ones, and
+    /// sending a client-side guess would register a provider crawling at whatever this form
+    /// happened to seed.
+    #[test]
+    fn registration_leaves_politeness_to_the_server() {
+        let body = ok("generic_config").ok().expect("the form is complete");
+        assert!(body.politeness.is_none());
     }
 }

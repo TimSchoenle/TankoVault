@@ -7,6 +7,7 @@ mod config;
 mod coverage;
 mod create;
 mod danger;
+mod politeness;
 mod row;
 mod runs;
 mod test;
@@ -24,13 +25,14 @@ use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::capabilities::use_capabilities;
 use crate::util::{monogram, rel_time, thousands};
-use crate::views::console::{config_editor_text, politeness_json};
+use crate::views::console::config_editor_text;
 use crate::wire::types::Permission;
 use config::DryRunResult;
 use coverage::CoverageTab;
 use create::CreateProviderForm;
 use danger::DangerTab;
 use dioxus::prelude::*;
+use politeness::{emulation_token, politeness_body, EMULATION_CHOICES};
 use progenitor_client::ResponseValue;
 use row::ProviderRow;
 use runs::RunsTab;
@@ -263,13 +265,7 @@ fn ProviderInspector(
     )]
     let mut crawl_delay = use_signal(|| provider.politeness.crawl_delay_ms.unwrap_or(0) as f64);
     let mut user_agent = use_signal(|| provider.politeness.user_agent.clone().unwrap_or_default());
-    // Empty string is the "no emulation" sentinel, matching `politeness_json`. `Variant0` is
-    // the generated client's raw-JSON fallback for the untagged nullable `$ref`.
-    let mut emulation = use_signal(|| match &provider.politeness.emulation {
-        Some(PolitenessEmulation::Variant1(e)) => e.to_string(),
-        Some(PolitenessEmulation::Variant0(v)) => v.as_str().unwrap_or_default().to_owned(),
-        None => String::new(),
-    });
+    let mut emulation = use_signal(|| emulation_token(provider.politeness.emulation.as_ref()));
 
     let config_dirty = *config.read() != original_config;
     let base_changed = *base_url.read() != original_base;
@@ -295,7 +291,7 @@ fn ProviderInspector(
                     return;
                 }
             };
-            let politeness = match politeness_json(
+            let politeness = match politeness_body(
                 &format!("{}", *rps.peek()),
                 &format!("{:.0}", *concurrency.peek()),
                 &format!("{:.0}", *crawl_delay.peek()),
@@ -314,7 +310,7 @@ fn ProviderInspector(
                 name: name.peek().clone(),
                 base_url: base_url.peek().clone(),
                 config: Some(parsed),
-                politeness: serde_json::from_value::<Politeness>(politeness).ok(),
+                politeness: Some(politeness),
             };
             let client = api.client();
             spawn(async move {
@@ -646,11 +642,9 @@ fn ProviderInspector(
                                             disabled: !can_edit,
                                             value: "{emulation}",
                                             onchange: move |e| emulation.set(e.value()),
-                                            option { value: "chrome", "Chrome" }
-                                            option { value: "firefox", "Firefox" }
-                                            option { value: "safari", "Safari" }
-                                            option { value: "edge", "Edge" }
-                                            option { value: "ok_http", "OkHttp (Android)" }
+                                            for (profile , label) in EMULATION_CHOICES {
+                                                option { key: "{profile}", value: "{profile}", "{label}" }
+                                            }
                                             option { value: "", {i18n.t("console.providers.emulationNone")} }
                                         }
                                     }

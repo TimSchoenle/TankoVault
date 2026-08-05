@@ -832,14 +832,22 @@ jobs:
       # short-lived and the SBOM step above is not fast. Written to a file, not an env var or an
       # argument: `--identity-token` accepts a path, and a token in `argv` is readable from
       # `/proc` by anything else on the runner.
+      #
+      # The file must hold the JWT and nothing else. cosign reads it with `os.ReadFile` and hands
+      # the bytes to Fulcio as the `Authorization` header verbatim, so the newline `jq` writes
+      # made every signature fail with `net/http: invalid header field value for "Authorization"`
+      # — naming neither the file nor the newline. That is how v1.3.1 published nine unsigned
+      # images. Command substitution strips the newline, `printf` puts none back, and `printf` is
+      # a shell builtin so the token still never reaches any process's `argv`.
       - name: mint one OIDC token for cosign
         run: |
           set -euo pipefail
           umask 077
           for attempt in 1 2 3; do
-            if curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-                 "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore" \
-                 | jq -er '.value' > "${RUNNER_TEMP}/cosign-oidc-token"; then
+            if token=$(curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+                            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore" \
+                       | jq -er '.value') && [ -n "$token" ]; then
+              printf '%s' "$token" > "${RUNNER_TEMP}/cosign-oidc-token"
               exit 0
             fi
             echo "::warning::OIDC token request failed (attempt ${attempt}/3)"

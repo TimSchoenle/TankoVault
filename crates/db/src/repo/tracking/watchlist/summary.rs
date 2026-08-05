@@ -82,12 +82,14 @@ pub async fn watchlist_summary<'e, E: PgExecutor<'e>>(
 /// How many entries sit at each status under every filter *but* `status`.
 ///
 /// The predicate list is [`fetch_page`]'s minus the status arm and must stay that way — a tab
-/// whose count disagrees with the list it opens is worse than one with no count at all.
+/// whose count disagrees with the list it opens is worse than one with no count at all. That
+/// includes `pattern`, which arrives pre-escaped from
+/// [`search_pattern`](super::query::search_pattern).
 pub(super) async fn fetch_counts(
     pool: &PgPool,
     user_id: UserId,
     filter: &WatchlistFilter,
-    query: Option<&str>,
+    pattern: Option<&str>,
 ) -> DbResult<Vec<(WatchStatus, i64, i64)>> {
     #[derive(FromRow)]
     struct Row {
@@ -123,23 +125,23 @@ pub(super) async fn fetch_counts(
          ) src \
          WHERE w.user_id = $1 \
            AND ($2::text IS NULL \
-                OR strpos(lower(s.canonical_title), lower($2)) > 0 \
+                OR s.canonical_title ILIKE $2 \
                 OR EXISTS (SELECT 1 FROM series_titles st \
                            WHERE st.series_id = w.series_id \
-                             AND strpos(lower(st.title), lower($2)) > 0) \
+                             AND st.title ILIKE $2) \
                 OR EXISTS (SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
                            WHERE stg.series_id = w.series_id \
-                             AND strpos(lower(t.name), lower($2)) > 0) \
+                             AND t.name ILIKE $2) \
                 OR EXISTS (SELECT 1 FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
                            WHERE sa.series_id = w.series_id \
-                             AND strpos(lower(a.name), lower($2)) > 0)) \
+                             AND a.name ILIKE $2)) \
            AND (NOT $3::boolean OR ch.unread > 0) \
            AND ($4::timestamptz IS NULL OR ch.latest_chapter_at >= $4) \
            AND (NOT $5::boolean OR src.source_degraded) \
            AND ($6::uuid IS NULL OR w.series_id = $6) \
          GROUP BY w.status",
         user_id.as_uuid(),
-        query,
+        pattern,
         filter.unread_only,
         filter.released_since,
         filter.source_issues,
@@ -164,7 +166,7 @@ pub(super) async fn fetch_groups(
     pool: &PgPool,
     user_id: UserId,
     filter: &WatchlistFilter,
-    query: Option<&str>,
+    pattern: Option<&str>,
 ) -> DbResult<Vec<ReleaseGroup>> {
     #[derive(FromRow)]
     struct Row {
@@ -206,16 +208,16 @@ pub(super) async fn fetch_groups(
          WHERE w.user_id = $1 \
            AND ($2::watch_status IS NULL OR w.status = $2) \
            AND ($3::text IS NULL \
-                OR strpos(lower(s.canonical_title), lower($3)) > 0 \
+                OR s.canonical_title ILIKE $3 \
                 OR EXISTS (SELECT 1 FROM series_titles st \
                            WHERE st.series_id = w.series_id \
-                             AND strpos(lower(st.title), lower($3)) > 0) \
+                             AND st.title ILIKE $3) \
                 OR EXISTS (SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
                            WHERE stg.series_id = w.series_id \
-                             AND strpos(lower(t.name), lower($3)) > 0) \
+                             AND t.name ILIKE $3) \
                 OR EXISTS (SELECT 1 FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
                            WHERE sa.series_id = w.series_id \
-                             AND strpos(lower(a.name), lower($3)) > 0)) \
+                             AND a.name ILIKE $3)) \
            AND (NOT $4::boolean OR ch.unread > 0) \
            AND ($5::timestamptz IS NULL OR ch.latest_chapter_at >= $5) \
            AND (NOT $6::boolean OR src.source_degraded) \
@@ -223,7 +225,7 @@ pub(super) async fn fetch_groups(
          GROUP BY 1",
         user_id.as_uuid(),
         filter.status as Option<WatchStatus>,
-        query,
+        pattern,
         filter.unread_only,
         filter.released_since,
         filter.source_issues,

@@ -497,9 +497,13 @@ async fn rank_and_render(
             vector_of.get(&b).unwrap_or(&empty),
         )
     };
+    let diversify_limit = usize::try_from(limit)
+        .unwrap_or(1)
+        .saturating_mul(3)
+        .min(penalised.len());
     let diversified = tankovault_recsys::diversify(
         &penalised,
-        usize::try_from(limit).unwrap_or(1) * 3,
+        diversify_limit,
         tuning.diversity_lambda,
         similarity,
     );

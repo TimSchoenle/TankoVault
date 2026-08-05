@@ -114,6 +114,16 @@ pub struct ContinueCard {
 /// Both aggregates must use the module's unread predicate — filtering on the whole frontier
 /// alone leaves a card that can never be cleared (badge stuck on an already-read part).
 ///
+/// **Two laterals, and they must stay two.** `agg` carries the predicate in its `WHERE`, which
+/// is what lets `floor(number) > …` reach `chapters_source_floor_num_idx` as an index condition
+/// and read only the unread tail. Folding `max(discovered_at)` back in would push the predicate
+/// into a `FILTER` and the scan back over every chapter of every watched series — 268 k rows,
+/// 280 ms, and an estimated cost high enough to buy 190 ms of JIT nothing needed. `act` keeps
+/// that `max` exact by asking one source at a time, so each answer is a one-row backward scan of
+/// `chapters_source_disc_idx`. Ordering by the newest *unread* chapter would collapse the two
+/// into one, and is measurably slower: `discovered_at` is not in the covering index, so that
+/// scan cannot stay index-only.
+///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; nothing left is an empty `Vec`.
 pub async fn continue_reading<'e, E: PgExecutor<'e>>(
@@ -129,9 +139,6 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
         next_number: Option<f64>,
         unread: i64,
     }
-    // One lateral pass per row, not four correlated subqueries — must stay one pass, measured
-    // far cheaper at scale. `FILTER`, not `WHERE`: pushing the unread predicate into the
-    // lateral's `WHERE` would silently redefine the ordering as "newest unread chapter".
     let rows = sqlx::query_as!(
         Row,
         "SELECT w.series_id, s.canonical_title AS series_title, s.cover_url, \
@@ -142,25 +149,23 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
          JOIN series s ON s.id = w.series_id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
          CROSS JOIN LATERAL ( \
-           SELECT min(c.number) FILTER ( \
-                    WHERE floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
-                      AND NOT (c.number <> floor(c.number) \
-                               AND rp.last_read_part_number IS NOT NULL \
-                               AND c.number <= rp.last_read_part_number) \
-                  ) AS next_number, \
-                  COALESCE(count(DISTINCT floor(c.number)) FILTER ( \
-                    WHERE floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
-                      AND NOT (c.number <> floor(c.number) \
-                               AND rp.last_read_part_number IS NOT NULL \
-                               AND c.number <= rp.last_read_part_number) \
-                  ), 0) AS unread, \
-                  max(c.discovered_at) AS last_activity \
+           SELECT min(c.number) AS next_number, \
+                  count(DISTINCT floor(c.number)) AS unread \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
            WHERE ss.series_id = w.series_id \
+             AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
+             AND NOT (c.number <> floor(c.number) \
+                      AND rp.last_read_part_number IS NOT NULL \
+                      AND c.number <= rp.last_read_part_number) \
          ) agg \
+         CROSS JOIN LATERAL ( \
+           SELECT max((SELECT max(c2.discovered_at) FROM chapters c2 \
+                       WHERE c2.series_source_id = ss2.id)) AS last_activity \
+           FROM series_sources ss2 WHERE ss2.series_id = w.series_id \
+         ) act \
          WHERE w.user_id = $1 AND w.status IN ('reading','planned','paused') \
            AND agg.unread > 0 \
-         ORDER BY agg.last_activity DESC NULLS LAST, w.series_id",
+         ORDER BY act.last_activity DESC NULLS LAST, w.series_id",
         user_id.as_uuid(),
     )
     .fetch_all(exec)
@@ -196,10 +201,13 @@ pub struct MeStats {
 /// more than once and therefore materialised — three scalar subqueries over the same rows were
 /// three scans of them.
 ///
-/// `unread` stays a global `DISTINCT`, not a per-series lateral like [`continue_reading`]'s —
-/// measured slower here despite being faster there; the rewrite is not universally right. It
-/// leans on `chapters_source_floor_num_idx`, which carries `number` alongside `floor(number)`
-/// precisely so this predicate never leaves the index.
+/// `unread` sums a per-series lateral, the same shape as [`continue_reading`]'s: the predicate
+/// sits in the lateral's `WHERE`, so `floor(number) > …` becomes an index condition on
+/// `chapters_source_floor_num_idx` and the scan reads only unread rows. The global `DISTINCT`
+/// this replaced could not — `last_read_whole_number` arrived from a join *above* the chapter
+/// scan, so every chapter of every watched series was read and then filtered (319 k rows for 851
+/// entries). Summing per series equals that `DISTINCT` only because `watchlist_entries` is keyed
+/// on `(user_id, series_id)`: one row per series, so no series is counted twice.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; tracking nothing gets zeros, not [`crate::DbError::NotFound`].
@@ -218,18 +226,19 @@ pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResu
            (SELECT completed FROM watched) AS \"completed!\", \
            (SELECT COALESCE(sum(floor(last_read_whole_number)),0)::int8 FROM read_progress \
               WHERE user_id = $1) AS \"chapters_read!\", \
-           (SELECT count(*) FROM ( \
-               SELECT DISTINCT w.series_id, floor(c.number) \
-               FROM watchlist_entries w \
-               JOIN series_sources ss ON ss.series_id = w.series_id \
-               JOIN chapters c ON c.series_source_id = ss.id \
-               LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
-               WHERE w.user_id = $1 \
-                 AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
-                 AND NOT (c.number <> floor(c.number) \
-                          AND rp.last_read_part_number IS NOT NULL \
-                          AND c.number <= rp.last_read_part_number) \
-           ) q) AS \"unread!\"",
+           (SELECT COALESCE(sum(agg.unread),0)::int8 \
+              FROM watchlist_entries w \
+              LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
+              CROSS JOIN LATERAL ( \
+                SELECT count(DISTINCT floor(c.number)) AS unread \
+                FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+                WHERE ss.series_id = w.series_id \
+                  AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
+                  AND NOT (c.number <> floor(c.number) \
+                           AND rp.last_read_part_number IS NOT NULL \
+                           AND c.number <= rp.last_read_part_number) \
+              ) agg \
+              WHERE w.user_id = $1) AS \"unread!\"",
         user_id.as_uuid(),
     )
     .fetch_one(exec)

@@ -152,17 +152,12 @@ fn sorted_titles(page: &tankovault_db::repo::catalog::SeriesPage) -> Vec<&str> {
     t
 }
 
-/// Every filter shape the API can construct, named so a failure says which one drifted.
-fn filter_matrix() -> Vec<(&'static str, SeriesFilter)> {
+/// Filter shapes with no search term, named so a failure says which one drifted.
+///
+/// Split from [`search_filter_matrix`] because the statements now branch on whether a term is
+/// present: these exercise the arm with the search disjunction removed.
+fn plain_filter_matrix() -> Vec<(&'static str, SeriesFilter)> {
     vec![
-        ("unfiltered", SeriesFilter::default()),
-        (
-            "query",
-            SeriesFilter {
-                query: Some("berserk".to_owned()),
-                ..SeriesFilter::default()
-            },
-        ),
         (
             "content_type",
             SeriesFilter {
@@ -237,8 +232,20 @@ fn filter_matrix() -> Vec<(&'static str, SeriesFilter)> {
                 ..SeriesFilter::default()
             },
         ),
-        // A search term routes every statement down its other branch, so each of the three
-        // shapes below is a second statement the differential has to reach.
+    ]
+}
+
+/// Filter shapes carrying a search term — the arm that unions the trigram and FTS index scans.
+fn search_filter_matrix() -> Vec<(&'static str, SeriesFilter)> {
+    vec![
+        ("unfiltered", SeriesFilter::default()),
+        (
+            "query",
+            SeriesFilter {
+                query: Some("berserk".to_owned()),
+                ..SeriesFilter::default()
+            },
+        ),
         (
             "query_alt_title",
             SeriesFilter {
@@ -266,6 +273,13 @@ fn filter_matrix() -> Vec<(&'static str, SeriesFilter)> {
             },
         ),
     ]
+}
+
+/// Every filter shape the API can construct, both arms.
+fn filter_matrix() -> Vec<(&'static str, SeriesFilter)> {
+    let mut all = plain_filter_matrix();
+    all.extend(search_filter_matrix());
+    all
 }
 
 // The differential test

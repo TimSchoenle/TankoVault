@@ -209,6 +209,9 @@ jobs:
           filters: |
             workflows: &workflows
               - '.github/workflows/ci.yml'
+              # The composite actions the jobs below call are an input exactly as the workflow
+              # body is: a change to one changes what every Rust job installs.
+              - '.github/actions/**'
             rust: &rust
               - *workflows
               - 'crates/**'
@@ -303,10 +306,11 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
 
-      # `wreq` compiles BoringSSL from C/C++ source; installed explicitly rather than relying on
-      # whatever the runner image ships.
+      # `wreq` compiles BoringSSL from C/C++ source. Eight jobs here need the same three packages
+      # and each used to carry its own `apt-get` line; the action owns the retry and the timeout
+      # that none of the copies had — see it for the 20-minute stall that bought them.
       - name: BoringSSL build dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+        uses: ./.github/actions/boringssl-deps
 
       # Unconditional: seconds long, and a formatting slip can arrive in any commit.
       - name: rustfmt
@@ -353,7 +357,7 @@ jobs:
           cache-on-failure: true
 
       - name: BoringSSL build dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+        uses: ./.github/actions/boringssl-deps
 
       - name: cargo test
         run: cargo test --workspace --all-targets
@@ -414,7 +418,7 @@ jobs:
           cache-on-failure: true
 
       - name: BoringSSL build dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+        uses: ./.github/actions/boringssl-deps
 
       # Libraries only: the service binaries require their features, so a workspace-wide
       # `--no-default-features` would fail for reasons that are not bugs.
@@ -495,7 +499,7 @@ jobs:
           save-if: false
 
       - name: BoringSSL build dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+        uses: ./.github/actions/boringssl-deps
 
       # Version-pinned: the CLI writes the cache this workspace has to read back.
       - name: install sqlx-cli
@@ -541,7 +545,7 @@ jobs:
           save-if: false
 
       - name: BoringSSL build dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+        uses: ./.github/actions/boringssl-deps
 
       # Inherited SQLX_OFFLINE resolves the macros from the cache at compile time; the container
       # supplies the live database at runtime.
@@ -747,7 +751,7 @@ jobs:
           cache-on-failure: true
 
       - name: BoringSSL build dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+        uses: ./.github/actions/boringssl-deps
 
       # `--locked` measures this lockfile's dependency set, not whatever a resolver picks today.
       # `RUSTFLAGS` is cleared: `-D warnings` would fail on lints an older compiler happens to
@@ -799,7 +803,7 @@ jobs:
           tool: cargo-llvm-cov
 
       - name: BoringSSL build dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+        uses: ./.github/actions/boringssl-deps
 
       - name: cargo llvm-cov
         run: |
@@ -853,7 +857,7 @@ jobs:
           tool: cargo-mutants
 
       - name: BoringSSL build dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake nasm libclang-dev
+        uses: ./.github/actions/boringssl-deps
 
       - name: cargo mutants
         run: cargo mutants --in-place --no-shuffle

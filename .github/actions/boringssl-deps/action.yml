@@ -1,0 +1,64 @@
+name: BoringSSL build dependencies
+description: >-
+  Installs the C/C++ toolchain `wreq` needs to compile BoringSSL from source, skipping the work
+  when the runner image already ships it and bounding every apt call so a stalled mirror fails
+  fast instead of eating the job's timeout.
+
+# Nine jobs across `ci.yml` and `auto-fix.yaml` need these three packages, and until 2026-08-05
+# each carried its own copy of a one-line `apt-get update && apt-get install`. The copies are what
+# made the incident below invisible: nothing owned the step, so nothing bounded it.
+#
+# On 2026-08-05 `auto-fix` sat on a stalled apt mirror for 20m47s — longer than every other step
+# in that run put together — and the job's 60-minute timeout was the only thing that would
+# eventually have stopped it. A mechanical fix took half an hour, and the log showed a step that
+# normally costs 11–20s simply not returning.
+#
+# Two things follow, and both belong here rather than at the call sites:
+#
+#   - `timeout` wraps `apt-get`, not the step. A composite action's steps cannot declare
+#     `timeout-minutes`, but bounding the command is the better shape anyway: it names the thing
+#     that hangs, and `sudo timeout` rather than `timeout sudo` so the signal reaches `apt-get`
+#     itself instead of dying at the privilege boundary.
+#   - A stall is transient, so it is retried rather than fatal. These jobs commit and gate; one
+#     that fails on a mirror hiccup costs a human a re-run for no defect.
+
+runs:
+  using: composite
+  steps:
+    - name: cmake, nasm and libclang-dev
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # `dpkg-query`, not `dpkg -s`: the latter also succeeds for a package that has been
+        # removed but kept its config files, and a false "already installed" here fails the
+        # BoringSSL build later, somewhere that reads nothing like this step.
+        missing=""
+        for pkg in cmake nasm libclang-dev; do
+          dpkg-query -W -f='${db:Status-Status}' "$pkg" 2>/dev/null | grep -qx installed \
+            || missing="$missing $pkg"
+        done
+
+        if [ -z "$missing" ]; then
+          echo "cmake, nasm and libclang-dev are already installed."
+          exit 0
+        fi
+
+        # 120s is roughly ten times what either call costs on a healthy mirror, so a trip here is
+        # evidence of a stall rather than of a slow day. Three attempts bound the worst case at
+        # about six minutes against the 20m47s that prompted this.
+        apt_bounded() {
+          for attempt in 1 2 3; do
+            if sudo timeout 120 apt-get "$@"; then
+              return 0
+            fi
+            echo "::warning::apt-get $1 stalled or failed (attempt ${attempt}/3); retrying"
+            sleep $((attempt * 5))
+          done
+          echo "::error::apt-get $1 did not complete after 3 bounded attempts"
+          return 1
+        }
+
+        apt_bounded update
+        # shellcheck disable=SC2086 # deliberate word splitting: `missing` is a package list.
+        apt_bounded install -y --no-install-recommends $missing

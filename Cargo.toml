@@ -317,7 +317,11 @@ opt-level = 3
 [profile.release]
 opt-level = 3
 lto = "thin"
-codegen-units = 1
+# 16, not 1. `codegen-units = 1` serialises each crate's codegen onto one thread, which on a
+# 4-vCPU runner made the image builds 26-43 minutes of mostly idle cores. Thin LTO already
+# optimises across codegen units, so it recovers most of what splitting them gives up.
+# This is the knob to turn back if a benchmark ever shows the difference on a real workload.
+codegen-units = 16
 strip = true
 # `unwind`, not `abort`. With `abort`, a panic anywhere in a handler terminated the whole
 # process — so any single panicking code path (an overflow, an out-of-range slice, an

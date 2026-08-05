@@ -70,6 +70,7 @@ jobs:
       toolchain: ${{ steps.versions.outputs.toolchain }}
       msrv: ${{ steps.versions.outputs.msrv }}
       buildcache: ${{ steps.buildcache.outputs.ref }}
+      deps_scope: ${{ steps.depsscope.outputs.scope }}
       # Each is `true` on a full run, so a downstream job only tests its own filter. A skipped
       # filter step yields `''`, which is not `'true'`.
       rust: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.rust == 'true' }}
@@ -148,6 +149,53 @@ jobs:
         run: |
           set -euo pipefail
           echo "ref=ghcr.io/${GITHUB_REPOSITORY,,}/buildcache" >> "$GITHUB_OUTPUT"
+
+      # Which cache tag `docker-deps` may export to, or empty for "export nothing". Read that
+      # job's comment for why a pull request must not write `backend-deps-<arch>`.
+      #
+      # `release-pr-deps-<arch>` is the one pull-request export, and it is what stops a release
+      # compiling a tree this workflow has already compiled. The release PR's *build context* is
+      # byte-identical to the merge commit's — `.dockerignore` drops `CHANGELOG.md`, `.github/`
+      # and the release-please manifest, which leaves the `Cargo.toml` version bump and the
+      # synced `Cargo.lock`, and merging changes neither — so `release-please.yaml`'s warm-up
+      # imports this instead of recompiling all 26 workspace crates on both architectures while
+      # this workflow compiles the same thing beside it. A stale or absent tag is a slow release,
+      # not a broken one: the warm-up rebuilds and the legs read what it exports.
+      #
+      # Safe only because of *which* branch, and both halves of that are load-bearing.
+      #
+      # The `Release Please Branches: Trusted Bots Only` ruleset restricts creation, update,
+      # deletion and non-fast-forward on `refs/heads/release-please--**` to two bypass Apps and
+      # requires signed commits, so no human push can reach this tag.
+      #
+      # That ruleset governs refs in *this* repository only. `github.head_ref` is the pull
+      # request's head **branch name**, which for a fork is a name its author chose freely — a
+      # fork branch called `release-please--branches--main` matches the prefix and is governed by
+      # nothing. So the head repository is checked as well, and the prefix test only means
+      # anything after it. A fork's `GITHUB_TOKEN` is read-only and its export would 403 anyway,
+      # but that is a consequence of how Actions issues tokens, not a rule this file states, and
+      # the tag is an input to the workflow that publishes signed images.
+      - name: decide the deps cache scope
+        id: depsscope
+        env:
+          EVENT: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          scope=''
+          if [ "$EVENT" = "pull_request" ]; then
+            if [ "$HEAD_REPO" = "$THIS_REPO" ]; then
+              case "$HEAD_REF" in
+                release-please--*) scope='release-pr-deps' ;;
+              esac
+            fi
+          else
+            scope='backend-deps'
+          fi
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
+          echo "::notice::deps cache export scope: ${scope:-none}"
 
       # Skipped on `schedule` and `workflow_dispatch`: those runs are already `full`, so every
       # consumer reads `true` regardless.
@@ -370,12 +418,17 @@ jobs:
 
       # Libraries only: the service binaries require their features, so a workspace-wide
       # `--no-default-features` would fail for reasons that are not bugs.
+      # `xtask` is here for a different reason than the rest: `release-please.yaml` runs
+      # `release-plan` with `--no-default-features` to keep the job that decides what a signed
+      # release publishes off a 654-crate build, so this configuration has to keep compiling or
+      # the next release is the first thing to notice.
       - name: crates with no default features
         run: |
           cargo check --no-default-features \
             -p tankovault-domain -p tankovault-service -p tankovault-config \
             -p tankovault-contracts -p tankovault-fetch -p tankovault-solver \
-            -p tankovault-matcher -p tankovault-auth -p tankovault-email
+            -p tankovault-matcher -p tankovault-auth -p tankovault-email \
+            -p xtask
 
       - name: workspace with all features
         run: cargo check --workspace --all-targets --all-features
@@ -1048,6 +1101,10 @@ jobs:
   # token still pulls a public package, and whose miss is a slow build rather than a failure
   # since BuildKit treats an unreadable `cache-from` as a warning.
   #
+  # The single exception is the release-please branch, which exports to `release-pr-deps-<arch>`
+  # instead — a different tag, so it can never overwrite what `main` wrote. The `changes` job's
+  # `decide the deps cache scope` step holds that rule and the branch protection it depends on.
+  #
   # Deliberately **not** `needs: lint`. A warm-up is not a gate: nothing it produces reaches a
   # registry, and `docker`, `docker-arm64` and `docker-frontend` all still wait on `lint`. Gating
   # the warm-up too only severed the cache lineage — `main` went red on a three-file `cargo fmt`
@@ -1106,8 +1163,17 @@ jobs:
           push: false
           outputs: type=cacheonly
           provenance: false
-          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-${{ matrix.arch }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}:backend-deps-{1},mode=max,compression=zstd,image-manifest=true,oci-mediatypes=true', needs.changes.outputs.buildcache, matrix.arch) || '' }}
+          # `release-pr-deps-<arch>` is imported here as well as by `release-please.yaml`, and it
+          # matters most on the one push where this job is otherwise at its worst: merging a
+          # release PR changes `Cargo.toml` and `Cargo.lock`, every workspace crate's metadata
+          # hash with them, so `builder` misses `backend-deps-<arch>` and recompiles all 26 —
+          # 43 minutes, beside `release-please.yaml` compiling the identical tree. The PR run
+          # already did that work under a key this push can read.
+          cache-from: |
+            type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-${{ matrix.arch }}
+            type=registry,ref=${{ needs.changes.outputs.buildcache }}:release-pr-deps-${{ matrix.arch }}
+          # The tag comes from `changes`, which is where the rule for choosing it lives.
+          cache-to: ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-{2},mode=max,compression=zstd,image-manifest=true,oci-mediatypes=true', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope, matrix.arch) || '' }}
 
   # The wasm half, warmed in the same shape as `docker-deps` and for the same reasons — read that
   # job's comment for the arch-qualified scope and the pull-request `cache-to` rule.

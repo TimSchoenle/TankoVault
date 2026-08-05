@@ -50,7 +50,7 @@ services:
     # Stable major only (was `19beta2-alpine`): a beta catalog meant CI type-checked queries
     # against a moving target.
     #
-    # `pgvector/pgvector`, not stock `postgres`: migration 0026 does `CREATE EXTENSION vector`
+    # `pgvector/pgvector`, not stock `postgres`: migration 0027 does `CREATE EXTENSION vector`
     # and the recommender retrieves through an HNSW index, so the extension is a hard dependency
     # of the deployment. This image is the official Postgres image with pgvector preinstalled —
     # same major, same entrypoint, same environment contract, so nothing else here changes.
@@ -60,6 +60,38 @@ services:
     # `deploy/README.md`.
     image: pgvector/pgvector:pg18@sha256:691673308c99d2161ba298736f3147f1f22d79de2fb7ec93ae9b4afcab870b62
     deploy: { resources: { limits: { memory: 1g } } }
+    # Postgres ships defaults sized for a machine it knows nothing about, and every one of them
+    # is wrong here: 128 MB of `shared_buffers` against a catalogue whose `chapters` table alone
+    # passed 1.2 GB, an `effective_cache_size` claiming 4 GB inside a 1 GB container, and a
+    # `random_page_cost` of 4 that prices an SSD as a spinning disk. Measured effect of the
+    # defaults: dashboard and trigram-match statements that run in 40–140 ms warm took 1.0–3.3 s
+    # in the slow log, because a running scan's chapter inserts evict the working set continuously.
+    #
+    # `jit=off` is deliberate, not a rounding error. This workload is OLTP; every observed JIT
+    # compilation so far has been on a plan whose cost estimate was inflated by a bad shape, and
+    # it charged 190–260 ms to compile a query that then ran in tens of milliseconds. Nothing here
+    # runs long enough to earn the compile back.
+    #
+    # `shm_size` is raised because parallel workers allocate their exchange buffers in /dev/shm,
+    # which Docker caps at 64 MB by default — the failure is "could not resize shared memory
+    # segment" mid-query, not a slowdown.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=768MB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - jit=off
+    shm_size: 256mb
     environment:
       POSTGRES_USER: tankovault
       POSTGRES_PASSWORD: tankovault

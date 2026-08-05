@@ -1,5 +1,8 @@
-//! Discover/browse read-model tests: the recency page, sort-token page and count statements
-//! duplicate one predicate (`sqlx` needs a string literal per query) and must stay in agreement.
+//! Discover/browse read-model tests: six statements — the recency page, the sort-token page and
+//! the count, each in a search and a no-search form — must select the same rows for the same
+//! filter. They share their filter predicate (one literal, spliced by `browse_statement!`), so
+//! what can drift is the rest: the search branch's `matched` CTE and join, the ordering, and the
+//! parameter numbering each statement chooses.
 //!
 //! Gated behind the `integration` feature (requires Docker).
 #![cfg(feature = "integration")]
@@ -234,15 +237,49 @@ fn filter_matrix() -> Vec<(&'static str, SeriesFilter)> {
                 ..SeriesFilter::default()
             },
         ),
+        // A search term routes every statement down its other branch, so each of the three
+        // shapes below is a second statement the differential has to reach.
+        (
+            "query_alt_title",
+            SeriesFilter {
+                query: Some("na honjaman level up".to_owned()),
+                ..SeriesFilter::default()
+            },
+        ),
+        (
+            "query_combined",
+            SeriesFilter {
+                query: Some("berserk".to_owned()),
+                status: Some(SeriesStatus::Completed),
+                year_min: Some(1980),
+                min_chapters: Some(50),
+                tags: vec!["action".to_owned()],
+                exclude_tags: vec!["historical".to_owned()],
+                ..SeriesFilter::default()
+            },
+        ),
+        (
+            "query_matches_nothing",
+            SeriesFilter {
+                query: Some("zzzzqqqwxyv".to_owned()),
+                ..SeriesFilter::default()
+            },
+        ),
     ]
 }
 
 // The differential test
 
-/// The recency page, sort-token page and count must select the same rows. Asserted as a set,
-/// not a sequence — ordering is [`every_sort_order_orders_by_its_own_key`]'s job.
+/// Every page and count statement must select the same rows for the same filter — the recency
+/// page, the sort-token page and the count, each in the search and no-search form the filter's
+/// `query` picks. Asserted as a set, not a sequence — ordering is
+/// [`every_sort_order_orders_by_its_own_key`]'s job.
+///
+/// The count is the one that bites: it is a separate statement with its own parameter numbering
+/// and its own search branch, and a page it disagrees with is a pager offering a page that comes
+/// back empty.
 #[tokio::test]
-async fn the_three_copies_of_the_where_clause_agree() {
+async fn every_page_and_count_statement_selects_the_same_rows() {
     let db = TestDb::spawn().await;
     seed_corpus(&db).await;
 
@@ -320,6 +357,9 @@ async fn each_filter_narrows_to_exactly_its_rows() {
         ("tags_all", &["Berserk", "Solo Leveling"]),
         ("exclude_tags", &["Oyasumi Punpun", "Vinland Saga"]),
         ("combined", &["Berserk", "Solo Leveling"]),
+        ("query_alt_title", &["Solo Leveling"]),
+        ("query_combined", &["Berserk"]),
+        ("query_matches_nothing", &[]),
     ];
 
     let matrix = filter_matrix();

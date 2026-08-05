@@ -2,25 +2,33 @@
 //! regeneration, the offline CI gate, and the repo-invariant/config-docs/coverage checks. Run
 //! with no arguments for usage.
 
+// `ci` runs `openapi` in process rather than shelling out, so it sits behind the same gate.
+#[cfg(feature = "full")]
 mod ci;
 mod config_docs;
 mod coverage;
 mod notices;
+#[cfg(feature = "full")]
 mod prune_chapters;
 mod release_plan;
 mod repo_lint;
 
+#[cfg(feature = "full")]
 use progenitor_impl::{GenerationSettings, Generator, InterfaceStyle, TypePatch};
+#[cfg(feature = "full")]
 use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+/// The commands that only read files, dispatched before anything that needs the workspace
+/// compiled. Everything below the `full` gate is unreachable in a `--no-default-features` build;
+/// see that feature's comment in `Cargo.toml` for why the split exists.
+fn main() -> anyhow::Result<()> {
     let cmd = std::env::args().nth(1).unwrap_or_default();
 
     if cmd == "install-hooks" {
         return install_hooks();
     }
 
+    #[cfg(feature = "full")]
     if cmd == "ci" {
         return ci::run(workspace_root());
     }
@@ -53,11 +61,6 @@ async fn main() -> anyhow::Result<()> {
         return coverage::run(workspace_root(), std::path::Path::new(&report));
     }
 
-    if cmd == "openapi" {
-        let check = std::env::args().nth(2).as_deref() == Some("--check");
-        return openapi(check);
-    }
-
     if cmd == "config-docs" {
         let check = std::env::args().nth(2).as_deref() == Some("--check");
         return config_docs::run(workspace_root(), check);
@@ -66,6 +69,36 @@ async fn main() -> anyhow::Result<()> {
     if cmd == "notices" {
         let check = std::env::args().nth(2).as_deref() == Some("--check");
         return notices::run(workspace_root(), check);
+    }
+
+    #[cfg(feature = "full")]
+    return compiled_commands(&cmd);
+
+    #[cfg(not(feature = "full"))]
+    {
+        eprintln!(
+            "unknown command {cmd:?} in a --no-default-features build; usage: xtask \
+             <repo-lint|install-hooks|coverage-ratchet [report.json]|\
+             config-docs [--check]|notices [--check]|release-plan <bases.json>|--all>\n\
+             ci, migrate, reset, seed, prune-chapters, openapi and sqlx-prepare need the \
+             default `full` feature."
+        );
+        std::process::exit(2);
+    }
+}
+
+/// The commands that need this workspace compiled: `openapi` and `sqlx-prepare`, then everything
+/// that wants a live pool.
+///
+/// # Errors
+/// A missing `DATABASE_URL`, a pool that will not connect, or whatever the command itself fails
+/// with. An unrecognised command exits 2 rather than returning.
+#[cfg(feature = "full")]
+#[tokio::main]
+async fn compiled_commands(cmd: &str) -> anyhow::Result<()> {
+    if cmd == "openapi" {
+        let check = std::env::args().nth(2).as_deref() == Some("--check");
+        return openapi(check);
     }
 
     // Shells out to `sqlx-cli`, which manages its own `DATABASE_URL` connection, so this runs
@@ -82,7 +115,7 @@ async fn main() -> anyhow::Result<()> {
     );
     let pool = tankovault_db::connect(&url, 5, 10).await?;
 
-    match cmd.as_str() {
+    match cmd {
         "migrate" => {
             tankovault_bootstrap::migrate(&pool).await?;
             println!("migrations applied");
@@ -109,6 +142,7 @@ async fn main() -> anyhow::Result<()> {
 /// Regenerate (or, with `check = true`, verify) the committed sqlx offline query cache in
 /// `.sqlx/` via `cargo sqlx prepare`. Needs `DATABASE_URL` pointing at a migrated database and
 /// `sqlx-cli` installed.
+#[cfg(feature = "full")]
 fn sqlx_prepare(check: bool) -> anyhow::Result<()> {
     if std::env::var_os("DATABASE_URL").is_none() {
         anyhow::bail!("DATABASE_URL must be set (point it at a migrated database)");
@@ -207,6 +241,7 @@ fn install_hooks() -> anyhow::Result<()> {
 /// Regenerate `openapi.json` and the typed `crates/api-client/src/lib.rs` from the api
 /// service's `utoipa` schemas. With `check = true`, verifies both against disk instead of
 /// writing, and fails on any difference.
+#[cfg(feature = "full")]
 fn openapi(check: bool) -> anyhow::Result<()> {
     let doc = tankovault_api::full_openapi();
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -277,6 +312,7 @@ fn openapi(check: bool) -> anyhow::Result<()> {
 ///
 /// Must match `cargo fmt`'s output exactly, or `xtask openapi --check` and `cargo fmt --check`
 /// would disagree on the same file.
+#[cfg(feature = "full")]
 fn rustfmt(src: &str) -> anyhow::Result<String> {
     use std::io::Write as _;
     use std::process::{Command, Stdio};
@@ -303,6 +339,7 @@ fn rustfmt(src: &str) -> anyhow::Result<String> {
 
 /// The domain typed-id newtypes. Shared by the `TypePatch`es in [`openapi`] and the
 /// `x-rust-type` hints below, so the two lists cannot drift apart.
+#[cfg(feature = "full")]
 const ID_TYPES: [&str; 10] = [
     "SeriesId",
     "ChapterId",
@@ -321,6 +358,7 @@ const ID_TYPES: [&str; 10] = [
 /// `Permission` and `Feature` are absent on purpose: both are `#[non_exhaustive]`, and mapping
 /// them would make the client reject a response naming a capability this build lacks. The
 /// frontend keeps them as wire strings instead.
+#[cfg(feature = "full")]
 const ENUM_TYPES: [&str; 7] = [
     "ContentType",
     "SeriesStatus",
@@ -333,6 +371,7 @@ const ENUM_TYPES: [&str; 7] = [
 
 /// Inject `x-rust-type` into the id and enum schema components so `progenitor` emits our
 /// domain newtypes/enums instead of freshly generated stand-ins.
+#[cfg(feature = "full")]
 fn inject_rust_types(value: &mut serde_json::Value) {
     let Some(map) = value
         .pointer_mut("/components/schemas")
@@ -356,6 +395,7 @@ fn inject_rust_types(value: &mut serde_json::Value) {
 /// Downgrade `OpenAPI` 3.1.0 (utoipa 5 default) to 3.0.3 (openapiv3 crate requirement).
 /// This handles the `type: [string, null]` -> `type: string, nullable: true` conversion
 /// and changes the version string.
+#[cfg(feature = "full")]
 fn downgrade_to_3_0(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(map) => {
@@ -427,6 +467,7 @@ fn downgrade_to_3_0(value: &mut serde_json::Value) {
 /// Drop the whole schema and re-migrate from scratch. Refuses to run unless
 /// `TANKOVAULT_CONFIRM_RESET=1` is set, so it cannot wipe a database by accident
 /// (e.g. a mis-pointed `DATABASE_URL` in a shell that also targets staging).
+#[cfg(feature = "full")]
 async fn reset(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
     if std::env::var("TANKOVAULT_CONFIRM_RESET").as_deref() != Ok("1") {
         anyhow::bail!(
@@ -439,6 +480,7 @@ async fn reset(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "full")]
 async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
     // Same implementation the shipped `bootstrap` image runs (`services/bootstrap`), so the
     // permission set a developer's admin gets cannot drift from a deployment's. What differs is
@@ -491,7 +533,8 @@ fn workspace_root() -> &'static std::path::Path {
         .expect("xtask sits directly under the workspace root")
 }
 
-#[cfg(test)]
+// Gated with the code it covers: every property here is about the OpenAPI 3.1 → 3.0 downgrade.
+#[cfg(all(test, feature = "full"))]
 mod tests {
     use super::*;
     use proptest::prelude::*;

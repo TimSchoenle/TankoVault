@@ -11,28 +11,56 @@ publish = false
 name = "xtask"
 path = "src/main.rs"
 
+# `full` is the developer build and the default. Everything it adds is a command that needs this
+# workspace *compiled* — `migrate`, `reset`, `seed`, `prune-chapters` (a live pool) and `openapi`
+# (the api crate's utoipa schemas). What is left without it are the commands that only read files:
+# `ci`, `repo-lint`, `release-plan`, `coverage-ratchet`, `config-docs`, `notices`, `install-hooks`.
+#
+# The split exists for `release-plan`. It is the first thing a release runs and it decides what a
+# signed release publishes, so it deliberately has no compilation cache (see the `plan` job in
+# `.github/workflows/release-please.yaml`) — and through `tankovault-api` it used to drag in most
+# of the backend and BoringSSL, making a three-line program a ~9 minute cold build at the head of
+# every release. `--no-default-features` builds it from `anyhow` + `serde_json` instead.
+[features]
+default = ["full"]
+full = [
+    "dep:tankovault-db",
+    "dep:tankovault-domain",
+    "dep:tankovault-bootstrap",
+    "dep:tankovault-api",
+    "dep:secrecy",
+    "dep:tokio",
+    "dep:sqlx",
+    "dep:uuid",
+    "dep:progenitor-impl",
+    "dep:openapiv3",
+]
+
 [dependencies]
-tankovault-db = { workspace = true }
-tankovault-domain = { workspace = true }
-# The install steps themselves: shared with the shipped `bootstrap` image rather than
-# reimplemented, so "the first admin holds every permission" has one definition.
-tankovault-bootstrap = { workspace = true }
-# `connect` takes a wrapped DSN, and the seed hands the hasher a wrapped password and pepper.
-secrecy = { workspace = true }
-tankovault-api = { path = "../services/api" }
-tokio = { workspace = true }
 anyhow = { workspace = true }
-# `prune-chapters` re-judges stored chapter numbers, which is a query no repository exposes:
-# it is a one-off maintenance sweep, not part of any service's contract.
-sqlx = { workspace = true, default-features = false, features = ["postgres", "uuid", "runtime-tokio"] }
-uuid = { workspace = true }
 # `notices` parses `cargo about generate --format json`; the derive is on structs that name only
 # the four fields of that output this repository's notices document actually needs.
 serde = { workspace = true }
 serde_json = { workspace = true }
-progenitor-impl = { workspace = true }
-openapiv3 = "2.2.0"
+# `config-docs` parses the config structs' attributes rather than matching on their text, so this
+# stays outside `full`: it is the one lightweight crate a file-scanning command needs.
 syn = { workspace = true }
+
+tankovault-db = { workspace = true, optional = true }
+tankovault-domain = { workspace = true, optional = true }
+# The install steps themselves: shared with the shipped `bootstrap` image rather than
+# reimplemented, so "the first admin holds every permission" has one definition.
+tankovault-bootstrap = { workspace = true, optional = true }
+# `connect` takes a wrapped DSN, and the seed hands the hasher a wrapped password and pepper.
+secrecy = { workspace = true, optional = true }
+tankovault-api = { path = "../services/api", optional = true }
+tokio = { workspace = true, optional = true }
+# `prune-chapters` re-judges stored chapter numbers, which is a query no repository exposes:
+# it is a one-off maintenance sweep, not part of any service's contract.
+sqlx = { workspace = true, default-features = false, features = ["postgres", "uuid", "runtime-tokio"], optional = true }
+uuid = { workspace = true, optional = true }
+progenitor-impl = { workspace = true, optional = true }
+openapiv3 = { version = "2.2.0", optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

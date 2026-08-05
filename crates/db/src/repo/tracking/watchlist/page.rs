@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use super::query::{
     NextUnread, WatchlistCard, WatchlistCounts, WatchlistCursor, WatchlistFilter, WatchlistPage,
-    WatchlistSource,
+    WatchlistSource, search_pattern,
 };
 use super::summary::{fetch_counts, fetch_groups};
 
@@ -129,7 +129,9 @@ pub async fn watchlist_page(
         .query
         .as_deref()
         .map(str::trim)
-        .filter(|q| !q.is_empty());
+        .filter(|q| !q.is_empty())
+        .map(search_pattern);
+    let query = query.as_deref();
 
     let (rows, status_counts, groups) = tokio::try_join!(
         fetch_page(pool, user_id, filter, query),
@@ -175,6 +177,9 @@ async fn attach_sources(pool: &PgPool, rows: Vec<CardRow>) -> DbResult<Vec<Watch
 
 /// One page of matching rows, in the requested order.
 ///
+/// `pattern` is already wrapped and escaped by [`search_pattern`]; binding a raw term instead
+/// would let a typed `%` or `_` act as a wildcard.
+///
 /// # Why the sort key is computed in a subquery
 ///
 /// The order is chosen by two bound tokens, so `ORDER BY` needs an ascending and a descending
@@ -196,7 +201,7 @@ async fn fetch_page(
     pool: &PgPool,
     user_id: UserId,
     filter: &WatchlistFilter,
-    query: Option<&str>,
+    pattern: Option<&str>,
 ) -> DbResult<Vec<CardRow>> {
     let cursor = filter.cursor.as_ref();
     let rows = sqlx::query_as!(
@@ -275,16 +280,16 @@ async fn fetch_page(
            WHERE w.user_id = $1 \
              AND ($2::watch_status IS NULL OR w.status = $2) \
              AND ($3::text IS NULL \
-                  OR strpos(lower(s.canonical_title), lower($3)) > 0 \
+                  OR s.canonical_title ILIKE $3 \
                   OR EXISTS (SELECT 1 FROM series_titles st \
                              WHERE st.series_id = w.series_id \
-                               AND strpos(lower(st.title), lower($3)) > 0) \
+                               AND st.title ILIKE $3) \
                   OR EXISTS (SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
                              WHERE stg.series_id = w.series_id \
-                               AND strpos(lower(t.name), lower($3)) > 0) \
+                               AND t.name ILIKE $3) \
                   OR EXISTS (SELECT 1 FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
                              WHERE sa.series_id = w.series_id \
-                               AND strpos(lower(a.name), lower($3)) > 0)) \
+                               AND a.name ILIKE $3)) \
              AND (NOT $4::boolean OR ch.unread > 0) \
              AND ($5::timestamptz IS NULL OR ch.latest_chapter_at >= $5) \
              AND (NOT $6::boolean OR src.source_degraded) \
@@ -314,7 +319,7 @@ async fn fetch_page(
          LIMIT $9 OFFSET $10",
         user_id.as_uuid(),
         filter.status as Option<WatchStatus>,
-        query,
+        pattern,
         filter.unread_only,
         filter.released_since,
         filter.source_issues,

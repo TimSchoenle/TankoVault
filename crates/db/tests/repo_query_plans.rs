@@ -249,10 +249,10 @@ fn assert_index_driven(plan: &Value, label: &str) {
 ///
 /// `Filter` is the field that matters, and the node type does not: the pathology is "compare
 /// every row the scan produced", and a scan that produces every row is as easily an ordered
-/// `Index Scan` as a `Seq Scan` — one of the three queries below reaches it through
-/// `series_updated_idx`, at an estimated cost of 1.9 million. A `Recheck Cond` on a bitmap heap
-/// scan carries the same operator and is *not* a violation: that is the index having already
-/// narrowed the rows and Postgres confirming them.
+/// `Index Scan` as a `Seq Scan` — the filtered browse reached it through `series_updated_idx`,
+/// at an estimated cost of 1.9 million. A `Recheck Cond` on a bitmap heap scan carries the same
+/// operator and is *not* a violation: that is the index having already narrowed the rows and
+/// Postgres confirming them.
 fn filters_on_similarity(plan: &Value) -> Option<String> {
     let mut found = None;
     walk(&plan[0]["Plan"], &mut |node| {
@@ -304,16 +304,26 @@ struct Budget {
 }
 
 const BUDGETS: &[Budget] = &[Budget {
-    label: "browse::list_series/count_series, optional-search variants",
+    label: "browse filtered page/count, no-search variants",
     matches: |query| {
-        query.sql.contains("$1::text IS NULL") && query.sql.contains("plainto_tsquery")
+        query
+            .sql
+            .contains("cardinality($7::text[]) = 0 OR NOT EXISTS")
+            && !query.sql.contains("plainto_tsquery")
     },
-    ceiling: 2_000_000.0,
-    reason: "still the `OR EXISTS` form. Their search term is optional — the predicate is \
-                 guarded by `$1::text IS NULL OR …`, because one statement serves a filtered \
-                 browse with no search box — so a UNION of index scans cannot be substituted \
-                 unconditionally: with no term there is nothing to union. Needs two statements \
-                 or a different rewrite.",
+    ceiling: 1_600_000.0,
+    reason: "the optional *filters*, not the search term — the trigram disjunction these \
+             statements used to carry is gone, and their search-branch twins plan at ~31 000. \
+             `GENERIC_PLAN` cannot fold `$n IS NULL`, so every optional filter's subquery is \
+             charged against every row of `series`: the `min_chapters` sum and the require-all \
+             tag `EXCEPT` are ~17 cost units per row between them, and the sort-token variant \
+             adds the `ORDER BY CASE` aggregates on top. Folding the parameters in as literals, \
+             which is what a custom plan does with real binds, gives cost 210/422 and \
+             0.2–1.1 ms — the same plan, to the decimal, as the statement this branch replaced. \
+             The estimate is the lens being pessimistic about a predicate that does fold; the \
+             trigram one never did, because a supplied search term is never NULL. Removing it \
+             needs hashed set-membership subqueries or a pre-aggregated `series_sources` join, \
+             both of which make the no-filter case do work it currently skips.",
 }];
 
 /// The budget covering `query`, if any.
@@ -470,13 +480,12 @@ async fn trigram_searches_reach_their_indexes() {
     let suggest_candidates = find(&queries, "admin_views::suggest_series_candidates", |q| {
         has_column(q, "similarity!")
     });
-    // `repo::catalog::browse::list_series`, search arm: the only catalogue query combining the
-    // FTS vector with a *mandatory* term. The three filtered variants guard theirs with
-    // `$1::text IS NULL`, and still carry the `OR EXISTS` form this test would fail them for.
+    // `repo::catalog::browse::list_series`, search arm: the only unpaginated catalogue query
+    // over the FTS vector. The filtered browse's search-branch statements return the same
+    // columns and match the same three ways; they page, and this one does not. They are held to
+    // the same rules by the sweep above, which does not have to bind their enum parameters.
     let browse_search = find(&queries, "browse::list_series (search arm)", |q| {
-        has_column(q, "cover_url")
-            && q.sql.contains("plainto_tsquery")
-            && !q.sql.contains("$1::text IS NULL")
+        has_column(q, "cover_url") && q.sql.contains("plainto_tsquery") && !q.sql.contains("OFFSET")
     });
 
     for (label, query) in [

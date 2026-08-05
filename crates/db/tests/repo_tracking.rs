@@ -49,9 +49,9 @@
 #![cfg(feature = "integration")]
 
 use tankovault_db::repo::tracking::{
-    ReadProgress, WatchlistFilter, continue_reading, feed, is_sync_excluded, me_stats,
-    progress_get_full, progress_mark_read, progress_mark_unread, progress_set, set_sync_excluded,
-    watchers_for_series, watchlist_page, watchlist_upsert,
+    ReadProgress, WatchlistFilter, WatchlistPage, continue_reading, feed, is_sync_excluded,
+    me_stats, progress_get_full, progress_mark_read, progress_mark_unread, progress_set,
+    set_sync_excluded, watchers_for_series, watchlist_page, watchlist_upsert,
 };
 use tankovault_domain::{ProviderId, SeriesId, UserId, WatchStatus};
 use tankovault_test_support::{TestDb, seed};
@@ -995,4 +995,156 @@ async fn excluding_an_untracked_series_reports_that_nothing_was_written() {
             .await
             .expect("read the exclusion")
     );
+}
+
+// ---------------------------------------------------------------------------
+// Watchlist free-text search
+// ---------------------------------------------------------------------------
+
+/// One unfiltered-but-for-`term` watchlist page.
+///
+/// Deliberately reads the whole [`WatchlistPage`], not just `items`: the search predicate is
+/// written out three times — the page, the tab counts and the group aggregates — and asserting on
+/// `items` alone would pass with two of the three still wrong.
+async fn search(db: &TestDb, user: UserId, term: &str) -> WatchlistPage {
+    watchlist_page(
+        &db.pool,
+        user,
+        &WatchlistFilter {
+            query: Some(term.to_owned()),
+            ..WatchlistFilter::default()
+        },
+    )
+    .await
+    .expect("watchlist search")
+}
+
+/// Put every one of `series` on `user`'s watchlist.
+async fn track_all(db: &TestDb, user: UserId, series: &[SeriesId]) {
+    for id in series {
+        watchlist_upsert(&db.pool, user, *id, WatchStatus::Reading, true)
+            .await
+            .expect("watchlist");
+    }
+}
+
+/// Search reaches every column it advertises: the canonical title, an alternative title, a tag
+/// name and an author name — case-insensitively, on a substring.
+#[tokio::test]
+async fn the_search_matches_canonical_titles_alt_titles_tags_and_authors() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "searcher").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+
+    let canonical = seed::series(&db, provider, "Berserk")
+        .source_path("/s/berserk")
+        .chapters(&[1.0])
+        .create()
+        .await;
+    let alternate = seed::series(&db, provider, "Claymore")
+        .source_path("/s/claymore")
+        .alt_titles(&["Kureimoa"])
+        .chapters(&[1.0])
+        .create()
+        .await;
+    let tagged = seed::series(&db, provider, "Dorohedoro")
+        .source_path("/s/dorohedoro")
+        .tags(&["Seinen"])
+        .chapters(&[1.0])
+        .create()
+        .await;
+    let credited = seed::series(&db, provider, "Eden")
+        .source_path("/s/eden")
+        .authors(&["Kentaro Miura"])
+        .chapters(&[1.0])
+        .create()
+        .await;
+    track_all(&db, user, &[canonical, alternate, tagged, credited]).await;
+
+    // Lower-cased and clipped short, so a branch that lost either property fails here.
+    for (term, expected) in [
+        ("erser", canonical),
+        ("kureimo", alternate),
+        ("seine", tagged),
+        ("miur", credited),
+    ] {
+        let page = search(&db, user, term).await;
+        assert_eq!(
+            page.items.iter().map(|c| c.series_id).collect::<Vec<_>>(),
+            vec![expected],
+            "term={term:?}"
+        );
+        assert_eq!(page.total, 1, "group aggregates disagree for term={term:?}");
+        assert_eq!(page.counts.all, 1, "tab counts disagree for term={term:?}");
+    }
+}
+
+/// A term containing a LIKE metacharacter is matched literally.
+///
+/// The predicate used to be `strpos(lower(col), lower($n)) > 0`, which no index can serve, so it
+/// moved to `col ILIKE $n`. That hands `%`, `_` and `\` — ordinary characters to whoever typed
+/// them into the filter box — straight to the pattern matcher. Unescaped, `_` and `%` each widen
+/// the search to the entire watchlist, and a term ending in `\` is a dangling escape that Postgres
+/// rejects, turning a keystroke into a 500 from the filter box.
+#[tokio::test]
+async fn a_search_term_with_like_metacharacters_matches_literally() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "escaper").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+
+    let underscore = seed::series(&db, provider, "Under_score")
+        .source_path("/s/underscore")
+        .chapters(&[1.0])
+        .create()
+        .await;
+    let percent = seed::series(&db, provider, "100% Orange")
+        .source_path("/s/orange")
+        .chapters(&[1.0])
+        .create()
+        .await;
+    let backslash = seed::series(&db, provider, "Back\\slash")
+        .source_path("/s/backslash")
+        .chapters(&[1.0])
+        .create()
+        .await;
+    let plain = seed::series(&db, provider, "Plain Title")
+        .source_path("/s/plain")
+        .chapters(&[1.0])
+        .create()
+        .await;
+    track_all(&db, user, &[underscore, percent, backslash, plain]).await;
+
+    for (term, expected) in [("_", underscore), ("%", percent), ("\\", backslash)] {
+        let page = search(&db, user, term).await;
+        assert_eq!(
+            page.items.iter().map(|c| c.series_id).collect::<Vec<_>>(),
+            vec![expected],
+            "term={term:?} was treated as a wildcard"
+        );
+        assert_eq!(page.total, 1, "group aggregates disagree for term={term:?}");
+        assert_eq!(page.counts.all, 1, "tab counts disagree for term={term:?}");
+    }
+}
+
+/// A blank or whitespace-only query is no search, not a search for nothing — the same contract
+/// `repo_browse`'s `a_blank_query_is_not_a_filter` pins for Discover.
+#[tokio::test]
+async fn a_blank_watchlist_query_is_not_a_filter() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "idler").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+
+    for title in ["Akira", "Berserk", "Claymore"] {
+        let series = a_series(&db, provider, title, &[1.0]).await;
+        watchlist_upsert(&db.pool, user, series, WatchStatus::Reading, true)
+            .await
+            .expect("watchlist");
+    }
+
+    for term in ["", "   "] {
+        let page = search(&db, user, term).await;
+        assert_eq!(page.items.len(), 3, "term={term:?}");
+        assert_eq!(page.total, 3, "term={term:?}");
+        assert_eq!(page.counts.all, 3, "term={term:?}");
+    }
 }

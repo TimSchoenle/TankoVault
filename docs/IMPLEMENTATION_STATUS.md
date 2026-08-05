@@ -4,7 +4,33 @@ This file tracks the build state of the system described in [`design.md`](./desi
 Update it at the end of every coding session: mark what landed, and leave a precise
 "pick up next" list so the next session starts without re-deriving context.
 
-**Last updated:** 2026-08-01 (Session 20 — the image build was compiling the workspace nine times)
+**Last updated:** 2026-08-05. **The session log below ends at Session 20 (2026-08-01)** and does
+not cover the 69 commits merged since; the note directly beneath says what landed and where the
+detail is. Read §6 "Pick up next" against that note — it predates all of it.
+
+> **Since Session 20 (2026-08-01 → 2026-08-05) — a pointer, not a session entry.** Sixty-nine
+> commits landed across 49 pull requests and eighteen releases (`0.2.0` through `1.4.0`) without
+> one being written, so reconstructing them as a narrative would be invention. Sourced from
+> `git log --oneline` and [`CHANGELOG.md`](../CHANGELOG.md), which are the record:
+>
+> - **Recommendations.** The suggestion system, `pgvector` and a guard on merges (#72), then
+>   every published surface wired into the SPA (#91). Design: [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md).
+> - **Observability.** A described metric catalogue, 23 new metrics, and a `repo-lint` gate on
+>   both (#66). See [`OBSERVABILITY.md`](./OBSERVABILITY.md).
+> - **Frontend.** Layout at scale, a bottom tab bar and operator-published legal documents (#68);
+>   per-page titles and a paged notifications inbox (#62).
+> - **Performance.** Console rollups off the request path, trigram candidates no longer scored
+>   row by row, a batch-aborting chapter upsert fixed (#69); the dashboard reading only the
+>   unread tail, and Postgres off stock defaults (#78).
+> - **Solver.** FlareSolverr replaced by TRAWL as the back-end (#55) — a breaking change.
+> - **Metadata.** The priority config now governs both writers rather than one (#87).
+> - **Structure.** The six largest source files split into cohesive modules (#89).
+> - **Licensing and release.** PolyForm Noncommercial 1.0.0 chosen, `THIRD-PARTY-NOTICES`
+>   generated and shipped in the images, keyless signing and per-release image publishing fixed.
+> - **Audit remediation** ran throughout; [`audit/PROGRESS.md`](./audit/PROGRESS.md) is its
+>   hand-off and is current. Two items in §6 below are closed by it: the permission-model
+>   integration suite (0a) and in-repo DB integration tests (4) both exist — 4,083 lines under
+>   `services/api/tests/` and 8,269 under `crates/db/tests/`, run by CI's `integration` job.
 
 > **Session 20 — `docker compose build` took over twenty minutes, and most of it was repeated
 > work.** `deploy/docker/Dockerfile`'s `builder` stage took `ARG BIN` and ran
@@ -592,11 +618,14 @@ wasm32-unknown-unknown` clean. The only honest stubs left are features with no e
 
 All migrations applied cleanly to a throwaway `postgres:19-alpine` (Session 1). The new
 `sync` repo SQL (`external_accounts`, `sync_mappings`) matches `0005_external_sync.sql`
-(bytea ciphertext token columns) and was validated by inspection. In-repo DB integration
-tests (via `sqlx`'s test harness against a disposable database) remain the priority
-pickup (§6) that would exercise all repo SQL — including enum text-casts, `xmax = 0`
-new-chapter detection, SKIP LOCKED claim, and trigram candidate lookup — against a live
-PG19.
+(bytea ciphertext token columns) and was validated by inspection.
+
+**Closed since.** The in-repo DB integration tests this section listed as the priority pickup
+exist: `crates/db/tests/` is 12 files and 8,269 lines, run by CI's `integration` job against a
+testcontainers Postgres. The harness major is **pg18** (`crates/test-support`:
+`pgvector/pgvector:pg18`), not the PG19 beta this section was written against — audit OPS-4.2
+moved both it and the reference stack off a beta catalogue, and `repo-lint`'s
+`tests_run_the_production_postgres_major` now holds the two together.
 
 ---
 
@@ -641,11 +670,13 @@ PG19.
 ## 6. Pick up next (ordered)
 
 0a. **Follow-ups left open by Session 17** (none blocking; the model is complete and verified):
-   - **A permission-model integration test suite.** The 44-check smoke script that verified this
-     session lives only in a scratchpad. It should become a checked-in integration test against
-     a disposable PG19 (see §6.4) — grant/revoke visibility, suspension, last-administrator
-     protection and the GDPR queue transitions are exactly the behaviours a refactor would break
-     silently.
+   - ~~**A permission-model integration test suite.**~~ **Done.** The scratchpad smoke script is
+     now `crates/db/tests/repo_access_control.rs` (live grants and suspension,
+     `other_active_holders` last-holder protection, `set_status` round trip, `cancel_own`
+     ownership scoping) and `services/api/tests/{me,admin}_access_matrix.rs`, which drive every
+     published route anonymous / holding every permission but the required one / holding exactly
+     it, and reconcile the set against `openapi.json` so an unclassified route fails by operation
+     id.
    - **Bootstrap for a deployment with no administrator.** `xtask seed` grants the demo admin
      every capability, and the migration converts existing roles, but an installation that
      somehow reaches zero active `users.permissions` holders has no in-band recovery. A
@@ -687,9 +718,10 @@ PG19.
    lease with `GET`/`PEXPIRE` renewal (fails open without Redis). Run counters were already
    aggregated DB-side by `scans::complete_task`/`fail_task`. Remaining polish: the API SSE
    could subscribe to the relayed NATS events instead of DB-polling.
-4. **In-repo DB integration tests** (§3) using `sqlx`'s test harness against a disposable
+4. ~~**In-repo DB integration tests** (§3) using `sqlx`'s test harness against a disposable
    PG19 — exercises every repo (canonicalisation `resolve_canonical_series`, `merge_series`,
-   `feed`, `sync`, SKIP LOCKED, `xmax = 0`).
+   `feed`, `sync`, SKIP LOCKED, `xmax = 0`).~~ **Done** — `crates/db/tests/`, 12 files, on a
+   testcontainers **pg18**; see §3.
 5. ~~**CI pipeline:** wire fmt + clippy(`-D warnings`) + `cargo deny` + `cargo audit` +
    tests + `docker build` of each `BIN`.~~ **DONE (Session 8).** `.github/workflows/ci.yml`
    runs those as parallel jobs plus a `wasm32` frontend check; `deny.toml` configures the

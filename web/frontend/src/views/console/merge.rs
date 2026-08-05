@@ -178,7 +178,7 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
     let mut busy = use_signal(|| false);
     // Which side survives; seeded from the server's suggestion, swappable since the operator
     // can see something the counts can't.
-    let mut keep_first = use_signal(|| can.suggested_keep == can.series_id);
+    let mut keep_first = use_signal(|| keeps_first_by_default(&can));
 
     let score_class = if pct >= 90 {
         "ik-mono acc"
@@ -188,27 +188,15 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
         "ik-mono ik-muted"
     };
 
-    let first = SideSummary {
-        id: can.series_id,
-        title: can.series_title.clone(),
-        sources: can.series_sources,
-        chapters: can.series_chapters,
-    };
-    let second = SideSummary {
-        id: can.candidate_id,
-        title: can.candidate_title.clone(),
-        sources: can.candidate_sources,
-        chapters: can.candidate_chapters,
-    };
     let signals = can.signals.clone();
     let reason = can.reason.clone();
+    let sides = MergeSides::of(&can, *keep_first.read());
     drop(can);
 
-    let (keep, drop_side) = if *keep_first.read() {
-        (first.clone(), second.clone())
-    } else {
-        (second.clone(), first.clone())
-    };
+    let MergeSides {
+        keep,
+        drop: drop_side,
+    } = sides;
     let keep_id = keep.id;
     let drop_id = drop_side.id;
 
@@ -359,6 +347,54 @@ impl SideSummary {
     }
 }
 
+/// Whether the server's `suggested_keep` names the pair's first side.
+///
+/// Seeds the swap toggle, and is therefore what decides the direction of every merge the
+/// operator does not explicitly swap. Inverting it discards the side the scorer judged richer,
+/// and the absorbed id stops existing — so nothing downstream can report the mistake.
+fn keeps_first_by_default(candidate: &MergeCandidate) -> bool {
+    candidate.suggested_keep == candidate.series_id
+}
+
+/// A candidate pair oriented into the merge it would perform.
+#[derive(Clone, PartialEq)]
+struct MergeSides {
+    /// The series that survives and absorbs the other.
+    keep: SideSummary,
+    /// The series that stops existing.
+    drop: SideSummary,
+}
+
+impl MergeSides {
+    /// Orient a candidate. `keep_first` is [`keeps_first_by_default`] as the operator has
+    /// possibly since flipped it.
+    fn of(candidate: &MergeCandidate, keep_first: bool) -> Self {
+        let first = SideSummary {
+            id: candidate.series_id,
+            title: candidate.series_title.clone(),
+            sources: candidate.series_sources,
+            chapters: candidate.series_chapters,
+        };
+        let second = SideSummary {
+            id: candidate.candidate_id,
+            title: candidate.candidate_title.clone(),
+            sources: candidate.candidate_sources,
+            chapters: candidate.candidate_chapters,
+        };
+        if keep_first {
+            Self {
+                keep: first,
+                drop: second,
+            }
+        } else {
+            Self {
+                keep: second,
+                drop: first,
+            }
+        }
+    }
+}
+
 /// Compact read-only "manga info" card for a single series, used by the merge compare view
 /// and the Sync inspector. Fetches the public series detail so operators can eyeball cover,
 /// type/status, sources and tags before acting.
@@ -439,4 +475,73 @@ pub(super) fn SeriesMiniCard(series_id: SeriesId) -> Element {
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn candidate(suggested: SeriesId, first: SeriesId, second: SeriesId) -> MergeCandidate {
+        MergeCandidate {
+            candidate_chapters: 140,
+            candidate_id: second,
+            candidate_sources: 1,
+            candidate_title: "Bell of the Ninth".to_owned(),
+            created_at: "2026-07-29T00:00:00Z".to_owned(),
+            id: uuid::Uuid::from_u128(9),
+            reason: None,
+            score: 0.91,
+            series_chapters: 412,
+            series_id: first,
+            series_sources: 3,
+            series_title: "Ninth Bell".to_owned(),
+            signals: Vec::new(),
+            suggested_keep: suggested,
+            updated_at: "2026-07-29T00:00:00Z".to_owned(),
+        }
+    }
+
+    /// The side the server suggests keeping is the side that survives an unswapped merge.
+    ///
+    /// This is the whole safety of the row: a merge discards the absorbed id outright, so an
+    /// inverted default destroys the richer series on a click that looks routine, and there is
+    /// nothing left afterwards for any check to notice.
+    #[test]
+    fn the_servers_suggestion_is_the_side_that_survives_by_default() {
+        let (first, second) = (
+            SeriesId(uuid::Uuid::from_u128(1)),
+            SeriesId(uuid::Uuid::from_u128(2)),
+        );
+
+        let keeps_first = candidate(first, first, second);
+        let sides = MergeSides::of(&keeps_first, keeps_first_by_default(&keeps_first));
+        assert_eq!(sides.keep.id, first);
+        assert_eq!(sides.drop.id, second);
+
+        let keeps_second = candidate(second, first, second);
+        let sides = MergeSides::of(&keeps_second, keeps_first_by_default(&keeps_second));
+        assert_eq!(sides.keep.id, second);
+        assert_eq!(sides.drop.id, first);
+    }
+
+    /// Swapping exchanges the two sides and nothing else — the counts and titles must travel
+    /// with their own id, or the operator reads one series' figures while merging away another.
+    #[test]
+    fn swapping_exchanges_the_sides_with_their_own_figures() {
+        let (first, second) = (
+            SeriesId(uuid::Uuid::from_u128(1)),
+            SeriesId(uuid::Uuid::from_u128(2)),
+        );
+        let row = candidate(first, first, second);
+
+        let kept = MergeSides::of(&row, true);
+        assert_eq!((kept.keep.chapters, kept.keep.sources), (412, 3));
+        assert_eq!(kept.keep.title, "Ninth Bell");
+
+        let swapped = MergeSides::of(&row, false);
+        assert_eq!((swapped.keep.chapters, swapped.keep.sources), (140, 1));
+        assert_eq!(swapped.keep.title, "Bell of the Ninth");
+        assert_eq!(swapped.drop.id, kept.keep.id);
+        assert_eq!(swapped.keep.id, kept.drop.id);
+    }
 }

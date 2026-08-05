@@ -219,14 +219,88 @@ struct FilteredRow {
     source_count: i64,
 }
 
+#[derive(FromRow)]
+struct CountRow {
+    total: i64,
+}
+
+/// Every filtered-browse statement, built from one copy of the shared filter predicate.
+///
+/// The `sqlx` macros need their SQL as literal tokens at the call site, so a `const` or a
+/// `concat!` is invisible to them — but `sqlx` 0.9 accepts a `"a" + "b"` chain of literals, and a
+/// macro can hand it one. That is what keeps the predicate and the row projection written once
+/// across the six statements below (recency/sort-token page × search/no-search, plus the two
+/// counts) instead of six times; `crates/db/tests/repo_browse.rs` is the differential over what
+/// still differs.
+///
+/// The predicate binds `$1`–`$8`, so a call site numbers its own parameters from `$9` up. `$cte`
+/// and `$join` carry the search branch's matched-id set, `$tail` the ordering and paging.
+macro_rules! browse_statement {
+    (page $cte:literal, $join:literal, $tail:literal, $($args:tt)*) => {
+        browse_statement!(
+            @build FilteredRow,
+            $cte,
+            "s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
+             s.content_type AS \"content_type: ContentType\", \
+             s.status AS \"status: SeriesStatus\", s.release_year, \
+             s.created_at, s.updated_at, \
+             (SELECT count(DISTINCT ss.provider_id) FROM series_sources ss \
+              WHERE ss.series_id = s.id) AS \"source_count!\"",
+            $join,
+            $tail,
+            $($args)*
+        )
+    };
+    (count $cte:literal, $join:literal, $($args:tt)*) => {
+        browse_statement!(
+            @build CountRow,
+            $cte,
+            "count(*) AS \"total!\"",
+            $join,
+            "",
+            $($args)*
+        )
+    };
+    (@build $row:path, $cte:literal, $projection:literal, $join:literal, $tail:literal,
+     $($args:tt)*) => {
+        sqlx::query_as!(
+            $row,
+            $cte
+                + "SELECT " + $projection + " FROM series s" + $join
+                + " WHERE ($1::content_type IS NULL OR s.content_type = $1) \
+                     AND ($2::series_status IS NULL OR s.status = $2) \
+                     AND ($3::int IS NULL OR s.release_year >= $3) \
+                     AND ($4::int IS NULL OR s.release_year <= $4) \
+                     AND ($5::text IS NULL OR EXISTS ( \
+                           SELECT 1 FROM series_sources ss JOIN providers p ON p.id = ss.provider_id \
+                           WHERE ss.series_id = s.id AND p.slug = $5)) \
+                     AND ($6::int IS NULL OR ( \
+                           SELECT COALESCE(sum(ss.chapter_count),0) FROM series_sources ss \
+                           WHERE ss.series_id = s.id) >= $6) \
+                     AND (cardinality($7::text[]) = 0 OR NOT EXISTS ( \
+                           SELECT unnest($7::text[]) \
+                           EXCEPT \
+                           SELECT t.slug FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                           WHERE stg.series_id = s.id)) \
+                     AND (cardinality($8::text[]) = 0 OR NOT EXISTS ( \
+                           SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+                           WHERE stg.series_id = s.id AND t.slug = ANY($8::text[])))"
+                + $tail,
+            $($args)*
+        )
+    };
+}
+
 /// Query the browse list with server-side filtering, sorting and offset pagination
 /// (frontend §9.1). Returns the page plus the total match count for the pager.
 ///
-/// Two statements, not five (drift risk across near-identical `ORDER BY` copies) or one
+/// Two page statements, not five (drift risk across near-identical `ORDER BY` copies) or one
 /// (folding every sort key into bound `CASE` expressions loses the default order's index under
-/// a generic plan). The total is counted separately from the page: a `count(*) OVER()` window
-/// forces full materialization before `LIMIT` applies, where a concurrent index-only count does
-/// not. Takes `&PgPool`, not a generic executor, so the two queries can run concurrently.
+/// a generic plan), each in a search and a no-search form — see [`fetch_filtered_page`] for why
+/// the search term cannot be a bound `NULL` in one statement. The total is counted separately
+/// from the page: a `count(*) OVER()` window forces full materialization before `LIMIT` applies,
+/// where a concurrent index-only count does not. Takes `&PgPool`, not a generic executor, so the
+/// two queries can run concurrently.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; a filter matching nothing is `{items: [], total: 0}`.
@@ -268,7 +342,15 @@ pub async fn list_series_filtered(pool: &PgPool, filter: &SeriesFilter) -> DbRes
 
 /// One page of matching rows, in the requested order.
 ///
-/// Both statements end with `s.id DESC` as a tiebreaker — without it, ties in the sort key
+/// Two branches, not one statement: the order picks the statement, and a search term picks
+/// whether the matched-id set is joined in. The term cannot be folded back into a single
+/// statement as `$1::text IS NULL OR … OR EXISTS (…)` — an `EXISTS` under `OR` cannot be pulled
+/// up into a semi-join, so no index on `series` is usable and the planner scans all of it (see
+/// [`crate::repo::matching::find_candidates`]). The `UNION` of index-driven scans that fixes
+/// that has nothing to union when there is no term, which is why this branches rather than
+/// rewrites.
+///
+/// Both page statements end with `s.id DESC` as a tiebreaker — without it, ties in the sort key
 /// give adjacent `OFFSET` pages no stable order.
 async fn fetch_filtered_page(
     pool: &PgPool,
@@ -288,39 +370,37 @@ async fn fetch_page_by_recency(
     filter: &SeriesFilter,
     query: Option<&str>,
 ) -> DbResult<Vec<FilteredRow>> {
-    let rows = sqlx::query_as!(
-            FilteredRow,
-            "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
-                    s.content_type AS \"content_type: ContentType\", \
-                    s.status AS \"status: SeriesStatus\", s.release_year, \
-                    s.created_at, s.updated_at, \
-                    (SELECT count(DISTINCT ss.provider_id) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\" \
-             FROM series s \
-             WHERE ($1::text IS NULL OR s.normalized_title % $1 \
-                     OR s.search_vec @@ plainto_tsquery('simple', $1) \
-                     OR EXISTS (SELECT 1 FROM series_titles st \
-                                WHERE st.series_id = s.id AND st.normalized % $1)) \
-               AND ($2::content_type IS NULL OR s.content_type = $2) \
-               AND ($3::series_status IS NULL OR s.status = $3) \
-               AND ($4::int IS NULL OR s.release_year >= $4) \
-               AND ($5::int IS NULL OR s.release_year <= $5) \
-               AND ($6::text IS NULL OR EXISTS ( \
-                     SELECT 1 FROM series_sources ss JOIN providers p ON p.id = ss.provider_id \
-                     WHERE ss.series_id = s.id AND p.slug = $6)) \
-               AND ($7::int IS NULL OR ( \
-                     SELECT COALESCE(sum(ss.chapter_count),0) FROM series_sources ss \
-                     WHERE ss.series_id = s.id) >= $7) \
-               AND (cardinality($8::text[]) = 0 OR NOT EXISTS ( \
-                     SELECT unnest($8::text[]) \
-                     EXCEPT \
-                     SELECT t.slug FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
-                     WHERE stg.series_id = s.id)) \
-               AND (cardinality($9::text[]) = 0 OR NOT EXISTS ( \
-                     SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
-                     WHERE stg.series_id = s.id AND t.slug = ANY($9::text[]))) \
-             ORDER BY s.updated_at DESC, s.id DESC \
-             LIMIT $10 OFFSET $11",
-            query,
+    let rows = if let Some(q) = query {
+        browse_statement!(
+            page "WITH matched AS ( \
+                    SELECT s.id FROM series s WHERE s.normalized_title % $11 \
+                    UNION \
+                    SELECT s.id FROM series s \
+                     WHERE s.search_vec @@ plainto_tsquery('simple', $11) \
+                    UNION \
+                    SELECT st.series_id FROM series_titles st WHERE st.normalized % $11 \
+                  ) ",
+            " JOIN matched m ON m.id = s.id",
+            " ORDER BY s.updated_at DESC, s.id DESC LIMIT $9 OFFSET $10",
+            filter.content_type as Option<ContentType>,
+            filter.status as Option<SeriesStatus>,
+            filter.year_min,
+            filter.year_max,
+            filter.provider_slug.as_deref(),
+            filter.min_chapters,
+            &filter.tags as &[String],
+            &filter.exclude_tags as &[String],
+            filter.limit,
+            filter.offset,
+            q,
+        )
+        .fetch_all(pool)
+        .await?
+    } else {
+        browse_statement!(
+            page "",
+            "",
+            " ORDER BY s.updated_at DESC, s.id DESC LIMIT $9 OFFSET $10",
             filter.content_type as Option<ContentType>,
             filter.status as Option<SeriesStatus>,
             filter.year_min,
@@ -332,8 +412,9 @@ async fn fetch_page_by_recency(
             filter.limit,
             filter.offset,
         )
-    .fetch_all(pool)
-    .await?;
+        .fetch_all(pool)
+        .await?
+    };
     Ok(rows)
 }
 
@@ -346,48 +427,28 @@ async fn fetch_page_by_sort_token(
     filter: &SeriesFilter,
     query: Option<&str>,
 ) -> DbResult<Vec<FilteredRow>> {
-    let rows = sqlx::query_as!(
-            FilteredRow,
-            "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, \
-                    s.content_type AS \"content_type: ContentType\", \
-                    s.status AS \"status: SeriesStatus\", s.release_year, \
-                    s.created_at, s.updated_at, \
-                    (SELECT count(DISTINCT ss.provider_id) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\" \
-             FROM series s \
-             WHERE ($1::text IS NULL OR s.normalized_title % $1 \
-                     OR s.search_vec @@ plainto_tsquery('simple', $1) \
-                     OR EXISTS (SELECT 1 FROM series_titles st \
-                                WHERE st.series_id = s.id AND st.normalized % $1)) \
-               AND ($2::content_type IS NULL OR s.content_type = $2) \
-               AND ($3::series_status IS NULL OR s.status = $3) \
-               AND ($4::int IS NULL OR s.release_year >= $4) \
-               AND ($5::int IS NULL OR s.release_year <= $5) \
-               AND ($6::text IS NULL OR EXISTS ( \
-                     SELECT 1 FROM series_sources ss JOIN providers p ON p.id = ss.provider_id \
-                     WHERE ss.series_id = s.id AND p.slug = $6)) \
-               AND ($7::int IS NULL OR ( \
-                     SELECT COALESCE(sum(ss.chapter_count),0) FROM series_sources ss \
-                     WHERE ss.series_id = s.id) >= $7) \
-               AND (cardinality($8::text[]) = 0 OR NOT EXISTS ( \
-                     SELECT unnest($8::text[]) \
-                     EXCEPT \
-                     SELECT t.slug FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
-                     WHERE stg.series_id = s.id)) \
-               AND (cardinality($9::text[]) = 0 OR NOT EXISTS ( \
-                     SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
-                     WHERE stg.series_id = s.id AND t.slug = ANY($9::text[]))) \
-             ORDER BY \
-               CASE WHEN $12 = 'title' THEN s.canonical_title END ASC NULLS LAST, \
-               CASE WHEN $12 = 'year' THEN s.release_year END DESC NULLS LAST, \
-               CASE WHEN $12 = 'chapters' THEN ( \
-                     SELECT COALESCE(sum(ss.chapter_count),0)::int8 FROM series_sources ss \
-                     WHERE ss.series_id = s.id) END DESC NULLS LAST, \
-               CASE WHEN $12 = 'sources' THEN ( \
-                     SELECT count(DISTINCT ss.provider_id)::int8 FROM series_sources ss \
-                     WHERE ss.series_id = s.id) END DESC NULLS LAST, \
-               s.updated_at DESC, s.id DESC \
-             LIMIT $10 OFFSET $11",
-            query,
+    let rows = if let Some(q) = query {
+        browse_statement!(
+            page "WITH matched AS ( \
+                    SELECT s.id FROM series s WHERE s.normalized_title % $12 \
+                    UNION \
+                    SELECT s.id FROM series s \
+                     WHERE s.search_vec @@ plainto_tsquery('simple', $12) \
+                    UNION \
+                    SELECT st.series_id FROM series_titles st WHERE st.normalized % $12 \
+                  ) ",
+            " JOIN matched m ON m.id = s.id",
+            " ORDER BY \
+                CASE WHEN $11 = 'title' THEN s.canonical_title END ASC NULLS LAST, \
+                CASE WHEN $11 = 'year' THEN s.release_year END DESC NULLS LAST, \
+                CASE WHEN $11 = 'chapters' THEN ( \
+                      SELECT COALESCE(sum(ss.chapter_count),0)::int8 FROM series_sources ss \
+                      WHERE ss.series_id = s.id) END DESC NULLS LAST, \
+                CASE WHEN $11 = 'sources' THEN ( \
+                      SELECT count(DISTINCT ss.provider_id)::int8 FROM series_sources ss \
+                      WHERE ss.series_id = s.id) END DESC NULLS LAST, \
+                s.updated_at DESC, s.id DESC \
+              LIMIT $9 OFFSET $10",
             filter.content_type as Option<ContentType>,
             filter.status as Option<SeriesStatus>,
             filter.year_min,
@@ -399,58 +460,92 @@ async fn fetch_page_by_sort_token(
             filter.limit,
             filter.offset,
             filter.sort.as_token(),
-    )
-    .fetch_all(pool)
-    .await?;
+            q,
+        )
+        .fetch_all(pool)
+        .await?
+    } else {
+        browse_statement!(
+            page "",
+            "",
+            " ORDER BY \
+                CASE WHEN $11 = 'title' THEN s.canonical_title END ASC NULLS LAST, \
+                CASE WHEN $11 = 'year' THEN s.release_year END DESC NULLS LAST, \
+                CASE WHEN $11 = 'chapters' THEN ( \
+                      SELECT COALESCE(sum(ss.chapter_count),0)::int8 FROM series_sources ss \
+                      WHERE ss.series_id = s.id) END DESC NULLS LAST, \
+                CASE WHEN $11 = 'sources' THEN ( \
+                      SELECT count(DISTINCT ss.provider_id)::int8 FROM series_sources ss \
+                      WHERE ss.series_id = s.id) END DESC NULLS LAST, \
+                s.updated_at DESC, s.id DESC \
+              LIMIT $9 OFFSET $10",
+            filter.content_type as Option<ContentType>,
+            filter.status as Option<SeriesStatus>,
+            filter.year_min,
+            filter.year_max,
+            filter.provider_slug.as_deref(),
+            filter.min_chapters,
+            &filter.tags as &[String],
+            &filter.exclude_tags as &[String],
+            filter.limit,
+            filter.offset,
+            filter.sort.as_token(),
+        )
+        .fetch_all(pool)
+        .await?
+    };
     Ok(rows)
 }
 
 /// How many rows match the filter, ignoring `limit`/`offset`.
 ///
-/// Predicate must mirror [`fetch_filtered_page`]'s exactly, or the pager can offer a page that
-/// comes back empty.
+/// Must take the same search branch as [`fetch_filtered_page`] and share its predicate, or the
+/// pager can offer a page that comes back empty.
 async fn count_filtered(
     pool: &PgPool,
     filter: &SeriesFilter,
     query: Option<&str>,
 ) -> DbResult<i64> {
-    let total = sqlx::query_scalar!(
-        "SELECT count(*) AS \"total!\" FROM series s \
-         WHERE ($1::text IS NULL OR s.normalized_title % $1 \
-                 OR s.search_vec @@ plainto_tsquery('simple', $1) \
-                 OR EXISTS (SELECT 1 FROM series_titles st \
-                            WHERE st.series_id = s.id AND st.normalized % $1)) \
-           AND ($2::content_type IS NULL OR s.content_type = $2) \
-           AND ($3::series_status IS NULL OR s.status = $3) \
-           AND ($4::int IS NULL OR s.release_year >= $4) \
-           AND ($5::int IS NULL OR s.release_year <= $5) \
-           AND ($6::text IS NULL OR EXISTS ( \
-                 SELECT 1 FROM series_sources ss JOIN providers p ON p.id = ss.provider_id \
-                 WHERE ss.series_id = s.id AND p.slug = $6)) \
-           AND ($7::int IS NULL OR ( \
-                 SELECT COALESCE(sum(ss.chapter_count),0) FROM series_sources ss \
-                 WHERE ss.series_id = s.id) >= $7) \
-           AND (cardinality($8::text[]) = 0 OR NOT EXISTS ( \
-                 SELECT unnest($8::text[]) \
-                 EXCEPT \
-                 SELECT t.slug FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
-                 WHERE stg.series_id = s.id)) \
-           AND (cardinality($9::text[]) = 0 OR NOT EXISTS ( \
-                 SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
-                 WHERE stg.series_id = s.id AND t.slug = ANY($9::text[])))",
-        query,
-        filter.content_type as Option<ContentType>,
-        filter.status as Option<SeriesStatus>,
-        filter.year_min,
-        filter.year_max,
-        filter.provider_slug.as_deref(),
-        filter.min_chapters,
-        &filter.tags as &[String],
-        &filter.exclude_tags as &[String],
-    )
-    .fetch_one(pool)
-    .await?;
-    Ok(total)
+    let row = if let Some(q) = query {
+        browse_statement!(
+            count "WITH matched AS ( \
+                     SELECT s.id FROM series s WHERE s.normalized_title % $9 \
+                     UNION \
+                     SELECT s.id FROM series s \
+                      WHERE s.search_vec @@ plainto_tsquery('simple', $9) \
+                     UNION \
+                     SELECT st.series_id FROM series_titles st WHERE st.normalized % $9 \
+                   ) ",
+            " JOIN matched m ON m.id = s.id",
+            filter.content_type as Option<ContentType>,
+            filter.status as Option<SeriesStatus>,
+            filter.year_min,
+            filter.year_max,
+            filter.provider_slug.as_deref(),
+            filter.min_chapters,
+            &filter.tags as &[String],
+            &filter.exclude_tags as &[String],
+            q,
+        )
+        .fetch_one(pool)
+        .await?
+    } else {
+        browse_statement!(
+            count "",
+            "",
+            filter.content_type as Option<ContentType>,
+            filter.status as Option<SeriesStatus>,
+            filter.year_min,
+            filter.year_max,
+            filter.provider_slug.as_deref(),
+            filter.min_chapters,
+            &filter.tags as &[String],
+            &filter.exclude_tags as &[String],
+        )
+        .fetch_one(pool)
+        .await?
+    };
+    Ok(row.total)
 }
 
 /// Alternative titles of a series (design §9.2 enrichment). Empty when none are recorded.

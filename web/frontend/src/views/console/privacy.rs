@@ -21,6 +21,71 @@ use crate::wire::types::{
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
 
+/// What this reader is allowed to do to the queue at all.
+///
+/// `erase` is deliberately the conjunction of two permissions: answering an erasure request
+/// destroys an account, so holding the privacy queue's write permission is not on its own
+/// enough — the reader must also be trusted to delete users.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) struct QueuePermits {
+    write: bool,
+    export: bool,
+    erase: bool,
+}
+
+impl QueuePermits {
+    fn of(caps: &crate::state::capabilities::CapabilitySet) -> Self {
+        let write = caps.can(Permission::PrivacyWrite);
+        Self {
+            write,
+            export: caps.can(Permission::PrivacyExport),
+            erase: write && caps.can(Permission::UsersDelete),
+        }
+    }
+}
+
+/// A control a queue row can offer.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum RowAction {
+    /// Take ownership of a request nobody is working.
+    Claim,
+    /// Release the subject's data export.
+    Export,
+    /// Carry out the erasure.
+    Erase,
+    /// Record how the request was answered.
+    Resolve,
+}
+
+/// Whether a row offers `action`, given the reader's permissions and the request's own state.
+///
+/// Every arm that acts on the person requires the person to still be there: a completed erasure
+/// leaves its row in the queue with `user_id: None`, and offering export or erasure over an
+/// account that is already gone is a call the server refuses.
+///
+/// `needs_export` is the server's answer rather than a re-derivation from `kind` — the set of
+/// kinds that disclose an export belongs where the export is produced (see the field's own doc).
+pub(super) fn offers(row: &AdminRequestRow, permits: QueuePermits, action: RowAction) -> bool {
+    let open = row.request.status.is_open();
+    let subject_present = row.user_id.is_some();
+    match action {
+        RowAction::Claim => permits.write && row.request.status == RequestStatus::Pending,
+        RowAction::Export => permits.export && row.needs_export && subject_present,
+        RowAction::Erase => {
+            permits.erase && open && row.request.kind == RequestKind::Erasure && subject_present
+        }
+        RowAction::Resolve => permits.write && open,
+    }
+}
+
+/// Whether the typed confirmation releases the erasure.
+///
+/// A subject with no username left can never be confirmed: matching "nothing typed" against
+/// "no name" would arm the most destructive control on the page with an empty field.
+pub(super) fn erasure_confirmed(username: Option<&str>, typed: &str) -> bool {
+    username.is_some_and(|name| typed.trim() == name)
+}
+
 #[component]
 pub(super) fn PrivacyQueuePanel(tick: RefreshTick) -> Element {
     let api = api::use_api();
@@ -29,9 +94,7 @@ pub(super) fn PrivacyQueuePanel(tick: RefreshTick) -> Element {
     let reload = use_reload();
     let mut include_resolved = use_signal(|| false);
 
-    let can_write = caps.can(Permission::PrivacyWrite);
-    let can_export = caps.can(Permission::PrivacyExport);
-    let can_erase = can_write && caps.can(Permission::UsersDelete);
+    let permits = QueuePermits::of(&caps);
 
     let requests = use_resource(move || {
         tick.track();
@@ -73,14 +136,7 @@ pub(super) fn PrivacyQueuePanel(tick: RefreshTick) -> Element {
                     &i18n.t("console.privacy.empty"),
                     |rows| rsx! {
                         for row in rows.iter().cloned() {
-                            QueueRow {
-                                key: "{row.request.id}",
-                                row,
-                                can_write,
-                                can_export,
-                                can_erase,
-                                reload,
-                            }
+                            QueueRow { key: "{row.request.id}", row, permits, reload }
                         }
                     },
                 )
@@ -91,13 +147,7 @@ pub(super) fn PrivacyQueuePanel(tick: RefreshTick) -> Element {
 
 /// One queue entry: who asked, for what, by when, and what can be done about it.
 #[component]
-fn QueueRow(
-    row: AdminRequestRow,
-    can_write: bool,
-    can_export: bool,
-    can_erase: bool,
-    reload: Reload,
-) -> Element {
+fn QueueRow(row: AdminRequestRow, permits: QueuePermits, reload: Reload) -> Element {
     let i18n = use_i18n();
     let busy = use_busy();
     let mut confirm_erase = use_signal(|| false);
@@ -106,8 +156,7 @@ fn QueueRow(
 
     let id = row.request.id;
     let open = row.request.status.is_open();
-    // False here means the subject is already erased — expected end state, not a fault.
-    let subject_present = row.user_id.is_some();
+    let can_erase = offers(&row, permits, RowAction::Erase);
     let subject = row
         .username
         .clone()
@@ -115,10 +164,7 @@ fn QueueRow(
     let filed = iso_date(Some(&row.request.requested_at)).to_owned();
     let due = iso_date(Some(&row.request.due_at)).to_owned();
 
-    let matches_subject = row
-        .username
-        .as_ref()
-        .is_some_and(|name| typed.read().trim() == name);
+    let matches_subject = erasure_confirmed(row.username.as_deref(), &typed.read());
 
     rsx! {
         div { class: "ik-row", style: "align-items:flex-start;",
@@ -193,7 +239,7 @@ fn QueueRow(
             }
 
             div { class: "ik-flex", style: "gap:6px;flex-shrink:0;flex-wrap:wrap;",
-                if can_write && row.request.status == RequestStatus::Pending {
+                if offers(&row, permits, RowAction::Claim) {
                     ActionButton {
                         id,
                         action: QueueAction::Claim,
@@ -203,12 +249,10 @@ fn QueueRow(
                         outcome,
                     }
                 }
-                if can_export && row.needs_export && subject_present {
+                if offers(&row, permits, RowAction::Export) {
                     ExportButton { id, busy, outcome }
                 }
-                if can_erase && open && row.request.kind == RequestKind::Erasure && subject_present
-                    && !*confirm_erase.read()
-                {
+                if can_erase && !*confirm_erase.read() {
                     button {
                         class: "ik-btn",
                         style: "color:var(--vermilion);",
@@ -216,7 +260,7 @@ fn QueueRow(
                         {i18n.t("console.privacy.erase")}
                     }
                 }
-                if can_write && open {
+                if offers(&row, permits, RowAction::Resolve) {
                     ActionButton {
                         id,
                         action: QueueAction::Complete,
@@ -393,5 +437,127 @@ fn EraseButton(
             onclick: click,
             {i18n.t("console.privacy.eraseConfirmCta")}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wire::types::RequestRow;
+
+    const ALL: QueuePermits = QueuePermits {
+        write: true,
+        export: true,
+        erase: true,
+    };
+
+    fn row(kind: RequestKind, status: RequestStatus, subject: Option<&str>) -> AdminRequestRow {
+        AdminRequestRow {
+            claimed_by: None,
+            email: None,
+            // The server's answer; the console must not re-derive it from `kind`.
+            needs_export: kind != RequestKind::Erasure,
+            overdue: false,
+            request: RequestRow {
+                detail: None,
+                due_at: "2026-08-28T00:00:00Z".to_owned(),
+                id: uuid::Uuid::from_u128(1),
+                kind,
+                requested_at: "2026-07-29T00:00:00Z".to_owned(),
+                resolution_note: None,
+                resolved_at: None,
+                status,
+            },
+            resolved_by: None,
+            user_id: subject.map(|_| "11111111-1111-1111-1111-111111111111".to_owned()),
+            username: subject.map(ToOwned::to_owned),
+        }
+    }
+
+    /// Erasure is gated on two permissions, not one. `privacy.write` alone advances the queue's
+    /// paperwork; destroying the account behind it also needs `users.delete`, and a reader with
+    /// only the former must not be shown a control the server would refuse.
+    #[test]
+    fn erasing_needs_both_the_privacy_and_the_delete_permission() {
+        let request = row(RequestKind::Erasure, RequestStatus::Pending, Some("kaori"));
+        let write_only = QueuePermits {
+            erase: false,
+            ..ALL
+        };
+        assert!(!offers(&request, write_only, RowAction::Erase));
+        assert!(offers(&request, ALL, RowAction::Erase));
+    }
+
+    /// A completed erasure leaves its row in the queue with the subject gone. Every action that
+    /// acts on the person must disappear with them, or the row offers calls the server refuses.
+    #[test]
+    fn an_already_erased_subject_offers_nothing_that_acts_on_them() {
+        let gone = row(RequestKind::Erasure, RequestStatus::InProgress, None);
+        assert!(!offers(&gone, ALL, RowAction::Erase));
+        assert!(!offers(&gone, ALL, RowAction::Export));
+        // Resolving is paperwork about the request, not about the person, so it stays.
+        assert!(offers(&gone, ALL, RowAction::Resolve));
+    }
+
+    /// Erasure is offered on erasure requests only — never as a shortcut out of an access or
+    /// rectification request that merely happens to be open.
+    #[test]
+    fn only_an_erasure_request_offers_erasure() {
+        for kind in [
+            RequestKind::Access,
+            RequestKind::Portability,
+            RequestKind::Rectification,
+        ] {
+            let request = row(kind, RequestStatus::Pending, Some("kaori"));
+            assert!(
+                !offers(&request, ALL, RowAction::Erase),
+                "`{kind}` offered the erase control"
+            );
+        }
+    }
+
+    /// A closed request is finished: nothing may still be done to it, and claiming is offered
+    /// only while it is unclaimed.
+    #[test]
+    fn a_resolved_request_offers_no_transitions() {
+        for status in [RequestStatus::Completed, RequestStatus::Rejected] {
+            let request = row(RequestKind::Erasure, status, Some("kaori"));
+            assert!(
+                !offers(&request, ALL, RowAction::Erase),
+                "`{status}` offered the erase control"
+            );
+            assert!(
+                !offers(&request, ALL, RowAction::Resolve),
+                "`{status}` offered a resolution"
+            );
+            assert!(
+                !offers(&request, ALL, RowAction::Claim),
+                "`{status}` offered a claim"
+            );
+        }
+        let taken = row(RequestKind::Access, RequestStatus::InProgress, Some("kaori"));
+        assert!(!offers(&taken, ALL, RowAction::Claim));
+    }
+
+    /// The export control follows the server's `needs_export`, which is why that field exists —
+    /// the console re-deriving it from `kind` was FRONTEND F10.
+    #[test]
+    fn the_export_control_follows_the_servers_own_answer() {
+        let mut request = row(RequestKind::Access, RequestStatus::Pending, Some("kaori"));
+        assert!(offers(&request, ALL, RowAction::Export));
+        request.needs_export = false;
+        assert!(!offers(&request, ALL, RowAction::Export));
+    }
+
+    /// The typed confirmation must match the subject exactly, and an already-erased subject can
+    /// never be confirmed — comparing an empty field against a missing name would arm the most
+    /// destructive control on the page with nothing typed at all.
+    #[test]
+    fn the_erasure_confirmation_needs_the_exact_username() {
+        assert!(erasure_confirmed(Some("kaori"), "  kaori "));
+        assert!(!erasure_confirmed(Some("kaori"), "Kaori"));
+        assert!(!erasure_confirmed(Some("kaori"), ""));
+        assert!(!erasure_confirmed(None, ""));
+        assert!(!erasure_confirmed(None, "   "));
     }
 }

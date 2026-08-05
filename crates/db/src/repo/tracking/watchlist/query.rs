@@ -254,6 +254,28 @@ impl Default for WatchlistFilter {
     }
 }
 
+/// Wrap a trimmed search term as the `ILIKE` pattern the watchlist statements bind.
+///
+/// The three statements search four columns each, so escaping in SQL would mean twelve copies of
+/// a nested `replace(replace(replace(…)))`; doing it once here keeps the predicate readable and
+/// the escape impossible to omit from one branch.
+///
+/// `\`, `%` and `_` are ordinary characters to someone typing in the filter box and wildcards to
+/// `ILIKE`. Without the escape a search for `50%` widens to every row, and a term ending in `\`
+/// is a dangling escape that makes Postgres reject the statement outright.
+pub(super) fn search_pattern(term: &str) -> String {
+    let mut pattern = String::with_capacity(term.len() + 2);
+    pattern.push('%');
+    for ch in term.chars() {
+        if matches!(ch, '\\' | '%' | '_') {
+            pattern.push('\\');
+        }
+        pattern.push(ch);
+    }
+    pattern.push('%');
+    pattern
+}
+
 /// Where a keyset page resumes: the sort key of the previous page's last row, plus its id.
 ///
 /// **Read out of the row the database ordered on, never recomputed.** `progress` orders on

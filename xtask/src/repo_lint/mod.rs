@@ -8,6 +8,7 @@
 //! reason lives on the rule, so read it there before changing it.
 
 mod deploy;
+mod floors;
 mod frontend;
 mod metrics;
 mod notices;
@@ -54,9 +55,10 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(metrics::every_service_serves_metrics(root)?);
     findings.extend(workflows::concurrency_groups_hold_one_workflow(root)?);
     findings.extend(workflows::the_oidc_token_carries_no_newline(root)?);
+    findings.extend(floors::coverage_floors_parse(root)?);
 
     if findings.is_empty() {
-        println!("repo-lint: 15 rules, no violations");
+        println!("repo-lint: 16 rules, no violations");
         return Ok(());
     }
 

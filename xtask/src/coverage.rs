@@ -38,7 +38,7 @@ pub(crate) enum Suite {
 
 impl Suite {
     /// The committed floor for this measurement, relative to the workspace root.
-    const fn floor_file(self) -> &'static str {
+    pub(crate) const fn floor_file(self) -> &'static str {
         match self {
             Suite::Offline => ".github/coverage-floor.txt",
             Suite::Integration => ".github/coverage-floor-integration.txt",

@@ -199,9 +199,16 @@ where
     let mut remaining: Vec<&Scored<Id>> = ranked.iter().collect();
     // Parallel to `remaining`: each entry is that candidate's greatest similarity to anything
     // already picked. Zero while nothing is picked, which is what makes the first round a pure
-    // relevance ranking.
+    // relevance ranking. Sized from the input, not from `limit`.
     let mut closest: Vec<f32> = vec![0.0; remaining.len()];
-    let mut picked: Vec<Scored<Id>> = Vec::with_capacity(limit);
+
+    // **No `with_capacity`, deliberately.** `limit` reaches here from a query parameter, and
+    // sizing an allocation from it is a shape static analysis flags — reasonably, since `.min()`
+    // is not something it can see through. The clamp above makes it safe, but the hint is not
+    // worth defending: this vector holds at most a shelf's worth of items, so the handful of
+    // reallocations it avoids are invisible beside the `picks x candidates` similarity work in
+    // the loop below. Do not add it back for tidiness.
+    let mut picked: Vec<Scored<Id>> = Vec::new();
 
     while picked.len() < limit && !remaining.is_empty() {
         let mut best_index = 0;

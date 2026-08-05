@@ -521,6 +521,20 @@ async fn rank_and_render(
         .into_iter()
         .take(usize::try_from(limit).unwrap_or(1))
         .collect();
+    render(state, profile, &chosen, &vector_of, &feature_of).await
+}
+
+/// Turn the chosen ranking into the response, with the explanation attached.
+///
+/// Split from [`rank_and_render`] at the point where the shelf stops being decided and starts
+/// being described — which is also where the last database reads happen.
+async fn render(
+    state: &AppState,
+    profile: &recsys::TasteProfile,
+    chosen: &[tankovault_recsys::Scored<SeriesId>],
+    vector_of: &HashMap<SeriesId, Vec<(i32, f32)>>,
+    feature_of: &HashMap<i32, recsys::FeatureRow>,
+) -> ApiResult<Vec<Recommendation>> {
     let chosen_ids: Vec<SeriesId> = chosen.iter().map(|s| s.id).collect();
     let summaries = recsys::summaries_in_order(&state.pool, &chosen_ids).await?;
     let title_of: HashMap<SeriesId, String> = summaries

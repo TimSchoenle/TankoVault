@@ -618,11 +618,14 @@ wasm32-unknown-unknown` clean. The only honest stubs left are features with no e
 
 All migrations applied cleanly to a throwaway `postgres:19-alpine` (Session 1). The new
 `sync` repo SQL (`external_accounts`, `sync_mappings`) matches `0005_external_sync.sql`
-(bytea ciphertext token columns) and was validated by inspection. In-repo DB integration
-tests (via `sqlx`'s test harness against a disposable database) remain the priority
-pickup (§6) that would exercise all repo SQL — including enum text-casts, `xmax = 0`
-new-chapter detection, SKIP LOCKED claim, and trigram candidate lookup — against a live
-PG19.
+(bytea ciphertext token columns) and was validated by inspection.
+
+**Closed since.** The in-repo DB integration tests this section listed as the priority pickup
+exist: `crates/db/tests/` is 12 files and 8,269 lines, run by CI's `integration` job against a
+testcontainers Postgres. The harness major is **pg18** (`crates/test-support`:
+`pgvector/pgvector:pg18`), not the PG19 beta this section was written against — audit OPS-4.2
+moved both it and the reference stack off a beta catalogue, and `repo-lint`'s
+`tests_run_the_production_postgres_major` now holds the two together.
 
 ---
 
@@ -667,11 +670,13 @@ PG19.
 ## 6. Pick up next (ordered)
 
 0a. **Follow-ups left open by Session 17** (none blocking; the model is complete and verified):
-   - **A permission-model integration test suite.** The 44-check smoke script that verified this
-     session lives only in a scratchpad. It should become a checked-in integration test against
-     a disposable PG19 (see §6.4) — grant/revoke visibility, suspension, last-administrator
-     protection and the GDPR queue transitions are exactly the behaviours a refactor would break
-     silently.
+   - ~~**A permission-model integration test suite.**~~ **Done.** The scratchpad smoke script is
+     now `crates/db/tests/repo_access_control.rs` (live grants and suspension,
+     `other_active_holders` last-holder protection, `set_status` round trip, `cancel_own`
+     ownership scoping) and `services/api/tests/{me,admin}_access_matrix.rs`, which drive every
+     published route anonymous / holding every permission but the required one / holding exactly
+     it, and reconcile the set against `openapi.json` so an unclassified route fails by operation
+     id.
    - **Bootstrap for a deployment with no administrator.** `xtask seed` grants the demo admin
      every capability, and the migration converts existing roles, but an installation that
      somehow reaches zero active `users.permissions` holders has no in-band recovery. A
@@ -713,9 +718,10 @@ PG19.
    lease with `GET`/`PEXPIRE` renewal (fails open without Redis). Run counters were already
    aggregated DB-side by `scans::complete_task`/`fail_task`. Remaining polish: the API SSE
    could subscribe to the relayed NATS events instead of DB-polling.
-4. **In-repo DB integration tests** (§3) using `sqlx`'s test harness against a disposable
+4. ~~**In-repo DB integration tests** (§3) using `sqlx`'s test harness against a disposable
    PG19 — exercises every repo (canonicalisation `resolve_canonical_series`, `merge_series`,
-   `feed`, `sync`, SKIP LOCKED, `xmax = 0`).
+   `feed`, `sync`, SKIP LOCKED, `xmax = 0`).~~ **Done** — `crates/db/tests/`, 12 files, on a
+   testcontainers **pg18**; see §3.
 5. ~~**CI pipeline:** wire fmt + clippy(`-D warnings`) + `cargo deny` + `cargo audit` +
    tests + `docker build` of each `BIN`.~~ **DONE (Session 8).** `.github/workflows/ci.yml`
    runs those as parallel jobs plus a `wasm32` frontend check; `deny.toml` configures the

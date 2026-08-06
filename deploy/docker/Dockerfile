@@ -4,8 +4,15 @@
 # `--build-arg BIN=<api|worker|control-plane|notifier|sync|challenge-solver|render|bootstrap>`.
 
 ARG RUST_VERSION=1.94
-# Passed through so BuildKit can clamp layer mtimes for reproducible images; empty is fine.
-ARG SOURCE_DATE_EPOCH
+
+# `SOURCE_DATE_EPOCH` is deliberately **not** declared, and must not be re-added. Reproducible
+# timestamps come from the exporter — `rewrite-timestamp=true` on the publishing legs in
+# release-please.yaml — which reads the value buildx propagates from the environment. Declaring it
+# and passing `--build-arg` instead puts the commit timestamp into the build's argument set, and
+# BuildKit then reuses no cached layer built under a different epoch. That made every cross-run
+# `cache-from` a total miss: `chef` re-ran `apk add` and rebuilt `cargo-auditable` on a
+# digest-pinned base, and `cook` recompiled all 549 dependencies, on every run — 45 minutes a
+# build. release-please.yaml documents the same trap for `SERVICE_BINS`.
 
 # Alpine, not Debian: BoringSSL (wreq's TLS backend) needs a musl C++ toolchain that Debian's
 # musl-tools lacks, so the build is native rather than cross. Pinned by digest.
@@ -52,14 +59,20 @@ COPY . .
 ARG SERVICE_BINS="api bootstrap challenge-solver control-plane frontend notifier render sync worker xtask"
 # `from=cook,source=/app/target` seeds the mount so a cold cache (CI's is always cold) starts from
 # `cook`'s output instead of rebuilding every dependency. `sharing=locked` lets concurrent builds
-# queue on cargo's target-dir lock rather than race it. `${flags}` is unquoted so word splitting
-# turns it into separate --bin args.
+# queue on cargo's target-dir lock rather than race it.
+#
+# **The build is not narrowed to `--bin`, and narrowing it again would cost 12 minutes a build.**
+# `cargo chef cook` compiles the whole skeleton workspace, `crates/test-support` included; a
+# `--bin` list selects the ten packages owning those binaries and excludes it. Feature unification
+# runs over the selected set, so the two invocations resolve different features for the shared
+# dependency graph and cargo rebuilds everything the difference reaches — measured at 489 of the
+# 512 crates in this stage recompiled after `cook` had just compiled them. Building the same set
+# `cook` cooks is what makes the seed above worth anything. `SERVICE_BINS` still names what gets
+# copied out and what the linkage contract below checks.
 RUN --mount=type=cache,id=tankovault-backend-cargo,target=/cargo,sharing=shared \
     --mount=type=cache,id=tankovault-backend-target,target=/app/target,sharing=locked,from=cook,source=/app/target \
     set -eu; \
-    flags=''; \
-    for bin in ${SERVICE_BINS}; do flags="${flags} --bin ${bin}"; done; \
-    cargo auditable build --release --locked ${flags}; \
+    cargo auditable build --release --locked; \
     mkdir -p /out; \
     for bin in ${SERVICE_BINS}; do cp "target/release/${bin}" "/out/${bin}"; done
 

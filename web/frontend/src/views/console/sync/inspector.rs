@@ -9,37 +9,37 @@ use crate::models::*;
 use crate::state::use_session;
 use crate::util::rel_time;
 use crate::views::console::merge::SeriesMiniCard;
+use crate::views::console::use_console_nav;
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
 
 /// Either the editable per-series "manga info" view (when a series is selected) or a title
 /// search + recently-mapped list to open one.
 #[component]
-pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Reload) -> Element {
+pub(super) fn SeriesSyncInspector(reload: Reload) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
-    let mut query = use_signal(String::new);
+    let nav = use_console_nav();
+    let query = nav.query().q;
 
-    // Hooks stay unconditional (Rules of Hooks) ahead of the branch on `selected`.
-    let results = {
-        use_resource(move || {
-            let q = query.read().clone();
-            let client = api.client();
-            async move {
-                if q.trim().len() < 2 {
-                    return Ok(Vec::new());
-                }
-                client
-                    .list()
-                    .query(q)
-                    .limit(12)
-                    .send()
-                    .await
-                    .map(ResponseValue::into_inner)
-                    .map_err(|e| api::friendly_error(i18n, e))
+    // Hooks stay unconditional (Rules of Hooks) ahead of the branch on the selection.
+    let results = use_resource(use_reactive!(|query| {
+        let q = query.clone();
+        let client = api.client();
+        async move {
+            if q.trim().len() < 2 {
+                return Ok(Vec::new());
             }
-        })
-    };
+            client
+                .list()
+                .query(q)
+                .limit(12)
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))
+        }
+    }));
 
     let mappings = {
         use_resource(move || {
@@ -56,9 +56,9 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
         })
     };
 
-    if let Some(sid) = selected.read().clone() {
+    if let Some(sid) = nav.query().sel {
         return rsx! {
-            SeriesSyncEditor { key: "{sid}", series_id: sid, selected, reload }
+            SeriesSyncEditor { key: "{sid}", series_id: sid, reload }
         };
     }
 
@@ -73,10 +73,9 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
             rsx! {
                 ErrorBox {
                     message,
-                    on_retry: move |()| {
-                        let current = query.peek().clone();
-                        query.set(current);
-                    },
+                    // The resource is keyed on the URL's `q`, so re-writing the same value
+                    // back is what re-runs it.
+                    on_retry: move |()| nav.filter(nav.query()),
                 }
             }
         }
@@ -86,7 +85,7 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
             rsx! {
                 div { style: "margin-top:8px;",
                     for s in list {
-                        SeriesPickRow { key: "{s.id}", series: s, selected }
+                        SeriesPickRow { key: "{s.id}", series: s }
                     }
                 }
             }
@@ -101,7 +100,6 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
                 MappingPickRow {
                     key: "{m.series_id}-{m.provider}",
                     mapping: Signal::new(m),
-                    selected,
                 }
             }
         }
@@ -114,7 +112,7 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
             r#type: "text",
             placeholder: i18n.t("console.sync.searchSeries"),
             value: "{query}",
-            oninput: move |e| query.set(e.value()),
+            oninput: move |e| nav.filter(nav.query().with_search(e.value())),
         }
         {results_body}
         div { class: "ik-muted", style: "font-size:12px;margin:14px 0 6px;",
@@ -126,8 +124,9 @@ pub(super) fn SeriesSyncInspector(selected: Signal<Option<String>>, reload: Relo
 
 /// A search-result row that opens the series in the inspector.
 #[component]
-pub(super) fn SeriesPickRow(series: SeriesSummary, selected: Signal<Option<String>>) -> Element {
+pub(super) fn SeriesPickRow(series: SeriesSummary) -> Element {
     let i18n = use_i18n();
+    let nav = use_console_nav();
     let sid = series.id;
     rsx! {
         div { class: "ik-row",
@@ -137,7 +136,7 @@ pub(super) fn SeriesPickRow(series: SeriesSummary, selected: Signal<Option<Strin
                     {i18n.plural("series.sources", series.source_count, &[])}
                 }
             }
-            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.to_string())),
+            button { class: "ik-btn", onclick: move |_| nav.select(nav.query().with_selection(Some(sid.to_string()))),
                 {i18n.t("common.open")}
             }
         }
@@ -146,11 +145,9 @@ pub(super) fn SeriesPickRow(series: SeriesSummary, selected: Signal<Option<Strin
 
 /// A recently-mapped row that opens the series in the inspector.
 #[component]
-pub(super) fn MappingPickRow(
-    mapping: Signal<AdminSyncMapping>,
-    selected: Signal<Option<String>>,
-) -> Element {
+pub(super) fn MappingPickRow(mapping: Signal<AdminSyncMapping>) -> Element {
     let i18n = use_i18n();
+    let nav = use_console_nav();
     let m = mapping.read();
     let updated = rel_time(i18n, Some(&m.updated_at));
     let sid = m.series_id;
@@ -170,7 +167,7 @@ pub(super) fn MappingPickRow(
                     }
                 }
             }
-            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.to_string())),
+            button { class: "ik-btn", onclick: move |_| nav.select(nav.query().with_selection(Some(sid.to_string()))),
                 {i18n.t("common.open")}
             }
         }
@@ -180,13 +177,10 @@ pub(super) fn MappingPickRow(
 /// The editable per-series "manga info" view: the series card plus one editor row per known
 /// sync provider, prefilled with its current external id.
 #[component]
-pub(super) fn SeriesSyncEditor(
-    series_id: String,
-    selected: Signal<Option<String>>,
-    reload: Reload,
-) -> Element {
+pub(super) fn SeriesSyncEditor(series_id: String, reload: Reload) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
+    let nav = use_console_nav();
     // `series_id` arrives as a plain `String` shared with the search/pick-row flow; parsed
     // once here at the boundary.
     let Ok(sid) = series_id.parse::<SeriesId>() else {
@@ -236,7 +230,7 @@ pub(super) fn SeriesSyncEditor(
 
     rsx! {
         div { class: "ik-flex", style: "justify-content:space-between;align-items:center;margin-bottom:10px;",
-            button { class: "ik-btn", onclick: move |_| selected.set(None),
+            button { class: "ik-btn", onclick: move |_| nav.select(nav.query().with_selection(None)),
                 {i18n.t("console.sync.backToSearch")}
             }
             button { class: "ik-btn", onclick: move |_| reload.bump(),

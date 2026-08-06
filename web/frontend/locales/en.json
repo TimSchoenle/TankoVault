@@ -654,6 +654,11 @@
       "sync": "Sync",
       "users": "Users"
     },
+    "table": {
+      "columns": "Columns",
+      "columnsLegend": "Columns to show",
+      "compact": "Compact"
+    },
     "title": "Operator Console",
     "users": {
       "activeSessions": "{count} active",
@@ -726,6 +731,12 @@
       "unverifiedHint": "This address has not been confirmed, so the account cannot sign in.",
       "verified": "Verified",
       "verifyEmail": "Confirm email address"
+    },
+    "window": {
+      "any": "Any time",
+      "day": "Last 24 hours",
+      "hour": "Last hour",
+      "week": "Last 7 days"
     }
   },
   "discover": {

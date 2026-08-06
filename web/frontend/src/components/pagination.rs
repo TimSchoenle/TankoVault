@@ -163,9 +163,13 @@ pub(crate) fn Pagination(page: Signal<usize>, pages: usize, has_next: bool) -> E
 ///
 /// `page` is a 0-based page index; `window` describes what the server returned for it.
 #[component]
-pub(crate) fn CompactPager(page: Signal<i64>, window: Window) -> Element {
+pub(crate) fn CompactPager(
+    /// Controlled: the console's page lives in the URL, so the caller owns it.
+    page: i64,
+    window: Window,
+    on_page: EventHandler<i64>,
+) -> Element {
     let i18n = use_i18n();
-    let mut page = page;
     rsx! {
         div { class: "ik-cons-foot",
             span {
@@ -185,14 +189,14 @@ pub(crate) fn CompactPager(page: Signal<i64>, window: Window) -> Element {
                     class: "ik-btn xs",
                     r#type: "button",
                     disabled: !window.has_prev(),
-                    onclick: move |_| page -= 1,
+                    onclick: move |_| on_page.call(page - 1),
                     {i18n.t("common.previous")}
                 }
                 button {
                     class: "ik-btn xs",
                     r#type: "button",
                     disabled: !window.has_next(),
-                    onclick: move |_| page += 1,
+                    onclick: move |_| on_page.call(page + 1),
                     {i18n.t("common.next")}
                 }
             }

@@ -24,8 +24,11 @@ pub(super) fn LiveControls(tick: RefreshTick, auto: Signal<bool>) -> Element {
                 class: "ik-btn",
                 onclick: move |_| {
                     let mut a = auto;
-                    let cur = *a.peek();
-                    a.set(!cur);
+                    let next = !*a.peek();
+                    a.set(next);
+                    // Persisted: an operator who pauses to read a queue should not have it
+                    // start moving again on the next reload.
+                    crate::state::prefs::set_console_live(next);
                 },
                 if is_auto {
                     {i18n.t("console.live.pause")}

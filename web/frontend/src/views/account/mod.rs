@@ -88,7 +88,7 @@ pub(crate) fn Account() -> Element {
     let caps = use_capabilities();
     let i18n = use_i18n();
     let api = api::use_api();
-    let panel = use_signal(|| Panel::Profile);
+    let mut panel = use_signal(|| Panel::Profile);
 
     if !session.is_authenticated() {
         return rsx! { AuthRequired { title: i18n.t("nav.account") } };
@@ -134,7 +134,11 @@ pub(crate) fn Account() -> Element {
             h1 { class: "ik-page-title", {i18n.t("nav.account")} }
             button { class: "ik-btn", onclick: sign_out, {i18n.t("account.signOut")} }
         }
-        TabBar { selected: panel, visible: visible.clone() }
+        TabBar {
+            selected: current,
+            on_select: move |next| panel.set(next),
+            visible: visible.clone(),
+        }
         match current {
             Panel::Profile => rsx! { profile::ProfilePanel { name: name.clone(), tier: tier.clone() } },
             Panel::Appearance => rsx! { appearance::AppearancePanel {} },

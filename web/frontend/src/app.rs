@@ -8,9 +8,9 @@ use crate::state::legal::LegalIndex;
 use crate::state::Session;
 use crate::title::PageTitle;
 use crate::views::{
-    Account, AnilistCallback, Console, Discover, ForgotPassword, Home, Legal, Login, NotFound,
-    Notifications, Recommendations, ResetPassword, Search, Series, VerifyEmail, Watchlist,
-    WatchlistQuery,
+    Account, AnilistCallback, Console, ConsoleEntity, ConsoleQuery, ConsoleSection, Discover,
+    ForgotPassword, Home, Legal, Login, NotFound, Notifications, Recommendations, ResetPassword,
+    Search, Series, VerifyEmail, Watchlist, WatchlistQuery,
 };
 use dioxus::prelude::*;
 
@@ -56,8 +56,16 @@ pub(crate) enum Route {
         ForgotPassword {},
         #[route("/reset-password?:token")]
         ResetPassword { token: String },
+        // `/console` is the way in: it resolves the operator's last entity and replaces itself
+        // with the addressable form below, so no console view an operator reaches is unlinkable.
         #[route("/console")]
         Console {},
+        #[route("/console/:entity?:..query")]
+        ConsoleSection { entity: ConsoleEntity, query: ConsoleQuery },
+        // An entity slug this build has dropped lands in the console rather than on a 404 — the
+        // rail is capability-filtered anyway, so "no such entity" and "not for you" already
+        // resolve the same way.
+        #[redirect("/console/:_entity", |_entity: String| Route::Console {})]
         // Operator-published documents. The slug set is configuration, not code — an
         // operator can publish one this build has never heard of — so the segment is a
         // free string and an unconfigured one is the API's 404, not a routing miss.

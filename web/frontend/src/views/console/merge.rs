@@ -11,16 +11,10 @@ use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::state::use_session;
+use crate::views::console::query::Band;
+use crate::views::console::{use_console_nav, ConsoleQuery};
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
-
-/// Confidence bands an operator triages in, from all matches down to near-certain duplicates.
-const BANDS: &[(f32, &str)] = &[
-    (0.0, "console.merge.bandAll"),
-    (0.6, "console.merge.bandLow"),
-    (0.75, "console.merge.bandMed"),
-    (0.9, "console.merge.bandHigh"),
-];
 
 /// Canonicalisation review queue with merge / dismiss actions and the duplicate sweep.
 #[component]
@@ -29,13 +23,14 @@ pub(super) fn MergeQueue() -> Element {
     let i18n = use_i18n();
     let session = use_session();
     let reload = use_reload();
-    let mut min_score = use_signal(|| 0.0_f32);
+    let nav = use_console_nav();
+    let band = nav.query().band;
     let mut notice = use_signal(String::new);
     let mut busy = use_signal(|| false);
 
     let resource = use_resource(move || {
         reload.track();
-        let threshold = *min_score.read();
+        let threshold = band.min_score();
         let client = api.client();
         async move {
             client
@@ -128,18 +123,17 @@ pub(super) fn MergeQueue() -> Element {
         });
     };
 
-    let active = *min_score.read();
     rsx! {
         section {
             h3 { {i18n.t("console.tab.merge")} }
             div { class: "ik-row", style: "gap:8px;flex-wrap:wrap;margin-bottom:12px;",
                 div { class: "ik-flex", style: "gap:4px;flex-wrap:wrap;",
-                    for (threshold , label) in BANDS.iter().copied() {
+                    for option in Band::ALL {
                         button {
-                            key: "{label}",
-                            class: if (active - threshold).abs() < f32::EPSILON { "ik-btn primary" } else { "ik-btn" },
-                            onclick: move |_| min_score.set(threshold),
-                            {i18n.t(label)}
+                            key: "{option.token()}",
+                            class: if option == band { "ik-btn primary" } else { "ik-btn" },
+                            onclick: move |_| nav.filter(ConsoleQuery { band: option, ..nav.query() }),
+                            {i18n.t(option.label_key())}
                         }
                     }
                 }

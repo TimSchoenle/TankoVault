@@ -1,6 +1,10 @@
 //! Operator Console: a master–detail surface with an entity rail, an entity list, and a deep
 //! inspector, one module per entity.
 //!
+//! Every filter and selection lives in the URL (see [`query`]), so a console view can be linked
+//! to. Panels read it through [`ConsoleNav`] and never keep a second copy: a signal shadowing a
+//! parameter is a filter that reverts on the back button.
+//!
 //! Providers, Users and Flags are deliberately off the shared [`RefreshTick`]: they are mid-edit
 //! work surfaces, and a background refetch landing on a half-filled form would discard it.
 
@@ -11,6 +15,7 @@ mod merge;
 mod overview;
 mod privacy;
 mod providers;
+pub(crate) mod query;
 mod recommendations;
 mod scans;
 mod solver;
@@ -18,17 +23,24 @@ mod stats;
 mod sync;
 mod users;
 
+pub(crate) use query::ConsoleQuery;
+
 use crate::api;
+use crate::app::Route;
 use crate::components::EmptyBox;
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::capabilities::{use_capabilities, CapabilitySet};
+use crate::state::prefs;
 use crate::util::thousands;
 use crate::wire::types::{Feature, Permission};
 use dioxus::prelude::*;
+use dioxus::router::Navigator;
 use progenitor_client::ResponseValue;
+use std::fmt;
+use std::str::FromStr;
 
 /// Auto-refresh cadence for the read-only entities.
 const REFRESH_MS: u32 = 4000;
@@ -59,8 +71,11 @@ impl RefreshTick {
 }
 
 /// The console's entities, in rail order within their group.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Entity {
+///
+/// Public because it is a route segment: [`ConsoleEntity::slug`] *is* the URL, so
+/// `/console/providers` and `/console/feature-flags` are addresses rather than parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConsoleEntity {
     Overview,
     Merge,
     Recommendations,
@@ -76,34 +91,51 @@ enum Entity {
 }
 
 /// The rail's groups, in order, each with the entities it holds.
-const RAIL: &[(&str, &[Entity])] = &[
-    ("console.group.system", &[Entity::Overview]),
+const RAIL: &[(&str, &[ConsoleEntity])] = &[
+    ("console.group.system", &[ConsoleEntity::Overview]),
     (
         "console.group.catalogue",
-        &[Entity::Merge, Entity::Recommendations],
+        &[ConsoleEntity::Merge, ConsoleEntity::Recommendations],
     ),
     (
         "console.group.pipeline",
         &[
-            Entity::Providers,
-            Entity::Scans,
-            Entity::Solver,
-            Entity::AdapterTest,
+            ConsoleEntity::Providers,
+            ConsoleEntity::Scans,
+            ConsoleEntity::Solver,
+            ConsoleEntity::AdapterTest,
         ],
     ),
     (
         "console.group.people",
         &[
-            Entity::Users,
-            Entity::Sync,
-            Entity::Flags,
-            Entity::Privacy,
-            Entity::Audit,
+            ConsoleEntity::Users,
+            ConsoleEntity::Sync,
+            ConsoleEntity::Flags,
+            ConsoleEntity::Privacy,
+            ConsoleEntity::Audit,
         ],
     ),
 ];
 
-impl Entity {
+impl ConsoleEntity {
+    /// Every entity, in rail order. Kept in step with [`RAIL`] by
+    /// `the_rail_and_the_entity_list_hold_the_same_entities`.
+    pub(crate) const ALL: [ConsoleEntity; 12] = [
+        Self::Overview,
+        Self::Merge,
+        Self::Recommendations,
+        Self::Providers,
+        Self::Scans,
+        Self::Solver,
+        Self::AdapterTest,
+        Self::Users,
+        Self::Sync,
+        Self::Flags,
+        Self::Privacy,
+        Self::Audit,
+    ];
+
     /// The catalogue key of this entity's rail label.
     fn label_key(self) -> &'static str {
         match self {
@@ -142,8 +174,8 @@ impl Entity {
         }
     }
 
-    /// The breadcrumb segment shown beside the wordmark.
-    fn slug(self) -> &'static str {
+    /// This entity's URL segment, and the breadcrumb shown beside the wordmark.
+    pub(crate) fn slug(self) -> &'static str {
         match self {
             Self::Overview => "overview",
             Self::Merge => "merge-queue",
@@ -200,6 +232,89 @@ impl Entity {
     }
 }
 
+impl fmt::Display for ConsoleEntity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.slug())
+    }
+}
+
+/// An unrecognised slug. The route table turns this into a redirect to `/console` rather than a
+/// 404: a link to an entity this build has dropped should still land the operator in the
+/// console.
+#[derive(Debug)]
+pub(crate) struct UnknownEntity;
+
+impl fmt::Display for UnknownEntity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("no console entity by that name")
+    }
+}
+
+impl FromStr for ConsoleEntity {
+    type Err = UnknownEntity;
+
+    fn from_str(slug: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|entity| entity.slug() == slug)
+            .ok_or(UnknownEntity)
+    }
+}
+
+/// The console's addressable state, and the two ways a panel changes it.
+///
+/// Handed down as context rather than threaded as props: the inspector tabs sit four components
+/// below the route, and every handle here is `Copy`, so a lookup is cheaper than the clone chain
+/// would be.
+#[derive(Clone, Copy)]
+pub(super) struct ConsoleNav {
+    entity: Memo<ConsoleEntity>,
+    query: Memo<ConsoleQuery>,
+    nav: Navigator,
+}
+
+impl ConsoleNav {
+    /// The entity currently open.
+    pub(super) fn entity(self) -> ConsoleEntity {
+        *self.entity.read()
+    }
+
+    /// The current view state. Cloned, because callers build the next state from it.
+    pub(super) fn query(self) -> ConsoleQuery {
+        self.query.read().clone()
+    }
+
+    /// A **selection** change: pushes, so the back button moves between rows.
+    pub(super) fn select(self, next: ConsoleQuery) {
+        self.nav.push(Route::ConsoleSection {
+            entity: self.entity(),
+            query: next,
+        });
+    }
+
+    /// A **filter** change: replaces, so a debounced search box does not leave one history
+    /// entry per keystroke.
+    pub(super) fn filter(self, next: ConsoleQuery) {
+        self.nav.replace(Route::ConsoleSection {
+            entity: self.entity(),
+            query: next,
+        });
+    }
+
+    /// Move to another entity, dropping the filters — they belong to the panel being left.
+    pub(super) fn open(self, entity: ConsoleEntity) {
+        self.nav.push(Route::ConsoleSection {
+            entity,
+            query: ConsoleQuery::fresh(),
+        });
+    }
+}
+
+/// The console's nav handle, from any component below the route.
+pub(super) fn use_console_nav() -> ConsoleNav {
+    use_context::<ConsoleNav>()
+}
+
 /// One rail count: the number, and the tone that says whether it needs attention.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CountTone {
@@ -230,43 +345,97 @@ pub(super) fn adapter_label_key(a: AdapterKind) -> &'static str {
     }
 }
 
+/// The entity a bare `/console` opens: where the operator left off, if they may still see it,
+/// else the first entity their capabilities allow.
+fn landing_entity(caps: &CapabilitySet) -> Option<ConsoleEntity> {
+    prefs::console_entity()
+        .filter(|entity| entity.is_visible(caps))
+        .or_else(|| {
+            ConsoleEntity::ALL
+                .into_iter()
+                .find(|entity| entity.is_visible(caps))
+        })
+}
+
+/// `/console` — the way in, not a place. Resolves the landing entity and rewrites the address
+/// bar to it, so every console view an operator can reach is one they can also send.
 #[component]
 pub(crate) fn Console() -> Element {
     let i18n = use_i18n();
-    let api = api::use_api();
     let caps = use_capabilities();
     let session = crate::state::use_session();
+    let nav = navigator();
+
+    use_effect(move || {
+        if !caps.is_ready() {
+            return;
+        }
+        if let Some(entity) = landing_entity(&caps) {
+            nav.replace(Route::ConsoleSection {
+                entity,
+                query: ConsoleQuery::fresh(),
+            });
+        }
+    });
 
     // `/console` is a public route (the rail link is merely hidden while signed out), so a
     // bookmark, a shared link, or a session expiry can land here unauthenticated.
     if !session.is_authenticated() {
         return rsx! { crate::components::AuthRequired { title: i18n.t("nav.console") } };
     }
-
-    // Held back until the capability fetch lands: rendering "operators only" first and the
-    // console a moment later reads as a permission error to anyone who blinks.
-    if !caps.is_ready() {
-        return rsx! {
-            h1 { class: "ik-page-title", {i18n.t("nav.console")} }
-            crate::components::SkeletonBlock { height: 220 }
-        };
-    }
-
-    let visible: Vec<Entity> = RAIL
-        .iter()
-        .flat_map(|(_, entities)| entities.iter().copied())
-        .filter(|entity| entity.is_visible(&caps))
-        .collect();
-    let Some(&first) = visible.first() else {
+    if caps.is_ready() && landing_entity(&caps).is_none() {
         return rsx! {
             h1 { class: "ik-page-title", {i18n.t("nav.console")} }
             EmptyBox { message: i18n.t("console.operatorsOnly") }
         };
-    };
+    }
+
+    // Held back until the capability fetch lands: rendering "operators only" first and the
+    // console a moment later reads as a permission error to anyone who blinks.
+    rsx! {
+        h1 { class: "ik-page-title", {i18n.t("nav.console")} }
+        crate::components::SkeletonBlock { height: 220 }
+    }
+}
+
+/// `/console/:entity?:..query` — the console itself.
+#[component]
+pub(crate) fn ConsoleSection(entity: ConsoleEntity, query: ConsoleQuery) -> Element {
+    let i18n = use_i18n();
+    let api = api::use_api();
+    let caps = use_capabilities();
+    let session = crate::state::use_session();
+    let navigator = navigator();
+
+    // The route is the read side of every filter; these memos recompute when it changes rather
+    // than mirroring it into signals that could drift out of step with the address bar.
+    let entity_memo = use_memo(use_reactive!(|entity| entity));
+    let query_memo = use_memo(use_reactive!(|query| query.clone()));
+    let nav = use_context_provider(|| ConsoleNav {
+        entity: entity_memo,
+        query: query_memo,
+        nav: navigator,
+    });
+
+    // Remember where the operator was, and bail out to somewhere they can see if the entity in
+    // the URL loses its permission or feature under their feet.
+    use_effect(move || {
+        if !caps.is_ready() {
+            return;
+        }
+        let current = *entity_memo.read();
+        if current.is_visible(&caps) {
+            prefs::set_console_entity(current);
+        } else if let Some(fallback) = landing_entity(&caps) {
+            navigator.replace(Route::ConsoleSection {
+                entity: fallback,
+                query: ConsoleQuery::fresh(),
+            });
+        }
+    });
 
     let tick = RefreshTick(use_reload());
-    let auto = use_signal(|| true);
-    let mut selected = use_signal(|| first);
+    let auto = use_signal(prefs::console_live);
     use_future(move || async move {
         loop {
             gloo_timers::future::TimeoutFuture::new(REFRESH_MS).await;
@@ -296,21 +465,10 @@ pub(crate) fn Console() -> Element {
         }
     });
 
-    // Fall back to the first still-visible entity if the selected one loses its permission
-    // or feature under the reader's feet.
-    let current = {
-        let choice = *selected.read();
-        if visible.contains(&choice) {
-            choice
-        } else {
-            first
-        }
-    };
-
     // Groups with nothing visible in them are dropped whole: a kicker over an empty stretch of
     // rail reads as a broken list.
     //
-    // Memoised because this component re-renders on the shared 4s tick, and the rail's shape
+    // Memoised because this component re-renders on the shared tick, and the rail's shape
     // depends on nothing that changes between ticks — only on the capability set.
     let groups = use_memo(move || {
         RAIL.iter()
@@ -323,8 +481,27 @@ pub(crate) fn Console() -> Element {
                 (*key, shown)
             })
             .filter(|(_, shown)| !shown.is_empty())
-            .collect::<Vec<(&str, Vec<Entity>)>>()
+            .collect::<Vec<(&str, Vec<ConsoleEntity>)>>()
     });
+
+    if !session.is_authenticated() {
+        return rsx! { crate::components::AuthRequired { title: i18n.t("nav.console") } };
+    }
+    if !caps.is_ready() {
+        return rsx! {
+            h1 { class: "ik-page-title", {i18n.t("nav.console")} }
+            crate::components::SkeletonBlock { height: 220 }
+        };
+    }
+    // The effect above is already navigating away; rendering the panel meanwhile would fire a
+    // privileged fetch the reader is not entitled to make.
+    if !entity.is_visible(&caps) {
+        return rsx! {
+            h1 { class: "ik-page-title", {i18n.t("nav.console")} }
+            EmptyBox { message: i18n.t("console.operatorsOnly") }
+        };
+    }
+    let current = entity;
 
     let counts = stats.read_unchecked().clone().flatten();
     let body_class = if current.is_master_detail() {
@@ -334,55 +511,55 @@ pub(crate) fn Console() -> Element {
     };
 
     let panel = match current {
-        Entity::Overview => rsx! {
+        ConsoleEntity::Overview => rsx! {
             div { class: "ik-cons-pane",
                 overview::SystemOverview { tick }
                 stats::ProviderStatsTable { tick }
             }
         },
-        Entity::Scans => rsx! {
+        ConsoleEntity::Scans => rsx! {
             div { class: "ik-cons-pane",
                 scans::ScanQueue { tick }
             }
         },
-        Entity::Providers => rsx! { providers::ProvidersEntity {} },
-        Entity::Solver => rsx! {
+        ConsoleEntity::Providers => rsx! { providers::ProvidersEntity {} },
+        ConsoleEntity::Solver => rsx! {
             div { class: "ik-cons-pane",
                 solver::SolverPanel { tick }
             }
         },
-        Entity::AdapterTest => rsx! {
+        ConsoleEntity::AdapterTest => rsx! {
             div { class: "ik-cons-pane",
                 solver::AdapterTestTab {}
             }
         },
-        Entity::Merge => rsx! {
+        ConsoleEntity::Merge => rsx! {
             div { class: "ik-cons-pane",
                 merge::MergeQueue {}
             }
         },
-        Entity::Recommendations => rsx! {
+        ConsoleEntity::Recommendations => rsx! {
             div { class: "ik-cons-pane",
                 recommendations::RecommendationsPanel {}
             }
         },
-        Entity::Sync => rsx! {
+        ConsoleEntity::Sync => rsx! {
             div { class: "ik-cons-pane",
                 sync::SyncAdminPanel {}
             }
         },
-        Entity::Users => rsx! { users::UsersEntity {} },
-        Entity::Flags => rsx! {
+        ConsoleEntity::Users => rsx! { users::UsersEntity {} },
+        ConsoleEntity::Flags => rsx! {
             div { class: "ik-cons-pane",
                 flags::FeatureFlagsPanel {}
             }
         },
-        Entity::Privacy => rsx! {
+        ConsoleEntity::Privacy => rsx! {
             div { class: "ik-cons-pane",
                 privacy::PrivacyQueuePanel { tick }
             }
         },
-        Entity::Audit => rsx! {
+        ConsoleEntity::Audit => rsx! {
             div { class: "ik-cons-pane",
                 audit::AuditPanel { tick }
             }
@@ -419,7 +596,7 @@ pub(crate) fn Console() -> Element {
                                 key: "{entity.slug()}",
                                 class: if entity == current { "ik-cons-entry active" } else { "ik-cons-entry" },
                                 "aria-current": if entity == current { "page" } else { "false" },
-                                onclick: move |_| selected.set(entity),
+                                onclick: move |_| nav.open(entity),
                                 Ic { icon: entity.icon(), size: 15 }
                                 span { {i18n.t(entity.label_key())} }
                                 RailCount { entity, counts: counts.clone() }
@@ -435,12 +612,12 @@ pub(crate) fn Console() -> Element {
 
 /// The rail's right-aligned count for an entity, when the stats endpoint supplies one.
 #[component]
-fn RailCount(entity: Entity, counts: Option<SystemStats>) -> Element {
+fn RailCount(entity: ConsoleEntity, counts: Option<SystemStats>) -> Element {
     let Some(stats) = counts else {
         return rsx! {};
     };
     let (value, tone) = match entity {
-        Entity::Merge => (
+        ConsoleEntity::Merge => (
             stats.pending_merges,
             if stats.pending_merges > 0 {
                 CountTone::Attention
@@ -448,8 +625,8 @@ fn RailCount(entity: Entity, counts: Option<SystemStats>) -> Element {
                 CountTone::Plain
             },
         ),
-        Entity::Providers => (stats.providers_total, CountTone::Plain),
-        Entity::Scans => (
+        ConsoleEntity::Providers => (stats.providers_total, CountTone::Plain),
+        ConsoleEntity::Scans => (
             stats.runs_active,
             if stats.runs_active > 0 {
                 CountTone::Live
@@ -457,7 +634,7 @@ fn RailCount(entity: Entity, counts: Option<SystemStats>) -> Element {
                 CountTone::Plain
             },
         ),
-        Entity::Users => (stats.users_total, CountTone::Plain),
+        ConsoleEntity::Users => (stats.users_total, CountTone::Plain),
         _ => return rsx! {},
     };
 
@@ -519,8 +696,37 @@ pub(super) fn config_editor_text(v: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{adapter_label_key, ADAPTER_KINDS};
+    use super::{adapter_label_key, ConsoleEntity, ADAPTER_KINDS, RAIL};
     use crate::models::AdapterKind;
+
+    /// `ConsoleEntity::ALL` is what the palette enumerates and what the slug round-trip test
+    /// covers; `RAIL` is what the operator can actually click. An entity in one and not the
+    /// other is either an address nothing reaches or a rail entry no link can name.
+    #[test]
+    fn the_rail_and_the_entity_list_hold_the_same_entities() {
+        let mut railed: Vec<&str> = RAIL
+            .iter()
+            .flat_map(|(_, entities)| entities.iter().map(|entity| entity.slug()))
+            .collect();
+        let mut listed: Vec<&str> = ConsoleEntity::ALL.iter().map(|e| e.slug()).collect();
+        railed.sort_unstable();
+        listed.sort_unstable();
+        assert_eq!(railed, listed);
+    }
+
+    /// A rail entry with no wording renders as `console.tab.…` to the operator, because a
+    /// missing catalogue key falls back to the key itself rather than failing.
+    #[test]
+    fn every_entity_is_worded() {
+        for entity in ConsoleEntity::ALL {
+            let key = entity.label_key();
+            assert!(
+                crate::i18n::has_key(key),
+                "`{}` is on the rail but `{key}` is not in the catalogue",
+                entity.slug()
+            );
+        }
+    }
 
     /// The provider-registration picker must offer every adapter the API accepts.
     ///

@@ -142,7 +142,7 @@ pub(crate) fn Notifications() -> Element {
     let api = api::use_api();
     let badge = use_context::<UnreadBadge>();
     let reload = use_reload();
-    let tab = use_signal(|| Tab::All);
+    let mut tab = use_signal(|| Tab::All);
     let page = use_signal(|| 0usize);
 
     let notifications = use_resource(move || {
@@ -225,7 +225,7 @@ pub(crate) fn Notifications() -> Element {
                 {i18n.t("notifications.markAllRead")}
             }
         }
-        TabBar { selected: tab }
+        TabBar { selected: *tab.read(), on_select: move |next| tab.set(next) }
         {
             async_view(
                 &notifications,

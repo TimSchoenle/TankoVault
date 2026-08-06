@@ -22,9 +22,6 @@ pub(super) fn SyncAdminPanel() -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let reload = use_reload();
-    // The series currently open in the "manga info" inspector, shared with the assign queue
-    // so "Inspect" jumps straight to the editable per-provider mapping view.
-    let selected = use_signal(|| Option::<String>::None);
 
     let accounts = {
         use_resource(move || {
@@ -75,14 +72,14 @@ pub(super) fn SyncAdminPanel() -> Element {
             p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
                 {i18n.t("console.sync.inspectorIntro")}
             }
-            SeriesSyncInspector { selected, reload }
+            SeriesSyncInspector { reload }
         }
         section { style: "margin-bottom:24px;",
             h3 { {i18n.t("console.sync.assignQueue")} }
             p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
                 {i18n.t("console.sync.assignQueueIntro")}
             }
-            AssignQueue { selected, reload }
+            AssignQueue { reload }
         }
         section {
             h3 { {i18n.t("console.sync.remoteQueue")} }

@@ -1,11 +1,19 @@
-//! Appearance preferences (`DESIGN_SPEC` §8).
+//! Appearance preferences (`DESIGN_SPEC` §8) and the operator console's persisted knobs.
 //!
-//! Each knob is a `data-*` attribute on `<html>`, mirrored into a `tv-*` `localStorage` key so
-//! it survives a reload. The *initial* application runs from an inline script in `index.html`,
-//! before first paint, since a WASM app can't set the attribute soon enough to avoid a flash of
-//! the wrong theme — this module only handles changes made while the app is running.
+//! Each appearance knob is a `data-*` attribute on `<html>`, mirrored into a `tv-*`
+//! `localStorage` key so it survives a reload. The *initial* application runs from an inline
+//! script in `index.html`, before first paint, since a WASM app can't set the attribute soon
+//! enough to avoid a flash of the wrong theme — this module only handles changes made while
+//! the app is running.
+//!
+//! The console's knobs (below) are `localStorage` and *not* the URL on purpose: they are the
+//! operator's, not the link's. A colleague opening a pasted console URL should see their own
+//! density and their own pinned tiles, not the sender's.
 
+use crate::views::ConsoleEntity;
 use dioxus::prelude::*;
+use std::collections::BTreeSet;
+use std::str::FromStr as _;
 
 /// One appearance knob: which attribute it drives, which key persists it, and the value that
 /// means "leave it to the stylesheet".
@@ -73,5 +81,71 @@ impl Knob {
             crate::browser::set_root_attribute(self.attr, value);
             crate::browser::local_set(self.key, value);
         }
+    }
+}
+
+/// The entity a bare `/console` reopens.
+const CONSOLE_ENTITY: &str = "tv-console-entity";
+/// Whether the console's live push is running or detached.
+const CONSOLE_LIVE: &str = "tv-console-live";
+/// Whether the console's tables are drawn compact.
+const CONSOLE_COMPACT: &str = "tv-console-compact";
+/// The columns the operator has hidden, as a comma-separated list of column tokens.
+const CONSOLE_HIDDEN_COLUMNS: &str = "tv-console-hidden-cols";
+
+/// The console entity to reopen, if one was stored and this build still has it.
+pub(crate) fn console_entity() -> Option<ConsoleEntity> {
+    crate::browser::local_get(CONSOLE_ENTITY).and_then(|slug| ConsoleEntity::from_str(&slug).ok())
+}
+
+/// Remember the console entity as the one to reopen.
+pub(crate) fn set_console_entity(entity: ConsoleEntity) {
+    crate::browser::local_set(CONSOLE_ENTITY, entity.slug());
+}
+
+/// Whether the console's live push should run. Defaults to on — a console that opens detached
+/// shows stale numbers with no sign that they are stale.
+pub(crate) fn console_live() -> bool {
+    crate::browser::local_get(CONSOLE_LIVE).is_none_or(|stored| stored != "0")
+}
+
+pub(crate) fn set_console_live(live: bool) {
+    if live {
+        crate::browser::local_remove(CONSOLE_LIVE);
+    } else {
+        crate::browser::local_set(CONSOLE_LIVE, "0");
+    }
+}
+
+/// Whether the console's tables are drawn compact. Defaults to on, matching what the class
+/// strings hardcoded before this was a choice.
+pub(crate) fn console_compact() -> bool {
+    crate::browser::local_get(CONSOLE_COMPACT).is_none_or(|stored| stored != "0")
+}
+
+pub(crate) fn set_console_compact(compact: bool) {
+    if compact {
+        crate::browser::local_remove(CONSOLE_COMPACT);
+    } else {
+        crate::browser::local_set(CONSOLE_COMPACT, "0");
+    }
+}
+
+/// The console table columns the operator has hidden.
+pub(crate) fn console_hidden_columns() -> BTreeSet<String> {
+    crate::browser::local_get(CONSOLE_HIDDEN_COLUMNS)
+        .unwrap_or_default()
+        .split(',')
+        .filter(|token| !token.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+pub(crate) fn set_console_hidden_columns(hidden: &BTreeSet<String>) {
+    if hidden.is_empty() {
+        crate::browser::local_remove(CONSOLE_HIDDEN_COLUMNS);
+    } else {
+        let joined = hidden.iter().cloned().collect::<Vec<_>>().join(",");
+        crate::browser::local_set(CONSOLE_HIDDEN_COLUMNS, &joined);
     }
 }

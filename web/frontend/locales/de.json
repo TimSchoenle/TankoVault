@@ -654,6 +654,11 @@
       "sync": "Sync",
       "users": "Benutzer"
     },
+    "table": {
+      "columns": "Spalten",
+      "columnsLegend": "Anzuzeigende Spalten",
+      "compact": "Kompakt"
+    },
     "title": "Betreiber-Konsole",
     "users": {
       "activeSessions": "{count} aktiv",
@@ -726,6 +731,12 @@
       "unverifiedHint": "Diese Adresse wurde nicht bestätigt, das Konto kann sich daher nicht anmelden.",
       "verified": "Bestätigt",
       "verifyEmail": "E-Mail-Adresse bestätigen"
+    },
+    "window": {
+      "any": "Beliebiger Zeitraum",
+      "day": "Letzte 24 Stunden",
+      "hour": "Letzte Stunde",
+      "week": "Letzte 7 Tage"
     }
   },
   "discover": {

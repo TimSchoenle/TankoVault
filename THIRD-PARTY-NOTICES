@@ -271,7 +271,7 @@ by the block naming that crate.
   - base16ct 0.2.0
   - base64 0.21.7
   - base64 0.22.1
-  - base64 0.23.0
+  - base64 0.23.1
   - base64ct 1.8.3
   - bitflags 2.13.1
   - blake2 0.10.6
@@ -3648,7 +3648,7 @@ SOFTWARE.
 
 Applies to:
 
-  - lettre 0.11.22
+  - lettre 0.11.23
 
 Copyright (c) 2014-2024 Alexis Mousset <contact@amousset.me>
 Copyright (c) 2019-2025 Paolo Barbolini <paolo@paolo565.org>
@@ -5845,7 +5845,7 @@ by the block naming that crate.
   - autocfg 1.5.1
   - base64 0.21.7
   - base64 0.22.1
-  - base64 0.23.0
+  - base64 0.23.1
   - bitflags 2.13.1
   - block-buffer 0.10.4
   - bumpalo 3.20.3

@@ -22,6 +22,17 @@ pub struct BuildState {
     pub error: Option<String>,
 }
 
+/// A granted claim on the build: what generation to write under, and the token that proves the
+/// claim is still this run's.
+///
+/// Every write that advances or releases the claim carries it, so a build whose lease expired
+/// while it was still running cannot touch the state of the run that replaced it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BuildClaim {
+    pub generation: i32,
+    pub claim_id: Uuid,
+}
+
 /// Read the current build state.
 ///
 /// # Errors
@@ -77,16 +88,30 @@ pub async fn read_model_coverage<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Mod
     Ok(coverage)
 }
 
-/// Claim the build, advancing the generation, and return the generation claimed.
+/// Claim the build, advancing the generation, and return the claim granted.
 ///
-/// The `WHERE stage = 'idle'` is the mutual exclusion: a build is a singleton, and two workers
-/// that both decided to start would interleave writes under two generations and leave a model
-/// that is neither. A caller that gets `None` was beaten to it and must do nothing — not wait,
+/// The claim is a **lease**, not a flag. `WHERE stage = 'idle'` alone was the mutual exclusion
+/// and it was released in exactly one place — the `finish_build` at the end of a run — so a
+/// build that died without reaching that line held the claim forever and every later run
+/// declined to start, silently. A claim whose `heartbeat_at` is older than `lease_secs` (or
+/// absent, which is a claim taken before the column existed) is therefore breakable.
+///
+/// `lease_secs` must be comfortably larger than the caller's heartbeat interval; the two are
+/// defined together in `services/control-plane/src/recsys.rs` for that reason. Too short and a
+/// live build gets its claim stolen mid-run; too long and a dead one blocks that much of the
+/// schedule.
+///
+/// A caller that gets `None` was beaten to it by a *live* build and must do nothing — not wait,
 /// not retry, because the other build is already doing this one's work.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
-pub async fn start_build<'e, E: PgExecutor<'e>>(exec: E, full: bool) -> DbResult<Option<i32>> {
+pub async fn start_build<'e, E: PgExecutor<'e>>(
+    exec: E,
+    full: bool,
+    lease_secs: f64,
+) -> DbResult<Option<BuildClaim>> {
+    let claim_id = Uuid::new_v4();
     // A full build takes the next generation so its rows can be swapped in wholesale; an
     // incremental one writes under the live generation, because it is patching that model
     // rather than replacing it.
@@ -94,18 +119,28 @@ pub async fn start_build<'e, E: PgExecutor<'e>>(exec: E, full: bool) -> DbResult
         "UPDATE rec_build_state \
             SET generation  = CASE WHEN $1 THEN generation + 1 ELSE generation END, \
                 stage       = CASE WHEN $1 THEN 'full:features' ELSE 'incremental' END, \
+                claim_id    = $2, \
                 started_at  = now(), \
+                heartbeat_at = now(), \
                 finished_at = NULL, \
                 series_built = 0, \
                 stage_total = 0, \
                 error       = NULL \
-          WHERE id AND stage = 'idle' \
+          WHERE id \
+            AND (stage = 'idle' \
+                 OR heartbeat_at IS NULL \
+                 OR heartbeat_at < now() - make_interval(secs => $3::double precision)) \
       RETURNING generation",
         full,
+        claim_id,
+        lease_secs,
     )
     .fetch_optional(exec)
     .await?;
-    Ok(generation)
+    Ok(generation.map(|generation| BuildClaim {
+        generation,
+        claim_id,
+    }))
 }
 
 /// Record progress within a running build.
@@ -114,19 +149,49 @@ pub async fn start_build<'e, E: PgExecutor<'e>>(exec: E, full: bool) -> DbResult
 /// not known without doing the work twice. The console shows a bare count in that case rather
 /// than a bar it would have to invent a denominator for.
 ///
+/// Fenced by `claim_id`: a build whose lease expired while it was still running would otherwise
+/// keep writing its own progress over the run that replaced it, and the console would show two
+/// runs interleaved as one going backwards.
+///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
 pub async fn update_build_stage<'e, E: PgExecutor<'e>>(
     exec: E,
+    claim: BuildClaim,
     stage: &str,
     series_built: i32,
     stage_total: i32,
 ) -> DbResult<()> {
     sqlx::query!(
-        "UPDATE rec_build_state SET stage = $1, series_built = $2, stage_total = $3 WHERE id",
+        "UPDATE rec_build_state SET stage = $1, series_built = $2, stage_total = $3 \
+          WHERE id AND claim_id = $4",
         stage,
         series_built,
         stage_total,
+        claim.claim_id,
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+/// Stamp the running build's lease so it is not reclaimed under it.
+///
+/// Driven by a timer for the life of the build rather than by its progress: `full:basis` and
+/// `full:index` are single database statements that can run for minutes with nothing to report,
+/// and a heartbeat that only rode along with progress writes would expire during them. The
+/// stamp therefore means "the process running this build is alive", which is exactly what the
+/// lease needs to know.
+///
+/// `claim_id` makes a superseded build's heartbeat a no-op, so it cannot keep a claim it no
+/// longer holds alive.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn touch_build<'e, E: PgExecutor<'e>>(exec: E, claim: BuildClaim) -> DbResult<()> {
+    sqlx::query!(
+        "UPDATE rec_build_state SET heartbeat_at = now() WHERE id AND claim_id = $1",
+        claim.claim_id,
     )
     .execute(exec)
     .await?;
@@ -135,15 +200,19 @@ pub async fn update_build_stage<'e, E: PgExecutor<'e>>(
 
 /// Release the build, recording how it ended.
 ///
-/// **Must run on the failure path too.** The claim in [`start_build`] is only released here, so
-/// a build that dies without calling this leaves `stage` stuck and every subsequent run
-/// declining to start — a recommender that silently stops updating and reports nothing wrong.
-/// The operator-visible symptom is `recsys_model_age_seconds` climbing.
+/// **Must run on the failure path too.** This is where a run's own claim is released, so a build
+/// that dies without calling it leaves the claim held until its lease expires — which is what
+/// the lease exists for, but the operator still sees a run that is going nowhere until then.
+///
+/// Fenced by `claim_id`, and that fence is the load-bearing half: a build whose lease was
+/// broken while it was still running would otherwise release the claim of the run that replaced
+/// it, and write that run's `stage = 'idle'` over a build still in progress.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
 pub async fn finish_build<'e, E: PgExecutor<'e>>(
     exec: E,
+    claim: BuildClaim,
     series_built: i32,
     vocabulary: i32,
     dense_dims: i32,
@@ -152,17 +221,19 @@ pub async fn finish_build<'e, E: PgExecutor<'e>>(
     sqlx::query!(
         "UPDATE rec_build_state \
             SET stage        = 'idle', \
+                claim_id     = NULL, \
                 finished_at  = now(), \
                 stage_total  = 0, \
                 series_built = $1, \
                 vocabulary   = $2, \
                 dense_dims   = $3, \
                 error        = $4 \
-          WHERE id",
+          WHERE id AND claim_id = $5",
         series_built,
         vocabulary,
         dense_dims,
         error,
+        claim.claim_id,
     )
     .execute(exec)
     .await?;

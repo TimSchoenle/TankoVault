@@ -328,12 +328,13 @@ pub struct RebuildRequest {
 
 /// Rebuild the recommendation model
 ///
-/// Runs a build now rather than waiting for the schedule. A `next_build` tuning change takes
+/// Starts a build now rather than waiting for the schedule. A `next_build` tuning change takes
 /// effect after an incremental run; a `next_full_build` one is baked into stored vectors and the
 /// index, and needs `full`.
 ///
 /// The build is a singleton over the whole catalogue, so this runs in the control plane behind
-/// the same claim the scheduled runs take.
+/// the same claim the scheduled runs take. It answers once that claim is taken and the build
+/// runs on: poll `GET /v1/admin/recommendations/health` for progress and the outcome.
 #[utoipa::path(
     post,
     path = "/v1/admin/recommendations/rebuild",
@@ -341,7 +342,7 @@ pub struct RebuildRequest {
     request_body = RebuildRequest,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "What the build did", body = RecsysBuildView),
+        (status = 200, description = "Whether a build was started", body = RecsysBuildView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 502, description = "the control plane is unreachable", body = crate::error::ProblemDetails),
@@ -354,7 +355,7 @@ pub async fn rebuild_model(
 ) -> ApiResult<Json<RecsysBuildView>> {
     user.require(Permission::RecsysWrite).await?;
 
-    let Json(report): Json<RecsysBuildView> = state
+    let Json(view): Json<RecsysBuildView> = state
         .control_plane
         .post(
             "/internal/recsys-build",
@@ -371,10 +372,10 @@ pub async fn rebuild_model(
         &user,
         "recsys.rebuild",
         mode,
-        &serde_json::to_value(report).unwrap_or_default(),
+        &serde_json::to_value(view).unwrap_or_default(),
     )
     .await;
-    Ok(Json(report))
+    Ok(Json(view))
 }
 
 /// Whether writing `value` to `tunable` would leave every score weight at zero.

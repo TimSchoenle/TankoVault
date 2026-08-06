@@ -108,10 +108,25 @@ pub struct BuildReport {
     pub dense_dims: i64,
 }
 
-/// Run one build.
+/// How long a claim survives without a heartbeat before another run may break it.
 ///
-/// Returns `None` when another build already holds the claim — the correct response to which is
-/// to do nothing, not to wait: the other build is doing this one's work.
+/// Sized against [`HEARTBEAT_INTERVAL`] rather than against how long a build takes: the
+/// heartbeat says the process holding the claim is alive, so the only question this answers is
+/// how many beats may be lost before the holder is presumed dead. Ten — long enough that a
+/// database hiccup does not hand a live build's claim away mid-run, short enough that a killed
+/// one stops being the schedule's problem within minutes instead of forever.
+const BUILD_LEASE_SECS: f64 = 300.0;
+
+/// How often a running build stamps its lease.
+const HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Run one build to completion.
+///
+/// Returns `None` when another *live* build already holds the claim — the correct response to
+/// which is to do nothing, not to wait: the other build is doing this one's work.
+///
+/// This awaits the whole build, so it belongs on a background loop. A request handler must use
+/// [`build_detached`] instead; see its documentation for what awaiting one inside a handler did.
 ///
 /// # Errors
 /// Database failures. Whatever a failed run had already written stays written and is coherent:
@@ -121,19 +136,81 @@ pub async fn build(
     tuning: BuildTuning,
     full: bool,
 ) -> anyhow::Result<Option<BuildReport>> {
-    let Some(generation) = recsys::start_build(pool, full).await? else {
+    let Some(claim) = recsys::start_build(pool, full, BUILD_LEASE_SECS).await? else {
+        tracing::debug!("recsys build already in progress; skipping");
+        return Ok(None);
+    };
+    run_claimed(pool.clone(), tuning, full, claim)
+        .await
+        .map(Some)
+}
+
+/// Claim the build and run it on a detached task, returning the generation claimed.
+///
+/// The claim is taken *before* returning, so the answer to "did this start a build?" is the
+/// truth rather than an optimistic guess; everything after it happens on a task of its own.
+///
+/// **A build must never be awaited inside a request handler.** It was, and the control plane's
+/// `TimeoutLayer` dropped the handler future at 30 seconds — mid-extraction, before the code
+/// that releases the claim. The claim was held by nothing at all from then on, every scheduled
+/// run declined to start, and the console showed a full rebuild frozen at its first stage for
+/// six hours. The lease in `start_build` is the second half of that fix; this is the first.
+///
+/// # Errors
+/// Database failures while claiming. Failures *within* the build are logged by the spawned
+/// task and recorded on `rec_build_state`, which is where the console reads them from.
+pub async fn build_detached(
+    pool: &PgPool,
+    tuning: BuildTuning,
+    full: bool,
+) -> anyhow::Result<Option<i32>> {
+    let Some(claim) = recsys::start_build(pool, full, BUILD_LEASE_SECS).await? else {
         tracing::debug!("recsys build already in progress; skipping");
         return Ok(None);
     };
 
-    // The claim is released *only* here. A build that returned early on an error without
-    // finishing would leave `stage` stuck and every later run declining to start — a recommender
-    // that silently stops updating and reports nothing wrong.
-    let outcome = run_stages(pool, tuning, full, generation).await;
+    let pool = pool.clone();
+    tokio::spawn(async move {
+        match run_claimed(pool, tuning, full, claim).await {
+            Ok(report) => tracing::info!(
+                full,
+                generation = report.generation,
+                series = report.series_built,
+                vocabulary = report.vocabulary,
+                dims = report.dense_dims,
+                "recommendation model build (on demand) complete"
+            ),
+            Err(error) => tracing::warn!(
+                full,
+                generation = claim.generation,
+                error = %error,
+                "recommendation model build (on demand) failed"
+            ),
+        }
+    });
+    Ok(Some(claim.generation))
+}
+
+/// Run every stage under a claim already taken, and release it however that ends.
+///
+/// The claim is released *only* here. A build that returned early on an error without finishing
+/// would leave the claim held until its lease expired — and before the lease existed, forever.
+async fn run_claimed(
+    pool: PgPool,
+    tuning: BuildTuning,
+    full: bool,
+    claim: recsys::BuildClaim,
+) -> anyhow::Result<BuildReport> {
+    // Bound to a name, not to `_`: the guard has to live to the end of this function, and `let _`
+    // would drop it — and so stop the heartbeat — on this very line.
+    let _heartbeat = Heartbeat::spawn(pool.clone(), claim);
+
+    let outcome = run_stages(&pool, tuning, full, claim).await;
     match &outcome {
         Ok(report) => {
             recsys::finish_build(
-                pool,
+                &pool,
+                claim,
                 i32::try_from(report.series_built).unwrap_or(i32::MAX),
                 i32::try_from(report.vocabulary).unwrap_or(i32::MAX),
                 i32::try_from(report.dense_dims).unwrap_or(i32::MAX),
@@ -142,21 +219,50 @@ pub async fn build(
             .await?;
         }
         Err(error) => {
-            recsys::finish_build(pool, 0, 0, 0, Some(&error.to_string())).await?;
+            recsys::finish_build(&pool, claim, 0, 0, 0, Some(&error.to_string())).await?;
         }
     }
-    outcome.map(Some)
+    outcome
+}
+
+/// Stamps a claim's lease until dropped.
+///
+/// On a timer rather than alongside the progress writes: `full:basis` and `full:index` are
+/// single statements that can run for minutes with nothing to report, and a heartbeat carried by
+/// progress would expire during them and hand the claim to a second build.
+struct Heartbeat(tokio::task::JoinHandle<()>);
+
+impl Heartbeat {
+    fn spawn(pool: PgPool, claim: recsys::BuildClaim) -> Self {
+        Self(tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(HEARTBEAT_INTERVAL);
+            loop {
+                ticker.tick().await;
+                if let Err(error) = recsys::touch_build(&pool, claim).await {
+                    // Not fatal here: the lease expiring is the correct outcome if this replica
+                    // really has lost the database, and the build's own next query will say so.
+                    tracing::warn!(error = %error, "recsys build heartbeat failed");
+                }
+            }
+        }))
+    }
+}
+
+impl Drop for Heartbeat {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 async fn run_stages(
     pool: &PgPool,
     tuning: BuildTuning,
     full: bool,
-    generation: i32,
+    claim: recsys::BuildClaim,
 ) -> anyhow::Result<BuildReport> {
     let budget = tuning.budget;
     let mut report = BuildReport {
-        generation,
+        generation: claim.generation,
         ..BuildReport::default()
     };
 
@@ -166,36 +272,36 @@ async fn run_stages(
         // against. Display only — a failed read would cost a bar, not a build.
         let catalogue = recsys::read_model_coverage(pool).await?.series_total;
 
-        stage(pool, "full:features", 0, catalogue).await?;
-        report.series_built = extract_all(pool, budget, generation, catalogue).await?;
+        stage(pool, claim, "full:features", 0, catalogue).await?;
+        report.series_built = extract_all(pool, budget, claim, catalogue).await?;
 
-        stage(pool, "full:vocabulary", 0, 0).await?;
+        stage(pool, claim, "full:vocabulary", 0, 0).await?;
         report.vocabulary = vocabulary_pass(pool, budget.dense_input_cap).await?;
 
-        stage(pool, "full:basis", 0, 0).await?;
+        stage(pool, claim, "full:basis", 0, 0).await?;
         let vocabulary = dense_map(pool).await?;
         let basis = solve_basis(pool, budget, &vocabulary).await?;
         persist_basis(pool, &basis).await?;
         report.dense_dims = i64::try_from(basis.width()).unwrap_or(i64::MAX);
 
-        stage(pool, "full:embedding", 0, report.series_built).await?;
+        stage(pool, claim, "full:embedding", 0, report.series_built).await?;
         project_all(
             pool,
             budget,
-            generation,
+            claim,
             &basis,
             &vocabulary,
             report.series_built,
         )
         .await?;
 
-        stage(pool, "full:index", 0, 0).await?;
+        stage(pool, claim, "full:index", 0, 0).await?;
         recsys::create_embedding_index(pool, budget.hnsw_m, budget.hnsw_ef_construction).await?;
 
-        stage(pool, "full:priors", 0, catalogue).await?;
-        prior_pass(pool, tuning, generation, None, catalogue).await?;
+        stage(pool, claim, "full:priors", 0, catalogue).await?;
+        prior_pass(pool, tuning, claim, None, catalogue).await?;
 
-        recsys::delete_stale_generations(pool, generation).await?;
+        recsys::delete_stale_generations(pool, claim.generation).await?;
     } else {
         // No basis means no full build has ever run, so there is no space to project into.
         // Refusing is correct: projecting with a basis solved from a partial catalogue would
@@ -212,17 +318,18 @@ async fn run_stages(
         report.series_built = i64::try_from(touched.len()).unwrap_or(i64::MAX);
         // The work list is only knowable after it is claimed, which is why the incremental run
         // publishes its denominator here rather than at `start_build`.
-        stage(pool, "incremental", 0, report.series_built).await?;
+        stage(pool, claim, "incremental", 0, report.series_built).await?;
         if !touched.is_empty() {
-            extract_and_project(pool, budget, generation, &touched, &basis, &vocabulary).await?;
-            prior_pass(
+            extract_and_project(
                 pool,
-                tuning,
-                generation,
-                Some(&touched),
-                report.series_built,
+                budget,
+                claim.generation,
+                &touched,
+                &basis,
+                &vocabulary,
             )
             .await?;
+            prior_pass(pool, tuning, claim, Some(&touched), report.series_built).await?;
         }
         // Cheap and idempotent: a deployment whose index build was interrupted gets it back on
         // the next incremental pass instead of waiting for the next full one.
@@ -236,9 +343,16 @@ async fn run_stages(
 ///
 /// The two counts are `i64` here and `i32` in the column; a catalogue past two billion series
 /// saturates the display rather than failing the build over a progress figure.
-async fn stage(pool: &PgPool, name: &str, done: i64, total: i64) -> anyhow::Result<()> {
+async fn stage(
+    pool: &PgPool,
+    claim: recsys::BuildClaim,
+    name: &str,
+    done: i64,
+    total: i64,
+) -> anyhow::Result<()> {
     recsys::update_build_stage(
         pool,
+        claim,
         name,
         i32::try_from(done).unwrap_or(i32::MAX),
         i32::try_from(total).unwrap_or(i32::MAX),
@@ -251,20 +365,28 @@ async fn stage(pool: &PgPool, name: &str, done: i64, total: i64) -> anyhow::Resu
 async fn extract_all(
     pool: &PgPool,
     budget: BuildBudget,
-    generation: i32,
+    claim: recsys::BuildClaim,
     total: i64,
 ) -> anyhow::Result<i64> {
     let mut cursor: Option<SeriesId> = None;
     let mut built = 0_i64;
+    let mut since_report = 0_i64;
     loop {
         let page = recsys::list_series_facts(pool, cursor, budget.batch).await?;
         let Some(last) = page.last() else { break };
         cursor = Some(last.series_id);
 
-        let stored = extract_batch(pool, &page, generation).await?;
-        built += i64::try_from(stored.len()).unwrap_or(0);
-        if built % (budget.batch * 20) == 0 {
-            stage(pool, "full:features", built, total).await?;
+        let stored = extract_batch(pool, &page, claim.generation).await?;
+        let n = i64::try_from(stored.len()).unwrap_or(0);
+        built += n;
+        since_report += n;
+        // Counted since the last report rather than tested with `built % (batch * 20) == 0`: a
+        // single short page — one the query filtered, one at the end of a catalogue an
+        // incremental walk resumes past — knocks the running total off every future multiple,
+        // and the stage then reports nothing at all for the rest of the run.
+        if since_report >= budget.batch * 20 {
+            since_report = 0;
+            stage(pool, claim, "full:features", built, total).await?;
         }
     }
     Ok(built)
@@ -465,13 +587,14 @@ async fn load_basis(pool: &PgPool) -> anyhow::Result<Option<Basis>> {
 async fn project_all(
     pool: &PgPool,
     budget: BuildBudget,
-    generation: i32,
+    claim: recsys::BuildClaim,
     basis: &Basis,
     vocabulary: &DenseMap,
     total: i64,
 ) -> anyhow::Result<()> {
     let mut cursor: Option<SeriesId> = None;
     let mut done = 0_i64;
+    let mut since_report = 0_i64;
     loop {
         let page = recsys::read_features(pool, cursor, budget.batch).await?;
         let Some((last, _, _)) = page.last() else {
@@ -486,12 +609,15 @@ async fn project_all(
                 embed(basis, &dense_row(feature_ids, weights, vocabulary))
             })
             .collect();
-        recsys::write_embeddings(pool, &ids, &vectors, generation).await?;
-        done += i64::try_from(ids.len()).unwrap_or(0);
+        recsys::write_embeddings(pool, &ids, &vectors, claim.generation).await?;
+        let n = i64::try_from(ids.len()).unwrap_or(0);
+        done += n;
+        since_report += n;
         // Every 20 pages, matching `extract_all`: often enough that a long projection visibly
         // moves, rare enough that the progress write is noise beside the batch it reports.
-        if done % (budget.batch * 20) == 0 {
-            stage(pool, "full:embedding", done, total).await?;
+        if since_report >= budget.batch * 20 {
+            since_report = 0;
+            stage(pool, claim, "full:embedding", done, total).await?;
         }
     }
     Ok(())
@@ -591,7 +717,7 @@ fn predecessor_of(id: SeriesId) -> Option<SeriesId> {
 async fn prior_pass(
     pool: &PgPool,
     tuning: BuildTuning,
-    generation: i32,
+    claim: recsys::BuildClaim,
     subset: Option<&[SeriesId]>,
     total: i64,
 ) -> anyhow::Result<()> {
@@ -600,15 +726,19 @@ async fn prior_pass(
 
     let mut cursor: Option<SeriesId> = None;
     let mut walked = 0_i64;
+    let mut since_report = 0_i64;
     loop {
         let ids = recsys::page_series_ids(pool, cursor, tuning.budget.batch).await?;
         let Some(last) = ids.last() else { break };
         cursor = Some(*last);
-        walked += i64::try_from(ids.len()).unwrap_or(0);
+        let n = i64::try_from(ids.len()).unwrap_or(0);
+        walked += n;
+        since_report += n;
         // Only the full path reports here: the incremental one filters this same walk down to a
         // claimed subset, so pages walked is not what its bar is counting.
-        if wanted.is_none() && walked % (tuning.budget.batch * 20) == 0 {
-            stage(pool, "full:priors", walked, total).await?;
+        if wanted.is_none() && since_report >= tuning.budget.batch * 20 {
+            since_report = 0;
+            stage(pool, claim, "full:priors", walked, total).await?;
         }
 
         let page = recsys::prior_inputs_for(pool, &ids).await?;
@@ -643,7 +773,7 @@ async fn prior_pass(
             &watchers,
             &velocities,
             &recommendable,
-            generation,
+            claim.generation,
         )
         .await?;
     }

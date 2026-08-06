@@ -5629,44 +5629,27 @@ pub mod types {
             value.parse()
         }
     }
-    #[doc = "What one recommendation-model build did.\n\nReturned by `POST /v1/admin/recommendations/rebuild`, produced by the control plane that\nactually runs the build."]
+    #[doc = "What one recommendation-model build request did.\n\nReturned by `POST /v1/admin/recommendations/rebuild`, produced by the control plane that\nactually runs the build.\n\nThe build runs detached, so this answers only whether one was *started*: a build takes\nminutes to hours and no request may be held open for it. What it went on to do — stage,\nprogress, counts, and how it ended — is on `GET /v1/admin/recommendations/health`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"What one recommendation-model build did.\\n\\nReturned by `POST /v1/admin/recommendations/rebuild`, produced by the control plane that\\nactually runs the build.\","]
+    #[doc = "  \"description\": \"What one recommendation-model build request did.\\n\\nReturned by `POST /v1/admin/recommendations/rebuild`, produced by the control plane that\\nactually runs the build.\\n\\nThe build runs detached, so this answers only whether one was *started*: a build takes\\nminutes to hours and no request may be held open for it. What it went on to do — stage,\\nprogress, counts, and how it ended — is on `GET /v1/admin/recommendations/health`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
-    #[doc = "    \"dense_dims\","]
     #[doc = "    \"generation\","]
-    #[doc = "    \"series_built\","]
-    #[doc = "    \"started\","]
-    #[doc = "    \"vocabulary\""]
+    #[doc = "    \"started\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"dense_dims\": {"]
-    #[doc = "      \"description\": \"Width of the dense space it projected into.\","]
-    #[doc = "      \"type\": \"integer\","]
-    #[doc = "      \"format\": \"int64\""]
-    #[doc = "    },"]
     #[doc = "    \"generation\": {"]
-    #[doc = "      \"description\": \"The generation the build wrote under.\","]
+    #[doc = "      \"description\": \"The generation the build claimed and will write under.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int32\""]
     #[doc = "    },"]
-    #[doc = "    \"series_built\": {"]
-    #[doc = "      \"type\": \"integer\","]
-    #[doc = "      \"format\": \"int64\""]
-    #[doc = "    },"]
     #[doc = "    \"started\": {"]
-    #[doc = "      \"description\": \"`false` when another build already held the claim. The correct response is to wait for\\nit, not to retry: the other build is doing this one's work, and the remaining fields are\\nzero because this call did nothing.\","]
+    #[doc = "      \"description\": \"`false` when another build already held the claim. The correct response is to wait for\\nit, not to retry: the other build is doing this one's work, and `generation` is zero\\nbecause this call started nothing.\","]
     #[doc = "      \"type\": \"boolean\""]
-    #[doc = "    },"]
-    #[doc = "    \"vocabulary\": {"]
-    #[doc = "      \"description\": \"Distinct features in the vocabulary the build saw.\","]
-    #[doc = "      \"type\": \"integer\","]
-    #[doc = "      \"format\": \"int64\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -5674,15 +5657,10 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct RecsysBuildView {
-        #[doc = "Width of the dense space it projected into."]
-        pub dense_dims: i64,
-        #[doc = "The generation the build wrote under."]
+        #[doc = "The generation the build claimed and will write under."]
         pub generation: i32,
-        pub series_built: i64,
-        #[doc = "`false` when another build already held the claim. The correct response is to wait for\nit, not to retry: the other build is doing this one's work, and the remaining fields are\nzero because this call did nothing."]
+        #[doc = "`false` when another build already held the claim. The correct response is to wait for\nit, not to retry: the other build is doing this one's work, and `generation` is zero\nbecause this call started nothing."]
         pub started: bool,
-        #[doc = "Distinct features in the vocabulary the build saw."]
-        pub vocabulary: i64,
     }
     impl RecsysBuildView {
         pub fn builder() -> builder::RecsysBuildView {
@@ -16737,34 +16715,18 @@ pub mod types {
         }
         #[derive(Clone, Debug)]
         pub struct RecsysBuildView {
-            dense_dims: ::std::result::Result<i64, ::std::string::String>,
             generation: ::std::result::Result<i32, ::std::string::String>,
-            series_built: ::std::result::Result<i64, ::std::string::String>,
             started: ::std::result::Result<bool, ::std::string::String>,
-            vocabulary: ::std::result::Result<i64, ::std::string::String>,
         }
         impl ::std::default::Default for RecsysBuildView {
             fn default() -> Self {
                 Self {
-                    dense_dims: Err("no value supplied for dense_dims".to_string()),
                     generation: Err("no value supplied for generation".to_string()),
-                    series_built: Err("no value supplied for series_built".to_string()),
                     started: Err("no value supplied for started".to_string()),
-                    vocabulary: Err("no value supplied for vocabulary".to_string()),
                 }
             }
         }
         impl RecsysBuildView {
-            pub fn dense_dims<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<i64>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.dense_dims = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for dense_dims: {e}"));
-                self
-            }
             pub fn generation<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<i32>,
@@ -16773,16 +16735,6 @@ pub mod types {
                 self.generation = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for generation: {e}"));
-                self
-            }
-            pub fn series_built<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<i64>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.series_built = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for series_built: {e}"));
                 self
             }
             pub fn started<T>(mut self, value: T) -> Self
@@ -16795,16 +16747,6 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for started: {e}"));
                 self
             }
-            pub fn vocabulary<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<i64>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.vocabulary = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for vocabulary: {e}"));
-                self
-            }
         }
         impl ::std::convert::TryFrom<RecsysBuildView> for super::RecsysBuildView {
             type Error = super::error::ConversionError;
@@ -16812,22 +16754,16 @@ pub mod types {
                 value: RecsysBuildView,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
-                    dense_dims: value.dense_dims?,
                     generation: value.generation?,
-                    series_built: value.series_built?,
                     started: value.started?,
-                    vocabulary: value.vocabulary?,
                 })
             }
         }
         impl ::std::convert::From<super::RecsysBuildView> for RecsysBuildView {
             fn from(value: super::RecsysBuildView) -> Self {
                 Self {
-                    dense_dims: Ok(value.dense_dims),
                     generation: Ok(value.generation),
-                    series_built: Ok(value.series_built),
                     started: Ok(value.started),
-                    vocabulary: Ok(value.vocabulary),
                 }
             }
         }
@@ -21873,7 +21809,7 @@ impl Client {
     pub fn model_health(&self) -> builder::ModelHealth<'_> {
         builder::ModelHealth::new(self)
     }
-    #[doc = "Rebuild the recommendation model\n\nRuns a build now rather than waiting for the schedule. A `next_build` tuning change takes\neffect after an incremental run; a `next_full_build` one is baked into stored vectors and the\nindex, and needs `full`.\n\nThe build is a singleton over the whole catalogue, so this runs in the control plane behind\nthe same claim the scheduled runs take.\n\nSends a `POST` request to `/v1/admin/recommendations/rebuild`\n\n```ignore\nlet response = client.rebuild_model()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Rebuild the recommendation model\n\nStarts a build now rather than waiting for the schedule. A `next_build` tuning change takes\neffect after an incremental run; a `next_full_build` one is baked into stored vectors and the\nindex, and needs `full`.\n\nThe build is a singleton over the whole catalogue, so this runs in the control plane behind\nthe same claim the scheduled runs take. It answers once that claim is taken and the build\nruns on: poll `GET /v1/admin/recommendations/health` for progress and the outcome.\n\nSends a `POST` request to `/v1/admin/recommendations/rebuild`\n\n```ignore\nlet response = client.rebuild_model()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn rebuild_model(&self) -> builder::RebuildModel<'_> {
         builder::RebuildModel::new(self)
     }

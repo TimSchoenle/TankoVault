@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE rec_build_state SET heartbeat_at = now() WHERE id AND claim_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5d0f46998c4b0c562a55d37f06881d0636f5f0edce20639723851cbc23ebef71"
+}

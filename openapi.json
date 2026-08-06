@@ -2411,38 +2411,21 @@
         "type": "string"
       },
       "RecsysBuildView": {
-        "description": "What one recommendation-model build did.\n\nReturned by `POST /v1/admin/recommendations/rebuild`, produced by the control plane that\nactually runs the build.",
+        "description": "What one recommendation-model build request did.\n\nReturned by `POST /v1/admin/recommendations/rebuild`, produced by the control plane that\nactually runs the build.\n\nThe build runs detached, so this answers only whether one was *started*: a build takes\nminutes to hours and no request may be held open for it. What it went on to do — stage,\nprogress, counts, and how it ended — is on `GET /v1/admin/recommendations/health`.",
         "properties": {
-          "dense_dims": {
-            "description": "Width of the dense space it projected into.",
-            "format": "int64",
-            "type": "integer"
-          },
           "generation": {
-            "description": "The generation the build wrote under.",
+            "description": "The generation the build claimed and will write under.",
             "format": "int32",
             "type": "integer"
           },
-          "series_built": {
-            "format": "int64",
-            "type": "integer"
-          },
           "started": {
-            "description": "`false` when another build already held the claim. The correct response is to wait for\nit, not to retry: the other build is doing this one's work, and the remaining fields are\nzero because this call did nothing.",
+            "description": "`false` when another build already held the claim. The correct response is to wait for\nit, not to retry: the other build is doing this one's work, and `generation` is zero\nbecause this call started nothing.",
             "type": "boolean"
-          },
-          "vocabulary": {
-            "description": "Distinct features in the vocabulary the build saw.",
-            "format": "int64",
-            "type": "integer"
           }
         },
         "required": [
           "started",
-          "generation",
-          "series_built",
-          "vocabulary",
-          "dense_dims"
+          "generation"
         ],
         "type": "object"
       },
@@ -6073,7 +6056,7 @@
     },
     "/v1/admin/recommendations/rebuild": {
       "post": {
-        "description": "Runs a build now rather than waiting for the schedule. A `next_build` tuning change takes\neffect after an incremental run; a `next_full_build` one is baked into stored vectors and the\nindex, and needs `full`.\n\nThe build is a singleton over the whole catalogue, so this runs in the control plane behind\nthe same claim the scheduled runs take.",
+        "description": "Starts a build now rather than waiting for the schedule. A `next_build` tuning change takes\neffect after an incremental run; a `next_full_build` one is baked into stored vectors and the\nindex, and needs `full`.\n\nThe build is a singleton over the whole catalogue, so this runs in the control plane behind\nthe same claim the scheduled runs take. It answers once that claim is taken and the build\nruns on: poll `GET /v1/admin/recommendations/health` for progress and the outcome.",
         "operationId": "rebuild_model",
         "requestBody": {
           "content": {
@@ -6094,7 +6077,7 @@
                 }
               }
             },
-            "description": "What the build did"
+            "description": "Whether a build was started"
           },
           "401": {
             "content": {

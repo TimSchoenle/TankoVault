@@ -20,9 +20,9 @@ mod prior;
 mod reader;
 
 pub use build::{
-    BuildState, ModelCoverage, claim_repair_batch, delete_stale_generations, enqueue_repair,
-    finish_build, list_stale_series, read_basis, read_build_state, read_model_coverage,
-    repair_depth, start_build, update_build_stage, write_basis,
+    BuildClaim, BuildState, ModelCoverage, claim_repair_batch, delete_stale_generations,
+    enqueue_repair, finish_build, list_stale_series, read_basis, read_build_state,
+    read_model_coverage, repair_depth, start_build, touch_build, update_build_stage, write_basis,
 };
 pub use embedding::{
     Neighbour, create_embedding_index, embedding_of, mean_embedding, nearest_excluding,

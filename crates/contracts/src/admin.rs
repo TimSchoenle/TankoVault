@@ -191,23 +191,22 @@ pub enum RecsysBuildMode {
     Full,
 }
 
-/// What one recommendation-model build did.
+/// What one recommendation-model build request did.
 ///
 /// Returned by `POST /v1/admin/recommendations/rebuild`, produced by the control plane that
 /// actually runs the build.
+///
+/// The build runs detached, so this answers only whether one was *started*: a build takes
+/// minutes to hours and no request may be held open for it. What it went on to do — stage,
+/// progress, counts, and how it ended — is on `GET /v1/admin/recommendations/health`.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, ToSchema)]
 pub struct RecsysBuildView {
     /// `false` when another build already held the claim. The correct response is to wait for
-    /// it, not to retry: the other build is doing this one's work, and the remaining fields are
-    /// zero because this call did nothing.
+    /// it, not to retry: the other build is doing this one's work, and `generation` is zero
+    /// because this call started nothing.
     pub started: bool,
-    /// The generation the build wrote under.
+    /// The generation the build claimed and will write under.
     pub generation: i32,
-    pub series_built: i64,
-    /// Distinct features in the vocabulary the build saw.
-    pub vocabulary: i64,
-    /// Width of the dense space it projected into.
-    pub dense_dims: i64,
 }
 
 /// What one duplicate-reconciliation sweep did.

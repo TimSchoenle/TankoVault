@@ -1,0 +1,24 @@
+# Breaking spec changes that were made deliberately. One per line.
+#
+# FORMAT: oasdiff lowercases each change's single-line rendering (`oasdiff breaking -f singleline`)
+# and ignores it if any line here appears in it as a substring. So a line must be the *lowercased*
+# message with the leading `error at <spec path>, ` stripped — the path differs between a local run
+# and CI, and including it would silently stop the entry matching. Comment lines never match
+# anything, which is why they are safe here.
+#
+# WHY THIS FILE IS SHORT: the gate exists because the SPA is deployed separately from the API, so a
+# version skew window always exists and a breaking change ships silently as a runtime
+# deserialisation failure in the browser. An entry is therefore a claim that the *only* consumer of
+# that operation is `web/frontend`, and that it was updated in the same commit. Anything a caller
+# outside this repository could hit does not belong here — it gets a new endpoint and a deprecation
+# instead, the way `/v1/admin/scans/stream` did.
+#
+# Keep each entry pinned to the exact operation and the exact from/to shape, so this file cannot
+# quietly absolve a *different* break on the same endpoint later.
+
+# docs/frontend/new-console.md §4.2, §4.4: the audit trail and the scan history were fixed-size
+# unfiltered feeds that fall off the end under load. Paging them needs a total, a pager cannot say
+# "1-40 of N" without one, and a total cannot ride alongside a bare array — so both responses
+# became `{ items, total }`. Consumed only by the operator console.
+in api get /v1/admin/audit the response's body `type` changed from `array<object>` to `object` for status `200`
+in api get /v1/admin/scans the response's body `type` changed from `array<object>` to `object` for status `200`

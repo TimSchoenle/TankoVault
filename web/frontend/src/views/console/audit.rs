@@ -190,7 +190,7 @@ pub(super) fn AuditPanel(tick: RefreshTick) -> Element {
                                             th { {i18n.t("console.audit.col.actor")} }
                                             th { {i18n.t("console.audit.col.action")} }
                                             th { {i18n.t("console.audit.col.target")} }
-                                            th { class: "ik-visually-hidden", {i18n.t("console.audit.col.detail")} }
+                                            th { style: "text-align:right;", {i18n.t("console.audit.col.detail")} }
                                         }
                                     }
                                     tbody {

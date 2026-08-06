@@ -128,8 +128,8 @@ pub(crate) fn SliderRow(
 #[component]
 pub(crate) fn ListSearch(
     placeholder: String,
-    /// Controlled: the caller owns the text, because in the console it lives in the URL and a
-    /// signal here would shadow it.
+    /// Controlled: the caller owns the text, because in the console it lives in the URL, and a
+    /// signal here would hold a second copy of it.
     query: String,
     on_input: EventHandler<String>,
     /// Already-worded, e.g. "4 hits" — the caller knows what it is counting.

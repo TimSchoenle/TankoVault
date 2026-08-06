@@ -20,8 +20,8 @@ pub(crate) trait TabKind: Copy + PartialEq + 'static {
 /// `visible` restricts the strip to a subset — Account hides panels a reader has no capability
 /// for, and rendering a tab that opens nothing is worse than omitting it.
 ///
-/// Controlled: the caller owns the selection, because in the console it is a URL parameter and
-/// a signal here would shadow it.
+/// Controlled: the caller owns the selection, because in the console it is a URL parameter, and
+/// a signal here would hold a second copy of it.
 #[component]
 pub(crate) fn TabBar<T: TabKind + Clone + PartialEq + 'static>(
     selected: T,

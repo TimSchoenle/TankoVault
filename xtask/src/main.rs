@@ -311,13 +311,34 @@ fn openapi(check: bool) -> anyhow::Result<()> {
 ///
 /// Must match `cargo fmt`'s output exactly, or `xtask openapi --check` and `cargo fmt --check`
 /// would disagree on the same file.
+///
+/// `newline_style=Unix` is what makes that true off Linux, and it is not redundant with the
+/// `eol=lf` this artefact carries in `.gitattributes`: that governs the checkout, this governs
+/// the bytes we render to compare against it. rustfmt's default is `Auto`, which takes the style
+/// of the first line ending it sees and falls back to the *platform* default when there is none —
+/// and there is none here, because the input is one line of `TokenStream::to_string()`. So on
+/// Windows rustfmt emitted CRLF, `--check` compared it against an LF file and failed, and the
+/// remedy it printed ("run `cargo run -p xtask -- openapi`") wrote the CRLF file back and left
+/// the gate failing with an empty `git diff`.
+///
+/// `cargo fmt` is deliberately left on `Auto` (`rustfmt.toml` sets nothing): forcing Unix there
+/// would fail `cargo fmt --check` on every hand-written `.rs` file in a CRLF working copy. It
+/// agrees with this function because the artefact is stored LF, so `Auto` detects LF and keeps it.
 #[cfg(feature = "full")]
 fn rustfmt(src: &str) -> anyhow::Result<String> {
     use std::io::Write as _;
     use std::process::{Command, Stdio};
 
     let mut child = Command::new("rustfmt")
-        .args(["--edition", "2024", "--emit", "stdout", "--quiet"])
+        .args([
+            "--edition",
+            "2024",
+            "--emit",
+            "stdout",
+            "--quiet",
+            "--config",
+            "newline_style=Unix",
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -678,6 +699,25 @@ mod tests {
         assert!(out.get("examples").is_none());
         // An empty array yields neither key rather than `example: null`.
         assert_eq!(downgraded(json!({ "examples": [] })), json!({}));
+    }
+
+    /// **rustfmt must emit LF whatever the host does.**
+    ///
+    /// Its `newline_style` default is `Auto`, which adopts the first line ending it sees and
+    /// falls back to the *platform* default when the input has none — and the input here is one
+    /// line of `TokenStream::to_string()`. So on Windows this returned CRLF, `openapi --check`
+    /// compared it against the LF artefact and failed on a clean checkout, and the remedy it
+    /// printed rewrote the file in CRLF and left the gate red with an empty `git diff`. That made
+    /// `xtask ci` — this repository's definition of done — unpassable on the platform
+    /// `.gitattributes` says it is developed on.
+    ///
+    /// The `eol=lf` on the artefact governs the checkout; this governs what is rendered to
+    /// compare against it. Both halves are needed and neither implies the other.
+    #[test]
+    fn rustfmt_emits_lf_whatever_the_host_does() {
+        let out = rustfmt("fn a ( ) { }\nfn b ( ) { }\n").expect("rustfmt should be installed");
+        assert!(out.contains('\n'), "expected a multi-line result: {out:?}");
+        assert!(!out.contains('\r'), "rustfmt emitted a CR: {out:?}");
     }
 
     #[test]

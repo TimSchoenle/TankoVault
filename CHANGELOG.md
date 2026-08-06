@@ -12,6 +12,15 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [1.4.2](https://github.com/TimSchoenle/TankoVault/compare/v1.4.1...v1.4.2) (2026-08-06)
+
+
+### Miscellaneous
+
+* **deps:** update all non-major action updates (patch) ([#97](https://github.com/TimSchoenle/TankoVault/issues/97)) ([fb5cd40](https://github.com/TimSchoenle/TankoVault/commit/fb5cd402039ee7dc17a00a6b7ac899c0692d2788))
+* **deps:** update cargo non-major (patch) ([#99](https://github.com/TimSchoenle/TankoVault/issues/99)) ([e5a643c](https://github.com/TimSchoenle/TankoVault/commit/e5a643c6b808fa1217eec99c1695f2e8dd0acd7b))
+* **deps:** update debian:13-slim docker digest to 3a39a05 ([#96](https://github.com/TimSchoenle/TankoVault/issues/96)) ([9575583](https://github.com/TimSchoenle/TankoVault/commit/9575583ea5a1a3c8b15e7f5212a6fd087fe5e60a))
+
 ## [1.4.1](https://github.com/TimSchoenle/TankoVault/compare/v1.4.0...v1.4.1) (2026-08-05)
 
 

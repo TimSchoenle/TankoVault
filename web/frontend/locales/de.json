@@ -894,6 +894,11 @@
       "empty": "Du bist auf dem neuesten Stand. Neue Kapitel deiner Merkliste landen hier.",
       "title": "Neu auf deiner Merkliste"
     },
+    "guest": {
+      "browse": "Katalog durchstöbern",
+      "subtitle": "Melde dich an, um Kapitel über alle Quellen hinweg zu verfolgen, von neuen zu erfahren und dort weiterzulesen, wo du aufgehört hast.",
+      "title": "Alle Serien, denen du folgst, an einem Ort"
+    },
     "recommendations": {
       "askTitle": "Das nicht mehr vorschlagen?",
       "because": "Weil du {title} gelesen hast",

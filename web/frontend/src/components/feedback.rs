@@ -73,9 +73,19 @@ pub(crate) fn EmptyBox(message: String) -> Element {
 }
 
 /// A "please sign in" gate rendered by protected views when there is no session.
+///
+/// While the boot-time silent refresh is still in flight it is a skeleton instead: the token is
+/// re-adopted from the refresh cookie by a network round trip, so every reload of a protected
+/// screen used to flash "Sign in to see this" at a reader who was signed in the whole time.
 #[component]
 pub(crate) fn SignInGate() -> Element {
     let i18n = use_i18n();
+    let session = crate::state::use_session();
+    if !session.is_settled() {
+        return rsx! {
+            SkeletonRows { count: 3 }
+        };
+    }
     rsx! {
         div { class: "ik-empty",
             p { {i18n.t("feedback.signInGate")} }

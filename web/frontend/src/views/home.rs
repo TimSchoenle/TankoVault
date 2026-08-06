@@ -1,5 +1,7 @@
 //! Home dashboard (`DESIGN_SPEC` §7.1) — the signed-in reader's landing screen. Greeting +
 //! lifetime stat tiles, a continue-reading rail and a day-grouped "New in your watchlist" feed.
+//! Signed out, the same route is [`GuestHome`] instead: every section here is derived from a
+//! watchlist that does not exist yet.
 //!
 //! Recommendations used to close this screen and now live at [`crate::Route::Recommendations`].
 //! They were the fourth section down, so they got whatever room was left: a short shelf below
@@ -7,8 +9,9 @@
 //! the reader is *already* reading; what they might read next is a different question and now
 //! has a page that can answer it properly.
 
+use super::auth::AuthBrand;
 use crate::api;
-use crate::components::{async_list, AuthRequired, Cover, SkeletonBlock, SkeletonRows};
+use crate::components::{async_list, Cover, SkeletonBlock, SkeletonRows};
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -89,7 +92,15 @@ pub(crate) fn Home() -> Element {
     });
 
     if !session.is_authenticated() {
-        return rsx! { AuthRequired { title: i18n.t("nav.home") } };
+        // Until the boot-time silent refresh settles, "signed out" only means "we have not
+        // looked yet" — so the landing waits rather than painting over the reader's own home.
+        if !session.is_settled() {
+            return rsx! {
+                SkeletonBlock { height: 96 }
+                SkeletonRows { count: 3 }
+            };
+        }
+        return rsx! { GuestHome {} };
     }
 
     let name = session
@@ -178,6 +189,39 @@ pub(crate) fn Home() -> Element {
                     {i18n.t("home.recommendations.cta")}
                 }
                 Ic { icon: Icon::ArrowForward, size: 16 }
+            }
+        }
+    }
+}
+
+/// What `/` is for a reader with no session: the brand, what the product does, and the two
+/// moves that actually work from here.
+///
+/// It replaces the bare "Home — sign in to see this" gate. Every section of the signed-in
+/// screen is derived from a watchlist that does not exist yet, so there is nothing to withhold;
+/// what was missing was a reason to sign in and a way into the part of the app that is public.
+#[component]
+fn GuestHome() -> Element {
+    let i18n = use_i18n();
+    let caps = use_capabilities();
+    rsx! {
+        div { class: "ik-auth",
+            AuthBrand {}
+            h1 { {i18n.t("home.guest.title")} }
+            p { class: "ik-muted", {i18n.t("home.guest.subtitle")} }
+            Link {
+                to: Route::Login {},
+                class: "ik-btn primary block",
+                style: "margin-top:20px;",
+                {i18n.t("common.signIn")}
+            }
+            if caps.has_feature(Feature::CatalogueBrowse) {
+                Link {
+                    to: Route::Discover {},
+                    class: "ik-btn block",
+                    style: "margin-top:10px;",
+                    {i18n.t("home.guest.browse")}
+                }
             }
         }
     }

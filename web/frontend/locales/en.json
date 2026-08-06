@@ -894,6 +894,11 @@
       "empty": "You're all caught up. New chapters from your watchlist will land here.",
       "title": "New in your watchlist"
     },
+    "guest": {
+      "browse": "Browse the catalogue",
+      "subtitle": "Sign in to track chapters across every source that carries them, hear about new ones, and pick up where you left off.",
+      "title": "Every series you follow, in one place"
+    },
     "recommendations": {
       "askTitle": "Stop suggesting this?",
       "because": "Because you read {title}",

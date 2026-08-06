@@ -154,9 +154,10 @@ pub(super) fn TrackingCard(
         return rsx! {
             div { class: "ik-sidebar-card",
                 TrackingHead { conflicts: 0 }
-                p { class: "ik-muted", style: "font-size:13px;margin:0;",
+                p { class: "ik-muted", style: "font-size:13px;margin:0 0 12px;",
                     {i18n.t("series.signInToTrack")}
                 }
+                Link { to: crate::Route::Login {}, class: "ik-btn block", {i18n.t("common.signIn")} }
             }
         };
     }

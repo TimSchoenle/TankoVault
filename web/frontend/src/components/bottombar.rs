@@ -3,10 +3,13 @@
 //!
 //! Below 820px the rail used to become a wrapping strip of eleven capability-gated links, the
 //! brand lockup and the user box — roughly a third of a 390px viewport before any content. The
-//! bar replaces it with five 44px targets; everything the five cannot carry moves into the
-//! sheet, which is also where the per-reader gating lives so the bar itself never reflows.
+//! bar replaces it with up to five 44px targets; everything they cannot carry moves into the
+//! sheet, which is where the per-reader gating lives so the bar does not reflow around a
+//! permission. Signing out is the one thing that does shorten it — see `nav::tab_destinations`.
 
-use crate::components::nav::{tab_destinations, Destination, NOTICES_ROUTE};
+use crate::components::nav::{
+    reader_destinations_visible, tab_destinations, Destination, NOTICES_ROUTE,
+};
 use crate::components::UnreadBadge;
 use crate::i18n::{use_i18n, Translator, LOCALES};
 use crate::icons::{Ic, Icon};
@@ -22,6 +25,7 @@ use dioxus::prelude::*;
 pub(crate) fn BottomTabs() -> Element {
     let i18n = use_i18n();
     let caps = use_capabilities();
+    let session = use_session();
     let route: Route = use_route();
     let unread = *use_context::<UnreadBadge>().0.read();
     let mut sheet = use_signal(|| false);
@@ -36,7 +40,8 @@ pub(crate) fn BottomTabs() -> Element {
         }
     }));
 
-    let tabs = tab_destinations(i18n, &caps, unread);
+    let personal = reader_destinations_visible(session.is_authenticated(), session.is_settled());
+    let tabs = tab_destinations(i18n, &caps, unread, personal);
     rsx! {
         nav { class: "ik-tabbar", "aria-label": i18n.t("nav.railLabel"),
             for tab in tabs {

@@ -1,0 +1,98 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT running, started_at, finished_at, scanned, enriched, unresolved, error FROM metadata_sweep_state WHERE id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "running",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "metadata_sweep_state",
+            "name": "running"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "metadata_sweep_state",
+            "name": "started_at"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "finished_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "metadata_sweep_state",
+            "name": "finished_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "scanned",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "metadata_sweep_state",
+            "name": "scanned"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "enriched",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "metadata_sweep_state",
+            "name": "enriched"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "unresolved",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "metadata_sweep_state",
+            "name": "unresolved"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_sweep_state",
+            "name": "error"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "8486ccc219bc6aec2e65e0b11971190efe766603dfe63024fe6c92abd2b69a99"
+}

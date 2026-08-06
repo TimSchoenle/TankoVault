@@ -53,7 +53,9 @@ pub struct ListParams {
     pub year_max: Option<i32>,
     #[serde(default)]
     pub min_chapters: Option<i32>,
-    /// `updated | title | chapters | sources | year | rating` (default `updated`).
+    /// `relevance | updated | title | chapters | sources | year | rating`. Defaults to
+    /// `relevance` when `query` is supplied and `updated` when it is not; `relevance` without a
+    /// `query` has nothing to rank and falls back to `updated`.
     #[serde(default)]
     pub sort: Option<String>,
     /// Zero-based page index (alias: `cursor`).
@@ -83,6 +85,12 @@ fn parse_param<T: std::str::FromStr>(raw: Option<&str>, name: &str) -> ApiResult
     }
 }
 
+/// One card in a catalogue grid.
+///
+/// Grown rather than replaced: a deployed SPA outlives a server change, so every field an older
+/// client reads is still here and the additions are ignored by it. `source_count` is kept for
+/// that reason alone — the surfaces that used to print it now print [`Self::chapter_count`],
+/// which is what a reader was actually trying to learn from it.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SeriesSummary {
     pub id: SeriesId,
@@ -90,7 +98,70 @@ pub struct SeriesSummary {
     pub cover_url: Option<String>,
     pub content_type: ContentType,
     pub status: SeriesStatus,
+    /// Distinct providers carrying this series. Retained for compatibility; not a figure any
+    /// reader-facing surface shows.
     pub source_count: i64,
+    /// Distinct **whole** chapters across every source, so a title carried by four providers is
+    /// not counted four times and a part release does not count as its own chapter. This is the
+    /// same figure the series screen prints, so a card and the page it opens agree.
+    pub chapter_count: i64,
+    /// The highest chapter number any source carries, when there is one.
+    pub latest_chapter: Option<f64>,
+    pub release_year: Option<i32>,
+    /// Tag names, alphabetically. Capped server-side: a card has room for two or three, and
+    /// shipping forty for a client to slice is payload nobody renders.
+    pub tags: Vec<String>,
+}
+
+/// Tags a card carries at most. Alphabetical, so the choice is stable between requests rather
+/// than varying with row order.
+const CARD_TAGS: usize = 3;
+
+impl SeriesSummary {
+    /// Build the summaries for one page, in the order given, with the two batched reads the
+    /// card needs.
+    ///
+    /// Batched rather than folded into the listing query: the browse statements are the ones the
+    /// plan audit budgets, and a reach into `chapters` per candidate row is charged against every
+    /// row of `series` under a generic plan. Keyed on the ids about to be rendered, these two
+    /// touch only those.
+    ///
+    /// # Errors
+    /// Propagates the two reads. Neither is defaulted away — a card silently claiming zero
+    /// chapters is worse than the page failing and being retried.
+    async fn page(
+        state: &AppState,
+        items: Vec<tankovault_db::repo::catalog::SeriesListItem>,
+    ) -> ApiResult<Vec<Self>> {
+        let ids: Vec<SeriesId> = items.iter().map(|it| it.series.id).collect();
+        let (chapters, tags) = tokio::try_join!(
+            tankovault_db::repo::catalog::chapter_stats_for_series(&state.pool, &ids),
+            tankovault_db::repo::catalog::tags_for_series(&state.pool, &ids),
+        )?;
+
+        Ok(items
+            .into_iter()
+            .map(|it| {
+                let id = it.series.id;
+                let counts = chapters.get(&id);
+                Self {
+                    id,
+                    title: it.series.canonical_title,
+                    cover_url: it.series.cover_url,
+                    content_type: it.series.content_type,
+                    status: it.series.status,
+                    source_count: it.source_count,
+                    chapter_count: counts.map_or(0, |c| c.chapter_count),
+                    latest_chapter: counts.and_then(|c| c.latest_number),
+                    release_year: it.series.release_year,
+                    tags: tags
+                        .get(&id)
+                        .map(|names| names.iter().take(CARD_TAGS).cloned().collect())
+                        .unwrap_or_default(),
+                }
+            })
+            .collect())
+    }
 }
 
 /// Browse the catalogue
@@ -132,6 +203,7 @@ pub async fn list(
     }
 
     let limit = params.limit.clamp(1, 100);
+
     // Unbounded `page * limit` overflows `i64` in release (`overflow-checks = false`),
     // wrapping to a negative offset; debug/CI builds panic instead, aborting the process.
     //
@@ -144,7 +216,21 @@ pub async fn list(
     // Parsed at the edge: an unrecognised `sort`/`content_type`/`status` must fail loudly,
     // not silently answer `200` with a wrong page. Native Postgres types also let the
     // filters use an index; casting the column to text would lose it.
-    let sort = parse_param(params.sort.as_deref(), "sort")?.unwrap_or_default();
+    // A *searched* list defaults to relevance, an unsearched one to recency. Without this the
+    // search screen inherited `updated`, so an exact title match ranked wherever its last scan
+    // happened to put it — which is how a 100%-matching title came back below forty unrelated
+    // series. An explicit `sort` still wins: the Discover grid's control is the same parameter.
+    let searching = params
+        .query
+        .as_deref()
+        .is_some_and(|q| !q.trim().is_empty());
+    let sort = parse_param(params.sort.as_deref(), "sort")?.unwrap_or({
+        if searching {
+            tankovault_db::repo::catalog::SeriesSort::Relevance
+        } else {
+            tankovault_db::repo::catalog::SeriesSort::default()
+        }
+    });
     let content_type = parse_param(params.content_type.as_deref(), "content_type")?;
     let status = parse_param(params.status.as_deref(), "status")?;
 
@@ -179,18 +265,7 @@ pub async fn list(
         headers.insert("X-Next-Cursor", v);
     }
 
-    let items = out
-        .items
-        .into_iter()
-        .map(|it| SeriesSummary {
-            id: it.series.id,
-            title: it.series.canonical_title,
-            cover_url: it.series.cover_url,
-            content_type: it.series.content_type,
-            status: it.series.status,
-            source_count: it.source_count,
-        })
-        .collect();
+    let items = SeriesSummary::page(&state, out.items).await?;
     Ok((headers, Json(items)))
 }
 
@@ -480,18 +555,44 @@ fn optional_user(state: &AppState, headers: &HeaderMap) -> Option<UserId> {
         .and_then(|c| c.user_id())
 }
 
+/// One entry of the tag facet: a tag plus how much of the catalogue carries it.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct TagFacet {
+    pub id: tankovault_domain::TagId,
+    pub slug: String,
+    pub name: String,
+    /// Series carrying this tag. What lets the filter panel order by usage and say how much a
+    /// chip would narrow the grid before it is clicked.
+    pub series_count: i64,
+}
+
 /// List all tags
 ///
-/// All genres/tags in the catalogue (public).
+/// Every genre/tag in the catalogue with the number of series carrying it, commonest first
+/// (public).
+///
+/// Ordered by usage rather than alphabetically because the facet panel that consumes this can
+/// only show so many chips at once: an alphabetical list truncated to fit cuts off at whatever
+/// letter the cap lands on, hiding the genres most of the catalogue actually uses. The body is a
+/// superset of the previous `Tag[]`, so an older client reading only `id`/`slug`/`name` is
+/// unaffected — it just sees them in a different order.
 #[utoipa::path(
     get,
     path = "/v1/tags",
     tag = SERIES_TAG,
-    responses((status = 200, description = "All known tags", body = Vec<tankovault_domain::Tag>))
+    responses((status = 200, description = "All known tags, commonest first", body = Vec<TagFacet>))
 )]
-pub async fn tags(State(state): State<AppState>) -> ApiResult<Json<Vec<tankovault_domain::Tag>>> {
+pub async fn tags(State(state): State<AppState>) -> ApiResult<Json<Vec<TagFacet>>> {
+    let rows = tankovault_db::repo::catalog::list_tag_facets(&state.pool).await?;
     Ok(Json(
-        tankovault_db::repo::catalog::list_tags(&state.pool).await?,
+        rows.into_iter()
+            .map(|row| TagFacet {
+                id: row.tag.id,
+                slug: row.tag.slug,
+                name: row.tag.name,
+                series_count: row.series_count,
+            })
+            .collect(),
     ))
 }
 
@@ -684,29 +785,28 @@ pub async fn similar(
     let score_of: HashMap<SeriesId, f32> =
         neighbours.iter().map(|n| (n.series_id, n.score)).collect();
 
-    let out = summaries
-        .into_iter()
+    let shared_of: HashMap<SeriesId, Vec<String>> = summaries
+        .iter()
         .map(|item| {
             let series_id = item.series.id;
-            let shared = vector_of
+            let shared: Vec<String> = vector_of
                 .get(&series_id)
                 .map(|other| tankovault_recsys::shared_features(&seed_vector, other, 3))
                 .unwrap_or_default()
                 .into_iter()
                 .filter_map(|feature_id| name_of.get(&feature_id).cloned())
                 .collect();
-            SimilarSeries {
-                score: score_of.get(&series_id).copied().unwrap_or_default(),
-                shared,
-                series: SeriesSummary {
-                    id: series_id,
-                    title: item.series.canonical_title,
-                    cover_url: item.series.cover_url,
-                    content_type: item.series.content_type,
-                    status: item.series.status,
-                    source_count: item.source_count,
-                },
-            }
+            (series_id, shared)
+        })
+        .collect();
+
+    let out = SeriesSummary::page(&state, summaries)
+        .await?
+        .into_iter()
+        .map(|series| SimilarSeries {
+            score: score_of.get(&series.id).copied().unwrap_or_default(),
+            shared: shared_of.get(&series.id).cloned().unwrap_or_default(),
+            series,
         })
         .collect();
     Ok(Json(out))
@@ -737,19 +837,13 @@ async fn fallback_to_prior(
         .take(usize::try_from(limit).unwrap_or(12))
         .collect();
     let summaries = recsys::summaries_in_order(&state.pool, &ids).await?;
-    Ok(summaries
+    Ok(SeriesSummary::page(state, summaries)
+        .await?
         .into_iter()
-        .map(|item| SimilarSeries {
+        .map(|series| SimilarSeries {
             score: 0.0,
             shared: Vec::new(),
-            series: SeriesSummary {
-                id: item.series.id,
-                title: item.series.canonical_title,
-                cover_url: item.series.cover_url,
-                content_type: item.series.content_type,
-                status: item.series.status,
-                source_count: item.source_count,
-            },
+            series,
         })
         .collect())
 }

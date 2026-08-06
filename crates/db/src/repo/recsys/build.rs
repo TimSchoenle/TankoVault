@@ -14,6 +14,9 @@ pub struct BuildState {
     pub started_at: Option<OffsetDateTime>,
     pub finished_at: Option<OffsetDateTime>,
     pub series_built: i32,
+    /// What the running stage is counting towards. Display only — nothing branches on it, and a
+    /// stage that cannot cheaply know its own size leaves it at zero.
+    pub stage_total: i32,
     pub vocabulary: i32,
     pub dense_dims: i32,
     pub error: Option<String>,
@@ -26,8 +29,8 @@ pub struct BuildState {
 pub async fn read_build_state<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<BuildState> {
     let state = sqlx::query_as!(
         BuildState,
-        "SELECT generation, stage, started_at, finished_at, series_built, vocabulary, \
-                dense_dims, error \
+        "SELECT generation, stage, started_at, finished_at, series_built, stage_total, \
+                vocabulary, dense_dims, error \
          FROM rec_build_state WHERE id",
     )
     .fetch_one(exec)
@@ -93,6 +96,8 @@ pub async fn start_build<'e, E: PgExecutor<'e>>(exec: E, full: bool) -> DbResult
                 stage       = CASE WHEN $1 THEN 'full:features' ELSE 'incremental' END, \
                 started_at  = now(), \
                 finished_at = NULL, \
+                series_built = 0, \
+                stage_total = 0, \
                 error       = NULL \
           WHERE id AND stage = 'idle' \
       RETURNING generation",
@@ -105,17 +110,23 @@ pub async fn start_build<'e, E: PgExecutor<'e>>(exec: E, full: bool) -> DbResult
 
 /// Record progress within a running build.
 ///
+/// `stage_total` is what `series_built` is counting towards; pass `0` from a stage whose size is
+/// not known without doing the work twice. The console shows a bare count in that case rather
+/// than a bar it would have to invent a denominator for.
+///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
 pub async fn update_build_stage<'e, E: PgExecutor<'e>>(
     exec: E,
     stage: &str,
     series_built: i32,
+    stage_total: i32,
 ) -> DbResult<()> {
     sqlx::query!(
-        "UPDATE rec_build_state SET stage = $1, series_built = $2 WHERE id",
+        "UPDATE rec_build_state SET stage = $1, series_built = $2, stage_total = $3 WHERE id",
         stage,
         series_built,
+        stage_total,
     )
     .execute(exec)
     .await?;
@@ -142,6 +153,7 @@ pub async fn finish_build<'e, E: PgExecutor<'e>>(
         "UPDATE rec_build_state \
             SET stage        = 'idle', \
                 finished_at  = now(), \
+                stage_total  = 0, \
                 series_built = $1, \
                 vocabulary   = $2, \
                 dense_dims   = $3, \

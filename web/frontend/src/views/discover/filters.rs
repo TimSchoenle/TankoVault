@@ -7,6 +7,7 @@ use super::{YEAR_MAX, YEAR_MIN};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
+use crate::util::thousands;
 use dioxus::prelude::*;
 
 // `#[component]` turns these props into a struct, so `too_many_arguments` never fires here.
@@ -21,7 +22,7 @@ pub(super) fn FilterPanel(
     year_max: Signal<i32>,
     min_ch: Signal<i32>,
     provider: Signal<Option<String>>,
-    tags: Vec<Tag>,
+    tags: Vec<TagFacet>,
     providers: Vec<PublicProvider>,
     active_count: usize,
     page: Signal<usize>,
@@ -86,15 +87,7 @@ pub(super) fn FilterPanel(
                 if tags.is_empty() {
                     div { class: "ik-muted", style: "font-size:12px;", {i18n.t("discover.noTags")} }
                 } else {
-                    div { class: "ik-chips", style: "margin-bottom:0;",
-                        for tag in tags.iter().take(40).cloned() {
-                            TagChip { tag, inc, exc, page }
-                        }
-                    }
-                    div { class: "ik-legend",
-                        span { class: "inc", {i18n.t("discover.legend.include")} }
-                        span { class: "exc", {i18n.t("discover.legend.exclude")} }
-                    }
+                    TagFacetPanel { tags: tags.clone(), inc, exc, page }
                 }
             }
 
@@ -239,10 +232,105 @@ pub(super) fn StatusChip(
     }
 }
 
+/// Chips shown before the reader asks for the rest.
+///
+/// The list arrives commonest-first, so this prefix is the genres most of the catalogue is
+/// actually tagged with rather than the ones whose names happen to sort early. It used to be a
+/// flat `.take(40)` over an *alphabetical* list, which is why the panel appeared to stop
+/// mid-alphabet: the cap was real, the ordering made it look like the catalogue simply had no
+/// tags past whatever letter chip forty landed on.
+const VISIBLE_TAGS: usize = 32;
+
+/// The tag facet: a searchable, expandable chip list over the whole vocabulary.
+///
+/// Three affordances rather than one longer list, because they answer different questions. The
+/// prefix answers "what is this catalogue mostly about"; the search box answers "does it have
+/// *X*", which is the only workable interaction once a catalogue has hundreds of tags; and
+/// "show all" is the escape hatch for browsing the tail. Every tag is reachable through at
+/// least one of them, which is the property the old fixed cap did not have.
+#[component]
+pub(super) fn TagFacetPanel(
+    tags: Vec<TagFacet>,
+    inc: Signal<Vec<String>>,
+    exc: Signal<Vec<String>>,
+    page: Signal<usize>,
+) -> Element {
+    let i18n = use_i18n();
+    let mut query = use_signal(String::new);
+    let mut expanded = use_signal(|| false);
+
+    let needle = query.read().trim().to_lowercase();
+    let matching: Vec<TagFacet> = if needle.is_empty() {
+        tags.clone()
+    } else {
+        tags.iter()
+            .filter(|tag| {
+                tag.name.to_lowercase().contains(&needle) || tag.slug.contains(&needle)
+            })
+            .cloned()
+            .collect()
+    };
+    // A search is already a narrowing, so it shows everything it found: capping a result set the
+    // reader deliberately narrowed would hide the very tag they typed the name of.
+    let searching = !needle.is_empty();
+    let show_all = searching || *expanded.read();
+    let hidden = matching.len().saturating_sub(VISIBLE_TAGS);
+    let shown: Vec<TagFacet> = if show_all {
+        matching.clone()
+    } else {
+        matching.iter().take(VISIBLE_TAGS).cloned().collect()
+    };
+
+    rsx! {
+        input {
+            class: "ik-input",
+            style: "width:100%;margin-bottom:8px;font-size:12.5px;padding:6px 9px;",
+            r#type: "search",
+            placeholder: i18n.args("discover.tagSearch", &[("count", &tags.len().to_string())]),
+            "aria-label": i18n.args("discover.tagSearch", &[("count", &tags.len().to_string())]),
+            value: "{query}",
+            oninput: move |e| query.set(e.value()),
+        }
+        if shown.is_empty() {
+            div { class: "ik-muted", style: "font-size:12px;",
+                {i18n.args("discover.noTagMatch", &[("query", query.read().trim())])}
+            }
+        } else {
+            div { class: "ik-chips", style: "margin-bottom:0;",
+                for tag in shown {
+                    TagChip { key: "{tag.slug}", tag, inc, exc, page }
+                }
+            }
+            // Only when collapsing actually hides something: a "show fewer" control under a
+            // list that is already complete is a control that does nothing.
+            if !searching && hidden > 0 {
+                button {
+                    class: "reset",
+                    style: "margin-top:8px;text-transform:none;font-family:inherit;",
+                    r#type: "button",
+                    onclick: move |_| {
+                        let cur = *expanded.peek();
+                        expanded.set(!cur);
+                    },
+                    if *expanded.read() {
+                        {i18n.t("discover.showFewerTags")}
+                    } else {
+                        {i18n.args("discover.showAllTags", &[("count", &hidden.to_string())])}
+                    }
+                }
+            }
+        }
+        div { class: "ik-legend",
+            span { class: "inc", {i18n.t("discover.legend.include")} }
+            span { class: "exc", {i18n.t("discover.legend.exclude")} }
+        }
+    }
+}
+
 /// A 3-state tag chip: neutral → include (+) → exclude (−) → neutral.
 #[component]
 pub(super) fn TagChip(
-    tag: Tag,
+    tag: TagFacet,
     inc: Signal<Vec<String>>,
     exc: Signal<Vec<String>>,
     page: Signal<usize>,
@@ -284,6 +372,9 @@ pub(super) fn TagChip(
                 page.set(0);
             },
             "{prefix}{tag.name}"
+            // How much the chip would narrow the grid, before it is clicked. A facet whose
+            // options are all unlabelled is a facet you have to click to learn anything from.
+            span { class: "ik-tagchip-n", {thousands(tag.series_count)} }
         }
     }
 }

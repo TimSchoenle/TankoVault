@@ -16,6 +16,7 @@ pub mod pacing;
 pub mod permissions;
 pub mod politeness;
 pub mod ssrf;
+pub mod tag_filter;
 pub mod tunables;
 
 pub use chapter_outliers::{OutlierPolicy, implausible_indices};
@@ -40,4 +41,5 @@ pub use permissions::{
     ParsePermissionError, Permission, PermissionGroup, PermissionPreset, PermissionSet,
 };
 pub use politeness::{BrowserEmulation, MIN_RPS, Politeness};
+pub use tag_filter::{DEFAULT_BLOCKED_TAGS, TagBlocklist, slugify};
 pub use tunables::{Applies, ParseTunableError, Tunable, TunableGroup, TunableKind, TunableSpec};

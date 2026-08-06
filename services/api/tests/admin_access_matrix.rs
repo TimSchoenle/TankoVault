@@ -363,6 +363,13 @@ fn admin_gates() -> Vec<Gate> {
         },
         Gate {
             method: "GET",
+            template: "/v1/admin/sync/enrichment",
+            path: "/v1/admin/sync/enrichment",
+            required: &[Permission::SyncAdminRead],
+            body: empty,
+        },
+        Gate {
+            method: "GET",
             template: "/v1/admin/sync/series/{id}",
             path: "/v1/admin/sync/series/00000000-0000-7000-8000-00000000000a",
             required: &[Permission::SyncAdminRead],

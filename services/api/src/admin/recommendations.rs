@@ -245,8 +245,12 @@ pub struct ModelHealthView {
     /// How the last run ended, when it ended badly. The builder always releases its claim, so a
     /// failure shows up here rather than as a build that never finishes.
     pub error: Option<String>,
-    /// Series the last run wrote.
+    /// Series the running stage has processed, or the count the last completed run wrote.
     pub series_built: i32,
+    /// What the running stage's `series_built` is counting towards, so a console can draw a
+    /// progress bar instead of a number with no scale. Zero when the stage cannot know its own
+    /// size without doing the work twice, and after a run has finished.
+    pub stage_total: i32,
     /// Distinct features in the vocabulary.
     pub vocabulary: i32,
     /// Width of the dense space the model was built in.
@@ -303,6 +307,7 @@ pub async fn model_health(
         finished_at: rfc3339(build.finished_at),
         error: build.error,
         series_built: build.series_built,
+        stage_total: build.stage_total,
         vocabulary: build.vocabulary,
         dense_dims: build.dense_dims,
         series_total: coverage.series_total,

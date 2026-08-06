@@ -9,7 +9,8 @@ use crate::state::Session;
 use crate::title::PageTitle;
 use crate::views::{
     Account, AnilistCallback, Console, Discover, ForgotPassword, Home, Legal, Login, NotFound,
-    Notifications, ResetPassword, Search, Series, VerifyEmail, Watchlist, WatchlistQuery,
+    Notifications, Recommendations, ResetPassword, Search, Series, VerifyEmail, Watchlist,
+    WatchlistQuery,
 };
 use dioxus::prelude::*;
 
@@ -23,6 +24,10 @@ pub(crate) enum Route {
         Home {},
         #[route("/discover")]
         Discover {},
+        // Its own screen rather than a shelf on Home: the reasons are the surface, and a rail
+        // under three other sections had room for neither the list nor the explanations.
+        #[route("/for-you")]
+        Recommendations {},
         #[route("/series/:id")]
         Series { id: String },
         // The old Reading feed folded into Home; the path stays alive for bookmarks and links.

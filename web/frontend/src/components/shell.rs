@@ -28,6 +28,7 @@ const RETRY_BACKOFF_MAX_MS: u32 = 60_000;
 pub(crate) fn Shell() -> Element {
     use_token_refresh();
     use_capability_sync();
+    use_unread_count();
     use_live_notifications();
     crate::state::legal::use_legal_sync();
     // Here rather than in each screen: the layout is the one component every route renders
@@ -222,6 +223,43 @@ fn use_live_notifications() {
         async move {
             if signed_in {
                 crate::live::run(api, badge).await;
+            }
+        }
+    });
+}
+
+/// Seed the unread badge from the server, and re-seed it on every token change.
+///
+/// The stream alone was not enough, and this is the defect that made the count "not always
+/// load": the SSE stream only ever *pushes a change*. A reader who opens the app with unread
+/// notifications and receives nothing new while the tab is open gets no push at all, so the
+/// badge sat at its initial zero until they happened to visit `/notifications`, which is the one
+/// screen that recounts. On a reload the same thing happened again.
+///
+/// Keyed on the token like the stream and the capability sync, so the count is fetched on
+/// sign-in, on the boot-time silent refresh, and on each renewal — the cadence that also
+/// repairs a badge the stream drifted away from during a disconnection.
+///
+/// `limit(1)`: the inbox-wide `unread` total is a field of the response, not something counted
+/// from the rows, so there is no reason to transfer a page of them to read it. A failed fetch
+/// deliberately leaves the previous count alone — the badge is a nicety, and blanking it on a
+/// transient error would report "nothing unread", which is a specific and wrong claim.
+fn use_unread_count() {
+    let session = use_session();
+    let api = api::use_api();
+    let badge = use_context::<UnreadBadge>();
+
+    use_resource(move || {
+        let client = api.client();
+        let signed_in = session.is_authenticated();
+        let mut count = badge.0;
+        async move {
+            if !signed_in {
+                count.set(0);
+                return;
+            }
+            if let Ok(response) = client.notifications().limit(1).offset(0).send().await {
+                count.set(response.into_inner().unread);
             }
         }
     });

@@ -75,7 +75,7 @@ fn tab_link(tab: &Destination, current: &Route) -> Element {
             "aria-current": if active { "page" } else { "false" },
             Ic { icon: tab.icon, size: 21 }
             if badge > 0 {
-                span { class: "ik-tab-badge", "aria-hidden": "true", "{badge}" }
+                span { class: "ik-tab-badge", "aria-hidden": "true", {crate::util::compact_count(badge)} }
             }
             span { class: "ik-tab-label", "{tab.short}" }
         }

@@ -285,9 +285,10 @@ fn filter_matrix() -> Vec<(&'static str, SeriesFilter)> {
 // The differential test
 
 /// Every page and count statement must select the same rows for the same filter — the recency
-/// page, the sort-token page and the count, each in the search and no-search form the filter's
-/// `query` picks. Asserted as a set, not a sequence — ordering is
-/// [`every_sort_order_orders_by_its_own_key`]'s job.
+/// page, the sort-token page, the relevance page and the count, each in the search and no-search
+/// form the filter's `query` picks. Asserted as a set, not a sequence — ordering is
+/// [`every_sort_order_orders_by_its_own_key`]'s and
+/// [`an_exact_title_match_leads_the_relevance_order`]'s job.
 ///
 /// The count is the one that bites: it is a separate statement with its own parameter numbering
 /// and its own search branch, and a page it disagrees with is a pager offering a page that comes
@@ -318,10 +319,33 @@ async fn every_page_and_count_statement_selects_the_same_rows() {
         .await
         .unwrap_or_else(|e| panic!("{name}: sort-token page: {e}"));
 
+        // The fourth statement, and the newest: it carries the shared filter predicate *and* two
+        // more bound parameters of its own (the raw term and its normalized key), which is
+        // exactly the shape that drifts. It is only reached with a search term; without one it
+        // falls back to the recency statement, which this compares it against either way.
+        let by_relevance = list_series_filtered(
+            &db.pool,
+            &all_of(SeriesFilter {
+                sort: SeriesSort::Relevance,
+                ..filter.clone()
+            }),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{name}: relevance page: {e}"));
+
         assert_eq!(
             sorted_titles(&recency),
             sorted_titles(&by_token),
             "{name}: the recency and sort-token statements select different rows"
+        );
+        assert_eq!(
+            sorted_titles(&recency),
+            sorted_titles(&by_relevance),
+            "{name}: the relevance statement selects different rows from the recency one"
+        );
+        assert_eq!(
+            recency.total, by_relevance.total,
+            "{name}: the count disagrees with the relevance page it is paging"
         );
         assert_eq!(
             i64::try_from(recency.items.len()).unwrap(),
@@ -615,6 +639,102 @@ async fn search_finds_a_series_by_its_alternative_title() {
             .map(|i| i.series.canonical_title.as_str())
             .collect::<Vec<_>>(),
         vec!["Solo Leveling"]
+    );
+}
+
+/// A title that *is* the query must come first, however stale it is.
+///
+/// This pins the defect the relevance order exists for. Search used to inherit the browse
+/// grid's default, `updated`, so results came back in last-scanned order and the term played no
+/// part in ranking at all: a reader typing an exact title got it wherever its most recent crawl
+/// happened to put it — below every longer title that merely contains the word and was scanned
+/// more recently. Trigram similarity alone does not fix that either, which is why the order has
+/// explicit tiers: a short query is a large fraction of a short unrelated title, so
+/// `similarity()` ranks "Berserk of Gluttony" above "Berserk" on its own.
+///
+/// The fixture is built so the two failure modes are distinguishable. Both series match the
+/// term; the exact one is deliberately the *older* row, so an order that fell through to
+/// `updated_at DESC` puts it second, and one that ranked by similarity alone puts it second too.
+#[tokio::test]
+async fn an_exact_title_match_leads_the_relevance_order() {
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    for title in ["Berserk", "Berserk of Gluttony", "Berserk: The Prototype"] {
+        seed::series(&db, alpha, title)
+            .chapters(&[1.0])
+            .create()
+            .await;
+    }
+    // The exact match is the least recently updated of the three.
+    db.execute(
+        "UPDATE series SET updated_at = timestamptz '2024-01-01 00:00:00Z' \
+           + CASE canonical_title WHEN 'Berserk' THEN interval '1 day' ELSE interval '9 days' END",
+    )
+    .await;
+
+    let relevance = list_series_filtered(
+        &db.pool,
+        &all_of(SeriesFilter {
+            query: Some("Berserk".to_owned()),
+            sort: SeriesSort::Relevance,
+            ..SeriesFilter::default()
+        }),
+    )
+    .await
+    .expect("relevance page");
+    assert_eq!(
+        titles(&relevance).first().copied(),
+        Some("Berserk"),
+        "the exact title must lead; got {:?}",
+        titles(&relevance)
+    );
+
+    // And the order this replaced still behaves as it did, so the fix is the new statement
+    // rather than a change to what `updated` means.
+    let recency = list_series_filtered(
+        &db.pool,
+        &all_of(SeriesFilter {
+            query: Some("Berserk".to_owned()),
+            sort: SeriesSort::Updated,
+            ..SeriesFilter::default()
+        }),
+    )
+    .await
+    .expect("recency page");
+    assert_eq!(
+        titles(&recency).last().copied(),
+        Some("Berserk"),
+        "recency order is unchanged, and is exactly why search no longer defaults to it"
+    );
+}
+
+/// An alternative title that is the query must lead too — a work is just as exactly named by a
+/// synonym, and only the `series_titles` tier of the relevance order can put it first.
+#[tokio::test]
+async fn an_exact_alternative_title_leads_as_well() {
+    let db = TestDb::spawn().await;
+    seed_corpus(&db).await;
+    let alpha = seed::provider(&db, "gamma").create().await;
+    seed::series(&db, alpha, "Na Honjaman Level Up Redraw")
+        .chapters(&[1.0])
+        .create()
+        .await;
+
+    let page = list_series_filtered(
+        &db.pool,
+        &all_of(SeriesFilter {
+            query: Some("Na Honjaman Level Up".to_owned()),
+            sort: SeriesSort::Relevance,
+            ..SeriesFilter::default()
+        }),
+    )
+    .await
+    .expect("relevance page");
+    assert_eq!(
+        titles(&page).first().copied(),
+        Some("Solo Leveling"),
+        "the series whose synonym is the query must lead; got {:?}",
+        titles(&page)
     );
 }
 

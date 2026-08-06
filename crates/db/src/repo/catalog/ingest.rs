@@ -8,7 +8,9 @@ use super::series::{SeriesUpsert, resolve_canonical_series};
 use super::sources::{update_source_scan, upsert_source};
 use crate::error::DbResult;
 use tankovault_domain::matching::Canonicaliser;
-use tankovault_domain::{MetadataPriority, MetadataSource, ProviderId, SeriesId, SeriesSourceId};
+use tankovault_domain::{
+    MetadataPriority, MetadataSource, ProviderId, SeriesId, SeriesSourceId, TagBlocklist,
+};
 
 /// A fully-scanned series ready to persist: canonical metadata, alternative titles,
 /// and the full chapter list, plus the content hash for change detection.
@@ -36,8 +38,8 @@ pub struct IngestOutcome {
 /// idempotent, so replaying under at-least-once delivery converges without false-new chapters.
 ///
 /// `canonicaliser` decides which series the scan belongs to; `priority` decides which of the
-/// scan's values are allowed to replace what another source already wrote. This function only
-/// writes.
+/// scan's values are allowed to replace what another source already wrote; `blocked` decides
+/// which scraped "genres" are not tags at all. This function only writes.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; any failure rolls back the whole transaction, so a series
@@ -49,6 +51,7 @@ pub async fn ingest_series(
     scanned: &ScannedSeries,
     canonicaliser: &dyn Canonicaliser,
     priority: &MetadataPriority,
+    blocked: &TagBlocklist,
 ) -> DbResult<IngestOutcome> {
     let mut tx = pool.begin().await?;
 
@@ -67,7 +70,7 @@ pub async fn ingest_series(
     if !scanned.tags.is_empty() {
         // A scraped tag is a bare genre name: no rank to carry, so it is wholly present.
         let links: Vec<TagLink<'_>> = scanned.tags.iter().map(|t| TagLink::genre(t)).collect();
-        add_series_tags(&mut tx, series_id, &links).await?;
+        add_series_tags(&mut tx, series_id, &links, blocked).await?;
     }
     if !scanned.authors.is_empty() {
         add_series_authors(&mut tx, series_id, &scanned.authors).await?;

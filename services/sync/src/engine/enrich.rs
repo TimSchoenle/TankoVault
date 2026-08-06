@@ -15,6 +15,18 @@ use tankovault_db::repo::sync;
 use super::metadata::MetadataWriter;
 use super::registry::ProviderRegistry;
 
+/// What the sweep records when there is no provider that can answer without a user token.
+///
+/// A sentence rather than an empty result, because "ran, found nothing" and "cannot run at all"
+/// need different operator responses and look identical in the counters.
+const NO_PUBLIC_PROVIDER: &str =
+    "no registered provider exposes public metadata, so the sweep had nothing to ask";
+
+/// Narrow a counter for the `int` columns the sweep state is stored in.
+fn saturating(count: usize) -> i32 {
+    i32::try_from(count).unwrap_or(i32::MAX)
+}
+
 /// Outcome of a tokenless metadata-enrichment sweep.
 #[derive(Debug, Default, Serialize)]
 pub(crate) struct EnrichReport {
@@ -49,15 +61,53 @@ impl Enricher {
     /// Walk the catalogue in batches of `batch_size`, up to `max_series` series, asking every
     /// public-metadata provider for each one's catalogue metadata by cached external id, else
     /// by canonical title. Never fails the whole sweep on a single series' error.
+    ///
+    /// Every run is published to `metadata_sweep_state` as well as logged, because a log line is
+    /// invisible to the operator console and gone once the window rolls — and the two ways this
+    /// can come back having done nothing (no public-metadata provider registered, versus a sweep
+    /// that ran and resolved nothing) are indistinguishable from the catalogue alone.
     pub(crate) async fn enrich_all(
         &self,
         batch_size: i64,
         max_series: usize,
     ) -> anyhow::Result<EnrichReport> {
         let mut report = EnrichReport::default();
+        catalog::begin_sweep(&self.pool).await?;
         if !self.registry.any_public_metadata() {
+            catalog::finish_sweep(&self.pool, 0, 0, 0, Some(NO_PUBLIC_PROVIDER)).await?;
             return Ok(report);
         }
+
+        let outcome = self.sweep(batch_size, max_series, &mut report).await;
+        let error = outcome.as_ref().err().map(ToString::to_string);
+        catalog::finish_sweep(
+            &self.pool,
+            saturating(report.scanned),
+            saturating(report.enriched),
+            saturating(report.unresolved),
+            error.as_deref(),
+        )
+        .await?;
+        outcome?;
+
+        tracing::info!(
+            scanned = report.scanned,
+            enriched = report.enriched,
+            unresolved = report.unresolved,
+            "tokenless metadata enrichment sweep complete"
+        );
+        Ok(report)
+    }
+
+    /// The walk itself, split out so [`Self::enrich_all`] closes the sweep out on the failure
+    /// path as well as the success one — a run that returned early would otherwise leave
+    /// `running` true forever, and the console would report a sweep that no longer exists.
+    async fn sweep(
+        &self,
+        batch_size: i64,
+        max_series: usize,
+        report: &mut EnrichReport,
+    ) -> anyhow::Result<()> {
         // Every row touched is stamped `metadata_checked_at = now()`, success or not, and
         // `started_at` fences the run — that stamp is the whole paging mechanism. Paging on
         // `updated_at` instead (only a success writes it) let unresolvable series stay at the
@@ -88,17 +138,20 @@ impl Enricher {
                     }
                 }
             }
+            // Once per page rather than per series: a sweep of thousands would otherwise spend a
+            // write on every row to move a number the console re-reads every few seconds.
+            catalog::record_sweep_progress(
+                &self.pool,
+                saturating(report.scanned),
+                saturating(report.enriched),
+                saturating(report.unresolved),
+            )
+            .await?;
             if i64::try_from(fetched).unwrap_or(0) < batch_size {
                 break;
             }
         }
-        tracing::info!(
-            scanned = report.scanned,
-            enriched = report.enriched,
-            unresolved = report.unresolved,
-            "tokenless metadata enrichment sweep complete"
-        );
-        Ok(report)
+        Ok(())
     }
 
     /// Enrich one series from the first public provider that resolves it. Returns whether any

@@ -68,6 +68,7 @@ async fn a_rescan_of_an_unchanged_listing_discovers_nothing() {
         &scanned(provider, listing()),
         &MatchingConfig::default(),
         &MetadataPriority::default(),
+        &tankovault_domain::TagBlocklist::default(),
     )
     .await
     .expect("first ingest");
@@ -82,6 +83,7 @@ async fn a_rescan_of_an_unchanged_listing_discovers_nothing() {
         &scanned(provider, listing()),
         &MatchingConfig::default(),
         &MetadataPriority::default(),
+        &tankovault_domain::TagBlocklist::default(),
     )
     .await
     .expect("second ingest");
@@ -106,6 +108,7 @@ async fn only_added_chapters_are_reported_and_edits_are_applied_quietly() {
         &scanned(provider, vec![chapter(1.0, Some("Old title"), "/c/1")]),
         &MatchingConfig::default(),
         &MetadataPriority::default(),
+        &tankovault_domain::TagBlocklist::default(),
     )
     .await
     .expect("first ingest");
@@ -121,6 +124,7 @@ async fn only_added_chapters_are_reported_and_edits_are_applied_quietly() {
         ),
         &MatchingConfig::default(),
         &MetadataPriority::default(),
+        &tankovault_domain::TagBlocklist::default(),
     )
     .await
     .expect("second ingest");
@@ -163,6 +167,7 @@ async fn a_listing_that_repeats_a_chapter_number_does_not_abort_the_batch() {
         ),
         &MatchingConfig::default(),
         &MetadataPriority::default(),
+        &tankovault_domain::TagBlocklist::default(),
     )
     .await
     .expect("a duplicated chapter number must not abort the ingest");
@@ -213,6 +218,7 @@ async fn chapter_numbers_that_round_to_one_value_do_not_abort_the_batch() {
         ),
         &MatchingConfig::default(),
         &MetadataPriority::default(),
+        &tankovault_domain::TagBlocklist::default(),
     )
     .await
     .expect("numbers that collide only after rounding must not abort the ingest");
@@ -245,6 +251,7 @@ async fn an_empty_chapter_list_is_a_no_op() {
         &scanned(provider, Vec::new()),
         &MatchingConfig::default(),
         &MetadataPriority::default(),
+        &tankovault_domain::TagBlocklist::default(),
     )
     .await
     .expect("an empty listing still ingests the series itself");

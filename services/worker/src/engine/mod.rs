@@ -12,7 +12,7 @@ use tankovault_bus::Bus;
 use tankovault_config::MatchingConfig;
 use tankovault_db::PgPool;
 use tankovault_domain::chapter_outliers::{OutlierPolicy, implausible_indices};
-use tankovault_domain::{MetadataPriority, Provider, ProviderId};
+use tankovault_domain::{MetadataPriority, Provider, ProviderId, TagBlocklist};
 use tankovault_fetch::{Fetcher, ProviderFetchConfig, SessionStore, build_provider_fetcher};
 use tankovault_solver::ChallengeSolver;
 
@@ -49,6 +49,10 @@ pub(crate) struct Engine {
     /// Held here for the same reason as [`Self::matching`]: sync writes these columns too, and
     /// a priority only one writer consults is last-writer-wins with extra steps.
     pub(crate) metadata_priority: MetadataPriority,
+    /// Which scraped "genres" are not tags at all. Held here for the same reason as
+    /// [`Self::metadata_priority`]: sync's enrichment writer interns into the same `tags`
+    /// vocabulary, and a guard only one writer applies is not a guard.
+    pub(crate) tag_blocklist: TagBlocklist,
     /// Which scraped chapter numbers the source cannot plausibly have released.
     pub(crate) outliers: OutlierPolicy,
     /// One fetch stack per provider, keyed by the politeness settings it was built from.
@@ -103,6 +107,7 @@ pub(crate) struct EngineSettings {
     pub(crate) max_catalog_pages: u32,
     pub(crate) matching: MatchingConfig,
     pub(crate) metadata_priority: MetadataPriority,
+    pub(crate) tag_blocklist: TagBlocklist,
     pub(crate) outliers: OutlierPolicy,
 }
 
@@ -128,6 +133,7 @@ impl Engine {
             max_catalog_pages: settings.max_catalog_pages,
             matching: settings.matching,
             metadata_priority: settings.metadata_priority,
+            tag_blocklist: settings.tag_blocklist,
             outliers: settings.outliers,
             fetchers: Arc::default(),
         }

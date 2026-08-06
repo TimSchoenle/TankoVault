@@ -1,5 +1,6 @@
 //! Sync administration: the linked-account directory and the per-series mapping tools.
 
+mod enrichment;
 mod inspector;
 mod queues;
 
@@ -10,6 +11,7 @@ use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::util::rel_time;
 use dioxus::prelude::*;
+use enrichment::EnrichmentPanel;
 use inspector::SeriesSyncInspector;
 use progenitor_client::ResponseValue;
 use queues::AssignQueue;
@@ -54,6 +56,16 @@ pub(super) fn SyncAdminPanel() -> Element {
     });
 
     rsx! {
+        // First, not last: this is the only surface that says whether the catalogue-wide half of
+        // the AniList integration is running at all, and every account row below it is about the
+        // other half.
+        section { style: "margin-bottom:24px;",
+            h3 { {i18n.t("console.sync.enrich.title")} }
+            p { class: "ik-muted", style: "font-size:13px;margin-top:0;max-width:74ch;",
+                {i18n.t("console.sync.enrich.intro")}
+            }
+            EnrichmentPanel {}
+        }
         section { style: "margin-bottom:24px;",
             h3 { {i18n.t("console.sync.accounts")} }
             {accounts_body}

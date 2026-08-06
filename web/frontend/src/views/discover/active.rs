@@ -12,7 +12,7 @@ pub(super) fn ActiveFilters(
     inc: Signal<Vec<String>>,
     exc: Signal<Vec<String>>,
     provider: Signal<Option<String>>,
-    tags: Vec<Tag>,
+    tags: Vec<TagFacet>,
     providers: Vec<PublicProvider>,
     page: Signal<usize>,
 ) -> Element {

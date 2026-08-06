@@ -125,6 +125,9 @@ pub enum SeriesSort {
     /// Default; the only order with a dedicated index (`series_updated_idx`).
     #[default]
     Updated,
+    /// Best match for the search term. Meaningless without one, and degrades to [`Self::Updated`]
+    /// when there is none rather than refusing — the sort control is shared with the browse grid.
+    Relevance,
     Title,
     Chapters,
     Sources,
@@ -140,6 +143,7 @@ impl SeriesSort {
     pub fn as_token(self) -> &'static str {
         match self {
             Self::Updated => "updated",
+            Self::Relevance => "relevance",
             Self::Title => "title",
             Self::Chapters => "chapters",
             Self::Sources => "sources",
@@ -149,8 +153,11 @@ impl SeriesSort {
     }
 
     /// Whether this order is served by the dedicated recency statement.
+    ///
+    /// [`Self::Relevance`] is in the list because this is only consulted once the relevance
+    /// branch has already declined — which it does when there is no search term to rank by.
     fn is_recency(self) -> bool {
-        matches!(self, Self::Updated | Self::Rating)
+        matches!(self, Self::Updated | Self::Rating | Self::Relevance)
     }
 }
 
@@ -160,6 +167,7 @@ impl std::str::FromStr for SeriesSort {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "updated" => Ok(Self::Updated),
+            "relevance" => Ok(Self::Relevance),
             "title" => Ok(Self::Title),
             "chapters" => Ok(Self::Chapters),
             "sources" => Ok(Self::Sources),
@@ -342,7 +350,7 @@ pub async fn list_series_filtered(pool: &PgPool, filter: &SeriesFilter) -> DbRes
 
 /// One page of matching rows, in the requested order.
 ///
-/// Two branches, not one statement: the order picks the statement, and a search term picks
+/// Three branches, not one statement: the order picks the statement, and a search term picks
 /// whether the matched-id set is joined in. The term cannot be folded back into a single
 /// statement as `$1::text IS NULL OR … OR EXISTS (…)` — an `EXISTS` under `OR` cannot be pulled
 /// up into a semi-join, so no index on `series` is usable and the planner scans all of it (see
@@ -350,18 +358,79 @@ pub async fn list_series_filtered(pool: &PgPool, filter: &SeriesFilter) -> DbRes
 /// that has nothing to union when there is no term, which is why this branches rather than
 /// rewrites.
 ///
-/// Both page statements end with `s.id DESC` as a tiebreaker — without it, ties in the sort key
+/// Every page statement ends with `s.id DESC` as a tiebreaker — without it, ties in the sort key
 /// give adjacent `OFFSET` pages no stable order.
 async fn fetch_filtered_page(
     pool: &PgPool,
     filter: &SeriesFilter,
     query: Option<&str>,
 ) -> DbResult<Vec<FilteredRow>> {
-    if filter.sort.is_recency() {
-        fetch_page_by_recency(pool, filter, query).await
-    } else {
-        fetch_page_by_sort_token(pool, filter, query).await
+    match (filter.sort, query) {
+        (SeriesSort::Relevance, Some(q)) => fetch_page_by_relevance(pool, filter, q).await,
+        (sort, _) if sort.is_recency() => fetch_page_by_recency(pool, filter, query).await,
+        _ => fetch_page_by_sort_token(pool, filter, query).await,
     }
+}
+
+/// Best-match order for a search term.
+///
+/// Its own statement rather than another `ORDER BY CASE` arm on [`fetch_page_by_sort_token`],
+/// because the ranking needs the term itself and that statement's tail is shared with the
+/// no-search branch, which has no term to bind.
+///
+/// The tiers exist because trigram similarity alone does not put an exact title first: a short
+/// query is a large fraction of a short unrelated title, so `similarity()` happily ranks
+/// "Berserk of Gluttony" above "Berserk". Exactness is therefore decided *before* similarity is
+/// consulted — the canonical title first, then any alternative title, then a prefix. Prefix is
+/// tested with `left(…)` rather than `LIKE $n || '%'` so a `%` or `_` surviving normalization
+/// cannot turn the reader's query into a wildcard.
+async fn fetch_page_by_relevance(
+    pool: &PgPool,
+    filter: &SeriesFilter,
+    query: &str,
+) -> DbResult<Vec<FilteredRow>> {
+    // The exactness tiers compare against `normalized_title`, so the term has to be reduced by
+    // the same function that produced that column — otherwise "SPY×FAMILY" never equals the row
+    // it is stored as.
+    let key = tankovault_domain::normalize_title(query);
+    let rows = browse_statement!(
+        page "WITH matched AS ( \
+                SELECT s.id FROM series s WHERE s.normalized_title % $11 \
+                UNION \
+                SELECT s.id FROM series s \
+                 WHERE s.search_vec @@ plainto_tsquery('simple', $11) \
+                UNION \
+                SELECT st.series_id FROM series_titles st WHERE st.normalized % $11 \
+              ) ",
+        " JOIN matched m ON m.id = s.id",
+        " ORDER BY \
+            (s.normalized_title = $12) DESC, \
+            EXISTS (SELECT 1 FROM series_titles st \
+                     WHERE st.series_id = s.id AND st.normalized = $12) DESC, \
+            (left(s.normalized_title, length($12)) = $12) DESC, \
+            GREATEST( \
+              similarity(s.normalized_title, $11), \
+              COALESCE((SELECT max(similarity(st.normalized, $11)) \
+                        FROM series_titles st WHERE st.series_id = s.id), 0) \
+            ) DESC, \
+            s.updated_at DESC, s.id DESC \
+          LIMIT $9 OFFSET $10",
+        filter.content_type as Option<ContentType>,
+        filter.status as Option<SeriesStatus>,
+        filter.year_min,
+        filter.year_max,
+        filter.provider_slug.as_deref(),
+        filter.min_chapters,
+        &filter.tags as &[String],
+        &filter.exclude_tags as &[String],
+        filter.limit,
+        filter.offset,
+        query,
+        key,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
 }
 
 /// The default order: newest-updated first, straight down `series_updated_idx`.
@@ -629,6 +698,43 @@ pub async fn list_series_tags<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
+/// Tag names for a set of series, alphabetically within each — the batched counterpart to
+/// [`list_series_tags`], for card grids that would otherwise issue one query per cover.
+///
+/// Names, not [`tankovault_domain::Tag`]s: a card labels a series, it does not link the facet,
+/// and shipping ids and slugs a caller cannot use is payload nobody reads.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only. An untagged series is absent from the map rather than present
+/// as an empty `Vec`.
+pub async fn tags_for_series<'e, E: PgExecutor<'e>>(
+    exec: E,
+    series_ids: &[SeriesId],
+) -> DbResult<std::collections::HashMap<SeriesId, Vec<String>>> {
+    #[derive(FromRow)]
+    struct Row {
+        series_id: Uuid,
+        name: String,
+    }
+    let ids: Vec<Uuid> = series_ids.iter().map(|s| s.as_uuid()).collect();
+    let rows = sqlx::query_as!(
+        Row,
+        "SELECT stg.series_id, t.name FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
+         WHERE stg.series_id = ANY($1) ORDER BY stg.series_id, t.name",
+        &ids,
+    )
+    .fetch_all(exec)
+    .await?;
+    let mut out: std::collections::HashMap<SeriesId, Vec<String>> =
+        std::collections::HashMap::new();
+    for row in rows {
+        out.entry(SeriesId::from_uuid(row.series_id))
+            .or_default()
+            .push(row.name);
+    }
+    Ok(out)
+}
+
 /// List all tags/genres, alphabetically (design §11 `GET /v1/tags`).
 ///
 /// # Errors
@@ -653,6 +759,58 @@ pub async fn list_tags<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<tankovaul
         })
         .collect())
 }
+
+/// A tag plus how much of the catalogue carries it.
+pub struct TagFacet {
+    pub tag: tankovault_domain::Tag,
+    pub series_count: i64,
+}
+
+/// Every tag with its series count, commonest first.
+///
+/// Popularity order, not alphabetical: a facet panel can only render so many chips, and an
+/// alphabetical truncation cuts the list at whatever letter the cap lands on — which is how a
+/// panel ends mid-alphabet and hides the genres most of the catalogue is actually tagged with.
+/// Ties break on name so the order is stable between requests.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; must not be defaulted to empty — that reads as "no tags"
+/// rather than a failed fetch.
+pub async fn list_tag_facets<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<TagFacet>> {
+    #[derive(FromRow)]
+    struct Row {
+        id: Uuid,
+        slug: String,
+        name: String,
+        series_count: i64,
+    }
+    // One aggregate over `series_tags` joined in, not a correlated `count(*)` per tag. The
+    // correlated form is charged once per row of `tags` and estimated at 262 000 on the plan
+    // audit's fixture — the whole vocabulary re-counted for a facet the panel loads on every
+    // visit. This groups `series_tags` once and hash-joins it, which is the same answer for a
+    // fraction of the work.
+    let rows = sqlx::query_as!(
+        Row,
+        "SELECT t.id, t.slug, t.name, COALESCE(c.n, 0) AS \"series_count!\" \
+         FROM tags t \
+         LEFT JOIN (SELECT stg.tag_id, count(*) AS n FROM series_tags stg GROUP BY stg.tag_id) c \
+                ON c.tag_id = t.id \
+         ORDER BY COALESCE(c.n, 0) DESC, t.name",
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| TagFacet {
+            tag: tankovault_domain::Tag {
+                id: tankovault_domain::TagId::from_uuid(r.id),
+                slug: r.slug,
+                name: r.name,
+            },
+            series_count: r.series_count,
+        })
+        .collect())
+}
 #[cfg(test)]
 mod sort_tests {
     use super::SeriesSort;
@@ -665,6 +823,7 @@ mod sort_tests {
     fn every_sort_token_round_trips_and_unknown_is_refused() {
         for sort in [
             SeriesSort::Updated,
+            SeriesSort::Relevance,
             SeriesSort::Title,
             SeriesSort::Chapters,
             SeriesSort::Sources,
@@ -679,10 +838,16 @@ mod sort_tests {
 
     /// Pins which orders route to the indexed recency statement; a wrong answer here silently
     /// reorders results with no error.
+    ///
+    /// `Relevance` belongs to that set: the relevance statement is chosen ahead of this check and
+    /// only when a search term exists, so what this pins is the *fallback* — a relevance request
+    /// with nothing to rank must land on recency, not on the sort-token statement whose `CASE`
+    /// arms all miss and which would then order by `updated_at` the slow way.
     #[test]
     fn only_recency_orders_use_the_indexed_statement() {
         assert!(SeriesSort::Updated.is_recency());
         assert!(SeriesSort::Rating.is_recency());
+        assert!(SeriesSort::Relevance.is_recency());
         for sort in [
             SeriesSort::Title,
             SeriesSort::Chapters,

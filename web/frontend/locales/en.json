@@ -504,13 +504,17 @@
       "outOfRange": "Outside the permitted range.",
       "privacyFloor": "Privacy floor",
       "privacyFloorHint": "The lower bound is an anonymity threshold, not a tuning limit. The API refuses anything below it however it is sent.",
+      "progressOf": "{done} / {total} ({percent}%)",
+      "progressWorking": "{done} so far",
       "readOnly": "You can see this tuning, but not change it.",
       "rebuildFull": "Full rebuild",
       "rebuildFullHint": "Re-solve the projection and re-embed the catalogue. Needed for a value baked into the stored vectors.",
       "rebuildIncremental": "Rebuild",
       "rebuildIncrementalHint": "Patch the live generation. Enough for a value that applies on the next build.",
       "resetHint": "Drop the override and follow the shipped default",
+      "runningFor": "started {since}",
       "saved": "Saved.",
+      "stageStep": "step {n} of {of}",
       "startedAt": "started {date}",
       "tuning": "Tuning",
       "valueLabel": "Value for {title}"
@@ -582,6 +586,27 @@
       "backToSearch": "← Back to search",
       "badSeriesId": "That series id doesn't look right.",
       "clear": "Clear",
+      "enrich": {
+        "finishedAt": "last finished {when}",
+        "idle": "idle",
+        "intro": "The tokenless sweep: it walks the whole catalogue asking public providers for cover art, descriptions, tags and release years. Independent of the linked accounts below, which sync one reader's list.",
+        "kpi": {
+          "backlog": "Never checked",
+          "backlogSub": "of {total} in the catalogue",
+          "enriched": "Enriched",
+          "enrichedSub": "upstream had something to add",
+          "lastDay": "Checked in 24h",
+          "lastDaySub": "ground the recent sweeps covered",
+          "scanned": "Scanned",
+          "scannedSub": "series examined this sweep",
+          "unresolved": "Unresolved",
+          "unresolvedSub": "no provider matched the title"
+        },
+        "lastError": "Last sweep ended with: {message}",
+        "running": "sweeping",
+        "startedAt": "started {when}",
+        "title": "Catalogue metadata enrichment"
+      },
       "externalId": "external id",
       "externalIdHint": "external id (e.g. AniList media id)",
       "externalMappings": "External sync mappings",
@@ -722,6 +747,7 @@
       "title": "Nothing matched those filters"
     },
     "noProviders": "No providers available yet.",
+    "noTagMatch": "No tag matches “{query}”.",
     "noTags": "No tags indexed yet.",
     "page": {
       "go": "Go",
@@ -738,9 +764,12 @@
     "releaseYearFrom": "Earliest release year",
     "releaseYearTo": "Latest release year",
     "resetFilters": "Reset filters",
+    "showAllTags": "Show {count} more",
+    "showFewerTags": "Show fewer",
     "sort": {
       "chapters": "Most chapters",
       "rating": "Highest rated",
+      "relevance": "Best match",
       "sources": "Most sources",
       "title": "Title (A–Z)",
       "updated": "Recently updated",
@@ -748,6 +777,7 @@
     },
     "sortLabel": "Sort",
     "status": "Status",
+    "tagSearch": "Filter {count} tags",
     "tags": "Genres / tags",
     "toggleFilters": "Toggle filters"
   },
@@ -867,6 +897,7 @@
     "recommendations": {
       "askTitle": "Stop suggesting this?",
       "because": "Because you read {title}",
+      "cta": "Suggestions drawn from what you have been reading",
       "dismiss": "Dismiss {title}",
       "hideForever": "Never again",
       "hideForeverHint": "Hidden for good. This one does not expire.",
@@ -903,6 +934,7 @@
     "notices": "Open-source notices",
     "notifications": "Notifications",
     "railLabel": "Main",
+    "recommendations": "For you",
     "search": "Search",
     "skipToContent": "Skip to content",
     "tagline": "SOURCE · TRACK · SYNC",
@@ -981,6 +1013,20 @@
     },
     "tooShort": "Password must be at least 8 characters."
   },
+  "recommendations": {
+    "countLine": {
+      "one": "{count} suggestion",
+      "other": "{count} suggestions"
+    },
+    "disabled": "This deployment does not offer recommendations.",
+    "empty": {
+      "hint": "Track a few series and read a little of them — the model needs something of yours to reason from.",
+      "title": "Nothing to suggest yet"
+    },
+    "intro": "Built from the series you track and how far you have read them. Every suggestion says which of your titles produced it.",
+    "sharesLabel": "Both share",
+    "whyLabel": "Why"
+  },
   "search": {
     "countLine": "{count} results · trigram fuzzy match",
     "empty": "No series matched that. Try fewer words.",
@@ -995,6 +1041,10 @@
     "chapterCount": "{count} ch",
     "chapterNumbered": "Chapter {number}",
     "chapterShort": "ch {number}",
+    "chapterTally": {
+      "one": "{count} chapter",
+      "other": "{count} chapters"
+    },
     "chapters": "Chapters",
     "chooseSource": "Choose a source",
     "continueOn": "Continue ch {number} on {source}",
@@ -1004,6 +1054,7 @@
     "filterUnread": "Unread {count}",
     "hideParts": "Hide parts",
     "inWatchlist": "In watchlist",
+    "lastRelease": "Newest {when}",
     "loadMore": "load {count} more",
     "markFailed": "Chapter {number} could not be updated.",
     "menuTitle": "Open ch {number} on",
@@ -1025,6 +1076,10 @@
     "partReleases": {
       "one": "{count} early part release ({from}–{to})",
       "other": "{count} early part releases ({from}–{to})"
+    },
+    "partTally": {
+      "one": "{count} part release",
+      "other": "{count} part releases"
     },
     "pinHint": "Pin a source to open it first",
     "pinSource": "Pin for this series",
@@ -1068,7 +1123,8 @@
       "unlink": "Unlink"
     },
     "tracking": "Tracking",
-    "unread": "Unread"
+    "unread": "Unread",
+    "upTo": "up to #{number}"
   },
   "time": {
     "daysAgo": "{count}d ago",

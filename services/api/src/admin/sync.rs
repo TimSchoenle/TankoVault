@@ -590,3 +590,84 @@ pub async fn assign_remote_entry(
     .await;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
+
+/// What the tokenless metadata-enrichment sweep is doing, or last did.
+///
+/// The `AniList` side of the sync service does two unrelated things, and only one of them has
+/// ever had an operator surface: reconciling a *user's* list (visible per account above) and
+/// walking the *catalogue* asking for metadata nobody's account is involved in. The second is
+/// the one that fills in cover art, descriptions, tags and release years — and until this view
+/// it reported itself only into the sync container's log.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct EnrichmentSweepView {
+    /// Whether a sweep is in flight. Advisory: the sweep is idempotent per series and does not
+    /// take a claim, so this says "one is running", not "one may not start".
+    pub running: bool,
+    /// RFC 3339. When the current or most recent sweep started.
+    #[schema(example = "2026-08-06T02:00:00Z")]
+    pub started_at: Option<String>,
+    /// RFC 3339. When the most recent sweep ended; absent while one is running.
+    #[schema(example = "2026-08-06T02:04:00Z")]
+    pub finished_at: Option<String>,
+    /// Series examined. Written as the sweep advances, so this is progress while `running`.
+    pub scanned: i32,
+    /// Series an upstream provider resolved and supplied metadata for.
+    pub enriched: i32,
+    /// Series no public provider could resolve. A high figure beside a low `enriched` is the
+    /// signal that titles are not matching upstream, not that the sweep is broken.
+    pub unresolved: i32,
+    /// How the last sweep ended when it ended badly, including the case where no registered
+    /// provider offers public metadata at all.
+    pub error: Option<String>,
+    pub series_total: i64,
+    /// Series the sweep has never attempted. These lead every work list, so a figure that does
+    /// not fall between two reads means the sweep is not running.
+    pub never_checked: i64,
+    /// Series attempted in the last 24 hours — how much ground the recent runs covered.
+    pub checked_last_day: i64,
+}
+
+/// Get metadata enrichment status
+///
+/// What the catalogue-wide `AniList` enrichment sweep did on its last run, how far it has got
+/// through the catalogue, and its progress if one is running now.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/sync/enrichment",
+    tag = ADMIN_SYNC_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "The sweep's current state", body = EnrichmentSweepView),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn enrichment_status(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<EnrichmentSweepView>> {
+    user.require(Permission::SyncAdminRead).await?;
+
+    let sweep = tankovault_db::repo::catalog::read_sweep_state(&state.pool).await?;
+    let coverage = tankovault_db::repo::catalog::read_sweep_coverage(&state.pool).await?;
+
+    let rfc3339 = |at: Option<time::OffsetDateTime>| {
+        at.and_then(|t| {
+            t.format(&time::format_description::well_known::Rfc3339)
+                .ok()
+        })
+    };
+
+    Ok(Json(EnrichmentSweepView {
+        running: sweep.running,
+        started_at: rfc3339(sweep.started_at),
+        finished_at: rfc3339(sweep.finished_at),
+        scanned: sweep.scanned,
+        enriched: sweep.enriched,
+        unresolved: sweep.unresolved,
+        error: sweep.error,
+        series_total: coverage.series_total,
+        never_checked: coverage.never_checked,
+        checked_last_day: coverage.checked_last_day,
+    }))
+}

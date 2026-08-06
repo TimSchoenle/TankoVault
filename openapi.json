@@ -667,6 +667,77 @@
         ],
         "type": "object"
       },
+      "EnrichmentSweepView": {
+        "description": "What the tokenless metadata-enrichment sweep is doing, or last did.\n\nThe `AniList` side of the sync service does two unrelated things, and only one of them has\never had an operator surface: reconciling a *user's* list (visible per account above) and\nwalking the *catalogue* asking for metadata nobody's account is involved in. The second is\nthe one that fills in cover art, descriptions, tags and release years — and until this view\nit reported itself only into the sync container's log.",
+        "properties": {
+          "checked_last_day": {
+            "description": "Series attempted in the last 24 hours — how much ground the recent runs covered.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "enriched": {
+            "description": "Series an upstream provider resolved and supplied metadata for.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "error": {
+            "description": "How the last sweep ended when it ended badly, including the case where no registered\nprovider offers public metadata at all.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "description": "RFC 3339. When the most recent sweep ended; absent while one is running.",
+            "example": "2026-08-06T02:04:00Z",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "never_checked": {
+            "description": "Series the sweep has never attempted. These lead every work list, so a figure that does\nnot fall between two reads means the sweep is not running.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "running": {
+            "description": "Whether a sweep is in flight. Advisory: the sweep is idempotent per series and does not\ntake a claim, so this says \"one is running\", not \"one may not start\".",
+            "type": "boolean"
+          },
+          "scanned": {
+            "description": "Series examined. Written as the sweep advances, so this is progress while `running`.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "series_total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "started_at": {
+            "description": "RFC 3339. When the current or most recent sweep started.",
+            "example": "2026-08-06T02:00:00Z",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unresolved": {
+            "description": "Series no public provider could resolve. A high figure beside a low `enriched` is the\nsignal that titles are not matching upstream, not that the sweep is broken.",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "running",
+          "scanned",
+          "enriched",
+          "unresolved",
+          "series_total",
+          "never_checked",
+          "checked_last_day"
+        ],
+        "type": "object"
+      },
       "ExtendRequest": {
         "properties": {
           "due_at": {
@@ -1402,7 +1473,7 @@
             "type": "integer"
           },
           "series_built": {
-            "description": "Series the last run wrote.",
+            "description": "Series the running stage has processed, or the count the last completed run wrote.",
             "format": "int32",
             "type": "integer"
           },
@@ -1429,6 +1500,11 @@
             "description": "What the builder is doing. `idle` between runs.",
             "type": "string"
           },
+          "stage_total": {
+            "description": "What the running stage's `series_built` is counting towards, so a console can draw a\nprogress bar instead of a number with no scale. Zero when the stage cannot know its own\nsize without doing the work twice, and after a run has finished.",
+            "format": "int32",
+            "type": "integer"
+          },
           "started_at": {
             "description": "RFC 3339. When the current or most recent run started.",
             "example": "2026-08-04T12:00:00Z",
@@ -1448,6 +1524,7 @@
           "stage",
           "building",
           "series_built",
+          "stage_total",
           "vocabulary",
           "dense_dims",
           "series_total",
@@ -2195,6 +2272,11 @@
               "null"
             ]
           },
+          "chapter_count": {
+            "description": "Distinct whole chapters across every source — the figure a reader deciding whether to\nstart something actually wants, and the same one the series screen prints.",
+            "format": "int64",
+            "type": "integer"
+          },
           "content_type": {
             "$ref": "#/components/schemas/ContentType"
           },
@@ -2208,6 +2290,20 @@
             "$ref": "#/components/schemas/SeriesId",
             "description": "`id`, not `series_id`, on purpose. This endpoint used to return `SeriesSummary`, and the\nSPA ships as its own image — so a deployed client always outlives a server change by some\nwindow. Keeping the name makes the new body a strict *superset* of the old one: every\nfield an older client reads is still there, and the additions are ignored. Renaming it\nwould have been a deserialization failure in somebody's browser, which is precisely what\nthe `openapi breaking changes` gate exists to catch."
           },
+          "latest_chapter": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "release_year": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "score": {
             "format": "float",
             "type": "number"
@@ -2220,11 +2316,19 @@
             "type": "array"
           },
           "source_count": {
+            "description": "Distinct providers carrying this series. Retained for compatibility; not a figure any\nreader-facing surface shows.",
             "format": "int64",
             "type": "integer"
           },
           "status": {
             "$ref": "#/components/schemas/SeriesStatus"
+          },
+          "tags": {
+            "description": "Tag names, alphabetically, capped for the card that shows them.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "title": {
             "type": "string"
@@ -2236,6 +2340,8 @@
           "content_type",
           "status",
           "source_count",
+          "chapter_count",
+          "tags",
           "score",
           "shared"
         ],
@@ -2719,7 +2825,13 @@
         "type": "string"
       },
       "SeriesSummary": {
+        "description": "One card in a catalogue grid.\n\nGrown rather than replaced: a deployed SPA outlives a server change, so every field an older\nclient reads is still here and the additions are ignored by it. `source_count` is kept for\nthat reason alone — the surfaces that used to print it now print [`Self::chapter_count`],\nwhich is what a reader was actually trying to learn from it.",
         "properties": {
+          "chapter_count": {
+            "description": "Distinct **whole** chapters across every source, so a title carried by four providers is\nnot counted four times and a part release does not count as its own chapter. This is the\nsame figure the series screen prints, so a card and the page it opens agree.",
+            "format": "int64",
+            "type": "integer"
+          },
           "content_type": {
             "$ref": "#/components/schemas/ContentType"
           },
@@ -2732,12 +2844,35 @@
           "id": {
             "$ref": "#/components/schemas/SeriesId"
           },
+          "latest_chapter": {
+            "description": "The highest chapter number any source carries, when there is one.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "release_year": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "source_count": {
+            "description": "Distinct providers carrying this series. Retained for compatibility; not a figure any\nreader-facing surface shows.",
             "format": "int64",
             "type": "integer"
           },
           "status": {
             "$ref": "#/components/schemas/SeriesStatus"
+          },
+          "tags": {
+            "description": "Tag names, alphabetically. Capped server-side: a card has room for two or three, and\nshipping forty for a client to slice is payload nobody renders.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "title": {
             "type": "string"
@@ -2748,7 +2883,9 @@
           "title",
           "content_type",
           "status",
-          "source_count"
+          "source_count",
+          "chapter_count",
+          "tags"
         ],
         "type": "object"
       },
@@ -3201,6 +3338,32 @@
           "id",
           "slug",
           "name"
+        ],
+        "type": "object"
+      },
+      "TagFacet": {
+        "description": "One entry of the tag facet: a tag plus how much of the catalogue carries it.",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/TagId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "series_count": {
+            "description": "Series carrying this tag. What lets the filter panel order by usage and say how much a\nchip would narrow the grid before it is clicked.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "series_count"
         ],
         "type": "object"
       },
@@ -6476,6 +6639,53 @@
           }
         ],
         "summary": "Assign a remote entry to a local series",
+        "tags": [
+          "admin-sync"
+        ]
+      }
+    },
+    "/v1/admin/sync/enrichment": {
+      "get": {
+        "description": "What the catalogue-wide `AniList` enrichment sweep did on its last run, how far it has got\nthrough the catalogue, and its progress if one is running now.",
+        "operationId": "enrichment_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrichmentSweepView"
+                }
+              }
+            },
+            "description": "The sweep's current state"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get metadata enrichment status",
         "tags": [
           "admin-sync"
         ]
@@ -11287,7 +11497,7 @@
             }
           },
           {
-            "description": "`updated | title | chapters | sources | year | rating` (default `updated`).",
+            "description": "`relevance | updated | title | chapters | sources | year | rating`. Defaults to\n`relevance` when `query` is supplied and `updated` when it is not; `relevance` without a\n`query` has nothing to rank and falls back to `updated`.",
             "in": "query",
             "name": "sort",
             "required": false,
@@ -11522,7 +11732,7 @@
     },
     "/v1/tags": {
       "get": {
-        "description": "All genres/tags in the catalogue (public).",
+        "description": "Every genre/tag in the catalogue with the number of series carrying it, commonest first\n(public).\n\nOrdered by usage rather than alphabetically because the facet panel that consumes this can\nonly show so many chips at once: an alphabetical list truncated to fit cuts off at whatever\nletter the cap lands on, hiding the genres most of the catalogue actually uses. The body is a\nsuperset of the previous `Tag[]`, so an older client reading only `id`/`slug`/`name` is\nunaffected — it just sees them in a different order.",
         "operationId": "tags",
         "responses": {
           "200": {
@@ -11530,13 +11740,13 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/Tag"
+                    "$ref": "#/components/schemas/TagFacet"
                   },
                   "type": "array"
                 }
               }
             },
-            "description": "All known tags"
+            "description": "All known tags, commonest first"
           }
         },
         "summary": "List all tags",

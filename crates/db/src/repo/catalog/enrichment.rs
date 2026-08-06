@@ -4,7 +4,10 @@
 use super::metadata::{MetadataCandidate, merge_metadata};
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
-use tankovault_domain::{MetadataPriority, MetadataSource, SeriesId};
+// `slugify` is the domain's, not a local copy: `TagBlocklist` compares against exactly the key
+// this module writes into `tags.slug`, and a second implementation here is the drift that would
+// make the intake guard fail open.
+use tankovault_domain::{MetadataPriority, MetadataSource, SeriesId, TagBlocklist, slugify};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -112,6 +115,131 @@ pub async fn mark_metadata_checked<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
+/// The single row of `metadata_sweep_state`: what the enrichment sweep is doing, or last did.
+#[derive(Debug, Clone, FromRow)]
+pub struct MetadataSweepState {
+    pub running: bool,
+    pub started_at: Option<OffsetDateTime>,
+    pub finished_at: Option<OffsetDateTime>,
+    pub scanned: i32,
+    pub enriched: i32,
+    pub unresolved: i32,
+    pub error: Option<String>,
+}
+
+/// How much of the catalogue the sweep has and has not reached.
+#[derive(Debug, Clone, Copy, FromRow)]
+pub struct MetadataSweepCoverage {
+    pub series_total: i64,
+    /// Series the sweep has never attempted. These lead every work list, so a figure that never
+    /// falls is the signal that the sweep is not running at all.
+    pub never_checked: i64,
+    /// Series attempted within the last day — how much ground the recent runs actually covered.
+    pub checked_last_day: i64,
+}
+
+/// Read the enrichment sweep's state.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; the row is created by migration 0034 and cannot be absent.
+pub async fn read_sweep_state<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<MetadataSweepState> {
+    let state = sqlx::query_as!(
+        MetadataSweepState,
+        "SELECT running, started_at, finished_at, scanned, enriched, unresolved, error \
+         FROM metadata_sweep_state WHERE id",
+    )
+    .fetch_one(exec)
+    .await?;
+    Ok(state)
+}
+
+/// Read how far the sweep has got through the catalogue.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn read_sweep_coverage<'e, E: PgExecutor<'e>>(
+    exec: E,
+) -> DbResult<MetadataSweepCoverage> {
+    let coverage = sqlx::query_as!(
+        MetadataSweepCoverage,
+        "SELECT count(*) AS \"series_total!\", \
+                count(*) FILTER (WHERE metadata_checked_at IS NULL) AS \"never_checked!\", \
+                count(*) FILTER (WHERE metadata_checked_at > now() - interval '1 day') \
+                  AS \"checked_last_day!\" \
+         FROM series",
+    )
+    .fetch_one(exec)
+    .await?;
+    Ok(coverage)
+}
+
+/// Mark a sweep as started, clearing the previous run's counters.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn begin_sweep<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<()> {
+    sqlx::query!(
+        "UPDATE metadata_sweep_state \
+            SET running = true, started_at = now(), finished_at = NULL, \
+                scanned = 0, enriched = 0, unresolved = 0, error = NULL \
+          WHERE id",
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+/// Publish the counters of a sweep still in flight.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn record_sweep_progress<'e, E: PgExecutor<'e>>(
+    exec: E,
+    scanned: i32,
+    enriched: i32,
+    unresolved: i32,
+) -> DbResult<()> {
+    sqlx::query!(
+        "UPDATE metadata_sweep_state \
+            SET scanned = $1, enriched = $2, unresolved = $3 WHERE id",
+        scanned,
+        enriched,
+        unresolved,
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+/// Close a sweep out, recording how it ended.
+///
+/// **Must run on the failure path too**, or `running` stays true forever and the console reports
+/// a sweep in flight that no longer exists.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn finish_sweep<'e, E: PgExecutor<'e>>(
+    exec: E,
+    scanned: i32,
+    enriched: i32,
+    unresolved: i32,
+    error: Option<&str>,
+) -> DbResult<()> {
+    sqlx::query!(
+        "UPDATE metadata_sweep_state \
+            SET running = false, finished_at = now(), \
+                scanned = $1, enriched = $2, unresolved = $3, error = $4 \
+          WHERE id",
+        scanned,
+        enriched,
+        unresolved,
+        error,
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
 /// A batch of metadata to fold into an existing series. `None` leaves a field untouched;
 /// titles/tags/authors are additive.
 pub struct MetadataEnrichment<'a> {
@@ -146,6 +274,7 @@ pub async fn apply_enrichment(
     series_id: SeriesId,
     enrichment: &MetadataEnrichment<'_>,
     priority: &MetadataPriority,
+    blocked: &TagBlocklist,
 ) -> DbResult<()> {
     let mut tx = pool.begin().await?;
     merge_metadata(
@@ -177,7 +306,7 @@ pub async fn apply_enrichment(
         add_series_titles(&mut tx, series_id, enrichment.alt_titles).await?;
     }
     if !enrichment.tags.is_empty() {
-        add_series_tags(&mut tx, series_id, enrichment.tags).await?;
+        add_series_tags(&mut tx, series_id, enrichment.tags, blocked).await?;
     }
     if !enrichment.authors.is_empty() {
         add_series_authors(&mut tx, series_id, enrichment.authors).await?;
@@ -224,24 +353,6 @@ pub async fn add_series_titles(
     .execute(&mut *conn)
     .await?;
     Ok(())
-}
-
-/// A URL-safe, lowercase identity key for a display name (tag or author). Deliberately
-/// distinct from [`normalize_title`] — that function drops "noise" words like "scan" or
-/// "comic" which would wrongly mangle a genre or a person's name.
-fn slugify(name: &str) -> String {
-    let mut slug = String::with_capacity(name.len());
-    let mut last_was_dash = true; // suppresses a leading dash
-    for c in name.to_lowercase().chars() {
-        if c.is_alphanumeric() {
-            slug.push(c);
-            last_was_dash = false;
-        } else if !last_was_dash {
-            slug.push('-');
-            last_was_dash = true;
-        }
-    }
-    slug.trim_end_matches('-').to_owned()
 }
 
 /// The axis a tag lives on, mirroring the `tags_kind_check` constraint.
@@ -319,7 +430,12 @@ impl<'a> TagLink<'a> {
     }
 }
 
-/// Add tag links to a series (idempotent). Empty/unslugifiable names are skipped.
+/// Add tag links to a series (idempotent). Empty/unslugifiable names are skipped, as are terms
+/// `blocked` refuses.
+///
+/// The guard is applied *here*, at the one statement that interns a term into the shared `tags`
+/// vocabulary, rather than at each caller: a refused term must never reach the table, and a
+/// filter at one of the two producers is a filter the other one does not have.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; unknown `series_id` is a foreign-key violation. All-empty
@@ -328,6 +444,7 @@ pub async fn add_series_tags(
     conn: &mut sqlx::PgConnection,
     series_id: SeriesId,
     tags: &[TagLink<'_>],
+    blocked: &TagBlocklist,
 ) -> DbResult<()> {
     let mut seen = std::collections::HashSet::new();
     let mut slugs = Vec::with_capacity(tags.len());
@@ -337,7 +454,7 @@ pub async fn add_series_tags(
     let mut sources = Vec::with_capacity(tags.len());
     for tag in tags {
         let slug = slugify(tag.name);
-        if slug.is_empty() || !seen.insert(slug.clone()) {
+        if slug.is_empty() || blocked.blocks(tag.name) || !seen.insert(slug.clone()) {
             continue;
         }
         slugs.push(slug);

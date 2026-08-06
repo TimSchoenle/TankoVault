@@ -333,6 +333,10 @@ impl<'a> SeriesBuilder<'a> {
             },
             &MatchingConfig::default(),
             &MetadataPriority::default(),
+            // Empty, not the shipped defaults: a fixture that asks for the tag `Manga` must get
+            // it, or a test would be silently exercising the intake guard instead of the thing
+            // it names. `tag_filter`'s own tests cover the guard.
+            &tankovault_domain::TagBlocklist::default(),
         )
         .await
         .expect("seed series")

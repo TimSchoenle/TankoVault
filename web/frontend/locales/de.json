@@ -504,13 +504,17 @@
       "outOfRange": "Außerhalb des erlaubten Bereichs.",
       "privacyFloor": "Datenschutzgrenze",
       "privacyFloorHint": "Die Untergrenze ist eine Anonymitätsschwelle, kein Einstellwert. Die API lehnt niedrigere Werte ab, egal wie sie gesendet werden.",
+      "progressOf": "{done} / {total} ({percent} %)",
+      "progressWorking": "{done} bisher",
       "readOnly": "Du kannst diese Werte sehen, aber nicht ändern.",
       "rebuildFull": "Vollständig neu bauen",
       "rebuildFullHint": "Löst die Projektion neu und bettet den Katalog neu ein. Nötig für Werte, die in den gespeicherten Vektoren stecken.",
       "rebuildIncremental": "Neu bauen",
       "rebuildIncrementalHint": "Ergänzt die laufende Generation. Reicht für Werte, die beim nächsten Build greifen.",
       "resetHint": "Überschreibung verwerfen und dem Auslieferungsstandard folgen",
+      "runningFor": "gestartet {since}",
       "saved": "Gespeichert.",
+      "stageStep": "Schritt {n} von {of}",
       "startedAt": "gestartet {date}",
       "tuning": "Feineinstellung",
       "valueLabel": "Wert für {title}"
@@ -582,6 +586,27 @@
       "backToSearch": "← Zurück zur Suche",
       "badSeriesId": "Diese Serien-ID sieht nicht richtig aus.",
       "clear": "Löschen",
+      "enrich": {
+        "finishedAt": "zuletzt beendet {when}",
+        "idle": "inaktiv",
+        "intro": "Der tokenlose Durchlauf: Er geht den gesamten Katalog durch und fragt öffentliche Anbieter nach Coverbildern, Beschreibungen, Tags und Erscheinungsjahren. Unabhängig von den verknüpften Konten unten, die die Liste eines Lesers synchronisieren.",
+        "kpi": {
+          "backlog": "Nie geprüft",
+          "backlogSub": "von {total} im Katalog",
+          "enriched": "Angereichert",
+          "enrichedSub": "Anbieter hatte etwas beizutragen",
+          "lastDay": "In 24 h geprüft",
+          "lastDaySub": "Reichweite der letzten Durchläufe",
+          "scanned": "Geprüft",
+          "scannedSub": "Serien in diesem Durchlauf",
+          "unresolved": "Ungelöst",
+          "unresolvedSub": "kein Anbieter fand den Titel"
+        },
+        "lastError": "Letzter Durchlauf endete mit: {message}",
+        "running": "läuft",
+        "startedAt": "gestartet {when}",
+        "title": "Katalog-Metadatenanreicherung"
+      },
       "externalId": "externe ID",
       "externalIdHint": "externe ID (z. B. AniList-Medien-ID)",
       "externalMappings": "Externe Sync-Zuordnungen",
@@ -722,6 +747,7 @@
       "title": "Nichts passt zu diesen Filtern"
     },
     "noProviders": "Noch keine Anbieter verfügbar.",
+    "noTagMatch": "Kein Tag passt zu „{query}“.",
     "noTags": "Noch keine Tags indexiert.",
     "page": {
       "go": "Los",
@@ -738,9 +764,12 @@
     "releaseYearFrom": "Frühestes Erscheinungsjahr",
     "releaseYearTo": "Spätestes Erscheinungsjahr",
     "resetFilters": "Filter zurücksetzen",
+    "showAllTags": "{count} weitere anzeigen",
+    "showFewerTags": "Weniger anzeigen",
     "sort": {
       "chapters": "Meiste Kapitel",
       "rating": "Beste Bewertung",
+      "relevance": "Beste Treffer",
       "sources": "Meiste Quellen",
       "title": "Titel (A–Z)",
       "updated": "Zuletzt aktualisiert",
@@ -748,6 +777,7 @@
     },
     "sortLabel": "Sortierung",
     "status": "Status",
+    "tagSearch": "{count} Tags filtern",
     "tags": "Genres / Tags",
     "toggleFilters": "Filter ein-/ausblenden"
   },
@@ -867,6 +897,7 @@
     "recommendations": {
       "askTitle": "Das nicht mehr vorschlagen?",
       "because": "Weil du {title} gelesen hast",
+      "cta": "Vorschläge auf Basis deiner Lektüre",
       "dismiss": "{title} ausblenden",
       "hideForever": "Nie wieder",
       "hideForeverHint": "Dauerhaft ausgeblendet. Das läuft nicht ab.",
@@ -903,6 +934,7 @@
     "notices": "Open-Source-Hinweise",
     "notifications": "Benachrichtigungen",
     "railLabel": "Hauptnavigation",
+    "recommendations": "Für dich",
     "search": "Suche",
     "skipToContent": "Zum Inhalt springen",
     "tagline": "FINDEN · VERFOLGEN · SYNCHRONISIEREN",
@@ -981,6 +1013,20 @@
     },
     "tooShort": "Das Passwort muss mindestens 8 Zeichen lang sein."
   },
+  "recommendations": {
+    "countLine": {
+      "one": "{count} Vorschlag",
+      "other": "{count} Vorschläge"
+    },
+    "disabled": "Diese Instanz bietet keine Empfehlungen an.",
+    "empty": {
+      "hint": "Verfolge ein paar Serien und lies etwas davon — das Modell braucht eine Grundlage von dir.",
+      "title": "Noch nichts vorzuschlagen"
+    },
+    "intro": "Erstellt aus den Serien, die du verfolgst, und deinem Lesefortschritt. Jeder Vorschlag nennt den Titel, aus dem er stammt.",
+    "sharesLabel": "Gemeinsam",
+    "whyLabel": "Warum"
+  },
   "search": {
     "countLine": "{count} Ergebnisse · unscharfe Trigramm-Suche",
     "empty": "Dazu passt keine Serie. Versuch es mit weniger Wörtern.",
@@ -995,6 +1041,10 @@
     "chapterCount": "{count} Kap.",
     "chapterNumbered": "Kapitel {number}",
     "chapterShort": "Kap. {number}",
+    "chapterTally": {
+      "one": "{count} Kapitel",
+      "other": "{count} Kapitel"
+    },
     "chapters": "Kapitel",
     "chooseSource": "Quelle wählen",
     "continueOn": "Kap. {number} bei {source} weiterlesen",
@@ -1004,6 +1054,7 @@
     "filterUnread": "Ungelesen {count}",
     "hideParts": "Teile ausblenden",
     "inWatchlist": "Auf der Merkliste",
+    "lastRelease": "Neuestes {when}",
     "loadMore": "{count} weitere laden",
     "markFailed": "Kapitel {number} konnte nicht aktualisiert werden.",
     "menuTitle": "Kap. {number} öffnen bei",
@@ -1025,6 +1076,10 @@
     "partReleases": {
       "one": "{count} vorab veröffentlichter Teil ({from}–{to})",
       "other": "{count} vorab veröffentlichte Teile ({from}–{to})"
+    },
+    "partTally": {
+      "one": "{count} Teilrelease",
+      "other": "{count} Teilreleases"
     },
     "pinHint": "Hefte eine Quelle an, damit sie zuerst öffnet",
     "pinSource": "Für diese Serie anheften",
@@ -1068,7 +1123,8 @@
       "unlink": "Trennen"
     },
     "tracking": "Verfolgung",
-    "unread": "Ungelesen"
+    "unread": "Ungelesen",
+    "upTo": "bis #{number}"
   },
   "time": {
     "daysAgo": "vor {count} T.",

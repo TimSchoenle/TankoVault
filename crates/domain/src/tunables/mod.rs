@@ -774,7 +774,10 @@ impl Tunable {
                 title: "Shelf size",
                 description: "Recommendations returned when the caller asks for no particular \
                               number, and the ceiling on what it may ask for.",
-                default: 12.0,
+                // A grid page, not a rail. This used to be twelve, sized for a shelf tucked
+                // under the home feed; recommendations are now a screen of their own, and a
+                // dozen covers on a full-width grid reads as a shelf that ran out.
+                default: 24.0,
                 min: 1.0,
                 max: 60.0,
                 kind: Count,

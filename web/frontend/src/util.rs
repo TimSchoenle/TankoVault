@@ -85,6 +85,47 @@ pub(crate) fn thousands(n: i64) -> String {
     out
 }
 
+/// A count narrowed to fit a badge: `999`, `1.2k`, `12k`, `1.4M`, `99M+`.
+///
+/// The bell's badge is a circle sized for three glyphs sitting on the icon's corner. A literal
+/// count overflows it the moment an inbox passes 999 — the pill grows, pushes past the icon and
+/// takes the bar's alignment with it — so the *string* is bounded rather than the layout being
+/// asked to cope with an unbounded one.
+///
+/// One decimal below ten of each unit and none above: `1.2k` carries information a reader uses,
+/// `12.4k` does not, and dropping it is what keeps the string within four glyphs.
+///
+/// Integer arithmetic throughout. The fractional digit is a division, not a rounded float, so
+/// `999_600` prints `999k` rather than the `1.0k` a rounded one would put beside a bell that has
+/// not reached a million.
+#[must_use]
+pub(crate) fn compact_count(n: i64) -> String {
+    /// Past this the badge gives up on precision rather than on its width.
+    const CEILING: i64 = 99_999_999;
+
+    // Negative is not a state any counter this formats can reach; clamped rather than handled,
+    // so a corrupted value renders as nothing alarming.
+    let n = n.max(0);
+    if n > CEILING {
+        return "99M+".to_owned();
+    }
+    // Tenths of the chosen unit, so the decimal digit falls out of the remainder.
+    let (tenths, unit) = if n >= 1_000_000 {
+        (n / 100_000, "M")
+    } else if n >= 1_000 {
+        (n / 100, "k")
+    } else {
+        return n.to_string();
+    };
+    let whole = tenths / 10;
+    let tenth = tenths % 10;
+    if whole < 10 && tenth > 0 {
+        format!("{whole}.{tenth}{unit}")
+    } else {
+        format!("{whole}{unit}")
+    }
+}
+
 /// The date component of an RFC-3339 timestamp (`2026-07-25`), or an empty string.
 ///
 /// Slices rather than parses: the API always emits RFC-3339, whose first ten bytes are the
@@ -236,6 +277,42 @@ pub(crate) fn greeting_key() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Pins the badge string's length, which is the whole point of the function.
+    ///
+    /// The bell's badge is a fixed circle on the icon's corner. It used to print the raw count,
+    /// so an account with four-figure unread notifications rendered a pill wider than the icon
+    /// it sat on and shoved the top bar's actions out of alignment. The boundaries below are the
+    /// ones that regressed: 999 → 1k is where a third glyph would have become a fourth, and the
+    /// truncation is what stops 999 600 claiming to be a million.
+    #[test]
+    fn a_badge_count_never_exceeds_four_glyphs() {
+        for (count, expected) in [
+            (0_i64, "0"),
+            (7, "7"),
+            (999, "999"),
+            (1_000, "1k"),
+            (1_240, "1.2k"),
+            (9_990, "9.9k"),
+            (10_000, "10k"),
+            (12_400, "12k"),
+            (999_600, "999k"),
+            (1_000_000, "1M"),
+            (1_400_000, "1.4M"),
+            (99_999_999, "99M"),
+            (100_000_000, "99M+"),
+        ] {
+            let rendered = compact_count(count);
+            assert_eq!(rendered, expected, "compact_count({count})");
+            assert!(
+                rendered.chars().count() <= 4,
+                "{rendered} does not fit the badge"
+            );
+        }
+        // Not reachable from an unread count, but the formatter must not emit a minus sign into
+        // a circle sized for three digits if one ever appears.
+        assert_eq!(compact_count(-5), "0");
+    }
 
     #[test]
     fn trims_whole_chapter_numbers_but_keeps_parts() {

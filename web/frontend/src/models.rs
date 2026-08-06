@@ -20,7 +20,7 @@ pub(crate) use crate::wire::types::{
     ResendVerificationRequest, ResetPasswordRequest, ResolveConflict, RunState, ScanMode, ScanRun,
     ScanRunProviderId, SeriesDetail, SeriesId, SeriesSourceId, SeriesStatus, SeriesSummary,
     SetProviderState as SetProviderStateBody, SimilarSeries, SourceDto, SuggestedMatch,
-    SyncExcluded, SyncOpts, SyncPullBody, SyncPushBody, SyncSettingsPatch, SystemStats, Tag,
+    SyncExcluded, SyncOpts, SyncPullBody, SyncPushBody, SyncSettingsPatch, SystemStats, TagFacet,
     TasteFeature, TasteView, TestAdapterBody, TestAdapterRequest, TriggerScan,
     TriggerScanProviderId, UpdateProvider, UpsertMapping, UserId, VerifyEmailRequest, WatchStatus,
     WatchlistBulkIds, WatchlistBulkUpdate, WatchlistCounts, WatchlistEntryViewEntry,

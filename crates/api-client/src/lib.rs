@@ -1688,6 +1688,118 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "What the tokenless metadata-enrichment sweep is doing, or last did.\n\nThe `AniList` side of the sync service does two unrelated things, and only one of them has\never had an operator surface: reconciling a *user's* list (visible per account above) and\nwalking the *catalogue* asking for metadata nobody's account is involved in. The second is\nthe one that fills in cover art, descriptions, tags and release years — and until this view\nit reported itself only into the sync container's log."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What the tokenless metadata-enrichment sweep is doing, or last did.\\n\\nThe `AniList` side of the sync service does two unrelated things, and only one of them has\\never had an operator surface: reconciling a *user's* list (visible per account above) and\\nwalking the *catalogue* asking for metadata nobody's account is involved in. The second is\\nthe one that fills in cover art, descriptions, tags and release years — and until this view\\nit reported itself only into the sync container's log.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"checked_last_day\","]
+    #[doc = "    \"enriched\","]
+    #[doc = "    \"never_checked\","]
+    #[doc = "    \"running\","]
+    #[doc = "    \"scanned\","]
+    #[doc = "    \"series_total\","]
+    #[doc = "    \"unresolved\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"checked_last_day\": {"]
+    #[doc = "      \"description\": \"Series attempted in the last 24 hours — how much ground the recent runs covered.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"enriched\": {"]
+    #[doc = "      \"description\": \"Series an upstream provider resolved and supplied metadata for.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"error\": {"]
+    #[doc = "      \"description\": \"How the last sweep ended when it ended badly, including the case where no registered\\nprovider offers public metadata at all.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"finished_at\": {"]
+    #[doc = "      \"description\": \"RFC 3339. When the most recent sweep ended; absent while one is running.\","]
+    #[doc = "      \"examples\": ["]
+    #[doc = "        \"2026-08-06T02:04:00Z\""]
+    #[doc = "      ],"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"never_checked\": {"]
+    #[doc = "      \"description\": \"Series the sweep has never attempted. These lead every work list, so a figure that does\\nnot fall between two reads means the sweep is not running.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"running\": {"]
+    #[doc = "      \"description\": \"Whether a sweep is in flight. Advisory: the sweep is idempotent per series and does not\\ntake a claim, so this says \\\"one is running\\\", not \\\"one may not start\\\".\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"scanned\": {"]
+    #[doc = "      \"description\": \"Series examined. Written as the sweep advances, so this is progress while `running`.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"series_total\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"started_at\": {"]
+    #[doc = "      \"description\": \"RFC 3339. When the current or most recent sweep started.\","]
+    #[doc = "      \"examples\": ["]
+    #[doc = "        \"2026-08-06T02:00:00Z\""]
+    #[doc = "      ],"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"unresolved\": {"]
+    #[doc = "      \"description\": \"Series no public provider could resolve. A high figure beside a low `enriched` is the\\nsignal that titles are not matching upstream, not that the sweep is broken.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct EnrichmentSweepView {
+        #[doc = "Series attempted in the last 24 hours — how much ground the recent runs covered."]
+        pub checked_last_day: i64,
+        #[doc = "Series an upstream provider resolved and supplied metadata for."]
+        pub enriched: i32,
+        #[doc = "How the last sweep ended when it ended badly, including the case where no registered\nprovider offers public metadata at all."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub error: ::std::option::Option<::std::string::String>,
+        #[doc = "RFC 3339. When the most recent sweep ended; absent while one is running."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub finished_at: ::std::option::Option<::std::string::String>,
+        #[doc = "Series the sweep has never attempted. These lead every work list, so a figure that does\nnot fall between two reads means the sweep is not running."]
+        pub never_checked: i64,
+        #[doc = "Whether a sweep is in flight. Advisory: the sweep is idempotent per series and does not\ntake a claim, so this says \"one is running\", not \"one may not start\"."]
+        pub running: bool,
+        #[doc = "Series examined. Written as the sweep advances, so this is progress while `running`."]
+        pub scanned: i32,
+        pub series_total: i64,
+        #[doc = "RFC 3339. When the current or most recent sweep started."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub started_at: ::std::option::Option<::std::string::String>,
+        #[doc = "Series no public provider could resolve. A high figure beside a low `enriched` is the\nsignal that titles are not matching upstream, not that the sweep is broken."]
+        pub unresolved: i32,
+    }
+    impl EnrichmentSweepView {
+        pub fn builder() -> builder::EnrichmentSweepView {
+            Default::default()
+        }
+    }
     #[doc = "`ExtendRequest`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3214,6 +3326,7 @@ pub mod types {
     #[doc = "    \"series_with_embedding\","]
     #[doc = "    \"series_with_features\","]
     #[doc = "    \"stage\","]
+    #[doc = "    \"stage_total\","]
     #[doc = "    \"vocabulary\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
@@ -3254,7 +3367,7 @@ pub mod types {
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"series_built\": {"]
-    #[doc = "      \"description\": \"Series the last run wrote.\","]
+    #[doc = "      \"description\": \"Series the running stage has processed, or the count the last completed run wrote.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int32\""]
     #[doc = "    },"]
@@ -3280,6 +3393,11 @@ pub mod types {
     #[doc = "    \"stage\": {"]
     #[doc = "      \"description\": \"What the builder is doing. `idle` between runs.\","]
     #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"stage_total\": {"]
+    #[doc = "      \"description\": \"What the running stage's `series_built` is counting towards, so a console can draw a\\nprogress bar instead of a number with no scale. Zero when the stage cannot know its own\\nsize without doing the work twice, and after a run has finished.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
     #[doc = "    },"]
     #[doc = "    \"started_at\": {"]
     #[doc = "      \"description\": \"RFC 3339. When the current or most recent run started.\","]
@@ -3316,7 +3434,7 @@ pub mod types {
         pub generation: i32,
         #[doc = "Series queued for re-embedding, most often after a merge."]
         pub repair_queue_depth: i64,
-        #[doc = "Series the last run wrote."]
+        #[doc = "Series the running stage has processed, or the count the last completed run wrote."]
         pub series_built: i32,
         #[doc = "Series the model is willing to recommend. A large gap below `series_with_embedding` means\n`recsys.build.min_features` is excluding more than intended."]
         pub series_recommendable: i64,
@@ -3327,6 +3445,8 @@ pub mod types {
         pub series_with_features: i64,
         #[doc = "What the builder is doing. `idle` between runs."]
         pub stage: ::std::string::String,
+        #[doc = "What the running stage's `series_built` is counting towards, so a console can draw a\nprogress bar instead of a number with no scale. Zero when the stage cannot know its own\nsize without doing the work twice, and after a run has finished."]
+        pub stage_total: i32,
         #[doc = "RFC 3339. When the current or most recent run started."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub started_at: ::std::option::Option<::std::string::String>,
@@ -5127,12 +5247,14 @@ pub mod types {
     #[doc = "  \"description\": \"One recommended series and why it is here.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
+    #[doc = "    \"chapter_count\","]
     #[doc = "    \"content_type\","]
     #[doc = "    \"id\","]
     #[doc = "    \"score\","]
     #[doc = "    \"shared\","]
     #[doc = "    \"source_count\","]
     #[doc = "    \"status\","]
+    #[doc = "    \"tags\","]
     #[doc = "    \"title\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
@@ -5150,6 +5272,11 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
+    #[doc = "    \"chapter_count\": {"]
+    #[doc = "      \"description\": \"Distinct whole chapters across every source — the figure a reader deciding whether to\\nstart something actually wants, and the same one the series screen prints.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
     #[doc = "    \"content_type\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/ContentType\""]
     #[doc = "    },"]
@@ -5161,6 +5288,20 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"id\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    },"]
+    #[doc = "    \"latest_chapter\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"number\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    },"]
+    #[doc = "    \"release_year\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"int32\""]
     #[doc = "    },"]
     #[doc = "    \"score\": {"]
     #[doc = "      \"type\": \"number\","]
@@ -5174,11 +5315,19 @@ pub mod types {
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"source_count\": {"]
+    #[doc = "      \"description\": \"Distinct providers carrying this series. Retained for compatibility; not a figure any\\nreader-facing surface shows.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"status\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/SeriesStatus\""]
+    #[doc = "    },"]
+    #[doc = "    \"tags\": {"]
+    #[doc = "      \"description\": \"Tag names, alphabetically, capped for the card that shows them.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"title\": {"]
     #[doc = "      \"type\": \"string\""]
@@ -5193,15 +5342,24 @@ pub mod types {
         pub because_series_id: ::std::option::Option<RecommendationBecauseSeriesId>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub because_title: ::std::option::Option<::std::string::String>,
+        #[doc = "Distinct whole chapters across every source — the figure a reader deciding whether to\nstart something actually wants, and the same one the series screen prints."]
+        pub chapter_count: i64,
         pub content_type: ContentType,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub cover_url: ::std::option::Option<::std::string::String>,
         pub id: SeriesId,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub latest_chapter: ::std::option::Option<f64>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub release_year: ::std::option::Option<i32>,
         pub score: f32,
         #[doc = "Features shared with `because_series_id`, most explanatory first."]
         pub shared: ::std::vec::Vec<::std::string::String>,
+        #[doc = "Distinct providers carrying this series. Retained for compatibility; not a figure any\nreader-facing surface shows."]
         pub source_count: i64,
         pub status: SeriesStatus,
+        #[doc = "Tag names, alphabetically, capped for the card that shows them."]
+        pub tags: ::std::vec::Vec<::std::string::String>,
         pub title: ::std::string::String,
     }
     impl Recommendation {
@@ -6666,21 +6824,29 @@ pub mod types {
             value.parse()
         }
     }
-    #[doc = "`SeriesSummary`"]
+    #[doc = "One card in a catalogue grid.\n\nGrown rather than replaced: a deployed SPA outlives a server change, so every field an older\nclient reads is still here and the additions are ignored by it. `source_count` is kept for\nthat reason alone — the surfaces that used to print it now print [`Self::chapter_count`],\nwhich is what a reader was actually trying to learn from it."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
+    #[doc = "  \"description\": \"One card in a catalogue grid.\\n\\nGrown rather than replaced: a deployed SPA outlives a server change, so every field an older\\nclient reads is still here and the additions are ignored by it. `source_count` is kept for\\nthat reason alone — the surfaces that used to print it now print [`Self::chapter_count`],\\nwhich is what a reader was actually trying to learn from it.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
+    #[doc = "    \"chapter_count\","]
     #[doc = "    \"content_type\","]
     #[doc = "    \"id\","]
     #[doc = "    \"source_count\","]
     #[doc = "    \"status\","]
+    #[doc = "    \"tags\","]
     #[doc = "    \"title\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"chapter_count\": {"]
+    #[doc = "      \"description\": \"Distinct **whole** chapters across every source, so a title carried by four providers is\\nnot counted four times and a part release does not count as its own chapter. This is the\\nsame figure the series screen prints, so a card and the page it opens agree.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
     #[doc = "    \"content_type\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/ContentType\""]
     #[doc = "    },"]
@@ -6693,12 +6859,35 @@ pub mod types {
     #[doc = "    \"id\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
     #[doc = "    },"]
+    #[doc = "    \"latest_chapter\": {"]
+    #[doc = "      \"description\": \"The highest chapter number any source carries, when there is one.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"number\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    },"]
+    #[doc = "    \"release_year\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
     #[doc = "    \"source_count\": {"]
+    #[doc = "      \"description\": \"Distinct providers carrying this series. Retained for compatibility; not a figure any\\nreader-facing surface shows.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"status\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/SeriesStatus\""]
+    #[doc = "    },"]
+    #[doc = "    \"tags\": {"]
+    #[doc = "      \"description\": \"Tag names, alphabetically. Capped server-side: a card has room for two or three, and\\nshipping forty for a client to slice is payload nobody renders.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"title\": {"]
     #[doc = "      \"type\": \"string\""]
@@ -6709,12 +6898,22 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct SeriesSummary {
+        #[doc = "Distinct **whole** chapters across every source, so a title carried by four providers is\nnot counted four times and a part release does not count as its own chapter. This is the\nsame figure the series screen prints, so a card and the page it opens agree."]
+        pub chapter_count: i64,
         pub content_type: ContentType,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub cover_url: ::std::option::Option<::std::string::String>,
         pub id: SeriesId,
+        #[doc = "The highest chapter number any source carries, when there is one."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub latest_chapter: ::std::option::Option<f64>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub release_year: ::std::option::Option<i32>,
+        #[doc = "Distinct providers carrying this series. Retained for compatibility; not a figure any\nreader-facing surface shows."]
         pub source_count: i64,
         pub status: SeriesStatus,
+        #[doc = "Tag names, alphabetically. Capped server-side: a card has room for two or three, and\nshipping forty for a client to slice is payload nobody renders."]
+        pub tags: ::std::vec::Vec<::std::string::String>,
         pub title: ::std::string::String,
     }
     impl SeriesSummary {
@@ -6981,16 +7180,26 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct SimilarSeries {
+        #[doc = "Distinct **whole** chapters across every source, so a title carried by four providers is\nnot counted four times and a part release does not count as its own chapter. This is the\nsame figure the series screen prints, so a card and the page it opens agree."]
+        pub chapter_count: i64,
         pub content_type: ContentType,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub cover_url: ::std::option::Option<::std::string::String>,
         pub id: SeriesId,
+        #[doc = "The highest chapter number any source carries, when there is one."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub latest_chapter: ::std::option::Option<f64>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub release_year: ::std::option::Option<i32>,
         #[doc = "Cosine similarity in `[0, 1]`, as the index ranked it."]
         pub score: f32,
         #[doc = "The features this shares with the seed, most explanatory first — the tag names a reader\nwould recognise, not feature ids."]
         pub shared: ::std::vec::Vec<::std::string::String>,
+        #[doc = "Distinct providers carrying this series. Retained for compatibility; not a figure any\nreader-facing surface shows."]
         pub source_count: i64,
         pub status: SeriesStatus,
+        #[doc = "Tag names, alphabetically. Capped server-side: a card has room for two or three, and\nshipping forty for a client to slice is payload nobody renders."]
+        pub tags: ::std::vec::Vec<::std::string::String>,
         pub title: ::std::string::String,
     }
     impl SimilarSeries {
@@ -7668,6 +7877,52 @@ pub mod types {
     }
     impl Tag {
         pub fn builder() -> builder::Tag {
+            Default::default()
+        }
+    }
+    #[doc = "One entry of the tag facet: a tag plus how much of the catalogue carries it."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One entry of the tag facet: a tag plus how much of the catalogue carries it.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"id\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"series_count\","]
+    #[doc = "    \"slug\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/TagId\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"series_count\": {"]
+    #[doc = "      \"description\": \"Series carrying this tag. What lets the filter panel order by usage and say how much a\\nchip would narrow the grid before it is clicked.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"slug\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct TagFacet {
+        pub id: TagId,
+        pub name: ::std::string::String,
+        #[doc = "Series carrying this tag. What lets the filter panel order by usage and say how much a\nchip would narrow the grid before it is clicked."]
+        pub series_count: i64,
+        pub slug: ::std::string::String,
+    }
+    impl TagFacet {
+        pub fn builder() -> builder::TagFacet {
             Default::default()
         }
     }
@@ -11693,6 +11948,181 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct EnrichmentSweepView {
+            checked_last_day: ::std::result::Result<i64, ::std::string::String>,
+            enriched: ::std::result::Result<i32, ::std::string::String>,
+            error: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            finished_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            never_checked: ::std::result::Result<i64, ::std::string::String>,
+            running: ::std::result::Result<bool, ::std::string::String>,
+            scanned: ::std::result::Result<i32, ::std::string::String>,
+            series_total: ::std::result::Result<i64, ::std::string::String>,
+            started_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            unresolved: ::std::result::Result<i32, ::std::string::String>,
+        }
+        impl ::std::default::Default for EnrichmentSweepView {
+            fn default() -> Self {
+                Self {
+                    checked_last_day: Err("no value supplied for checked_last_day".to_string()),
+                    enriched: Err("no value supplied for enriched".to_string()),
+                    error: Ok(Default::default()),
+                    finished_at: Ok(Default::default()),
+                    never_checked: Err("no value supplied for never_checked".to_string()),
+                    running: Err("no value supplied for running".to_string()),
+                    scanned: Err("no value supplied for scanned".to_string()),
+                    series_total: Err("no value supplied for series_total".to_string()),
+                    started_at: Ok(Default::default()),
+                    unresolved: Err("no value supplied for unresolved".to_string()),
+                }
+            }
+        }
+        impl EnrichmentSweepView {
+            pub fn checked_last_day<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.checked_last_day = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for checked_last_day: {e}")
+                });
+                self
+            }
+            pub fn enriched<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.enriched = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for enriched: {e}"));
+                self
+            }
+            pub fn error<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.error = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for error: {e}"));
+                self
+            }
+            pub fn finished_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.finished_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for finished_at: {e}"));
+                self
+            }
+            pub fn never_checked<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.never_checked = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for never_checked: {e}"));
+                self
+            }
+            pub fn running<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.running = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for running: {e}"));
+                self
+            }
+            pub fn scanned<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.scanned = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for scanned: {e}"));
+                self
+            }
+            pub fn series_total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series_total: {e}"));
+                self
+            }
+            pub fn started_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.started_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for started_at: {e}"));
+                self
+            }
+            pub fn unresolved<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.unresolved = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for unresolved: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<EnrichmentSweepView> for super::EnrichmentSweepView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: EnrichmentSweepView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    checked_last_day: value.checked_last_day?,
+                    enriched: value.enriched?,
+                    error: value.error?,
+                    finished_at: value.finished_at?,
+                    never_checked: value.never_checked?,
+                    running: value.running?,
+                    scanned: value.scanned?,
+                    series_total: value.series_total?,
+                    started_at: value.started_at?,
+                    unresolved: value.unresolved?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::EnrichmentSweepView> for EnrichmentSweepView {
+            fn from(value: super::EnrichmentSweepView) -> Self {
+                Self {
+                    checked_last_day: Ok(value.checked_last_day),
+                    enriched: Ok(value.enriched),
+                    error: Ok(value.error),
+                    finished_at: Ok(value.finished_at),
+                    never_checked: Ok(value.never_checked),
+                    running: Ok(value.running),
+                    scanned: Ok(value.scanned),
+                    series_total: Ok(value.series_total),
+                    started_at: Ok(value.started_at),
+                    unresolved: Ok(value.unresolved),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct ExtendRequest {
             due_at: ::std::result::Result<::std::string::String, ::std::string::String>,
             reason: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -13577,6 +14007,7 @@ pub mod types {
             series_with_embedding: ::std::result::Result<i64, ::std::string::String>,
             series_with_features: ::std::result::Result<i64, ::std::string::String>,
             stage: ::std::result::Result<::std::string::String, ::std::string::String>,
+            stage_total: ::std::result::Result<i32, ::std::string::String>,
             started_at: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
@@ -13604,6 +14035,7 @@ pub mod types {
                         "no value supplied for series_with_features".to_string()
                     ),
                     stage: Err("no value supplied for stage".to_string()),
+                    stage_total: Err("no value supplied for stage_total".to_string()),
                     started_at: Ok(Default::default()),
                     vocabulary: Err("no value supplied for vocabulary".to_string()),
                 }
@@ -13730,6 +14162,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for stage: {e}"));
                 self
             }
+            pub fn stage_total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stage_total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stage_total: {e}"));
+                self
+            }
             pub fn started_at<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
@@ -13769,6 +14211,7 @@ pub mod types {
                     series_with_embedding: value.series_with_embedding?,
                     series_with_features: value.series_with_features?,
                     stage: value.stage?,
+                    stage_total: value.stage_total?,
                     started_at: value.started_at?,
                     vocabulary: value.vocabulary?,
                 })
@@ -13789,6 +14232,7 @@ pub mod types {
                     series_with_embedding: Ok(value.series_with_embedding),
                     series_with_features: Ok(value.series_with_features),
                     stage: Ok(value.stage),
+                    stage_total: Ok(value.stage_total),
                     started_at: Ok(value.started_at),
                     vocabulary: Ok(value.vocabulary),
                 }
@@ -15719,12 +16163,16 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            chapter_count: ::std::result::Result<i64, ::std::string::String>,
             content_type: ::std::result::Result<super::ContentType, ::std::string::String>,
             cover_url: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
             id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+            latest_chapter:
+                ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
+            release_year: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
             score: ::std::result::Result<f32, ::std::string::String>,
             shared: ::std::result::Result<
                 ::std::vec::Vec<::std::string::String>,
@@ -15732,6 +16180,10 @@ pub mod types {
             >,
             source_count: ::std::result::Result<i64, ::std::string::String>,
             status: ::std::result::Result<super::SeriesStatus, ::std::string::String>,
+            tags: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
             title: ::std::result::Result<::std::string::String, ::std::string::String>,
         }
         impl ::std::default::Default for Recommendation {
@@ -15739,13 +16191,17 @@ pub mod types {
                 Self {
                     because_series_id: Ok(Default::default()),
                     because_title: Ok(Default::default()),
+                    chapter_count: Err("no value supplied for chapter_count".to_string()),
                     content_type: Err("no value supplied for content_type".to_string()),
                     cover_url: Ok(Default::default()),
                     id: Err("no value supplied for id".to_string()),
+                    latest_chapter: Ok(Default::default()),
+                    release_year: Ok(Default::default()),
                     score: Err("no value supplied for score".to_string()),
                     shared: Err("no value supplied for shared".to_string()),
                     source_count: Err("no value supplied for source_count".to_string()),
                     status: Err("no value supplied for status".to_string()),
+                    tags: Err("no value supplied for tags".to_string()),
                     title: Err("no value supplied for title".to_string()),
                 }
             }
@@ -15771,6 +16227,16 @@ pub mod types {
                 self.because_title = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for because_title: {e}"));
+                self
+            }
+            pub fn chapter_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.chapter_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for chapter_count: {e}"));
                 self
             }
             pub fn content_type<T>(mut self, value: T) -> Self
@@ -15801,6 +16267,26 @@ pub mod types {
                 self.id = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn latest_chapter<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<f64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.latest_chapter = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for latest_chapter: {e}")
+                });
+                self
+            }
+            pub fn release_year<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<i32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.release_year = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for release_year: {e}"));
                 self
             }
             pub fn score<T>(mut self, value: T) -> Self
@@ -15843,6 +16329,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for status: {e}"));
                 self
             }
+            pub fn tags<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tags = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tags: {e}"));
+                self
+            }
             pub fn title<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::string::String>,
@@ -15862,13 +16358,17 @@ pub mod types {
                 Ok(Self {
                     because_series_id: value.because_series_id?,
                     because_title: value.because_title?,
+                    chapter_count: value.chapter_count?,
                     content_type: value.content_type?,
                     cover_url: value.cover_url?,
                     id: value.id?,
+                    latest_chapter: value.latest_chapter?,
+                    release_year: value.release_year?,
                     score: value.score?,
                     shared: value.shared?,
                     source_count: value.source_count?,
                     status: value.status?,
+                    tags: value.tags?,
                     title: value.title?,
                 })
             }
@@ -15878,13 +16378,17 @@ pub mod types {
                 Self {
                     because_series_id: Ok(value.because_series_id),
                     because_title: Ok(value.because_title),
+                    chapter_count: Ok(value.chapter_count),
                     content_type: Ok(value.content_type),
                     cover_url: Ok(value.cover_url),
                     id: Ok(value.id),
+                    latest_chapter: Ok(value.latest_chapter),
+                    release_year: Ok(value.release_year),
                     score: Ok(value.score),
                     shared: Ok(value.shared),
                     source_count: Ok(value.source_count),
                     status: Ok(value.status),
+                    tags: Ok(value.tags),
                     title: Ok(value.title),
                 }
             }
@@ -17041,29 +17545,51 @@ pub mod types {
         }
         #[derive(Clone, Debug)]
         pub struct SeriesSummary {
+            chapter_count: ::std::result::Result<i64, ::std::string::String>,
             content_type: ::std::result::Result<super::ContentType, ::std::string::String>,
             cover_url: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
             id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+            latest_chapter:
+                ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
+            release_year: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
             source_count: ::std::result::Result<i64, ::std::string::String>,
             status: ::std::result::Result<super::SeriesStatus, ::std::string::String>,
+            tags: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
             title: ::std::result::Result<::std::string::String, ::std::string::String>,
         }
         impl ::std::default::Default for SeriesSummary {
             fn default() -> Self {
                 Self {
+                    chapter_count: Err("no value supplied for chapter_count".to_string()),
                     content_type: Err("no value supplied for content_type".to_string()),
                     cover_url: Ok(Default::default()),
                     id: Err("no value supplied for id".to_string()),
+                    latest_chapter: Ok(Default::default()),
+                    release_year: Ok(Default::default()),
                     source_count: Err("no value supplied for source_count".to_string()),
                     status: Err("no value supplied for status".to_string()),
+                    tags: Err("no value supplied for tags".to_string()),
                     title: Err("no value supplied for title".to_string()),
                 }
             }
         }
         impl SeriesSummary {
+            pub fn chapter_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.chapter_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for chapter_count: {e}"));
+                self
+            }
             pub fn content_type<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<super::ContentType>,
@@ -17094,6 +17620,26 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for id: {e}"));
                 self
             }
+            pub fn latest_chapter<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<f64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.latest_chapter = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for latest_chapter: {e}")
+                });
+                self
+            }
+            pub fn release_year<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<i32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.release_year = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for release_year: {e}"));
+                self
+            }
             pub fn source_count<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<i64>,
@@ -17114,6 +17660,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for status: {e}"));
                 self
             }
+            pub fn tags<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tags = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tags: {e}"));
+                self
+            }
             pub fn title<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::string::String>,
@@ -17131,11 +17687,15 @@ pub mod types {
                 value: SeriesSummary,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    chapter_count: value.chapter_count?,
                     content_type: value.content_type?,
                     cover_url: value.cover_url?,
                     id: value.id?,
+                    latest_chapter: value.latest_chapter?,
+                    release_year: value.release_year?,
                     source_count: value.source_count?,
                     status: value.status?,
+                    tags: value.tags?,
                     title: value.title?,
                 })
             }
@@ -17143,11 +17703,15 @@ pub mod types {
         impl ::std::convert::From<super::SeriesSummary> for SeriesSummary {
             fn from(value: super::SeriesSummary) -> Self {
                 Self {
+                    chapter_count: Ok(value.chapter_count),
                     content_type: Ok(value.content_type),
                     cover_url: Ok(value.cover_url),
                     id: Ok(value.id),
+                    latest_chapter: Ok(value.latest_chapter),
+                    release_year: Ok(value.release_year),
                     source_count: Ok(value.source_count),
                     status: Ok(value.status),
+                    tags: Ok(value.tags),
                     title: Ok(value.title),
                 }
             }
@@ -17503,12 +18067,16 @@ pub mod types {
         }
         #[derive(Clone, Debug)]
         pub struct SimilarSeries {
+            chapter_count: ::std::result::Result<i64, ::std::string::String>,
             content_type: ::std::result::Result<super::ContentType, ::std::string::String>,
             cover_url: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
             id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+            latest_chapter:
+                ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
+            release_year: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
             score: ::std::result::Result<f32, ::std::string::String>,
             shared: ::std::result::Result<
                 ::std::vec::Vec<::std::string::String>,
@@ -17516,23 +18084,41 @@ pub mod types {
             >,
             source_count: ::std::result::Result<i64, ::std::string::String>,
             status: ::std::result::Result<super::SeriesStatus, ::std::string::String>,
+            tags: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
             title: ::std::result::Result<::std::string::String, ::std::string::String>,
         }
         impl ::std::default::Default for SimilarSeries {
             fn default() -> Self {
                 Self {
+                    chapter_count: Err("no value supplied for chapter_count".to_string()),
                     content_type: Err("no value supplied for content_type".to_string()),
                     cover_url: Ok(Default::default()),
                     id: Err("no value supplied for id".to_string()),
+                    latest_chapter: Ok(Default::default()),
+                    release_year: Ok(Default::default()),
                     score: Err("no value supplied for score".to_string()),
                     shared: Err("no value supplied for shared".to_string()),
                     source_count: Err("no value supplied for source_count".to_string()),
                     status: Err("no value supplied for status".to_string()),
+                    tags: Err("no value supplied for tags".to_string()),
                     title: Err("no value supplied for title".to_string()),
                 }
             }
         }
         impl SimilarSeries {
+            pub fn chapter_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.chapter_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for chapter_count: {e}"));
+                self
+            }
             pub fn content_type<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<super::ContentType>,
@@ -17561,6 +18147,26 @@ pub mod types {
                 self.id = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn latest_chapter<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<f64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.latest_chapter = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for latest_chapter: {e}")
+                });
+                self
+            }
+            pub fn release_year<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<i32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.release_year = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for release_year: {e}"));
                 self
             }
             pub fn score<T>(mut self, value: T) -> Self
@@ -17603,6 +18209,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for status: {e}"));
                 self
             }
+            pub fn tags<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tags = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tags: {e}"));
+                self
+            }
             pub fn title<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::string::String>,
@@ -17620,13 +18236,17 @@ pub mod types {
                 value: SimilarSeries,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    chapter_count: value.chapter_count?,
                     content_type: value.content_type?,
                     cover_url: value.cover_url?,
                     id: value.id?,
+                    latest_chapter: value.latest_chapter?,
+                    release_year: value.release_year?,
                     score: value.score?,
                     shared: value.shared?,
                     source_count: value.source_count?,
                     status: value.status?,
+                    tags: value.tags?,
                     title: value.title?,
                 })
             }
@@ -17634,13 +18254,17 @@ pub mod types {
         impl ::std::convert::From<super::SimilarSeries> for SimilarSeries {
             fn from(value: super::SimilarSeries) -> Self {
                 Self {
+                    chapter_count: Ok(value.chapter_count),
                     content_type: Ok(value.content_type),
                     cover_url: Ok(value.cover_url),
                     id: Ok(value.id),
+                    latest_chapter: Ok(value.latest_chapter),
+                    release_year: Ok(value.release_year),
                     score: Ok(value.score),
                     shared: Ok(value.shared),
                     source_count: Ok(value.source_count),
                     status: Ok(value.status),
+                    tags: Ok(value.tags),
                     title: Ok(value.title),
                 }
             }
@@ -18572,6 +19196,88 @@ pub mod types {
                 Self {
                     id: Ok(value.id),
                     name: Ok(value.name),
+                    slug: Ok(value.slug),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct TagFacet {
+            id: ::std::result::Result<super::TagId, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            series_count: ::std::result::Result<i64, ::std::string::String>,
+            slug: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for TagFacet {
+            fn default() -> Self {
+                Self {
+                    id: Err("no value supplied for id".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    series_count: Err("no value supplied for series_count".to_string()),
+                    slug: Err("no value supplied for slug".to_string()),
+                }
+            }
+        }
+        impl TagFacet {
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::TagId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn series_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series_count: {e}"));
+                self
+            }
+            pub fn slug<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.slug = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for slug: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<TagFacet> for super::TagFacet {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: TagFacet,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    id: value.id?,
+                    name: value.name?,
+                    series_count: value.series_count?,
+                    slug: value.slug?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::TagFacet> for TagFacet {
+            fn from(value: super::TagFacet) -> Self {
+                Self {
+                    id: Ok(value.id),
+                    name: Ok(value.name),
+                    series_count: Ok(value.series_count),
                     slug: Ok(value.slug),
                 }
             }
@@ -20819,6 +21525,10 @@ impl Client {
     pub fn assign_remote_entry(&self) -> builder::AssignRemoteEntry<'_> {
         builder::AssignRemoteEntry::new(self)
     }
+    #[doc = "Get metadata enrichment status\n\nWhat the catalogue-wide `AniList` enrichment sweep did on its last run, how far it has got\nthrough the catalogue, and its progress if one is running now.\n\nSends a `GET` request to `/v1/admin/sync/enrichment`\n\n```ignore\nlet response = client.enrichment_status()\n    .send()\n    .await;\n```"]
+    pub fn enrichment_status(&self) -> builder::EnrichmentStatus<'_> {
+        builder::EnrichmentStatus::new(self)
+    }
     #[doc = "List series↔external mappings\n\nEvery series↔external mapping across all providers.\n\nSends a `GET` request to `/v1/admin/sync/mappings`\n\n```ignore\nlet response = client.list_sync_mappings()\n    .send()\n    .await;\n```"]
     pub fn list_sync_mappings(&self) -> builder::ListSyncMappings<'_> {
         builder::ListSyncMappings::new(self)
@@ -21155,7 +21865,7 @@ impl Client {
     pub fn providers(&self) -> builder::Providers<'_> {
         builder::Providers::new(self)
     }
-    #[doc = "Browse the catalogue\n\nFilter/sort/paginate the public series list (frontend §9.1). The body remains a plain\n`SeriesSummary[]`; pagination metadata rides on the `X-Total-Count` (rows matching the\nfilter) and `X-Next-Cursor` (next page index, absent on the last page) headers so existing\narray-decoding clients keep working.\n\nSends a `GET` request to `/v1/series`\n\nArguments:\n- `content_type`\n- `cursor`\n- `exclude_tag`: Tag slugs the series must not carry.\n- `limit`\n- `min_chapters`\n- `page`: Zero-based page index (alias: `cursor`).\n- `provider`: Provider slug the series must have a source on.\n- `query`\n- `sort`: `updated | title | chapters | sources | year | rating` (default `updated`).\n- `status`\n- `tag`: Tag slugs the series must all carry.\n- `year_max`\n- `year_min`\n```ignore\nlet response = client.list()\n    .content_type(content_type)\n    .cursor(cursor)\n    .exclude_tag(exclude_tag)\n    .limit(limit)\n    .min_chapters(min_chapters)\n    .page(page)\n    .provider(provider)\n    .query(query)\n    .sort(sort)\n    .status(status)\n    .tag(tag)\n    .year_max(year_max)\n    .year_min(year_min)\n    .send()\n    .await;\n```"]
+    #[doc = "Browse the catalogue\n\nFilter/sort/paginate the public series list (frontend §9.1). The body remains a plain\n`SeriesSummary[]`; pagination metadata rides on the `X-Total-Count` (rows matching the\nfilter) and `X-Next-Cursor` (next page index, absent on the last page) headers so existing\narray-decoding clients keep working.\n\nSends a `GET` request to `/v1/series`\n\nArguments:\n- `content_type`\n- `cursor`\n- `exclude_tag`: Tag slugs the series must not carry.\n- `limit`\n- `min_chapters`\n- `page`: Zero-based page index (alias: `cursor`).\n- `provider`: Provider slug the series must have a source on.\n- `query`\n- `sort`: `relevance | updated | title | chapters | sources | year | rating`. Defaults to\n`relevance` when `query` is supplied and `updated` when it is not; `relevance` without a\n`query` has nothing to rank and falls back to `updated`.\n- `status`\n- `tag`: Tag slugs the series must all carry.\n- `year_max`\n- `year_min`\n```ignore\nlet response = client.list()\n    .content_type(content_type)\n    .cursor(cursor)\n    .exclude_tag(exclude_tag)\n    .limit(limit)\n    .min_chapters(min_chapters)\n    .page(page)\n    .provider(provider)\n    .query(query)\n    .sort(sort)\n    .status(status)\n    .tag(tag)\n    .year_max(year_max)\n    .year_min(year_min)\n    .send()\n    .await;\n```"]
     pub fn list(&self) -> builder::List<'_> {
         builder::List::new(self)
     }
@@ -21171,7 +21881,7 @@ impl Client {
     pub fn similar(&self) -> builder::Similar<'_> {
         builder::Similar::new(self)
     }
-    #[doc = "List all tags\n\nAll genres/tags in the catalogue (public).\n\nSends a `GET` request to `/v1/tags`\n\n```ignore\nlet response = client.tags()\n    .send()\n    .await;\n```"]
+    #[doc = "List all tags\n\nEvery genre/tag in the catalogue with the number of series carrying it, commonest first\n(public).\n\nOrdered by usage rather than alphabetically because the facet panel that consumes this can\nonly show so many chips at once: an alphabetical list truncated to fit cuts off at whatever\nletter the cap lands on, hiding the genres most of the catalogue actually uses. The body is a\nsuperset of the previous `Tag[]`, so an older client reading only `id`/`slug`/`name` is\nunaffected — it just sees them in a different order.\n\nSends a `GET` request to `/v1/tags`\n\n```ignore\nlet response = client.tags()\n    .send()\n    .await;\n```"]
     pub fn tags(&self) -> builder::Tags<'_> {
         builder::Tags::new(self)
     }
@@ -23746,6 +24456,56 @@ pub mod builder {
                 400u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::enrichment_status`]\n\n[`Client::enrichment_status`]: super::Client::enrichment_status"]
+    #[derive(Debug, Clone)]
+    pub struct EnrichmentStatus<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> EnrichmentStatus<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/sync/enrichment`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::EnrichmentSweepView>, Error<types::ProblemDetails>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v1/admin/sync/enrichment", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "enrichment_status",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -30396,7 +31156,9 @@ pub mod builder {
             Self { client: client }
         }
         #[doc = "Sends a `GET` request to `/v1/tags`"]
-        pub async fn send(self) -> Result<ResponseValue<::std::vec::Vec<types::Tag>>, Error<()>> {
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::TagFacet>>, Error<()>> {
             let Self { client } = self;
             let url = format!("{}/v1/tags", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);

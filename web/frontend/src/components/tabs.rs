@@ -19,18 +19,21 @@ pub(crate) trait TabKind: Copy + PartialEq + 'static {
 ///
 /// `visible` restricts the strip to a subset — Account hides panels a reader has no capability
 /// for, and rendering a tab that opens nothing is worse than omitting it.
+///
+/// Controlled: the caller owns the selection, because in the console it is a URL parameter, and
+/// a signal here would hold a second copy of it.
 #[component]
 pub(crate) fn TabBar<T: TabKind + Clone + PartialEq + 'static>(
-    selected: Signal<T>,
+    selected: T,
+    on_select: EventHandler<T>,
     #[props(default)] visible: Option<Vec<T>>,
     /// `ik-tabs flush` + the console's top margin, for strips that sit inside an inspector.
     #[props(default = false)]
     flush: bool,
 ) -> Element {
     let i18n = use_i18n();
-    let mut selected = selected;
     let entries = visible.unwrap_or_else(|| T::all().to_vec());
-    let current = *selected.read();
+    let current = selected;
 
     // Resolved once so the key handler can move by position without re-reading the list.
     let index = entries.iter().position(|entry| *entry == current);
@@ -53,7 +56,7 @@ pub(crate) fn TabBar<T: TabKind + Clone + PartialEq + 'static>(
                 };
                 // Suppress the browser's own scroll-by-arrow-key behavior.
                 event.prevent_default();
-                selected.set(keyed[next]);
+                on_select.call(keyed[next]);
             },
             for entry in entries {
                 button {
@@ -64,7 +67,7 @@ pub(crate) fn TabBar<T: TabKind + Clone + PartialEq + 'static>(
                     "aria-selected": if entry == current { "true" } else { "false" },
                     // Roving tabindex: only the current tab is a Tab stop.
                     tabindex: if entry == current { "0" } else { "-1" },
-                    onclick: move |_| selected.set(entry),
+                    onclick: move |_| on_select.call(entry),
                     {i18n.t(entry.label_key())}
                 }
             }

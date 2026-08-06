@@ -7,7 +7,9 @@
 mod account;
 mod capabilities;
 mod dashboard;
-mod notifications;
+// `pub(crate)`, not private: `/v1/admin/stream` reuses this module's ticket query type and
+// its SSE gauge guard, so both kinds of stream land in one metric.
+pub(crate) mod notifications;
 mod passkeys;
 mod privacy;
 mod progress;

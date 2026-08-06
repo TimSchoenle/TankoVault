@@ -229,6 +229,41 @@ impl IntoView for repo::user_admin::DirectoryRow {
     }
 }
 
+impl IntoView for repo::scans::RunPage {
+    type View = admin::ScanRunPageView;
+
+    fn into_view(self) -> Self::View {
+        admin::ScanRunPageView {
+            items: self.items,
+            total: self.total,
+        }
+    }
+}
+
+impl IntoView for repo::scans::FailureGroup {
+    type View = admin::FailureGroupView;
+
+    fn into_view(self) -> Self::View {
+        admin::FailureGroupView {
+            error: self.error,
+            count: self.count,
+            providers: self.providers,
+            latest_at: self.latest_at,
+        }
+    }
+}
+
+impl IntoView for repo::audit::AuditPage {
+    type View = admin::AuditPageView;
+
+    fn into_view(self) -> Self::View {
+        admin::AuditPageView {
+            items: self.items.into_view(),
+            total: self.total,
+        }
+    }
+}
+
 impl IntoView for repo::user_admin::DirectoryPage {
     type View = admin::UserDirectoryPage;
 

@@ -300,6 +300,13 @@ fn admin_gates() -> Vec<Gate> {
         },
         Gate {
             method: "GET",
+            template: "/v1/admin/scan-failures/grouped",
+            path: "/v1/admin/scan-failures/grouped",
+            required: &[Permission::ScansRead],
+            body: empty,
+        },
+        Gate {
+            method: "GET",
             template: "/v1/admin/scans/stream",
             path: "/v1/admin/scans/stream",
             required: &[Permission::ScansRead],
@@ -422,6 +429,13 @@ fn admin_gates() -> Vec<Gate> {
             method: "GET",
             template: "/v1/admin/audit",
             path: "/v1/admin/audit",
+            required: &[Permission::AuditRead],
+            body: empty,
+        },
+        Gate {
+            method: "GET",
+            template: "/v1/admin/audit/actions",
+            path: "/v1/admin/audit/actions",
             required: &[Permission::AuditRead],
             body: empty,
         },
@@ -647,6 +661,88 @@ async fn every_admin_endpoint_admits_a_caller_holding_exactly_its_capability() {
     }
 }
 
+/// Admin endpoints deliberately outside this file, each with the reason and where they *are*
+/// covered.
+///
+/// The reconciliation test consults this list, so "not in the matrix" is always a decision
+/// somebody wrote down rather than an omission.
+fn covered_elsewhere() -> Vec<(&'static str, &'static str)> {
+    vec![(
+        // Ticket-authenticated, not bearer: every leg of this matrix sends an `Authorization`
+        // header and no `?ticket=`, so all three would 401 for the same uninteresting reason
+        // and prove nothing about the permission check.
+        "GET /v1/admin/stream",
+        "the_console_stream_* tests below, driven with real tickets",
+    )]
+}
+
+/// A bearer token does not open the console stream, and a session alone does not either.
+///
+/// The credential rides in the query string, so this route skips `AuthUser` entirely — which
+/// means its permission check is hand-written rather than inherited, and hand-written checks
+/// are the ones a refactor drops. `403` is the signal that redemption succeeded and
+/// authorization then refused: a redeemed ticket proves a session existed, never authority.
+#[tokio::test]
+async fn the_console_stream_refuses_a_session_that_holds_none_of_its_permissions() {
+    let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
+    let user = app
+        .seed_user(
+            "streamdenied",
+            &[Permission::FlagsRead],
+            AccountStatus::Active,
+        )
+        .await;
+
+    let bearer_only = status_of(
+        &app,
+        "GET",
+        "/v1/admin/stream",
+        Some(&app.bearer(user)),
+        None,
+    )
+    .await;
+    assert_eq!(
+        bearer_only,
+        StatusCode::BAD_REQUEST,
+        "no `?ticket=` at all must fail extraction, never fall through to an open stream"
+    );
+
+    let ticket = app.stream_ticket(user).await;
+    let refused = status_of(
+        &app,
+        "GET",
+        &format!("/v1/admin/stream?ticket={ticket}"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        refused,
+        StatusCode::FORBIDDEN,
+        "`flags.read` carries neither payload this stream pushes, so it opens nothing"
+    );
+}
+
+/// A ticket minted for an operator who may read scan runs opens the stream.
+#[tokio::test]
+async fn the_console_stream_opens_for_a_permitted_operator() {
+    let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
+    let user = app
+        .seed_user("streamok", &[Permission::ScansRead], AccountStatus::Active)
+        .await;
+    let ticket = app.stream_ticket(user).await;
+
+    let opened = status_of(
+        &app,
+        "GET",
+        &format!("/v1/admin/stream?ticket={ticket}"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(opened, StatusCode::OK);
+}
+
 #[tokio::test]
 async fn the_matrix_covers_every_admin_endpoint_in_the_openapi_document() {
     // Reconciling against the published document, not a hand-maintained list, is what stops
@@ -670,15 +766,17 @@ async fn the_matrix_covers_every_admin_endpoint_in_the_openapi_document() {
         }
     }
 
-    let covered: BTreeSet<String> = admin_gates()
+    let mut covered: BTreeSet<String> = admin_gates()
         .iter()
         .map(|g| format!("{} {}", g.method, g.template))
         .collect();
+    covered.extend(covered_elsewhere().iter().map(|(op, _)| (*op).to_owned()));
 
     let uncovered: Vec<&String> = published.difference(&covered).collect();
     assert!(
         uncovered.is_empty(),
-        "these admin endpoints are published but not in the access-control matrix: {uncovered:?}"
+        "these admin endpoints are published but no access-control matrix classifies them — \
+         add a row to admin_gates(), or to covered_elsewhere() with the reason: {uncovered:?}"
     );
 
     let stale: Vec<&String> = covered.difference(&published).collect();

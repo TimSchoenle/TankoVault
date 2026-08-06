@@ -122,6 +122,15 @@ pub(crate) fn stream_url(ticket: &str) -> String {
     format!("/v1/me/stream?ticket={ticket}")
 }
 
+/// URL of the operator console's SSE stream, for a ticket from the same mint.
+///
+/// Same credential and the same reason for it as [`stream_url`]; a different stream because the
+/// payloads and their cadences are different, and because what it may carry depends on the
+/// caller's permissions rather than on their identity.
+pub(crate) fn admin_stream_url(ticket: &str) -> String {
+    format!("/v1/admin/stream?ticket={ticket}")
+}
+
 #[cfg(test)]
 mod tests {
     /// Pins the bug where this sent `?token=` while the API read `access_token=`, silently
@@ -154,6 +163,29 @@ mod tests {
         assert!(
             spec["paths"]["/v1/me/stream-ticket"]["post"].is_object(),
             "the published document must offer the endpoint that mints the ticket"
+        );
+    }
+
+    /// The console stream is hand-built for the same reason and pinned the same way — and it
+    /// redeems a ticket from the *me* mint, so a rename on either side has to show up here.
+    #[test]
+    fn the_console_stream_url_uses_the_parameter_the_published_document_declares() {
+        const SPEC: &str = include_str!("../../../../openapi.json");
+        let spec: serde_json::Value = serde_json::from_str(SPEC).expect("openapi.json parses");
+
+        let name = spec["paths"]["/v1/admin/stream"]["get"]["parameters"]
+            .as_array()
+            .expect("the console stream declares query parameters")
+            .iter()
+            .find(|p| p["in"] == "query")
+            .and_then(|p| p["name"].as_str())
+            .expect("a query parameter")
+            .to_owned();
+
+        let url = super::admin_stream_url("TICKET");
+        assert!(
+            url.contains(&format!("{name}=TICKET")),
+            "the API reads `{name}`, this crate sends `{url}`"
         );
     }
 }

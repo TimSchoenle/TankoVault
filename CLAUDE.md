@@ -62,7 +62,7 @@ differential. CI's own command is the full set:
 cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features integration
 ```
 
-## Nine rules you will otherwise break
+## Ten rules you will otherwise break
 
 1. **Never widen a Content-Security-Policy to make code work.** Change the code. The SPA's access
    token is in memory; the CSP is the ceiling on where an injected script could send it.
@@ -97,6 +97,13 @@ cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features inte
    in a `//` comment — utoipa publishes `///` as the public `description`. Values that are *not*
    secrets (a PHC hash, a token digest, ciphertext) keep their plain types on purpose.
    Full table and the two deliberate exceptions: `docs/ENGINEERING_GUIDE.md` §2.2.
+10. **Every commit message is a Conventional Commit** — `type(scope): subject`, always, with no
+    exceptions for a one-line fix. Types in use: `feat`, `fix`, `docs`, `refactor`, `test`,
+    `perf`, `build`, `ci`, `chore`. The scope is the crate or surface the change owns
+    (`console`, `api`, `db`, `sync`, `deps`, …). The subject is imperative, lower-case and
+    unpunctuated. A breaking change says so with `!` before the colon and a `BREAKING CHANGE:`
+    footer. Release-please reads these to cut the changelog and pick the next version, so a
+    mistyped type silently mis-versions the release rather than failing anything.
 
 ## When a gate fails
 

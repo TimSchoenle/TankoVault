@@ -8,6 +8,8 @@ use crate::i18n::{use_i18n, Translator};
 use crate::models::*;
 use crate::state::use_session;
 use crate::views::console::merge::SeriesMiniCard;
+use crate::views::console::query::QueueFilter;
+use crate::views::console::{use_console_nav, ConsoleQuery};
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
 
@@ -25,11 +27,11 @@ fn provider_options(resource: &Resource<Result<Vec<ProviderInfo>, String>>) -> V
 /// The assign queue: hand-assign an external id to a series the automatic matcher left
 /// unmapped, or open it in the inspector.
 #[component]
-pub(super) fn AssignQueue(selected: Signal<Option<String>>, reload: Reload) -> Element {
+pub(super) fn AssignQueue(reload: Reload) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
-    let mut provider = use_signal(|| "anilist".to_string());
-    let mut query = use_signal(String::new);
+    let nav = use_console_nav();
+    let filter = nav.query().assign;
 
     let providers = use_resource(move || {
         let client = api.client();
@@ -43,39 +45,35 @@ pub(super) fn AssignQueue(selected: Signal<Option<String>>, reload: Reload) -> E
         }
     });
 
-    let list = {
-        use_resource(move || {
-            let p = provider.read().clone();
-            let q = query.read().clone();
-            reload.track();
-            let client = api.client();
-            async move {
-                let mut builder = client.list_unmapped_series().provider(p);
-                if !q.trim().is_empty() {
-                    builder = builder.query(q);
-                }
-                builder
-                    .send()
-                    .await
-                    .map(ResponseValue::into_inner)
-                    .map_err(|e| api::friendly_error(i18n, e))
+    let list = use_resource(use_reactive!(|filter| {
+        let QueueFilter { provider: p, q } = filter;
+        reload.track();
+        let client = api.client();
+        async move {
+            let mut builder = client.list_unmapped_series().provider(p);
+            if !q.trim().is_empty() {
+                builder = builder.query(q);
             }
-        })
-    };
+            builder
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))
+        }
+    }));
 
     let prov_list = provider_options(&providers);
 
     let empty = i18n.t("console.sync.assignEmpty");
     let body = async_block_list(&list, reload, 60, &empty, |rows| {
         let rows = rows.to_vec();
-        let prov = provider.read().clone();
+        let prov = filter.provider.clone();
         rsx! {
             for s in rows {
                 AssignRow {
                     key: "{s.series_id}",
                     series: Signal::new(s),
                     provider: prov.clone(),
-                    selected,
                     reload,
                 }
             }
@@ -86,8 +84,11 @@ pub(super) fn AssignQueue(selected: Signal<Option<String>>, reload: Reload) -> E
         div { class: "ik-flex", style: "gap:8px;margin-bottom:10px;flex-wrap:wrap;",
             select {
                 class: "ik-input",
-                value: "{provider}",
-                onchange: move |e| provider.set(e.value()),
+                value: "{filter.provider}",
+                onchange: move |e: FormEvent| {
+                    let assign = QueueFilter { provider: e.value(), ..nav.query().assign };
+                    nav.filter(ConsoleQuery { assign, ..nav.query() });
+                },
                 if prov_list.is_empty() {
                     option { value: "anilist", "anilist" }
                 }
@@ -100,8 +101,11 @@ pub(super) fn AssignQueue(selected: Signal<Option<String>>, reload: Reload) -> E
                 style: "flex:1;",
                 r#type: "text",
                 placeholder: i18n.t("console.sync.filterUnmapped"),
-                value: "{query}",
-                oninput: move |e| query.set(e.value()),
+                value: "{filter.q}",
+                oninput: move |e: FormEvent| {
+                    let assign = QueueFilter { q: e.value(), ..nav.query().assign };
+                    nav.filter(ConsoleQuery { assign, ..nav.query() });
+                },
             }
         }
         {body}
@@ -114,12 +118,12 @@ pub(super) fn AssignQueue(selected: Signal<Option<String>>, reload: Reload) -> E
 pub(super) fn AssignRow(
     series: Signal<UnmappedSeries>,
     provider: String,
-    selected: Signal<Option<String>>,
     reload: Reload,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let session = use_session();
+    let nav = use_console_nav();
     let mut value = use_signal(String::new);
     let mut busy = use_signal(|| false);
     let s = series.read();
@@ -182,7 +186,9 @@ pub(super) fn AssignRow(
             button { class: "ik-btn primary", disabled: *busy.read(), onclick: assign,
                 {i18n.t("console.sync.assign")}
             }
-            button { class: "ik-btn", onclick: move |_| selected.set(Some(sid.to_string())),
+            button {
+                class: "ik-btn",
+                onclick: move |_| nav.select(nav.query().with_selection(Some(sid.to_string()))),
                 {i18n.t("console.sync.inspect")}
             }
         }
@@ -195,8 +201,8 @@ pub(super) fn AssignRow(
 pub(super) fn UnmatchedRemoteQueue(reload: Reload) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
-    let mut provider = use_signal(|| "anilist".to_string());
-    let mut query = use_signal(String::new);
+    let nav = use_console_nav();
+    let filter = nav.query().remote;
 
     let providers = use_resource(move || {
         let client = api.client();
@@ -210,25 +216,22 @@ pub(super) fn UnmatchedRemoteQueue(reload: Reload) -> Element {
         }
     });
 
-    let list = {
-        use_resource(move || {
-            let p = provider.read().clone();
-            let q = query.read().clone();
-            reload.track();
-            let client = api.client();
-            async move {
-                let mut builder = client.list_unmatched_remote().provider(p);
-                if !q.trim().is_empty() {
-                    builder = builder.query(q);
-                }
-                builder
-                    .send()
-                    .await
-                    .map(ResponseValue::into_inner)
-                    .map_err(|e| api::friendly_error(i18n, e))
+    let list = use_resource(use_reactive!(|filter| {
+        let QueueFilter { provider: p, q } = filter;
+        reload.track();
+        let client = api.client();
+        async move {
+            let mut builder = client.list_unmatched_remote().provider(p);
+            if !q.trim().is_empty() {
+                builder = builder.query(q);
             }
-        })
-    };
+            builder
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))
+        }
+    }));
 
     let prov_list = provider_options(&providers);
 
@@ -250,8 +253,11 @@ pub(super) fn UnmatchedRemoteQueue(reload: Reload) -> Element {
         div { class: "ik-flex", style: "gap:8px;margin-bottom:10px;flex-wrap:wrap;",
             select {
                 class: "ik-input",
-                value: "{provider}",
-                onchange: move |e| provider.set(e.value()),
+                value: "{filter.provider}",
+                onchange: move |e: FormEvent| {
+                    let remote = QueueFilter { provider: e.value(), ..nav.query().remote };
+                    nav.filter(ConsoleQuery { remote, ..nav.query() });
+                },
                 if prov_list.is_empty() {
                     option { value: "anilist", "anilist" }
                 }
@@ -264,8 +270,11 @@ pub(super) fn UnmatchedRemoteQueue(reload: Reload) -> Element {
                 style: "flex:1;",
                 r#type: "text",
                 placeholder: i18n.t("console.sync.filterUnmatched"),
-                value: "{query}",
-                oninput: move |e| query.set(e.value()),
+                value: "{filter.q}",
+                oninput: move |e: FormEvent| {
+                    let remote = QueueFilter { q: e.value(), ..nav.query().remote };
+                    nav.filter(ConsoleQuery { remote, ..nav.query() });
+                },
             }
         }
         {body}

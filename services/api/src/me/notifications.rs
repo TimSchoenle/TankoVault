@@ -242,10 +242,12 @@ pub async fn stream_ticket(
 /// `http_requests_total` and the latency histogram are recorded from a response, and an SSE
 /// response ends by the client disconnecting, which drops the middleware future before there
 /// is one. This is the only honest count of connected browsers.
-struct StreamGuard;
+///
+/// Shared with `/v1/admin/stream`, so both kinds of connection land in one gauge.
+pub(crate) struct StreamGuard;
 
 impl StreamGuard {
-    fn enter() -> Self {
+    pub(crate) fn enter() -> Self {
         metrics::gauge!("sse_streams_active").increment(1.0);
         Self
     }

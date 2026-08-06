@@ -602,6 +602,11 @@ jobs:
           revision: openapi.json
           # `ERR` only: gating on oasdiff's warning level would fail every PR that adds a field.
           fail-on: ERR
+          # Deliberate breaks, each with its reason. A *relative* path for the same reason as
+          # `base` above: this is a Docker container action, and a host path does not survive
+          # the boundary. The file explains what may go in it — the short version is that an
+          # entry claims `web/frontend` is the only consumer of that operation.
+          err-ignore: .github/oasdiff-ignore.txt
 
   # `web/frontend` targets wasm32 and is outside the host workspace, so no job above touches it.
   # Its tests and its own `clippy::pedantic` set run here or nowhere.

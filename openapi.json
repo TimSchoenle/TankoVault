@@ -237,6 +237,27 @@
         ],
         "type": "object"
       },
+      "AuditPageView": {
+        "description": "A page of the audit trail plus how many records the filter matches in total.\n\nAn envelope rather than a bare list, because the trail is deep enough that the console can\nonly ever hold a window on it, and a window with no total is a pager that cannot say where\nit is.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditView"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Total matching the current filter, ignoring `limit`/`offset`.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
       "AuditView": {
         "description": "One privileged-action record enriched with the actor's username, for the console feed.",
         "properties": {
@@ -802,6 +823,40 @@
           "mode",
           "kind",
           "attempts"
+        ],
+        "type": "object"
+      },
+      "FailureGroupView": {
+        "description": "One distinct scan failure, with how often it happened and which providers it hit.\n\nThe grouped view of the failure feed: twelve rows of the same broken selector are one\nproblem, and the flat feed presents them as twelve.",
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "error": {
+            "description": "The error text these failures share. `null` groups the failures that recorded none.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latest_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "providers": {
+            "description": "Provider slugs affected, sorted.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "providers"
         ],
         "type": "object"
       },
@@ -2702,6 +2757,27 @@
         "format": "uuid",
         "type": "string"
       },
+      "ScanRunPageView": {
+        "description": "A page of scan runs plus how many the filter matches in total.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScanRun"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Total matching the current filter, ignoring `limit`/`offset`.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
       "ScanTaskId": {
         "description": "Identifies a scan task.",
         "format": "uuid",
@@ -4212,21 +4288,107 @@
   "paths": {
     "/v1/admin/audit": {
       "get": {
-        "description": "The most recent privileged actions (design §16 audit trail).",
+        "description": "A filtered, paged window on the privileged-action trail (design §16), newest first.\n\nEvery filter is applied in SQL. The console cannot filter client-side here on purpose: it\nholds one page, and a filter over one page silently answers a different question than the\none asked — the defect `users/activity.rs` shipped.",
         "operationId": "audit_log",
+        "parameters": [
+          {
+            "description": "Only actions attributed to this account. Absent matches every actor and the system.",
+            "in": "query",
+            "name": "actor",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Exact action key, e.g. `admin.user.update`.",
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Case-insensitive substring of the target.",
+            "in": "query",
+            "name": "target",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Inclusive lower bound on `created_at`, RFC 3339.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Exclusive upper bound on `created_at`, RFC 3339.",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AuditView"
-                  },
-                  "type": "array"
+                  "$ref": "#/components/schemas/AuditPageView"
                 }
               }
             },
-            "description": "Up to 40 most recent audit records"
+            "description": "A page of the audit trail"
           },
           "401": {
             "content": {
@@ -4265,6 +4427,66 @@
           }
         ],
         "summary": "Get the audit log",
+        "tags": [
+          "admin-overview"
+        ]
+      }
+    },
+    "/v1/admin/audit/actions": {
+      "get": {
+        "description": "Every distinct action present in the trail, for the console's filter picker. Read from the\ndata rather than from a hand-written list, so a newly recorded action is filterable the\nfirst time it happens.",
+        "operationId": "audit_actions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Distinct action keys, sorted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the audit trail feature is disabled"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List audit action keys",
         "tags": [
           "admin-overview"
         ]
@@ -6118,8 +6340,47 @@
     },
     "/v1/admin/scan-failures": {
       "get": {
-        "description": "The most recently failed scan tasks with their errors, for triaging stuck providers /\nbroken selectors (design §17.2.7).",
+        "description": "The most recently failed scan tasks with their errors, for triaging stuck providers and\nbroken selectors (design §17.2.7). The grouped view is `/v1/admin/scan-failures/grouped`.",
         "operationId": "scan_failures",
+        "parameters": [
+          {
+            "description": "Provider slug. Absent lists every provider's failures.",
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Inclusive lower bound on `finished_at`, RFC 3339.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -6132,7 +6393,7 @@
                 }
               }
             },
-            "description": "Up to 25 most recent failed tasks"
+            "description": "Recent failed tasks, newest first"
           },
           "401": {
             "content": {
@@ -6166,23 +6427,191 @@
         ]
       }
     },
-    "/v1/admin/scans": {
+    "/v1/admin/scan-failures/grouped": {
       "get": {
-        "description": "The most recent scan runs (the console's scan-queue overview). The live variant is\n`/v1/admin/scans/stream`; this GET gives the console its first paint and drives its\npolling refresh.",
-        "operationId": "list_scans",
+        "description": "The same failures collapsed by their error text, worst first: one broken selector that hit\ntwelve series is one row with a count, not twelve rows of the same sentence.",
+        "operationId": "scan_failure_groups",
+        "parameters": [
+          {
+            "description": "Provider slug. Absent lists every provider's failures.",
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Inclusive lower bound on `finished_at`, RFC 3339.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/ScanRun"
+                    "$ref": "#/components/schemas/FailureGroupView"
                   },
                   "type": "array"
                 }
               }
             },
-            "description": "Up to 30 most recent scan runs"
+            "description": "Distinct failures with counts and affected providers"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Group scan failures by error",
+        "tags": [
+          "admin-scans"
+        ]
+      }
+    },
+    "/v1/admin/scans": {
+      "get": {
+        "description": "A filtered, paged window on the run history, newest first. The live variant is\n`/v1/admin/stream`'s `runs` event; this GET is the console's first paint and its\nmanual-refresh path.",
+        "operationId": "list_scans",
+        "parameters": [
+          {
+            "description": "Provider slug. Absent lists every provider's runs.",
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/ScanMode"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/RunState"
+                }
+              ]
+            }
+          },
+          {
+            "description": "Inclusive lower bound on `created_at`, RFC 3339.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanRunPageView"
+                }
+              }
+            },
+            "description": "A page of scan runs"
           },
           "401": {
             "content": {
@@ -6521,6 +6950,70 @@
           }
         ],
         "summary": "Get system stats",
+        "tags": [
+          "admin-overview"
+        ]
+      }
+    },
+    "/v1/admin/stream": {
+      "get": {
+        "description": "Server-Sent Events for the operator console: `stats` every 10 s and `runs` every 2 s.\n\nAuthenticated by a single-use `ticket` query parameter from `POST /v1/me/stream-ticket`,\nbecause `EventSource` cannot set an `Authorization` header. A ticket proves a session\nexisted thirty seconds ago and nothing more, so the permission check below happens *after*\nredemption and gates each event separately: a caller entitled to scan runs but not to system\ncounters receives `runs` and never `stats`. Emitting an event the caller could not fetch\nover its own GET would be a disclosure, and the access-matrix suites would not catch it —\nthey reconcile status codes, not event names.",
+        "operationId": "admin_stream",
+        "parameters": [
+          {
+            "description": "Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (design §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.",
+            "in": "query",
+            "name": "ticket",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "SSE stream of `stats` and `runs` events"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "missing, expired, or already-redeemed ticket"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the caller holds none of the permissions this stream carries"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the ticket store is temporarily unavailable"
+          }
+        },
+        "security": [
+          {
+            "stream_ticket": []
+          }
+        ],
+        "summary": "Console live stream",
         "tags": [
           "admin-overview"
         ]

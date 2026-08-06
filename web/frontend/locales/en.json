@@ -215,10 +215,19 @@
       "col": {
         "action": "Action",
         "actor": "Actor",
+        "detail": "Detail",
         "target": "Target",
         "when": "When"
       },
       "empty": "No privileged actions recorded yet.",
+      "filter": {
+        "action": "Action",
+        "anyAction": "Any action",
+        "target": "Filter by target",
+        "window": "Time window"
+      },
+      "hideDetail": "Hide",
+      "showDetail": "Detail",
       "system": "system",
       "title": "Audit trail",
       "unavailable": "Audit log unavailable: {message}"
@@ -280,11 +289,13 @@
     },
     "listKeys": "↑↓ move · ↵ open",
     "live": {
-      "on": "Live · {seconds}s",
+      "connecting": "Connecting",
+      "detached": "Detached",
       "pause": "Pause",
-      "paused": "Paused",
+      "reconnecting": "Reconnecting",
       "refresh": "Refresh",
-      "resume": "Resume"
+      "resume": "Resume",
+      "streaming": "Live"
     },
     "merge": {
       "actionFailed": "Failed: {message}",
@@ -519,6 +530,30 @@
       "tuning": "Tuning",
       "valueLabel": "Value for {title}"
     },
+    "scan": {
+      "detail": {
+        "attempts": "Attempts",
+        "elapsed": "Elapsed",
+        "minutes": "{count} min",
+        "perMinute": "{count}/min",
+        "pick": "Select a run to inspect it.",
+        "tasks": "Tasks",
+        "throughput": "Throughput",
+        "title": "Run detail",
+        "underAMinute": "under a minute"
+      },
+      "failures": {
+        "affected": "{count} affected",
+        "grouped": "Group identical errors",
+        "noError": "No error recorded"
+      },
+      "filter": {
+        "anyProvider": "Any provider",
+        "anyState": "Any state",
+        "provider": "Provider",
+        "state": "Run state"
+      }
+    },
     "scans": {
       "active": "Active runs",
       "col": {
@@ -654,6 +689,11 @@
       "sync": "Sync",
       "users": "Users"
     },
+    "table": {
+      "columns": "Columns",
+      "columnsLegend": "Columns to show",
+      "compact": "Compact"
+    },
     "title": "Operator Console",
     "users": {
       "activeSessions": "{count} active",
@@ -726,6 +766,12 @@
       "unverifiedHint": "This address has not been confirmed, so the account cannot sign in.",
       "verified": "Verified",
       "verifyEmail": "Confirm email address"
+    },
+    "window": {
+      "any": "Any time",
+      "day": "Last 24 hours",
+      "hour": "Last hour",
+      "week": "Last 7 days"
     }
   },
   "discover": {

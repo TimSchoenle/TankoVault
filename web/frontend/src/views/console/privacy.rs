@@ -14,7 +14,7 @@ use crate::i18n::use_i18n;
 use crate::models::{RequestKindExt as _, RequestStatusExt as _};
 use crate::state::capabilities::use_capabilities;
 use crate::util::iso_date;
-use crate::views::console::RefreshTick;
+use crate::views::console::{use_console_nav, ConsoleQuery, RefreshTick};
 use crate::wire::types::{
     AdminRequestRow, FulfilErasure, Permission, RequestKind, RequestStatus, ResolveRequest,
 };
@@ -92,19 +92,21 @@ pub(super) fn PrivacyQueuePanel(tick: RefreshTick) -> Element {
     let i18n = use_i18n();
     let caps = use_capabilities();
     let reload = use_reload();
-    let mut include_resolved = use_signal(|| false);
+    let nav = use_console_nav();
+    // `?status=all` is the only non-default here: the queue is a work list, so open-only is
+    // what a bare link should show.
+    let include_resolved = nav.query().status_token() == "all";
 
     let permits = QueuePermits::of(&caps);
 
     let requests = use_resource(move || {
         tick.track();
         reload.track();
-        let show_all = *include_resolved.read();
         let client = api.client();
         async move {
             client
                 .list_privacy_queue()
-                .include_resolved(show_all)
+                .include_resolved(include_resolved)
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
@@ -119,8 +121,14 @@ pub(super) fn PrivacyQueuePanel(tick: RefreshTick) -> Element {
                 label { class: "ik-flex", style: "gap:6px;font-size:13px;",
                     input {
                         r#type: "checkbox",
-                        checked: *include_resolved.read(),
-                        onchange: move |e| include_resolved.set(e.checked()),
+                        checked: include_resolved,
+                        onchange: move |e: FormEvent| {
+                            let next = ConsoleQuery {
+                                status: e.checked().then(|| "all".to_owned()),
+                                ..nav.query()
+                            };
+                            nav.filter(next);
+                        },
                     }
                     {i18n.t("console.privacy.includeResolved")}
                 }

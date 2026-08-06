@@ -24,6 +24,7 @@ use crate::models::AccountStatusExt as _;
 use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::util::{initial, iso_date, rel_time, thousands};
+use crate::views::console::{use_console_nav, ConsoleQuery};
 use crate::wire::types::{
     AccountStatus, AdminProfileUpdate, DirectoryRow, GrantRow, Permission, SetPermissions,
     SetUserStatus, UserDetailResponse,
@@ -72,6 +73,28 @@ impl TabKind for Tab {
     }
 }
 
+impl Tab {
+    /// This tab's `?tab=` token.
+    fn token(self) -> &'static str {
+        match self {
+            Self::Identity => "identity",
+            Self::Sessions => "sessions",
+            Self::Library => "library",
+            Self::Privacy => "privacy",
+            Self::Activity => "activity",
+        }
+    }
+
+    /// An unrecognised token opens the default tab rather than refusing the link.
+    fn parse(token: &str) -> Self {
+        <Self as TabKind>::all()
+            .iter()
+            .copied()
+            .find(|tab| tab.token() == token)
+            .unwrap_or(Self::Identity)
+    }
+}
+
 /// Which accounts the list is showing.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum StatusFilter {
@@ -86,6 +109,25 @@ impl StatusFilter {
             Self::Any => Self::Active,
             Self::Active => Self::Suspended,
             Self::Suspended => Self::Any,
+        }
+    }
+
+    /// This filter's `?status=` token. `Any` is the absence of the parameter, not a value.
+    fn token(self) -> &'static str {
+        match self {
+            Self::Any => "",
+            Self::Active => "active",
+            Self::Suspended => "suspended",
+        }
+    }
+
+    /// An unrecognised token shows every account rather than silently hiding most of the
+    /// directory behind a filter the operator did not choose.
+    fn parse(token: &str) -> Self {
+        match token {
+            "active" => Self::Active,
+            "suspended" => Self::Suspended,
+            _ => Self::Any,
         }
     }
 
@@ -124,18 +166,18 @@ pub(super) fn UsersEntity() -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let reload = use_reload();
-    let query = use_signal(String::new);
-    let page = use_signal(|| 0i64);
-    let mut staff_only = use_signal(|| false);
-    let mut status = use_signal(|| StatusFilter::Any);
-    let mut selected = use_signal(|| Option::<String>::None);
+    let nav = use_console_nav();
+    let view = nav.query();
+    let status = StatusFilter::parse(view.status_token());
+    let staff_only = view.staff;
+    let page = i64::from(view.page);
 
     // The search term goes to the server (it matches username *and* email across the whole
     // table); the two chips filter the page that comes back.
-    let directory = use_resource(move || {
+    let search = view.q.clone();
+    let directory = use_resource(use_reactive!(|(search, page)| {
         reload.track();
-        let search = query.read().clone();
-        let offset = *page.read() * PAGE_SIZE;
+        let offset = page * PAGE_SIZE;
         let client = api.client();
         async move {
             client
@@ -148,7 +190,7 @@ pub(super) fn UsersEntity() -> Element {
                 .map(ResponseValue::into_inner)
                 .map_err(|e| api::friendly_error(i18n, e))
         }
-    });
+    }));
 
     // Memoised: without it, this reclones the whole page and every row on every render,
     // including hover-state changes and search keystrokes.
@@ -158,32 +200,35 @@ pub(super) fn UsersEntity() -> Element {
     // directory. Pagination arithmetic must use `page_len`, not `rows.len()` — `rows.len()`
     // made `has_next` go false while later pages still existed, and the "1-N of TOTAL" line
     // compared a client-side count to a server-side total.
-    let page_state = use_memo(move || match &*directory.read() {
-        Some(Ok(page_data)) => {
-            let status = *status.read();
-            let staff_only = *staff_only.read();
-            let filtered: Vec<DirectoryRow> = page_data
-                .users
-                .iter()
-                .filter(|row| status.accepts(row))
-                .filter(|row| !staff_only || row.permission_count > 0)
-                .cloned()
-                .collect();
-            (
-                filtered,
-                i64::try_from(page_data.users.len()).unwrap_or(0),
-                page_data.total,
-            )
+    let page_state = use_memo(use_reactive!(|(status, staff_only)| {
+        match &*directory.read() {
+            Some(Ok(page_data)) => {
+                let filtered: Vec<DirectoryRow> = page_data
+                    .users
+                    .iter()
+                    .filter(|row| status.accepts(row))
+                    .filter(|row| !staff_only || row.permission_count > 0)
+                    .cloned()
+                    .collect();
+                (
+                    filtered,
+                    i64::try_from(page_data.users.len()).unwrap_or(0),
+                    page_data.total,
+                )
+            }
+            _ => (Vec::new(), 0, 0),
         }
-        _ => (Vec::new(), 0, 0),
-    });
+    }));
     let (rows, page_len, total) = page_state.read().clone();
-    let current = selected
-        .read()
+    // A `sel` naming an account the current filters exclude falls back to the first row, so a
+    // stale link opens a lit row rather than an inspector with nothing selected beside it.
+    let current = view
+        .sel
         .clone()
+        .filter(|id| rows.iter().any(|row| &row.id == id))
         .or_else(|| rows.first().map(|r| r.id.clone()));
     let window = Window {
-        offset: *page.read() * PAGE_SIZE,
+        offset: page * PAGE_SIZE,
         page_len,
         total,
     };
@@ -193,7 +238,8 @@ pub(super) fn UsersEntity() -> Element {
             div { class: "ik-cons-listhead",
                 ListSearch {
                     placeholder: i18n.t("console.users.searchPlaceholder"),
-                    query,
+                    query: view.q.clone(),
+                    on_input: move |text| nav.filter(nav.query().with_search(text)),
                     hits: i18n.plural(
                         "console.users.hits",
                         i64::try_from(rows.len()).unwrap_or(0),
@@ -202,25 +248,32 @@ pub(super) fn UsersEntity() -> Element {
                 }
                 div { class: "ik-flex", style: "gap:6px;flex-wrap:wrap;",
                     button {
-                        class: if *staff_only.read() { "ik-chip active" } else { "ik-chip" },
+                        class: if staff_only { "ik-chip active" } else { "ik-chip" },
                         style: "font-size:11.5px;padding:4px 9px;",
                         onclick: move |_| {
-                            let next = !*staff_only.read();
-                            staff_only.set(next);
+                            // Page one: the filter narrows the directory, so page 4 of the old
+                            // width is very likely past the end of the new one.
+                            let next = ConsoleQuery { staff: !staff_only, page: 0, ..nav.query() };
+                            nav.filter(next);
                         },
                         {i18n.t("console.users.filter.staff")}
-                        if *staff_only.read() {
+                        if staff_only {
                             Ic { icon: Icon::Close, size: 11 }
                         }
                     }
                     button {
-                        class: if *status.read() == StatusFilter::Any { "ik-chip" } else { "ik-chip active" },
+                        class: if status == StatusFilter::Any { "ik-chip" } else { "ik-chip active" },
                         style: "font-size:11.5px;padding:4px 9px;",
                         onclick: move |_| {
-                            let next = status.read().next();
-                            status.set(next);
+                            let token = status.next().token();
+                            let next = ConsoleQuery {
+                                status: (!token.is_empty()).then(|| token.to_owned()),
+                                page: 0,
+                                ..nav.query()
+                            };
+                            nav.filter(next);
                         },
-                        {i18n.t(status.read().label_key())}
+                        {i18n.t(status.label_key())}
                     }
                     button {
                         class: "ik-btn xs",
@@ -254,21 +307,25 @@ pub(super) fn UsersEntity() -> Element {
                                     key: "{row.id}",
                                     row: row.clone(),
                                     selected: current.as_deref() == Some(row.id.as_str()),
-                                    on_pick: move |id| selected.set(Some(id)),
+                                    on_pick: move |id: String| nav.select(nav.query().with_selection(Some(id))),
                                 }
                             }
                         }
                     },
                 )
             }
-            CompactPager { page, window }
+            CompactPager {
+                page,
+                window,
+                on_page: move |next: i64| nav.select(nav.query().with_page(u32::try_from(next).unwrap_or(0))),
+            }
         }
         if let Some(id) = current {
             UserInspector {
                 key: "{id}",
                 user_id: id,
                 reload,
-                on_erased: move |()| selected.set(None),
+                on_erased: move |()| nav.select(nav.query().with_selection(None)),
             }
         } else {
             NoSelection { message: i18n.t("console.users.pick") }
@@ -338,7 +395,8 @@ fn UserEditor(
     let caps = use_capabilities();
     let busy = use_busy();
     let mut outcome = use_outcome();
-    let tab = use_signal(|| Tab::Identity);
+    let nav = use_console_nav();
+    let tab = Tab::parse(nav.query().tab_token());
 
     let can_write = caps.can(Permission::UsersWrite);
     let can_grant = caps.can(Permission::UsersPermissions);
@@ -519,7 +577,11 @@ fn UserEditor(
                     }
                 }
             }
-            TabBar { selected: tab, flush: true }
+            TabBar {
+                selected: tab,
+                on_select: move |next: Tab| nav.filter(nav.query().with_tab(next.token())),
+                flush: true,
+            }
         }
         div { style: "padding:0 22px;",
             if is_self {
@@ -529,7 +591,7 @@ fn UserEditor(
             }
             OutcomeLine { outcome: outcome.read().clone() }
         }
-        match *tab.read() {
+        match tab {
             Tab::Identity => rsx! {
                 div { class: "ik-cons-inspbody",
                     div { class: "ik-cons-col",
@@ -758,7 +820,7 @@ fn UserEditor(
             Tab::Activity => rsx! {
                 div { class: "ik-cons-inspbody",
                     div { class: "ik-cons-col", style: "grid-column:1 / -1;max-width:620px;",
-                        RecentActions { username: user.username.clone() }
+                        RecentActions { user_id: user.id.clone() }
                     }
                 }
             },

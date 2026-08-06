@@ -621,6 +621,45 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "A page of the audit trail plus how many records the filter matches in total.\n\nAn envelope rather than a bare list, because the trail is deep enough that the console can\nonly ever hold a window on it, and a window with no total is a pager that cannot say where\nit is."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A page of the audit trail plus how many records the filter matches in total.\\n\\nAn envelope rather than a bare list, because the trail is deep enough that the console can\\nonly ever hold a window on it, and a window with no total is a pager that cannot say where\\nit is.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"items\","]
+    #[doc = "    \"total\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"items\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/AuditView\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"total\": {"]
+    #[doc = "      \"description\": \"Total matching the current filter, ignoring `limit`/`offset`.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct AuditPageView {
+        pub items: ::std::vec::Vec<AuditView>,
+        #[doc = "Total matching the current filter, ignoring `limit`/`offset`."]
+        pub total: i64,
+    }
+    impl AuditPageView {
+        pub fn builder() -> builder::AuditPageView {
+            Default::default()
+        }
+    }
     #[doc = "One privileged-action record enriched with the actor's username, for the console feed."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -1913,6 +1952,63 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "One distinct scan failure, with how often it happened and which providers it hit.\n\nThe grouped view of the failure feed: twelve rows of the same broken selector are one\nproblem, and the flat feed presents them as twelve."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One distinct scan failure, with how often it happened and which providers it hit.\\n\\nThe grouped view of the failure feed: twelve rows of the same broken selector are one\\nproblem, and the flat feed presents them as twelve.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"count\","]
+    #[doc = "    \"providers\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"count\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"error\": {"]
+    #[doc = "      \"description\": \"The error text these failures share. `null` groups the failures that recorded none.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"latest_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"providers\": {"]
+    #[doc = "      \"description\": \"Provider slugs affected, sorted.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct FailureGroupView {
+        pub count: i64,
+        #[doc = "The error text these failures share. `null` groups the failures that recorded none."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub error: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub latest_at: ::std::option::Option<::std::string::String>,
+        #[doc = "Provider slugs affected, sorted."]
+        pub providers: ::std::vec::Vec<::std::string::String>,
+    }
+    impl FailureGroupView {
+        pub fn builder() -> builder::FailureGroupView {
+            Default::default()
+        }
+    }
     #[doc = "A switchable product capability."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -2913,6 +3009,68 @@ pub mod types {
             value: ::std::string::String,
         ) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
+        }
+    }
+    #[doc = "`ListScansMode`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ScanMode\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum ListScansMode {
+        Variant0(::serde_json::Value),
+        Variant1(ScanMode),
+    }
+    impl ::std::convert::From<::serde_json::Value> for ListScansMode {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<ScanMode> for ListScansMode {
+        fn from(value: ScanMode) -> Self {
+            Self::Variant1(value)
+        }
+    }
+    #[doc = "`ListScansState`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/RunState\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum ListScansState {
+        Variant0(::serde_json::Value),
+        Variant1(RunState),
+    }
+    impl ::std::convert::From<::serde_json::Value> for ListScansState {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<RunState> for ListScansState {
+        fn from(value: RunState) -> Self {
+            Self::Variant1(value)
         }
     }
     #[doc = "`LoginRequest`"]
@@ -6383,6 +6541,45 @@ pub mod types {
     impl ::std::fmt::Display for ScanRunId {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
             self.0.fmt(f)
+        }
+    }
+    #[doc = "A page of scan runs plus how many the filter matches in total."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A page of scan runs plus how many the filter matches in total.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"items\","]
+    #[doc = "    \"total\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"items\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/ScanRun\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"total\": {"]
+    #[doc = "      \"description\": \"Total matching the current filter, ignoring `limit`/`offset`.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct ScanRunPageView {
+        pub items: ::std::vec::Vec<ScanRun>,
+        #[doc = "Total matching the current filter, ignoring `limit`/`offset`."]
+        pub total: i64,
+    }
+    impl ScanRunPageView {
+        pub fn builder() -> builder::ScanRunPageView {
+            Default::default()
         }
     }
     #[doc = "`ScanRunProviderId`"]
@@ -10769,6 +10966,60 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct AuditPageView {
+            items: ::std::result::Result<::std::vec::Vec<super::AuditView>, ::std::string::String>,
+            total: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for AuditPageView {
+            fn default() -> Self {
+                Self {
+                    items: Err("no value supplied for items".to_string()),
+                    total: Err("no value supplied for total".to_string()),
+                }
+            }
+        }
+        impl AuditPageView {
+            pub fn items<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::AuditView>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.items = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for items: {e}"));
+                self
+            }
+            pub fn total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for total: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<AuditPageView> for super::AuditPageView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AuditPageView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    items: value.items?,
+                    total: value.total?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::AuditPageView> for AuditPageView {
+            fn from(value: super::AuditPageView) -> Self {
+                Self {
+                    items: Ok(value.items),
+                    total: Ok(value.total),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct AuditView {
             action: ::std::result::Result<::std::string::String, ::std::string::String>,
             actor: ::std::result::Result<
@@ -12320,6 +12571,97 @@ pub mod types {
                     mode: Ok(value.mode),
                     provider_slug: Ok(value.provider_slug),
                     run_id: Ok(value.run_id),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct FailureGroupView {
+            count: ::std::result::Result<i64, ::std::string::String>,
+            error: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            latest_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            providers: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for FailureGroupView {
+            fn default() -> Self {
+                Self {
+                    count: Err("no value supplied for count".to_string()),
+                    error: Ok(Default::default()),
+                    latest_at: Ok(Default::default()),
+                    providers: Err("no value supplied for providers".to_string()),
+                }
+            }
+        }
+        impl FailureGroupView {
+            pub fn count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for count: {e}"));
+                self
+            }
+            pub fn error<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.error = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for error: {e}"));
+                self
+            }
+            pub fn latest_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.latest_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for latest_at: {e}"));
+                self
+            }
+            pub fn providers<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.providers = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for providers: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<FailureGroupView> for super::FailureGroupView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: FailureGroupView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    count: value.count?,
+                    error: value.error?,
+                    latest_at: value.latest_at?,
+                    providers: value.providers?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::FailureGroupView> for FailureGroupView {
+            fn from(value: super::FailureGroupView) -> Self {
+                Self {
+                    count: Ok(value.count),
+                    error: Ok(value.error),
+                    latest_at: Ok(value.latest_at),
+                    providers: Ok(value.providers),
                 }
             }
         }
@@ -17296,6 +17638,60 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct ScanRunPageView {
+            items: ::std::result::Result<::std::vec::Vec<super::ScanRun>, ::std::string::String>,
+            total: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for ScanRunPageView {
+            fn default() -> Self {
+                Self {
+                    items: Err("no value supplied for items".to_string()),
+                    total: Err("no value supplied for total".to_string()),
+                }
+            }
+        }
+        impl ScanRunPageView {
+            pub fn items<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::ScanRun>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.items = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for items: {e}"));
+                self
+            }
+            pub fn total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for total: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<ScanRunPageView> for super::ScanRunPageView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ScanRunPageView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    items: value.items?,
+                    total: value.total?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::ScanRunPageView> for ScanRunPageView {
+            fn from(value: super::ScanRunPageView) -> Self {
+                Self {
+                    items: Ok(value.items),
+                    total: Ok(value.total),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct ScanTriggered {
             run_ids:
                 ::std::result::Result<::std::vec::Vec<super::ScanRunId>, ::std::string::String>,
@@ -21377,9 +21773,13 @@ impl ClientInfo<()> for Client {
 }
 impl ClientHooks<()> for &Client {}
 impl Client {
-    #[doc = "Get the audit log\n\nThe most recent privileged actions (design §16 audit trail).\n\nSends a `GET` request to `/v1/admin/audit`\n\n```ignore\nlet response = client.audit_log()\n    .send()\n    .await;\n```"]
+    #[doc = "Get the audit log\n\nA filtered, paged window on the privileged-action trail (design §16), newest first.\n\nEvery filter is applied in SQL. The console cannot filter client-side here on purpose: it\nholds one page, and a filter over one page silently answers a different question than the\none asked — the defect `users/activity.rs` shipped.\n\nSends a `GET` request to `/v1/admin/audit`\n\nArguments:\n- `action`: Exact action key, e.g. `admin.user.update`.\n- `actor`: Only actions attributed to this account. Absent matches every actor and the system.\n- `limit`\n- `offset`\n- `since`: Inclusive lower bound on `created_at`, RFC 3339.\n- `target`: Case-insensitive substring of the target.\n- `until`: Exclusive upper bound on `created_at`, RFC 3339.\n```ignore\nlet response = client.audit_log()\n    .action(action)\n    .actor(actor)\n    .limit(limit)\n    .offset(offset)\n    .since(since)\n    .target(target)\n    .until(until)\n    .send()\n    .await;\n```"]
     pub fn audit_log(&self) -> builder::AuditLog<'_> {
         builder::AuditLog::new(self)
+    }
+    #[doc = "List audit action keys\n\nEvery distinct action present in the trail, for the console's filter picker. Read from the\ndata rather than from a hand-written list, so a newly recorded action is filterable the\nfirst time it happens.\n\nSends a `GET` request to `/v1/admin/audit/actions`\n\n```ignore\nlet response = client.audit_actions()\n    .send()\n    .await;\n```"]
+    pub fn audit_actions(&self) -> builder::AuditActions<'_> {
+        builder::AuditActions::new(self)
     }
     #[doc = "List feature flags\n\nEvery feature this build defines, with its effective state, its shipped default, and who\nlast changed it. Served from the compiled registry joined to the stored overrides, so the\npage can never list a feature that does nothing or omit one that does.\n\nSends a `GET` request to `/v1/admin/feature-flags`\n\n```ignore\nlet response = client.list_flags()\n    .send()\n    .await;\n```"]
     pub fn list_flags(&self) -> builder::ListFlags<'_> {
@@ -21489,11 +21889,15 @@ impl Client {
     pub fn reset_tunable(&self) -> builder::ResetTunable<'_> {
         builder::ResetTunable::new(self)
     }
-    #[doc = "List recent scan failures\n\nThe most recently failed scan tasks with their errors, for triaging stuck providers /\nbroken selectors (design §17.2.7).\n\nSends a `GET` request to `/v1/admin/scan-failures`\n\n```ignore\nlet response = client.scan_failures()\n    .send()\n    .await;\n```"]
+    #[doc = "List recent scan failures\n\nThe most recently failed scan tasks with their errors, for triaging stuck providers and\nbroken selectors (design §17.2.7). The grouped view is `/v1/admin/scan-failures/grouped`.\n\nSends a `GET` request to `/v1/admin/scan-failures`\n\nArguments:\n- `limit`\n- `provider`: Provider slug. Absent lists every provider's failures.\n- `since`: Inclusive lower bound on `finished_at`, RFC 3339.\n```ignore\nlet response = client.scan_failures()\n    .limit(limit)\n    .provider(provider)\n    .since(since)\n    .send()\n    .await;\n```"]
     pub fn scan_failures(&self) -> builder::ScanFailures<'_> {
         builder::ScanFailures::new(self)
     }
-    #[doc = "List recent scan runs\n\nThe most recent scan runs (the console's scan-queue overview). The live variant is\n`/v1/admin/scans/stream`; this GET gives the console its first paint and drives its\npolling refresh.\n\nSends a `GET` request to `/v1/admin/scans`\n\n```ignore\nlet response = client.list_scans()\n    .send()\n    .await;\n```"]
+    #[doc = "Group scan failures by error\n\nThe same failures collapsed by their error text, worst first: one broken selector that hit\ntwelve series is one row with a count, not twelve rows of the same sentence.\n\nSends a `GET` request to `/v1/admin/scan-failures/grouped`\n\nArguments:\n- `limit`\n- `provider`: Provider slug. Absent lists every provider's failures.\n- `since`: Inclusive lower bound on `finished_at`, RFC 3339.\n```ignore\nlet response = client.scan_failure_groups()\n    .limit(limit)\n    .provider(provider)\n    .since(since)\n    .send()\n    .await;\n```"]
+    pub fn scan_failure_groups(&self) -> builder::ScanFailureGroups<'_> {
+        builder::ScanFailureGroups::new(self)
+    }
+    #[doc = "List recent scan runs\n\nA filtered, paged window on the run history, newest first. The live variant is\n`/v1/admin/stream`'s `runs` event; this GET is the console's first paint and its\nmanual-refresh path.\n\nSends a `GET` request to `/v1/admin/scans`\n\nArguments:\n- `limit`\n- `mode`\n- `offset`\n- `provider`: Provider slug. Absent lists every provider's runs.\n- `since`: Inclusive lower bound on `created_at`, RFC 3339.\n- `state`\n```ignore\nlet response = client.list_scans()\n    .limit(limit)\n    .mode(mode)\n    .offset(offset)\n    .provider(provider)\n    .since(since)\n    .state(state)\n    .send()\n    .await;\n```"]
     pub fn list_scans(&self) -> builder::ListScans<'_> {
         builder::ListScans::new(self)
     }
@@ -21516,6 +21920,10 @@ impl Client {
     #[doc = "Get system stats\n\nSystem-wide rollup for the console header.\n\nSends a `GET` request to `/v1/admin/stats`\n\n```ignore\nlet response = client.system_stats()\n    .send()\n    .await;\n```"]
     pub fn system_stats(&self) -> builder::SystemStats<'_> {
         builder::SystemStats::new(self)
+    }
+    #[doc = "Console live stream\n\nServer-Sent Events for the operator console: `stats` every 10 s and `runs` every 2 s.\n\nAuthenticated by a single-use `ticket` query parameter from `POST /v1/me/stream-ticket`,\nbecause `EventSource` cannot set an `Authorization` header. A ticket proves a session\nexisted thirty seconds ago and nothing more, so the permission check below happens *after*\nredemption and gates each event separately: a caller entitled to scan runs but not to system\ncounters receives `runs` and never `stats`. Emitting an event the caller could not fetch\nover its own GET would be a disclosure, and the access-matrix suites would not catch it —\nthey reconcile status codes, not event names.\n\nSends a `GET` request to `/v1/admin/stream`\n\nArguments:\n- `ticket`: Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (design §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.\n```ignore\nlet response = client.admin_stream()\n    .ticket(ticket)\n    .send()\n    .await;\n```"]
+    pub fn admin_stream(&self) -> builder::AdminStream<'_> {
+        builder::AdminStream::new(self)
     }
     #[doc = "List linked external accounts\n\nEvery linked external account across all users.\n\nSends a `GET` request to `/v1/admin/sync/accounts`\n\n```ignore\nlet response = client.list_sync_accounts()\n    .send()\n    .await;\n```"]
     pub fn list_sync_accounts(&self) -> builder::ListSyncAccounts<'_> {
@@ -21899,18 +22307,177 @@ pub mod builder {
     #[derive(Debug, Clone)]
     pub struct AuditLog<'a> {
         client: &'a super::Client,
+        action: Result<Option<::std::string::String>, String>,
+        actor: Result<Option<::uuid::Uuid>, String>,
+        limit: Result<Option<i32>, String>,
+        offset: Result<Option<i32>, String>,
+        since: Result<Option<::std::string::String>, String>,
+        target: Result<Option<::std::string::String>, String>,
+        until: Result<Option<::std::string::String>, String>,
     }
     impl<'a> AuditLog<'a> {
         pub fn new(client: &'a super::Client) -> Self {
-            Self { client: client }
+            Self {
+                client: client,
+                action: Ok(None),
+                actor: Ok(None),
+                limit: Ok(None),
+                offset: Ok(None),
+                since: Ok(None),
+                target: Ok(None),
+                until: Ok(None),
+            }
+        }
+        pub fn action<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.action = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for action failed".to_string()
+            });
+            self
+        }
+        pub fn actor<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.actor = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for actor failed".to_string());
+            self
+        }
+        pub fn limit<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i32>,
+        {
+            self.limit = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i32` for limit failed".to_string());
+            self
+        }
+        pub fn offset<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i32>,
+        {
+            self.offset = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i32` for offset failed".to_string());
+            self
+        }
+        pub fn since<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.since = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for since failed".to_string()
+            });
+            self
+        }
+        pub fn target<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.target = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for target failed".to_string()
+            });
+            self
+        }
+        pub fn until<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.until = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for until failed".to_string()
+            });
+            self
         }
         #[doc = "Sends a `GET` request to `/v1/admin/audit`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::AuditView>>, Error<types::ProblemDetails>>
-        {
-            let Self { client } = self;
+        ) -> Result<ResponseValue<types::AuditPageView>, Error<types::ProblemDetails>> {
+            let Self {
+                client,
+                action,
+                actor,
+                limit,
+                offset,
+                since,
+                target,
+                until,
+            } = self;
+            let action = action.map_err(Error::InvalidRequest)?;
+            let actor = actor.map_err(Error::InvalidRequest)?;
+            let limit = limit.map_err(Error::InvalidRequest)?;
+            let offset = offset.map_err(Error::InvalidRequest)?;
+            let since = since.map_err(Error::InvalidRequest)?;
+            let target = target.map_err(Error::InvalidRequest)?;
+            let until = until.map_err(Error::InvalidRequest)?;
             let url = format!("{}/v1/admin/audit", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("action", &action))
+                .query(&progenitor_client::QueryParam::new("actor", &actor))
+                .query(&progenitor_client::QueryParam::new("limit", &limit))
+                .query(&progenitor_client::QueryParam::new("offset", &offset))
+                .query(&progenitor_client::QueryParam::new("since", &since))
+                .query(&progenitor_client::QueryParam::new("target", &target))
+                .query(&progenitor_client::QueryParam::new("until", &until))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "audit_log",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::audit_actions`]\n\n[`Client::audit_actions`]: super::Client::audit_actions"]
+    #[derive(Debug, Clone)]
+    pub struct AuditActions<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> AuditActions<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/audit/actions`"]
+        pub async fn send(
+            self,
+        ) -> Result<
+            ResponseValue<::std::vec::Vec<::std::string::String>>,
+            Error<types::ProblemDetails>,
+        > {
+            let Self { client } = self;
+            let url = format!("{}/v1/admin/audit/actions", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -21927,7 +22494,7 @@ pub mod builder {
                 .headers(header_map)
                 .build()?;
             let info = OperationInfo {
-                operation_id: "audit_log",
+                operation_id: "audit_actions",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;
@@ -23916,10 +24483,46 @@ pub mod builder {
     #[derive(Debug, Clone)]
     pub struct ScanFailures<'a> {
         client: &'a super::Client,
+        limit: Result<Option<i32>, String>,
+        provider: Result<Option<::std::string::String>, String>,
+        since: Result<Option<::std::string::String>, String>,
     }
     impl<'a> ScanFailures<'a> {
         pub fn new(client: &'a super::Client) -> Self {
-            Self { client: client }
+            Self {
+                client: client,
+                limit: Ok(None),
+                provider: Ok(None),
+                since: Ok(None),
+            }
+        }
+        pub fn limit<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i32>,
+        {
+            self.limit = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i32` for limit failed".to_string());
+            self
+        }
+        pub fn provider<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.provider = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for provider failed".to_string()
+            });
+            self
+        }
+        pub fn since<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.since = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for since failed".to_string()
+            });
+            self
         }
         #[doc = "Sends a `GET` request to `/v1/admin/scan-failures`"]
         pub async fn send(
@@ -23928,7 +24531,15 @@ pub mod builder {
             ResponseValue<::std::vec::Vec<types::FailedTaskView>>,
             Error<types::ProblemDetails>,
         > {
-            let Self { client } = self;
+            let Self {
+                client,
+                limit,
+                provider,
+                since,
+            } = self;
+            let limit = limit.map_err(Error::InvalidRequest)?;
+            let provider = provider.map_err(Error::InvalidRequest)?;
+            let since = since.map_err(Error::InvalidRequest)?;
             let url = format!("{}/v1/admin/scan-failures", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
@@ -23943,6 +24554,9 @@ pub mod builder {
                     ::reqwest::header::ACCEPT,
                     ::reqwest::header::HeaderValue::from_static("application/json"),
                 )
+                .query(&progenitor_client::QueryParam::new("limit", &limit))
+                .query(&progenitor_client::QueryParam::new("provider", &provider))
+                .query(&progenitor_client::QueryParam::new("since", &since))
                 .headers(header_map)
                 .build()?;
             let info = OperationInfo {
@@ -23964,21 +24578,205 @@ pub mod builder {
             }
         }
     }
+    #[doc = "Builder for [`Client::scan_failure_groups`]\n\n[`Client::scan_failure_groups`]: super::Client::scan_failure_groups"]
+    #[derive(Debug, Clone)]
+    pub struct ScanFailureGroups<'a> {
+        client: &'a super::Client,
+        limit: Result<Option<i32>, String>,
+        provider: Result<Option<::std::string::String>, String>,
+        since: Result<Option<::std::string::String>, String>,
+    }
+    impl<'a> ScanFailureGroups<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                limit: Ok(None),
+                provider: Ok(None),
+                since: Ok(None),
+            }
+        }
+        pub fn limit<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i32>,
+        {
+            self.limit = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i32` for limit failed".to_string());
+            self
+        }
+        pub fn provider<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.provider = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for provider failed".to_string()
+            });
+            self
+        }
+        pub fn since<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.since = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for since failed".to_string()
+            });
+            self
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/scan-failures/grouped`"]
+        pub async fn send(
+            self,
+        ) -> Result<
+            ResponseValue<::std::vec::Vec<types::FailureGroupView>>,
+            Error<types::ProblemDetails>,
+        > {
+            let Self {
+                client,
+                limit,
+                provider,
+                since,
+            } = self;
+            let limit = limit.map_err(Error::InvalidRequest)?;
+            let provider = provider.map_err(Error::InvalidRequest)?;
+            let since = since.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/admin/scan-failures/grouped", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("limit", &limit))
+                .query(&progenitor_client::QueryParam::new("provider", &provider))
+                .query(&progenitor_client::QueryParam::new("since", &since))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "scan_failure_groups",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
     #[doc = "Builder for [`Client::list_scans`]\n\n[`Client::list_scans`]: super::Client::list_scans"]
     #[derive(Debug, Clone)]
     pub struct ListScans<'a> {
         client: &'a super::Client,
+        limit: Result<Option<i32>, String>,
+        mode: Result<Option<types::ListScansMode>, String>,
+        offset: Result<Option<i32>, String>,
+        provider: Result<Option<::std::string::String>, String>,
+        since: Result<Option<::std::string::String>, String>,
+        state: Result<Option<types::ListScansState>, String>,
     }
     impl<'a> ListScans<'a> {
         pub fn new(client: &'a super::Client) -> Self {
-            Self { client: client }
+            Self {
+                client: client,
+                limit: Ok(None),
+                mode: Ok(None),
+                offset: Ok(None),
+                provider: Ok(None),
+                since: Ok(None),
+                state: Ok(None),
+            }
+        }
+        pub fn limit<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i32>,
+        {
+            self.limit = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i32` for limit failed".to_string());
+            self
+        }
+        pub fn mode<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::ListScansMode>,
+        {
+            self.mode = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `ListScansMode` for mode failed".to_string());
+            self
+        }
+        pub fn offset<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i32>,
+        {
+            self.offset = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i32` for offset failed".to_string());
+            self
+        }
+        pub fn provider<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.provider = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for provider failed".to_string()
+            });
+            self
+        }
+        pub fn since<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.since = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for since failed".to_string()
+            });
+            self
+        }
+        pub fn state<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::ListScansState>,
+        {
+            self.state = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `ListScansState` for state failed".to_string());
+            self
         }
         #[doc = "Sends a `GET` request to `/v1/admin/scans`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::ScanRun>>, Error<types::ProblemDetails>>
-        {
-            let Self { client } = self;
+        ) -> Result<ResponseValue<types::ScanRunPageView>, Error<types::ProblemDetails>> {
+            let Self {
+                client,
+                limit,
+                mode,
+                offset,
+                provider,
+                since,
+                state,
+            } = self;
+            let limit = limit.map_err(Error::InvalidRequest)?;
+            let mode = mode.map_err(Error::InvalidRequest)?;
+            let offset = offset.map_err(Error::InvalidRequest)?;
+            let provider = provider.map_err(Error::InvalidRequest)?;
+            let since = since.map_err(Error::InvalidRequest)?;
+            let state = state.map_err(Error::InvalidRequest)?;
             let url = format!("{}/v1/admin/scans", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
@@ -23993,6 +24791,12 @@ pub mod builder {
                     ::reqwest::header::ACCEPT,
                     ::reqwest::header::HeaderValue::from_static("application/json"),
                 )
+                .query(&progenitor_client::QueryParam::new("limit", &limit))
+                .query(&progenitor_client::QueryParam::new("mode", &mode))
+                .query(&progenitor_client::QueryParam::new("offset", &offset))
+                .query(&progenitor_client::QueryParam::new("provider", &provider))
+                .query(&progenitor_client::QueryParam::new("since", &since))
+                .query(&progenitor_client::QueryParam::new("state", &state))
                 .headers(header_map)
                 .build()?;
             let info = OperationInfo {
@@ -24328,6 +25132,67 @@ pub mod builder {
                     ResponseValue::from_response(response).await?,
                 )),
                 404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::admin_stream`]\n\n[`Client::admin_stream`]: super::Client::admin_stream"]
+    #[derive(Debug, Clone)]
+    pub struct AdminStream<'a> {
+        client: &'a super::Client,
+        ticket: Result<::std::string::String, String>,
+    }
+    impl<'a> AdminStream<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                ticket: Err("ticket was not initialized".to_string()),
+            }
+        }
+        pub fn ticket<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.ticket = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for ticket failed".to_string()
+            });
+            self
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/stream`"]
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<types::ProblemDetails>> {
+            let Self { client, ticket } = self;
+            let ticket = ticket.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/admin/stream", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .query(&progenitor_client::QueryParam::new("ticket", &ticket))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "admin_stream",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => Ok(ResponseValue::stream(response)),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                503u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

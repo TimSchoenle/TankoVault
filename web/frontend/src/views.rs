@@ -16,7 +16,7 @@ mod watchlist;
 
 pub(crate) use account::{Account, AnilistCallback};
 pub(crate) use auth::{Login, VerifyEmail};
-pub(crate) use console::Console;
+pub(crate) use console::{Console, ConsoleEntity, ConsoleQuery, ConsoleSection};
 pub(crate) use discover::Discover;
 pub(crate) use home::Home;
 pub(crate) use legal::Legal;

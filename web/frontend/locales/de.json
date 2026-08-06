@@ -215,10 +215,19 @@
       "col": {
         "action": "Aktion",
         "actor": "Akteur",
+        "detail": "Details",
         "target": "Ziel",
         "when": "Wann"
       },
       "empty": "Noch keine privilegierten Aktionen aufgezeichnet.",
+      "filter": {
+        "action": "Aktion",
+        "anyAction": "Beliebige Aktion",
+        "target": "Nach Ziel filtern",
+        "window": "Zeitraum"
+      },
+      "hideDetail": "Ausblenden",
+      "showDetail": "Details",
       "system": "System",
       "title": "Audit-Protokoll",
       "unavailable": "Audit-Protokoll nicht verfügbar: {message}"
@@ -280,11 +289,13 @@
     },
     "listKeys": "↑↓ bewegen · ↵ öffnen",
     "live": {
-      "on": "Live · {seconds}s",
+      "connecting": "Verbindung wird aufgebaut",
+      "detached": "Getrennt",
       "pause": "Pausieren",
-      "paused": "Pausiert",
+      "reconnecting": "Neuverbindung",
       "refresh": "Aktualisieren",
-      "resume": "Fortsetzen"
+      "resume": "Fortsetzen",
+      "streaming": "Live"
     },
     "merge": {
       "actionFailed": "Fehlgeschlagen: {message}",
@@ -519,6 +530,30 @@
       "tuning": "Feineinstellung",
       "valueLabel": "Wert für {title}"
     },
+    "scan": {
+      "detail": {
+        "attempts": "Versuche",
+        "elapsed": "Dauer",
+        "minutes": "{count} Min.",
+        "perMinute": "{count}/Min.",
+        "pick": "Wähle einen Lauf aus, um ihn zu untersuchen.",
+        "tasks": "Aufgaben",
+        "throughput": "Durchsatz",
+        "title": "Laufdetails",
+        "underAMinute": "unter einer Minute"
+      },
+      "failures": {
+        "affected": "{count} betroffen",
+        "grouped": "Gleiche Fehler gruppieren",
+        "noError": "Kein Fehler erfasst"
+      },
+      "filter": {
+        "anyProvider": "Beliebiger Anbieter",
+        "anyState": "Beliebiger Status",
+        "provider": "Anbieter",
+        "state": "Laufstatus"
+      }
+    },
     "scans": {
       "active": "Laufende Durchläufe",
       "col": {
@@ -654,6 +689,11 @@
       "sync": "Sync",
       "users": "Benutzer"
     },
+    "table": {
+      "columns": "Spalten",
+      "columnsLegend": "Anzuzeigende Spalten",
+      "compact": "Kompakt"
+    },
     "title": "Betreiber-Konsole",
     "users": {
       "activeSessions": "{count} aktiv",
@@ -726,6 +766,12 @@
       "unverifiedHint": "Diese Adresse wurde nicht bestätigt, das Konto kann sich daher nicht anmelden.",
       "verified": "Bestätigt",
       "verifyEmail": "E-Mail-Adresse bestätigen"
+    },
+    "window": {
+      "any": "Beliebiger Zeitraum",
+      "day": "Letzte 24 Stunden",
+      "hour": "Letzte Stunde",
+      "week": "Letzte 7 Tage"
     }
   },
   "discover": {

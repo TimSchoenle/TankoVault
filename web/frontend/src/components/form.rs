@@ -128,11 +128,13 @@ pub(crate) fn SliderRow(
 #[component]
 pub(crate) fn ListSearch(
     placeholder: String,
-    query: Signal<String>,
+    /// Controlled: the caller owns the text, because in the console it lives in the URL, and a
+    /// signal here would hold a second copy of it.
+    query: String,
+    on_input: EventHandler<String>,
     /// Already-worded, e.g. "4 hits" — the caller knows what it is counting.
     hits: String,
 ) -> Element {
-    let mut query = query;
     rsx! {
         div { class: "ik-flex", style: "gap:8px;background:var(--surface);border:1px solid var(--border-ctl);border-radius:9px;padding:7px 10px;",
             span { style: "display:flex;color:var(--faint);flex:none;",
@@ -144,7 +146,7 @@ pub(crate) fn ListSearch(
                 placeholder: "{placeholder}",
                 "aria-label": "{placeholder}",
                 value: "{query}",
-                oninput: move |event| query.set(event.value()),
+                oninput: move |event| on_input.call(event.value()),
             }
             span { class: "ik-mono", style: "font-size:11px;color:var(--faint);flex:none;", "{hits}" }
         }

@@ -25,7 +25,7 @@ use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::capabilities::use_capabilities;
 use crate::util::{monogram, rel_time, thousands};
-use crate::views::console::config_editor_text;
+use crate::views::console::{config_editor_text, use_console_nav};
 use crate::wire::types::Permission;
 use config::DryRunResult;
 use coverage::CoverageTab;
@@ -69,6 +69,28 @@ impl TabKind for Tab {
     }
 }
 
+impl Tab {
+    /// This tab's `?tab=` token.
+    fn token(self) -> &'static str {
+        match self {
+            Self::Config => "config",
+            Self::Politeness => "politeness",
+            Self::Coverage => "coverage",
+            Self::Runs => "runs",
+            Self::Danger => "danger",
+        }
+    }
+
+    /// An unrecognised token opens the default tab rather than refusing the link.
+    fn parse(token: &str) -> Self {
+        <Self as TabKind>::all()
+            .iter()
+            .copied()
+            .find(|tab| tab.token() == token)
+            .unwrap_or(Self::Config)
+    }
+}
+
 /// The list pane and the inspector pane, as the console shell's two grid children.
 #[component]
 pub(super) fn ProvidersEntity() -> Element {
@@ -77,8 +99,8 @@ pub(super) fn ProvidersEntity() -> Element {
     let caps = use_capabilities();
     let can_create = caps.can(Permission::ProvidersCreate);
     let reload = use_reload();
-    let query = use_signal(String::new);
-    let mut selected = use_signal(|| Option::<ProviderId>::None);
+    let nav = use_console_nav();
+    let view = nav.query();
     let mut creating = use_signal(|| false);
 
     let providers = use_resource(move || {
@@ -110,8 +132,8 @@ pub(super) fn ProvidersEntity() -> Element {
     });
 
     // Memoised: filtering reclones the list on every keystroke and every row selection.
-    let filtered = use_memo(move || {
-        let needle = query.read().trim().to_lowercase();
+    let needle = view.q.trim().to_lowercase();
+    let filtered = use_memo(use_reactive!(|needle| {
         match &*providers.read() {
             Some(Ok(list)) => list
                 .iter()
@@ -124,12 +146,17 @@ pub(super) fn ProvidersEntity() -> Element {
                 .collect::<Vec<Provider>>(),
             _ => Vec::new(),
         }
-    });
+    }));
     let stat_rows = stats.read().clone().unwrap_or_default();
     let rows = filtered.read().clone();
 
-    // Falls back to the first row so the inspector is never empty.
-    let current = selected.read().or_else(|| rows.first().map(|p| p.id));
+    // Falls back to the first row so the inspector is never empty. A `sel` naming a provider
+    // that is filtered out falls back too, rather than showing an inspector with no lit row.
+    let current = view
+        .sel
+        .as_deref()
+        .and_then(|id| rows.iter().find(|p| p.id.to_string() == id).map(|p| p.id))
+        .or_else(|| rows.first().map(|p| p.id));
     let chosen = current.and_then(|id| rows.iter().find(|p| p.id == id).cloned());
 
     rsx! {
@@ -137,7 +164,8 @@ pub(super) fn ProvidersEntity() -> Element {
             div { class: "ik-cons-listhead",
                 ListSearch {
                     placeholder: i18n.t("console.providers.filter"),
-                    query,
+                    query: view.q.clone(),
+                    on_input: move |text| nav.filter(nav.query().with_search(text)),
                     hits: i18n.plural(
                         "console.providers.hits",
                         i64::try_from(rows.len()).unwrap_or(0),
@@ -181,9 +209,9 @@ pub(super) fn ProvidersEntity() -> Element {
                                     provider: provider.clone(),
                                     stat: stat_rows.iter().find(|s| s.slug == provider.slug).cloned(),
                                     selected: current == Some(provider.id),
-                                    on_pick: move |id| {
+                                    on_pick: move |id: ProviderId| {
                                         creating.set(false);
-                                        selected.set(Some(id));
+                                        nav.select(nav.query().with_selection(Some(id.to_string())));
                                     },
                                 }
                             }
@@ -213,7 +241,7 @@ pub(super) fn ProvidersEntity() -> Element {
                 provider: provider.clone(),
                 stat: stat_rows.iter().find(|s| s.slug == provider.slug).cloned(),
                 reload,
-                on_deleted: move |()| selected.set(None),
+                on_deleted: move |()| nav.select(nav.query().with_selection(None)),
             }
         } else {
             NoSelection { message: i18n.t("console.providers.pick") }
@@ -244,7 +272,8 @@ fn ProviderInspector(
     let original_config = config_editor_text(&provider.config);
     let is_disabled = provider.state == ProviderState::Disabled;
 
-    let tab = use_signal(|| Tab::Config);
+    let nav = use_console_nav();
+    let tab = Tab::parse(nav.query().tab_token());
     // Fast scan checks deltas; full re-reads the catalogue for this provider only.
     let mut scan_mode = use_signal(|| ScanMode::Fast);
     let busy = use_busy();
@@ -482,12 +511,16 @@ fn ProviderInspector(
                         }
                     }
                 }
-                TabBar { selected: tab, flush: true }
+                TabBar {
+                    selected: tab,
+                    on_select: move |next: Tab| nav.filter(nav.query().with_tab(next.token())),
+                    flush: true,
+                }
             }
             div { style: "padding:0 22px;",
                 OutcomeLine { outcome: outcome.read().clone() }
             }
-            match *tab.read() {
+            match tab {
                 Tab::Config => rsx! {
                     div { class: "ik-cons-inspbody",
                         div { class: "ik-cons-col",

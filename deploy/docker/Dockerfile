@@ -60,19 +60,29 @@ ARG SERVICE_BINS="api bootstrap challenge-solver control-plane frontend notifier
 # `from=cook,source=/app/target` seeds the mount so a cold cache (CI's is always cold) starts from
 # `cook`'s output instead of rebuilding every dependency. `sharing=locked` lets concurrent builds
 # queue on cargo's target-dir lock rather than race it.
+# `${flags}` is unquoted so word splitting turns it into separate --bin args.
 #
-# **The build is not narrowed to `--bin`, and narrowing it again would cost 12 minutes a build.**
-# `cargo chef cook` compiles the whole skeleton workspace, `crates/test-support` included; a
-# `--bin` list selects the ten packages owning those binaries and excludes it. Feature unification
-# runs over the selected set, so the two invocations resolve different features for the shared
-# dependency graph and cargo rebuilds everything the difference reaches — measured at 489 of the
-# 512 crates in this stage recompiled after `cook` had just compiled them. Building the same set
-# `cook` cooks is what makes the seed above worth anything. `SERVICE_BINS` still names what gets
-# copied out and what the linkage contract below checks.
+# **The seed above currently delivers nothing, and the package selection is not why.** Measured on
+# CI, this stage recompiles *all 523* third-party crates `cook` had just compiled, every build —
+# `cook`'s 11 minutes are pure waste and cargo-chef is buying nothing here. The `/cargo` mount is
+# shared and works (zero re-downloads in this stage), so it is specifically the compiled artefacts
+# in `/app/target` that never come back.
+#
+# Building the whole workspace here instead of this `--bin` list was tried, on the theory that
+# feature unification over a different package set was invalidating the fingerprints. It is not:
+# the redundant recompiles went 489-of-512 to 523-of-549 — the same ~95%, just more crates. It is
+# reverted rather than kept because it compiled 26 extra crates for no gain. `cargo auditable` is
+# not the cause either: it sets `RUSTC_WORKSPACE_WRAPPER`, so switching to it rebuilds workspace
+# members only, verified locally at one crate rather than a graph.
+#
+# So the cause is still unknown, and the next person should start at whether the `from=cook`
+# seeding populates the mount at all rather than re-testing either of the above.
 RUN --mount=type=cache,id=tankovault-backend-cargo,target=/cargo,sharing=shared \
     --mount=type=cache,id=tankovault-backend-target,target=/app/target,sharing=locked,from=cook,source=/app/target \
     set -eu; \
-    cargo auditable build --release --locked; \
+    flags=''; \
+    for bin in ${SERVICE_BINS}; do flags="${flags} --bin ${bin}"; done; \
+    cargo auditable build --release --locked ${flags}; \
     mkdir -p /out; \
     for bin in ${SERVICE_BINS}; do cp "target/release/${bin}" "/out/${bin}"; done
 

@@ -44,6 +44,12 @@ impl Session {
         self.token.read().is_some()
     }
 
+    /// Whether the boot-time silent refresh has settled, so an absent token is an *answer*
+    /// rather than "we have not looked yet".
+    pub(crate) fn is_settled(&self) -> bool {
+        *self.ready.read()
+    }
+
     /// The current token cloned out for an API call.
     pub(crate) fn token_value(&self) -> Option<String> {
         self.token.read().clone()

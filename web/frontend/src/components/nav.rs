@@ -20,14 +20,14 @@ pub(crate) fn Rail() -> Element {
     let session = use_session();
 
     // Each entry needs both: the reader is allowed, and the deployment offers the feature.
+    let personal = reader_destinations_visible(session.is_authenticated(), session.is_settled());
     let show_search = caps.has_feature(Feature::CatalogueSearch);
     let show_discover = caps.has_feature(Feature::CatalogueBrowse);
-    let show_watchlist = caps.has_feature(Feature::TrackingWatchlist);
-    let show_notifications = caps.has_feature(Feature::NotificationsInApp);
+    let show_watchlist = personal && caps.has_feature(Feature::TrackingWatchlist);
+    let show_notifications = personal && caps.has_feature(Feature::NotificationsInApp);
     let show_console = caps.is_staff();
     // Signed-out readers have no taste profile, so the destination would be an auth wall.
-    let show_recommendations =
-        caps.has_feature(Feature::CatalogueRecommendations) && session.is_authenticated();
+    let show_recommendations = personal && caps.has_feature(Feature::CatalogueRecommendations);
 
     rsx! {
         nav { class: "ik-rail", "aria-label": i18n.t("nav.railLabel"),
@@ -76,13 +76,27 @@ pub(crate) fn Rail() -> Element {
                 NavLink { to: Route::Console {}, label: i18n.t("nav.console"), icon: Icon::Console, current: route.clone() }
             }
 
-            NavGroup { label: i18n.t("nav.group.account") }
-            NavLink { to: Route::Account {}, label: i18n.t("nav.account"), icon: Icon::Account, current: route.clone() }
+            if personal {
+                NavGroup { label: i18n.t("nav.group.account") }
+                NavLink { to: Route::Account {}, label: i18n.t("nav.account"), icon: Icon::Account, current: route.clone() }
+            }
 
             div { class: "ik-rail-spacer" }
             UserFooter {}
         }
     }
+}
+
+/// Whether the reader-scoped destinations — watchlist, notifications, recommendations, account —
+/// belong in the chrome at all.
+///
+/// Every one of them is an auth wall without a session, so offering them signed out advertises
+/// four screens that can only answer "sign in". They are withdrawn on the *settled* answer, not
+/// on the absent token: the token is adopted from the refresh cookie by a network round trip, so
+/// gating on `!authenticated` alone would strip the rail and the tab bar on every reload and
+/// then put them back a moment later.
+pub(crate) const fn reader_destinations_visible(authenticated: bool, settled: bool) -> bool {
+    authenticated || !settled
 }
 
 /// One routed destination in the bottom tab bar.
@@ -102,13 +116,19 @@ pub(crate) struct Destination {
 
 /// The routed destinations the bottom tab bar draws, in bar order.
 ///
-/// Feature-gated, not permission-gated: these four are deployment-level switches, so the bar is
-/// the same for every reader of a given instance and never reflows per user. Everything that
-/// *does* vary per reader — the console above all — lives in the **More** sheet instead.
+/// Feature-gated, not permission-gated: the deployment-level switches are the same for every
+/// reader of a given instance, so the bar never reflows *per reader*. Everything that does vary
+/// by who is holding it — the console above all — lives in the **More** sheet instead.
+///
+/// Signing in or out is the one exception, and deliberately so: `personal` drops the two
+/// reader-scoped tabs for a reader we know has no session, because a tab bar whose middle two
+/// slots both lead to a sign-in gate is worse than a shorter bar. See
+/// [`reader_destinations_visible`] for why "no session" is not simply "no token yet".
 pub(crate) fn tab_destinations(
     i18n: crate::i18n::Translator,
     caps: &CapabilitySet,
     unread: i64,
+    personal: bool,
 ) -> Vec<Destination> {
     let mut out = vec![Destination {
         route: Route::Home {},
@@ -124,7 +144,7 @@ pub(crate) fn tab_destinations(
             badge: 0,
         });
     }
-    if caps.has_feature(Feature::TrackingWatchlist) {
+    if personal && caps.has_feature(Feature::TrackingWatchlist) {
         out.push(Destination {
             route: Route::Watchlist {
                 query: WatchlistQuery::default(),
@@ -134,7 +154,7 @@ pub(crate) fn tab_destinations(
             badge: 0,
         });
     }
-    if caps.has_feature(Feature::NotificationsInApp) {
+    if personal && caps.has_feature(Feature::NotificationsInApp) {
         out.push(Destination {
             route: Route::Notifications {},
             short: i18n.t("nav.alerts"),
@@ -210,14 +230,19 @@ fn same_screen(a: &Route, b: &Route) -> bool {
     discriminant(&normalise(a)) == discriminant(&normalise(b))
 }
 
-/// Avatar + identity + settings gear when signed in; a "Sign in" button otherwise.
-/// Sign-out lives on the Account screen.
+/// Avatar + identity + settings gear when signed in; a "Sign in" button once we know there is
+/// no session. Sign-out lives on the Account screen.
 #[component]
 fn UserFooter() -> Element {
     let session = use_session();
     let caps = use_capabilities();
     let i18n = use_i18n();
     if !session.is_authenticated() {
+        // Nothing at all until the boot refresh settles: a "Sign in" button that turns into the
+        // reader's own name a moment later is the sign-in flash `Session::ready` exists to stop.
+        if !session.is_settled() {
+            return rsx! {};
+        }
         return rsx! {
             div { style: "padding:8px;",
                 Link { to: Route::Login {}, class: "ik-btn primary block", {i18n.t("common.signIn")} }
@@ -244,5 +269,30 @@ fn UserFooter() -> Element {
                 Ic { icon: Icon::Settings, size: 18 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reader_destinations_visible;
+
+    /// Both halves of the rule, because either one alone is a defect.
+    ///
+    /// Without the `settled` term the rail and the tab bar are stripped for the length of the
+    /// boot-time silent refresh on every reload, and put back once it lands. Without the rule at
+    /// all — the behaviour this replaced — a signed-out reader is offered four destinations that
+    /// can only answer "sign in".
+    #[test]
+    fn reader_destinations_survive_boot_and_go_on_a_settled_sign_out() {
+        assert!(
+            reader_destinations_visible(false, false),
+            "an unsettled session means `we have not looked yet`, not `signed out`"
+        );
+        assert!(reader_destinations_visible(true, true));
+        assert!(reader_destinations_visible(true, false));
+        assert!(
+            !reader_destinations_visible(false, true),
+            "a settled sign-out is the one state that withdraws them"
+        );
     }
 }

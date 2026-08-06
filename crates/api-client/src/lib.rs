@@ -21517,6 +21517,10 @@ impl Client {
     pub fn system_stats(&self) -> builder::SystemStats<'_> {
         builder::SystemStats::new(self)
     }
+    #[doc = "Console live stream\n\nServer-Sent Events for the operator console: `stats` every 10 s and `runs` every 2 s.\n\nAuthenticated by a single-use `ticket` query parameter from `POST /v1/me/stream-ticket`,\nbecause `EventSource` cannot set an `Authorization` header. A ticket proves a session\nexisted thirty seconds ago and nothing more, so the permission check below happens *after*\nredemption and gates each event separately: a caller entitled to scan runs but not to system\ncounters receives `runs` and never `stats`. Emitting an event the caller could not fetch\nover its own GET would be a disclosure, and the access-matrix suites would not catch it —\nthey reconcile status codes, not event names.\n\nSends a `GET` request to `/v1/admin/stream`\n\nArguments:\n- `ticket`: Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (design §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.\n```ignore\nlet response = client.admin_stream()\n    .ticket(ticket)\n    .send()\n    .await;\n```"]
+    pub fn admin_stream(&self) -> builder::AdminStream<'_> {
+        builder::AdminStream::new(self)
+    }
     #[doc = "List linked external accounts\n\nEvery linked external account across all users.\n\nSends a `GET` request to `/v1/admin/sync/accounts`\n\n```ignore\nlet response = client.list_sync_accounts()\n    .send()\n    .await;\n```"]
     pub fn list_sync_accounts(&self) -> builder::ListSyncAccounts<'_> {
         builder::ListSyncAccounts::new(self)
@@ -24328,6 +24332,67 @@ pub mod builder {
                     ResponseValue::from_response(response).await?,
                 )),
                 404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::admin_stream`]\n\n[`Client::admin_stream`]: super::Client::admin_stream"]
+    #[derive(Debug, Clone)]
+    pub struct AdminStream<'a> {
+        client: &'a super::Client,
+        ticket: Result<::std::string::String, String>,
+    }
+    impl<'a> AdminStream<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                ticket: Err("ticket was not initialized".to_string()),
+            }
+        }
+        pub fn ticket<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.ticket = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for ticket failed".to_string()
+            });
+            self
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/stream`"]
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<types::ProblemDetails>> {
+            let Self { client, ticket } = self;
+            let ticket = ticket.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/admin/stream", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .query(&progenitor_client::QueryParam::new("ticket", &ticket))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "admin_stream",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => Ok(ResponseValue::stream(response)),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                503u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

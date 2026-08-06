@@ -11,6 +11,7 @@
 mod audit;
 mod controls;
 mod flags;
+mod live;
 mod merge;
 mod overview;
 mod privacy;
@@ -41,9 +42,6 @@ use dioxus::router::Navigator;
 use progenitor_client::ResponseValue;
 use std::fmt;
 use std::str::FromStr;
-
-/// Auto-refresh cadence for the read-only entities.
-const REFRESH_MS: u32 = 4000;
 
 /// The shared refetch signal for every auto-refreshing console panel.
 ///
@@ -436,21 +434,16 @@ pub(crate) fn ConsoleSection(entity: ConsoleEntity, query: ConsoleQuery) -> Elem
 
     let tick = RefreshTick(use_reload());
     let auto = use_signal(prefs::console_live);
-    use_future(move || async move {
-        loop {
-            gloo_timers::future::TimeoutFuture::new(REFRESH_MS).await;
-            // `peek`, not `read`: this loop must not re-subscribe itself to `auto`, or toggling
-            // the pause switch would restart the timer rather than gate it.
-            if *auto.peek() {
-                tick.bump();
-            }
-        }
-    });
+    // The stream is the cadence now; `RefreshTick` stays for the panels it carries no event for
+    // and for the manual refresh button. The timer that used to bump it every four seconds is
+    // gone — twelve panels refetching in lockstep is what this replaced.
+    let live = live::use_console_live(api, auto.into());
 
-    // A reader without `system.stats` simply gets a rail with no numbers on it.
+    // A reader without `system.stats` simply gets a rail with no numbers on it. The first paint
+    // still needs a fetch: the stream's `stats` event is ten seconds away, and a rail that
+    // counts up from nothing reads as an empty deployment.
     let can_count = caps.can(Permission::SystemStats) && caps.has_feature(Feature::AdminStats);
-    let stats = use_resource(move || {
-        tick.track();
+    let seed = use_resource(move || {
         let client = api.client();
         async move {
             if !can_count {
@@ -503,7 +496,12 @@ pub(crate) fn ConsoleSection(entity: ConsoleEntity, query: ConsoleQuery) -> Elem
     }
     let current = entity;
 
-    let counts = stats.read_unchecked().clone().flatten();
+    // Pushed first, seeded second: the stream is the newer of the two the moment it lands.
+    let counts = live
+        .stats
+        .read()
+        .clone()
+        .or_else(|| seed.read_unchecked().clone().flatten());
     let body_class = if current.is_master_detail() {
         "ik-cons-body"
     } else {
@@ -579,7 +577,7 @@ pub(crate) fn ConsoleSection(entity: ConsoleEntity, query: ConsoleQuery) -> Elem
                 JumpField {}
                 div { class: "ik-flex", style: "margin-left:auto;gap:9px;flex-wrap:wrap;",
                     if current.auto_refreshes() {
-                        controls::LiveControls { tick, auto }
+                        controls::LiveControls { tick, auto, state: live.state }
                     } else {
                         span { class: "ik-mono", style: "font-size:11.5px;color:var(--faint);",
                             {i18n.t("console.noAutoRefresh")}

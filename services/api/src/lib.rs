@@ -424,6 +424,10 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::fulfil_erasure))
         .routes(routes!(admin::list_scans, admin::trigger_scan))
         .routes(routes!(admin::scan_failures))
+        // The console's one live stream. Deliberately absent from the feature-gate table
+        // above: it carries two payloads behind two different features, and one prefix rule
+        // would close the whole stream when either is off. The handler gates per event.
+        .routes(routes!(admin::admin_stream))
         .routes(routes!(admin::scan_stream))
         .routes(routes!(admin::get_scan))
         .routes(routes!(admin::list_merge_candidates))

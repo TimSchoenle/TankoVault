@@ -280,11 +280,13 @@
     },
     "listKeys": "↑↓ bewegen · ↵ öffnen",
     "live": {
-      "on": "Live · {seconds}s",
+      "connecting": "Verbindung wird aufgebaut",
+      "detached": "Getrennt",
       "pause": "Pausieren",
-      "paused": "Pausiert",
+      "reconnecting": "Neuverbindung",
       "refresh": "Aktualisieren",
-      "resume": "Fortsetzen"
+      "resume": "Fortsetzen",
+      "streaming": "Live"
     },
     "merge": {
       "actionFailed": "Fehlgeschlagen: {message}",

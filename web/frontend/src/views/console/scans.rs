@@ -6,6 +6,7 @@ use crate::components::async_block;
 use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::util::rel_time;
+use crate::views::console::live::ConsoleLive;
 use crate::views::console::run_state_pill;
 use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
@@ -19,6 +20,10 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
     let mut mode = use_signal(|| ScanMode::Fast);
     let mut message = use_signal(|| Option::<String>::None);
 
+    // Pushed every two seconds by the console stream; this fetch is the first paint and the
+    // manual-refresh path, not the cadence. A run in flight changes faster than any poll this
+    // panel could justify.
+    let live = use_context::<ConsoleLive>();
     let runs = use_resource(move || {
         tick.track();
         let client = api.client();
@@ -106,7 +111,11 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
                     &runs,
                     tick.reload(),
                     100,
-                    |all_runs| {
+                    |fetched| {
+                        // The stream wins once it has pushed: it is at most two seconds old,
+                        // and the fetch behind it is from whenever the panel opened.
+                        let pushed = live.runs.read().clone();
+                        let all_runs: &Vec<ScanRun> = pushed.as_ref().unwrap_or(fetched);
                         let active: Vec<ScanRun> = all_runs
                             .iter()
                             .filter(|r| matches!(r.state, RunState::Running | RunState::Queued))

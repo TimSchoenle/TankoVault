@@ -12,6 +12,19 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [1.5.0](https://github.com/TimSchoenle/TankoVault/compare/v1.4.3...v1.5.0) (2026-08-06)
+
+
+### Features
+
+* **console:** operator console v2 — phases 1–3 ([#106](https://github.com/TimSchoenle/TankoVault/issues/106)) ([b433660](https://github.com/TimSchoenle/TankoVault/commit/b43366091155401d5f3f1a6daee869b19fcea412))
+
+
+### Miscellaneous
+
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-timed-auto-pr-approve.yaml to vworkflows-maintenance-timed-auto-pr-approve-v1.2.29 ([#104](https://github.com/TimSchoenle/TankoVault/issues/104)) ([8ee2b70](https://github.com/TimSchoenle/TankoVault/commit/8ee2b7032605c4e0a4a5a7126be98387e508d6e9))
+* **deps:** update timschoenle/actions/actions/helm/update-chart-version to vactions-helm-update-chart-version-v1.6.1 ([#105](https://github.com/TimSchoenle/TankoVault/issues/105)) ([107d4e0](https://github.com/TimSchoenle/TankoVault/commit/107d4e01ac36001b78755ac69761042320a7e6a0))
+
 ## [1.4.3](https://github.com/TimSchoenle/TankoVault/compare/v1.4.2...v1.4.3) (2026-08-06)
 
 

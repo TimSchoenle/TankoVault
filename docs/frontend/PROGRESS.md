@@ -300,6 +300,13 @@ still renders against them unchanged; consuming them in the UI is optional polis
 - **2FA / password change** — no schema/endpoint yet (Account → Security notes this).
 - **Saved filter presets** (Discover) and **notification cover thumbs** — minor niceties.
 
+## Next surface: the operator console
+
+The console is endpoint-complete but not yet operable — no deep links, no keyboard model, a 4 s
+whole-console poll where a ticketed SSE stream belongs, and two unfiltered fixed-size triage lists.
+The phased handoff is **[`new-console.md`](./new-console.md)**; start at its §3.1, which everything
+later depends on.
+
 ## Notes / gotchas
 - CSS strategy: custom rules live as **plain CSS** after the `@tailwind` directives in
   `input.css` (not inside `@layer`), so Tailwind's content-purge never drops the semantic

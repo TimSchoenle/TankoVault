@@ -12,10 +12,19 @@
 #
 # `Cargo.lock` keeps `linguist-generated` but *not* `-diff`: a lockfile change is exactly what a
 # reviewer should be reading, since it is how a dependency actually enters the build.
-openapi.json                 linguist-generated=true -diff
-crates/api-client/src/lib.rs linguist-generated=true -diff
-.sqlx/*.json                 linguist-generated=true -diff
-Cargo.lock                   linguist-generated=true
+#
+# **`eol=lf` on every one of them, because a generator writes LF and a gate compares bytes.**
+# `xtask openapi --check` reads the file and tests it against freshly rendered output for exact
+# equality (`xtask/src/main.rs`), and `std::fs::write` emits `\n`. Without `eol=lf` these check
+# out CRLF wherever `core.autocrlf` is on, so the comparison failed for every Windows developer
+# on a clean tree — and reported it as "openapi.json is out of date; run `xtask openapi`", which
+# names the wrong problem and is not fixed by doing what it says. `xtask ci` is this repository's
+# definition of done and it could not pass on the platform this repository is developed on.
+# `repo-lint`'s `generated-artefacts-eol` rule holds the whole list to this.
+openapi.json                 linguist-generated=true -diff eol=lf
+crates/api-client/src/lib.rs linguist-generated=true -diff eol=lf
+.sqlx/*.json                 linguist-generated=true -diff eol=lf
+Cargo.lock                   linguist-generated=true eol=lf
 
 # The repository is developed on Windows and built on Linux. Normalise line endings in the
 # index so a checkout on either platform produces the same content hash, and keep the shell
@@ -29,8 +38,11 @@ Dockerfile*   text eol=lf
 *.yaml        text eol=lf
 
 # `THIRD-PARTY-NOTICES` is generated (`xtask notices`) and belongs with the artefacts at the top
-# of this file, but its attributes are declared *here*, after `* text=auto`: the last matching
-# line wins, and `eol=lf` stated above that one would be overridden by it. LF because this file
+# of this file; it is declared *here* only for historical reasons. The placement is not
+# load-bearing, contrary to what this comment used to claim: the last matching line wins **per
+# attribute**, and `* text=auto` sets `text` and nothing else, so an `eol=lf` stated above it
+# survives. `git check-attr text eol -- THIRD-PARTY-NOTICES` reports `eol: lf` from either
+# position, which is why the artefacts at the top of this file declare theirs there. LF because
 # is copied verbatim into every image and compared by CI, so a CRLF working copy would make the
 # built layer differ by platform. Its diff is suppressed for the reason `openapi.json`'s is —
 # 300-odd KB of licence text that only ever changes because `Cargo.lock` did, and *that* diff is

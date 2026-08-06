@@ -10,6 +10,7 @@
 mod deploy;
 mod floors;
 mod frontend;
+mod gitattributes;
 mod metrics;
 mod notices;
 mod secrets;
@@ -56,9 +57,10 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(workflows::concurrency_groups_hold_one_workflow(root)?);
     findings.extend(workflows::the_oidc_token_carries_no_newline(root)?);
     findings.extend(floors::coverage_floors_parse(root)?);
+    findings.extend(gitattributes::generated_artefacts_check_out_as_lf(root)?);
 
     if findings.is_empty() {
-        println!("repo-lint: 16 rules, no violations");
+        println!("repo-lint: 17 rules, no violations");
         return Ok(());
     }
 

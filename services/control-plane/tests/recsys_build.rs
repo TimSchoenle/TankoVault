@@ -115,6 +115,7 @@ async fn ingest(db: &TestDb, provider: ProviderId, fixture: &Fixture) -> SeriesI
         },
         &MatchingConfig::default(),
         &MetadataPriority::default(),
+        &tankovault_domain::TagBlocklist::default(),
     )
     .await
     .expect("ingest series")

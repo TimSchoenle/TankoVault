@@ -81,19 +81,29 @@ pub(super) fn SimilarRail(series_id: SeriesId) -> Element {
     }
 }
 
-/// One neighbour: a thumbnail, the title, and the features it shares with the seed.
+/// One neighbour: a thumbnail, the title, its length, and the features it shares with the seed.
+///
+/// The thumbnail is sized by a class rather than an inline `width`, because the box has to be
+/// reserved in *both* dimensions. It was a 38px-wide `div` with no height, leaving the height to
+/// the `<img>`'s aspect ratio — which a cover that fails to load does not have, so one broken
+/// image collapsed its row and pulled the whole rail's spacing out of alignment. `Cover` now
+/// swaps a failed image for the fallback element as well, so the two fixes are belt and braces:
+/// the box exists whatever renders inside it.
 #[component]
 fn SimilarRow(item: SimilarSeries) -> Element {
+    let i18n = use_i18n();
     rsx! {
         Link {
             to: Route::Series { id: item.id.to_string() },
-            class: "ik-flex",
-            style: "gap:10px;align-items:flex-start;padding:8px 0;color:inherit;",
-            div { style: "width:38px;flex:none;border-radius:6px;overflow:hidden;",
+            class: "ik-similar-row",
+            div { class: "ik-similar-art",
                 Cover { url: item.cover_url.clone(), title: item.title.clone() }
             }
             div { style: "min-width:0;",
-                div { style: "font-size:13px;font-weight:600;line-height:1.3;", "{item.title}" }
+                div { style: "font-size:13.5px;font-weight:600;line-height:1.3;", "{item.title}" }
+                div { class: "ik-mono ik-muted", style: "font-size:11.5px;margin-top:3px;",
+                    {i18n.plural("series.chapterTally", item.chapter_count, &[])}
+                }
                 if !item.shared.is_empty() {
                     div {
                         class: "ik-muted",

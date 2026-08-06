@@ -1,0 +1,122 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT generation, stage, started_at, finished_at, series_built, stage_total, vocabulary, dense_dims, error FROM rec_build_state WHERE id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "generation",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "rec_build_state",
+            "name": "generation"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "stage",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "rec_build_state",
+            "name": "stage"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "rec_build_state",
+            "name": "started_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "finished_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "rec_build_state",
+            "name": "finished_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "series_built",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "rec_build_state",
+            "name": "series_built"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "stage_total",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "rec_build_state",
+            "name": "stage_total"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "vocabulary",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "rec_build_state",
+            "name": "vocabulary"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "dense_dims",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "rec_build_state",
+            "name": "dense_dims"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "rec_build_state",
+            "name": "error"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "83b283bb291258d0f1e4f1f323ff3200eadad32679b647260bc1762cfa339a5f"
+}

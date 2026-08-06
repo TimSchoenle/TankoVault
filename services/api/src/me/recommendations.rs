@@ -98,6 +98,10 @@ impl ShelfTuning {
     }
 }
 
+/// Tags a card carries at most, matching the catalogue grid's cap so the two surfaces show a
+/// series the same way.
+const CARD_TAGS: usize = 3;
+
 /// One recommended series and why it is here.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Recommendation {
@@ -112,7 +116,16 @@ pub struct Recommendation {
     pub cover_url: Option<String>,
     pub content_type: tankovault_domain::ContentType,
     pub status: tankovault_domain::SeriesStatus,
+    /// Distinct providers carrying this series. Retained for compatibility; not a figure any
+    /// reader-facing surface shows.
     pub source_count: i64,
+    /// Distinct whole chapters across every source — the figure a reader deciding whether to
+    /// start something actually wants, and the same one the series screen prints.
+    pub chapter_count: i64,
+    pub latest_chapter: Option<f64>,
+    pub release_year: Option<i32>,
+    /// Tag names, alphabetically, capped for the card that shows them.
+    pub tags: Vec<String>,
     pub score: f32,
     /// The series that produced this one, when a seed did.
     pub because_series_id: Option<SeriesId>,
@@ -551,6 +564,12 @@ async fn render(
         .map(|s| (s.id, (s.score, s.because)))
         .collect();
 
+    // The two batched card reads, keyed on exactly the shelf about to be rendered.
+    let (chapters, tags) = tokio::try_join!(
+        tankovault_db::repo::catalog::chapter_stats_for_series(&state.pool, &chosen_ids),
+        tankovault_db::repo::catalog::tags_for_series(&state.pool, &chosen_ids),
+    )?;
+
     Ok(summaries
         .into_iter()
         .map(|item| {
@@ -565,6 +584,7 @@ async fn render(
                         .collect()
                 })
                 .unwrap_or_default();
+            let counts = chapters.get(&id);
             Recommendation {
                 id,
                 title: item.series.canonical_title,
@@ -572,6 +592,13 @@ async fn render(
                 content_type: item.series.content_type,
                 status: item.series.status,
                 source_count: item.source_count,
+                chapter_count: counts.map_or(0, |c| c.chapter_count),
+                latest_chapter: counts.and_then(|c| c.latest_number),
+                release_year: item.series.release_year,
+                tags: tags
+                    .get(&id)
+                    .map(|names| names.iter().take(CARD_TAGS).cloned().collect())
+                    .unwrap_or_default(),
                 score,
                 because_series_id: because,
                 because_title: because.and_then(|seed| seed_title_of.get(&seed).cloned()),

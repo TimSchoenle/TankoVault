@@ -1,0 +1,13 @@
+-- A denominator for the recommendation build's progress.
+--
+-- `rec_build_state.series_built` was already written as a run advanced, but nothing said what it
+-- was advancing *towards*: the console could show "41 000 series" with no way to tell whether
+-- that was a run nearly done or one barely started. The denominator is not derivable from the
+-- coverage counts either — each stage walks a different population (every series for feature
+-- extraction, only the extracted ones for projection, a claimed subset for an incremental run),
+-- and an incremental run's work list is not a column at all.
+--
+-- Written by the builder at the top of each stage alongside the stage name, and read only for
+-- display: nothing branches on it, so a run from a replica that predates this column reports
+-- zero and the console falls back to showing the raw count.
+ALTER TABLE rec_build_state ADD COLUMN stage_total int NOT NULL DEFAULT 0;

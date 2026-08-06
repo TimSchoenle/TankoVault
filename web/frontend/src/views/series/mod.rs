@@ -22,7 +22,7 @@ use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::use_session;
-use crate::util::chapter_number;
+use crate::util::{chapter_number, rel_time};
 use crate::Route;
 use chapters::{ChapterSection, OpenControl};
 use dioxus::prelude::*;
@@ -291,7 +291,18 @@ fn Hero(
 
     let backdrop = detail.cover_url.clone().unwrap_or_default();
     let whole_chapters = chapters.iter().filter(|c| !c.is_part()).count();
-    let source_count = i64::try_from(detail.sources.len()).unwrap_or(0);
+    let whole_chapters_i64 = i64::try_from(whole_chapters).unwrap_or(i64::MAX);
+    // Counted separately rather than folded into the total: a part release is a chapter a source
+    // shipped ahead of the compiled whole one, so counting them together would make a series
+    // look longer than it is — which is exactly why the chapter list collapses them.
+    let part_releases = i64::try_from(chapters.iter().filter(|c| c.is_part()).count())
+        .unwrap_or(i64::MAX);
+    // The merge orders newest-first, so the head is the newest number and the newest date.
+    let latest_number = chapters.first().map(|c| c.number);
+    let latest_release = chapters
+        .first()
+        .and_then(|c| c.resolved().published_at.clone())
+        .map(|at| rel_time(i18n, Some(at.as_str())));
     let byline = {
         let authors = detail
             .authors
@@ -362,20 +373,33 @@ fn Hero(
                             }
                         }
                     }
+                    // The source count used to sit here beside the chapter total. It is an
+                    // operational fact about how many providers this deployment happens to
+                    // carry the title on, not a property of the work, and next to a length it
+                    // read as one. What replaces it is what a reader actually asks of a series
+                    // page before committing: how much there is, how far it goes, and whether
+                    // it is still moving.
                     div { class: "ik-stat-inline",
-                        div { class: "item",
-                            {
-                                i18n.args(
-                                    "series.chapterCount",
-                                    &[("count", &whole_chapters.to_string())],
-                                )
-                            }
-                        }
                         div { class: "item",
                             span { style: "display:flex;color:var(--jade-bright);",
                                 Ic { icon: Icon::Layers, size: 15 }
                             }
-                            {i18n.plural("series.sources", source_count, &[])}
+                            {i18n.plural("series.chapterTally", whole_chapters_i64, &[])}
+                        }
+                        if let Some(latest) = latest_number {
+                            div { class: "item",
+                                {i18n.args("series.upTo", &[("number", &chapter_number(latest))])}
+                            }
+                        }
+                        if part_releases > 0 {
+                            div { class: "item",
+                                {i18n.plural("series.partTally", part_releases, &[])}
+                            }
+                        }
+                        if let Some(updated) = latest_release.clone() {
+                            div { class: "item",
+                                {i18n.args("series.lastRelease", &[("when", &updated)])}
+                            }
                         }
                     }
                     div { class: "ik-flex", style: "gap:9px;flex-wrap:wrap;",

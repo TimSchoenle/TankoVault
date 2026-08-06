@@ -383,6 +383,7 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::admin_sync_push))
         .routes(routes!(admin::admin_sync_unlink))
         .routes(routes!(admin::clear_sync_mapping))
+        .routes(routes!(admin::enrichment_status))
         // admin
         .routes(routes!(admin::system_stats))
         .routes(routes!(admin::audit_log))

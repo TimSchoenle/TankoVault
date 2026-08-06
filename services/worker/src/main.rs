@@ -200,6 +200,7 @@ async fn build(cfg: &Config) -> anyhow::Result<Built> {
             max_catalog_pages: cfg.worker.max_catalog_pages,
             matching: cfg.matching.clone(),
             metadata_priority: cfg.metadata.priority.clone(),
+            tag_blocklist: cfg.metadata.tag_blocklist(),
             outliers: cfg.chapter_outliers.policy(),
         },
     );

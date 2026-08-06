@@ -1,11 +1,14 @@
 //! Home dashboard (`DESIGN_SPEC` §7.1) — the signed-in reader's landing screen. Greeting +
-//! lifetime stat tiles, a continue-reading rail, a day-grouped "New in your watchlist" feed,
-//! and a "Because you read" recommendations shelf.
+//! lifetime stat tiles, a continue-reading rail and a day-grouped "New in your watchlist" feed.
+//!
+//! Recommendations used to close this screen and now live at [`crate::Route::Recommendations`].
+//! They were the fourth section down, so they got whatever room was left: a short shelf below
+//! the fold with each suggestion's reason squeezed into one grey line. This screen is about what
+//! the reader is *already* reading; what they might read next is a different question and now
+//! has a page that can answer it properly.
 
 use crate::api;
-use crate::components::{
-    async_list, async_view, AuthRequired, Cover, RecCard, SkeletonBlock, SkeletonRows,
-};
+use crate::components::{async_list, AuthRequired, Cover, SkeletonBlock, SkeletonRows};
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -81,30 +84,6 @@ pub(crate) fn Home() -> Element {
                     items.sort_by(|a, b| a.unread.cmp(&b.unread));
                     items
                 })
-                .map_err(|e| api::friendly_error(i18n, e))
-        }
-    });
-
-    // Its own handle: dismissing a recommendation must refetch the shelf, and only the shelf —
-    // the feed, the stats and the continue rail are unaffected by that write.
-    let reload_recs = use_reload();
-    let recommendations = use_resource(move || {
-        reload_recs.track();
-        let client = api.client();
-        // Gated here as well as server-side: with the feature off the endpoint answers 404, and
-        // an error box under a "Because you read" heading reads as a fault rather than a
-        // deployment that does not offer recommendations.
-        let offered =
-            session.is_authenticated() && caps.has_feature(Feature::CatalogueRecommendations);
-        async move {
-            if !offered {
-                return Ok(Vec::new());
-            }
-            client
-                .recommendations()
-                .send()
-                .await
-                .map(ResponseValue::into_inner)
                 .map_err(|e| api::friendly_error(i18n, e))
         }
     });
@@ -187,30 +166,19 @@ pub(crate) fn Home() -> Element {
             )
         }
 
-        // Recommendations are a bonus shelf: when there is nothing to suggest the whole
-        // section disappears rather than showing an empty state for something unasked for.
-        {
-            async_view(
-                &recommendations,
-                reload_recs,
-                || rsx! { SkeletonBlock { height: 96 } },
-                |items| {
-                    if items.is_empty() {
-                        return rsx! {};
-                    }
-                    rsx! {
-                        div { class: "ik-section-head",
-                            Ic { icon: Icon::AutoAwesome, size: 20 }
-                            h2 { {i18n.t("home.recommendations.title")} }
-                        }
-                        div { class: "ik-grid",
-                            for item in items.iter().cloned() {
-                                RecCard { key: "{item.id}", item, reload: reload_recs }
-                            }
-                        }
-                    }
-                },
-            )
+        // A pointer, not the shelf. The screen no longer carries recommendations, and a reader
+        // who only ever lands here would otherwise never learn the surface exists.
+        if caps.has_feature(Feature::CatalogueRecommendations) {
+            Link { to: Route::Recommendations {}, class: "ik-cta-row",
+                span { class: "ik-flex", style: "gap:9px;align-items:center;",
+                    Ic { icon: Icon::AutoAwesome, size: 18 }
+                    span { style: "font-weight:600;", {i18n.t("home.recommendations.title")} }
+                }
+                span { class: "ik-muted", style: "font-size:13px;",
+                    {i18n.t("home.recommendations.cta")}
+                }
+                Ic { icon: Icon::ArrowForward, size: 16 }
+            }
         }
     }
 }

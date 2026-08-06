@@ -17,6 +17,7 @@ pub(crate) fn Rail() -> Element {
     let route: Route = use_route();
     let unread = *use_context::<UnreadBadge>().0.read();
     let caps = use_capabilities();
+    let session = use_session();
 
     // Each entry needs both: the reader is allowed, and the deployment offers the feature.
     let show_search = caps.has_feature(Feature::CatalogueSearch);
@@ -24,6 +25,9 @@ pub(crate) fn Rail() -> Element {
     let show_watchlist = caps.has_feature(Feature::TrackingWatchlist);
     let show_notifications = caps.has_feature(Feature::NotificationsInApp);
     let show_console = caps.is_staff();
+    // Signed-out readers have no taste profile, so the destination would be an auth wall.
+    let show_recommendations =
+        caps.has_feature(Feature::CatalogueRecommendations) && session.is_authenticated();
 
     rsx! {
         nav { class: "ik-rail", "aria-label": i18n.t("nav.railLabel"),
@@ -46,6 +50,9 @@ pub(crate) fn Rail() -> Element {
             }
             if show_search {
                 NavLink { to: Route::Search { q: String::new() }, label: i18n.t("nav.search"), icon: Icon::Search, current: route.clone() }
+            }
+            if show_recommendations {
+                NavLink { to: Route::Recommendations {}, label: i18n.t("nav.recommendations"), icon: Icon::AutoAwesome, current: route.clone() }
             }
 
             if show_watchlist || show_notifications {
@@ -182,7 +189,10 @@ fn NavLink(
             Ic { icon, size: 18 }
             span { class: "label", "{label}" }
             if badge > 0 {
-                span { class: "ik-nav-badge", "{badge}" }
+                // Compacted, not raw: the badge is a fixed pill and a four-figure inbox used to
+                // widen it past the label it sits beside. `title` keeps the exact number
+                // reachable for anyone who wants it.
+                span { class: "ik-nav-badge", title: "{badge}", {crate::util::compact_count(badge)} }
             }
         }
     }

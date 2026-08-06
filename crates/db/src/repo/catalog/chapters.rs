@@ -290,3 +290,60 @@ pub async fn list_chapters_across<'e, E: PgExecutor<'e>>(
     .await?;
     Ok(rows.into_iter().map(Chapter::from).collect())
 }
+
+/// The de-duplicated chapter figures a catalogue card shows.
+pub struct SeriesChapterStats {
+    /// Distinct **whole** chapters across every source, so a title carried by four providers
+    /// counts its chapters once. Part releases collapse into their whole chapter, matching what
+    /// the series screen counts.
+    pub chapter_count: i64,
+    /// The highest chapter number any source carries.
+    pub latest_number: Option<f64>,
+}
+
+/// [`SeriesChapterStats`] for a set of series, in one statement.
+///
+/// Batched rather than folded into the browse projection as a correlated subquery: the browse
+/// statements are the ones the plan audit budgets, and a `chapters` reach per candidate row is
+/// charged against every row of `series` under a generic plan. Keyed on the page's ids, this
+/// touches only the rows about to be rendered.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only. Inner join: a series whose sources hold no chapters is absent
+/// from the map rather than present as zero — callers must treat a missing key as zero.
+pub async fn chapter_stats_for_series<'e, E: PgExecutor<'e>>(
+    exec: E,
+    series_ids: &[SeriesId],
+) -> DbResult<std::collections::HashMap<SeriesId, SeriesChapterStats>> {
+    #[derive(FromRow)]
+    struct Row {
+        series_id: Uuid,
+        chapters: i64,
+        latest: Option<f64>,
+    }
+    let ids: Vec<Uuid> = series_ids.iter().map(|s| s.as_uuid()).collect();
+    let rows = sqlx::query_as!(
+        Row,
+        "SELECT ss.series_id, \
+                count(DISTINCT floor(c.number)) AS \"chapters!\", \
+                max(c.number)::float8 AS \"latest?\" \
+         FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+         WHERE ss.series_id = ANY($1) \
+         GROUP BY ss.series_id",
+        &ids,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            (
+                SeriesId::from_uuid(r.series_id),
+                SeriesChapterStats {
+                    chapter_count: r.chapters,
+                    latest_number: r.latest,
+                },
+            )
+        })
+        .collect())
+}

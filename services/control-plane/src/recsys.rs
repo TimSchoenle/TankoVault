@@ -161,26 +161,39 @@ async fn run_stages(
     };
 
     if full {
-        recsys::update_build_stage(pool, "full:features", 0).await?;
-        report.series_built = extract_all(pool, budget, generation).await?;
+        // Read once, up front: every full stage walks either the catalogue or the subset of it
+        // that has features, so this is the denominator the console draws its progress bar
+        // against. Display only — a failed read would cost a bar, not a build.
+        let catalogue = recsys::read_model_coverage(pool).await?.series_total;
 
-        recsys::update_build_stage(pool, "full:vocabulary", 0).await?;
+        stage(pool, "full:features", 0, catalogue).await?;
+        report.series_built = extract_all(pool, budget, generation, catalogue).await?;
+
+        stage(pool, "full:vocabulary", 0, 0).await?;
         report.vocabulary = vocabulary_pass(pool, budget.dense_input_cap).await?;
 
-        recsys::update_build_stage(pool, "full:basis", 0).await?;
+        stage(pool, "full:basis", 0, 0).await?;
         let vocabulary = dense_map(pool).await?;
         let basis = solve_basis(pool, budget, &vocabulary).await?;
         persist_basis(pool, &basis).await?;
         report.dense_dims = i64::try_from(basis.width()).unwrap_or(i64::MAX);
 
-        recsys::update_build_stage(pool, "full:embedding", 0).await?;
-        project_all(pool, budget, generation, &basis, &vocabulary).await?;
+        stage(pool, "full:embedding", 0, report.series_built).await?;
+        project_all(
+            pool,
+            budget,
+            generation,
+            &basis,
+            &vocabulary,
+            report.series_built,
+        )
+        .await?;
 
-        recsys::update_build_stage(pool, "full:index", 0).await?;
+        stage(pool, "full:index", 0, 0).await?;
         recsys::create_embedding_index(pool, budget.hnsw_m, budget.hnsw_ef_construction).await?;
 
-        recsys::update_build_stage(pool, "full:priors", 0).await?;
-        prior_pass(pool, tuning, generation, None).await?;
+        stage(pool, "full:priors", 0, catalogue).await?;
+        prior_pass(pool, tuning, generation, None, catalogue).await?;
 
         recsys::delete_stale_generations(pool, generation).await?;
     } else {
@@ -197,9 +210,19 @@ async fn run_stages(
 
         let touched = incremental_targets(pool, budget).await?;
         report.series_built = i64::try_from(touched.len()).unwrap_or(i64::MAX);
+        // The work list is only knowable after it is claimed, which is why the incremental run
+        // publishes its denominator here rather than at `start_build`.
+        stage(pool, "incremental", 0, report.series_built).await?;
         if !touched.is_empty() {
             extract_and_project(pool, budget, generation, &touched, &basis, &vocabulary).await?;
-            prior_pass(pool, tuning, generation, Some(&touched)).await?;
+            prior_pass(
+                pool,
+                tuning,
+                generation,
+                Some(&touched),
+                report.series_built,
+            )
+            .await?;
         }
         // Cheap and idempotent: a deployment whose index build was interrupted gets it back on
         // the next incremental pass instead of waiting for the next full one.
@@ -209,8 +232,28 @@ async fn run_stages(
     Ok(report)
 }
 
+/// Publish the stage a build has reached, with what it is counting and what towards.
+///
+/// The two counts are `i64` here and `i32` in the column; a catalogue past two billion series
+/// saturates the display rather than failing the build over a progress figure.
+async fn stage(pool: &PgPool, name: &str, done: i64, total: i64) -> anyhow::Result<()> {
+    recsys::update_build_stage(
+        pool,
+        name,
+        i32::try_from(done).unwrap_or(i32::MAX),
+        i32::try_from(total).unwrap_or(i32::MAX),
+    )
+    .await?;
+    Ok(())
+}
+
 /// Extract features for the whole catalogue, one keyset page at a time.
-async fn extract_all(pool: &PgPool, budget: BuildBudget, generation: i32) -> anyhow::Result<i64> {
+async fn extract_all(
+    pool: &PgPool,
+    budget: BuildBudget,
+    generation: i32,
+    total: i64,
+) -> anyhow::Result<i64> {
     let mut cursor: Option<SeriesId> = None;
     let mut built = 0_i64;
     loop {
@@ -221,12 +264,7 @@ async fn extract_all(pool: &PgPool, budget: BuildBudget, generation: i32) -> any
         let stored = extract_batch(pool, &page, generation).await?;
         built += i64::try_from(stored.len()).unwrap_or(0);
         if built % (budget.batch * 20) == 0 {
-            recsys::update_build_stage(
-                pool,
-                "full:features",
-                i32::try_from(built).unwrap_or(i32::MAX),
-            )
-            .await?;
+            stage(pool, "full:features", built, total).await?;
         }
     }
     Ok(built)
@@ -430,8 +468,10 @@ async fn project_all(
     generation: i32,
     basis: &Basis,
     vocabulary: &DenseMap,
+    total: i64,
 ) -> anyhow::Result<()> {
     let mut cursor: Option<SeriesId> = None;
+    let mut done = 0_i64;
     loop {
         let page = recsys::read_features(pool, cursor, budget.batch).await?;
         let Some((last, _, _)) = page.last() else {
@@ -447,6 +487,12 @@ async fn project_all(
             })
             .collect();
         recsys::write_embeddings(pool, &ids, &vectors, generation).await?;
+        done += i64::try_from(ids.len()).unwrap_or(0);
+        // Every 20 pages, matching `extract_all`: often enough that a long projection visibly
+        // moves, rare enough that the progress write is noise beside the batch it reports.
+        if done % (budget.batch * 20) == 0 {
+            stage(pool, "full:embedding", done, total).await?;
+        }
     }
     Ok(())
 }
@@ -547,15 +593,23 @@ async fn prior_pass(
     tuning: BuildTuning,
     generation: i32,
     subset: Option<&[SeriesId]>,
+    total: i64,
 ) -> anyhow::Result<()> {
     let wanted: Option<std::collections::HashSet<uuid::Uuid>> =
         subset.map(|ids| ids.iter().copied().map(SeriesId::as_uuid).collect());
 
     let mut cursor: Option<SeriesId> = None;
+    let mut walked = 0_i64;
     loop {
         let ids = recsys::page_series_ids(pool, cursor, tuning.budget.batch).await?;
         let Some(last) = ids.last() else { break };
         cursor = Some(*last);
+        walked += i64::try_from(ids.len()).unwrap_or(0);
+        // Only the full path reports here: the incremental one filters this same walk down to a
+        // claimed subset, so pages walked is not what its bar is counting.
+        if wanted.is_none() && walked % (tuning.budget.batch * 20) == 0 {
+            stage(pool, "full:priors", walked, total).await?;
+        }
 
         let page = recsys::prior_inputs_for(pool, &ids).await?;
         let rows: Vec<&recsys::PriorInputs> = page

@@ -14,13 +14,34 @@ use crate::hooks::{use_busy, use_outcome, use_reload, Busy, Outcome, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::state::capabilities::use_capabilities;
-use crate::util::{iso_date, thousands};
+use crate::util::{iso_date, rel_time, thousands};
 use crate::wire::types::{
     Applies, ModelHealthView, Permission, RebuildRequest, RecsysBuildMode, SetTunable,
     TunableGroup, TunableKind, TunableView,
 };
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
+
+/// How often the health panel re-reads itself while a build holds the claim.
+///
+/// Fast enough that a progress bar visibly moves, slow enough that it is nothing beside the work
+/// the build is doing. Only ticks while `building`; see [`ModelHealth`].
+const BUILD_POLL_MS: u32 = 3_000;
+
+/// The build stages a full run passes through, in order, so the console can say "4 of 6" rather
+/// than printing a bare token whose position in the sequence only the builder knows.
+///
+/// Hand-listed against `services/control-plane/src/recsys.rs`; a stage this does not know is
+/// shown by name with no ordinal, which is the honest degradation — a wrong ordinal would claim
+/// a run is further along than it is.
+const FULL_STAGES: [&str; 6] = [
+    "full:features",
+    "full:vocabulary",
+    "full:basis",
+    "full:embedding",
+    "full:index",
+    "full:priors",
+];
 
 /// The groups in display order, each with the catalogue key that titles it.
 ///
@@ -97,12 +118,20 @@ pub(super) fn RecommendationsPanel() -> Element {
 }
 
 /// What the model is, how much of the catalogue it covers, and the two rebuilds.
+///
+/// This one panel *is* on a refresh tick, unlike the tuning rows below it — and for the same
+/// reason they are not. A background refetch is destructive over a half-typed value; over a
+/// read-only progress figure it is the entire point. A build takes minutes and the operator who
+/// pressed the button has no other way to tell a run that is working from one that has hung,
+/// short of reloading the page repeatedly.
 #[component]
 fn ModelHealth(can_write: bool, reload: Reload) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
+    let tick = use_reload();
     let health = use_resource(move || {
         reload.track();
+        tick.track();
         let client = api.client();
         async move {
             client
@@ -111,6 +140,18 @@ fn ModelHealth(can_write: bool, reload: Reload) -> Element {
                 .await
                 .map(ResponseValue::into_inner)
                 .map_err(|e| api::friendly_error(i18n, e))
+        }
+    });
+
+    // Only while something is running. An idle model's figures do not move, so a standing timer
+    // over them would be a request every few seconds for an answer that cannot change.
+    let building = matches!(&*health.read_unchecked(), Some(Ok(view)) if view.building);
+    use_future(move || async move {
+        loop {
+            gloo_timers::future::TimeoutFuture::new(BUILD_POLL_MS).await;
+            if building {
+                tick.bump();
+            }
         }
     });
 
@@ -182,6 +223,15 @@ fn HealthBody(view: ModelHealthView, can_write: bool, reload: Reload) -> Element
             }
         }
 
+        if view.building {
+            BuildProgress {
+                stage: view.stage.clone(),
+                done: view.series_built,
+                total: view.stage_total,
+                started_at: view.started_at.clone(),
+            }
+        }
+
         // A failed run releases its claim, so this is the only place the failure is visible at
         // all — an unbuilt model and a broken one look identical in the coverage figures.
         if let Some(error) = view.error.clone() {
@@ -231,6 +281,90 @@ fn HealthBody(view: ModelHealthView, can_write: bool, reload: Reload) -> Element
                 label: i18n.t("console.recsys.kpi.lastRun"),
                 value: thousands(i64::from(view.series_built)),
                 sub: i18n.t("console.recsys.kpi.lastRunSub"),
+            }
+        }
+    }
+}
+
+/// How far a running build has got.
+///
+/// Shown only while one holds the claim. Before this the panel said `full:embedding` and nothing
+/// else, so the difference between a build ten seconds in and one wedged for an hour was
+/// invisible — an operator's only recourse was to watch the coverage counts and guess. Three
+/// facts answer it: which stage of how many, how far through that stage, and how long the run
+/// has been going.
+///
+/// The bar is omitted rather than faked when the stage published no total: `full:vocabulary`,
+/// `full:basis` and `full:index` are single database operations with no per-series progress to
+/// report, and a bar that sat at zero through them would read as a stall.
+#[component]
+fn BuildProgress(stage: String, done: i32, total: i32, started_at: Option<String>) -> Element {
+    let i18n = use_i18n();
+
+    let position = FULL_STAGES.iter().position(|name| *name == stage);
+    let step = position.map(|index| {
+        i18n.args(
+            "console.recsys.stageStep",
+            &[
+                ("n", &(index + 1).to_string()),
+                ("of", &FULL_STAGES.len().to_string()),
+            ],
+        )
+    });
+    let elapsed = started_at
+        .as_deref()
+        .map(|at| rel_time(i18n, Some(at)))
+        .unwrap_or_default();
+
+    // Integer percent, clamped: `stage_total` is read once at the top of a stage and `done`
+    // counts up against it, so a catalogue that grew mid-run can overshoot it.
+    let percent = if total > 0 {
+        Some((i64::from(done) * 100 / i64::from(total)).clamp(0, 100))
+    } else {
+        None
+    };
+
+    rsx! {
+        div { style: "margin-bottom:14px;",
+            div { class: "ik-flex", style: "gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px;",
+                span { class: "ik-mono", style: "font-size:12.5px;", "{stage}" }
+                if let Some(step) = step {
+                    span { class: "ik-mono ik-muted", style: "font-size:11.5px;", "{step}" }
+                }
+                span { class: "ik-mono ik-muted", style: "font-size:11.5px;",
+                    if let Some(percent) = percent {
+                        {
+                            i18n.args(
+                                "console.recsys.progressOf",
+                                &[
+                                    ("done", &thousands(i64::from(done))),
+                                    ("total", &thousands(i64::from(total))),
+                                    ("percent", &percent.to_string()),
+                                ],
+                            )
+                        }
+                    } else {
+                        {i18n.args("console.recsys.progressWorking", &[("done", &thousands(i64::from(done)))])}
+                    }
+                }
+                if !elapsed.is_empty() {
+                    span { class: "ik-mono ik-muted", style: "font-size:11.5px;margin-left:auto;",
+                        {i18n.args("console.recsys.runningFor", &[("since", &elapsed)])}
+                    }
+                }
+            }
+            if let Some(percent) = percent {
+                div { class: "ik-progress",
+                    role: "progressbar",
+                    "aria-valuenow": "{percent}",
+                    "aria-valuemin": "0",
+                    "aria-valuemax": "100",
+                    span { style: "width:{percent}%;" }
+                }
+            } else {
+                // Indeterminate: the stage is doing work this panel cannot measure. Striped
+                // rather than empty, so it does not read as a bar stuck at zero.
+                div { class: "ik-progress indeterminate", span {} }
             }
         }
     }

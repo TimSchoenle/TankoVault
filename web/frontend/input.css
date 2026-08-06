@@ -76,7 +76,9 @@
   /* Metrics — §4 */
   --radius: 14px;
   --rail-w: 280px;
-  --card: 158px;
+  /* Cover width. Raised from 158px: at that size a two-line title and the meta rows below it
+   * competed with the artwork for a card barely wider than a thumbnail. */
+  --card: 190px;
   --gap: 18px;
 
   /* The measured column (layout handoff §2). `--measure` caps every band inside `.ik-main` —
@@ -133,8 +135,8 @@
 [data-accent="azure"]    { --acc: #3e86c9; --acc2: #66a4e0; --acc3: #aacdec; --acc-dk: #255c8f; }
 [data-accent="amethyst"] { --acc: #8b5cf6; --acc2: #a985f8; --acc3: #cebafb; --acc-dk: #6334c9; }
 
-[data-density="cozy"]    { --card: 198px; --gap: 22px; }
-[data-density="compact"] { --card: 124px; --gap: 12px; }
+[data-density="cozy"]    { --card: 232px; --gap: 22px; }
+[data-density="compact"] { --card: 150px; --gap: 12px; }
 
 [data-cover="duotone"] { --cover-fallback: linear-gradient(155deg, hsl(222 20% 27%) 0%, hsl(222 26% 15%) 45%, hsl(222 34% 8%) 100%); }
 [data-cover="vivid"]   { --cover-fallback: radial-gradient(120% 120% at 20% 0%, hsl(16 74% 46%) 0%, hsl(206 80% 26%) 55%, hsl(206 72% 12%) 100%); }
@@ -241,8 +243,9 @@ a { color: inherit; text-decoration: none; }
 }
 .ik-nav-link .label { flex: 1; min-width: 0; }
 .ik-nav-badge {
-  margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: #fff;
+  margin-left: auto; flex: none; font-family: var(--font-mono); font-size: 11px; color: #fff;
   background: var(--acc); border-radius: 999px; padding: 1px 7px; line-height: 1.5;
+  max-width: 46px; overflow: hidden;
 }
 
 .ik-rail-spacer { flex: 1; }
@@ -301,7 +304,11 @@ a { color: inherit; text-decoration: none; }
 .ik-bell.compact { display: none; }
 .ik-bell { position: relative; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; color: var(--text-3); border: 1px solid var(--border-ctl); background: var(--surface); }
 .ik-bell:hover { border-color: var(--acc); color: var(--text); }
-.ik-bell .dot { position: absolute; top: 5px; right: 6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--acc); color: #fff; font-family: var(--font-mono); font-size: 10px; display: grid; place-items: center; }
+/* `max-width` + `pointer-events: none` are the guard rails, not decoration: this pill sits on
+ * the bell's corner, and before the count was compacted a four-figure inbox grew it wider than
+ * the 40px button and pushed the top bar's actions out of line. The formatter bounds the string
+ * (`util::compact_count`); these bound what happens if one ever gets past it. */
+.ik-bell .dot { position: absolute; top: 3px; right: 2px; min-width: 16px; max-width: 34px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--acc); color: #fff; font-family: var(--font-mono); font-size: 10px; line-height: 1; display: grid; place-items: center; overflow: hidden; pointer-events: none; }
 
 /* No `max-width` here: the cap belongs to the `.ik-measure` row inside, so the content band
  * spans the window and only its inner column is measured. Left-pinning this block is what
@@ -357,7 +364,7 @@ a { color: inherit; text-decoration: none; }
 .ik-tab-item.active svg { color: var(--acc); }
 .ik-tab-item:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
 .ik-tab-label { font-size: 10.5px; font-weight: 500; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ik-tab-badge { position: absolute; top: 4px; left: 52%; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; background: var(--acc); color: #fff; font-family: var(--font-mono); font-size: 9.5px; display: grid; place-items: center; }
+.ik-tab-badge { position: absolute; top: 4px; left: 52%; min-width: 15px; max-width: 32px; height: 15px; padding: 0 4px; border-radius: 999px; background: var(--acc); color: #fff; font-family: var(--font-mono); font-size: 9.5px; line-height: 1; display: grid; place-items: center; overflow: hidden; }
 
 /* The `More` sheet: everything the fixed five tabs cannot carry. */
 .ik-sheet-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.5); border: none; padding: 0; }
@@ -450,18 +457,34 @@ a { color: inherit; text-decoration: none; }
 .ik-section-head .more { margin-left: auto; font-size: 13px; color: var(--muted); }
 .ik-section-head .more:hover { color: var(--acc); }
 
+/* The pointer that replaced the home recommendations shelf: one full-width row, so it reads as
+ * a destination rather than as a section that failed to load. */
+.ik-cta-row { display: flex; align-items: center; gap: 14px; margin-top: 26px; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: inherit; transition: border-color 120ms ease; }
+.ik-cta-row:hover { border-color: var(--acc); }
+.ik-cta-row > .ik-muted { margin-left: auto; }
+@media (max-width: 560px) { .ik-cta-row > .ik-muted { display: none; } }
+
 /* ============================================================================
  * Cards, grids, tiles
  * ========================================================================== */
 .ik-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card), 1fr)); gap: var(--gap); }
 .ik-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; transition: transform 120ms ease, border-color 120ms ease; }
 .ik-card:hover { transform: translateY(-2px); border-color: var(--acc); }
-.ik-cover, .ik-cover-fallback { aspect-ratio: 2/3; width: 100%; display: block; background: var(--cover-fallback); }
-.ik-cover { object-fit: cover; }
+/* `aspect-ratio` reserves the box before the bytes arrive, and `min-height: 0` keeps it from
+ * being floored by the alt text of an image that never does. `Cover` swaps a failed <img> for
+ * the fallback element (a broken replaced element ignores aspect-ratio and shrinks to one line
+ * of alt text, which is what used to buckle the "More like this" rail), so these two rules and
+ * that swap are one mechanism — do not drop either half. */
+.ik-cover, .ik-cover-fallback { aspect-ratio: 2/3; width: 100%; min-height: 0; display: block; background: var(--cover-fallback); overflow: hidden; }
+.ik-cover { object-fit: cover; color: transparent; }
 .ik-cover-fallback { display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,.11); font-family: var(--font-display); font-size: 48px; font-weight: 700; }
 .ik-card-body { padding: 10px 12px 12px; }
 .ik-card-title { font-weight: 600; font-size: 14px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.ik-card-meta { margin-top: 6px; display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; }
+.ik-card-meta { margin-top: 6px; display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 11.5px; flex-wrap: wrap; }
+.ik-card-meta + .ik-card-meta { margin-top: 4px; }
+.ik-card-dot { color: var(--faint-2); }
+.ik-card-tags { margin-top: 8px; display: flex; gap: 5px; flex-wrap: wrap; overflow: hidden; max-height: 22px; }
+.ik-minitag { border: 1px solid var(--border-soft); border-radius: 6px; padding: 1px 6px; font-size: 10.5px; color: var(--text-3); white-space: nowrap; }
 
 /* Stat / KPI tiles. */
 .ik-stat-row { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -481,6 +504,7 @@ a { color: inherit; text-decoration: none; }
 .ik-tagchip { border: 1px solid var(--border-ctl); background: var(--surface); color: var(--muted); padding: 4px 10px; border-radius: 8px; font-size: 12px; cursor: pointer; user-select: none; }
 .ik-tagchip.inc { color: var(--acc3); border-color: color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--acc) 12%, transparent); }
 .ik-tagchip.exc { color: #a94436; border-color: color-mix(in srgb, #a94436 55%, transparent); text-decoration: line-through; }
+.ik-tagchip-n { font-family: var(--font-mono); font-size: 10px; color: var(--faint-2); margin-left: 6px; }
 
 .ik-pill { font-family: var(--font-mono); font-size: 11px; padding: 3px 9px; border-radius: 20px; border: 1px solid var(--border-ctl); text-transform: uppercase; letter-spacing: .05em; }
 .ik-pill.jade { color: var(--jade-bright); border-color: color-mix(in srgb, var(--jade) 55%, transparent); background: color-mix(in srgb, var(--jade) 13%, transparent); }
@@ -528,6 +552,16 @@ a { color: inherit; text-decoration: none; }
  * unbreakable token in the synopsis pushed the sidebar off the measured column. */
 .ik-body-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 28px; }
 .ik-sidebar-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+
+/* "More like this". The art box is sized in *both* dimensions on purpose: leaving the height to
+ * the image's aspect ratio meant a cover that failed to load had no ratio to apply, collapsed to
+ * the height of its alt text, and dragged the rest of the rail's rhythm with it. 56px is also
+ * roughly the smallest a cover stays recognisable at. */
+.ik-similar-row { display: flex; gap: 12px; align-items: flex-start; padding: 9px 0; color: inherit; border-bottom: 1px solid var(--border-soft); }
+.ik-similar-row:last-child { border-bottom: none; }
+.ik-similar-row:hover .ik-similar-art { border-color: var(--acc); }
+.ik-similar-art { width: 56px; height: 84px; flex: none; border-radius: 7px; overflow: hidden; border: 1px solid var(--border); transition: border-color 120ms ease; }
+.ik-similar-art .ik-cover, .ik-similar-art .ik-cover-fallback { width: 56px; height: 84px; aspect-ratio: auto; font-size: 22px; }
 /* Collapsed-by-default row exposing a full chapter's early part releases. */
 /* A `<button>`, not a `<div>`: the disclosure used to be a click-only div, so the sub-chapter
    releases behind it had no keyboard path at all. These four lines undo the UA button chrome
@@ -637,9 +671,12 @@ a { color: inherit; text-decoration: none; }
 .ik-wl-band-act:hover:not(:disabled) { color: var(--acc); }
 .ik-wl-band-act:disabled { opacity: .4; cursor: not-allowed; }
 
-/* The row. 54px is the whole budget: a cover thumb, a title, a progress bar and
-   one action, and nothing else fits — which is the point. */
-.ik-wl-row { height: 54px; border-bottom: 1px solid var(--border-soft); position: relative; }
+/* The row. 68px is the whole budget: a cover thumb, a title, a progress bar and
+   one action, and nothing else fits — which is the point. Raised from 54px so the
+   thumb can be a cover a reader recognises rather than a 28px colour swatch; the
+   height and `.ik-wl-thumb` move together, and `.ik-wl-band`'s sticky offset is
+   measured from the header, not from this. */
+.ik-wl-row { height: 68px; border-bottom: 1px solid var(--border-soft); position: relative; }
 .ik-wl-row:hover { background: rgba(255,255,255,.02); }
 .ik-wl-row.focused { background: rgba(255,255,255,.035); }
 .ik-wl-row.selected { box-shadow: inset 2px 0 0 var(--acc); background: color-mix(in srgb, var(--acc) 4%, transparent); }
@@ -650,8 +687,8 @@ a { color: inherit; text-decoration: none; }
 .ik-wl-check { accent-color: var(--acc); width: 15px; height: 15px; cursor: pointer; }
 
 .ik-wl-title { display: flex; align-items: center; gap: 11px; min-width: 0; }
-.ik-wl-thumb { width: 28px; height: 38px; flex: none; border-radius: 4px; overflow: hidden; }
-.ik-wl-thumb .ik-cover, .ik-wl-thumb .ik-cover-fallback { width: 28px; height: 38px; aspect-ratio: auto; font-size: 13px; }
+.ik-wl-thumb { width: 38px; height: 54px; flex: none; border-radius: 5px; overflow: hidden; }
+.ik-wl-thumb .ik-cover, .ik-wl-thumb .ik-cover-fallback { width: 38px; height: 54px; aspect-ratio: auto; font-size: 17px; }
 .ik-wl-name { display: flex; align-items: center; gap: 7px; min-width: 0; font-weight: 600; font-size: 13.5px; }
 .ik-wl-name a { color: inherit; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ik-wl-name a:hover { color: var(--acc3); }
@@ -703,7 +740,7 @@ a { color: inherit; text-decoration: none; }
 
 /* 4b — the cover grid. Seven-up at the design width, and it degrades by column
    count rather than by card size so the covers stay legible. */
-.ik-wl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 16px; padding-top: 16px; }
+.ik-wl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(172px, 1fr)); gap: 18px; padding-top: 16px; }
 .ik-wl-tile { min-width: 0; }
 .ik-wl-tile.selected { box-shadow: 0 0 0 2px var(--acc); border-radius: 10px; }
 .ik-wl-tile-art { position: relative; display: block; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
@@ -711,8 +748,8 @@ a { color: inherit; text-decoration: none; }
 .ik-wl-tile-warn { position: absolute; top: 6px; left: 6px; color: var(--star); background: rgba(0,0,0,.6); border-radius: 6px; padding: 3px; display: grid; place-items: center; }
 .ik-wl-tile-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(0,0,0,.5); }
 .ik-wl-tile-bar > span { display: block; height: 100%; background: var(--acc); }
-.ik-wl-tile-name { margin-top: 7px; font-weight: 600; font-size: 13px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.ik-wl-tile-meta { margin-top: 3px; font-size: 11px; color: var(--faint); }
+.ik-wl-tile-name { margin-top: 8px; font-weight: 600; font-size: 13.5px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ik-wl-tile-meta { margin-top: 3px; font-size: 11.5px; color: var(--faint); }
 
 /* Below the design's two-pane width the fixed cells stop fitting; the row keeps
    the title, the unread pill and the actions, which is the minimum that still
@@ -905,6 +942,11 @@ table.ik-table { width: 100%; border-collapse: collapse; }
 /* The resolved open target, right-aligned in the chapter header; anchors the source popover. */
 .ik-opens { margin-left: auto; text-align: right; position: relative; }
 .ik-progress.thin { height: 6px; }
+/* A stage whose size cannot be known without doing the work twice. A bar sitting at zero would
+ * read as a stall, which is the one thing this panel exists to rule out. */
+.ik-progress.indeterminate > span { width: 40%; animation: ikslide 1.4s ease-in-out infinite; }
+@keyframes ikslide { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce) { .ik-progress.indeterminate > span { animation: none; width: 100%; opacity: .45; } }
 .ik-chnote { font-size: 12px; line-height: 1.5; color: var(--faint); margin-top: 11px; }
 
 .ik-chtable { border: 1px solid var(--border); border-radius: 12px; }
@@ -1233,7 +1275,7 @@ table.ik-table { width: 100%; border-collapse: collapse; }
 
 /* Covers stop being legible below this, so the card shrinks before the column count drops. */
 @media (max-width: 560px) {
-  :root { --card: 124px; }
+  :root { --card: 148px; }
   .ik-hero { grid-template-columns: 1fr; }
 }
 @media (max-width: 400px) {

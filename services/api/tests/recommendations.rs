@@ -108,6 +108,7 @@ async fn ingest(app: &TestApp, provider: ProviderId, fixture: &Fixture) -> Serie
         },
         &MatchingConfig::default(),
         &MetadataPriority::default(),
+        &tankovault_domain::TagBlocklist::default(),
     )
     .await
     .expect("ingest")

@@ -6,13 +6,11 @@
 //! inside an `<a>` is not focusable in the order it appears, and clicking it navigates.
 
 use crate::api;
-use crate::components::Cover;
+use crate::components::{CardMeta, Cover};
 use crate::hooks::{use_busy, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
-use crate::models::{
-    because_series, ContentTypeExt, FeedbackBody, Recommendation, SeriesId, SeriesStatusExt,
-};
+use crate::models::{because_series, FeedbackBody, Recommendation, SeriesId};
 use crate::Route;
 use dioxus::prelude::*;
 
@@ -24,8 +22,11 @@ const NOT_INTERESTED: &str = "not_interested";
 const HIDE_FOREVER: &str = "hide_forever";
 
 /// One recommendation: the cover card, the reason it is here, and the refusal.
+///
+/// `detailed` is the difference between a card in a rail and a card on the screen that exists to
+/// explain itself: the same reason, given room and a label instead of a grey line under the meta.
 #[component]
-pub(crate) fn RecCard(item: Recommendation, reload: Reload) -> Element {
+pub(crate) fn RecCard(item: Recommendation, reload: Reload, detailed: bool) -> Element {
     let i18n = use_i18n();
     let mut asking = use_signal(|| false);
 
@@ -41,21 +42,25 @@ pub(crate) fn RecCard(item: Recommendation, reload: Reload) -> Element {
                 Cover { url: item.cover_url.clone(), title: item.title.clone() }
                 div { class: "ik-card-body",
                     div { class: "ik-card-title", "{item.title}" }
-                    div { class: "ik-card-meta",
-                        span { {i18n.t(item.content_type.label_key())} }
-                        span { "·" }
-                        span { {i18n.t(item.status.label_key())} }
-                        span { class: "ik-rail-spacer" }
-                        span { class: "ik-mono",
-                            {i18n.args("series.sourceCount", &[("count", &item.source_count.to_string())])}
-                        }
+                    CardMeta {
+                        content_type: item.content_type,
+                        status: item.status,
+                        chapter_count: item.chapter_count,
+                        latest_chapter: item.latest_chapter,
+                        release_year: item.release_year,
+                        tags: item.tags.clone(),
                     }
                 }
             }
             if *asking.read() {
                 Verdicts { series_id: item.id, reload, on_close: move |()| asking.set(false) }
             } else {
-                Because { title: item.because_title.clone(), seed, shared: item.shared.clone() }
+                Because {
+                    title: item.because_title.clone(),
+                    seed,
+                    shared: item.shared.clone(),
+                    detailed,
+                }
                 button {
                     class: "ik-btn",
                     style: "position:absolute;top:8px;right:8px;width:30px;height:30px;padding:0;justify-content:center;background:color-mix(in srgb,var(--bg) 72%,transparent);backdrop-filter:blur(3px);",
@@ -74,8 +79,17 @@ pub(crate) fn RecCard(item: Recommendation, reload: Reload) -> Element {
 /// Renders nothing at all when the server sent no seed — the profile, exact-feature and
 /// popularity paths genuinely have no single title to name, and inventing one ("picked for you")
 /// would dress a different kind of answer up as this one.
+///
+/// `detailed` gives the same two facts a heading and full-size type. On a rail the reason is a
+/// footnote to the cover; on the screen the reader opened *to see the reasons*, a 11.5px grey
+/// line is the wrong emphasis.
 #[component]
-fn Because(title: Option<String>, seed: Option<SeriesId>, shared: Vec<String>) -> Element {
+fn Because(
+    title: Option<String>,
+    seed: Option<SeriesId>,
+    shared: Vec<String>,
+    detailed: bool,
+) -> Element {
     let i18n = use_i18n();
     let Some(title) = title else {
         return rsx! {};
@@ -84,9 +98,19 @@ fn Because(title: Option<String>, seed: Option<SeriesId>, shared: Vec<String>) -
     // puts the title in the middle of the clause, and a prefix + `{title}` layout would build
     // that sentence in English word order whatever the catalogue says.
     let line = i18n.args("home.recommendations.because", &[("title", &title)]);
+    let line_style = if detailed {
+        "font-size:13px;color:var(--text-2);line-height:1.45;"
+    } else {
+        "font-size:11.5px;color:var(--muted);line-height:1.4;"
+    };
     rsx! {
-        div { style: "padding:0 12px 12px;",
-            div { style: "font-size:11.5px;color:var(--muted);line-height:1.4;",
+        div { class: "ik-rec-because", style: if detailed { "padding:0 12px 12px;border-top:1px solid var(--border-soft);margin-top:2px;padding-top:10px;" } else { "padding:0 12px 12px;" },
+            if detailed {
+                div { class: "ik-sec-lbl", style: "margin-bottom:5px;",
+                    {i18n.t("recommendations.whyLabel")}
+                }
+            }
+            div { style: "{line_style}",
                 if let Some(seed) = seed {
                     Link {
                         to: Route::Series { id: seed.to_string() },
@@ -98,7 +122,12 @@ fn Because(title: Option<String>, seed: Option<SeriesId>, shared: Vec<String>) -
                 }
             }
             if !shared.is_empty() {
-                div { class: "ik-flex", style: "flex-wrap:wrap;gap:5px;margin-top:7px;",
+                if detailed {
+                    div { class: "ik-muted", style: "font-size:11.5px;margin-top:8px;",
+                        {i18n.t("recommendations.sharesLabel")}
+                    }
+                }
+                div { class: "ik-flex", style: "flex-wrap:wrap;gap:5px;margin-top:5px;",
                     for feature in shared {
                         span {
                             key: "{feature}",

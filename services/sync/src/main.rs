@@ -80,6 +80,10 @@ struct MetadataConfig {
     /// Per-field source authority order (default: `AniList` before the adapters).
     #[serde(default)]
     priority: MetadataPriority,
+    /// Which scraped "genres" intake refuses. Shared with the worker via
+    /// [`tankovault_config::TagIntakeConfig`], because both write the same `tags` vocabulary.
+    #[serde(default)]
+    tags: tankovault_config::TagIntakeConfig,
     /// Whether the background enrichment worker runs. On by default.
     #[serde(default = "default_enrich_enabled")]
     enrich_enabled: bool,
@@ -98,6 +102,7 @@ impl Default for MetadataConfig {
     fn default() -> Self {
         Self {
             priority: MetadataPriority::default(),
+            tags: tankovault_config::TagIntakeConfig::default(),
             enrich_enabled: default_enrich_enabled(),
             enrich_interval_secs: default_enrich_interval_secs(),
             enrich_batch: default_enrich_batch(),
@@ -368,6 +373,7 @@ async fn serve_once(
         secret,
         default_policy,
         metadata.priority.clone(),
+        metadata.tags.blocklist(),
         &cfg.matching,
         providers,
     ));

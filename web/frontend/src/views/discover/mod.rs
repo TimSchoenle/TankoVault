@@ -25,19 +25,26 @@ const YEAR_MAX: i32 = 2026;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Sort {
     Updated,
+    /// Best match for the query. Only reachable from Search, which is the same endpoint with a
+    /// `query` — the Discover grid has nothing to rank, so this is not in [`Sort::ALL`].
+    Relevance,
     Title,
     Chapters,
-    Sources,
     Rating,
     Year,
 }
 
 impl Sort {
-    const ALL: [Sort; 6] = [
+    /// The orders the Discover control offers, in menu order.
+    ///
+    /// "Most sources" is deliberately absent. It ranks by how many providers this deployment
+    /// happens to have crawled a title on, which is an operational fact about the crawler and
+    /// not a property of the series — the same reasoning that took the source count off the
+    /// cards. The token is still accepted by the API for any client that sends it.
+    const ALL: [Sort; 5] = [
         Self::Updated,
         Self::Title,
         Self::Chapters,
-        Self::Sources,
         Self::Rating,
         Self::Year,
     ];
@@ -45,9 +52,9 @@ impl Sort {
     fn label_key(self) -> &'static str {
         match self {
             Self::Updated => "discover.sort.updated",
+            Self::Relevance => "discover.sort.relevance",
             Self::Title => "discover.sort.title",
             Self::Chapters => "discover.sort.chapters",
-            Self::Sources => "discover.sort.sources",
             Self::Rating => "discover.sort.rating",
             Self::Year => "discover.sort.year",
         }
@@ -55,18 +62,18 @@ impl Sort {
     fn value(self) -> &'static str {
         match self {
             Self::Updated => "updated",
+            Self::Relevance => "relevance",
             Self::Title => "title",
             Self::Chapters => "chapters",
-            Self::Sources => "sources",
             Self::Rating => "rating",
             Self::Year => "year",
         }
     }
     fn parse(v: &str) -> Sort {
         match v {
+            "relevance" => Self::Relevance,
             "title" => Self::Title,
             "chapters" => Self::Chapters,
-            "sources" => Self::Sources,
             "rating" => Self::Rating,
             "year" => Self::Year,
             _ => Self::Updated,
@@ -107,7 +114,7 @@ pub(crate) fn Discover() -> Element {
                 .unwrap_or_default()
         }
     });
-    let all_tags: Vec<Tag> = tags_res.read_unchecked().clone().unwrap_or_default();
+    let all_tags: Vec<TagFacet> = tags_res.read_unchecked().clone().unwrap_or_default();
 
     let providers_res = use_resource(move || {
         let client = api.client();

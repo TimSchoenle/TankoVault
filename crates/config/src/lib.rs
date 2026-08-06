@@ -40,7 +40,7 @@ pub use legal::{LegalConfig, LegalDocument};
 pub use loader::{Loaded, Sources, default_true, is_production, load, load_watched};
 pub use matching::MatchingConfig;
 pub use messaging::{NatsConfig, RedisConfig};
-pub use metadata::MetadataPriorityConfig;
+pub use metadata::{MetadataPriorityConfig, TagIntakeConfig};
 pub use metrics::MetricsConfig;
 pub use ratelimit::{RateLimitBackend, RateLimitConfig, RateLimitPolicy};
 pub use security::SecurityConfig;

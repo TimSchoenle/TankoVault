@@ -268,6 +268,38 @@ lets a later write honour the order at all. Values written before that migration
 Only `anilist` and `adapter` are accepted; anything else is a startup error rather than a
 silently ignored entry, so a typo cannot read as deliberate de-prioritisation.
 
+### `metadata.tags` — which scraped "genres" are refused
+
+Aggregator templates put a work's genre chips next to its status, its type and the labels of the
+summary block itself, and an adapter that scrapes the block scrapes all of it. What reached the
+catalogue was a tag called `Updating`, one called `Status`, one called `Manga`. They are not
+merely useless: each becomes a facet chip in Discover, a term in the recommender's vocabulary,
+and — because a term shared by half the catalogue looks like strong evidence to a similarity
+model — a feature that makes unrelated series look alike. This is the same defect migration
+`0025` repaired for `series_titles`, where the same labels had leaked in as alternative titles.
+
+Both writers apply the guard: the worker's catalogue scan and external sync's enrichment pass
+intern into one shared `tags` vocabulary, so a guard only one of them consulted would not be one.
+It is applied at the statement that creates the tag, so a refused term never reaches the table.
+
+Terms are matched on their **slug**, so `N/A`, `n/a` and `n-a` are one entry. The two lists add
+rather than replace: `BLOCKLIST` is what *this* deployment's providers turn out to emit on top of
+the shipped set, so adding one term does not silently drop the rest. The shipped defaults are
+three kinds and nothing arguable — placeholders (`updating`, `unknown`, `n-a`), scrape-template
+field labels (`status`, `genres`, `alternative`, `author`) and medium words that describe the
+format rather than the work (`manga`, `webtoon`); see `tankovault_domain::DEFAULT_BLOCKED_TAGS`
+for the list. Publication status (`completed`, `ongoing`) is deliberately **not** refused: it is
+a column rather than a tag, but some catalogues do publish it as a browsable facet.
+
+The guard runs at intake only. Tags already linked stay linked — nothing in the normal path
+retracts a tag — so switching a term on refuses it from the next scan onwards rather than
+cleaning up after the last one.
+
+| Key | Default | Services | Notes |
+|---|---|---|---|
+| `TANKOVAULT_METADATA__TAGS__USE_DEFAULTS` | `true` | worker, sync | Whether the shipped list applies. An escape hatch for a deployment whose catalogue genuinely uses one of those words as a genre. |
+| `TANKOVAULT_METADATA__TAGS__BLOCKLIST` | `[]` | worker, sync | Additional refused terms, added to the shipped list unless `USE_DEFAULTS` is off. Matched on the slug. |
+
 ### `chapter_outliers` — refusing implausible chapter numbers
 
 Aggregator sites publish listing entries that are not releases: a slug carrying a date

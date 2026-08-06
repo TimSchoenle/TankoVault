@@ -180,6 +180,7 @@ impl Fixture {
             },
             &MatchingConfig::default(),
             &MetadataPriority::default(),
+            &tankovault_domain::TagBlocklist::default(),
         )
         .await
         .expect("ingest local series")
@@ -195,6 +196,9 @@ impl Fixture {
             ConflictPolicy::NewestWins,
             serde_json::from_value::<MetadataPriority>(serde_json::json!({}))
                 .expect("default metadata priority"),
+            // Empty: these tests assert what reconciliation writes, and a shipped blocklist term
+            // appearing in a fixture would silently change that answer.
+            tankovault_domain::TagBlocklist::default(),
             &MatchingConfig::default(),
             providers_map,
         );
@@ -246,6 +250,7 @@ impl Fixture {
             },
             &MatchingConfig::default(),
             &MetadataPriority::default(),
+            &tankovault_domain::TagBlocklist::default(),
         )
         .await
         .expect("re-scrape local series");

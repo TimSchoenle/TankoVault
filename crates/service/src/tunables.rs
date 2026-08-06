@@ -406,7 +406,16 @@ mod tests {
             "recsys.serve.shelf_size".to_owned(),
             25.0,
         )])));
-        assert_eq!(set.get_i64(Tunable::ServeShelfSize), 12);
+        // Read from the registry rather than written out: what this pins is that a refresh
+        // *adopts* the source's value, not what any particular knob ships as. Hard-coding the
+        // default made a deliberate change to it look like a broken refresh.
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a `Count` tunable's default is a small whole number by construction"
+        )]
+        let shipped = Tunable::ServeShelfSize.default_value() as i64;
+        assert_ne!(shipped, 25, "the fixture must differ from the default");
+        assert_eq!(set.get_i64(Tunable::ServeShelfSize), shipped);
         set.refresh().await;
         assert_eq!(set.get_i64(Tunable::ServeShelfSize), 25);
     }

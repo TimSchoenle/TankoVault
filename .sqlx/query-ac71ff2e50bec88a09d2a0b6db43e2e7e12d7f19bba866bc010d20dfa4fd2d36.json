@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE metadata_sweep_state SET running = true, started_at = now(), finished_at = NULL, scanned = 0, enriched = 0, unresolved = 0, error = NULL WHERE id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "ac71ff2e50bec88a09d2a0b6db43e2e7e12d7f19bba866bc010d20dfa4fd2d36"
+}

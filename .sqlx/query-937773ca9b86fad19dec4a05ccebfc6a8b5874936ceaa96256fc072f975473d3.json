@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"series_total!\", count(*) FILTER (WHERE metadata_checked_at IS NULL) AS \"never_checked!\", count(*) FILTER (WHERE metadata_checked_at > now() - interval '1 day') AS \"checked_last_day!\" FROM series",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "never_checked!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "checked_last_day!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "937773ca9b86fad19dec4a05ccebfc6a8b5874936ceaa96256fc072f975473d3"
+}

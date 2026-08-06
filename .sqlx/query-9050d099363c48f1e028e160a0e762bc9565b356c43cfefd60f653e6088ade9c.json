@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE rec_build_state SET generation  = CASE WHEN $1 THEN generation + 1 ELSE generation END, stage       = CASE WHEN $1 THEN 'full:features' ELSE 'incremental' END, started_at  = now(), finished_at = NULL, series_built = 0, stage_total = 0, error       = NULL WHERE id AND stage = 'idle' RETURNING generation",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "generation",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "rec_build_state",
+            "name": "generation"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9050d099363c48f1e028e160a0e762bc9565b356c43cfefd60f653e6088ade9c"
+}

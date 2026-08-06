@@ -6,7 +6,7 @@ use tankovault_db::repo::catalog::{
     MetadataCandidate, MetadataEnrichment, SeriesEnrichmentRow, TagKind, TagLink, TagSource,
 };
 use tankovault_db::repo::{catalog, sync};
-use tankovault_domain::{MetadataPriority, SeriesId, normalize_title};
+use tankovault_domain::{MetadataPriority, SeriesId, TagBlocklist, normalize_title};
 use time::OffsetDateTime;
 
 use crate::provider::RemoteMetadata;
@@ -16,13 +16,21 @@ pub(crate) struct MetadataWriter {
     pool: PgPool,
     /// Which source has the final say per metadata field (default: `AniList` over adapters).
     metadata_priority: MetadataPriority,
+    /// Which scraped "genres" never become tags. The same guard the worker's ingest applies:
+    /// both paths intern into one shared `tags` vocabulary.
+    tag_blocklist: TagBlocklist,
 }
 
 impl MetadataWriter {
-    pub(crate) const fn new(pool: PgPool, metadata_priority: MetadataPriority) -> Self {
+    pub(crate) const fn new(
+        pool: PgPool,
+        metadata_priority: MetadataPriority,
+        tag_blocklist: TagBlocklist,
+    ) -> Self {
         Self {
             pool,
             metadata_priority,
+            tag_blocklist,
         }
     }
 
@@ -84,6 +92,7 @@ impl MetadataWriter {
                 authors: &meta.authors,
             },
             &self.metadata_priority,
+            &self.tag_blocklist,
         )
         .await?;
         Ok(())

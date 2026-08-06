@@ -75,7 +75,12 @@ pub(crate) fn TopBar() -> Element {
                             Ic { icon: Icon::Notifications, size: 18 }
                             if unread > 0 {
                                 // Polite, not assertive: an SSE-pushed count should not interrupt the reader.
-                                span { class: "dot", "aria-live": "polite", "{unread}" }
+                                //
+                                // Compacted: the dot is a fixed circle on the bell's corner, and a
+                                // literal four-figure count grew it past the icon and pushed the
+                                // bar's actions out of alignment. The `aria-label` above still
+                                // announces the exact number.
+                                span { class: "dot", "aria-live": "polite", {crate::util::compact_count(unread)} }
                             }
                         }
                     }

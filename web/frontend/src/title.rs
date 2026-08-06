@@ -75,6 +75,7 @@ pub(crate) fn page_name(route: &Route, i18n: Translator) -> String {
     match route {
         Route::Home {} => i18n.t("nav.home"),
         Route::Discover {} => i18n.t("nav.discover"),
+        Route::Recommendations {} => i18n.t("nav.recommendations"),
         Route::Series { .. } => i18n.t("title.series"),
         Route::Watchlist { .. } => i18n.t("nav.watchlist"),
         Route::Notifications {} => i18n.t("nav.notifications"),

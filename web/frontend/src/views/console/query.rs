@@ -31,6 +31,50 @@ impl Window {
         }
     }
 
+    /// The catalogue key of this window's display name (see [`crate::i18n`]).
+    pub(crate) fn label_key(self) -> &'static str {
+        match self {
+            Self::Any => "console.window.any",
+            Self::Hour => "console.window.hour",
+            Self::Day => "console.window.day",
+            Self::Week => "console.window.week",
+        }
+    }
+
+    /// How many hours back this window reaches; `None` is no lower bound at all.
+    ///
+    /// `u32` so the conversion to milliseconds below is lossless — these are small numbers, and
+    /// an `i64` here would only buy a precision-loss lint.
+    pub(crate) fn hours(self) -> Option<u32> {
+        match self {
+            Self::Any => None,
+            Self::Hour => Some(1),
+            Self::Day => Some(24),
+            Self::Week => Some(24 * 7),
+        }
+    }
+
+    /// The RFC 3339 instant this window starts at, as the API's `since` parameter wants it.
+    ///
+    /// `None` for [`Window::Any`], which is the absence of the parameter rather than a bound at
+    /// the beginning of time. Computed from the browser clock: the window is what the operator
+    /// sees on their own screen, and a server-relative one would drift against it.
+    pub(crate) fn since_iso(self) -> Option<String> {
+        const MS_PER_HOUR: f64 = 3_600_000.0;
+        let hours = self.hours()?;
+        let now = js_sys::Date::new_0();
+        let start = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(
+            now.get_time() - f64::from(hours) * MS_PER_HOUR,
+        ));
+        start.to_iso_string().as_string()
+    }
+
+    /// Parse a `?since=` token. An unrecognised one widens to "any time" rather than refusing
+    /// the link — a hand-edited URL should show more, never an error.
+    pub(crate) fn parse_token(token: &str) -> Self {
+        Self::parse(token)
+    }
+
     fn parse(token: &str) -> Self {
         Self::ALL
             .into_iter()

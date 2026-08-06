@@ -90,6 +90,115 @@ pub struct AuditView {
     pub created_at: OffsetDateTime,
 }
 
+/// What narrows a page of the audit trail.
+///
+/// Every field is a SQL predicate, never a client-side filter: the point of paging the trail is
+/// that the console no longer holds it, so it cannot filter what it does not have.
+#[derive(Debug, Clone, Default)]
+pub struct AuditFilter<'a> {
+    /// Records attributed to one actor. `None` matches every actor *and* the system.
+    pub actor_id: Option<UserId>,
+    /// Exact action key, e.g. `admin.user.update`.
+    pub action: Option<&'a str>,
+    /// Substring of the target, since a target is an opaque identifier the operator pastes.
+    pub target: Option<&'a str>,
+    pub since: Option<OffsetDateTime>,
+    pub until: Option<OffsetDateTime>,
+}
+
+/// One page of the audit trail, plus how many records the filter matches in total.
+#[derive(Debug, Clone)]
+pub struct AuditPage {
+    pub items: Vec<AuditView>,
+    pub total: i64,
+}
+
+/// A filtered, paged window on the audit trail, newest first.
+///
+/// Every predicate is `$n IS NULL OR …`, so one prepared statement serves every combination of
+/// filters — and each one is a *SQL* predicate, which is the whole point: with the trail paged,
+/// the console no longer holds it and cannot filter what it does not have.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only. A filter matching nothing is an empty page with `total: 0`,
+/// not [`crate::DbError::NotFound`]; as in [`crate::repo::user_admin::directory`], `total` is
+/// read off the first row, so it is only meaningful because every row carries the same value —
+/// and an offset past the end reports `0`.
+pub async fn list_filtered<'e, E: PgExecutor<'e>>(
+    exec: E,
+    filter: &AuditFilter<'_>,
+    limit: i64,
+    offset: i64,
+) -> DbResult<AuditPage> {
+    #[derive(FromRow)]
+    struct Row {
+        id: Uuid,
+        actor: Option<String>,
+        action: String,
+        target: Option<String>,
+        detail: Json,
+        created_at: OffsetDateTime,
+        total: i64,
+    }
+    // `target` matches as a substring because it is an opaque identifier an operator pastes a
+    // fragment of; `action` matches exactly, because it comes from a closed vocabulary the
+    // filter offers as a list.
+    let rows: Vec<Row> = sqlx::query_as!(
+        Row,
+        "WITH matched AS ( \
+             SELECT a.* FROM audit_log a \
+             WHERE ($1::uuid IS NULL OR a.actor_id = $1) \
+               AND ($2::text IS NULL OR a.action = $2) \
+               AND ($3::text IS NULL OR a.target ILIKE '%' || $3 || '%') \
+               AND ($4::timestamptz IS NULL OR a.created_at >= $4) \
+               AND ($5::timestamptz IS NULL OR a.created_at < $5) \
+         ) \
+         SELECT m.id, u.username AS \"actor?\", m.action, m.target, m.detail, m.created_at, \
+                (SELECT count(*) FROM matched) AS \"total!\" \
+         FROM matched m \
+         LEFT JOIN users u ON u.id = m.actor_id \
+         ORDER BY m.created_at DESC \
+         LIMIT $6 OFFSET $7",
+        filter.actor_id.map(UserId::as_uuid),
+        filter.action,
+        filter.target,
+        filter.since,
+        filter.until,
+        limit,
+        offset,
+    )
+    .fetch_all(exec)
+    .await?;
+
+    let total = rows.first().map_or(0, |row| row.total);
+    let items = rows
+        .into_iter()
+        .map(|row| AuditView {
+            id: row.id,
+            actor: row.actor,
+            action: row.action,
+            target: row.target,
+            detail: row.detail,
+            created_at: row.created_at,
+        })
+        .collect();
+    Ok(AuditPage { items, total })
+}
+
+/// Every distinct action key present in the trail, for the filter's picker.
+///
+/// Read from the data rather than from a hand-written list: the vocabulary is whatever handlers
+/// have recorded, and a list here would go stale the first time one is added.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn distinct_actions<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<String>> {
+    let rows = sqlx::query_scalar!("SELECT DISTINCT action FROM audit_log ORDER BY action")
+        .fetch_all(exec)
+        .await?;
+    Ok(rows)
+}
+
 /// The most recent privileged actions, newest first, for the operator console.
 ///
 /// # Errors

@@ -6,16 +6,17 @@ use crate::openapi::ADMIN_SCANS_TAG;
 use crate::state::{AppState, AuthUser};
 use crate::views::IntoView;
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::time::Duration;
 use tankovault_contracts::admin::ScanTriggeredView;
-use tankovault_domain::{Feature, Permission, ProviderId, ScanMode, ScanRun, ScanRunId};
+use tankovault_domain::{Feature, Permission, ProviderId, RunState, ScanMode, ScanRun, ScanRunId};
+use time::OffsetDateTime;
 use tokio_stream::StreamExt as _;
 use tokio_stream::wrappers::IntervalStream;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct TriggerScan {
@@ -91,18 +92,47 @@ pub async fn get_scan(
     ))
 }
 
+/// Run-history paging, capped server-side for the same reason the audit trail is.
+const MAX_RUN_PAGE: u32 = 200;
+const DEFAULT_RUN_PAGE: u32 = 30;
+/// Failure-feed cap. Lower than the run page: a failure carries an error string.
+const MAX_FAILURE_PAGE: u32 = 200;
+const DEFAULT_FAILURE_PAGE: u32 = 25;
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct RunQuery {
+    /// Provider slug. Absent lists every provider's runs.
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub mode: Option<ScanMode>,
+    #[serde(default)]
+    pub state: Option<RunState>,
+    /// Inclusive lower bound on `created_at`, RFC 3339.
+    // `value_type` because `utoipa` has no schema for `OffsetDateTime`; the serde attribute
+    // above already pins the wire format this claims.
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    #[param(value_type = Option<String>)]
+    pub since: Option<OffsetDateTime>,
+    #[serde(default)]
+    pub limit: Option<u32>,
+    #[serde(default)]
+    pub offset: Option<u32>,
+}
+
 /// List recent scan runs
 ///
-/// The most recent scan runs (the console's scan-queue overview). The live variant is
-/// `/v1/admin/scans/stream`; this GET gives the console its first paint and drives its
-/// polling refresh.
+/// A filtered, paged window on the run history, newest first. The live variant is
+/// `/v1/admin/stream`'s `runs` event; this GET is the console's first paint and its
+/// manual-refresh path.
 #[utoipa::path(
     get,
     path = "/v1/admin/scans",
     tag = ADMIN_SCANS_TAG,
+    params(RunQuery),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Up to 30 most recent scan runs", body = Vec<ScanRun>),
+        (status = 200, description = "A page of scan runs", body = tankovault_contracts::admin::ScanRunPageView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
@@ -110,24 +140,55 @@ pub async fn get_scan(
 pub async fn list_scans(
     State(state): State<AppState>,
     user: AuthUser,
-) -> ApiResult<Json<Vec<ScanRun>>> {
+    Query(q): Query<RunQuery>,
+) -> ApiResult<Json<tankovault_contracts::admin::ScanRunPageView>> {
     user.require(Permission::ScansRead).await?;
-    Ok(Json(
-        tankovault_db::repo::scans::list_recent_runs(&state.pool, 30).await?,
-    ))
+    let limit = q.limit.unwrap_or(DEFAULT_RUN_PAGE).clamp(1, MAX_RUN_PAGE);
+    let filter = tankovault_db::repo::scans::RunFilter {
+        provider: q
+            .provider
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty()),
+        mode: q.mode,
+        state: q.state,
+        since: q.since,
+    };
+    let page = tankovault_db::repo::scans::list_runs_filtered(
+        &state.pool,
+        &filter,
+        i64::from(limit),
+        i64::from(q.offset.unwrap_or(0)),
+    )
+    .await?;
+    Ok(Json(page.into_view()))
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct FailureQuery {
+    /// Provider slug. Absent lists every provider's failures.
+    #[serde(default)]
+    pub provider: Option<String>,
+    /// Inclusive lower bound on `finished_at`, RFC 3339.
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    #[param(value_type = Option<String>)]
+    pub since: Option<OffsetDateTime>,
+    #[serde(default)]
+    pub limit: Option<u32>,
 }
 
 /// List recent scan failures
 ///
-/// The most recently failed scan tasks with their errors, for triaging stuck providers /
-/// broken selectors (design §17.2.7).
+/// The most recently failed scan tasks with their errors, for triaging stuck providers and
+/// broken selectors (design §17.2.7). The grouped view is `/v1/admin/scan-failures/grouped`.
 #[utoipa::path(
     get,
     path = "/v1/admin/scan-failures",
     tag = ADMIN_SCANS_TAG,
+    params(FailureQuery),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Up to 25 most recent failed tasks", body = Vec<tankovault_contracts::admin::FailedTaskView>),
+        (status = 200, description = "Recent failed tasks, newest first", body = Vec<tankovault_contracts::admin::FailedTaskView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
@@ -135,9 +196,62 @@ pub async fn list_scans(
 pub async fn scan_failures(
     State(state): State<AppState>,
     user: AuthUser,
+    Query(q): Query<FailureQuery>,
 ) -> ApiResult<Json<Vec<tankovault_contracts::admin::FailedTaskView>>> {
     user.require(Permission::ScansRead).await?;
-    let rows = tankovault_db::repo::scans::recent_failed_tasks(&state.pool, 25).await?;
+    let limit = q
+        .limit
+        .unwrap_or(DEFAULT_FAILURE_PAGE)
+        .clamp(1, MAX_FAILURE_PAGE);
+    let rows = tankovault_db::repo::scans::failed_tasks_filtered(
+        &state.pool,
+        q.provider
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty()),
+        q.since,
+        i64::from(limit),
+    )
+    .await?;
+    Ok(Json(rows.into_view()))
+}
+
+/// Group scan failures by error
+///
+/// The same failures collapsed by their error text, worst first: one broken selector that hit
+/// twelve series is one row with a count, not twelve rows of the same sentence.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/scan-failures/grouped",
+    tag = ADMIN_SCANS_TAG,
+    params(FailureQuery),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Distinct failures with counts and affected providers", body = Vec<tankovault_contracts::admin::FailureGroupView>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn scan_failure_groups(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Query(q): Query<FailureQuery>,
+) -> ApiResult<Json<Vec<tankovault_contracts::admin::FailureGroupView>>> {
+    user.require(Permission::ScansRead).await?;
+    let limit = q
+        .limit
+        .unwrap_or(DEFAULT_FAILURE_PAGE)
+        .clamp(1, MAX_FAILURE_PAGE);
+    let rows = tankovault_db::repo::scans::failure_groups(
+        &state.pool,
+        q.provider
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty()),
+        q.since,
+        i64::from(limit),
+    )
+    .await?;
     Ok(Json(rows.into_view()))
 }
 

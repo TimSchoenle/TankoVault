@@ -36,6 +36,7 @@ pub(super) fn RunsTab(provider_id: ProviderId) -> Element {
         || rsx! { SkeletonBlock { height: 160 } },
         |all| {
             let mine: Vec<ScanRun> = all
+                .items
                 .iter()
                 .filter(|run| {
                     matches!(&run.provider_id, Some(ScanRunProviderId::Variant1(id)) if *id == provider_id)

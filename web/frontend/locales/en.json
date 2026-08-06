@@ -215,10 +215,19 @@
       "col": {
         "action": "Action",
         "actor": "Actor",
+        "detail": "Detail",
         "target": "Target",
         "when": "When"
       },
       "empty": "No privileged actions recorded yet.",
+      "filter": {
+        "action": "Action",
+        "anyAction": "Any action",
+        "target": "Filter by target",
+        "window": "Time window"
+      },
+      "hideDetail": "Hide",
+      "showDetail": "Detail",
       "system": "system",
       "title": "Audit trail",
       "unavailable": "Audit log unavailable: {message}"
@@ -520,6 +529,30 @@
       "startedAt": "started {date}",
       "tuning": "Tuning",
       "valueLabel": "Value for {title}"
+    },
+    "scan": {
+      "detail": {
+        "attempts": "Attempts",
+        "elapsed": "Elapsed",
+        "minutes": "{count} min",
+        "perMinute": "{count}/min",
+        "pick": "Select a run to inspect it.",
+        "tasks": "Tasks",
+        "throughput": "Throughput",
+        "title": "Run detail",
+        "underAMinute": "under a minute"
+      },
+      "failures": {
+        "affected": "{count} affected",
+        "grouped": "Group identical errors",
+        "noError": "No error recorded"
+      },
+      "filter": {
+        "anyProvider": "Any provider",
+        "anyState": "Any state",
+        "provider": "Provider",
+        "state": "Run state"
+      }
     },
     "scans": {
       "active": "Active runs",

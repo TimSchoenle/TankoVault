@@ -820,7 +820,7 @@ fn UserEditor(
             Tab::Activity => rsx! {
                 div { class: "ik-cons-inspbody",
                     div { class: "ik-cons-col", style: "grid-column:1 / -1;max-width:620px;",
-                        RecentActions { username: user.username.clone() }
+                        RecentActions { user_id: user.id.clone() }
                     }
                 }
             },

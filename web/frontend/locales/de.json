@@ -215,10 +215,19 @@
       "col": {
         "action": "Aktion",
         "actor": "Akteur",
+        "detail": "Details",
         "target": "Ziel",
         "when": "Wann"
       },
       "empty": "Noch keine privilegierten Aktionen aufgezeichnet.",
+      "filter": {
+        "action": "Aktion",
+        "anyAction": "Beliebige Aktion",
+        "target": "Nach Ziel filtern",
+        "window": "Zeitraum"
+      },
+      "hideDetail": "Ausblenden",
+      "showDetail": "Details",
       "system": "System",
       "title": "Audit-Protokoll",
       "unavailable": "Audit-Protokoll nicht verfügbar: {message}"
@@ -520,6 +529,30 @@
       "startedAt": "gestartet {date}",
       "tuning": "Feineinstellung",
       "valueLabel": "Wert für {title}"
+    },
+    "scan": {
+      "detail": {
+        "attempts": "Versuche",
+        "elapsed": "Dauer",
+        "minutes": "{count} Min.",
+        "perMinute": "{count}/Min.",
+        "pick": "Wähle einen Lauf aus, um ihn zu untersuchen.",
+        "tasks": "Aufgaben",
+        "throughput": "Durchsatz",
+        "title": "Laufdetails",
+        "underAMinute": "unter einer Minute"
+      },
+      "failures": {
+        "affected": "{count} betroffen",
+        "grouped": "Gleiche Fehler gruppieren",
+        "noError": "Kein Fehler erfasst"
+      },
+      "filter": {
+        "anyProvider": "Beliebiger Anbieter",
+        "anyState": "Beliebiger Status",
+        "provider": "Anbieter",
+        "state": "Laufstatus"
+      }
     },
     "scans": {
       "active": "Laufende Durchläufe",

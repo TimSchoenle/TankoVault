@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use tankovault_domain::{AccountStatus, ScanRunId, SeriesId};
+use tankovault_domain::{AccountStatus, ScanRun, ScanRunId, SeriesId};
 use time::OffsetDateTime;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -86,6 +86,42 @@ pub struct AuditView {
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
+}
+
+/// A page of scan runs plus how many the filter matches in total.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ScanRunPageView {
+    pub items: Vec<ScanRun>,
+    /// Total matching the current filter, ignoring `limit`/`offset`.
+    pub total: i64,
+}
+
+/// One distinct scan failure, with how often it happened and which providers it hit.
+///
+/// The grouped view of the failure feed: twelve rows of the same broken selector are one
+/// problem, and the flat feed presents them as twelve.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct FailureGroupView {
+    /// The error text these failures share. `null` groups the failures that recorded none.
+    pub error: Option<String>,
+    pub count: i64,
+    /// Provider slugs affected, sorted.
+    pub providers: Vec<String>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
+    pub latest_at: Option<OffsetDateTime>,
+}
+
+/// A page of the audit trail plus how many records the filter matches in total.
+///
+/// An envelope rather than a bare list, because the trail is deep enough that the console can
+/// only ever hold a window on it, and a window with no total is a pager that cannot say where
+/// it is.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct AuditPageView {
+    pub items: Vec<AuditView>,
+    /// Total matching the current filter, ignoring `limit`/`offset`.
+    pub total: i64,
 }
 
 /// A failed scan task enriched with its run's provider + mode, for the console error feed.

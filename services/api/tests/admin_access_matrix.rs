@@ -300,6 +300,13 @@ fn admin_gates() -> Vec<Gate> {
         },
         Gate {
             method: "GET",
+            template: "/v1/admin/scan-failures/grouped",
+            path: "/v1/admin/scan-failures/grouped",
+            required: &[Permission::ScansRead],
+            body: empty,
+        },
+        Gate {
+            method: "GET",
             template: "/v1/admin/scans/stream",
             path: "/v1/admin/scans/stream",
             required: &[Permission::ScansRead],
@@ -422,6 +429,13 @@ fn admin_gates() -> Vec<Gate> {
             method: "GET",
             template: "/v1/admin/audit",
             path: "/v1/admin/audit",
+            required: &[Permission::AuditRead],
+            body: empty,
+        },
+        Gate {
+            method: "GET",
+            template: "/v1/admin/audit/actions",
+            path: "/v1/admin/audit/actions",
             required: &[Permission::AuditRead],
             body: empty,
         },

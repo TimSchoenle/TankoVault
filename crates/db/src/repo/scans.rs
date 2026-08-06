@@ -108,6 +108,96 @@ pub async fn list_recent_runs<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(ScanRun::from).collect())
 }
 
+/// What narrows a page of scan runs.
+#[derive(Debug, Clone, Default)]
+pub struct RunFilter<'a> {
+    /// Provider slug, not id: the console filters from the URL, and a slug is what an operator
+    /// can type and paste.
+    pub provider: Option<&'a str>,
+    pub mode: Option<ScanMode>,
+    pub state: Option<RunState>,
+    pub since: Option<OffsetDateTime>,
+}
+
+/// One page of scan runs, plus how many the filter matches in total.
+#[derive(Debug, Clone)]
+pub struct RunPage {
+    pub items: Vec<ScanRun>,
+    pub total: i64,
+}
+
+/// A filtered, paged window on the run history, newest first.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only. A filter matching nothing is an empty page with `total: 0`;
+/// as elsewhere, `total` is read off the first row, so an offset past the end reports `0`.
+pub async fn list_runs_filtered<'e, E: PgExecutor<'e>>(
+    exec: E,
+    filter: &RunFilter<'_>,
+    limit: i64,
+    offset: i64,
+) -> DbResult<RunPage> {
+    struct Row {
+        id: Uuid,
+        provider_id: Option<Uuid>,
+        mode: ScanMode,
+        state: RunState,
+        total_tasks: i32,
+        done_tasks: i32,
+        failed_tasks: i32,
+        started_at: Option<OffsetDateTime>,
+        finished_at: Option<OffsetDateTime>,
+        created_at: OffsetDateTime,
+        total: i64,
+    }
+    let rows = sqlx::query_as!(
+        Row,
+        "WITH matched AS ( \
+             SELECT r.* FROM scan_runs r \
+             LEFT JOIN providers p ON p.id = r.provider_id \
+             WHERE ($1::text IS NULL OR p.slug = $1) \
+               AND ($2::scan_mode IS NULL OR r.mode = $2) \
+               AND ($3::run_state IS NULL OR r.state = $3) \
+               AND ($4::timestamptz IS NULL OR r.created_at >= $4) \
+         ) \
+         SELECT m.id, m.provider_id, m.mode AS \"mode: ScanMode\", \
+                m.state AS \"state: RunState\", m.total_tasks, m.done_tasks, m.failed_tasks, \
+                m.started_at, m.finished_at, m.created_at, \
+                (SELECT count(*) FROM matched) AS \"total!\" \
+         FROM matched m \
+         ORDER BY m.created_at DESC \
+         LIMIT $5 OFFSET $6",
+        filter.provider,
+        filter.mode as Option<ScanMode>,
+        filter.state as Option<RunState>,
+        filter.since,
+        limit,
+        offset,
+    )
+    .fetch_all(exec)
+    .await?;
+
+    let total = rows.first().map_or(0, |row| row.total);
+    let items = rows
+        .into_iter()
+        .map(|r| {
+            ScanRun::from(RunRow {
+                id: r.id,
+                provider_id: r.provider_id,
+                mode: r.mode,
+                state: r.state,
+                total_tasks: r.total_tasks,
+                done_tasks: r.done_tasks,
+                failed_tasks: r.failed_tasks,
+                started_at: r.started_at,
+                finished_at: r.finished_at,
+                created_at: r.created_at,
+            })
+        })
+        .collect();
+    Ok(RunPage { items, total })
+}
+
 /// Transition a run to `running` and stamp `started_at`.
 ///
 /// # Errors
@@ -512,6 +602,86 @@ pub async fn recent_failed_tasks<'e, E: PgExecutor<'e>>(
          WHERE t.state = 'failed' \
          ORDER BY t.finished_at DESC NULLS LAST \
          LIMIT $1",
+        limit,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows)
+}
+
+/// Recent failed tasks, narrowed by provider and time window.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; no failures is an empty `Vec`.
+pub async fn failed_tasks_filtered<'e, E: PgExecutor<'e>>(
+    exec: E,
+    provider: Option<&str>,
+    since: Option<OffsetDateTime>,
+    limit: i64,
+) -> DbResult<Vec<FailedTaskView>> {
+    let rows = sqlx::query_as!(
+        FailedTaskView,
+        "SELECT t.id, t.run_id, p.slug AS \"provider_slug?\", r.mode::text AS \"mode!\", \
+                t.kind, t.error, t.attempts, t.finished_at \
+         FROM scan_tasks t \
+         JOIN scan_runs r ON r.id = t.run_id \
+         LEFT JOIN providers p ON p.id = r.provider_id \
+         WHERE t.state = 'failed' \
+           AND ($1::text IS NULL OR p.slug = $1) \
+           AND ($2::timestamptz IS NULL OR t.finished_at >= $2) \
+         ORDER BY t.finished_at DESC NULLS LAST \
+         LIMIT $3",
+        provider,
+        since,
+        limit,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows)
+}
+
+/// One distinct failure, with how often it happened and which providers it hit.
+#[derive(Debug, Clone, FromRow)]
+pub struct FailureGroup {
+    /// The error text these failures share. `None` groups the failures that recorded none.
+    pub error: Option<String>,
+    pub count: i64,
+    /// Provider slugs affected, sorted. A provider deleted since is omitted, not `null`.
+    pub providers: Vec<String>,
+    pub latest_at: Option<OffsetDateTime>,
+}
+
+/// Failed tasks collapsed by their error text, worst first.
+///
+/// Twelve rows of one broken selector is one problem; the flat feed presents it as twelve, and
+/// on a bad day it is the whole feed. Grouping is what makes the panel answer "what is wrong"
+/// rather than "what happened most recently".
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; no failures is an empty `Vec`.
+pub async fn failure_groups<'e, E: PgExecutor<'e>>(
+    exec: E,
+    provider: Option<&str>,
+    since: Option<OffsetDateTime>,
+    limit: i64,
+) -> DbResult<Vec<FailureGroup>> {
+    let rows = sqlx::query_as!(
+        FailureGroup,
+        "SELECT t.error, \
+                count(*) AS \"count!\", \
+                array_remove(array_agg(DISTINCT p.slug), NULL) AS \"providers!\", \
+                max(t.finished_at) AS latest_at \
+         FROM scan_tasks t \
+         JOIN scan_runs r ON r.id = t.run_id \
+         LEFT JOIN providers p ON p.id = r.provider_id \
+         WHERE t.state = 'failed' \
+           AND ($1::text IS NULL OR p.slug = $1) \
+           AND ($2::timestamptz IS NULL OR t.finished_at >= $2) \
+         GROUP BY t.error \
+         ORDER BY count(*) DESC, max(t.finished_at) DESC NULLS LAST \
+         LIMIT $3",
+        provider,
+        since,
         limit,
     )
     .fetch_all(exec)

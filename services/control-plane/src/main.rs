@@ -424,13 +424,18 @@ async fn trigger_merge_sweep(
     Ok(Json(report))
 }
 
-/// Run one model build on demand — to apply a `next_build` tuning change, or to bring a model
+/// Start one model build on demand — to apply a `next_build` tuning change, or to bring a model
 /// up to date after a long outage, without waiting for the schedule.
 ///
 /// Not leader-gated (it runs on the replica asked) but still gated on
 /// `catalogue.recommendations`, since the switch has to hold at the component doing the work.
 /// The build's own claim is the mutual exclusion: a run that arrives while another holds it
 /// answers `started: false` rather than queueing behind it.
+///
+/// Answers as soon as the claim is taken, and the build itself runs detached. It used to be
+/// awaited here, which meant the request timeout decided how long a build was allowed to
+/// take — see [`recsys::build_detached`]. Progress and the outcome are on
+/// `GET /v1/admin/recommendations/health`, which the console already polls.
 async fn trigger_recsys_build(
     State(state): State<AppState>,
     Json(req): Json<RecsysBuildRequest>,
@@ -449,23 +454,19 @@ async fn trigger_recsys_build(
         state.recsys_batch,
         state.recsys_incremental_max,
     );
-    let report = recsys::build(&state.pool, tuning, full)
+    let generation = recsys::build_detached(&state.pool, tuning, full)
         .await
         .map_err(internal)?;
 
-    let view = report.map_or_else(RecsysBuildView::default, |report| RecsysBuildView {
+    let view = generation.map_or_else(RecsysBuildView::default, |generation| RecsysBuildView {
         started: true,
-        generation: report.generation,
-        series_built: report.series_built,
-        vocabulary: report.vocabulary,
-        dense_dims: report.dense_dims,
+        generation,
     });
     tracing::info!(
         full,
         started = view.started,
         generation = view.generation,
-        series = view.series_built,
-        "recommendation model build (on demand) complete"
+        "recommendation model build (on demand) started"
     );
     Ok(Json(view))
 }

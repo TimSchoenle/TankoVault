@@ -1,0 +1,25 @@
+-- A lease on the recommendation build's claim, so a dead build stops blocking every later one.
+--
+-- `rec_build_state.stage <> 'idle'` was the whole mutual exclusion, and it was released in
+-- exactly one place: the `finish_build` at the end of a run. A build that never reached that
+-- line — a cancelled request handler, an OOM kill, a pod replaced mid-run — left the claim held
+-- forever, and every scheduled run afterwards declined to start and logged it at debug. The
+-- symptom in production was a console reading "full:features, 0 series" for six hours and a
+-- recommender that had silently stopped updating.
+--
+-- `heartbeat_at` is stamped by the running build every few seconds, so the claim is held only
+-- while a process is alive to hold it: a claim whose heartbeat has gone stale is reclaimable by
+-- the next run. It is deliberately separate from `started_at`, which the console shows as the
+-- run's age and must not be moved by a heartbeat.
+--
+-- `claim_id` fences the writes. Once a claim can be taken away, the previous holder may still be
+-- running — a request handler is cancelled but a spawned task is not, and a partitioned replica
+-- believes it still owns the build. Every write that advances or releases the claim carries the
+-- id it was granted, so a superseded build's progress writes and its final `finish_build` are
+-- no-ops instead of corrupting the state of the run that replaced it.
+--
+-- Both are nullable, and a NULL `heartbeat_at` counts as expired: the row this migration lands
+-- on may already be holding a claim that predates the column, and that claim is exactly the one
+-- that needs breaking.
+ALTER TABLE rec_build_state ADD COLUMN claim_id     uuid;
+ALTER TABLE rec_build_state ADD COLUMN heartbeat_at timestamptz;

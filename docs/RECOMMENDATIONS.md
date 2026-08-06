@@ -223,6 +223,17 @@ sweep. Putting the second one behind the same lock reuses that mutual exclusion 
 inventing a parallel one in a service that has none. `rec_build_state`'s claim is the real
 exclusion; leadership just stops the wasted attempt.
 
+That claim is a **lease**, not a flag (`0036_recsys_build_lease`). A running build stamps
+`heartbeat_at` every 30 seconds and a claim whose heartbeat is more than five minutes old is
+breakable, because a build that dies without releasing its claim would otherwise hold it forever
+and every scheduled run afterwards would decline to start — which is what happened when the
+on-demand rebuild was awaited inside its request handler and the request timeout dropped it
+mid-run. Every write that advances or releases the claim carries the `claim_id` it was granted,
+so a build whose lease was broken while it was still running cannot touch the state of the run
+that replaced it. On-demand builds are started, not awaited: `POST
+/v1/admin/recommendations/rebuild` answers once the claim is taken, and progress is on
+`GET /v1/admin/recommendations/health`.
+
 The real resource question moved with the work: **the memory that matters is now Postgres's**
 (`maintenance_work_mem` during the index build, and page cache to keep the graph hot), not the
 builder's. Size the database, not the worker. §6.4 gives figures.

@@ -22,3 +22,14 @@
 # became `{ items, total }`. Consumed only by the operator console.
 in api get /v1/admin/audit the response's body `type` changed from `array<object>` to `object` for status `200`
 in api get /v1/admin/scans the response's body `type` changed from `array<object>` to `object` for status `200`
+
+# The rebuild endpoint used to await the whole build inside the request handler, which meant the
+# control plane's 30 s request timeout decided how long a build was allowed to take: it dropped the
+# handler future mid-run, the claim was never released, and every later build declined to start.
+# The build now runs detached, so the response can only report whether one was *started* — these
+# three counts are not knowable when it answers, and are read from
+# `GET /v1/admin/recommendations/health` instead. Consumed only by the operator console, which
+# already ignores this response body and polls that endpoint.
+in api post /v1/admin/recommendations/rebuild removed the required property `series_built` from the response with the `200` status
+in api post /v1/admin/recommendations/rebuild removed the required property `vocabulary` from the response with the `200` status
+in api post /v1/admin/recommendations/rebuild removed the required property `dense_dims` from the response with the `200` status

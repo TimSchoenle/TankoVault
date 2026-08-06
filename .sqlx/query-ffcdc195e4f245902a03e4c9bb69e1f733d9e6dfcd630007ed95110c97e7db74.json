@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE rec_build_state SET generation  = CASE WHEN $1 THEN generation + 1 ELSE generation END, stage       = CASE WHEN $1 THEN 'full:features' ELSE 'incremental' END, claim_id    = $2, started_at  = now(), heartbeat_at = now(), finished_at = NULL, series_built = 0, stage_total = 0, error       = NULL WHERE id AND (stage = 'idle' OR heartbeat_at IS NULL OR heartbeat_at < now() - make_interval(secs => $3::double precision)) RETURNING generation",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "generation",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "rec_build_state",
+            "name": "generation"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ffcdc195e4f245902a03e4c9bb69e1f733d9e6dfcd630007ed95110c97e7db74"
+}

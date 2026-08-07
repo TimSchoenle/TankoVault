@@ -1126,6 +1126,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # appimagetool passes its own `-mkfs-time` to mksquashfs so an AppImage is
+          # reproducible, and squashfs-tools refuses a timestamp given on the command line and
+          # through `SOURCE_DATE_EPOCH` at once. The workflow-level constant is therefore fatal
+          # to the appimage leg, and it reports itself as `linuxdeploy failed with exit code
+          # Some(1)` with the real cause — `FATAL ERROR:SOURCE_DATE_EPOCH and command line
+          # options can't be used at the same time to set timestamp(s)` — buried in a captured
+          # stdout blob. Removing it here is safe precisely because this job builds no image:
+          # the constant exists to keep buildx cache keys identical across workflows, and no
+          # buildx runs in this process tree.
+          unset SOURCE_DATE_EPOCH
           case "$OS" in
             windows) types=(--package-types msi --package-types nsis) ;;
             linux)   types=(--package-types deb --package-types appimage) ;;

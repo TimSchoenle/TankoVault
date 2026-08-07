@@ -547,6 +547,16 @@ pub(super) fn the_build_epoch_is_one_constant(root: &Path) -> anyhow::Result<Vec
             if index + 1 == declared_line || is_comment(line) || !line.contains(EPOCH) {
                 continue;
             }
+            // Removing it is the one exception, and only in a job that runs no buildx: there the
+            // value reaches no cache key, while leaving it set breaks every packager that sets
+            // its own timestamps. Inside a job that *does* build, an `unset` is the same
+            // regression by subtraction — buildx then passes no `build-arg` at all, so the build
+            // misses every layer a build carrying the constant exported — and is still reported.
+            if line.trim() == format!("unset {EPOCH}")
+                && !job_builds_images(&text, index, BUILD_ACTION)
+            {
+                continue;
+            }
             findings.push(Finding {
                 rule: RULE,
                 file: file.clone(),
@@ -609,6 +619,38 @@ fn workflow_env_value(text: &str, key: &str) -> Option<(usize, String)> {
         }
     }
     None
+}
+
+/// Whether the job the given line index falls in runs `build_action`.
+///
+/// Textual, like the rest of this module: a job is a two-space-indented key under `jobs:`, and
+/// everything nested inside one is indented further, so the nearest such key at or above the line
+/// is its job and the block runs to the next one. A line that sits above the first job header
+/// counts as building, so an unrecognised layout is judged conservatively rather than waved
+/// through.
+fn job_builds_images(text: &str, line: usize, build_action: &str) -> bool {
+    let is_job_header = |candidate: &str| {
+        !is_comment(candidate)
+            && candidate.starts_with("  ")
+            && !candidate.starts_with("   ")
+            && candidate.trim_end().ends_with(':')
+    };
+
+    let Some(start) = text
+        .lines()
+        .take(line + 1)
+        .enumerate()
+        .filter(|(_, candidate)| is_job_header(candidate))
+        .map(|(index, _)| index)
+        .last()
+    else {
+        return true;
+    };
+
+    text.lines()
+        .skip(start + 1)
+        .take_while(|candidate| !is_job_header(candidate))
+        .any(|candidate| !is_comment(candidate) && candidate.contains(build_action))
 }
 
 #[cfg(test)]
@@ -699,6 +741,53 @@ mod tests {
         // A prefix match is not a match: a different key must not satisfy the rule.
         let prefixed = "env:\n  SOURCE_DATE_EPOCH_NOTE: \"0\"\n";
         assert_eq!(workflow_env_value(prefixed, "SOURCE_DATE_EPOCH"), None);
+    }
+
+    /// The bug this pins: the desktop job in `release-please.yaml` inherited the workflow-level
+    /// `SOURCE_DATE_EPOCH`, and appimagetool passes a `-mkfs-time` of its own to mksquashfs,
+    /// which refuses a timestamp from the command line and the environment at once. Release
+    /// v2.0.0's AppImage leg died as `linuxdeploy failed with exit code Some(1)` and took every
+    /// installer for that release with it. The fix removes the variable in that one job — which
+    /// this rule forbade outright, because until then any line naming the epoch outside its
+    /// declaration was an override.
+    ///
+    /// The exception has to stay job-scoped. Ahead of a buildx step an `unset` is the original
+    /// cache-key regression written backwards: buildx then passes no `build-arg` at all, so the
+    /// build reuses no layer that a build carrying the constant exported.
+    #[test]
+    fn an_unset_is_allowed_only_in_a_job_that_builds_no_image() {
+        const HEADER: &str = "env:\n  SOURCE_DATE_EPOCH: \"0\"\n\njobs:\n";
+        const BUILD: &str = "  build:\n    steps:\n      - uses: docker/build-push-action@v6\n";
+
+        let root = tempdir("build-epoch-unset");
+        std::fs::create_dir_all(root.join(".github/workflows")).unwrap();
+        let write = |body: &str| {
+            std::fs::write(root.join(".github/workflows/release.yaml"), body).unwrap();
+        };
+
+        // The shape of the fix: removed in the job that bundles the desktop client, which runs
+        // no buildx and so writes no cache key.
+        write(&format!(
+            "{HEADER}  desktop:\n    steps:\n      - run: |\n          unset \
+             SOURCE_DATE_EPOCH\n          dx bundle\n{BUILD}"
+        ));
+        assert!(the_build_epoch_is_one_constant(&root).unwrap().is_empty());
+
+        // The same line one job over, where it would cost every layer of the image build below.
+        write(&format!(
+            "{HEADER}  build:\n    steps:\n      - run: |\n          unset \
+             SOURCE_DATE_EPOCH\n      - uses: docker/build-push-action@v6\n"
+        ));
+        let findings = the_build_epoch_is_one_constant(&root).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].line, 8);
+
+        // The exception is `unset` and nothing adjacent to it: a second value is still a second
+        // declaration, in any job.
+        write(&format!(
+            "{HEADER}  desktop:\n    steps:\n      - run: export SOURCE_DATE_EPOCH=1\n{BUILD}"
+        ));
+        assert_eq!(the_build_epoch_is_one_constant(&root).unwrap().len(), 1);
     }
 
     /// The compose file pins images by digest, so the tag the rule has to read is

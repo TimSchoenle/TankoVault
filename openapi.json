@@ -2337,7 +2337,8 @@
           "system.stats",
           "audit.read",
           "flags.read",
-          "flags.write"
+          "flags.write",
+          "system.superuser"
         ],
         "type": "string"
       },
@@ -9716,7 +9717,7 @@
                 }
               }
             },
-            "description": "cannot edit your own permissions, or strip the last administrator"
+            "description": "cannot edit your own permissions, strip the last administrator, or grant the super user"
           },
           "401": {
             "content": {
@@ -10509,7 +10510,7 @@
     },
     "/v1/me/capabilities": {
       "get": {
-        "description": "The permissions the caller holds and the features this deployment has enabled — everything\na client needs to decide which navigation, panels and controls to render.\n\nNot cacheable: a permission revoked or a feature switched off must be reflected on the next\nfetch, and this is the endpoint a client polls to find out.",
+        "description": "The permissions the caller holds and the features this deployment has enabled — everything\na client needs to decide which navigation, panels and controls to render.\n\nNot cacheable: a permission revoked or a feature switched off must be reflected on the next\nfetch, and this is the endpoint a client polls to find out.\n\nThe grants as stored, not as they resolve: a super user's list is the single\n`system.superuser` token, and a client must treat that token the way the server does —\nas holding everything — rather than reading the array as exhaustive.",
         "operationId": "capabilities",
         "responses": {
           "200": {

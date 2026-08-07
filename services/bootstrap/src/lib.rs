@@ -30,16 +30,24 @@ pub struct AdminSeed<'a> {
 
 /// What [`seed_admin`] did, so a caller can report it without re-querying.
 pub enum AdminOutcome {
-    /// The account was created and granted every permission. Carries its username.
-    Created(String),
+    /// The account was created and granted every permission.
+    Created {
+        username: String,
+        /// Whether it also became the deployment's super user — false when the database
+        /// already held other accounts, or a super user.
+        super_user: bool,
+    },
     /// An account with that address or name already existed; nothing was changed.
     AlreadyPresent,
 }
 
-/// Create the first administrator, with every permission granted.
+/// Create the first administrator, with every grantable permission — plus the super user grant
+/// if this is the deployment's first account.
 ///
 /// Idempotent: an existing account is left exactly as it is, permissions included, so re-running
-/// an install job cannot re-grant something an operator has deliberately revoked.
+/// an install job cannot re-grant something an operator has deliberately revoked. Running it a
+/// second time under a different address creates an ordinary administrator: the super user grant
+/// is claimed only while no other account exists, and the database refuses a second one.
 ///
 /// Registration mints no privilege anywhere else in the system — this is the one deliberate
 /// exception, and without it no account could ever grant `users.permissions` to another, so a
@@ -56,10 +64,17 @@ pub async fn seed_admin(pool: &PgPool, seed: &AdminSeed<'_>) -> anyhow::Result<A
             // the address is marked verified — otherwise the login gate locks the account out
             // as soon as a mailer is configured.
             tankovault_db::repo::users::mark_email_verified(pool, user.id).await?;
-            for permission in tankovault_domain::Permission::all() {
-                tankovault_db::repo::permissions::grant(pool, user.id, *permission, None).await?;
+            for permission in tankovault_domain::Permission::grantable() {
+                tankovault_db::repo::permissions::grant(pool, user.id, permission, None).await?;
             }
-            Ok(AdminOutcome::Created(user.username))
+            // The enumerated grants above age: a capability added by a later release reaches
+            // this account only if someone re-grants it. The super user grant does not.
+            let super_user =
+                tankovault_db::repo::permissions::claim_super_user(pool, user.id).await?;
+            Ok(AdminOutcome::Created {
+                username: user.username,
+                super_user,
+            })
         }
         Err(e) if e.is_unique_violation() || matches!(e, tankovault_db::DbError::Conflict(_)) => {
             Ok(AdminOutcome::AlreadyPresent)

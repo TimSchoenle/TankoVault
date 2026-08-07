@@ -58,6 +58,91 @@ async fn permission_gated_routes_enforce_the_full_matrix() {
     }
 }
 
+/// One grant, every door. The super user holds a single stored token and no enumerated
+/// capability, so a build that lost the implication in `PermissionSet::has` would 403 the
+/// deployment owner out of the console they own — with a permission editor that cannot grant
+/// them their way back in.
+#[tokio::test]
+async fn the_super_user_passes_every_capability_check() {
+    let app = TestApp::spawn().await;
+    let owner = app
+        .seed_user("owner", &[Permission::SuperUser], AccountStatus::Active)
+        .await;
+    let bearer = app.bearer(owner);
+
+    for (permission, path) in gated_read_routes() {
+        let (status, _) = app.call("GET", path, Some(&bearer), None).await;
+        assert!(
+            status.is_success(),
+            "GET {path} needs {permission}, which the super user holds implicitly, got {status}"
+        );
+    }
+}
+
+/// The super user is minted by the installer and by nothing else. `users.permissions` is
+/// otherwise total power, so without this refusal any administrator could promote an account
+/// past every capability the enum will ever gain.
+#[tokio::test]
+async fn the_super_user_grant_cannot_be_handed_out_by_an_administrator() {
+    let app = TestApp::spawn().await;
+    let admin = app
+        .seed_user(
+            "granter",
+            &[Permission::UsersPermissions],
+            AccountStatus::Active,
+        )
+        .await;
+    let target = app.seed_user("target", &[], AccountStatus::Active).await;
+
+    let (status, _) = app
+        .call(
+            "PUT",
+            &format!("/v1/admin/users/{}/permissions", target.as_uuid()),
+            Some(&app.bearer(admin)),
+            Some(json!({ "permissions": ["system.superuser", "users.read"] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Refused whole, not partially applied: the accompanying grant must not land either.
+    let principal = tankovault_db::repo::permissions::resolve(&app.db.pool, target)
+        .await
+        .expect("resolve")
+        .expect("target exists");
+    assert!(!principal.permissions.is_super_user());
+    assert!(principal.permissions.is_empty());
+}
+
+/// The catalogue is what the editor renders its checklist from, so a super user entry there
+/// would be a checkbox whose every submission the write path rejects.
+#[tokio::test]
+async fn the_permission_catalogue_does_not_offer_the_super_user() {
+    let app = TestApp::spawn().await;
+    let reader = app
+        .seed_user(
+            "cataloguer",
+            &[Permission::UsersRead],
+            AccountStatus::Active,
+        )
+        .await;
+
+    let (status, body) = app
+        .call(
+            "GET",
+            "/v1/admin/permissions",
+            Some(&app.bearer(reader)),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let listed = serde_json::to_string(&body).expect("serialise catalogue");
+    assert!(
+        !listed.contains("system.superuser"),
+        "neither the permission list nor a preset may name the super user: {listed}"
+    );
+}
+
 #[tokio::test]
 async fn a_denied_call_emits_an_authz_denied_audit_event() {
     let app = TestApp::spawn().await;

@@ -95,10 +95,25 @@ async fn seed_admin(pool: &tankovault_db::PgPool, cfg: &Config) -> anyhow::Resul
     match tankovault_bootstrap::seed_admin(pool, &seed).await? {
         // The password is not echoed, unlike `xtask seed`: whoever runs this already set it,
         // and a `Job`'s logs outlive the shell that started it.
-        AdminOutcome::Created(username) => println!(
-            "administrator {username} created with all {} permissions",
-            tankovault_domain::Permission::all().len()
-        ),
+        AdminOutcome::Created {
+            username,
+            super_user,
+        } => {
+            println!(
+                "administrator {username} created with all {} permissions",
+                tankovault_domain::Permission::grantable().len()
+            );
+            // Worth a line of its own: it is the one grant this job can mint and no operator
+            // can, so "did the install take ownership?" must be answerable from the log.
+            if super_user {
+                println!("{username} is this deployment's super user");
+            } else {
+                println!(
+                    "{username} is not the super user; the database already had accounts, so \
+                     nothing was promoted"
+                );
+            }
+        }
         AdminOutcome::AlreadyPresent => println!("administrator already present; nothing changed"),
     }
     Ok(())

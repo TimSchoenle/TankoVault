@@ -64,7 +64,10 @@ pub(crate) fn TitleBar(on_settings: EventHandler<()>) -> Element {
                 "aria-label": i18n.t("settings.title"),
                 title: i18n.t("settings.title"),
                 onclick: move |_| on_settings.call(()),
-                Ic { icon: Icon::Settings, size: 15 }
+                // Sliders, not the gear the rest of the app uses for settings. The gear's path
+                // is a ring of arcs, and at the 15px a title-bar control gets they collapse into
+                // a smudge; three strokes and three dots survive the size.
+                Ic { icon: Icon::Tune, size: 15 }
             }
 
             div { class: "ik-titlebar-controls",

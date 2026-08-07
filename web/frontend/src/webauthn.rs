@@ -60,6 +60,19 @@ pub(crate) enum CeremonyError {
     /// nothing", and "no credential matched" — it is deliberately indistinguishable so a page
     /// cannot probe which authenticators a visitor holds. So this is not necessarily a refusal,
     /// and the wording must not accuse anyone of one.
+    //
+    // Reached by a browser and by Windows Hello, but not by the desktop build anywhere else —
+    // there, every ceremony is refused with `Unsupported` before an authenticator is involved.
+    // `not(test)` because the wording test below constructs the whole set, so the claim only
+    // holds for the non-test compilation and an `expect` unfulfilled under `--all-targets` warns
+    // exactly as loudly as the thing it suppresses.
+    #[cfg_attr(
+        all(feature = "desktop", not(windows), not(test)),
+        expect(
+            dead_code,
+            reason = "no OS passkey provider off Windows, so nothing gets as far as a refusal"
+        )
+    )]
     Cancelled,
     /// The prompt closed without producing a credential, and the platform did not say why.
     ///
@@ -73,11 +86,15 @@ pub(crate) enum CeremonyError {
     /// [`Failed`](Self::Failed) it would tell a reader who pressed Cancel that something broke.
     /// The wording names both possibilities instead. Fixing it properly is an upstream patch
     /// mapping `ERROR_CANCELLED`/`NTE_USER_CANCELLED`.
+    //
+    // Constructed by the Windows backend and nowhere else: a browser distinguishes cancellation,
+    // and every other desktop target refuses before a ceremony starts. See `Cancelled` for why
+    // `not(test)` is part of the condition.
     #[cfg_attr(
-        all(feature = "web", not(test)),
+        all(not(test), any(feature = "web", not(windows))),
         expect(
             dead_code,
-            reason = "browsers distinguish cancellation, so only the Windows backend needs this"
+            reason = "only the Windows backend loses the distinction this outcome exists for"
         )
     )]
     Incomplete,

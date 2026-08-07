@@ -204,6 +204,10 @@ desktop = [
     "dep:webauthn-authenticator-rs",
     # `bytes_stream()`, which is what the SSE parser above is fed.
     "reqwest/stream",
+    # The refresh credential is an httpOnly cookie. On web the browser owns the jar and this is
+    # free; a native `reqwest` has no jar at all unless asked, and without one it discards the
+    # cookie and the session dies at the access token's first expiry. See `api::cookie_jar`.
+    "reqwest/cookies",
 ]
 
 # This crate sits outside the workspace, so it cannot inherit `[workspace.lints]`. The set

@@ -153,17 +153,27 @@ pub(crate) fn window() -> Option<dioxus::desktop::DesktopContext> {
     try_consume_context::<dioxus::desktop::DesktopContext>()
 }
 
-/// Shrink and re-centre the window if the size it was built with does not fit the display.
+/// Size the window to the display it opened on, and centre it.
 ///
-/// `WindowBuilder` picks a size before there is an event loop, so it cannot know which monitor
-/// the window will open on. This runs once from the first render, when it can.
+/// `WindowBuilder` has to pick a size before there is an event loop, so it cannot know which
+/// monitor the window will land on — the fixed size it names is a placeholder. This runs once
+/// from the first render, when the monitor is knowable, and replaces it.
 ///
-/// 92% of the monitor, not 100%: `tao` reports the monitor, not its *work area*, so the taskbar
-/// or dock is included in that number and a window sized to it would sit under one edge.
-/// Growing is never attempted — a reader who wants it bigger has a maximise button, and a window
-/// that inflates itself on launch is worse than one that is merely smaller than the screen.
+/// Proportional rather than fixed, in both directions. A fixed default is either cramped on a
+/// large display or taller than the screen on a laptop, and this app's densest screen — the
+/// watchlist — reveals two more columns at 1500px, so the space is worth taking when it exists.
+///
+/// The bounds are what stop that being silly. [`MAX_FRACTION`] leaves the taskbar or dock room,
+/// because `tao` reports the monitor rather than its *work area*; the pixel ceiling stops a
+/// window spanning an ultrawide, where the measure-capped content would sit in a narrow strip
+/// down the middle of a very wide frame.
 pub(crate) fn fit_window_to_display() {
+    /// Of the monitor's shorter dimension budget, before the ceiling applies.
+    const PREFERRED_FRACTION: f64 = 0.82;
+    /// Never past this much of the monitor, so the taskbar keeps its edge.
     const MAX_FRACTION: f64 = 0.92;
+    const MAX_WIDTH: f64 = 1760.0;
+    const MAX_HEIGHT: f64 = 1120.0;
 
     let Some(window) = window() else {
         return;
@@ -174,17 +184,20 @@ pub(crate) fn fit_window_to_display() {
 
     let scale = monitor.scale_factor();
     let available = monitor.size().to_logical::<f64>(scale);
-    let current = window.inner_size().to_logical::<f64>(scale);
-
-    let width = current.width.min(available.width * MAX_FRACTION);
-    let height = current.height.min(available.height * MAX_FRACTION);
-    if width >= current.width && height >= current.height {
+    if available.width <= 0.0 || available.height <= 0.0 {
         return;
     }
 
+    let width = (available.width * PREFERRED_FRACTION)
+        .min(MAX_WIDTH)
+        .min(available.width * MAX_FRACTION);
+    let height = (available.height * PREFERRED_FRACTION)
+        .min(MAX_HEIGHT)
+        .min(available.height * MAX_FRACTION);
+
     window.set_inner_size(dioxus::desktop::LogicalSize::new(width, height));
-    // Re-centred as well: shrinking from the top-left corner alone leaves the window wherever
-    // the OS first placed a box of the old size, which after a resize is rarely centred.
+    // Centred as well: resizing moves the bottom-right corner only, so a window the OS placed
+    // for the old size ends up off-centre — and, when it grew, possibly off-screen.
     let position = monitor.position().to_logical::<f64>(scale);
     window.set_outer_position(dioxus::desktop::LogicalPosition::new(
         position.x + (available.width - width) / 2.0,

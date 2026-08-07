@@ -41,6 +41,15 @@ accepted = [
 # Every target a shipped artefact is built for. The wasm bundle is one; the desktop installers
 # `release-please.yaml` publishes are the other two, and a notice owed by a Windows-only or
 # Linux-only dependency is not discharged by a document generated for wasm alone.
+#
+# **Regenerating requires the sources for all three to be unpacked**, and `cargo fetch` resolves
+# for the host unless each is named. Miss one and cargo-about omits its crates silently: a
+# Windows developer and a Linux runner then produce different documents and overwrite each
+# other's "fix" for ever. CI's `notices` job names them; so must you.
+#
+#   cargo fetch --locked --manifest-path web/frontend/Cargo.toml \
+#     --target wasm32-unknown-unknown --target x86_64-pc-windows-msvc \
+#     --target x86_64-unknown-linux-gnu
 targets = [
     "wasm32-unknown-unknown",
     "x86_64-pc-windows-msvc",

@@ -1154,10 +1154,22 @@ jobs:
       # crate sources. `cargo fetch` unpacks them; without this the run would harvest nothing and
       # report drift that does not exist. Both graphs, because `web/frontend` is its own
       # workspace with its own lockfile.
-      - name: fetch both dependency graphs
+      #
+      # **Every target the `about.toml` files name, explicitly.** `cargo fetch` resolves for the
+      # *host* unless told otherwise, so a Linux runner never unpacks a Windows-only crate and
+      # cargo-about silently omits it — while a developer regenerating on Windows omits the
+      # Linux-only ones instead. The two then overwrite each other for ever, each "fixing" drift
+      # the other introduced, and the committed document is incomplete on both. It only became
+      # visible when `web/frontend` grew target-specific dependencies (`rfd` pulls `ashpd` on
+      # Linux; the passkey backend is Windows-only); before that its graph was wasm alone.
+      - name: fetch every dependency graph, for every target the notices cover
         run: |
-          cargo fetch --locked
-          cargo fetch --locked --manifest-path web/frontend/Cargo.toml
+          cargo fetch --locked \
+            --target x86_64-unknown-linux-musl --target aarch64-unknown-linux-musl
+          cargo fetch --locked --manifest-path web/frontend/Cargo.toml \
+            --target wasm32-unknown-unknown \
+            --target x86_64-pc-windows-msvc \
+            --target x86_64-unknown-linux-gnu
 
       - name: notices drift
         run: cargo run -p xtask -- notices --check

@@ -18,6 +18,14 @@ ARG RUST_VERSION=1.94
 # musl-tools lacks, so the build is native rather than cross. Pinned by digest.
 FROM lukemathwalker/cargo-chef:latest-rust-${RUST_VERSION}-alpine@sha256:5b2b5c6585c537a2795a477e93ebba85b4a2887e11ee9bddd34ad607e53ccec0 AS chef
 WORKDIR /app
+# Copied alone, first, exactly as `wasm-chef` does below and for a sharper version of the same
+# reason: the base image's toolchain floats within 1.94 while this file pins an exact patch.
+# Without it here, `cook` compiled against the image's rustc and `builder` — which receives this
+# file via `COPY . .` — compiled against the pinned one. Cargo's fingerprint carries the rustc
+# identity, so every one of the 523 dependency crates got a different metadata hash and `builder`
+# recompiled the entire graph `cook` had just built, on every single build. Measured: 427 crates
+# rebuilt with this file arriving late, 11 with the two stages agreeing.
+COPY rust-toolchain.toml ./
 # musl-dev/g++/cmake/nasm/perl build BoringSSL from source; git lets btls-sys patch the vendored
 # tree; clang-dev is bindgen's libclang; ca-certificates goes into the certificate-less scratch image.
 RUN apk add --no-cache musl-dev g++ cmake make nasm perl git clang-dev ca-certificates

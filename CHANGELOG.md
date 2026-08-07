@@ -12,6 +12,20 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [3.1.0](https://github.com/TimSchoenle/TankoVault/compare/v3.0.0...v3.1.0) (2026-08-07)
+
+
+### Features
+
+* **domain,api:** give the installer's first account a super user grant ([#135](https://github.com/TimSchoenle/TankoVault/issues/135)) ([8416fd4](https://github.com/TimSchoenle/TankoVault/commit/8416fd418bd3d5dcffb303e5c2ea6b9b7663efdd))
+* **frontend:** installer options, an in-app autostart switch, and a theme-aware scrollbar ([#136](https://github.com/TimSchoenle/TankoVault/issues/136)) ([76a09e1](https://github.com/TimSchoenle/TankoVault/commit/76a09e1df7b939cd0252d7799e2ba6e6ae8a7c52))
+* **frontend:** page discover on a scroll sentinel and address the position ([#137](https://github.com/TimSchoenle/TankoVault/issues/137)) ([ccd7182](https://github.com/TimSchoenle/TankoVault/commit/ccd7182a53d325d9296a442cd5dacfdfe463d64b))
+
+
+### Bug Fixes
+
+* **deps:** update rust crate sha2 to 0.11 ([#100](https://github.com/TimSchoenle/TankoVault/issues/100)) ([47417a4](https://github.com/TimSchoenle/TankoVault/commit/47417a400b9db7e84b0dd7b05afa0795dde56a8c))
+
 ## [3.0.0](https://github.com/TimSchoenle/TankoVault/compare/v2.1.0...v3.0.0) (2026-08-07)
 
 

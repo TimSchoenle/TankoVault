@@ -19,6 +19,9 @@ pub enum DbError {
     /// An expected row was not found.
     #[error("not found")]
     NotFound,
+    /// A typed document could not be encoded for a `jsonb` column.
+    #[error(transparent)]
+    Serialization(#[from] serde_json::Error),
 }
 
 impl DbError {

@@ -697,6 +697,20 @@ a { color: inherit; text-decoration: none; }
 .ik-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; }
 .ik-row.unread { border-left: 3px solid var(--acc); background: var(--surface-unread); }
 .ik-row .grow { flex: 1; min-width: 0; }
+
+/* Notification row — §7.5: kind tile, cover thumb, title line, sub-line, relative time.
+ * The tile had no rule at all before, so its size came from the icon alone and the covers,
+ * chapter titles and provider the spec asks for were simply not rendered. */
+.ik-notif-wrap { position: relative; }
+.ik-notif { text-decoration: none; color: inherit; }
+.ik-notif-kind { flex: none; width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; }
+.ik-notif-thumb { flex: none; width: 32px; height: 44px; border-radius: 5px; overflow: hidden; border: 1px solid var(--border); }
+.ik-notif-thumb .ik-cover, .ik-notif-thumb .ik-cover-fallback { width: 32px; height: 44px; aspect-ratio: auto; font-size: 15px; }
+.ik-notif-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ik-notif-sub { color: var(--muted); font-size: 12px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+/* Overlaid rather than nested: the row is itself a link, and HTML forbids an anchor inside one. */
+.ik-notif-read { position: absolute; top: 50%; right: 14px; transform: translateY(-50%); font-size: 12px; padding: 5px 10px; }
+.ik-notif-wrap:has(.ik-notif-read) .ik-notif { padding-right: 88px; }
 /* ============================================================================
  * Watchlist — status filter strip + one virtualized list (design turn 4 / 4a),
  * with a cover-grid alternate (4b).

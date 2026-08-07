@@ -1,6 +1,7 @@
 //! Consumes `chapter.discovered` events and fans them out to watchers: only users with
-//! `notify = true`, skipping already-read chapters, deduplicated per `(user, series,
-//! chapter)` so overlapping providers never double-fire.
+//! `notify = true` whose preferences allow the kind and the watchlist status, skipping
+//! already-read chapters, deduplicated per `(user, series, chapter)` so overlapping providers
+//! never double-fire, and coalesced into each reader's open row for the series.
 
 mod channels;
 
@@ -12,6 +13,7 @@ use serde::Deserialize;
 use tankovault_bus::Bus;
 use tankovault_contracts::{ChapterDiscovered, UserNotification, subjects};
 use tankovault_db::PgPool;
+use tankovault_db::repo::tracking::CreatedNotification;
 use tankovault_domain::Feature;
 use tankovault_service::health::PostgresCheck;
 use tankovault_service::{
@@ -210,7 +212,7 @@ async fn fan_out(
     // not `chapter_number > last_read_number` — a part release (`152.5`) belongs to the
     // chapter it floors to, so a direct comparison would announce it as new again.
     let unread_by: Vec<tankovault_domain::UserId> = watchers
-        .into_iter()
+        .iter()
         .filter(|w| {
             w.progress
                 .is_none_or(|progress| !progress.covers(event.chapter_number))
@@ -229,19 +231,36 @@ async fn fan_out(
     .await?;
     let notified_any = !claimed.is_empty();
 
-    if in_app && !claimed.is_empty() {
-        // One immutable document for the whole fan-out — only `user_id` varies.
-        let payload = serde_json::json!({
-            "series_id": event.series_id,
-            "chapter_number": event.chapter_number,
-            "chapter_title": event.chapter_title,
-            "chapter_path": event.chapter_path,
-            "provider_slug": event.provider_slug,
-        });
-        let created = tankovault_db::repo::tracking::notifications_create_many(
+    // Preferences are applied *after* the claim, for the same reason the in-app flag is: the
+    // claim is the announcement record. Filtering before it would leave the slot unclaimed, so
+    // re-enabling a muted watchlist status later would replay every chapter released while it
+    // was off as a fresh flood.
+    let recipients: Vec<tankovault_domain::UserId> = watchers
+        .iter()
+        .filter(|w| claimed.contains(&w.user_id))
+        .filter(|w| {
+            w.prefs
+                .allows(tankovault_domain::NotificationKind::NewChapter, w.status)
+        })
+        .map(|w| w.user_id)
+        .collect();
+
+    if in_app && !recipients.is_empty() {
+        // One immutable document for the whole fan-out — only `user_id` varies. Display fields
+        // are snapshotted rather than joined at read time: a notification is a record of what
+        // was announced, and a later rename should not rewrite what the reader was told.
+        let context = tankovault_db::repo::tracking::notification_context(
             pool,
-            &claimed,
-            "new_chapter",
+            event.series_id,
+            &event.provider_slug,
+        )
+        .await?;
+        let payload = chapter_payload(event, context.as_ref());
+        let created = tankovault_db::repo::tracking::notifications_upsert_many(
+            pool,
+            &recipients,
+            tankovault_domain::NotificationKind::NewChapter.as_str(),
+            Some(&group_key(event.series_id)),
             &payload,
         )
         .await?;
@@ -250,7 +269,16 @@ async fn fan_out(
         // The live push is a separate feature from the durable row: a deployment can keep the
         // notification list while shedding the SSE fan-out under load.
         if features.is_enabled(Feature::NotificationsLive) {
-            push_live(pool, bus, &created, &payload).await;
+            let live: Vec<&tankovault_db::repo::tracking::CreatedNotification> = created
+                .iter()
+                .filter(|c| {
+                    watchers
+                        .iter()
+                        .find(|w| w.user_id == c.user_id)
+                        .is_some_and(|w| w.prefs.allows_live(OffsetDateTime::now_utc()))
+                })
+                .collect();
+            push_live(pool, bus, &live).await;
         }
     }
 
@@ -269,19 +297,53 @@ async fn fan_out(
     Ok(())
 }
 
+/// The coalescing key: one open row per watched series, per reader.
+fn group_key(series_id: tankovault_domain::SeriesId) -> String {
+    format!("series:{}", series_id.as_uuid())
+}
+
+/// Build the `v2` chapter payload — everything a row needs to read without being opened.
+///
+/// `context` is `None` only when the series or provider vanished between the scan and here; the
+/// row is still written, just undecorated, because losing the announcement is worse than losing
+/// the title.
+fn chapter_payload(
+    event: &ChapterDiscovered,
+    context: Option<&tankovault_db::repo::tracking::NotificationContext>,
+) -> serde_json::Value {
+    let url = context.and_then(|c| {
+        tankovault_domain::resolve_link(&c.base_url, &event.chapter_path)
+            .inspect_err(|e| tracing::warn!(error = %e, "unresolvable chapter link"))
+            .ok()
+    });
+    serde_json::json!({
+        "v": 2,
+        "series_id": event.series_id,
+        "series_title": context.map(|c| c.series_title.as_str()),
+        "cover_url": context.and_then(|c| c.cover_url.as_deref()),
+        "provider_slug": event.provider_slug,
+        "count": 1,
+        "first_number": event.chapter_number,
+        "last_number": event.chapter_number,
+        "latest": {
+            "number": event.chapter_number,
+            "title": event.chapter_title,
+            "url": url,
+        },
+    })
+}
+
 /// Best-effort live push of freshly-created in-app notifications to users' SSE streams,
 /// each carrying the user's current unread count. Never affects the durable notification
 /// rows on failure.
 ///
 /// Counts come from one grouped query for the batch. A miss (a race with a concurrent
 /// "mark all read") is treated as `0` rather than panicking.
-async fn push_live(
-    pool: &PgPool,
-    bus: &Bus,
-    created: &[(tankovault_domain::UserId, tankovault_domain::NotificationId)],
-    payload: &serde_json::Value,
-) {
-    let users: Vec<tankovault_domain::UserId> = created.iter().map(|(u, _)| *u).collect();
+async fn push_live(pool: &PgPool, bus: &Bus, created: &[&CreatedNotification]) {
+    if created.is_empty() {
+        return;
+    }
+    let users: Vec<tankovault_domain::UserId> = created.iter().map(|c| c.user_id).collect();
     let counts =
         match tankovault_db::repo::tracking::notifications_unread_counts(pool, &users).await {
             Ok(c) => c,
@@ -291,17 +353,17 @@ async fn push_live(
             }
         };
     let created_at = OffsetDateTime::now_utc();
-    // This per-watcher `payload.clone()` is intentional: removing it would need an `Arc`
-    // or borrowed field in a published wire DTO — not worth it against a publish that
-    // re-serialises the same document anyway.
-    for &(user_id, notification_id) in created {
+    // The payload is the *stored* document, not the one this event contributed: a coalesced row
+    // now reads "12 new", and pushing the single-chapter document would put a stale line on
+    // screen that only a reload would correct.
+    for entry in created {
         let live = UserNotification {
-            user_id,
-            notification_id: notification_id.as_uuid(),
-            kind: "new_chapter".to_owned(),
-            payload: payload.clone(),
+            user_id: entry.user_id,
+            notification_id: entry.notification_id.as_uuid(),
+            kind: tankovault_domain::NotificationKind::NewChapter.to_string(),
+            payload: entry.payload.clone(),
             created_at,
-            unread_count: counts.get(&user_id).copied().unwrap_or(0),
+            unread_count: counts.get(&entry.user_id).copied().unwrap_or(0),
         };
         if let Err(e) = bus.publish_user_notification(&live).await {
             tracing::warn!(error = %e, "live notification push failed");

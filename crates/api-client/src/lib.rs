@@ -1015,6 +1015,51 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "Where a notification is allowed to go.\n\nNo `email` switch, deliberately. The notifier's email channel addresses *operator* recipients\nconfigured on the deployment, not the reader, so a per-reader email toggle would have nothing\nto switch — which is exactly what the three preferences this document replaced were."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Where a notification is allowed to go.\\n\\nNo `email` switch, deliberately. The notifier's email channel addresses *operator* recipients\\nconfigured on the deployment, not the reader, so a per-reader email toggle would have nothing\\nto switch — which is exactly what the three preferences this document replaced were.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"in_app\": {"]
+    #[doc = "      \"description\": \"The durable inbox row and the unread badge.\","]
+    #[doc = "      \"default\": true,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"live\": {"]
+    #[doc = "      \"description\": \"The live SSE push. Off still writes the row; only the real-time nudge stops.\","]
+    #[doc = "      \"default\": true,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct ChannelPrefs {
+        #[doc = "The durable inbox row and the unread badge."]
+        #[serde(default = "defaults::default_bool::<true>")]
+        pub in_app: bool,
+        #[doc = "The live SSE push. Off still writes the row; only the real-time nudge stops."]
+        #[serde(default = "defaults::default_bool::<true>")]
+        pub live: bool,
+    }
+    impl ::std::default::Default for ChannelPrefs {
+        fn default() -> Self {
+            Self {
+                in_app: defaults::default_bool::<true>(),
+                live: defaults::default_bool::<true>(),
+            }
+        }
+    }
+    impl ChannelPrefs {
+        pub fn builder() -> builder::ChannelPrefs {
+            Default::default()
+        }
+    }
     #[doc = "`ChapterDto`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -2800,6 +2845,68 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "One switch per [`NotificationKind`]."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One switch per [`NotificationKind`].\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"announcement\": {"]
+    #[doc = "      \"default\": true,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"new_chapter\": {"]
+    #[doc = "      \"default\": true,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"series_completed\": {"]
+    #[doc = "      \"default\": true,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"source_added\": {"]
+    #[doc = "      \"default\": true,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"sync_conflict\": {"]
+    #[doc = "      \"default\": true,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct KindPrefs {
+        #[serde(default = "defaults::default_bool::<true>")]
+        pub announcement: bool,
+        #[serde(default = "defaults::default_bool::<true>")]
+        pub new_chapter: bool,
+        #[serde(default = "defaults::default_bool::<true>")]
+        pub series_completed: bool,
+        #[serde(default = "defaults::default_bool::<true>")]
+        pub source_added: bool,
+        #[serde(default = "defaults::default_bool::<true>")]
+        pub sync_conflict: bool,
+    }
+    impl ::std::default::Default for KindPrefs {
+        fn default() -> Self {
+            Self {
+                announcement: defaults::default_bool::<true>(),
+                new_chapter: defaults::default_bool::<true>(),
+                series_completed: defaults::default_bool::<true>(),
+                source_added: defaults::default_bool::<true>(),
+                sync_conflict: defaults::default_bool::<true>(),
+            }
+        }
+    }
+    impl KindPrefs {
+        pub fn builder() -> builder::KindPrefs {
+            Default::default()
+        }
+    }
     #[doc = "One document, in the locale that was actually served."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3756,6 +3863,255 @@ pub mod types {
             self.0.fmt(f)
         }
     }
+    #[doc = "One inbox row, resolved to the fields a list can render without opening it.\n\nFlat rather than a `kind`-discriminated `oneOf`: the generated client is what the frontend\nconsumes, and a `oneOf` there produces an enum that is painful to match on for a gain the\nretained `payload` already covers."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One inbox row, resolved to the fields a list can render without opening it.\\n\\nFlat rather than a `kind`-discriminated `oneOf`: the generated client is what the frontend\\nconsumes, and a `oneOf` there produces an enum that is painful to match on for a gain the\\nretained `payload` already covers.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"chapter_count\","]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"kind\","]
+    #[doc = "    \"payload\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"chapter_count\": {"]
+    #[doc = "      \"description\": \"How many chapters this row has absorbed. `1` unless it was coalesced.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"chapter_title\": {"]
+    #[doc = "      \"description\": \"Title of the newest chapter this row covers, when the provider gave one.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"chapter_url\": {"]
+    #[doc = "      \"description\": \"Openable URL of that chapter. Absent on rows written before the payload resolved links.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"cover_url\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"first_number\": {"]
+    #[doc = "      \"description\": \"Lowest chapter number this row covers.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"number\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"kind\": {"]
+    #[doc = "      \"description\": \"The kind token. A string rather than the enum, because a client generated from an older\\ndocument still has to render a row a newer notifier wrote.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"last_number\": {"]
+    #[doc = "      \"description\": \"Highest chapter number this row covers; equal to `first_number` on an ungrouped row.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"number\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    },"]
+    #[doc = "    \"payload\": {"]
+    #[doc = "      \"description\": \"The stored document verbatim, for kinds the fields above do not model.\""]
+    #[doc = "    },"]
+    #[doc = "    \"provider_slug\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"read_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"series_id\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"series_title\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct NotificationItem {
+        #[doc = "How many chapters this row has absorbed. `1` unless it was coalesced."]
+        pub chapter_count: i64,
+        #[doc = "Title of the newest chapter this row covers, when the provider gave one."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub chapter_title: ::std::option::Option<::std::string::String>,
+        #[doc = "Openable URL of that chapter. Absent on rows written before the payload resolved links."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub chapter_url: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub cover_url: ::std::option::Option<::std::string::String>,
+        pub created_at: ::std::string::String,
+        #[doc = "Lowest chapter number this row covers."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub first_number: ::std::option::Option<f64>,
+        pub id: ::uuid::Uuid,
+        #[doc = "The kind token. A string rather than the enum, because a client generated from an older\ndocument still has to render a row a newer notifier wrote."]
+        pub kind: ::std::string::String,
+        #[doc = "Highest chapter number this row covers; equal to `first_number` on an ungrouped row."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub last_number: ::std::option::Option<f64>,
+        #[doc = "The stored document verbatim, for kinds the fields above do not model."]
+        pub payload: ::serde_json::Value,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub provider_slug: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub read_at: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub series_id: ::std::option::Option<::uuid::Uuid>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub series_title: ::std::option::Option<::std::string::String>,
+    }
+    impl NotificationItem {
+        pub fn builder() -> builder::NotificationItem {
+            Default::default()
+        }
+    }
+    #[doc = "A reader's notification preferences, stored as `users.notification_prefs`.\n\nEvery field defaults, so an absent, partial or legacy document decodes to the product\ndefaults rather than an error: a preference read must never fail the request it decorates.\nThe pre-v1 document (`{\"new_chapters\": …, \"email\": …, \"digest\": …}`) therefore decodes to\nfull defaults — those keys were never read by anything, so nothing observable is lost."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A reader's notification preferences, stored as `users.notification_prefs`.\\n\\nEvery field defaults, so an absent, partial or legacy document decodes to the product\\ndefaults rather than an error: a preference read must never fail the request it decorates.\\nThe pre-v1 document (`{\\\"new_chapters\\\": …, \\\"email\\\": …, \\\"digest\\\": …}`) therefore decodes to\\nfull defaults — those keys were never read by anything, so nothing observable is lost.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"channels\": {"]
+    #[doc = "      \"default\": {"]
+    #[doc = "        \"in_app\": true,"]
+    #[doc = "        \"live\": true"]
+    #[doc = "      },"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/ChannelPrefs\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"group_unread\": {"]
+    #[doc = "      \"description\": \"Collapse a series' chapters into one row while it stays unread, instead of one row each.\","]
+    #[doc = "      \"default\": true,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"kinds\": {"]
+    #[doc = "      \"default\": {"]
+    #[doc = "        \"announcement\": true,"]
+    #[doc = "        \"new_chapter\": true,"]
+    #[doc = "        \"series_completed\": true,"]
+    #[doc = "        \"source_added\": true,"]
+    #[doc = "        \"sync_conflict\": true"]
+    #[doc = "      },"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/KindPrefs\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"quiet_hours\": {"]
+    #[doc = "      \"default\": {"]
+    #[doc = "        \"enabled\": false,"]
+    #[doc = "        \"end_minute\": 420,"]
+    #[doc = "        \"start_minute\": 1380,"]
+    #[doc = "        \"utc_offset_minutes\": 0"]
+    #[doc = "      },"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/QuietHours\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"version\": {"]
+    #[doc = "      \"description\": \"Schema version of this document; see [`PREFS_VERSION`].\","]
+    #[doc = "      \"default\": 1,"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"watch_status\": {"]
+    #[doc = "      \"default\": {"]
+    #[doc = "        \"completed\": false,"]
+    #[doc = "        \"dropped\": false,"]
+    #[doc = "        \"paused\": true,"]
+    #[doc = "        \"planned\": true,"]
+    #[doc = "        \"reading\": true"]
+    #[doc = "      },"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/StatusPrefs\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct NotificationPrefs {
+        #[serde(default = "defaults::notification_prefs_channels")]
+        pub channels: ChannelPrefs,
+        #[doc = "Collapse a series' chapters into one row while it stays unread, instead of one row each."]
+        #[serde(default = "defaults::default_bool::<true>")]
+        pub group_unread: bool,
+        #[serde(default = "defaults::notification_prefs_kinds")]
+        pub kinds: KindPrefs,
+        #[serde(default = "defaults::notification_prefs_quiet_hours")]
+        pub quiet_hours: QuietHours,
+        #[doc = "Schema version of this document; see [`PREFS_VERSION`]."]
+        #[serde(default = "defaults::default_u64::<i32, 1>")]
+        pub version: i32,
+        #[serde(default = "defaults::notification_prefs_watch_status")]
+        pub watch_status: StatusPrefs,
+    }
+    impl ::std::default::Default for NotificationPrefs {
+        fn default() -> Self {
+            Self {
+                channels: defaults::notification_prefs_channels(),
+                group_unread: defaults::default_bool::<true>(),
+                kinds: defaults::notification_prefs_kinds(),
+                quiet_hours: defaults::notification_prefs_quiet_hours(),
+                version: defaults::default_u64::<i32, 1>(),
+                watch_status: defaults::notification_prefs_watch_status(),
+            }
+        }
+    }
+    impl NotificationPrefs {
+        pub fn builder() -> builder::NotificationPrefs {
+            Default::default()
+        }
+    }
     #[doc = "`NotificationsView`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3770,17 +4126,19 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"items\": {"]
-    #[doc = "      \"description\": \"One page of the inbox, newest first. Free-form per notification kind: the notifier writes\\nan open `payload`, and pinning a schema here would drop every kind it has not shipped yet.\","]
+    #[doc = "      \"description\": \"One page of the inbox, newest first.\","]
     #[doc = "      \"type\": \"array\","]
-    #[doc = "      \"items\": {}"]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/NotificationItem\""]
+    #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"total\": {"]
-    #[doc = "      \"description\": \"Notifications the caller has, in total — the pager's denominator.\","]
+    #[doc = "      \"description\": \"Notifications matching this request's filter — the pager's denominator.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"unread\": {"]
-    #[doc = "      \"description\": \"Of those, how many are unread. Counted server-side on purpose: derived from `items` it is\\nonly ever the unread count *of the loaded page*, which is what pinned the bell at 100.\","]
+    #[doc = "      \"description\": \"Unread notifications the caller has, ignoring the filter. Counted server-side on purpose:\\nderived from `items` it is only ever the unread count *of the loaded page*, which is what\\npinned the bell at 100.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    }"]
@@ -3790,11 +4148,11 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct NotificationsView {
-        #[doc = "One page of the inbox, newest first. Free-form per notification kind: the notifier writes\nan open `payload`, and pinning a schema here would drop every kind it has not shipped yet."]
-        pub items: ::std::vec::Vec<::serde_json::Value>,
-        #[doc = "Notifications the caller has, in total — the pager's denominator."]
+        #[doc = "One page of the inbox, newest first."]
+        pub items: ::std::vec::Vec<NotificationItem>,
+        #[doc = "Notifications matching this request's filter — the pager's denominator."]
         pub total: i64,
-        #[doc = "Of those, how many are unread. Counted server-side on purpose: derived from `items` it is\nonly ever the unread count *of the loaded page*, which is what pinned the bell at 100."]
+        #[doc = "Unread notifications the caller has, ignoring the filter. Counted server-side on purpose:\nderived from `items` it is only ever the unread count *of the loaded page*, which is what\npinned the bell at 100."]
         pub unread: i64,
     }
     impl NotificationsView {
@@ -5365,6 +5723,72 @@ pub mod types {
     }
     impl PublicProvider {
         pub fn builder() -> builder::PublicProvider {
+            Default::default()
+        }
+    }
+    #[doc = "A nightly window, expressed in minutes from local midnight.\n\nMinutes plus a fixed UTC offset rather than an IANA zone: the alternative is a timezone\ndatabase in a crate that deliberately has no I/O, to move a quiet window by an hour twice a\nyear. The client sends the offset its browser reports."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A nightly window, expressed in minutes from local midnight.\\n\\nMinutes plus a fixed UTC offset rather than an IANA zone: the alternative is a timezone\\ndatabase in a crate that deliberately has no I/O, to move a quiet window by an hour twice a\\nyear. The client sends the offset its browser reports.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"enabled\": {"]
+    #[doc = "      \"default\": false,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"end_minute\": {"]
+    #[doc = "      \"description\": \"Minutes from local midnight at which it closes (exclusive). May be less than\\n`start_minute`, which means the window wraps past midnight.\","]
+    #[doc = "      \"default\": 420,"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"start_minute\": {"]
+    #[doc = "      \"description\": \"Minutes from local midnight at which the window opens (inclusive).\","]
+    #[doc = "      \"default\": 1380,"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"utc_offset_minutes\": {"]
+    #[doc = "      \"description\": \"Minutes east of UTC that the two boundaries above are measured in.\","]
+    #[doc = "      \"default\": 0,"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct QuietHours {
+        #[serde(default)]
+        pub enabled: bool,
+        #[doc = "Minutes from local midnight at which it closes (exclusive). May be less than\n`start_minute`, which means the window wraps past midnight."]
+        #[serde(default = "defaults::default_u64::<i32, 420>")]
+        pub end_minute: i32,
+        #[doc = "Minutes from local midnight at which the window opens (inclusive)."]
+        #[serde(default = "defaults::default_u64::<i32, 1380>")]
+        pub start_minute: i32,
+        #[doc = "Minutes east of UTC that the two boundaries above are measured in."]
+        #[serde(default)]
+        pub utc_offset_minutes: i32,
+    }
+    impl ::std::default::Default for QuietHours {
+        fn default() -> Self {
+            Self {
+                enabled: Default::default(),
+                end_minute: defaults::default_u64::<i32, 420>(),
+                start_minute: defaults::default_u64::<i32, 1380>(),
+                utc_offset_minutes: Default::default(),
+            }
+        }
+    }
+    impl QuietHours {
+        pub fn builder() -> builder::QuietHours {
             Default::default()
         }
     }
@@ -7438,6 +7862,68 @@ pub mod types {
     }
     impl SourceDto {
         pub fn builder() -> builder::SourceDto {
+            Default::default()
+        }
+    }
+    #[doc = "One switch per [`WatchStatus`].\n\n`dropped` and `completed` default **off**: a reader who put a series down has said so, and\nthe watchlist's own `notify` flag is a per-series override, not a way to express that."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One switch per [`WatchStatus`].\\n\\n`dropped` and `completed` default **off**: a reader who put a series down has said so, and\\nthe watchlist's own `notify` flag is a per-series override, not a way to express that.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"completed\": {"]
+    #[doc = "      \"default\": false,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"dropped\": {"]
+    #[doc = "      \"default\": false,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"paused\": {"]
+    #[doc = "      \"default\": true,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"planned\": {"]
+    #[doc = "      \"default\": true,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"reading\": {"]
+    #[doc = "      \"default\": true,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct StatusPrefs {
+        #[serde(default)]
+        pub completed: bool,
+        #[serde(default)]
+        pub dropped: bool,
+        #[serde(default = "defaults::default_bool::<true>")]
+        pub paused: bool,
+        #[serde(default = "defaults::default_bool::<true>")]
+        pub planned: bool,
+        #[serde(default = "defaults::default_bool::<true>")]
+        pub reading: bool,
+    }
+    impl ::std::default::Default for StatusPrefs {
+        fn default() -> Self {
+            Self {
+                completed: Default::default(),
+                dropped: Default::default(),
+                paused: defaults::default_bool::<true>(),
+                planned: defaults::default_bool::<true>(),
+                reading: defaults::default_bool::<true>(),
+            }
+        }
+    }
+    impl StatusPrefs {
+        pub fn builder() -> builder::StatusPrefs {
             Default::default()
         }
     }
@@ -11327,6 +11813,60 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct ChannelPrefs {
+            in_app: ::std::result::Result<bool, ::std::string::String>,
+            live: ::std::result::Result<bool, ::std::string::String>,
+        }
+        impl ::std::default::Default for ChannelPrefs {
+            fn default() -> Self {
+                Self {
+                    in_app: Ok(super::defaults::default_bool::<true>()),
+                    live: Ok(super::defaults::default_bool::<true>()),
+                }
+            }
+        }
+        impl ChannelPrefs {
+            pub fn in_app<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.in_app = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for in_app: {e}"));
+                self
+            }
+            pub fn live<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.live = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for live: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<ChannelPrefs> for super::ChannelPrefs {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ChannelPrefs,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    in_app: value.in_app?,
+                    live: value.live?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::ChannelPrefs> for ChannelPrefs {
+            fn from(value: super::ChannelPrefs) -> Self {
+                Self {
+                    in_app: Ok(value.in_app),
+                    live: Ok(value.live),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct ChapterDto {
             number: ::std::result::Result<f64, ::std::string::String>,
             published_at: ::std::result::Result<
@@ -13392,6 +13932,102 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct KindPrefs {
+            announcement: ::std::result::Result<bool, ::std::string::String>,
+            new_chapter: ::std::result::Result<bool, ::std::string::String>,
+            series_completed: ::std::result::Result<bool, ::std::string::String>,
+            source_added: ::std::result::Result<bool, ::std::string::String>,
+            sync_conflict: ::std::result::Result<bool, ::std::string::String>,
+        }
+        impl ::std::default::Default for KindPrefs {
+            fn default() -> Self {
+                Self {
+                    announcement: Ok(super::defaults::default_bool::<true>()),
+                    new_chapter: Ok(super::defaults::default_bool::<true>()),
+                    series_completed: Ok(super::defaults::default_bool::<true>()),
+                    source_added: Ok(super::defaults::default_bool::<true>()),
+                    sync_conflict: Ok(super::defaults::default_bool::<true>()),
+                }
+            }
+        }
+        impl KindPrefs {
+            pub fn announcement<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.announcement = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for announcement: {e}"));
+                self
+            }
+            pub fn new_chapter<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.new_chapter = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for new_chapter: {e}"));
+                self
+            }
+            pub fn series_completed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_completed = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for series_completed: {e}")
+                });
+                self
+            }
+            pub fn source_added<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.source_added = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for source_added: {e}"));
+                self
+            }
+            pub fn sync_conflict<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sync_conflict = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for sync_conflict: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<KindPrefs> for super::KindPrefs {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: KindPrefs,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    announcement: value.announcement?,
+                    new_chapter: value.new_chapter?,
+                    series_completed: value.series_completed?,
+                    source_added: value.source_added?,
+                    sync_conflict: value.sync_conflict?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::KindPrefs> for KindPrefs {
+            fn from(value: super::KindPrefs) -> Self {
+                Self {
+                    announcement: Ok(value.announcement),
+                    new_chapter: Ok(value.new_chapter),
+                    series_completed: Ok(value.series_completed),
+                    source_added: Ok(value.source_added),
+                    sync_conflict: Ok(value.sync_conflict),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct LegalDocumentView {
             body: ::std::result::Result<::std::string::String, ::std::string::String>,
             format: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -14687,9 +15323,362 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct NotificationItem {
+            chapter_count: ::std::result::Result<i64, ::std::string::String>,
+            chapter_title: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            chapter_url: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            cover_url: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            created_at: ::std::result::Result<::std::string::String, ::std::string::String>,
+            first_number: ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            kind: ::std::result::Result<::std::string::String, ::std::string::String>,
+            last_number: ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
+            payload: ::std::result::Result<::serde_json::Value, ::std::string::String>,
+            provider_slug: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            read_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            series_id:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+            series_title: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for NotificationItem {
+            fn default() -> Self {
+                Self {
+                    chapter_count: Err("no value supplied for chapter_count".to_string()),
+                    chapter_title: Ok(Default::default()),
+                    chapter_url: Ok(Default::default()),
+                    cover_url: Ok(Default::default()),
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    first_number: Ok(Default::default()),
+                    id: Err("no value supplied for id".to_string()),
+                    kind: Err("no value supplied for kind".to_string()),
+                    last_number: Ok(Default::default()),
+                    payload: Err("no value supplied for payload".to_string()),
+                    provider_slug: Ok(Default::default()),
+                    read_at: Ok(Default::default()),
+                    series_id: Ok(Default::default()),
+                    series_title: Ok(Default::default()),
+                }
+            }
+        }
+        impl NotificationItem {
+            pub fn chapter_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.chapter_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for chapter_count: {e}"));
+                self
+            }
+            pub fn chapter_title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.chapter_title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for chapter_title: {e}"));
+                self
+            }
+            pub fn chapter_url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.chapter_url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for chapter_url: {e}"));
+                self
+            }
+            pub fn cover_url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.cover_url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for cover_url: {e}"));
+                self
+            }
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn first_number<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<f64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.first_number = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for first_number: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn kind<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kind = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kind: {e}"));
+                self
+            }
+            pub fn last_number<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<f64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_number = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for last_number: {e}"));
+                self
+            }
+            pub fn payload<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::serde_json::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.payload = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for payload: {e}"));
+                self
+            }
+            pub fn provider_slug<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provider_slug = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for provider_slug: {e}"));
+                self
+            }
+            pub fn read_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.read_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for read_at: {e}"));
+                self
+            }
+            pub fn series_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series_id: {e}"));
+                self
+            }
+            pub fn series_title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series_title: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<NotificationItem> for super::NotificationItem {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NotificationItem,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    chapter_count: value.chapter_count?,
+                    chapter_title: value.chapter_title?,
+                    chapter_url: value.chapter_url?,
+                    cover_url: value.cover_url?,
+                    created_at: value.created_at?,
+                    first_number: value.first_number?,
+                    id: value.id?,
+                    kind: value.kind?,
+                    last_number: value.last_number?,
+                    payload: value.payload?,
+                    provider_slug: value.provider_slug?,
+                    read_at: value.read_at?,
+                    series_id: value.series_id?,
+                    series_title: value.series_title?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::NotificationItem> for NotificationItem {
+            fn from(value: super::NotificationItem) -> Self {
+                Self {
+                    chapter_count: Ok(value.chapter_count),
+                    chapter_title: Ok(value.chapter_title),
+                    chapter_url: Ok(value.chapter_url),
+                    cover_url: Ok(value.cover_url),
+                    created_at: Ok(value.created_at),
+                    first_number: Ok(value.first_number),
+                    id: Ok(value.id),
+                    kind: Ok(value.kind),
+                    last_number: Ok(value.last_number),
+                    payload: Ok(value.payload),
+                    provider_slug: Ok(value.provider_slug),
+                    read_at: Ok(value.read_at),
+                    series_id: Ok(value.series_id),
+                    series_title: Ok(value.series_title),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct NotificationPrefs {
+            channels: ::std::result::Result<super::ChannelPrefs, ::std::string::String>,
+            group_unread: ::std::result::Result<bool, ::std::string::String>,
+            kinds: ::std::result::Result<super::KindPrefs, ::std::string::String>,
+            quiet_hours: ::std::result::Result<super::QuietHours, ::std::string::String>,
+            version: ::std::result::Result<i32, ::std::string::String>,
+            watch_status: ::std::result::Result<super::StatusPrefs, ::std::string::String>,
+        }
+        impl ::std::default::Default for NotificationPrefs {
+            fn default() -> Self {
+                Self {
+                    channels: Ok(super::defaults::notification_prefs_channels()),
+                    group_unread: Ok(super::defaults::default_bool::<true>()),
+                    kinds: Ok(super::defaults::notification_prefs_kinds()),
+                    quiet_hours: Ok(super::defaults::notification_prefs_quiet_hours()),
+                    version: Ok(super::defaults::default_u64::<i32, 1>()),
+                    watch_status: Ok(super::defaults::notification_prefs_watch_status()),
+                }
+            }
+        }
+        impl NotificationPrefs {
+            pub fn channels<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::ChannelPrefs>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.channels = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for channels: {e}"));
+                self
+            }
+            pub fn group_unread<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.group_unread = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for group_unread: {e}"));
+                self
+            }
+            pub fn kinds<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::KindPrefs>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kinds = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kinds: {e}"));
+                self
+            }
+            pub fn quiet_hours<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::QuietHours>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.quiet_hours = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for quiet_hours: {e}"));
+                self
+            }
+            pub fn version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.version = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for version: {e}"));
+                self
+            }
+            pub fn watch_status<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::StatusPrefs>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.watch_status = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for watch_status: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<NotificationPrefs> for super::NotificationPrefs {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NotificationPrefs,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    channels: value.channels?,
+                    group_unread: value.group_unread?,
+                    kinds: value.kinds?,
+                    quiet_hours: value.quiet_hours?,
+                    version: value.version?,
+                    watch_status: value.watch_status?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::NotificationPrefs> for NotificationPrefs {
+            fn from(value: super::NotificationPrefs) -> Self {
+                Self {
+                    channels: Ok(value.channels),
+                    group_unread: Ok(value.group_unread),
+                    kinds: Ok(value.kinds),
+                    quiet_hours: Ok(value.quiet_hours),
+                    version: Ok(value.version),
+                    watch_status: Ok(value.watch_status),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct NotificationsView {
-            items:
-                ::std::result::Result<::std::vec::Vec<::serde_json::Value>, ::std::string::String>,
+            items: ::std::result::Result<
+                ::std::vec::Vec<super::NotificationItem>,
+                ::std::string::String,
+            >,
             total: ::std::result::Result<i64, ::std::string::String>,
             unread: ::std::result::Result<i64, ::std::string::String>,
         }
@@ -14705,7 +15694,7 @@ pub mod types {
         impl NotificationsView {
             pub fn items<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::vec::Vec<::serde_json::Value>>,
+                T: ::std::convert::TryInto<::std::vec::Vec<super::NotificationItem>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.items = value
@@ -16432,6 +17421,88 @@ pub mod types {
                     name: Ok(value.name),
                     series_count: Ok(value.series_count),
                     slug: Ok(value.slug),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct QuietHours {
+            enabled: ::std::result::Result<bool, ::std::string::String>,
+            end_minute: ::std::result::Result<i32, ::std::string::String>,
+            start_minute: ::std::result::Result<i32, ::std::string::String>,
+            utc_offset_minutes: ::std::result::Result<i32, ::std::string::String>,
+        }
+        impl ::std::default::Default for QuietHours {
+            fn default() -> Self {
+                Self {
+                    enabled: Ok(Default::default()),
+                    end_minute: Ok(super::defaults::default_u64::<i32, 420>()),
+                    start_minute: Ok(super::defaults::default_u64::<i32, 1380>()),
+                    utc_offset_minutes: Ok(Default::default()),
+                }
+            }
+        }
+        impl QuietHours {
+            pub fn enabled<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.enabled = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for enabled: {e}"));
+                self
+            }
+            pub fn end_minute<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.end_minute = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for end_minute: {e}"));
+                self
+            }
+            pub fn start_minute<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.start_minute = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for start_minute: {e}"));
+                self
+            }
+            pub fn utc_offset_minutes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.utc_offset_minutes = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for utc_offset_minutes: {e}")
+                });
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<QuietHours> for super::QuietHours {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: QuietHours,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    enabled: value.enabled?,
+                    end_minute: value.end_minute?,
+                    start_minute: value.start_minute?,
+                    utc_offset_minutes: value.utc_offset_minutes?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::QuietHours> for QuietHours {
+            fn from(value: super::QuietHours) -> Self {
+                Self {
+                    enabled: Ok(value.enabled),
+                    end_minute: Ok(value.end_minute),
+                    start_minute: Ok(value.start_minute),
+                    utc_offset_minutes: Ok(value.utc_offset_minutes),
                 }
             }
         }
@@ -18708,6 +19779,102 @@ pub mod types {
                     provider_name: Ok(value.provider_name),
                     provider_slug: Ok(value.provider_slug),
                     url: Ok(value.url),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct StatusPrefs {
+            completed: ::std::result::Result<bool, ::std::string::String>,
+            dropped: ::std::result::Result<bool, ::std::string::String>,
+            paused: ::std::result::Result<bool, ::std::string::String>,
+            planned: ::std::result::Result<bool, ::std::string::String>,
+            reading: ::std::result::Result<bool, ::std::string::String>,
+        }
+        impl ::std::default::Default for StatusPrefs {
+            fn default() -> Self {
+                Self {
+                    completed: Ok(Default::default()),
+                    dropped: Ok(Default::default()),
+                    paused: Ok(super::defaults::default_bool::<true>()),
+                    planned: Ok(super::defaults::default_bool::<true>()),
+                    reading: Ok(super::defaults::default_bool::<true>()),
+                }
+            }
+        }
+        impl StatusPrefs {
+            pub fn completed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.completed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for completed: {e}"));
+                self
+            }
+            pub fn dropped<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.dropped = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for dropped: {e}"));
+                self
+            }
+            pub fn paused<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.paused = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for paused: {e}"));
+                self
+            }
+            pub fn planned<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.planned = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for planned: {e}"));
+                self
+            }
+            pub fn reading<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reading = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reading: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<StatusPrefs> for super::StatusPrefs {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StatusPrefs,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    completed: value.completed?,
+                    dropped: value.dropped?,
+                    paused: value.paused?,
+                    planned: value.planned?,
+                    reading: value.reading?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::StatusPrefs> for StatusPrefs {
+            fn from(value: super::StatusPrefs) -> Self {
+                Self {
+                    completed: Ok(value.completed),
+                    dropped: Ok(value.dropped),
+                    paused: Ok(value.paused),
+                    planned: Ok(value.planned),
+                    reading: Ok(value.reading),
                 }
             }
         }
@@ -21655,6 +22822,51 @@ pub mod types {
             }
         }
     }
+    #[doc = r" Generation of default values for serde."]
+    pub mod defaults {
+        pub(super) fn default_bool<const V: bool>() -> bool {
+            V
+        }
+        pub(super) fn default_u64<T, const V: u64>() -> T
+        where
+            T: ::std::convert::TryFrom<u64>,
+            <T as ::std::convert::TryFrom<u64>>::Error: ::std::fmt::Debug,
+        {
+            T::try_from(V).unwrap()
+        }
+        pub(super) fn notification_prefs_channels() -> super::ChannelPrefs {
+            super::ChannelPrefs {
+                in_app: true,
+                live: true,
+            }
+        }
+        pub(super) fn notification_prefs_kinds() -> super::KindPrefs {
+            super::KindPrefs {
+                announcement: true,
+                new_chapter: true,
+                series_completed: true,
+                source_added: true,
+                sync_conflict: true,
+            }
+        }
+        pub(super) fn notification_prefs_quiet_hours() -> super::QuietHours {
+            super::QuietHours {
+                enabled: false,
+                end_minute: 420_i32,
+                start_minute: 1380_i32,
+                utc_offset_minutes: 0_i32,
+            }
+        }
+        pub(super) fn notification_prefs_watch_status() -> super::StatusPrefs {
+            super::StatusPrefs {
+                completed: false,
+                dropped: false,
+                paused: true,
+                planned: true,
+                reading: true,
+            }
+        }
+    }
 }
 #[derive(Clone, Debug)]
 #[doc = "Client for tankovault-api\n\nAxum HTTP edge: public read/write + admin, auth, resolved links, SSE.\n\nVersion: 1.5.2"]
@@ -22013,15 +23225,15 @@ impl Client {
     pub fn feed(&self) -> builder::Feed<'_> {
         builder::Feed::new(self)
     }
-    #[doc = "Get notification preferences\n\nThe caller's notification preferences JSON (frontend §9.4). `{}` means \"product defaults\".\n\nSends a `GET` request to `/v1/me/notification-prefs`\n\n```ignore\nlet response = client.notification_prefs()\n    .send()\n    .await;\n```"]
+    #[doc = "Get notification preferences\n\nThe caller's effective notification preferences. A reader who has never saved any gets the\nproduct defaults, fully populated, rather than an empty object the client would have to know\nhow to fill in.\n\nSends a `GET` request to `/v1/me/notification-prefs`\n\n```ignore\nlet response = client.notification_prefs()\n    .send()\n    .await;\n```"]
     pub fn notification_prefs(&self) -> builder::NotificationPrefs<'_> {
         builder::NotificationPrefs::new(self)
     }
-    #[doc = "Replace notification preferences\n\nReplace the caller's notification preferences (frontend §9.4). The body is stored verbatim\nas an open JSON document.\n\nSends a `PUT` request to `/v1/me/notification-prefs`\n\n```ignore\nlet response = client.put_notification_prefs()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Replace notification preferences\n\nReplaces the caller's preferences wholesale. Every field defaults, so a partial body is a\nvalid document — the omitted fields come back to the product defaults, not to `false`.\n\nThe stored document used to be free-form and unvalidated, and nothing read it: the three\ntoggles it held had no effect on delivery at all. It is typed now precisely so that a\npreference which is saved is a preference the notifier honours.\n\nSends a `PUT` request to `/v1/me/notification-prefs`\n\n```ignore\nlet response = client.put_notification_prefs()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn put_notification_prefs(&self) -> builder::PutNotificationPrefs<'_> {
         builder::PutNotificationPrefs::new(self)
     }
-    #[doc = "List notifications\n\nA page of the caller's inbox, newest first, with the inbox-wide `total` and `unread`.\n\nThe body is an object rather than the bare array it used to be, for the same reason\n`/v1/me/watchlist` is: neither count is derivable from a page of items, and the frontend —\nthe only consumer, and regenerated from this document — needs both to page and to keep the\nbell honest past the first page.\n\nSends a `GET` request to `/v1/me/notifications`\n\nArguments:\n- `limit`: Page size, clamped to `1..=200`.\n- `offset`\n```ignore\nlet response = client.notifications()\n    .limit(limit)\n    .offset(offset)\n    .send()\n    .await;\n```"]
+    #[doc = "List notifications\n\nA page of the caller's inbox, newest first, with the filtered `total` and the inbox-wide\n`unread`.\n\nThe body is an object rather than the bare array it used to be, for the same reason\n`/v1/me/watchlist` is: neither count is derivable from a page of items, and the frontend —\nthe only consumer, and regenerated from this document — needs both to page and to keep the\nbell honest past the first page.\n\n`unread` and `kind` filter server-side. They exist because the client used to filter the one\npage it had loaded, so a tab could show nothing while matching rows sat on the next page.\n\nSends a `GET` request to `/v1/me/notifications`\n\nArguments:\n- `kind`: Return only rows of this `kind`.\n- `limit`: Page size, clamped to `1..=200`.\n- `offset`\n- `unread`: Return only unread rows.\n```ignore\nlet response = client.notifications()\n    .kind(kind)\n    .limit(limit)\n    .offset(offset)\n    .unread(unread)\n    .send()\n    .await;\n```"]
     pub fn notifications(&self) -> builder::Notifications<'_> {
         builder::Notifications::new(self)
     }
@@ -27855,7 +29067,7 @@ pub mod builder {
         #[doc = "Sends a `GET` request to `/v1/me/notification-prefs`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::NotificationPrefs>, Error<types::ProblemDetails>> {
             let Self { client } = self;
             let url = format!("{}/v1/me/notification-prefs", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
@@ -27893,30 +29105,43 @@ pub mod builder {
     #[derive(Debug, Clone)]
     pub struct PutNotificationPrefs<'a> {
         client: &'a super::Client,
-        body: Result<::serde_json::Value, String>,
+        body: Result<types::builder::NotificationPrefs, String>,
     }
     impl<'a> PutNotificationPrefs<'a> {
         pub fn new(client: &'a super::Client) -> Self {
             Self {
                 client: client,
-                body: Err("body was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
             }
         }
         pub fn body<V>(mut self, value: V) -> Self
         where
-            V: std::convert::TryInto<::serde_json::Value>,
+            V: std::convert::TryInto<types::NotificationPrefs>,
+            <V as std::convert::TryInto<types::NotificationPrefs>>::Error: std::fmt::Display,
         {
             self.body = value
                 .try_into()
-                .map_err(|_| "conversion to `:: serde_json :: Value` for body failed".to_string());
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NotificationPrefs` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::NotificationPrefs,
+                ) -> types::builder::NotificationPrefs,
+        {
+            self.body = self.body.map(f);
             self
         }
         #[doc = "Sends a `PUT` request to `/v1/me/notification-prefs`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::NotificationPrefs>, Error<types::ProblemDetails>> {
             let Self { client, body } = self;
-            let body = body.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NotificationPrefs::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
             let url = format!("{}/v1/me/notification-prefs", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
@@ -27943,6 +29168,9 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -27954,16 +29182,29 @@ pub mod builder {
     #[derive(Debug, Clone)]
     pub struct Notifications<'a> {
         client: &'a super::Client,
+        kind: Result<Option<::std::string::String>, String>,
         limit: Result<Option<i64>, String>,
         offset: Result<Option<i64>, String>,
+        unread: Result<Option<bool>, String>,
     }
     impl<'a> Notifications<'a> {
         pub fn new(client: &'a super::Client) -> Self {
             Self {
                 client: client,
+                kind: Ok(None),
                 limit: Ok(None),
                 offset: Ok(None),
+                unread: Ok(None),
             }
+        }
+        pub fn kind<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.kind = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for kind failed".to_string()
+            });
+            self
         }
         pub fn limit<V>(mut self, value: V) -> Self
         where
@@ -27985,17 +29226,31 @@ pub mod builder {
                 .map_err(|_| "conversion to `i64` for offset failed".to_string());
             self
         }
+        pub fn unread<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.unread = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for unread failed".to_string());
+            self
+        }
         #[doc = "Sends a `GET` request to `/v1/me/notifications`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::NotificationsView>, Error<types::ProblemDetails>> {
             let Self {
                 client,
+                kind,
                 limit,
                 offset,
+                unread,
             } = self;
+            let kind = kind.map_err(Error::InvalidRequest)?;
             let limit = limit.map_err(Error::InvalidRequest)?;
             let offset = offset.map_err(Error::InvalidRequest)?;
+            let unread = unread.map_err(Error::InvalidRequest)?;
             let url = format!("{}/v1/me/notifications", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
@@ -28010,8 +29265,10 @@ pub mod builder {
                     ::reqwest::header::ACCEPT,
                     ::reqwest::header::HeaderValue::from_static("application/json"),
                 )
+                .query(&progenitor_client::QueryParam::new("kind", &kind))
                 .query(&progenitor_client::QueryParam::new("limit", &limit))
                 .query(&progenitor_client::QueryParam::new("offset", &offset))
+                .query(&progenitor_client::QueryParam::new("unread", &unread))
                 .headers(header_map)
                 .build()?;
             let info = OperationInfo {

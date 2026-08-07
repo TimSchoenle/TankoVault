@@ -38,10 +38,30 @@
       "signedOut": "Sign in, then connect the provider again from Account → Sync & integrations."
     },
     "notifications": {
-      "digest": "Weekly digest",
-      "email": "Email notifications",
-      "newChapters": "New chapters in your watchlist",
+      "channel": {
+        "inApp": "In-app notifications",
+        "inAppHint": "The inbox and the unread badge. Off stops everything below it.",
+        "live": "Live push",
+        "liveHint": "Updates the badge without a reload. Off still records the notification."
+      },
+      "groupUnread": "Group a series' chapters",
+      "groupUnreadHint": "Twelve chapters overnight become one row until you've read it.",
+      "kind": {
+        "announcement": "Announcements from this instance",
+        "newChapter": "New chapters",
+        "seriesCompleted": "A series finishes",
+        "sourceAdded": "A new source to read on",
+        "syncConflict": "Sync needs a decision"
+      },
+      "quietHours": "Quiet hours",
+      "quietHoursHint": "Silences the live push overnight. Notifications are still recorded.",
       "saved": "Preferences saved.",
+      "section": {
+        "channels": "Where to tell me",
+        "delivery": "How to deliver",
+        "kinds": "What to tell me about",
+        "series": "Which series"
+      },
       "title": "Notification preferences"
     },
     "privacy": {
@@ -1038,17 +1058,21 @@
     "empty": "No notifications yet. We'll ping you when a watched series updates.",
     "emptyFilter": "Nothing in this filter.",
     "line": {
-      "generic": "Notification",
-      "newChapter": "New chapter {number} of {title}",
+      "chapterRange": "{title} — Ch. {first}–{last}",
+      "newChapter": "{title} — Ch. {number}",
       "update": "Update for {title}"
     },
     "markAllRead": "Mark all read",
     "new": "New",
+    "newChapters": {
+      "one": "{count} new chapter",
+      "other": "{count} new chapters"
+    },
+    "read": "Read",
     "summary": "{count} unread · live push via SSE",
     "tab": {
       "all": "All",
       "chapters": "Chapters",
-      "sync": "Sync",
       "unread": "Unread"
     }
   },

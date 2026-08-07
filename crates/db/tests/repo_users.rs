@@ -28,7 +28,7 @@
 
 use tankovault_db::DbError;
 use tankovault_db::repo::{user_admin, users};
-use tankovault_domain::{AccountStatus, UserId};
+use tankovault_domain::{AccountStatus, NotificationPrefs, StatusPrefs, UserId};
 use tankovault_test_support::{TestDb, seed};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
@@ -1037,13 +1037,17 @@ async fn revoking_all_sessions_reports_the_count_and_is_scoped_to_one_user() {
 
 /// Preferences default to `{}` and round-trip unchanged.
 ///
-/// `{}` means "use the product defaults" (migration 0009), and the read is deliberately total:
-/// an unknown id also answers `{}` rather than failing, because the column is `NOT NULL DEFAULT
-/// '{}'` and the caller is always an authenticated principal. The write is *not* total — it
-/// reports `NotFound` — and that asymmetry is pinned here so nobody reconciles it by making the
+/// An empty document means "use the product defaults", and the read is deliberately total: an
+/// unknown id also answers the defaults rather than failing, because the column is `NOT NULL
+/// DEFAULT '{}'` and the caller is always an authenticated principal. The write is *not* total —
+/// it reports `NotFound` — and that asymmetry is pinned here so nobody reconciles it by making the
 /// write silent, which would turn a settings save against a deleted account into a success.
+///
+/// The stored blob was free-form until the preferences became a typed contract; a document this
+/// build cannot parse still has to read as the defaults, since failing here would cost the reader
+/// the notification the preferences only ever meant to shape.
 #[tokio::test]
-async fn notification_prefs_default_to_an_empty_object_and_round_trip() {
+async fn notification_prefs_default_and_round_trip() {
     let db = TestDb::spawn().await;
     let user = seed::user(&db, "prefs")
         .email("prefs@example.test")
@@ -1054,11 +1058,17 @@ async fn notification_prefs_default_to_an_empty_object_and_round_trip() {
         users::get_notification_prefs(&db.pool, user)
             .await
             .expect("read prefs"),
-        serde_json::json!({}),
+        NotificationPrefs::default(),
         "an account that has never saved preferences reads as defaults"
     );
 
-    let prefs = serde_json::json!({ "email_digest": "weekly", "muted_kinds": ["new_chapter"] });
+    let prefs = NotificationPrefs {
+        watch_status: StatusPrefs {
+            dropped: true,
+            ..StatusPrefs::default()
+        },
+        ..NotificationPrefs::default()
+    };
     users::set_notification_prefs(&db.pool, user, &prefs)
         .await
         .expect("write prefs");
@@ -1069,12 +1079,25 @@ async fn notification_prefs_default_to_an_empty_object_and_round_trip() {
         prefs
     );
 
+    sqlx::query("UPDATE users SET notification_prefs = '[\"not a document\"]' WHERE id = $1")
+        .bind(user.as_uuid())
+        .execute(&db.pool)
+        .await
+        .expect("store an unparseable document");
+    assert_eq!(
+        users::get_notification_prefs(&db.pool, user)
+            .await
+            .expect("read prefs"),
+        NotificationPrefs::default(),
+        "an unparseable document reads as the defaults, not as an error"
+    );
+
     let ghost = UserId::new();
     assert_eq!(
         users::get_notification_prefs(&db.pool, ghost)
             .await
             .expect("read prefs for an unknown id"),
-        serde_json::json!({}),
+        NotificationPrefs::default(),
         "the read is total"
     );
     assert!(

@@ -390,6 +390,22 @@
         ],
         "type": "object"
       },
+      "ChannelPrefs": {
+        "description": "Where a notification is allowed to go.\n\nNo `email` switch, deliberately. The notifier's email channel addresses *operator* recipients\nconfigured on the deployment, not the reader, so a per-reader email toggle would have nothing\nto switch — which is exactly what the three preferences this document replaced were.",
+        "properties": {
+          "in_app": {
+            "default": true,
+            "description": "The durable inbox row and the unread badge.",
+            "type": "boolean"
+          },
+          "live": {
+            "default": true,
+            "description": "The live SSE push. Off still writes the row; only the real-time nudge stops.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "ChapterDto": {
         "properties": {
           "number": {
@@ -1165,6 +1181,32 @@
         ],
         "type": "object"
       },
+      "KindPrefs": {
+        "description": "One switch per [`NotificationKind`].",
+        "properties": {
+          "announcement": {
+            "default": true,
+            "type": "boolean"
+          },
+          "new_chapter": {
+            "default": true,
+            "type": "boolean"
+          },
+          "series_completed": {
+            "default": true,
+            "type": "boolean"
+          },
+          "source_added": {
+            "default": true,
+            "type": "boolean"
+          },
+          "sync_conflict": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "LegalDocumentView": {
         "description": "One document, in the locale that was actually served.",
         "properties": {
@@ -1639,20 +1681,189 @@
         "format": "uuid",
         "type": "string"
       },
+      "NotificationItem": {
+        "description": "One inbox row, resolved to the fields a list can render without opening it.\n\nFlat rather than a `kind`-discriminated `oneOf`: the generated client is what the frontend\nconsumes, and a `oneOf` there produces an enum that is painful to match on for a gain the\nretained `payload` already covers.",
+        "properties": {
+          "chapter_count": {
+            "description": "How many chapters this row has absorbed. `1` unless it was coalesced.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "chapter_title": {
+            "description": "Title of the newest chapter this row covers, when the provider gave one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chapter_url": {
+            "description": "Openable URL of that chapter. Absent on rows written before the payload resolved links.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cover_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "first_number": {
+            "description": "Lowest chapter number this row covers.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "description": "The kind token. A string rather than the enum, because a client generated from an older\ndocument still has to render a row a newer notifier wrote.",
+            "type": "string"
+          },
+          "last_number": {
+            "description": "Highest chapter number this row covers; equal to `first_number` on an ungrouped row.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "payload": {
+            "description": "The stored document verbatim, for kinds the fields above do not model."
+          },
+          "provider_slug": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "read_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "series_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "series_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "created_at",
+          "chapter_count",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "NotificationPrefs": {
+        "description": "A reader's notification preferences, stored as `users.notification_prefs`.\n\nEvery field defaults, so an absent, partial or legacy document decodes to the product\ndefaults rather than an error: a preference read must never fail the request it decorates.\nThe pre-v1 document (`{\"new_chapters\": …, \"email\": …, \"digest\": …}`) therefore decodes to\nfull defaults — those keys were never read by anything, so nothing observable is lost.",
+        "properties": {
+          "channels": {
+            "default": {
+              "in_app": true,
+              "live": true
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ChannelPrefs",
+                "description": "Where the notification goes once it has passed the two filters above."
+              }
+            ]
+          },
+          "group_unread": {
+            "default": true,
+            "description": "Collapse a series' chapters into one row while it stays unread, instead of one row each.",
+            "type": "boolean"
+          },
+          "kinds": {
+            "default": {
+              "announcement": true,
+              "new_chapter": true,
+              "series_completed": true,
+              "source_added": true,
+              "sync_conflict": true
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/KindPrefs",
+                "description": "Which kinds of event are worth telling this reader about."
+              }
+            ]
+          },
+          "quiet_hours": {
+            "default": {
+              "enabled": false,
+              "end_minute": 420,
+              "start_minute": 1380,
+              "utc_offset_minutes": 0
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/QuietHours",
+                "description": "A nightly window in which the live push stays silent."
+              }
+            ]
+          },
+          "version": {
+            "default": 1,
+            "description": "Schema version of this document; see [`PREFS_VERSION`].",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "watch_status": {
+            "default": {
+              "completed": false,
+              "dropped": false,
+              "paused": true,
+              "planned": true,
+              "reading": true
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StatusPrefs",
+                "description": "Which watchlist statuses are worth telling this reader about."
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
       "NotificationsView": {
         "properties": {
           "items": {
-            "description": "One page of the inbox, newest first. Free-form per notification kind: the notifier writes\nan open `payload`, and pinning a schema here would drop every kind it has not shipped yet.",
-            "items": {},
+            "description": "One page of the inbox, newest first.",
+            "items": {
+              "$ref": "#/components/schemas/NotificationItem"
+            },
             "type": "array"
           },
           "total": {
-            "description": "Notifications the caller has, in total — the pager's denominator.",
+            "description": "Notifications matching this request's filter — the pager's denominator.",
             "format": "int64",
             "type": "integer"
           },
           "unread": {
-            "description": "Of those, how many are unread. Counted server-side on purpose: derived from `items` it is\nonly ever the unread count *of the loaded page*, which is what pinned the bell at 100.",
+            "description": "Unread notifications the caller has, ignoring the filter. Counted server-side on purpose:\nderived from `items` it is only ever the unread count *of the loaded page*, which is what\npinned the bell at 100.",
             "format": "int64",
             "type": "integer"
           }
@@ -2292,6 +2503,36 @@
           "name",
           "series_count"
         ],
+        "type": "object"
+      },
+      "QuietHours": {
+        "description": "A nightly window, expressed in minutes from local midnight.\n\nMinutes plus a fixed UTC offset rather than an IANA zone: the alternative is a timezone\ndatabase in a crate that deliberately has no I/O, to move a quiet window by an hour twice a\nyear. The client sends the offset its browser reports.",
+        "properties": {
+          "enabled": {
+            "default": false,
+            "type": "boolean"
+          },
+          "end_minute": {
+            "default": 420,
+            "description": "Minutes from local midnight at which it closes (exclusive). May be less than\n`start_minute`, which means the window wraps past midnight.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "start_minute": {
+            "default": 1380,
+            "description": "Minutes from local midnight at which the window opens (inclusive).",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "utc_offset_minutes": {
+            "default": 0,
+            "description": "Minutes east of UTC that the two boundaries above are measured in.",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "RebuildRequest": {
@@ -3119,6 +3360,32 @@
           "chapter_count",
           "is_primary"
         ],
+        "type": "object"
+      },
+      "StatusPrefs": {
+        "description": "One switch per [`WatchStatus`].\n\n`dropped` and `completed` default **off**: a reader who put a series down has said so, and\nthe watchlist's own `notify` flag is a per-series override, not a way to express that.",
+        "properties": {
+          "completed": {
+            "default": false,
+            "type": "boolean"
+          },
+          "dropped": {
+            "default": false,
+            "type": "boolean"
+          },
+          "paused": {
+            "default": true,
+            "type": "boolean"
+          },
+          "planned": {
+            "default": true,
+            "type": "boolean"
+          },
+          "reading": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "StreamTicket": {
@@ -9144,16 +9411,18 @@
     },
     "/v1/me/notification-prefs": {
       "get": {
-        "description": "The caller's notification preferences JSON (frontend §9.4). `{}` means \"product defaults\".",
+        "description": "The caller's effective notification preferences. A reader who has never saved any gets the\nproduct defaults, fully populated, rather than an empty object the client would have to know\nhow to fill in.",
         "operationId": "notification_prefs",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPrefs"
+                }
               }
             },
-            "description": "Product-defined free-form preferences JSON"
+            "description": "The caller's effective preferences"
           },
           "401": {
             "content": {
@@ -9177,12 +9446,14 @@
         ]
       },
       "put": {
-        "description": "Replace the caller's notification preferences (frontend §9.4). The body is stored verbatim\nas an open JSON document.",
+        "description": "Replaces the caller's preferences wholesale. Every field defaults, so a partial body is a\nvalid document — the omitted fields come back to the product defaults, not to `false`.\n\nThe stored document used to be free-form and unvalidated, and nothing read it: the three\ntoggles it held had no effect on delivery at all. It is typed now precisely so that a\npreference which is saved is a preference the notifier honours.",
         "operationId": "put_notification_prefs",
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "$ref": "#/components/schemas/NotificationPrefs"
+              }
             }
           },
           "required": true
@@ -9191,10 +9462,22 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPrefs"
+                }
               }
             },
             "description": "The stored preferences, echoed back"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the document is out of range or from a newer schema"
           },
           "401": {
             "content": {
@@ -9220,7 +9503,7 @@
     },
     "/v1/me/notifications": {
       "get": {
-        "description": "A page of the caller's inbox, newest first, with the inbox-wide `total` and `unread`.\n\nThe body is an object rather than the bare array it used to be, for the same reason\n`/v1/me/watchlist` is: neither count is derivable from a page of items, and the frontend —\nthe only consumer, and regenerated from this document — needs both to page and to keep the\nbell honest past the first page.",
+        "description": "A page of the caller's inbox, newest first, with the filtered `total` and the inbox-wide\n`unread`.\n\nThe body is an object rather than the bare array it used to be, for the same reason\n`/v1/me/watchlist` is: neither count is derivable from a page of items, and the frontend —\nthe only consumer, and regenerated from this document — needs both to page and to keep the\nbell honest past the first page.\n\n`unread` and `kind` filter server-side. They exist because the client used to filter the one\npage it had loaded, so a tab could show nothing while matching rows sat on the next page.",
         "operationId": "notifications",
         "parameters": [
           {
@@ -9240,6 +9523,24 @@
             "schema": {
               "format": "int64",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Return only unread rows.",
+            "in": "query",
+            "name": "unread",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Return only rows of this `kind`.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],

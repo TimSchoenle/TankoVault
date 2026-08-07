@@ -53,7 +53,10 @@ use tankovault_db::repo::tracking::{
     me_stats, progress_get_full, progress_mark_read, progress_mark_unread, progress_set,
     set_sync_excluded, watchers_for_series, watchlist_page, watchlist_upsert,
 };
-use tankovault_domain::{ProviderId, SeriesId, UserId, WatchStatus};
+use tankovault_db::repo::users::set_notification_prefs;
+use tankovault_domain::{
+    NotificationKind, NotificationPrefs, ProviderId, SeriesId, UserId, WatchStatus,
+};
 use tankovault_test_support::{TestDb, seed};
 
 // ---------------------------------------------------------------------------
@@ -550,6 +553,65 @@ async fn the_notifier_sees_both_frontiers_and_they_decide_as_covers_does() {
             state.name
         );
     }
+}
+
+/// A watcher arrives with the watchlist status and the preference document that decide delivery.
+///
+/// The notifier used to consult `watchlist_entries.notify` alone, so a series the reader had
+/// *dropped* kept notifying — and the account panel's three toggles were stored in a free-form
+/// blob nothing ever read. Both inputs have to come back on the row, or the filter cannot be made
+/// at all; a document this build cannot parse must arrive as the defaults rather than failing the
+/// whole fan-out.
+#[tokio::test]
+async fn a_watcher_carries_its_status_and_preferences() {
+    let db = TestDb::spawn().await;
+    let reader = seed::user(&db, "dropper").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+    let series = a_series(&db, provider, "Berserk", CHAPTERS).await;
+    watchlist_upsert(&db.pool, reader, series, WatchStatus::Dropped, true)
+        .await
+        .expect("watchlist");
+
+    let watchers = watchers_for_series(&db.pool, series)
+        .await
+        .expect("watchers");
+    assert_eq!(watchers.len(), 1);
+    assert_eq!(watchers[0].status, WatchStatus::Dropped);
+    assert!(
+        !watchers[0]
+            .prefs
+            .allows(NotificationKind::NewChapter, WatchStatus::Dropped),
+        "a dropped series is muted by the shipped defaults"
+    );
+
+    let mut prefs = NotificationPrefs::default();
+    prefs.watch_status.dropped = true;
+    set_notification_prefs(&db.pool, reader, &prefs)
+        .await
+        .expect("save prefs");
+    let watchers = watchers_for_series(&db.pool, series)
+        .await
+        .expect("watchers");
+    assert!(
+        watchers[0]
+            .prefs
+            .allows(NotificationKind::NewChapter, WatchStatus::Dropped),
+        "opting back in reaches the fan-out"
+    );
+
+    sqlx::query("UPDATE users SET notification_prefs = '\"not a document\"' WHERE id = $1")
+        .bind(reader.as_uuid())
+        .execute(&db.pool)
+        .await
+        .expect("store an unparseable document");
+    let watchers = watchers_for_series(&db.pool, series)
+        .await
+        .expect("watchers");
+    assert_eq!(
+        watchers[0].prefs,
+        NotificationPrefs::default(),
+        "an unparseable document decodes to the defaults, it does not drop the watcher"
+    );
 }
 
 /// `me_stats.unread` counts `(series, whole chapter)` pairs, not whole chapters.

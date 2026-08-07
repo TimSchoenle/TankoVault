@@ -8,6 +8,7 @@ use axum::extract::{Query, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::convert::Infallible;
 use tankovault_contracts::UserNotification;
 use tankovault_domain::{SeriesId, resolve_link};
@@ -34,29 +35,74 @@ pub struct NotificationsParams {
     pub limit: i64,
     #[serde(default)]
     pub offset: i64,
+    /// Return only unread rows.
+    #[serde(default)]
+    pub unread: bool,
+    /// Return only rows of this `kind`.
+    #[serde(default)]
+    pub kind: Option<String>,
+}
+
+/// One inbox row, resolved to the fields a list can render without opening it.
+///
+/// Flat rather than a `kind`-discriminated `oneOf`: the generated client is what the frontend
+/// consumes, and a `oneOf` there produces an enum that is painful to match on for a gain the
+/// retained `payload` already covers.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct NotificationItem {
+    pub id: Uuid,
+    /// The kind token. A string rather than the enum, because a client generated from an older
+    /// document still has to render a row a newer notifier wrote.
+    pub kind: String,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
+    pub created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
+    pub read_at: Option<OffsetDateTime>,
+    pub series_id: Option<Uuid>,
+    pub series_title: Option<String>,
+    pub cover_url: Option<String>,
+    pub provider_slug: Option<String>,
+    /// Lowest chapter number this row covers.
+    pub first_number: Option<f64>,
+    /// Highest chapter number this row covers; equal to `first_number` on an ungrouped row.
+    pub last_number: Option<f64>,
+    /// How many chapters this row has absorbed. `1` unless it was coalesced.
+    pub chapter_count: i64,
+    /// Title of the newest chapter this row covers, when the provider gave one.
+    pub chapter_title: Option<String>,
+    /// Openable URL of that chapter. Absent on rows written before the payload resolved links.
+    pub chapter_url: Option<String>,
+    /// The stored document verbatim, for kinds the fields above do not model.
+    #[schema(value_type = serde_json::Value)]
+    pub payload: serde_json::Value,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct NotificationsView {
-    /// One page of the inbox, newest first. Free-form per notification kind: the notifier writes
-    /// an open `payload`, and pinning a schema here would drop every kind it has not shipped yet.
-    #[schema(value_type = Vec<serde_json::Value>)]
-    pub items: Vec<serde_json::Value>,
-    /// Notifications the caller has, in total — the pager's denominator.
+    /// One page of the inbox, newest first.
+    pub items: Vec<NotificationItem>,
+    /// Notifications matching this request's filter — the pager's denominator.
     pub total: i64,
-    /// Of those, how many are unread. Counted server-side on purpose: derived from `items` it is
-    /// only ever the unread count *of the loaded page*, which is what pinned the bell at 100.
+    /// Unread notifications the caller has, ignoring the filter. Counted server-side on purpose:
+    /// derived from `items` it is only ever the unread count *of the loaded page*, which is what
+    /// pinned the bell at 100.
     pub unread: i64,
 }
 
 /// List notifications
 ///
-/// A page of the caller's inbox, newest first, with the inbox-wide `total` and `unread`.
+/// A page of the caller's inbox, newest first, with the filtered `total` and the inbox-wide
+/// `unread`.
 ///
 /// The body is an object rather than the bare array it used to be, for the same reason
 /// `/v1/me/watchlist` is: neither count is derivable from a page of items, and the frontend —
 /// the only consumer, and regenerated from this document — needs both to page and to keep the
 /// bell honest past the first page.
+///
+/// `unread` and `kind` filter server-side. They exist because the client used to filter the one
+/// page it had loaded, so a tab could show nothing while matching rows sat on the next page.
 #[utoipa::path(
     get,
     path = "/v1/me/notifications",
@@ -73,22 +119,95 @@ pub async fn notifications(
     user: AuthUser,
     Query(params): Query<NotificationsParams>,
 ) -> ApiResult<Json<NotificationsView>> {
+    let filter = tankovault_db::repo::tracking::NotificationFilter {
+        unread_only: params.unread,
+        kind: params.kind.as_deref(),
+    };
     let page = tankovault_db::repo::tracking::notifications_page(
         &state.pool,
         user.user_id,
+        filter,
         params.limit.clamp(1, MAX_LIMIT),
         params.offset.clamp(0, MAX_OFFSET),
     )
     .await?;
+
+    // Rows written before the payload carried a title are named by one lookup for the whole page,
+    // rather than a backfill migration that would rewrite what readers were actually told.
+    let undecorated: Vec<SeriesId> = page
+        .items
+        .iter()
+        .filter(|n| string_at(&n.payload, "series_title").is_none())
+        .filter_map(|n| series_id_of(&n.payload))
+        .collect();
+    let fallback =
+        tankovault_db::repo::catalog::series_display_many(&state.pool, &undecorated).await?;
+
     Ok(Json(NotificationsView {
         items: page
             .items
             .into_iter()
-            .map(|n| serde_json::to_value(n).unwrap_or_default())
+            .map(|n| item_from(n, &fallback))
             .collect(),
         total: page.total,
         unread: page.unread,
     }))
+}
+
+fn string_at(payload: &serde_json::Value, key: &str) -> Option<String> {
+    payload.get(key)?.as_str().map(str::to_owned)
+}
+
+fn number_at(payload: &serde_json::Value, key: &str) -> Option<f64> {
+    payload.get(key)?.as_f64()
+}
+
+fn series_id_of(payload: &serde_json::Value) -> Option<SeriesId> {
+    payload
+        .get("series_id")?
+        .as_str()?
+        .parse::<Uuid>()
+        .ok()
+        .map(SeriesId::from_uuid)
+}
+
+/// Resolve one stored row into its display fields, reading both payload versions.
+///
+/// `v1` wrote a flat `chapter_number`/`chapter_title` and no title, cover or link; `v2` writes a
+/// coalesced `count`/`first_number`/`last_number` plus a `latest` object. Both have to keep
+/// rendering — the older rows are a reader's history, not a migration backlog.
+fn item_from(
+    n: tankovault_domain::Notification,
+    fallback: &HashMap<SeriesId, tankovault_db::repo::catalog::SeriesDisplay>,
+) -> NotificationItem {
+    let payload = n.payload;
+    let series_id = series_id_of(&payload);
+    let known = series_id.and_then(|id| fallback.get(&id));
+    let latest = payload.get("latest");
+    let single = number_at(&payload, "chapter_number");
+    NotificationItem {
+        id: n.id.as_uuid(),
+        kind: n.kind,
+        created_at: n.created_at,
+        read_at: n.read_at,
+        series_id: series_id.map(SeriesId::as_uuid),
+        series_title: string_at(&payload, "series_title")
+            .or_else(|| known.map(|s| s.title.clone())),
+        cover_url: string_at(&payload, "cover_url")
+            .or_else(|| known.and_then(|s| s.cover_url.clone())),
+        provider_slug: string_at(&payload, "provider_slug"),
+        first_number: number_at(&payload, "first_number").or(single),
+        last_number: number_at(&payload, "last_number").or(single),
+        chapter_count: payload
+            .get("count")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(1),
+        chapter_title: latest
+            .and_then(|l| string_at(l, "title"))
+            .or_else(|| string_at(&payload, "chapter_title")),
+        chapter_url: latest.and_then(|l| string_at(l, "url")),
+        payload,
+    }
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

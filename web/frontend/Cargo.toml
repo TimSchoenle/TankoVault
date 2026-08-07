@@ -194,9 +194,10 @@ minisign-verify = { version = "0.2", optional = true }
 # pre-release ordering wrong, and this is the comparison that decides whether to replace the
 # reader's installed app. Already resolved in this lockfile.
 semver = { version = "1", optional = true }
-# The digest each staged installer is checked against, from the verified manifest. `0.10` and not
-# `0.11.0-rc`: both are in this graph already and the release line is the one nearly everything
-# else here resolves to, so naming it adds no second copy.
+# The digest each staged installer is checked against, from the verified manifest. `0.11` because
+# `crypto-glue` already pulls that line in alongside `0.10`, so naming it unifies with a copy that
+# is here regardless rather than adding a third. Note `digest` 0.11 has no `std` feature and so no
+# `io::Write` impl on hashers; `update::install` feeds the file to it by hand.
 sha2 = { version = "0.11", optional = true }
 # Renders that digest for comparison against the manifest's lower-case hex. Already in the graph.
 hex = { version = "0.4", optional = true }

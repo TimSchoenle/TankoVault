@@ -22,7 +22,7 @@ use futures_util::StreamExt as _;
 use sha2::Digest as _;
 use std::convert::Infallible;
 use std::fs;
-use std::io::Write as _;
+use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 
 /// The directory staged updates live in, beside `settings.json`.
@@ -401,7 +401,18 @@ fn verify_file(path: &Path, target: &Target) -> Result<(), &'static str> {
     }
     let mut file = fs::File::open(path).map_err(|_| "settings.update.error.staging")?;
     let mut hasher = sha2::Sha256::new();
-    std::io::copy(&mut file, &mut hasher).map_err(|_| "settings.update.error.staging")?;
+    // Read by hand rather than `io::copy`: `digest` 0.11 dropped the `io::Write` impl on hashers.
+    // `Interrupted` is retried for the same reason `io::copy` retries it — a signal arriving
+    // mid-read is not a failed verification.
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        match file.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => hasher.update(&buffer[..read]),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return Err("settings.update.error.staging"),
+        }
+    }
     if hex::encode(hasher.finalize()) == target.sha256.to_ascii_lowercase() {
         Ok(())
     } else {

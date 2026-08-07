@@ -445,8 +445,7 @@ async fn retrieve(
 
     // R5 — the popularity prior. Cold start, and backfill when the rest come up short.
     let suppressed_set: HashSet<SeriesId> = suppressed.iter().copied().collect();
-    let popular =
-        recsys::top_by_prior(&mut *conn, adult.include_adult(), PRIOR_CANDIDATES).await?;
+    let popular = recsys::top_by_prior(&mut *conn, adult.include_adult(), PRIOR_CANDIDATES).await?;
     candidates.extend(
         popular
             .into_iter()

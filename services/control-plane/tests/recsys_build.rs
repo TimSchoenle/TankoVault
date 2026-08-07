@@ -427,7 +427,9 @@ async fn a_series_with_too_little_metadata_is_not_recommendable() {
 
     build(&db.pool, budget(), true).await.expect("build");
 
-    let top = recsys::top_by_prior(&db.pool, false, 50).await.expect("prior");
+    let top = recsys::top_by_prior(&db.pool, false, 50)
+        .await
+        .expect("prior");
     assert!(
         !top.contains(&bare),
         "a series with no tags, no authors and no medium must not be offered"

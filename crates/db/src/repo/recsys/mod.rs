@@ -38,7 +38,7 @@ pub use prior::{
     PriorInputs, page_series_ids, prior_inputs_for, summaries_in_order, top_by_prior, write_priors,
 };
 pub use reader::{
-    ReaderInteraction, TasteProfile, mark_profile_stale, mark_profiles_stale_for_series,
-    clear_shelf, read_profile, read_shelf, reader_interactions, record_feedback, replace_affinity,
-    suppressed_series, top_affinity, write_profile, write_shelf,
+    ReaderInteraction, TasteProfile, clear_shelf, mark_profile_stale,
+    mark_profiles_stale_for_series, read_profile, read_shelf, reader_interactions, record_feedback,
+    replace_affinity, suppressed_series, top_affinity, write_profile, write_shelf,
 };

@@ -49,11 +49,10 @@ impl FromRequestParts<AppState> for AdultVisibility {
         // Optional, and deliberately so: these routes serve anonymous callers, and a missing or
         // expired token has to read as "anonymous", never as a rejection. Turning an unreadable
         // token into a 401 here would break public browsing for anyone holding a stale session.
-        let user = <AuthUser as OptionalFromRequestParts<AppState>>::from_request_parts(
-            parts, state,
-        )
-        .await
-        .unwrap_or(None);
+        let user =
+            <AuthUser as OptionalFromRequestParts<AppState>>::from_request_parts(parts, state)
+                .await
+                .unwrap_or(None);
 
         Ok(Self(user.is_some_and(|u| u.adult_opt_in)))
     }

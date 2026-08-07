@@ -131,8 +131,7 @@ pub async fn put_content_prefs(
         tankovault_db::repo::recsys::clear_shelf(&state.pool, user.user_id).await?;
     }
 
-    if prefs.adult_opt_in != before.adult_opt_in
-        || prefs.age_attested_at != before.age_attested_at
+    if prefs.adult_opt_in != before.adult_opt_in || prefs.age_attested_at != before.age_attested_at
     {
         state
             .audit
@@ -152,10 +151,7 @@ pub async fn put_content_prefs(
 }
 
 /// Combine the stored preference with the deployment flag into the answer the client renders.
-fn render(
-    state: &AppState,
-    prefs: tankovault_db::repo::users::ContentPrefs,
-) -> ContentPrefsDto {
+fn render(state: &AppState, prefs: tankovault_db::repo::users::ContentPrefs) -> ContentPrefsDto {
     let allowed_by_deployment = state.features.is_enabled(Feature::CatalogueAdultContent);
     ContentPrefsDto {
         adult_opt_in: prefs.adult_opt_in,

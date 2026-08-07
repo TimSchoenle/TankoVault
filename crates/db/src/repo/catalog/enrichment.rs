@@ -253,7 +253,10 @@ pub async fn finish_sweep<'e, E: PgExecutor<'e>>(
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; an erased `series_id` is a no-op `Ok(())`.
-pub async fn mark_adult_inferred<'e, E: PgExecutor<'e>>(exec: E, series_id: SeriesId) -> DbResult<()> {
+pub async fn mark_adult_inferred<'e, E: PgExecutor<'e>>(
+    exec: E,
+    series_id: SeriesId,
+) -> DbResult<()> {
     sqlx::query!(
         "UPDATE series SET adult_inferred = true WHERE id = $1 AND NOT adult_inferred",
         series_id.as_uuid(),

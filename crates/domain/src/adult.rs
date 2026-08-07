@@ -164,7 +164,9 @@ mod tests {
     #[test]
     fn explicit_genres_are_adult_however_they_are_written() {
         let tags = AdultTagSet::defaults();
-        for genre in ["Hentai", "hentai", "  Smut  ", "ADULT", "R-18", "r18", "18+"] {
+        for genre in [
+            "Hentai", "hentai", "  Smut  ", "ADULT", "R-18", "r18", "18+",
+        ] {
             assert!(tags.classifies(genre), "{genre} must be adult");
         }
     }

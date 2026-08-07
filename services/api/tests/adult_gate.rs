@@ -9,13 +9,13 @@
 use axum::http::StatusCode;
 use serde_json::json;
 use tankovault_api_test_support::{TestApp, TestConfig};
-use tankovault_test_support::seed;
-use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert, ingest_series};
 use tankovault_config::MatchingConfig;
+use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert, ingest_series};
 use tankovault_domain::{
     AccountStatus, ContentType, Feature, MetadataPriority, ProviderId, SeriesId, SeriesStatus,
     UserId, normalize_title,
 };
+use tankovault_test_support::seed;
 
 /// An app with the deployment half of the gate open, so the reader's half is what is under test.
 async fn app_with_adult_allowed() -> TestApp {
@@ -120,9 +120,7 @@ async fn an_anonymous_caller_never_sees_a_gated_series() {
         "browse leaked a gated series to an anonymous caller: {listed:?}"
     );
 
-    let (status, body) = app
-        .call("GET", "/v1/series?query=Gated", None, None)
-        .await;
+    let (status, body) = app.call("GET", "/v1/series?query=Gated", None, None).await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         !titles(&body).contains(&"Gated Work".to_owned()),

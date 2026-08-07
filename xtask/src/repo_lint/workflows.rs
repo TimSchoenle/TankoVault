@@ -746,7 +746,7 @@ mod tests {
     /// The bug this pins: the desktop job in `release-please.yaml` inherited the workflow-level
     /// `SOURCE_DATE_EPOCH`, and appimagetool passes a `-mkfs-time` of its own to mksquashfs,
     /// which refuses a timestamp from the command line and the environment at once. Release
-    /// v2.0.0's AppImage leg died as `linuxdeploy failed with exit code Some(1)` and took every
+    /// v2.0.0's `AppImage` leg died as `linuxdeploy failed with exit code Some(1)` and took every
     /// installer for that release with it. The fix removes the variable in that one job — which
     /// this rule forbade outright, because until then any line naming the epoch outside its
     /// declaration was an override.

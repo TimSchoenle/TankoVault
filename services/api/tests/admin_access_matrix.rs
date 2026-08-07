@@ -148,6 +148,54 @@ fn admin_gates() -> Vec<Gate> {
             required: &[Permission::MergeWrite],
             body: empty,
         },
+        // --- merge decision journal ---
+        // Reading the journal and reversing it are separate capabilities on purpose: the revert
+        // is the only action in the system that resurrects a deleted series.
+        Gate {
+            method: "GET",
+            template: "/v1/admin/merge-decisions",
+            path: "/v1/admin/merge-decisions",
+            required: &[Permission::MergeAudit],
+            body: empty,
+        },
+        Gate {
+            method: "POST",
+            template: "/v1/admin/merge-decisions/{id}/revert",
+            path: "/v1/admin/merge-decisions/00000000-0000-0000-0000-0000000000aa/revert",
+            required: &[Permission::MergeRevert],
+            body: || Some(json!({ "reason": "not the same work" })),
+        },
+        Gate {
+            method: "POST",
+            template: "/v1/admin/merge-decisions/{id}/flag",
+            path: "/v1/admin/merge-decisions/00000000-0000-0000-0000-0000000000aa/flag",
+            required: &[Permission::MergeRevert],
+            body: || Some(json!({ "reason": "not the same work" })),
+        },
+        // --- sync decision journal ---
+        Gate {
+            method: "GET",
+            template: "/v1/admin/sync/decisions",
+            path: "/v1/admin/sync/decisions",
+            required: &[Permission::SyncAudit],
+            body: empty,
+        },
+        Gate {
+            method: "POST",
+            template: "/v1/admin/sync/decisions/{id}/revert",
+            path: "/v1/admin/sync/decisions/00000000-0000-0000-0000-0000000000aa/revert",
+            required: &[Permission::SyncRevert],
+            // Forwarded to a sync service the harness points at `.invalid`, so the leg-3
+            // outcome is a `502` — after the permission check the matrix is here to assert.
+            body: || Some(json!({ "reason": "wrong match" })),
+        },
+        Gate {
+            method: "POST",
+            template: "/v1/admin/sync/decisions/{id}/flag",
+            path: "/v1/admin/sync/decisions/00000000-0000-0000-0000-0000000000aa/flag",
+            required: &[Permission::SyncRevert],
+            body: || Some(json!({ "reason": "wrong match", "block_match": true })),
+        },
         // --- privacy queue ---
         Gate {
             method: "GET",

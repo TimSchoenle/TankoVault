@@ -38,6 +38,13 @@ pub(crate) struct FieldPlan<T> {
     pub(crate) action: MergeAction,
     pub(crate) local: T,
     pub(crate) remote: T,
+    /// The stable slug naming why this action was chosen, from
+    /// [`MergeDecision::reason`](crate::mapping::MergeDecision).
+    pub(crate) reason: &'static str,
+    /// The common-ancestor values this field's merge compared against, carried so the decision
+    /// journal can record the input as well as the answer. A `None` is "no snapshot yet", which
+    /// is what turns an ordinary disagreement into a first-sync conflict.
+    pub(crate) ancestor: (Option<T>, Option<T>),
 }
 
 /// The part of a series' plan that can be decided without reading the common ancestor.
@@ -110,24 +117,24 @@ pub(crate) fn plan_merge(
     };
     let local_status = local.status.unwrap_or(remote.status);
 
-    let progress = three_way(
+    let progress_decision = three_way(
         local.progress,
         remote.progress,
         ancestor.local_progress,
         ancestor.remote_progress,
         policy,
         newer,
-    )
-    .action;
-    let status = three_way(
+    );
+    let status_decision = three_way(
         local_status,
         remote.status,
         ancestor.local_status,
         ancestor.remote_status,
         policy,
         newer,
-    )
-    .action;
+    );
+    let progress = progress_decision.action;
+    let status = status_decision.action;
 
     // One remote write covers both fields when either of them wants to push local; the other
     // field contributes whichever value is going to survive.
@@ -166,11 +173,15 @@ pub(crate) fn plan_merge(
             action: progress,
             local: local.progress,
             remote: remote.progress,
+            reason: progress_decision.reason,
+            ancestor: (ancestor.local_progress, ancestor.remote_progress),
         },
         status: FieldPlan {
             action: status,
             local: local_status,
             remote: remote.status,
+            reason: status_decision.reason,
+            ancestor: (ancestor.local_status, ancestor.remote_status),
         },
         remote_write,
         snapshot,

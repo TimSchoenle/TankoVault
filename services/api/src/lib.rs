@@ -162,6 +162,10 @@ pub fn route_features() -> RouteFeatures {
             Feature::ScanningAutoMerge,
         )
         .gate("/v1/admin/matching", Feature::ScanningMergeQueue)
+        // The merge journal follows the sweep it records: with automatic merging switched off
+        // there are no new decisions, but the ones already taken are exactly what an operator
+        // switching it off wants to read, so the *reads* stay open and only the revert closes.
+        .gate_writes("/v1/admin/merge-decisions", Feature::ScanningAutoMerge)
         .gate("/v1/admin/sync", Feature::AdminSync)
         .gate("/v1/admin/audit", Feature::AdminAudit)
         .gate("/v1/admin/stats", Feature::AdminStats)
@@ -437,6 +441,12 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::merge_series))
         .routes(routes!(admin::sweep_merge_candidates))
         .routes(routes!(admin::rebuild_matching_keys))
+        .routes(routes!(admin::list_merge_decisions))
+        .routes(routes!(admin::revert_merge_decision))
+        .routes(routes!(admin::flag_merge_decision))
+        .routes(routes!(admin::list_sync_decisions))
+        .routes(routes!(admin::revert_sync_decision))
+        .routes(routes!(admin::flag_sync_decision))
 }
 
 /// Best-effort connection to NATS for the live notification relay. Returns `None` when

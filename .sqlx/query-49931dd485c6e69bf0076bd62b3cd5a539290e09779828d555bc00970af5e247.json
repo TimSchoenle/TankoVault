@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO merge_decisions (id, sweep_id, trigger, actor_id, left_id, right_id, left_title, right_title, verdict, reason, blocked_by, outcome, survivor_id, absorbed_id, score, base_score, signals, terms, evidence, policy, undo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "TextArray",
+        "Text",
+        "Uuid",
+        "Uuid",
+        "Float4",
+        "Float4",
+        "TextArray",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "49931dd485c6e69bf0076bd62b3cd5a539290e09779828d555bc00970af5e247"
+}

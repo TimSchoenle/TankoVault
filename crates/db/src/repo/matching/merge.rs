@@ -1,6 +1,7 @@
 //! Executing a merge, and resolving a series id that has since been merged away.
 
 use crate::error::DbResult;
+use crate::repo::matching::undo::MergeUndo;
 use sqlx::PgExecutor;
 use tankovault_domain::SeriesId;
 use uuid::Uuid;
@@ -10,6 +11,12 @@ use uuid::Uuid;
 /// sync state and external mappings, resolve any related merge candidates, then delete it. All
 /// child-table moves are idempotent (`ON CONFLICT`), and read-progress keeps the furthest
 /// point.
+///
+/// Returns the [`MergeUndo`] journal — the exact inverse of everything this transaction did.
+/// The caller is expected to persist it (see
+/// [`record_merge_decision`](super::record_merge_decision)); a merge whose journal is dropped is
+/// a merge that cannot be reverted, which is the state this function used to leave the catalogue
+/// in unconditionally.
 ///
 /// # The read-progress merge
 ///
@@ -24,11 +31,12 @@ use uuid::Uuid;
 ///
 /// # Tables that must move with the merge
 ///
-/// `series_sync_overrides`, `sync_history`, `sync_remote_entries` and `notification_dedup` all
-/// reference `series`; omitting any of them silently destroys a user's per-series sync
-/// exclusions and visible sync history, and orphans remote tracker entries matched to the
-/// absorbed series (`ON DELETE SET NULL` turns them *unmatched*, re-resolved from scratch on
-/// the next pull).
+/// `series_sync_overrides`, `sync_history`, `sync_remote_entries`, `sync_decisions`,
+/// `sync_match_blocks` and `notification_dedup` all reference `series`; omitting any of them
+/// silently destroys a user's per-series sync exclusions and visible sync history, orphans remote
+/// tracker entries matched to the absorbed series (`ON DELETE SET NULL` turns them *unmatched*,
+/// re-resolved from scratch on the next pull), or lets a title match an operator has already
+/// judged wrong come back.
 ///
 /// # Merge candidates
 ///
@@ -59,7 +67,7 @@ pub async fn merge_series(
     drop_id: SeriesId,
     actor: Option<tankovault_domain::UserId>,
     outcome: &str,
-) -> DbResult<()> {
+) -> DbResult<MergeUndo> {
     if keep_id == drop_id {
         return Err(crate::error::DbError::Conflict(
             "cannot merge a series into itself".to_owned(),
@@ -81,64 +89,96 @@ pub async fn merge_series(
         return Err(crate::error::DbError::NotFound);
     }
 
+    // Read the pre-merge state before touching anything: after the first statement below, "what
+    // it was" is no longer recoverable from the database.
+    let mut undo = MergeUndo::new(keep, drop);
+    super::undo::capture(&mut tx, &mut undo).await?;
+
     // Sources move wholesale (their global (provider, path) uniqueness is preserved).
-    sqlx::query!(
-        "UPDATE series_sources SET series_id = $1 WHERE series_id = $2",
+    undo.moved_sources = sqlx::query_scalar!(
+        "UPDATE series_sources SET series_id = $1 WHERE series_id = $2 RETURNING id",
         keep,
         drop,
     )
-    .execute(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
 
     // The merged series' canonical title becomes an alternative title of the survivor.
-    sqlx::query!(
+    //
+    // `RETURNING` under `DO NOTHING` yields only the rows actually created, which is exactly what
+    // the undo journal needs: deleting the whole key set on revert would take titles the survivor
+    // already answered to.
+    let inserted_canonical = sqlx::query_scalar!(
         "INSERT INTO series_titles (series_id, title, normalized) \
          SELECT $1, canonical_title, normalized_title FROM series WHERE id = $2 \
-         ON CONFLICT (series_id, normalized) DO NOTHING",
+         ON CONFLICT (series_id, normalized) DO NOTHING \
+         RETURNING to_jsonb(series_titles)",
         keep,
         drop,
     )
-    .execute(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
-    sqlx::query!(
+    let inserted_alternatives = sqlx::query_scalar!(
         "INSERT INTO series_titles (series_id, title, normalized) \
          SELECT $1, title, normalized FROM series_titles WHERE series_id = $2 \
-         ON CONFLICT (series_id, normalized) DO NOTHING",
+         ON CONFLICT (series_id, normalized) DO NOTHING \
+         RETURNING to_jsonb(series_titles)",
         keep,
         drop,
     )
-    .execute(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
+    undo.inserted_titles = rows_to_json(
+        inserted_canonical
+            .into_iter()
+            .chain(inserted_alternatives)
+            .collect(),
+    );
 
-    sqlx::query!(
-        "INSERT INTO series_tags (series_id, tag_id) \
-         SELECT $1, tag_id FROM series_tags WHERE series_id = $2 \
-         ON CONFLICT DO NOTHING",
-        keep,
-        drop,
-    )
-    .execute(&mut *tx)
-    .await?;
+    undo.inserted_tags = rows_to_json(
+        sqlx::query_scalar!(
+            "INSERT INTO series_tags (series_id, tag_id) \
+             SELECT $1, tag_id FROM series_tags WHERE series_id = $2 \
+             ON CONFLICT DO NOTHING \
+             RETURNING to_jsonb(series_tags)",
+            keep,
+            drop,
+        )
+        .fetch_all(&mut *tx)
+        .await?,
+    );
 
-    sqlx::query!(
-        "INSERT INTO series_authors (series_id, author_id) \
-         SELECT $1, author_id FROM series_authors WHERE series_id = $2 \
-         ON CONFLICT DO NOTHING",
-        keep,
-        drop,
-    )
-    .execute(&mut *tx)
-    .await?;
+    undo.inserted_authors = rows_to_json(
+        sqlx::query_scalar!(
+            "INSERT INTO series_authors (series_id, author_id) \
+             SELECT $1, author_id FROM series_authors WHERE series_id = $2 \
+             ON CONFLICT DO NOTHING \
+             RETURNING to_jsonb(series_authors)",
+            keep,
+            drop,
+        )
+        .fetch_all(&mut *tx)
+        .await?,
+    );
 
-    sqlx::query!(
-        "INSERT INTO watchlist_entries (user_id, series_id, status, notify, added_at) \
-         SELECT user_id, $1, status, notify, added_at FROM watchlist_entries WHERE series_id = $2 \
-         ON CONFLICT (user_id, series_id) DO NOTHING",
-        keep,
-        drop,
-    )
-    .execute(&mut *tx)
-    .await?;
+    // `sync_excluded` and `updated_at` travel with the entry. They did not, and the omission was
+    // silent in exactly the way that matters: a reader who had switched a series out of tracker
+    // sync found it switched back on by a merge they never saw, with the blanket flag reset to
+    // its default while the per-provider override beside it was carefully preserved.
+    undo.inserted_watchlist = rows_to_json(
+        sqlx::query_scalar!(
+            "INSERT INTO watchlist_entries \
+                (user_id, series_id, status, notify, added_at, sync_excluded, updated_at) \
+             SELECT user_id, $1, status, notify, added_at, sync_excluded, updated_at \
+                FROM watchlist_entries WHERE series_id = $2 \
+             ON CONFLICT (user_id, series_id) DO NOTHING \
+             RETURNING to_jsonb(watchlist_entries)",
+            keep,
+            drop,
+        )
+        .fetch_all(&mut *tx)
+        .await?,
+    );
 
     sqlx::query!(
         "INSERT INTO read_progress \
@@ -163,15 +203,18 @@ pub async fn merge_series(
     .execute(&mut *tx)
     .await?;
 
-    sqlx::query!(
-        "INSERT INTO sync_mappings (series_id, provider, external_id) \
-         SELECT $1, provider, external_id FROM sync_mappings WHERE series_id = $2 \
-         ON CONFLICT (series_id, provider) DO NOTHING",
-        keep,
-        drop,
-    )
-    .execute(&mut *tx)
-    .await?;
+    undo.inserted_mappings = rows_to_json(
+        sqlx::query_scalar!(
+            "INSERT INTO sync_mappings (series_id, provider, external_id) \
+             SELECT $1, provider, external_id FROM sync_mappings WHERE series_id = $2 \
+             ON CONFLICT (series_id, provider) DO NOTHING \
+             RETURNING to_jsonb(sync_mappings)",
+            keep,
+            drop,
+        )
+        .fetch_all(&mut *tx)
+        .await?,
+    );
 
     // A user's decision to exclude a series from a tracker is theirs, not the catalogue's, and
     // must survive the catalogue deciding two rows were one. `excluded` is kept if *either*
@@ -190,30 +233,57 @@ pub async fn merge_series(
 
     // The user-visible sync log. Re-pointed rather than unioned: these rows have their own
     // primary key and no uniqueness to collide on.
-    sqlx::query!(
-        "UPDATE sync_history SET series_id = $1 WHERE series_id = $2",
+    undo.moved_history = sqlx::query_scalar!(
+        "UPDATE sync_history SET series_id = $1 WHERE series_id = $2 RETURNING id",
         keep,
         drop,
     )
-    .execute(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
+
+    // The operator-facing decision journal, same reasoning. Its foreign key is `SET NULL`, so
+    // omitting this would not delete the rows — it would quietly detach them from the series
+    // they describe, which is worse: the record survives and stops being findable.
+    undo.moved_decisions = sqlx::query_scalar!(
+        "UPDATE sync_decisions SET series_id = $1 WHERE series_id = $2 RETURNING id",
+        keep,
+        drop,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+
+    // Title matches an operator has already judged wrong. Not moving these lets the next
+    // reconciliation re-make a match a human has explicitly rejected.
+    undo.moved_match_blocks = rows_to_json(
+        sqlx::query_scalar!(
+            "UPDATE sync_match_blocks SET series_id = $1 WHERE series_id = $2 \
+             RETURNING to_jsonb(sync_match_blocks)",
+            keep,
+            drop,
+        )
+        .fetch_all(&mut *tx)
+        .await?,
+    );
 
     // Remote tracker entries already matched to the absorbed series. Without this the FK's
     // `ON DELETE SET NULL` turns them into *unmatched* entries, and the next pull re-resolves
     // them from the title — which is the same guess that produced the duplicate in the first
     // place.
-    sqlx::query!(
-        "UPDATE sync_remote_entries SET series_id = $1 WHERE series_id = $2",
-        keep,
-        drop,
-    )
-    .execute(&mut *tx)
-    .await?;
+    undo.moved_remote_entries = rows_to_json(
+        sqlx::query_scalar!(
+            "UPDATE sync_remote_entries SET series_id = $1 WHERE series_id = $2 \
+             RETURNING to_jsonb(sync_remote_entries)",
+            keep,
+            drop,
+        )
+        .fetch_all(&mut *tx)
+        .await?,
+    );
 
     // Unresolved conflicts move where they can. The partial unique index only admits one open
     // conflict per (user, series, provider, field), so a collision means the survivor already
     // has an open conflict about the same field and the absorbed one is redundant.
-    sqlx::query!(
+    undo.moved_conflicts = sqlx::query_scalar!(
         "UPDATE sync_conflicts SET series_id = $1 WHERE series_id = $2 \
          AND (resolved_at IS NOT NULL \
               OR NOT EXISTS (SELECT 1 FROM sync_conflicts c2 \
@@ -221,37 +291,42 @@ pub async fn merge_series(
                                AND c2.series_id = $1 \
                                AND c2.provider = sync_conflicts.provider \
                                AND c2.field = sync_conflicts.field \
-                               AND c2.resolved_at IS NULL))",
+                               AND c2.resolved_at IS NULL)) \
+         RETURNING id",
         keep,
         drop,
     )
-    .execute(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
 
     // Notification suppression. Not moving these re-notifies every watcher of the survivor for
     // every chapter the absorbed series had already announced — which, on an automatic merge, is
     // a mail-out nobody asked for.
-    sqlx::query!(
-        "INSERT INTO notification_dedup (user_id, series_id, chapter_number, created_at) \
-         SELECT user_id, $1, chapter_number, created_at FROM notification_dedup WHERE series_id = $2 \
-         ON CONFLICT (user_id, series_id, chapter_number) DO NOTHING",
-        keep,
-        drop,
-    )
-    .execute(&mut *tx)
-    .await?;
+    undo.inserted_dedup = rows_to_json(
+        sqlx::query_scalar!(
+            "INSERT INTO notification_dedup (user_id, series_id, chapter_number, created_at) \
+             SELECT user_id, $1, chapter_number, created_at FROM notification_dedup WHERE series_id = $2 \
+             ON CONFLICT (user_id, series_id, chapter_number) DO NOTHING \
+             RETURNING to_jsonb(notification_dedup)",
+            keep,
+            drop,
+        )
+        .fetch_all(&mut *tx)
+        .await?,
+    );
 
     // Resolve every open candidate that referenced the vanishing series.
-    sqlx::query!(
+    undo.resolved_candidates = sqlx::query_scalar!(
         "UPDATE merge_candidates \
          SET resolved = true, outcome = $3, resolved_by = $2, resolved_at = now(), \
              updated_at = now() \
-         WHERE (series_id = $1 OR candidate_id = $1) AND NOT resolved",
+         WHERE (series_id = $1 OR candidate_id = $1) AND NOT resolved \
+         RETURNING id",
         drop,
         actor.map(tankovault_domain::UserId::as_uuid),
         outcome,
     )
-    .execute(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
 
     // A reader's refusal is theirs, not the catalogue's, and must survive the catalogue deciding
@@ -316,12 +391,12 @@ pub async fn merge_series(
     //
     // Compression runs before the insert. After it, the freshly written row would be a candidate
     // for its own rewrite the next time this predicate changed.
-    sqlx::query!(
-        "UPDATE series_merges SET survivor_id = $1 WHERE survivor_id = $2",
+    undo.recompressed = sqlx::query_scalar!(
+        "UPDATE series_merges SET survivor_id = $1 WHERE survivor_id = $2 RETURNING merged_id",
         keep,
         drop,
     )
-    .execute(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
 
     // `DO UPDATE`, not `DO NOTHING`: if an id that already has a forwarding address is somehow
@@ -347,7 +422,12 @@ pub async fn merge_series(
         .await?;
 
     tx.commit().await?;
-    Ok(())
+    Ok(undo)
+}
+
+/// Collect a `RETURNING to_jsonb(t)` result into the JSON array shape the undo journal stores.
+fn rows_to_json(rows: Vec<Option<serde_json::Value>>) -> serde_json::Value {
+    serde_json::Value::Array(rows.into_iter().flatten().collect())
 }
 
 /// Where a series went, if it was merged away.

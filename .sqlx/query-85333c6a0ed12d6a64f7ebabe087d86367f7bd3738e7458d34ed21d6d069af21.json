@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series_tags SELECT * FROM jsonb_populate_recordset(NULL::series_tags, $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "85333c6a0ed12d6a64f7ebabe087d86367f7bd3738e7458d34ed21d6d069af21"
+}

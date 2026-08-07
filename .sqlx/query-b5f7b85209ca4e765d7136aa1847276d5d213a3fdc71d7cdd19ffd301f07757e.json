@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO sync_decisions (id, run_id, user_id, series_id, provider, external_id, scope, action, reason, policy, applied, local_before, local_after, remote_before, remote_after, ancestor_local, ancestor_remote, match_score, match_signals, evidence) SELECT u.id, $1, u.user_id, u.series_id, u.provider, u.external_id, u.scope, u.action, u.reason, u.policy, u.applied, u.local_before, u.local_after, u.remote_before, u.remote_after, u.ancestor_local, u.ancestor_remote, u.match_score, COALESCE(ARRAY(SELECT jsonb_array_elements_text(u.signals)), '{}'), u.evidence FROM UNNEST($2::uuid[], $3::uuid[], $4::uuid[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[], $10::text[], $11::boolean[], $12::text[], $13::text[], $14::text[], $15::text[], $16::text[], $17::text[], $18::real[], $19::jsonb[], $20::jsonb[]) AS u(id, user_id, series_id, provider, external_id, scope, action, reason, policy, applied, local_before, local_after, remote_before, remote_after, ancestor_local, ancestor_remote, match_score, signals, evidence)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "UuidArray",
+        "UuidArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "BoolArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "Float4Array",
+        "JsonbArray",
+        "JsonbArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b5f7b85209ca4e765d7136aa1847276d5d213a3fdc71d7cdd19ffd301f07757e"
+}

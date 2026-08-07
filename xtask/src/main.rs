@@ -97,7 +97,7 @@ fn main() -> anyhow::Result<()> {
 async fn compiled_commands(cmd: &str) -> anyhow::Result<()> {
     if cmd == "openapi" {
         let check = std::env::args().nth(2).as_deref() == Some("--check");
-        return openapi(check);
+        return run_with_deep_stack(move || openapi(check));
     }
 
     // Shells out to `sqlx-cli`, which manages its own `DATABASE_URL` connection, so this runs
@@ -235,6 +235,31 @@ fn install_hooks() -> anyhow::Result<()> {
 
     println!("installed {}", hook_path.display());
     Ok(())
+}
+
+/// Stack for [`run_with_deep_stack`]. Both the 3.1 → 3.0 downgrade and progenitor's generator
+/// recurse once per level of schema nesting, so the depth they need scales with the document
+/// rather than being bounded — and a debug build's frames are large.
+#[cfg(feature = "full")]
+const GENERATOR_STACK: usize = 32 * 1024 * 1024;
+
+/// Run `f` on a thread with a stack big enough for the generators.
+///
+/// The main thread's stack is a *platform* default — 8 MiB on Linux, 1 MiB on Windows — so
+/// `openapi` worked in CI and overflowed locally, with a bare `STATUS_STACK_OVERFLOW` and no
+/// indication that the two differed. Adding a published endpoint is what pushes it over, which
+/// makes this the worst possible thing to leave to chance: it fails for whoever adds the next
+/// route, on their machine only, at the moment they are least expecting a toolchain problem.
+#[cfg(feature = "full")]
+fn run_with_deep_stack<F>(f: F) -> anyhow::Result<()>
+where
+    F: FnOnce() -> anyhow::Result<()> + Send + 'static,
+{
+    std::thread::Builder::new()
+        .stack_size(GENERATOR_STACK)
+        .spawn(f)?
+        .join()
+        .map_err(|_| anyhow::anyhow!("OpenAPI generation panicked"))?
 }
 
 /// Regenerate `openapi.json` and the typed `crates/api-client/src/lib.rs` from the api

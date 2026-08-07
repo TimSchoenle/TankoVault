@@ -1,0 +1,86 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (SELECT to_jsonb(s) FROM series s WHERE s.id = $1) AS series, COALESCE((SELECT jsonb_agg(to_jsonb(t)) FROM series_titles t WHERE t.series_id = $1), '[]') AS \"titles!\", COALESCE((SELECT jsonb_agg(to_jsonb(t)) FROM series_tags t WHERE t.series_id = $1), '[]') AS \"tags!\", COALESCE((SELECT jsonb_agg(to_jsonb(t)) FROM series_authors t WHERE t.series_id = $1), '[]') AS \"authors!\", COALESCE((SELECT jsonb_agg(to_jsonb(t)) FROM watchlist_entries t WHERE t.series_id = $1), '[]') AS \"watchlist!\", COALESCE((SELECT jsonb_agg(to_jsonb(t)) FROM read_progress t WHERE t.series_id = $1), '[]') AS \"progress!\", COALESCE((SELECT jsonb_agg(to_jsonb(t)) FROM sync_mappings t WHERE t.series_id = $1), '[]') AS \"mappings!\", COALESCE((SELECT jsonb_agg(to_jsonb(t)) FROM series_sync_overrides t WHERE t.series_id = $1), '[]') AS \"overrides!\", COALESCE((SELECT jsonb_agg(to_jsonb(t)) FROM notification_dedup t WHERE t.series_id = $1), '[]') AS \"dedup!\", COALESCE((SELECT jsonb_agg(to_jsonb(t)) FROM recommendation_feedback t WHERE t.series_id = $1), '[]') AS \"feedback!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "titles!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "tags!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "authors!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "watchlist!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "progress!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "mappings!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "overrides!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "dedup!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "feedback!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "65401e4758e51cc6477d01f7f7cd1f755b3eb5266e6908b4c66155f74a09907d"
+}

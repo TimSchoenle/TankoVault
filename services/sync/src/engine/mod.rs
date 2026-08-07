@@ -11,6 +11,7 @@ mod push;
 mod reconcile;
 mod registry;
 mod resolve;
+mod revert;
 mod tokens;
 
 use std::collections::HashMap;
@@ -29,6 +30,7 @@ use crate::provider::ExternalProvider;
 pub(crate) use enrich::EnrichReport;
 pub(crate) use push::ProviderPushOutcome;
 pub(crate) use reconcile::{PullReport, PushReport};
+pub(crate) use revert::RevertReport;
 
 use accounts::AccountService;
 use conflicts::ConflictService;
@@ -38,6 +40,7 @@ use push::TargetedPush;
 use reconcile::Reconciler;
 use registry::ProviderRegistry;
 use resolve::SeriesResolver;
+use revert::RevertService;
 use tokens::TokenVault;
 
 /// The stateful sync engine, shared behind an `Arc` in service state. A façade over the
@@ -49,6 +52,8 @@ pub(crate) struct SyncEngine {
     reconciler: Reconciler,
     targeted_push: TargetedPush,
     enricher: Enricher,
+    /// Undoing a journalled decision, and the durable refusal that stops it recurring.
+    reverts: RevertService,
 }
 
 impl SyncEngine {
@@ -97,6 +102,7 @@ impl SyncEngine {
                 Arc::clone(&resolver),
                 Arc::clone(&metadata),
             ),
+            reverts: RevertService::new(pool.clone(), Arc::clone(&registry), Arc::clone(&tokens)),
             targeted_push: TargetedPush::new(pool.clone(), Arc::clone(&registry), tokens, resolver),
             enricher: Enricher::new(pool, Arc::clone(&registry), metadata),
             registry,
@@ -187,6 +193,64 @@ impl SyncEngine {
     ) -> anyhow::Result<bool> {
         self.conflicts
             .resolve(user_id, conflict_id, resolution)
+            .await
+    }
+
+    /// A page of the operator-facing decision journal.
+    ///
+    /// # Errors
+    /// Database failures.
+    pub(crate) async fn list_decisions(
+        &self,
+        filter: &sync::SyncDecisionFilter,
+        limit: i64,
+        offset: i64,
+    ) -> anyhow::Result<Vec<sync::SyncDecisionRow>> {
+        self.reverts.list(filter, limit, offset).await
+    }
+
+    /// Undo one journalled sync decision.
+    ///
+    /// # Errors
+    /// A decision that changed nothing, was already reverted, or has no inverse; otherwise
+    /// database and provider failures.
+    pub(crate) async fn revert_decision(
+        &self,
+        id: uuid::Uuid,
+        actor: Option<UserId>,
+        reason: &str,
+    ) -> anyhow::Result<RevertReport> {
+        self.reverts.revert(id, actor, reason).await
+    }
+
+    /// Mark one journalled sync decision wrong, optionally refusing the match it made.
+    ///
+    /// # Errors
+    /// Database failures, or a `block_match` request against a decision that named no match.
+    pub(crate) async fn flag_decision(
+        &self,
+        id: uuid::Uuid,
+        actor: Option<UserId>,
+        reason: &str,
+        block_match: bool,
+    ) -> anyhow::Result<bool> {
+        self.reverts.flag(id, actor, reason, block_match).await
+    }
+
+    /// Refuse one (external id, series) correspondence permanently.
+    ///
+    /// # Errors
+    /// Database failures.
+    pub(crate) async fn block_match(
+        &self,
+        provider: &str,
+        external_id: &str,
+        series_id: SeriesId,
+        actor: Option<UserId>,
+        reason: &str,
+    ) -> anyhow::Result<()> {
+        self.reverts
+            .block_match(provider, external_id, series_id, actor, reason)
             .await
     }
 

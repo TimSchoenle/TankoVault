@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series_authors (series_id, author_id) SELECT $1, author_id FROM series_authors WHERE series_id = $2 ON CONFLICT DO NOTHING RETURNING to_jsonb(series_authors)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "to_jsonb",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "050e4ff0aee254d23387052d67728ea725f00d46a19df3163db0a18ff97b70f9"
+}

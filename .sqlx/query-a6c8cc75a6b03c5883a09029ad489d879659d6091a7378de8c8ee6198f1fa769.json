@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM sync_mappings t USING jsonb_populate_recordset(NULL::sync_mappings, $1) x WHERE t.series_id = x.series_id AND t.provider = x.provider",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a6c8cc75a6b03c5883a09029ad489d879659d6091a7378de8c8ee6198f1fa769"
+}

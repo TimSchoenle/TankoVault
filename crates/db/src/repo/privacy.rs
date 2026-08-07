@@ -68,6 +68,10 @@ pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
                                 FROM sync_conflicts c WHERE c.user_id = $1), \
            'sync_history', (SELECT coalesce(json_agg(to_jsonb(h) ORDER BY h.created_at), '[]'::json) \
                               FROM sync_history h WHERE h.user_id = $1), \
+           'sync_decisions', (SELECT coalesce(json_agg( \
+                                       to_jsonb(d) - 'user_id' - 'reverted_by' - 'flagged_by' \
+                                     ORDER BY d.decided_at), '[]'::json) \
+                                FROM sync_decisions d WHERE d.user_id = $1), \
            'audit_entries', (SELECT coalesce(json_agg(json_build_object( \
                                       'created_at', a.created_at, \
                                       'action', a.action, \

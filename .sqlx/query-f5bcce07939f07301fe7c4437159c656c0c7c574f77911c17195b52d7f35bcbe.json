@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sync_remote_entries SET series_id = $1 WHERE series_id = $2 RETURNING to_jsonb(sync_remote_entries)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "to_jsonb",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f5bcce07939f07301fe7c4437159c656c0c7c574f77911c17195b52d7f35bcbe"
+}

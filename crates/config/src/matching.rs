@@ -53,13 +53,20 @@ use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 /// ));
 ///
 /// // Boundaries are inclusive on the lower side of each band: `score == high` attaches.
-/// let exact = MatchingConfig { high: 0.9, low: 0.6, auto_merge: 0.97, candidate_limit: 10 };
+/// let exact = MatchingConfig { high: 0.9, low: 0.6, ..MatchingConfig::default() };
 /// assert_eq!(exact.canonicalise(&query, &[scoring(0.9)]), Decision::Attach(existing));
 ///
 /// // No candidates is the same answer as no good candidate.
 /// assert_eq!(policy.canonicalise(&query, &[]), Decision::Create);
 /// ```
 #[derive(Debug, Clone, Deserialize)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independently-settable configuration key, named in \
+              docs/CONFIGURATION.md and set by its own environment variable. The lint's \
+              suggested remedy — a state machine or two-variant enums — would stop an operator \
+              turning one guard off without restating the other three."
+)]
 pub struct MatchingConfig {
     /// At or above this score, attach to the existing series outright.
     #[serde(default = "default_threshold_high")]
@@ -77,6 +84,33 @@ pub struct MatchingConfig {
     /// How many trigram candidates to score per query title; more only costs a wider index scan.
     #[serde(default = "default_candidate_limit")]
     pub candidate_limit: i64,
+
+    /// Titles carrying different numbers (`Overlord` against `Overlord 2`) are reported as
+    /// distinct works rather than queued. Switching this off makes a sequel merge-eligible on
+    /// title similarity alone, which is the single most expensive mistake this scorer can make —
+    /// there is no other rule that distinguishes a sequel from its predecessor.
+    #[serde(default = "enabled")]
+    pub block_auto_merge_on_numeric_conflict: bool,
+    /// Both series name authors and share none: a remake, a spin-off, or an unrelated work with
+    /// the same title. Off costs nothing on a catalogue whose providers rarely publish credits,
+    /// because the signal cannot fire without credits on both sides.
+    #[serde(default = "enabled")]
+    pub block_auto_merge_on_author_conflict: bool,
+    /// Release years three or more years apart. Catches re-serialisations and remakes that share
+    /// an exact title; the scorer's own -0.05 penalty is smaller than the exact-title bonus and
+    /// so cannot hold such a pair back on its own.
+    #[serde(default = "enabled")]
+    pub block_auto_merge_on_year_conflict: bool,
+    /// Both series declare a medium and they disagree (manga against manhwa). Worth switching
+    /// off on a deployment whose providers guess the medium from the site they scraped it from.
+    #[serde(default = "enabled")]
+    pub block_auto_merge_on_type_conflict: bool,
+}
+
+/// Guards default on: a guard only ever moves a pair *towards* operator review, so the cost of
+/// a wrong one is a queue row and the cost of a missing one is a deleted series.
+const fn enabled() -> bool {
+    true
 }
 
 fn default_threshold_high() -> f32 {
@@ -102,18 +136,28 @@ impl Default for MatchingConfig {
             low: default_threshold_low(),
             auto_merge: default_threshold_auto_merge(),
             candidate_limit: default_candidate_limit(),
+            block_auto_merge_on_numeric_conflict: enabled(),
+            block_auto_merge_on_author_conflict: enabled(),
+            block_auto_merge_on_year_conflict: enabled(),
+            block_auto_merge_on_type_conflict: enabled(),
         }
     }
 }
 
 impl MatchingConfig {
-    /// The scorer's threshold pair.
+    /// The scorer's thresholds and guards, as one value.
     #[must_use]
     pub const fn thresholds(&self) -> tankovault_matcher::Thresholds {
         tankovault_matcher::Thresholds {
             high: self.high,
             low: self.low,
             auto_merge: self.auto_merge,
+            guards: tankovault_matcher::MergeGuards {
+                numeric_conflict: self.block_auto_merge_on_numeric_conflict,
+                author_conflict: self.block_auto_merge_on_author_conflict,
+                year_conflict: self.block_auto_merge_on_year_conflict,
+                type_conflict: self.block_auto_merge_on_type_conflict,
+            },
         }
     }
 }

@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO sync_match_blocks (provider, external_id, series_id, reason, created_by) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (provider, external_id, series_id) DO UPDATE SET reason = EXCLUDED.reason, created_by = EXCLUDED.created_by, created_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2d9007d1bfe25cd31af984718f9f84a54304f6a73ce1965aa9364798842aa854"
+}

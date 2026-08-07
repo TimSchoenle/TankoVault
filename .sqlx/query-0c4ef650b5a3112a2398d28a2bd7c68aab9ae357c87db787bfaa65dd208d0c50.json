@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO recommendation_feedback SELECT * FROM jsonb_populate_recordset(NULL::recommendation_feedback, $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0c4ef650b5a3112a2398d28a2bd7c68aab9ae357c87db787bfaa65dd208d0c50"
+}

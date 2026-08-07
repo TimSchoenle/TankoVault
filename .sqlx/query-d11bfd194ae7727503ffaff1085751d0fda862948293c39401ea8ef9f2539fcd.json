@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM series_merges WHERE merged_id = $1 AND survivor_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d11bfd194ae7727503ffaff1085751d0fda862948293c39401ea8ef9f2539fcd"
+}

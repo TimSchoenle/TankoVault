@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO read_progress SELECT * FROM jsonb_populate_recordset(NULL::read_progress, $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4d72ef7a3d4bc59ae037703d1db227265338cdd87b092cb34cde190e9d3e4c97"
+}

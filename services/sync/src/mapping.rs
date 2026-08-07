@@ -151,6 +151,13 @@ pub(crate) struct MergeDecision {
     pub(crate) action: MergeAction,
     /// The side deemed authoritative for a real conflict / directional write.
     pub(crate) winner: Side,
+    /// Stable slug naming the situation that produced the action, journalled on the decision.
+    ///
+    /// The action alone is not an explanation: a `PullRemote` because only the remote moved and a
+    /// `PullRemote` because both moved and the policy said so are the same write and completely
+    /// different events — the second is a value the reader lost, and it is the one they will ask
+    /// about. Stable because it is persisted and rendered.
+    pub(crate) reason: &'static str,
 }
 
 /// Three-way merge for one field of one series.
@@ -179,23 +186,27 @@ pub(crate) fn three_way<T: PartialEq + Copy>(
             return MergeDecision {
                 action: MergeAction::Noop,
                 winner: Side::Local,
+                reason: "no_ancestor_agreement",
             };
         }
-        return resolve_conflict(policy, newer);
+        return resolve_conflict(policy, newer, true);
     }
 
     match (local_changed, remote_changed) {
         (false, false) => MergeDecision {
             action: MergeAction::Noop,
             winner: Side::Local,
+            reason: "neither_side_changed",
         },
         (true, false) => MergeDecision {
             action: MergeAction::PushLocal,
             winner: Side::Local,
+            reason: "only_local_changed",
         },
         (false, true) => MergeDecision {
             action: MergeAction::PullRemote,
             winner: Side::Remote,
+            reason: "only_remote_changed",
         },
         (true, true) => {
             if current_local == current_remote {
@@ -203,9 +214,10 @@ pub(crate) fn three_way<T: PartialEq + Copy>(
                 MergeDecision {
                     action: MergeAction::Noop,
                     winner: Side::Local,
+                    reason: "both_sides_converged",
                 }
             } else {
-                resolve_conflict(policy, newer)
+                resolve_conflict(policy, newer, false)
             }
         }
     }
@@ -213,31 +225,71 @@ pub(crate) fn three_way<T: PartialEq + Copy>(
 
 /// Resolve a genuine conflict (both sides changed to different values, or first-sync
 /// disagreement) under `policy`.
+///
+/// `first_sync` distinguishes the two situations that reach here, and travels into the reason
+/// slug: the same policy applied to a first sync and to a genuine divergence are different
+/// events, and only the second means a value the reader had was overwritten.
+///
+/// The slugs are spelled out rather than composed, because they are persisted: a `format!` here
+/// would either allocate per field per series or leak, and the set is small enough to read.
 #[must_use]
-fn resolve_conflict(policy: ConflictPolicy, newer: Side) -> MergeDecision {
-    match policy {
-        ConflictPolicy::LocalWins => MergeDecision {
-            action: MergeAction::PushLocal,
-            winner: Side::Local,
-        },
-        ConflictPolicy::RemoteWins => MergeDecision {
-            action: MergeAction::PullRemote,
-            winner: Side::Remote,
-        },
-        ConflictPolicy::NewestWins => match newer {
-            Side::Local => MergeDecision {
-                action: MergeAction::PushLocal,
-                winner: Side::Local,
-            },
-            Side::Remote => MergeDecision {
-                action: MergeAction::PullRemote,
-                winner: Side::Remote,
-            },
-        },
-        ConflictPolicy::AskMe => MergeDecision {
-            action: MergeAction::Conflict,
-            winner: Side::Local,
-        },
+fn resolve_conflict(policy: ConflictPolicy, newer: Side, first_sync: bool) -> MergeDecision {
+    let (action, winner, reason) = match (policy, newer, first_sync) {
+        (ConflictPolicy::LocalWins, _, true) => (
+            MergeAction::PushLocal,
+            Side::Local,
+            "no_ancestor_policy_local_wins",
+        ),
+        (ConflictPolicy::LocalWins, _, false) => (
+            MergeAction::PushLocal,
+            Side::Local,
+            "both_sides_changed_policy_local_wins",
+        ),
+        (ConflictPolicy::RemoteWins, _, true) => (
+            MergeAction::PullRemote,
+            Side::Remote,
+            "no_ancestor_policy_remote_wins",
+        ),
+        (ConflictPolicy::RemoteWins, _, false) => (
+            MergeAction::PullRemote,
+            Side::Remote,
+            "both_sides_changed_policy_remote_wins",
+        ),
+        (ConflictPolicy::NewestWins, Side::Local, true) => (
+            MergeAction::PushLocal,
+            Side::Local,
+            "no_ancestor_newest_is_local",
+        ),
+        (ConflictPolicy::NewestWins, Side::Local, false) => (
+            MergeAction::PushLocal,
+            Side::Local,
+            "both_sides_changed_newest_is_local",
+        ),
+        (ConflictPolicy::NewestWins, Side::Remote, true) => (
+            MergeAction::PullRemote,
+            Side::Remote,
+            "no_ancestor_newest_is_remote",
+        ),
+        (ConflictPolicy::NewestWins, Side::Remote, false) => (
+            MergeAction::PullRemote,
+            Side::Remote,
+            "both_sides_changed_newest_is_remote",
+        ),
+        (ConflictPolicy::AskMe, _, true) => (
+            MergeAction::Conflict,
+            Side::Local,
+            "no_ancestor_queued_for_the_reader",
+        ),
+        (ConflictPolicy::AskMe, _, false) => (
+            MergeAction::Conflict,
+            Side::Local,
+            "both_sides_changed_queued_for_the_reader",
+        ),
+    };
+    MergeDecision {
+        action,
+        winner,
+        reason,
     }
 }
 

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series (id, canonical_title, normalized_title, description, cover_url, content_type, status, release_year, created_at, updated_at, metadata_checked_at, is_adult, external_score, external_popularity, external_source, title_source, description_source, cover_source, content_type_source, status_source, release_year_source) SELECT id, canonical_title, normalized_title, description, cover_url, content_type, status, release_year, created_at, updated_at, metadata_checked_at, is_adult, external_score, external_popularity, external_source, title_source, description_source, cover_source, content_type_source, status_source, release_year_source FROM jsonb_populate_record(NULL::series, $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7b2d5cafa46ce1b1f9a12b84d0e44c153d37350e9c883e82f9dadda75d20e2a9"
+}

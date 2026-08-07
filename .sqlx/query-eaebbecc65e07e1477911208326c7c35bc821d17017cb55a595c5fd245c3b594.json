@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO sync_mappings (series_id, provider, external_id) SELECT $1, provider, external_id FROM sync_mappings WHERE series_id = $2 ON CONFLICT (series_id, provider) DO NOTHING RETURNING to_jsonb(sync_mappings)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "to_jsonb",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "eaebbecc65e07e1477911208326c7c35bc821d17017cb55a595c5fd245c3b594"
+}

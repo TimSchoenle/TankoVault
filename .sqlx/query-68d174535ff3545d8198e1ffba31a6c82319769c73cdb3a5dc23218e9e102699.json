@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sync_match_blocks b SET series_id = $1 FROM jsonb_populate_recordset(NULL::sync_match_blocks, $2) x WHERE b.series_id = $3 AND b.provider = x.provider AND b.external_id = x.external_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "68d174535ff3545d8198e1ffba31a6c82319769c73cdb3a5dc23218e9e102699"
+}

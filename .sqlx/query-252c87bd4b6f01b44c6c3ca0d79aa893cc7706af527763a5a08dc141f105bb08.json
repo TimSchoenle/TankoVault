@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE merge_candidates SET resolved = true, outcome = $3, resolved_by = $2, resolved_at = now(), updated_at = now() WHERE (series_id = $1 OR candidate_id = $1) AND NOT resolved RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "merge_candidates",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "252c87bd4b6f01b44c6c3ca0d79aa893cc7706af527763a5a08dc141f105bb08"
+}

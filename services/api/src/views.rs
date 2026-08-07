@@ -144,6 +144,82 @@ impl IntoView for repo::matching::MergeCandidateView {
     }
 }
 
+impl IntoView for repo::matching::MergeDecisionRow {
+    type View = admin::MergeDecisionView;
+
+    fn into_view(self) -> Self::View {
+        admin::MergeDecisionView {
+            id: self.id,
+            decided_at: self.decided_at,
+            sweep_id: self.sweep_id,
+            trigger: self.trigger,
+            actor: self.actor,
+            left_id: self.left_id,
+            right_id: self.right_id,
+            left_title: self.left_title,
+            right_title: self.right_title,
+            verdict: self.verdict,
+            reason: self.reason,
+            blocked_by: self.blocked_by,
+            outcome: self.outcome,
+            survivor_id: self.survivor_id,
+            absorbed_id: self.absorbed_id,
+            score: self.score,
+            base_score: self.base_score,
+            signals: self.signals,
+            terms: self.terms,
+            evidence: self.evidence,
+            policy: self.policy,
+            revertible: self.revertible,
+            undo_rows: self.undo_rows,
+            reverted_at: self.reverted_at,
+            reverted_by: self.reverted_by,
+            revert_reason: self.revert_reason,
+            flagged_at: self.flagged_at,
+            flagged_by: self.flagged_by,
+            flag_reason: self.flag_reason,
+        }
+    }
+}
+
+impl IntoView for repo::sync::SyncDecisionRow {
+    type View = admin::SyncDecisionView;
+
+    fn into_view(self) -> Self::View {
+        admin::SyncDecisionView {
+            id: self.id,
+            run_id: self.run_id,
+            decided_at: self.decided_at,
+            user_id: self.user_id,
+            username: self.username,
+            series_id: self.series_id,
+            series_title: self.series_title,
+            provider: self.provider,
+            external_id: self.external_id,
+            scope: self.scope,
+            action: self.action,
+            reason: self.reason,
+            policy: self.policy,
+            applied: self.applied,
+            local_before: self.local_before,
+            local_after: self.local_after,
+            remote_before: self.remote_before,
+            remote_after: self.remote_after,
+            ancestor_local: self.ancestor_local,
+            ancestor_remote: self.ancestor_remote,
+            match_score: self.match_score,
+            match_signals: self.match_signals,
+            evidence: self.evidence,
+            reverted_at: self.reverted_at,
+            reverted_by: self.reverted_by,
+            revert_reason: self.revert_reason,
+            flagged_at: self.flagged_at,
+            flagged_by: self.flagged_by,
+            flag_reason: self.flag_reason,
+        }
+    }
+}
+
 // --- admin: external sync ---------------------------------------------------------------
 
 impl IntoView for repo::sync::AdminAccountRow {

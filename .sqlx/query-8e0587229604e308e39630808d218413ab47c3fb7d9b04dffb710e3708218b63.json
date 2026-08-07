@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO watchlist_entries (user_id, series_id, status, notify, added_at, sync_excluded, updated_at) SELECT user_id, $1, status, notify, added_at, sync_excluded, updated_at FROM watchlist_entries WHERE series_id = $2 ON CONFLICT (user_id, series_id) DO NOTHING RETURNING to_jsonb(watchlist_entries)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "to_jsonb",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8e0587229604e308e39630808d218413ab47c3fb7d9b04dffb710e3708218b63"
+}

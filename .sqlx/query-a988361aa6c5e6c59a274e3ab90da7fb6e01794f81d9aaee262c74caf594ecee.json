@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE((SELECT jsonb_agg(to_jsonb(p)) FROM read_progress p WHERE p.series_id = $1 AND p.user_id IN (SELECT user_id FROM read_progress WHERE series_id = $2)), '[]') AS \"progress!\", COALESCE((SELECT jsonb_agg(to_jsonb(o)) FROM series_sync_overrides o WHERE o.series_id = $1 AND (o.user_id, o.provider) IN (SELECT user_id, provider FROM series_sync_overrides WHERE series_id = $2)), '[]') AS \"overrides!\", COALESCE((SELECT jsonb_agg(to_jsonb(f)) FROM recommendation_feedback f WHERE f.series_id = $1 AND f.user_id IN (SELECT user_id FROM recommendation_feedback WHERE series_id = $2)), '[]') AS \"feedback!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "progress!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "overrides!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "feedback!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "a988361aa6c5e6c59a274e3ab90da7fb6e01794f81d9aaee262c74caf594ecee"
+}

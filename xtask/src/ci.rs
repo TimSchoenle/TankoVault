@@ -77,7 +77,9 @@ const GATES: &[Gate] = &[
     },
     Gate {
         name: "openapi drift",
-        step: Step::InProcess(|| crate::openapi(true)),
+        // Same deep stack the standalone command uses: this gate runs the generator in *this*
+        // process, so it inherits the main thread's platform-default stack otherwise.
+        step: Step::InProcess(|| crate::run_with_deep_stack(|| crate::openapi(true))),
     },
     Gate {
         name: "repo invariants",

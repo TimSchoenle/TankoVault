@@ -1,14 +1,22 @@
 //! Full three-way reconciliation of a linked account. Owns the *I/O* half — fetching, resolving,
 //! persisting, applying — while every merge rule itself lives in [`super::plan`].
+//!
+//! Every per-series decision a run takes is journalled in `sync_decisions`, including the ones
+//! that changed nothing: the entries that matched no local series, the series skipped as
+//! excluded, and the fields both sides already agreed on. What a run *considered* is as much
+//! part of explaining an automatic sync as what it wrote.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use secrecy::SecretString;
 use serde::Serialize;
+use serde_json::json;
 use time::OffsetDateTime;
+use uuid::Uuid;
 
 use tankovault_db::PgPool;
+use tankovault_db::repo::sync::NewSyncDecision;
 use tankovault_db::repo::{sync, tracking};
 use tankovault_domain::{SeriesId, UserId, WatchStatus};
 
@@ -16,7 +24,7 @@ use super::accounts::AccountService;
 use super::metadata::MetadataWriter;
 use super::plan::{Ancestor, LocalSide, MergePlan, SeriesPlan, plan_merge, plan_series};
 use super::registry::ProviderRegistry;
-use super::resolve::SeriesResolver;
+use super::resolve::{MatchOutcome, SeriesResolver};
 use super::tokens::TokenVault;
 use crate::mapping::{ConflictPolicy, MergeAction};
 use crate::provider::{ExternalProvider, RemoteEntry};
@@ -68,6 +76,37 @@ pub(crate) struct ReconcileCounts {
     pub(crate) enriched: usize,
 }
 
+/// A run's counters and its decision journal, threaded together because every step that moves a
+/// counter has a reason worth writing down and the two would otherwise drift apart.
+#[derive(Debug, Default)]
+struct RunState {
+    counts: ReconcileCounts,
+    decisions: Vec<NewSyncDecision>,
+}
+
+impl RunState {
+    /// Start a decision and hand back a handle to fill in. The identifying half comes from the
+    /// run, so a caller cannot journal a decision against the wrong user or provider.
+    fn note(
+        &mut self,
+        run: &RunContext<'_>,
+        scope: &str,
+        action: &str,
+        reason: &str,
+    ) -> &mut NewSyncDecision {
+        self.decisions.push(NewSyncDecision::new(
+            run.user_id,
+            run.slug,
+            scope,
+            action,
+            reason,
+        ));
+        self.decisions
+            .last_mut()
+            .expect("a decision was just pushed")
+    }
+}
+
 /// How long a series' catalogue metadata is left alone after an enrichment attempt before a
 /// list reconciliation refreshes it again. The tokenless sweep, not this pass, keeps metadata
 /// current in between.
@@ -115,6 +154,10 @@ struct RunContext<'a> {
     access: &'a SecretString,
     user_id: UserId,
     policy: ConflictPolicy,
+    /// Groups this run's decisions, so the console can read one reconciliation as a unit.
+    run_id: Uuid,
+    /// The (external id, series) matches an operator has judged wrong for this provider.
+    blocked: HashSet<(String, SeriesId)>,
 }
 
 /// Collapse a fetched remote list to at most one entry per `external_id`, keeping the most
@@ -261,27 +304,41 @@ impl Reconciler {
             access: &access,
             user_id,
             policy,
+            run_id: Uuid::now_v7(),
+            blocked: self.resolver.blocklist(slug).await?,
         };
 
-        let mut counts = ReconcileCounts {
-            fetched: entries.len(),
-            ..Default::default()
+        let mut state = RunState {
+            counts: ReconcileCounts {
+                fetched: entries.len(),
+                ..Default::default()
+            },
+            decisions: Vec::new(),
         };
         let local = LocalState::load(&self.pool, user_id, slug).await?;
 
         // Phase 1: resolve every entry to a canonical series (or to nothing).
-        let mut resolved: Vec<(&RemoteEntry, Option<SeriesId>)> = Vec::with_capacity(entries.len());
+        let mut resolved: Vec<(&RemoteEntry, MatchOutcome)> = Vec::with_capacity(entries.len());
         for entry in &entries {
-            let matched = self.resolver.series_for_entry(slug, entry).await?;
-            resolved.push((entry, matched));
+            let outcome = self
+                .resolver
+                .series_for_entry(slug, entry, &run.blocked)
+                .await?;
+            Self::note_match(&run, entry, &outcome, &mut state);
+            resolved.push((entry, outcome));
         }
 
+        // Flushed here as well as at the end: the match decisions are the most expensive half of
+        // the journal to lose, and a provider write failing in a later phase would take them with
+        // it if they were only written once.
+        self.flush(&run, &mut state).await;
+
         self.persist_fetched(&run, &resolved).await?;
-        self.enrich_matched(&run, &resolved, &mut counts).await;
+        self.enrich_matched(&run, &resolved, &mut state).await;
         let handled_ids = self
-            .reconcile_fetched(&run, &resolved, &local, &mut counts)
+            .reconcile_fetched(&run, &resolved, &local, &mut state)
             .await?;
-        self.reconcile_watchlist(&run, &handled_ids, &local, &mut counts)
+        self.reconcile_watchlist(&run, &handled_ids, &local, &mut state)
             .await?;
 
         sync::mark_synced(
@@ -292,18 +349,62 @@ impl Reconciler {
             OffsetDateTime::now_utc(),
         )
         .await?;
-        Ok(counts)
+        self.flush(&run, &mut state).await;
+        Ok(state.counts)
+    }
+
+    /// Write the journal so far and clear it.
+    ///
+    /// Best-effort, like `sync_history`: the record of a reconciliation must not be able to fail
+    /// the reconciliation. Cleared whether or not the write succeeded, so a persistent failure
+    /// costs the journal rather than growing the run's memory without bound.
+    async fn flush(&self, run: &RunContext<'_>, state: &mut RunState) {
+        if state.decisions.is_empty() {
+            return;
+        }
+        let decisions = std::mem::take(&mut state.decisions);
+        if let Err(e) = sync::record_sync_decisions(&self.pool, run.run_id, &decisions).await {
+            tracing::warn!(error = %e, provider = %run.slug, user_id = %run.user_id,
+                count = decisions.len(), "could not journal sync decisions");
+        }
+    }
+
+    /// Journal how one remote entry resolved — including, and especially, when it resolved to
+    /// nothing. An unmatched entry was previously a counter and no more, so the commonest sync
+    /// complaint ("the tracker has this and it never syncs") had no evidence at all.
+    fn note_match(
+        run: &RunContext<'_>,
+        entry: &RemoteEntry,
+        outcome: &MatchOutcome,
+        state: &mut RunState,
+    ) {
+        let action = if outcome.series_id.is_some() {
+            "matched"
+        } else {
+            "unmatched"
+        };
+        let decision = state.note(run, "match", action, outcome.reason);
+        decision.series_id = outcome.series_id;
+        decision.external_id = Some(entry.external_id().to_owned());
+        decision.evidence = outcome.evidence.clone();
+        if let Some(a) = outcome.assessment {
+            decision.match_score = Some(a.score);
+            decision.match_signals = a.signals.labels().iter().map(|s| (*s).to_owned()).collect();
+        }
+        // A fresh mapping is a write; a cache hit and a non-match are not.
+        decision.applied =
+            outcome.series_id.is_some() && outcome.reason == "title_match_above_threshold";
     }
 
     /// Persist every fetched snapshot and every resolved mapping in two set-based statements.
     async fn persist_fetched(
         &self,
         run: &RunContext<'_>,
-        resolved: &[(&RemoteEntry, Option<SeriesId>)],
+        resolved: &[(&RemoteEntry, MatchOutcome)],
     ) -> anyhow::Result<()> {
         let snapshots: Vec<sync::FetchedRemoteEntry> = resolved
             .iter()
-            .map(|(entry, matched)| sync::FetchedRemoteEntry {
+            .map(|(entry, outcome)| sync::FetchedRemoteEntry {
                 external_id: entry.external_id().to_owned(),
                 title: entry.metadata.titles.first().cloned().unwrap_or_default(),
                 status: entry.status.as_str().to_owned(),
@@ -311,14 +412,18 @@ impl Reconciler {
                 content_type: entry.metadata.content_type.as_str().to_owned(),
                 start_year: entry.metadata.start_year,
                 updated_at: entry.updated_at,
-                series_id: *matched,
+                series_id: outcome.series_id,
             })
             .collect();
         sync::upsert_remote_entries(&self.pool, run.user_id, run.slug, &snapshots).await?;
 
         let mappings: Vec<(SeriesId, String)> = resolved
             .iter()
-            .filter_map(|(entry, matched)| matched.map(|id| (id, entry.external_id().to_owned())))
+            .filter_map(|(entry, outcome)| {
+                outcome
+                    .series_id
+                    .map(|id| (id, entry.external_id().to_owned()))
+            })
             .collect();
         sync::upsert_mappings(&self.pool, run.slug, &mappings).await?;
         Ok(())
@@ -331,12 +436,12 @@ impl Reconciler {
     async fn enrich_matched(
         &self,
         run: &RunContext<'_>,
-        resolved: &[(&RemoteEntry, Option<SeriesId>)],
-        counts: &mut ReconcileCounts,
+        resolved: &[(&RemoteEntry, MatchOutcome)],
+        state: &mut RunState,
     ) {
         let by_series: HashMap<SeriesId, &RemoteEntry> = resolved
             .iter()
-            .filter_map(|(entry, matched)| matched.map(|id| (id, *entry)))
+            .filter_map(|(entry, outcome)| outcome.series_id.map(|id| (id, *entry)))
             .collect();
         if by_series.is_empty() {
             return;
@@ -356,7 +461,19 @@ impl Reconciler {
                 continue;
             };
             match self.metadata.apply(row, run.slug, &entry.metadata).await {
-                Ok(()) => counts.enriched += 1,
+                Ok(()) => {
+                    state.counts.enriched += 1;
+                    let decision =
+                        state.note(run, "metadata", "enriched", "stale_past_refresh_interval");
+                    decision.series_id = Some(row.id);
+                    decision.external_id = Some(entry.external_id().to_owned());
+                    decision.applied = true;
+                    decision.evidence = json!({
+                        "titles": entry.metadata.titles,
+                        "content_type": entry.metadata.content_type.as_str(),
+                        "start_year": entry.metadata.start_year,
+                    });
+                }
                 Err(e) => tracing::warn!(error = %e, series_id = %row.id,
                     "could not apply list-sync metadata"),
             }
@@ -368,24 +485,35 @@ impl Reconciler {
     async fn reconcile_fetched(
         &self,
         run: &RunContext<'_>,
-        resolved: &[(&RemoteEntry, Option<SeriesId>)],
+        resolved: &[(&RemoteEntry, MatchOutcome)],
         local: &LocalState,
-        counts: &mut ReconcileCounts,
+        state: &mut RunState,
     ) -> anyhow::Result<HashSet<String>> {
         let mut handled_ids: HashSet<String> = HashSet::new();
         // Two distinct remote ids can resolve to one local series; each series is reconciled
         // at most once per run or the clobbering flip-flop from dupes would repeat here too.
         let mut handled_series: HashSet<SeriesId> = HashSet::new();
 
-        for (entry, matched) in resolved {
-            let Some(series_id) = *matched else {
-                counts.unmatched += 1;
+        for (entry, outcome) in resolved {
+            let Some(series_id) = outcome.series_id else {
+                state.counts.unmatched += 1;
                 continue;
             };
-            counts.matched += 1;
+            state.counts.matched += 1;
             handled_ids.insert(entry.external_id().to_owned());
             if !handled_series.insert(series_id) {
-                continue; // this series was already reconciled against a duplicate remote row
+                // Journalled rather than silently skipped: a provider returning one work twice is
+                // an upstream anomaly, and it used to be visible only as a count that did not add
+                // up against the fetched total.
+                let decision = state.note(
+                    run,
+                    "series",
+                    "skipped",
+                    "series_already_reconciled_this_run",
+                );
+                decision.series_id = Some(series_id);
+                decision.external_id = Some(entry.external_id().to_owned());
+                continue;
             }
             self.reconcile_series(
                 run,
@@ -393,7 +521,7 @@ impl Reconciler {
                 entry.external_id(),
                 Some(entry),
                 local,
-                counts,
+                state,
             )
             .await?;
         }
@@ -407,23 +535,31 @@ impl Reconciler {
         run: &RunContext<'_>,
         handled_ids: &HashSet<String>,
         local: &LocalState,
-        counts: &mut ReconcileCounts,
+        state: &mut RunState,
     ) -> anyhow::Result<()> {
         let watchlist = tracking::watchlist_list(&self.pool, run.user_id).await?;
         for wl in &watchlist {
-            counts.considered += 1;
+            state.counts.considered += 1;
             let Some(external_id) = self
                 .resolver
-                .media_id_for_series(run.provider, run.slug, run.access, wl.series_id)
+                .media_id_for_series(
+                    run.provider,
+                    run.slug,
+                    run.access,
+                    wl.series_id,
+                    &run.blocked,
+                )
                 .await?
             else {
-                counts.unmapped += 1;
+                state.counts.unmapped += 1;
+                let decision = state.note(run, "match", "unmapped", "no_remote_media_found");
+                decision.series_id = Some(wl.series_id);
                 continue;
             };
             if handled_ids.contains(&external_id) {
                 continue; // already reconciled in the remote-driven pass
             }
-            self.reconcile_series(run, wl.series_id, &external_id, None, local, counts)
+            self.reconcile_series(run, wl.series_id, &external_id, None, local, state)
                 .await?;
         }
         Ok(())
@@ -439,23 +575,26 @@ impl Reconciler {
         external_id: &str,
         remote: Option<&RemoteEntry>,
         local: &LocalState,
-        counts: &mut ReconcileCounts,
+        state: &mut RunState,
     ) -> anyhow::Result<()> {
         let side = local.side(series_id);
         match plan_series(&side, remote) {
             SeriesPlan::Skip => {
-                counts.skipped += 1;
+                state.counts.skipped += 1;
+                let decision = state.note(run, "series", "skipped", "excluded_from_sync");
+                decision.series_id = Some(series_id);
+                decision.external_id = Some(external_id.to_owned());
                 Ok(())
             }
             SeriesPlan::CreateRemote { status, progress } => {
-                self.apply_create_remote(run, series_id, external_id, status, progress, counts)
+                self.apply_create_remote(run, series_id, external_id, status, progress, state)
                     .await
             }
             SeriesPlan::Merge => {
                 let remote = remote.expect("plan_series only asks for a merge when remote is set");
                 let ancestor = self.load_ancestor(series_id, run.slug).await?;
                 let plan = plan_merge(&side, remote, &ancestor, run.policy);
-                self.apply_merge(run, series_id, external_id, &plan, counts)
+                self.apply_merge(run, series_id, external_id, &plan, state)
                     .await
             }
         }
@@ -489,19 +628,33 @@ impl Reconciler {
         external_id: &str,
         status: WatchStatus,
         progress: f64,
-        counts: &mut ReconcileCounts,
+        state: &mut RunState,
     ) -> anyhow::Result<()> {
         run.provider
             .save_entry(run.access, external_id, status, progress)
             .await?;
         self.record_snapshot(run, series_id, progress, status)
             .await?;
-        counts.pushed += 1;
+        state.counts.pushed += 1;
+        let decision = state.note(
+            run,
+            "series",
+            "create_remote",
+            "absent_from_the_remote_library",
+        );
+        decision.series_id = Some(series_id);
+        decision.external_id = Some(external_id.to_owned());
+        decision.applied = true;
+        decision.policy = Some(run.policy.as_str().to_owned());
+        decision.local_after = Some(progress.to_string());
+        decision.remote_after = Some(progress.to_string());
+        decision.evidence = json!({ "status": status.as_str(), "created": true });
+
         self.append_history(
             run,
             series_id,
             "push",
-            &serde_json::json!({ "created": true, "progress": progress }),
+            &json!({ "created": true, "progress": progress }),
         )
         .await;
         Ok(())
@@ -509,30 +662,60 @@ impl Reconciler {
 
     /// Perform a decided merge: the optional watchlist import, then each field, then the single
     /// remote write, then the refreshed snapshot.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one arm per merge action per field, each journalling the values it acted on; \
+                  splitting it would separate a write from the record of that write"
+    )]
     async fn apply_merge(
         &self,
         run: &RunContext<'_>,
         series_id: SeriesId,
         external_id: &str,
         plan: &MergePlan,
-        counts: &mut ReconcileCounts,
+        state: &mut RunState,
     ) -> anyhow::Result<()> {
         if let Some(status) = plan.import_status {
             tracking::watchlist_set_status(&self.pool, run.user_id, series_id, status).await?;
+            let decision = state.note(run, "status", "import_status", "absent_from_the_watchlist");
+            decision.series_id = Some(series_id);
+            decision.external_id = Some(external_id.to_owned());
+            decision.applied = true;
+            decision.remote_after = Some(status.as_str().to_owned());
+            decision.local_after = Some(status.as_str().to_owned());
         }
 
         match plan.progress.action {
             MergeAction::PullRemote => {
                 tracking::progress_set(&self.pool, run.user_id, series_id, plan.progress.remote)
                     .await?;
-                counts.pulled += 1;
+                state.counts.pulled += 1;
+                Self::note_field(
+                    run,
+                    state,
+                    series_id,
+                    external_id,
+                    "progress",
+                    "pull",
+                    plan.progress.reason,
+                    (
+                        Some(plan.progress.local.to_string()),
+                        Some(plan.progress.remote.to_string()),
+                    ),
+                    (
+                        plan.progress.ancestor.0.map(|v| v.to_string()),
+                        plan.progress.ancestor.1.map(|v| v.to_string()),
+                    ),
+                    true,
+                );
                 self.append_history(
                     run,
                     series_id,
                     "pull",
-                    &serde_json::json!({
+                    &json!({
                         "field": "progress", "from": plan.progress.local,
-                        "to": plan.progress.remote, "policy": run.policy.as_str()
+                        "to": plan.progress.remote, "policy": run.policy.as_str(),
+                        "reason": plan.progress.reason
                     }),
                 )
                 .await;
@@ -550,17 +733,56 @@ impl Reconciler {
                     },
                 )
                 .await?;
-                counts.conflicts += 1;
+                state.counts.conflicts += 1;
+                Self::note_field(
+                    run,
+                    state,
+                    series_id,
+                    external_id,
+                    "progress",
+                    "conflict",
+                    plan.progress.reason,
+                    (
+                        Some(plan.progress.local.to_string()),
+                        Some(plan.progress.remote.to_string()),
+                    ),
+                    (
+                        plan.progress.ancestor.0.map(|v| v.to_string()),
+                        plan.progress.ancestor.1.map(|v| v.to_string()),
+                    ),
+                    false,
+                );
                 self.append_history(
                     run,
                     series_id,
                     "conflict_auto",
-                    &serde_json::json!({ "field": "progress",
+                    &json!({ "field": "progress", "reason": plan.progress.reason,
                         "local": plan.progress.local, "remote": plan.progress.remote }),
                 )
                 .await;
             }
-            MergeAction::PushLocal | MergeAction::Noop => {}
+            // A push is journalled once, with the status, where the single remote write happens;
+            // a no-op is journalled here because "nothing changed, and here is why" is the answer
+            // to the second commonest sync question.
+            MergeAction::PushLocal => {}
+            MergeAction::Noop => Self::note_field(
+                run,
+                state,
+                series_id,
+                external_id,
+                "progress",
+                "noop",
+                plan.progress.reason,
+                (
+                    Some(plan.progress.local.to_string()),
+                    Some(plan.progress.remote.to_string()),
+                ),
+                (
+                    plan.progress.ancestor.0.map(|v| v.to_string()),
+                    plan.progress.ancestor.1.map(|v| v.to_string()),
+                ),
+                false,
+            ),
         }
 
         match plan.status.action {
@@ -573,7 +795,25 @@ impl Reconciler {
                     plan.status.remote,
                 )
                 .await?;
-                counts.pulled += 1;
+                state.counts.pulled += 1;
+                Self::note_field(
+                    run,
+                    state,
+                    series_id,
+                    external_id,
+                    "status",
+                    "pull",
+                    plan.status.reason,
+                    (
+                        Some(plan.status.local.as_str().to_owned()),
+                        Some(plan.status.remote.as_str().to_owned()),
+                    ),
+                    (
+                        plan.status.ancestor.0.map(|v| v.as_str().to_owned()),
+                        plan.status.ancestor.1.map(|v| v.as_str().to_owned()),
+                    ),
+                    true,
+                );
             }
             MergeAction::Conflict => {
                 sync::insert_conflict(
@@ -588,7 +828,25 @@ impl Reconciler {
                     },
                 )
                 .await?;
-                counts.conflicts += 1;
+                state.counts.conflicts += 1;
+                Self::note_field(
+                    run,
+                    state,
+                    series_id,
+                    external_id,
+                    "status",
+                    "conflict",
+                    plan.status.reason,
+                    (
+                        Some(plan.status.local.as_str().to_owned()),
+                        Some(plan.status.remote.as_str().to_owned()),
+                    ),
+                    (
+                        plan.status.ancestor.0.map(|v| v.as_str().to_owned()),
+                        plan.status.ancestor.1.map(|v| v.as_str().to_owned()),
+                    ),
+                    false,
+                );
             }
             _ => {}
         }
@@ -597,13 +855,56 @@ impl Reconciler {
             run.provider
                 .save_entry(run.access, external_id, status, progress)
                 .await?;
-            counts.pushed += 1;
+            state.counts.pushed += 1;
+            // One decision for one write, naming whichever field asked for it. Two rows would
+            // claim two provider calls were made, and the whole point of `remote_write` is that
+            // there is exactly one.
+            let reason = if plan.progress.action == MergeAction::PushLocal {
+                plan.progress.reason
+            } else {
+                plan.status.reason
+            };
+            Self::note_field(
+                run,
+                state,
+                series_id,
+                external_id,
+                "progress",
+                "push",
+                reason,
+                (
+                    Some(progress.to_string()),
+                    Some(plan.progress.remote.to_string()),
+                ),
+                (
+                    plan.progress.ancestor.0.map(|v| v.to_string()),
+                    plan.progress.ancestor.1.map(|v| v.to_string()),
+                ),
+                true,
+            );
+            if let Some(decision) = state.decisions.last_mut() {
+                decision.remote_after = Some(progress.to_string());
+                decision.evidence = json!({
+                    "status_written": status.as_str(),
+                    "progress_written": progress,
+                    // Both halves of what the remote held before this one call, because
+                    // `save_entry` writes both and undoing it has to restore both. The
+                    // `remote_before` column carries only the progress.
+                    "remote_status_before": plan.status.remote.as_str(),
+                    "remote_progress_before": plan.progress.remote,
+                    "driven_by": if plan.progress.action == MergeAction::PushLocal {
+                        "progress"
+                    } else {
+                        "status"
+                    },
+                });
+            }
             self.append_history(
                 run,
                 series_id,
                 "push",
-                &serde_json::json!({ "progress": progress,
-                    "status": status.as_str(), "policy": run.policy.as_str() }),
+                &json!({ "progress": progress, "status": status.as_str(),
+                    "policy": run.policy.as_str(), "reason": reason }),
             )
             .await;
         }
@@ -613,6 +914,45 @@ impl Reconciler {
                 .await?;
         }
         Ok(())
+    }
+
+    /// Journal one field's decision. Takes the before/after and ancestor pairs already stringified
+    /// by the caller, because a progress is a number and a status is an enum and the journal
+    /// stores both as text.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "every argument is one column of the row being written; bundling them into a \
+                  struct would only move the same list one line up"
+    )]
+    fn note_field(
+        run: &RunContext<'_>,
+        state: &mut RunState,
+        series_id: SeriesId,
+        external_id: &str,
+        scope: &str,
+        action: &str,
+        reason: &str,
+        values: (Option<String>, Option<String>),
+        ancestor: (Option<String>, Option<String>),
+        applied: bool,
+    ) {
+        let (local, remote) = values;
+        let decision = state.note(run, scope, action, reason);
+        decision.series_id = Some(series_id);
+        decision.external_id = Some(external_id.to_owned());
+        decision.policy = Some(run.policy.as_str().to_owned());
+        decision.applied = applied;
+        // The written side gets an `after` as well; the untouched side keeps only its `before`,
+        // and is the only side that needs no clone.
+        match action {
+            "pull" => decision.local_after.clone_from(&remote),
+            "push" => decision.remote_after.clone_from(&local),
+            _ => {}
+        }
+        decision.local_before = local;
+        decision.remote_before = remote;
+        decision.ancestor_local = ancestor.0;
+        decision.ancestor_remote = ancestor.1;
     }
 
     /// Record the state both sides are known to agree on. Local and remote are written with the

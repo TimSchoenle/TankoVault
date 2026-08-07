@@ -33,6 +33,9 @@ const SETTINGS_FILE_NAME: &str = "settings.json";
 /// holds both.
 const SERVER_ORIGIN_KEY: &str = "tv-server-origin";
 
+/// Whether a push raises an OS notification. Absent means on.
+const DESKTOP_NOTIFICATIONS_KEY: &str = "tv-desktop-notifications";
+
 // ---------------------------------------------------------------------------------------------
 // Settings file
 // ---------------------------------------------------------------------------------------------
@@ -139,6 +142,98 @@ pub(crate) fn origin() -> String {
 }
 
 // ---------------------------------------------------------------------------------------------
+// The window
+// ---------------------------------------------------------------------------------------------
+
+/// The OS window, or `None` outside the Dioxus runtime.
+///
+/// `try_consume_context`, never `dioxus::desktop::window()`: that one panics when there is no
+/// desktop context, and a panic aborts the process (`panic = "abort"`) — over a title bar button.
+pub(crate) fn window() -> Option<dioxus::desktop::DesktopContext> {
+    try_consume_context::<dioxus::desktop::DesktopContext>()
+}
+
+/// Shrink and re-centre the window if the size it was built with does not fit the display.
+///
+/// `WindowBuilder` picks a size before there is an event loop, so it cannot know which monitor
+/// the window will open on. This runs once from the first render, when it can.
+///
+/// 92% of the monitor, not 100%: `tao` reports the monitor, not its *work area*, so the taskbar
+/// or dock is included in that number and a window sized to it would sit under one edge.
+/// Growing is never attempted — a reader who wants it bigger has a maximise button, and a window
+/// that inflates itself on launch is worse than one that is merely smaller than the screen.
+pub(crate) fn fit_window_to_display() {
+    const MAX_FRACTION: f64 = 0.92;
+
+    let Some(window) = window() else {
+        return;
+    };
+    let Some(monitor) = window.current_monitor() else {
+        return;
+    };
+
+    let scale = monitor.scale_factor();
+    let available = monitor.size().to_logical::<f64>(scale);
+    let current = window.inner_size().to_logical::<f64>(scale);
+
+    let width = current.width.min(available.width * MAX_FRACTION);
+    let height = current.height.min(available.height * MAX_FRACTION);
+    if width >= current.width && height >= current.height {
+        return;
+    }
+
+    window.set_inner_size(dioxus::desktop::LogicalSize::new(width, height));
+    // Re-centred as well: shrinking from the top-left corner alone leaves the window wherever
+    // the OS first placed a box of the old size, which after a resize is rarely centred.
+    let position = monitor.position().to_logical::<f64>(scale);
+    window.set_outer_position(dioxus::desktop::LogicalPosition::new(
+        position.x + (available.width - width) / 2.0,
+        position.y + (available.height - height) / 2.0,
+    ));
+}
+
+// ---------------------------------------------------------------------------------------------
+// OS notifications
+// ---------------------------------------------------------------------------------------------
+
+/// Whether a push should raise an OS notification. Defaults to on: the app exists to tell you a
+/// chapter landed, and a reader who does not want that has a switch (below) rather than a
+/// default that hides it.
+pub(crate) fn notifications_enabled() -> bool {
+    store_get(DESKTOP_NOTIFICATIONS_KEY).is_none_or(|stored| stored != "0")
+}
+
+pub(crate) fn set_notifications_enabled(enabled: bool) {
+    if enabled {
+        store_remove(DESKTOP_NOTIFICATIONS_KEY);
+    } else {
+        store_set(DESKTOP_NOTIFICATIONS_KEY, "0");
+    }
+}
+
+/// Raise an OS notification.
+///
+/// Best-effort and silent on failure, which is the same contract the rest of this module has: a
+/// desktop with no notification daemon, a Windows install that has muted the app, or a
+/// focus-assist session are all "the reader did not want this", not something to interrupt them
+/// about. The in-app badge is updated either way and is the source of truth.
+///
+/// Runs on its own thread. `notify-rust` talks D-Bus on Linux and `WinRT` on Windows, and
+/// neither is something to block a UI frame on.
+pub(crate) fn notify(summary: &str, body: &str) {
+    let (summary, body) = (summary.to_owned(), body.to_owned());
+    std::thread::spawn(move || {
+        let _ = notify_rust::Notification::new()
+            .summary(&summary)
+            .body(&body)
+            // Matches the bundle identifier, which is what a desktop environment keys an app's
+            // notification settings and icon off.
+            .appname("TankoVault")
+            .show();
+    });
+}
+
+// ---------------------------------------------------------------------------------------------
 // Appearance attributes
 // ---------------------------------------------------------------------------------------------
 
@@ -178,13 +273,33 @@ pub(crate) fn set_document_language(tag: &str) {
     set_root_attribute("lang", tag);
 }
 
-/// The OS window's title bar, which is this platform's answer to `document.title`.
+/// The screen's own name, for the app-drawn title bar to render.
+///
+/// Deliberately *not* the window title. The OS title is decorated for the taskbar and alt-tab
+/// (`"Home — TankoVault"`), and repeating the brand in a header that sits directly above the
+/// rail's own wordmark says nothing twice. The bar also renders above the router, so it cannot
+/// ask what the route is called — see [`crate::components::TitleBar`]. Empty until the first
+/// routed screen mounts, which is the connection screen, and the bar falls back to the product
+/// name there.
+pub(crate) static WINDOW_HEADING: GlobalSignal<String> = Signal::global(String::new);
+
+/// The OS window's title, which is this platform's answer to `document.title`.
 ///
 /// `try_consume_context`, not `dioxus::desktop::window()`: that one panics when there is no
 /// desktop context, and a panic here aborts the process (`panic = "abort"`) over a title.
 pub(crate) fn set_document_title(title: &str) {
     if let Some(window) = try_consume_context::<dioxus::desktop::DesktopContext>() {
         window.set_title(title);
+    }
+}
+
+/// Publish the undecorated screen name for the title bar.
+///
+/// Guarded: `set` invalidates unconditionally, and this runs from an effect that re-fires on
+/// every render of the routed screen.
+pub(crate) fn set_window_heading(heading: &str) {
+    if *WINDOW_HEADING.peek() != heading {
+        heading.clone_into(&mut WINDOW_HEADING.write());
     }
 }
 

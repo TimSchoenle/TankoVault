@@ -220,6 +220,20 @@
     "storedAt": "Saved to {path}",
     "subtitle": "TankoVault is self-hosted, so this copy needs to know which server is yours. You can change it later in Settings."
   },
+  "settings": {
+    "forgetServer": "Forget this server",
+    "notifications": {
+      "hint": "Shown by your operating system when a chapter you follow is released. The in-app bell is unaffected.",
+      "label": "Show desktop notifications",
+      "title": "Notifications"
+    },
+    "title": "Settings"
+  },
+  "window": {
+    "maximise": "Maximise",
+    "minimise": "Minimise",
+    "restore": "Restore"
+  },
   "console": {
     "adapterKind": {
       "custom": "Custom (built-in)",

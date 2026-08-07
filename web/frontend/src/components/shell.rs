@@ -216,12 +216,16 @@ fn use_live_notifications() {
     let session = use_session();
     let api = api::use_api();
     let badge = use_context::<UnreadBadge>();
+    // Threaded in rather than read inside the stream: the desktop build words its OS
+    // notification through the catalogue, and `use_i18n` is a hook — it cannot be called from
+    // inside a future that has already awaited.
+    let i18n = crate::i18n::use_i18n();
 
     use_resource(move || {
         let signed_in = session.is_authenticated();
         async move {
             if signed_in {
-                crate::live::run(api, badge).await;
+                crate::live::run(api, badge, i18n).await;
             }
         }
     });

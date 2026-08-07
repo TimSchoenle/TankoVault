@@ -5633,7 +5633,7 @@ Ships as: the WebAssembly bundle the frontend image serves, which executes in th
 
 Licences in this section, by number of crates:
 
-  Apache License 2.0 (Apache-2.0) — 420 crates, 30 distinct notices
+  Apache License 2.0 (Apache-2.0) — 422 crates, 30 distinct notices
   MIT License (MIT) — 144 crates, 69 distinct notices
   Unicode License v3 (Unicode-3.0) — 19 crates, 2 distinct notices
   BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) — 9 crates, 6 distinct notices
@@ -6121,6 +6121,7 @@ by the block naming that crate.
   - sync_wrapper 1.0.2
   - sys-locale 0.3.2
   - system-deps 6.2.2
+  - tauri-winrt-notification 0.7.3
   - tempfile 3.27.0
   - thiserror 1.0.69
   - thiserror 2.0.19
@@ -6521,6 +6522,7 @@ by the block naming that crate.
   - hex 0.4.3
   - native-tls 0.2.18
   - no_std_io2 0.9.4
+  - notify-rust 4.18.0
   - openssl 0.10.81
   - openssl-macros 0.1.1
   - quick-error 2.0.1

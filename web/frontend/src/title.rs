@@ -49,12 +49,24 @@ pub(crate) fn use_document_title() {
     let route = use_route::<Route>();
     let published = use_context::<PageTitle>();
 
-    let title = published
-        .claimed_for(&route)
+    let claimed = published.claimed_for(&route);
+    let title = claimed
+        .clone()
         .map_or_else(|| route_title(&route, i18n), |name| decorate(&name, i18n));
     use_effect(use_reactive!(|title| crate::platform::set_document_title(
         &title
     )));
+
+    // The undecorated name, for the desktop build's app-drawn title bar. The window keeps the
+    // decorated one, because that is what the taskbar and alt-tab show; repeating the brand in a
+    // header sitting directly above the rail's own wordmark says nothing twice.
+    #[cfg(feature = "desktop")]
+    {
+        let heading = claimed.unwrap_or_else(|| page_name(&route, i18n));
+        use_effect(use_reactive!(|heading| {
+            crate::platform::set_window_heading(&heading);
+        }));
+    }
 }
 
 /// The tab name for `route` alone, ignoring anything a screen has published.

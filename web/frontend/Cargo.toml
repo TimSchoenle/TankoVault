@@ -141,6 +141,12 @@ rfd = { version = "0.16", optional = true }
 # already is — and where several providers refuse to run a ceremony in a webview at all.
 open = { version = "5", optional = true }
 sys-locale = { version = "0.3", optional = true }
+# OS notifications: WinRT toasts on Windows, the freedesktop D-Bus service on Linux, from one
+# call site. `z-with-tokio` picks zbus's tokio integration on Linux rather than the default
+# `async-io`, so the desktop build carries one async runtime instead of two.
+notify-rust = { version = "4", default-features = false, features = [
+    "z-with-tokio",
+], optional = true }
 # Parses the SSE framing the browser's `EventSource` parses for us. The stream is authenticated
 # by the single-use ticket in the URL, exactly as on web, so this needs no credential handling.
 eventsource-stream = { version = "0.2", optional = true }
@@ -188,6 +194,7 @@ desktop = [
     "dep:chrono",
     "dep:directories",
     "dep:eventsource-stream",
+    "dep:notify-rust",
     "dep:open",
     "dep:rfd",
     "dep:sys-locale",

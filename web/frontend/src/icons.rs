@@ -70,6 +70,16 @@ pub(crate) enum Icon {
     Gavel,
     // fallback
     Circle,
+    /// Window controls for the desktop build's app-drawn title bar. Drawn to the platform
+    /// convention — an outline for "fill the screen", two offset outlines for "put it back" —
+    /// because a reader reaches for these by shape without reading a label.
+    ///
+    /// Desktop-only: the browser draws its own window chrome, so on the web build these would be
+    /// two glyphs nothing can render.
+    #[cfg(feature = "desktop")]
+    WindowMaximise,
+    #[cfg(feature = "desktop")]
+    WindowRestore,
 }
 
 /// Render a glyph. `size` in px (default 20); `class` applies a text-color utility.
@@ -210,5 +220,11 @@ fn path_for(icon: Icon) -> &'static str {
         }
 
         Icon::Circle => r#"<circle cx="12" cy="12" r="4"/>"#,
+        #[cfg(feature = "desktop")]
+        Icon::WindowMaximise => r#"<rect x="5" y="5" width="14" height="14" rx="1.5"/>"#,
+        #[cfg(feature = "desktop")]
+        Icon::WindowRestore => {
+            r#"<rect x="4" y="8" width="12" height="12" rx="1.5"/><path d="M8 8V5.5A1.5 1.5 0 0 1 9.5 4h9A1.5 1.5 0 0 1 20 5.5v9a1.5 1.5 0 0 1-1.5 1.5H16"/>"#
+        }
     }
 }

@@ -11,7 +11,9 @@ mod console;
 mod discover;
 mod home;
 mod legal;
-mod notifications;
+// `pub(crate)` for one function: `crate::live` reuses this screen's payload-to-sentence logic
+// for the OS notification, rather than growing a second reading of the same free-form JSON.
+pub(crate) mod notifications;
 mod password;
 mod recommendations;
 mod search;

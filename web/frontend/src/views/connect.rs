@@ -8,9 +8,8 @@
 //! router issues requests, and there is nowhere to send them until this is answered.
 
 use super::auth::AuthBrand;
-use crate::components::{Field, PanelCard};
+use crate::components::Field;
 use crate::i18n::use_i18n;
-use crate::icons::Icon;
 use dioxus::prelude::*;
 use tankovault_api_client::Client;
 
@@ -96,81 +95,6 @@ pub(crate) fn ConnectServer(on_connected: EventHandler<String>) -> Element {
     }
 }
 
-/// Change the server after first run, from the appearance panel.
-///
-/// Signing out is not optional here and is not a courtesy: the access token in memory was minted
-/// by the *old* server and means nothing to the new one, so keeping it would send a stranger's
-/// deployment a credential and then show the reader a wall of 401s it could not explain.
-#[component]
-pub(crate) fn ServerCard() -> Element {
-    let i18n = use_i18n();
-    let api = crate::api::use_api();
-    let session = crate::state::use_session();
-    let current = crate::platform::server_origin().unwrap_or_default();
-    let mut entered = use_signal(|| current.clone());
-    let mut error = use_signal(|| Option::<String>::None);
-    let mut probing = use_signal(|| false);
-
-    let mut change = move |()| {
-        if *probing.peek() {
-            return;
-        }
-        let candidate = match normalise(&entered.peek().clone()) {
-            Ok(origin) => origin,
-            Err(key) => {
-                error.set(Some(i18n.t(key)));
-                return;
-            }
-        };
-        error.set(None);
-        probing.set(true);
-        spawn(async move {
-            match probe(&candidate).await {
-                Ok(()) => {
-                    crate::platform::set_server_origin(Some(&candidate));
-                    api.set_base(&candidate);
-                    session.clear();
-                    probing.set(false);
-                }
-                Err(key) => {
-                    error.set(Some(i18n.t(key)));
-                    probing.set(false);
-                }
-            }
-        });
-    };
-
-    rsx! {
-        PanelCard { icon: Icon::CloudSync, title: i18n.t("connect.card.title"),
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                {i18n.t("connect.card.intro")}
-            }
-            if let Some(message) = error.read().clone() {
-                div { class: "ik-error", style: "padding:10px;margin-bottom:12px;", "{message}" }
-            }
-            Field {
-                id: "tv-settings-origin",
-                label: i18n.t("connect.field.server"),
-                kind: "url",
-                value: entered(),
-                on_input: move |value| entered.set(value),
-                on_enter: change,
-            }
-            button {
-                class: "ik-btn",
-                r#type: "button",
-                disabled: probing() || *entered.read() == current,
-                onclick: move |_| change(()),
-                if probing() {
-                    {i18n.t("connect.connecting")}
-                } else {
-                    {i18n.t("connect.card.action")}
-                }
-            }
-        }
-    }
-}
-
 /// Accept what a person would actually type and reject what cannot carry a bearer token safely.
 ///
 /// A bare host gets `https://`, never `http://`: the access token rides an `Authorization`
@@ -181,7 +105,7 @@ pub(crate) fn ServerCard() -> Element {
 ///
 /// # Errors
 /// A **catalogue key**, not a sentence.
-fn normalise(entered: &str) -> Result<String, &'static str> {
+pub(crate) fn normalise(entered: &str) -> Result<String, &'static str> {
     let trimmed = entered.trim();
     if trimmed.is_empty() {
         return Err("connect.error.empty");
@@ -236,7 +160,7 @@ fn is_loopback(rest: &str) -> bool {
 ///
 /// # Errors
 /// A **catalogue key**, not a sentence.
-async fn probe(origin: &str) -> Result<(), &'static str> {
+pub(crate) async fn probe(origin: &str) -> Result<(), &'static str> {
     use progenitor_client::Error;
 
     match Client::new(origin).legal_index().send().await {

@@ -42,8 +42,15 @@ pub(crate) use imp::EventStream;
 
 /// Desktop-only surface: there is no browser equivalent to reach for, so these have no
 /// counterpart on the other side and their callers are `#[cfg]`-gated too.
+///
+/// The window controls exist because the desktop build draws its own title bar — the OS caption
+/// is switched off in `main`, so minimising, maximising, moving and closing the window are the
+/// app's job now. See [`crate::components::TitleBar`].
 #[cfg(feature = "desktop")]
-pub(crate) use desktop::{server_origin, set_server_origin, settings_path, ROOT_ATTRIBUTES};
+pub(crate) use desktop::{
+    fit_window_to_display, notifications_enabled, notify, server_origin, set_notifications_enabled,
+    set_server_origin, set_window_heading, settings_path, window, ROOT_ATTRIBUTES, WINDOW_HEADING,
+};
 
 // ---------------------------------------------------------------------------------------------
 // Persistent key/value settings

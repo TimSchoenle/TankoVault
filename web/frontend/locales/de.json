@@ -220,6 +220,20 @@
     "storedAt": "Gespeichert unter {path}",
     "subtitle": "TankoVault wird selbst gehostet, deshalb muss diese Kopie wissen, welcher Server deiner ist. Du kannst das später in den Einstellungen ändern."
   },
+  "settings": {
+    "forgetServer": "Diesen Server vergessen",
+    "notifications": {
+      "hint": "Wird von deinem Betriebssystem angezeigt, wenn ein Kapitel erscheint, dem du folgst. Die Glocke in der App bleibt davon unberührt.",
+      "label": "Desktop-Benachrichtigungen anzeigen",
+      "title": "Benachrichtigungen"
+    },
+    "title": "Einstellungen"
+  },
+  "window": {
+    "maximise": "Maximieren",
+    "minimise": "Minimieren",
+    "restore": "Wiederherstellen"
+  },
   "console": {
     "adapterKind": {
       "custom": "Individuell (eingebaut)",

@@ -9,6 +9,7 @@
 
 use crate::api::Api;
 use crate::components::UnreadBadge;
+use crate::i18n::Translator;
 use crate::models::LiveNotification;
 use dioxus::prelude::*;
 
@@ -28,7 +29,7 @@ const SETTLED_MS: f64 = 5_000.0;
 ///
 /// Runs until dropped — the caller's `use_resource` does that on a token change or sign-out,
 /// closing the stream.
-pub(crate) async fn run(api: Api, badge: UnreadBadge) {
+pub(crate) async fn run(api: Api, badge: UnreadBadge, i18n: Translator) {
     let mut backoff_ms = RECONNECT_BACKOFF_START_MS;
     loop {
         // A fresh ticket per attempt: redeeming one spends it.
@@ -42,7 +43,7 @@ pub(crate) async fn run(api: Api, badge: UnreadBadge) {
         let ticket = response.into_inner().ticket;
 
         // The attempt that served a real stream resets the wait; a run of failures backs off.
-        if consume(&api, &ticket, badge).await {
+        if consume(&api, &ticket, badge, i18n).await {
             backoff_ms = RECONNECT_BACKOFF_START_MS;
         }
         crate::platform::sleep_ms(backoff_ms).await;
@@ -54,7 +55,7 @@ pub(crate) async fn run(api: Api, badge: UnreadBadge) {
 ///
 /// Returns whether the attempt is judged to have *worked* — see [`SETTLED_MS`] for why that is a
 /// duration rather than a status.
-async fn consume(api: &Api, ticket: &str, badge: UnreadBadge) -> bool {
+async fn consume(api: &Api, ticket: &str, badge: UnreadBadge, i18n: Translator) -> bool {
     let url = format!("{}{}", api.base_url(), crate::api::stream_url(ticket));
     let Some(mut stream) = crate::platform::subscribe(&url, &["notification"]).await else {
         // A malformed URL or a refused connection; neither is actionable here.
@@ -65,10 +66,49 @@ async fn consume(api: &Api, ticket: &str, badge: UnreadBadge) -> bool {
     let mut badge = badge.0;
     while let Some((_name, text)) = stream.next().await {
         if let Ok(push) = serde_json::from_str::<LiveNotification>(&text) {
+            // Read before the write: the toast is owed only for what *arrived*, and the push
+            // carries a running total rather than an event. A recount that lands lower — the
+            // reader cleared the inbox in another window — must not announce anything.
+            let previous = *badge.peek();
             badge.set(push.unread_count);
+            announce(api, i18n, previous, push.unread_count).await;
         }
     }
 
     stream.close();
     crate::platform::now_ms() - started >= SETTLED_MS
 }
+
+/// Raise an OS notification for a push that added something to the inbox.
+///
+/// The push body carries only the recomputed count, so the *subject* has to be fetched — one
+/// request for the newest row, worded by the inbox screen's own parser so the toast and the row
+/// never disagree. Pushes are rare (a chapter landing), so this is not a poll in disguise.
+///
+/// Silent on every failure. A toast nobody could be shown is not worth interrupting a reader
+/// over, and the badge behind it is already correct.
+#[cfg(feature = "desktop")]
+async fn announce(api: &Api, i18n: Translator, previous: i64, current: i64) {
+    if current <= previous || !crate::platform::notifications_enabled() {
+        return;
+    }
+    let Ok(response) = api.client().notifications().limit(1).offset(0).send().await else {
+        return;
+    };
+    let Some(newest) = response.into_inner().items.first().cloned() else {
+        return;
+    };
+    crate::platform::notify(
+        "TankoVault",
+        &crate::views::notifications::headline(&newest, i18n),
+    );
+}
+
+/// Nothing to raise: the browser build has the bell, the rail badge and the tab title, and asking
+/// for the `Notification` permission is a decision for a screen to make, not a background stream.
+#[cfg(feature = "web")]
+#[expect(
+    clippy::unused_async,
+    reason = "mirrors the desktop signature, which fetches the subject of the toast"
+)]
+async fn announce(_api: &Api, _i18n: Translator, _previous: i64, _current: i64) {}

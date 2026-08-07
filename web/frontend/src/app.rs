@@ -2,6 +2,8 @@
 //! font faces.
 
 use crate::components::{FocusTargets, Shell, UnreadBadge};
+#[cfg(feature = "desktop")]
+use crate::components::{SettingsSheet, TitleBar};
 use crate::i18n::I18nRoot;
 use crate::state::capabilities::CapabilitySet;
 use crate::state::legal::LegalIndex;
@@ -157,6 +159,28 @@ fn Connected() -> Element {
 #[component]
 fn AppRoot(children: Element) -> Element {
     let attributes = crate::platform::ROOT_ATTRIBUTES.read().clone();
+    let mut settings_open = use_signal(|| false);
+
+    // Once, on the first render: shrink the window to the display if the default does not fit.
+    // The builder cannot do this — it runs before there is an event loop to ask which monitor
+    // the window landed on — so a laptop at 1366×768 would otherwise open a 1280×860 window
+    // taller than its screen, with the footer and the sign-in button below the bottom edge.
+    use_hook(crate::platform::fit_window_to_display);
+
+    // The OS caption is off, so the window's light/dark chrome — its shadow, its resize borders,
+    // and the caption itself if decorations are ever turned back on — has to be told which theme
+    // the *app* is in. Left alone it follows the system's, which is how a dark border ended up
+    // around the Warm Paper theme.
+    let theme = attributes.get("data-theme");
+    use_effect(move || {
+        if let Some(window) = crate::platform::window() {
+            window.set_theme(Some(match theme.as_deref() {
+                Some("light") => dioxus::desktop::tao::window::Theme::Light,
+                _ => dioxus::desktop::tao::window::Theme::Dark,
+            }));
+        }
+    });
+
     rsx! {
         div {
             class: "ik-desktop-root",
@@ -165,7 +189,11 @@ fn AppRoot(children: Element) -> Element {
             "data-accent": attributes.get("data-accent"),
             "data-density": attributes.get("data-density"),
             "data-cover": attributes.get("data-cover"),
-            {children}
+            TitleBar { on_settings: move |()| settings_open.set(true) }
+            div { class: "ik-desktop-body", {children} }
+            if settings_open() {
+                SettingsSheet { on_close: move |()| settings_open.set(false) }
+            }
         }
     }
 }

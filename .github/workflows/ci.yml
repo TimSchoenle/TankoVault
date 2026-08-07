@@ -40,6 +40,20 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
+
+  # **A constant, and it has to stay one.** buildx propagates `SOURCE_DATE_EPOCH` from its own
+  # environment into the solve as `build-arg:SOURCE_DATE_EPOCH`, so its value is part of every
+  # BuildKit cache key in this repository — there is no channel that reaches the exporter without
+  # also reaching the build. Two attempts to make it the commit timestamp have now failed for the
+  # same reason: the value then differs between the run that *writes* a cache tag and the run that
+  # *reads* it, and every `cache-from` in both workflows is a total miss. Declared at workflow
+  # level rather than per step so a new `docker/build-push-action` cannot silently opt out;
+  # `xtask repo-lint` holds this file and release-please.yaml to the same value.
+  #
+  # Zero is the documented "no meaningful build time" value, and it is what makes rebuilding a tag
+  # byte-identical *across* commits rather than only within one. The cost is that the image config
+  # records `created: 1970-01-01`; nothing reads it, and the tag is what identifies a release.
+  SOURCE_DATE_EPOCH: "0"
   # Resolve sqlx's query macros from the committed `.sqlx/` cache instead of a live database; the
   # `sqlx` job below is what verifies that cache against the real schema.
   SQLX_OFFLINE: "true"
@@ -1310,12 +1324,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # No `SOURCE_DATE_EPOCH`, here or in any other leg. It is the commit timestamp, so passing it
-      # as a build arg changed the build's argument set on every commit and BuildKit reused nothing
-      # a previous run exported — the miss this whole warm-up exists to prevent. Nothing is exported
-      # from a `type=cacheonly` build, so there is no image whose timestamps it could clamp anyway.
-      # The Dockerfile's own comment carries the rule; release-please.yaml keeps reproducibility via
-      # the exporter instead.
+      # `SOURCE_DATE_EPOCH` arrives from this file's workflow-level `env:` and is part of the key
+      # this step writes — which is precisely why it is a constant there. This build exports no
+      # image, so the value clamps nothing here; it is set anyway so the tag stays readable by the
+      # publishing legs in release-please.yaml, which do export one.
       - name: cook dependency graph and compile every binary
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -1453,8 +1465,8 @@ jobs:
           load: true
           tags: tankovault-${{ matrix.bin }}:ci
           # No attestation/provenance layer. Nothing here is published — the image is built to be
-          # structure-tested and thrown away — so it carries no `SOURCE_DATE_EPOCH` either;
-          # release-please.yaml is where reproducibility is owned.
+          # structure-tested and thrown away. It still inherits the workflow-level
+          # `SOURCE_DATE_EPOCH`, because that value is part of the key it looks up.
           provenance: false
           # Import only — this job deliberately writes no cache. `backend-deps-amd64` is published
           # by `docker-deps` in this same run at this same commit, which is what makes `COPY . .`

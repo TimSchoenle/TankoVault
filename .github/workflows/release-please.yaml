@@ -89,6 +89,12 @@ name: release-please
 # `builder`'s cache key and `ci.yml` passes the Dockerfile default. Three call sites had to agree
 # on one string; now all three say nothing and agree with CI as well.
 #
+# `SOURCE_DATE_EPOCH` is the same rule and the same three call sites, arrived at from the other
+# direction: buildx propagates it from the environment into the solve as a build arg, so it
+# cannot be omitted from a build that has to *export* a reproducible image — it can only be held
+# constant. It is `"0"` in both workflows' `env:` blocks, and `xtask repo-lint` fails if they
+# disagree or if a step overrides it.
+#
 # ---------------------------------------------------------------------------------------------
 # On the `${{ }}` discipline in this file
 # ---------------------------------------------------------------------------------------------
@@ -110,6 +116,10 @@ concurrency:
 permissions: {}
 
 env:
+  # Must equal ci.yml's, which carries the reasoning: buildx turns this environment value into
+  # `build-arg:SOURCE_DATE_EPOCH`, so it is part of every BuildKit cache key both files write or
+  # read. `xtask repo-lint` fails if the two drift.
+  SOURCE_DATE_EPOCH: "0"
   GHCR_REGISTRY: ghcr.io
   # Docker Hub cannot represent `ghcr.io/<owner>/<repo>/<bin>` — it is a two-segment namespace,
   # so each service is its own repository under this account.
@@ -409,11 +419,14 @@ jobs:
       # is this same tree already compiled on the release pull request. Leaving the Dockerfile's
       # default is what makes that import hit.
       #
-      # `SOURCE_DATE_EPOCH` was the same mistake, one level worse, and is why this job has no
-      # build args at all now. It is the commit timestamp, so it differed between the release pull
-      # request and the merge commit — the two trees this import exists to bridge — and between
-      # every consecutive `main` push besides. No `cache-from` in either workflow had hit since it
-      # was introduced. Reproducibility moved to the exporter on the publishing legs below.
+      # `SOURCE_DATE_EPOCH` was the same mistake and cost the same import twice over, which is why
+      # it is now a repository constant in this file's `env:` rather than anything derived. As the
+      # commit timestamp it differed between the release pull request and the merge commit — the
+      # two trees this import exists to bridge — and between every consecutive `main` push
+      # besides. Moving it from `build-args:` to a step `env:` did not help: buildx propagates the
+      # environment value into the solve as `build-arg:SOURCE_DATE_EPOCH` regardless, so the only
+      # thing that changed was *which* build carried it. See the publishing leg below for what
+      # that cost.
       - name: cook dependency graph and compile every binary
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -514,14 +527,6 @@ jobs:
         # function, which is why every GHCR reference in this file reads a shell-computed output
         # rather than `${{ github.repository }}` directly.
 
-      # Clamps image layer mtimes to the commit timestamp so a rebuild of the same commit is
-      # byte-identical. Consumed by the exporter on the push leg below — never as a build arg.
-      # A step output rather than `$GITHUB_ENV`, which is a mutable channel between steps and the
-      # thing zizmor's `github-env` audit is about.
-      - name: derive SOURCE_DATE_EPOCH
-        id: epoch
-        run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
-
       - name: log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -599,17 +604,20 @@ jobs:
       # from one pass. The manifest digest is content-addressed, so it is the *same* digest in
       # both — which is why the `manifest` job can use one digest file to assemble the list in
       # either registry.
-      # `SOURCE_DATE_EPOCH` reaches this build as a step environment variable, which buildx
-      # propagates to the exporter, and `rewrite-timestamp=true` is what applies it to the file
-      # timestamps inside the pushed image. It is deliberately *not* a `--build-arg`: that put the
-      # commit timestamp into every stage's cache key and cost this job a full 45-minute recompile
-      # of a tree the warm-up above had already built. The Dockerfile must not declare the `ARG`
-      # again, and its comment says so.
+      # `rewrite-timestamp=true` clamps the file timestamps inside the pushed image to
+      # `SOURCE_DATE_EPOCH`, which is what makes a rebuild of this tag byte-identical. The value
+      # comes from this file's workflow-level `env:` and is a constant on purpose.
+      #
+      # **Never derive it here.** buildx propagates the environment value into the solve as
+      # `build-arg:SOURCE_DATE_EPOCH` — there is no exporter-only channel — so a per-commit value
+      # makes this the one build in the repository carrying an argument no cache tag was written
+      # under. It then recompiles the entire workspace: measured at 24 minutes on release v1.5.2,
+      # on all eighteen legs, against a `builder` the warm-up above had imported in 28 seconds and
+      # the structure-test build 40 lines up had just hit. Passing it as an explicit `--build-arg`
+      # has the identical effect; the two are the same wire format.
       - name: push ${{ matrix.bin }} (${{ matrix.arch }}) by digest
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        env:
-          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
         with:
           context: .
           file: deploy/docker/Dockerfile

@@ -30,14 +30,24 @@ const REPO: &str = "TimSchoenle/TankoVault";
 
 /// The minisign public keys a manifest may be signed with.
 ///
-/// **Empty in this build, which switches the updater off** — [`super::is_configured`] answers
-/// `false`, no request is made to GitHub, and the settings sheet says so rather than failing
-/// mysteriously later. Generating the key pair is an operator action (`docs/RELEASING.md`): the
-/// public half is pasted here, the secret half becomes the `release` environment's
-/// `MINISIGN_SECRET_KEY`. Neither half can be invented by CI, which is the point of it.
+/// A **list**, never a single entry to be replaced in place: shipped clients only ever trust what
+/// they were compiled with, so switching the signer in one step strands every installed reader on
+/// the version they have. Rotation is therefore two releases — publish a client trusting
+/// `[old, new]`, then switch `MINISIGN_SECRET_KEY` on the release after. `docs/RELEASING.md` has
+/// the procedure and the order.
 ///
-/// Paste the *key* line only — the `RWQ…` base64, not the `untrusted comment:` line above it.
-const TRUSTED_KEYS: &[&str] = &[];
+/// Empty would switch the updater off entirely ([`super::is_configured`] answers `false` and no
+/// request is made to GitHub), which is how this shipped before a key existed.
+///
+/// The *key* line only — the `RW…` base64, not the `untrusted comment:` line above it in the
+/// `.pub` file. A malformed entry is not a compile error and not a runtime error either: it simply
+/// never verifies anything, so the updater would refuse every release as untrusted. The test below
+/// is what stops that reaching a release.
+const TRUSTED_KEYS: &[&str] = &[
+    // Generated 2026-08-07. Its private half is the `release` environment's
+    // `MINISIGN_SECRET_KEY`, and `desktop-release` fails the release if the two disagree.
+    "RWRJbPWpabBZ+C+5MBbE04xjL6HFoNsBZLbqqWogP7sD5BedsiJDJ4Ve",
+];
 
 /// The manifest asset, and its detached minisign signature.
 const MANIFEST_ASSET: &str = "desktop-manifest.json";
@@ -507,15 +517,34 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
     }
 
     /// With no key compiled in there is nothing that could establish provenance, so verification
-    /// fails closed. `TRUSTED_KEYS` ships empty, and this is what makes that safe rather than
-    /// merely untested.
+    /// fails closed rather than open. This is what made shipping an empty `TRUSTED_KEYS` safe.
     #[test]
     fn an_empty_key_list_verifies_nothing() {
         assert_eq!(
             verify(FIXTURE_PAYLOAD, FIXTURE_SIGNATURE, &[]),
             Err("settings.update.error.unconfigured")
         );
-        assert!(!is_configured(), "TRUSTED_KEYS is empty in this build");
+    }
+
+    /// Every shipped key has to parse as a minisign public key.
+    ///
+    /// A malformed one fails **silently**: [`verify`] tries each key with `is_ok_and`, so an entry
+    /// that cannot be decoded simply never matches, and the updater reports every release as
+    /// untrusted — a broken update channel that no compiler, and no other test here, would notice.
+    /// A truncated paste or an accidentally included `untrusted comment:` line is exactly the way
+    /// that happens.
+    #[test]
+    fn every_trusted_key_is_a_well_formed_minisign_key() {
+        assert!(
+            is_configured(),
+            "this build ships a signing key, so the updater is live"
+        );
+        for key in TRUSTED_KEYS {
+            assert!(
+                minisign_verify::PublicKey::from_base64(key).is_ok(),
+                "TRUSTED_KEYS entry does not decode as a minisign public key: {key}"
+            );
+        }
     }
 
     #[test]

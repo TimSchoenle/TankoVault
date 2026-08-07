@@ -94,28 +94,43 @@ binary already installed, and it is not free in a shipped client.
 So both: minisign is the client's hot path, and the cosign bundle means a release is verifiable
 with the same tooling the images are.
 
-### Generating the signing key (one-off, operator action)
+### The signing key
 
-Until this is done the updater is **switched off**: `TRUSTED_KEYS` is empty, `is_configured()`
-answers `false`, the client makes no request to GitHub and the settings sheet says so.
-`desktop-release` fails if `MINISIGN_SECRET_KEY` is absent, so the two halves have to land
-together.
+The public half is compiled into the client — `TRUSTED_KEYS` in
+`web/frontend/src/update/discover.rs`, generated 2026-08-07:
+
+```
+RWRJbPWpabBZ+C+5MBbE04xjL6HFoNsBZLbqqWogP7sD5BedsiJDJ4Ve
+```
+
+> **The private half must be in the `release` environment before the next release.**
+> `desktop-release` fails outright without `MINISIGN_SECRET_KEY`, and then verifies its own
+> signature against the key above — so a secret that does not match it fails the release too. That
+> is deliberate: a release published without a usable signature is immutable and can never be
+> re-signed, and every installed client would refuse it.
+
+`MINISIGN_SECRET_KEY` is the whole of `tankovault-release.key` (both lines) and `MINISIGN_PASSWORD`
+is its passphrase. Both are **`release` environment** secrets; a repository secret is not
+equivalent, because a job that omits `environment: release` reads it as an empty string.
+
+```
+gh secret set MINISIGN_SECRET_KEY --env release < tankovault-release.key
+gh secret set MINISIGN_PASSWORD --env release
+```
+
+Keep `tankovault-release.key` offline as well as in the secret. If it is lost, rotation below is
+the only way back — and that needs a release to carry the new public key *first*.
+
+Generating a fresh pair, if one is ever needed:
 
 ```
 minisign -G -s tankovault-release.key -p tankovault-release.pub
 ```
 
-1. Put the contents of `tankovault-release.key` in the **`release` environment** secret
-   `MINISIGN_SECRET_KEY`, and the passphrase in `MINISIGN_PASSWORD`. A repository secret is not
-   equivalent — a job that omits `environment: release` reads it as an empty string.
-2. Paste the key line from `tankovault-release.pub` — the `RWQ…` base64, **not** the
-   `untrusted comment:` line above it — into `TRUSTED_KEYS` in
-   `web/frontend/src/update/discover.rs`.
-3. Keep the private key offline as well. If the GitHub secret is lost, rotation below is the only
-   way back, and it needs a release to carry the new key first.
-
-`desktop-release` verifies its own signature against the keys it finds in `discover.rs`, so a key
-pair that has drifted apart fails the release instead of shipping an update no client will take.
+`sed -n 2p tankovault-release.pub` is the line that goes in `TRUSTED_KEYS` — the `RW…` base64, not
+the `untrusted comment:` line above it. A malformed entry there is neither a compile error nor a
+runtime error: it just never verifies anything, and the client reports every release as untrusted.
+`every_trusted_key_is_a_well_formed_minisign_key` is what stops that reaching a release.
 
 ### Rotating it — a two-release move, in this order
 

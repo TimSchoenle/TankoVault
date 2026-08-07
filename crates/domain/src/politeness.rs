@@ -6,7 +6,12 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 /// Hard upper bound on requests-per-second for any single provider, per worker process.
-pub const MAX_RPS: f64 = 4.0;
+///
+/// Raised from 4.0 deliberately: a worker executes one scan task at a time, so this ceiling —
+/// not the task loop — is what bounds catalogue-scan throughput. The aggregate a provider sees
+/// is still `rps × replicas`, so this is the *per-process* half of a budget that has to be
+/// divided by the replica count before it means anything.
+pub const MAX_RPS: f64 = 8.0;
 /// Hard **lower** bound on requests-per-second: one request every 1000 seconds.
 ///
 /// A floor, not just a ceiling: the consumer turns `rps` into a *period*, and a non-positive
@@ -15,7 +20,11 @@ pub const MAX_RPS: f64 = 4.0;
 pub const MIN_RPS: f64 = 0.001;
 /// Hard upper bound on concurrent in-flight requests for any single provider, per worker
 /// process.
-pub const MAX_CONCURRENCY: u32 = 8;
+///
+/// Raised from 8 alongside [`MAX_RPS`], and the pairing is not incidental: in-flight requests
+/// are what let a crawl actually reach its `rps` when provider latency is high, so lifting one
+/// without the other leaves the rate unreachable.
+pub const MAX_CONCURRENCY: u32 = 16;
 /// Default identifiable crawler user-agent.
 ///
 /// Only sent when `emulation` is `None`; an emulated client must send the user-agent that
@@ -81,11 +90,14 @@ pub struct Politeness {
 }
 
 impl Politeness {
+    // The default is what an unconfigured provider crawls at, so it is a policy choice, not a
+    // placeholder: doubled from 1.0/2 to match the raised ceilings rather than leaving every
+    // provider that nobody has tuned sitting at the old budget.
     fn default_rps() -> f64 {
-        1.0
+        2.0
     }
     fn default_concurrency() -> u32 {
-        2
+        4
     }
     fn default_user_agent() -> String {
         DEFAULT_USER_AGENT.to_owned()

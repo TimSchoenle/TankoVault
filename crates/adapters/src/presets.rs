@@ -94,13 +94,13 @@ pub fn builtin() -> Vec<ProviderPreset> {
                 }
             }),
             // Sized for KunManga's much larger catalogue. `rps`/`concurrency` are enforced per
-            // worker process, so at the shipped two replicas this is 4 rps / 8 in flight
+            // worker process, so at the shipped two replicas this is 8 rps / 16 in flight
             // aggregate — exactly `MAX_RPS`/`MAX_CONCURRENCY`. Raising replica count without
             // lowering these silently exceeds the policy ceiling. `crawl_delay_ms` stays 0:
             // robots.txt sets no Crawl-delay, and 429/`Retry-After` now drives backoff.
             politeness: Politeness {
-                rps: 2.0,
-                concurrency: 4,
+                rps: 4.0,
+                concurrency: 8,
                 ..Politeness::default()
             },
         },

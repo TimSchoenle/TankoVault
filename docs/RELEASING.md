@@ -57,6 +57,115 @@ record of which releases changed each service — which is where the next releas
 base from — and it means **the chart is the only complete, uniform reference surface**. Deploy
 from the chart, not from a tag you assumed exists.
 
+## The desktop update channel
+
+Every release also carries the desktop client — Windows `.msi` and NSIS `.exe`, Linux `.deb` and
+`.AppImage`, plus a portable archive per platform — and an installed client can update *itself*
+from these releases (`web/frontend/src/update`). Because that means downloading an executable and
+running it, the release publishes a document the client can check first:
+
+| Asset | What it is |
+| --- | --- |
+| `desktop-manifest.json` | the version, and one entry per platform: file name, SHA-256, byte length |
+| `desktop-manifest.json.minisig` | minisign signature over it. **This is the gate** the client enforces |
+| `desktop-manifest.json.cosign.bundle` | keyless `cosign sign-blob` over the same bytes, for public verification |
+| `sha256sums.txt` | covers every asset above, for someone downloading by hand |
+
+The client reads **nothing** out of the manifest until the minisign signature verifies against a
+public key compiled into the binary, and then holds every downloaded byte to the digest and length
+that manifest gives. The installers themselves carry no code signature — there is no Authenticode
+certificate and no repository signature — so this is the only thing that distinguishes "the release
+we published" from "whatever answered the request".
+
+`desktop-release` builds the manifest by **file extension**, not by name: `dx` derives installer
+names from the product name and version and nothing here controls that string. A file matching none
+of the four extensions fails the release, rather than shipping a manifest that silently omits a
+platform.
+
+### Why minisign for the client, when the images use cosign
+
+Verification has to run inside a reader's app, offline, in a process built with `panic = "abort"`.
+`minisign-verify` is one ed25519 check with **zero dependencies**. Verifying a keyless signature
+means a Fulcio certificate chain, a Rekor inclusion proof and a TUF trust root that has to be
+embedded and then goes stale — in Rust, the pre-1.0 `sigstore` crate and a much larger
+`THIRD-PARTY-NOTICES` for the desktop half. That cost is free on a runner, where `cosign` is a Go
+binary already installed, and it is not free in a shipped client.
+
+So both: minisign is the client's hot path, and the cosign bundle means a release is verifiable
+with the same tooling the images are.
+
+### The signing key
+
+The public half is compiled into the client — `TRUSTED_KEYS` in
+`web/frontend/src/update/discover.rs`, generated 2026-08-07:
+
+```
+RWRJbPWpabBZ+C+5MBbE04xjL6HFoNsBZLbqqWogP7sD5BedsiJDJ4Ve
+```
+
+> **The private half must be in the `release` environment before the next release.**
+> `desktop-release` fails outright without `MINISIGN_SECRET_KEY`, and then verifies its own
+> signature against the key above — so a secret that does not match it fails the release too. That
+> is deliberate: a release published without a usable signature is immutable and can never be
+> re-signed, and every installed client would refuse it.
+
+`MINISIGN_SECRET_KEY` is the whole of `tankovault-release.key` (both lines) and `MINISIGN_PASSWORD`
+is its passphrase. Both are **`release` environment** secrets; a repository secret is not
+equivalent, because a job that omits `environment: release` reads it as an empty string.
+
+```
+gh secret set MINISIGN_SECRET_KEY --env release < tankovault-release.key
+gh secret set MINISIGN_PASSWORD --env release
+```
+
+Keep `tankovault-release.key` offline as well as in the secret. If it is lost, rotation below is
+the only way back — and that needs a release to carry the new public key *first*.
+
+Generating a fresh pair, if one is ever needed:
+
+```
+minisign -G -s tankovault-release.key -p tankovault-release.pub
+```
+
+`sed -n 2p tankovault-release.pub` is the line that goes in `TRUSTED_KEYS` — the `RW…` base64, not
+the `untrusted comment:` line above it. A malformed entry there is neither a compile error nor a
+runtime error: it just never verifies anything, and the client reports every release as untrusted.
+`every_trusted_key_is_a_well_formed_minisign_key` is what stops that reaching a release.
+
+### Rotating it — a two-release move, in this order
+
+A release is immutable once published, and shipped clients only trust what they were compiled
+with. Switching the signer in one step therefore strands every installed client on the version it
+has.
+
+1. **Release N**: add the new public key to `TRUSTED_KEYS` *beside* the old one, keep signing with
+   the old secret. Clients that take this release now trust both.
+2. **Release N+1**: replace `MINISIGN_SECRET_KEY` with the new secret. Clients from N accept it;
+   clients still on N−1 or earlier do not, and have to download once by hand.
+3. **Later**: drop the old public key from `TRUSTED_KEYS`, once you are content to leave behind
+   anyone who never took N.
+
+`TRUSTED_KEYS` is a list for exactly this reason — never replace its single entry in place.
+
+### Verifying a desktop release by hand
+
+```
+gh release download vX.Y.Z -p 'desktop-manifest.json*' -p 'sha256sums.txt'
+minisign -Vm desktop-manifest.json -P '<the RWQ… public key>'
+```
+
+or, without the key, against the workflow identity that produced it:
+
+```
+cosign verify-blob desktop-manifest.json \
+  --bundle desktop-manifest.json.cosign.bundle \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github.com/TimSchoenle/TankoVault/'
+```
+
+Then check the installer you downloaded against the `sha256` in the manifest — that is the same
+comparison the client makes, in the same order.
+
 ## Which images a release rebuilds
 
 `xtask release-plan` decides, and it is unit-tested rather than written as shell in the workflow.
@@ -224,6 +333,7 @@ This is what the two former gates were waiting on:
 | `RELEASE_BOT_APP_ID`, `RELEASE_BOT_PRIVATE_KEY` | `release` environment secret | release-please, helm-release |
 | `ACTIONS_MAINTENANCE_APP_ID`, `ACTIONS_MAINTENANCE_PRIVATE_KEY` | repository secret | auto-merge, auto-fix |
 | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | `release` environment secret | `plan` (reading the published tag set), image publish |
+| `MINISIGN_SECRET_KEY`, `MINISIGN_PASSWORD` | `release` environment secret | `desktop-release` (signing the desktop manifest) |
 
 Every job that reads a **`release` environment** secret names `environment: release` with
 `deployment: false` — `release-please`, `helm-release`, `plan`, and both publish jobs, `build` and

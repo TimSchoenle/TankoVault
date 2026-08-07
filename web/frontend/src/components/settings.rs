@@ -1,8 +1,9 @@
 //! The desktop client's own settings, reached from the window header.
 //!
 //! Everything here is a property of *this installation*, not of the account: which server it
-//! talks to, and whether pushes raise an OS notification. Account settings stay on the account
-//! screen, where they belong and where they can be synced.
+//! talks to, whether pushes raise an OS notification, and how it keeps itself up to date. Account
+//! settings stay on the account screen, where they belong and where they can be synced. A reader
+//! with two machines may reasonably want one of them current and the other pinned.
 //!
 //! **It is deliberately outside the router, and outside the sign-in gate.** The server address
 //! is the one setting a reader needs precisely when nothing else works — a typo, a moved host, a
@@ -10,9 +11,10 @@
 //! behind `AuthRequired`, as an earlier revision did, meant a wrong address could only be
 //! corrected by deleting the settings file by hand.
 
-use crate::components::Field;
+use crate::components::{Field, SegControl, SliderRow};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
+use crate::update::{self, Policy, Status, UpdateState};
 use dioxus::prelude::*;
 
 /// The settings sheet. `on_close` dismisses it.
@@ -52,6 +54,7 @@ pub(crate) fn SettingsSheet(on_close: EventHandler<()>) -> Element {
                 }
 
                 ServerSection {}
+                UpdateSection {}
                 NotificationSection {}
 
                 if let Some(path) = crate::platform::settings_path() {
@@ -151,6 +154,196 @@ fn ServerSection() -> Element {
                 }
             }
         }
+    }
+}
+
+/// How this installation keeps itself current (`crate::update`).
+///
+/// Three states this section has to render honestly rather than hide, because each one means the
+/// reader will not be updated and would otherwise be left guessing:
+///
+/// * **this build carries no signing key**, so nothing could be verified and no check is made;
+/// * **this copy is not ours to replace** — installed from the `.deb`, or run from the portable
+///   archive — so a release is announced and never applied;
+/// * **the release on offer has no signed manifest**, which is every release cut before this
+///   feature existed.
+#[component]
+fn UpdateSection() -> Element {
+    let i18n = use_i18n();
+    let state = use_context::<UpdateState>();
+    let mut policy = use_signal(update::policy);
+    let mut hold_back = use_signal(update::min_age_days);
+    // Fixed for the life of the process: it is decided by where this executable sits.
+    let flavour = use_hook(update::flavour);
+    let status = state.status();
+    let busy = matches!(status, Status::Checking | Status::Downloading { .. });
+
+    let check = move |()| {
+        spawn(async move { update::check(state, i18n).await });
+    };
+
+    rsx! {
+        section { class: "ik-prefs-section",
+            h3 { {i18n.t("settings.update.title")} }
+
+            p { class: "ik-muted", style: "font-size:12.5px;margin:0 0 12px;",
+                span { "v{crate::build_info::VERSION}" }
+                if let Some(commit) = crate::build_info::commit() {
+                    span { " · {commit}" }
+                }
+            }
+
+            if update::is_configured() {
+                div { class: "ik-subhead", style: "margin-bottom:8px;", {i18n.t("settings.update.policy")} }
+                SegControl {
+                    options: update::Policy::all()
+                        .iter()
+                        .map(|option| (option.token().to_owned(), i18n.t(option.label_key())))
+                        .collect::<Vec<_>>(),
+                    selected: policy().token().to_owned(),
+                    on_select: move |token: String| {
+                        if let Some(chosen) = Policy::from_token(&token) {
+                            update::set_policy(chosen);
+                            policy.set(chosen);
+                        }
+                    },
+                }
+                if policy() != Policy::Off {
+                    div { style: "margin-top:12px;",
+                        SliderRow {
+                            label: i18n.t("settings.update.holdBack"),
+                            value: f64::from(hold_back()),
+                            min: 0.0,
+                            max: f64::from(update::MAX_MIN_AGE_DAYS),
+                            step: 1.0,
+                            display: i18n.plural("settings.update.days", i64::from(hold_back()), &[]),
+                            on_input: move |position: f64| {
+                                let days = update::days_from_slider(position);
+                                update::set_min_age_days(days);
+                                hold_back.set(days);
+                            },
+                        }
+                    }
+                    p { class: "ik-muted", style: "font-size:12.5px;margin:6px 0 0;",
+                        {i18n.t("settings.update.holdBackHint")}
+                    }
+                }
+                if let Some(reason) = flavour.unmanaged_reason() {
+                    p { class: "ik-muted", style: "font-size:12.5px;margin:10px 0 0;", {i18n.t(reason)} }
+                }
+                p { class: "ik-muted", style: "font-size:12.5px;margin:10px 0 0;",
+                    {i18n.t("settings.update.source")}
+                }
+                p { style: "font-size:12.5px;margin:10px 0 0;", {state_text(&status, i18n)} }
+                UpdateActions { state, status: status.clone(), busy, on_check: check }
+            } else {
+                p { class: "ik-muted", style: "font-size:12.5px;margin:10px 0 0;",
+                    {i18n.t("settings.update.error.unconfigured")}
+                }
+            }
+        }
+    }
+}
+
+/// What the reader can do about the state the updater is in.
+///
+/// Split out so the branching lives in one place: an `Available` release is offered a download
+/// only when this app could actually apply it, and the release page otherwise.
+#[component]
+fn UpdateActions(
+    state: UpdateState,
+    status: Status,
+    busy: bool,
+    on_check: EventHandler<()>,
+) -> Element {
+    let i18n = use_i18n();
+
+    rsx! {
+        div { class: "ik-prefs-actions",
+            button {
+                class: "ik-btn",
+                r#type: "button",
+                disabled: busy,
+                onclick: move |_| on_check.call(()),
+                {i18n.t("settings.update.check")}
+            }
+            match status {
+                Status::Available { installable: true, .. } => rsx! {
+                    button {
+                        class: "ik-btn primary",
+                        r#type: "button",
+                        disabled: busy,
+                        onclick: move |_| {
+                            spawn(async move { update::install_now(state, i18n).await });
+                        },
+                        {i18n.t("settings.update.install")}
+                    }
+                    button {
+                        class: "ik-btn",
+                        r#type: "button",
+                        onclick: move |_| update::dismiss(state),
+                        {i18n.t("settings.update.dismiss")}
+                    }
+                },
+                Status::Available { page, installable: false, .. } => rsx! {
+                    button {
+                        class: "ik-btn",
+                        r#type: "button",
+                        onclick: move |_| crate::platform::navigate_to(&page),
+                        {i18n.t("settings.update.openPage")}
+                    }
+                },
+                // Applying happens at the next start, so the only thing left to offer is the
+                // restart itself — closing the window is what gets there.
+                Status::Staged { .. } => rsx! {
+                    button {
+                        class: "ik-btn primary",
+                        r#type: "button",
+                        onclick: move |_| {
+                            if let Some(window) = crate::platform::window() {
+                                window.close();
+                            }
+                        },
+                        {i18n.t("settings.update.quit")}
+                    }
+                },
+                Status::Idle
+                | Status::Checking
+                | Status::UpToDate
+                | Status::Downloading { .. }
+                | Status::Failed(_) => rsx! {},
+            }
+        }
+    }
+}
+
+/// The one-line description of what the updater is doing. `Failed` carries a catalogue key, so it
+/// resolves the same way as every other line here.
+fn state_text(status: &Status, i18n: crate::i18n::Translator) -> String {
+    match status {
+        Status::Idle => i18n.t("settings.update.state.idle"),
+        Status::Checking => i18n.t("settings.update.state.checking"),
+        Status::UpToDate => i18n.t("settings.update.state.upToDate"),
+        Status::Available {
+            version,
+            installable,
+            ..
+        } => {
+            let key = if *installable {
+                "settings.update.state.available"
+            } else {
+                "settings.update.state.availableOnly"
+            };
+            i18n.args(key, &[("version", version)])
+        }
+        Status::Downloading { percent } => i18n.args(
+            "settings.update.state.downloading",
+            &[("percent", &percent.to_string())],
+        ),
+        Status::Staged { version } => {
+            i18n.args("settings.update.state.staged", &[("version", version)])
+        }
+        Status::Failed(key) => i18n.t(key),
     }
 }
 

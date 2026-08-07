@@ -1259,12 +1259,38 @@ jobs:
   #
   # It is also the job that **publishes** the release, which is why a desktop build that fails
   # leaves a draft and no tag rather than a published release nobody can attach anything to.
+  #
+  # ---------------------------------------------------------------------------------------------
+  # The update channel: why this job signs a manifest
+  # ---------------------------------------------------------------------------------------------
+  # `web/frontend/src/update` lets an installed desktop client update itself from these releases,
+  # which means it downloads an executable and runs it. `sha256sums.txt` cannot authorise that: it
+  # is served from the same place as the files it describes, so it proves only that the download
+  # was not corrupted in transit — which TLS already did.
+  #
+  # So the installers are described by `desktop-manifest.json` (the version, and one entry per
+  # platform naming the installer with its SHA-256), and that document is signed twice:
+  #
+  #   desktop-manifest.json.minisig         minisign; **this is the gate**. The client carries the
+  #                                         public key and reads nothing out of the manifest until
+  #                                         it verifies.
+  #   desktop-manifest.json.cosign.bundle   cosign, keyless — the same posture the images have.
+  #                                         Nothing in the client reads it; it is there so a
+  #                                         release is publicly verifiable with `cosign`.
+  #
+  # minisign rather than cosign for the client's own check because verification has to happen
+  # inside a reader's app: `minisign-verify` is one ed25519 check with zero dependencies, while a
+  # keyless verification needs a Fulcio chain, a Rekor proof and a TUF trust root that goes stale.
+  # `docs/RELEASING.md` carries the full reasoning and the key-rotation procedure.
+  #
+  # All of it happens **before** `checksums`, so the checksums file covers the manifest and both
+  # signatures rather than describing only the files that existed when it ran.
   desktop-release:
     name: attach the desktop builds and publish
     needs: [release-please, desktop]
     if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' }}
-    # Required, not decorative: `RELEASE_BOT_*` are `release` environment secrets, and a job that
-    # omits the environment reads them as empty strings.
+    # Required, not decorative: `RELEASE_BOT_*` and `MINISIGN_*` are `release` environment secrets,
+    # and a job that omits the environment reads them as empty strings.
     environment:
       name: release
       deployment: false
@@ -1272,6 +1298,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read # to check out; the release itself is written with the bot token below
+      id-token: write # cosign keyless over the desktop manifest (Fulcio/Rekor via the OIDC token)
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
@@ -1289,14 +1316,165 @@ jobs:
           merge-multiple: true
           path: dist
 
-      - name: checksums
+      # Targets are matched **by extension, not by file name**: `dx` derives the installer names
+      # from the product name and the version (`Tankovault_2.1.0_x64_en-US.msi`) and nothing in
+      # this repository controls that string, so a client that looked for a name would break on the
+      # first bundler change. A file matching none of the cases is an error rather than a skip —
+      # shipping a manifest that silently omits a platform leaves those readers with an update they
+      # are told about and cannot take.
+      #
+      # The portable archives are deliberately absent: nothing installs them, and the client
+      # reports such a copy as one it must not replace.
+      #
+      # No `published_at` here. The release is still a draft, so it has none; the client reads it
+      # from the API, which is the value the hold-back window has to use anyway — the moment the
+      # installers became reachable, not the moment they were built.
+      - name: build the desktop manifest
         working-directory: dist
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
         run: |
           set -euo pipefail
+          shopt -s nullglob
           if [ -z "$(ls -A .)" ]; then
             echo "::error::no desktop artifacts were produced"
             exit 1
           fi
+          targets='{}'
+          for file in *; do
+            case "$file" in
+              desktop-manifest.json*|sha256sums.txt) continue ;;
+              *.zip|*.tar.gz)  continue ;;
+              *.msi)           kind=windows-x86_64-msi ;;
+              *.exe)           kind=windows-x86_64-nsis ;;
+              *.AppImage)      kind=linux-x86_64-appimage ;;
+              *.deb)           kind=linux-x86_64-deb ;;
+              *)
+                echo "::error::'${file}' matches no manifest target; the desktop client would not be able to resolve this release"
+                exit 1
+                ;;
+            esac
+            if printf '%s' "$targets" | jq -e --arg k "$kind" 'has($k)' >/dev/null; then
+              echo "::error::two files claim the '${kind}' target; the second is '${file}'"
+              exit 1
+            fi
+            sha=$(sha256sum "$file" | cut -d' ' -f1)
+            size=$(stat -c%s "$file")
+            targets=$(printf '%s' "$targets" | jq -c \
+              --arg k "$kind" --arg f "$file" --arg s "$sha" --argjson z "$size" \
+              '. + {($k): {file: $f, sha256: $s, size: $z}}')
+          done
+          # Every platform the release publishes has to be in it. `desktop-release` is skipped when
+          # either matrix leg fails, so a missing key here means a naming change this `case` did
+          # not see rather than a build that did not run.
+          for required in windows-x86_64-msi windows-x86_64-nsis linux-x86_64-appimage linux-x86_64-deb; do
+            if ! printf '%s' "$targets" | jq -e --arg k "$required" 'has($k)' >/dev/null; then
+              echo "::error::the manifest has no '${required}' entry"
+              exit 1
+            fi
+          done
+          jq -n --arg v "$VERSION" --argjson t "$targets" '{version: $v, targets: $t}' \
+            > desktop-manifest.json
+          cat desktop-manifest.json
+
+      # The signature the *client* checks. Without it an installed reader is told a release exists
+      # and refuses to install it, which is the safe failure but still a broken update channel — so
+      # a missing secret fails the release here rather than shipping one nobody can take.
+      #
+      # `-H` prehashes, because that is what the client verifies with (`allow_legacy: false` in
+      # `discover::verify`); the password goes in on stdin because minisign otherwise looks for a
+      # terminal, and an unencrypted key simply ignores it.
+      - name: sign the desktop manifest with minisign
+        working-directory: dist
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MINISIGN_SECRET_KEY:-}" ]; then
+            echo "::error::the release environment has no MINISIGN_SECRET_KEY, so this release cannot be signed and no installed desktop client will accept it as an update. See docs/RELEASING.md."
+            exit 1
+          fi
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends minisign
+          umask 077
+          key="${RUNNER_TEMP}/minisign.key"
+          # `tr -d '\r'`: minisign parses the key file line by line and a secret pasted into the
+          # GitHub secret from a Windows editor carries CRLF, which makes the base64 line
+          # unreadable and reports itself only as an unhelpful decode failure.
+          printf '%s\n' "$MINISIGN_SECRET_KEY" | tr -d '\r' > "$key"
+          # The passphrase on stdin, newline-terminated: with no terminal minisign reads it with
+          # `readpassphrase`, which takes the line and strips the newline. An unencrypted key
+          # (generated with `-W`) never prompts and ignores this.
+          printf '%s\n' "${MINISIGN_PASSWORD:-}" \
+            | minisign -S -H -s "$key" -m desktop-manifest.json \
+                -t "TankoVault ${TAG} desktop manifest"
+          rm -f "$key"
+
+      # The check that makes the signature worth anything: it verifies against **the keys the
+      # shipped client actually compiles in**, read out of the source rather than restated here.
+      #
+      # A key pair that has been rotated on one side only is otherwise invisible until a reader's
+      # client refuses the release — at which point the release is published, immutable, and cannot
+      # be re-signed. An empty list is the pre-key state and warns rather than fails, because that
+      # is a client which does not check for updates at all.
+      - name: verify the signature against the client's own trusted keys
+        env:
+          KEYS_FILE: web/frontend/src/update/discover.rs
+        run: |
+          set -euo pipefail
+          # `awk` and not a `sed` address range: sed searches for the range's end starting at the
+          # line *after* the start, so a one-line `const TRUSTED_KEYS: &[&str] = &[];` would run on
+          # to the next `];` in the file — which is inside the test module, whose fixture key also
+          # begins `RW`. That would have made a release "verify" against a published test vector.
+          keys=$(awk '/^const TRUSTED_KEYS/ { inside = 1 }
+                      inside { print; if (/\];/) exit }' "$KEYS_FILE" \
+                 | grep -o '"RW[A-Za-z0-9+/=]\{1,\}"' | tr -d '"' || true)
+          if [ -z "$keys" ]; then
+            echo "::warning::the desktop client carries no trusted signing key, so it does not check for updates; this release is signed but no shipped build can verify it. See docs/RELEASING.md."
+            exit 0
+          fi
+          for key in $keys; do
+            if minisign -V -P "$key" -m dist/desktop-manifest.json >/dev/null 2>&1; then
+              echo "::notice::the manifest verifies against a key the client trusts"
+              exit 0
+            fi
+          done
+          echo "::error::the manifest does not verify against any key in ${KEYS_FILE}; MINISIGN_SECRET_KEY and the client's TRUSTED_KEYS have drifted apart. Publishing now would ship a release no installed client can take."
+          exit 1
+
+      - name: install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # Same one-token discipline as the `manifest` job, and for the same two reasons recorded
+      # there: cosign otherwise fetches an ambient token per call, and the file must hold the JWT
+      # with **no trailing newline** or Fulcio rejects the `Authorization` header without saying
+      # why. `printf` is a builtin, so the token never reaches any process's `argv`.
+      - name: mint one OIDC token for cosign
+        run: |
+          set -euo pipefail
+          umask 077
+          token=$(curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+                       "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore" | jq -er '.value')
+          printf '%s' "$token" > "${RUNNER_TEMP}/cosign-oidc-token"
+
+      # Transparency, not the gate. This is what lets anyone check a release with the same tooling
+      # the images are verified with, without the client having to carry a sigstore stack.
+      - name: attest the desktop manifest with cosign
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes \
+            --identity-token "${RUNNER_TEMP}/cosign-oidc-token" \
+            --bundle desktop-manifest.json.cosign.bundle \
+            desktop-manifest.json
+
+      # Last, so it covers the manifest and both signatures as well as the installers.
+      - name: checksums
+        working-directory: dist
+        run: |
+          set -euo pipefail
           sha256sum ./* > sha256sums.txt
           cat sha256sums.txt
 
@@ -1317,9 +1495,11 @@ jobs:
       # what `--clobber` is asked to do. So release-please creates a draft, the installers go onto
       # the draft, and only then is it published.
       #
-      # These installers are **not signed**. Windows SmartScreen warns on first run and the Linux
-      # packages carry no repository signature, so the checksums above are the only integrity
-      # check a reader has — which is why they are published beside the files and named here.
+      # The installers themselves carry **no code signature**: there is no Authenticode certificate
+      # and no repository signature, so Windows SmartScreen warns on first run and `apt` cannot
+      # verify the `.deb`. What a reader downloading by hand has is `sha256sums.txt`; what the
+      # desktop client's updater has is the signed manifest above, which is a stronger claim than
+      # the checksums and the reason it exists.
       - name: attach the installers and publish the release
         env:
           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
@@ -1344,8 +1524,13 @@ jobs:
             echo "Windows (\`.msi\`, \`.exe\`) and Linux (\`.deb\`, \`.AppImage\`) installers, plus a"
             echo "portable archive per platform, are attached to the release with \`sha256sums.txt\`."
             echo
-            echo "**Unsigned.** Windows SmartScreen will warn on first run; verify against the"
-            echo "checksums file."
+            echo "\`desktop-manifest.json\` describes each installer by digest and is signed with"
+            echo "minisign (\`.minisig\`) and, for public verification, with keyless cosign"
+            echo "(\`.cosign.bundle\`). The minisign signature is what an installed client checks"
+            echo "before it will download or run anything — see \`docs/RELEASING.md\`."
+            echo
+            echo "**The installers carry no code signature.** Windows SmartScreen will warn on"
+            echo "first run; verify a manual download against the checksums file."
           } >> "$GITHUB_STEP_SUMMARY"
 
   summary:

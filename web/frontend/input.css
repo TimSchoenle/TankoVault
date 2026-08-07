@@ -251,6 +251,16 @@ a { color: inherit; text-decoration: none; }
  * reader reaches for it by muscle memory rather than by reading. */
 .ik-titlebar-btn.danger:hover { background: #c42b1c; color: #fff; }
 .ik-titlebar-btn:focus-visible { outline: 2px solid var(--acc); outline-offset: -3px; }
+/* An update is waiting behind the settings button. `position: relative` is set only on the marked
+ * button, so the unmarked one keeps the plain grid box the controls above rely on. */
+.ik-titlebar-btn[data-update] { position: relative; }
+/* Clear of the 15px glyph rather than ringed against the bar's fill — the button's background
+ * changes on hover, so a ring in `--rail` would stop matching exactly when it is looked at. */
+.ik-titlebar-btn[data-update]::after {
+  content: ""; position: absolute; top: 8px; right: 9px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--acc);
+}
 
 /* ---------------------------------------------------------------------------------------------
  * The settings sheet (desktop only; `components::SettingsSheet`).

@@ -5634,7 +5634,7 @@ Ships as: the WebAssembly bundle the frontend image serves, which executes in th
 Licences in this section, by number of crates:
 
   Apache License 2.0 (Apache-2.0) — 426 crates, 31 distinct notices
-  MIT License (MIT) — 142 crates, 68 distinct notices
+  MIT License (MIT) — 143 crates, 68 distinct notices
   Unicode License v3 (Unicode-3.0) — 19 crates, 2 distinct notices
   BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) — 9 crates, 6 distinct notices
   Mozilla Public License 2.0 (MPL-2.0) — 7 crates
@@ -7886,6 +7886,7 @@ Applies to:
   - dlopen2_derive 0.4.3
   - dpi 0.1.2
   - libm 0.2.16
+  - minisign-verify 0.2.5
   - pulp-wasm-simd-flag 0.1.1
   - simd_helpers 0.1.0
   - sledgehammer_bindgen 0.6.0

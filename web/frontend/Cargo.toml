@@ -173,6 +173,33 @@ keyring = { version = "4", optional = true }
 # mis-read a quoted value. A credential that round-trips wrong signs the reader out on the next
 # start, which is the one failure this whole path exists to prevent.
 cookie = { version = "0.18", optional = true }
+# The four below back `crate::update`, which downloads a release installer and runs it. That is
+# the most dangerous thing this app does, so read `src/update/discover.rs` before touching any of
+# them.
+#
+# **This is the gate on that.** The release workflow signs `desktop-manifest.json` with minisign
+# and the client refuses a manifest that does not verify against an embedded public key — so a
+# forged manifest cannot name an installer, and the checksums inside a verified one are what every
+# downloaded byte is held to.
+#
+# Chosen over `cosign` deliberately, and the reasoning is worth keeping because the repository
+# signs its *images* with cosign keyless and the mismatch looks like an oversight. Verifying a
+# keyless signature means checking a Fulcio certificate chain and a Rekor inclusion proof, which
+# in Rust is the pre-1.0 `sigstore` crate, plus a TUF trust root that has to be embedded and then
+# goes stale. This crate is ed25519 verification and nothing else: **zero dependencies**, MIT, and
+# small enough to read. The release also carries a keyless `cosign sign-blob` bundle over the same
+# manifest for anyone auditing it with the tooling the images use — see `docs/RELEASING.md`.
+minisign-verify = { version = "0.2", optional = true }
+# Which release is newer, and whether this build is one. A hand-rolled tuple compare gets
+# pre-release ordering wrong, and this is the comparison that decides whether to replace the
+# reader's installed app. Already resolved in this lockfile.
+semver = { version = "1", optional = true }
+# The digest each staged installer is checked against, from the verified manifest. `0.10` and not
+# `0.11.0-rc`: both are in this graph already and the release line is the one nearly everything
+# else here resolves to, so naming it adds no second copy.
+sha2 = { version = "0.10", optional = true }
+# Renders that digest for comparison against the manifest's lower-case hex. Already in the graph.
+hex = { version = "0.4", optional = true }
 
 # `uuid`'s WebCrypto backend, needed only where `v7` has no OS randomness to reach for. Declared
 # per-target so the desktop build links neither it nor `wasm-bindgen`.
@@ -218,10 +245,14 @@ desktop = [
     "dep:cookie",
     "dep:directories",
     "dep:eventsource-stream",
+    "dep:hex",
     "dep:keyring",
+    "dep:minisign-verify",
     "dep:notify-rust",
     "dep:open",
     "dep:rfd",
+    "dep:semver",
+    "dep:sha2",
     "dep:sys-locale",
     "dep:tokio",
     # Resolves to nothing off Windows — the dependency is declared per-target — so this enables

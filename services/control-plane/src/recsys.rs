@@ -462,7 +462,8 @@ async fn vocabulary_pass(pool: &PgPool, cap: i64) -> anyhow::Result<i64> {
     recsys::set_feature_stats(pool, &ids, &doc_counts, &weights).await?;
 
     // Must run before the basis is solved: `dense_index` is what pins the basis' column order.
-    recsys::set_dense_indices(pool, cap).await?;
+    let mut conn = pool.acquire().await?;
+    recsys::set_dense_indices(&mut conn, cap).await?;
     Ok(i64::try_from(ids.len()).unwrap_or(i64::MAX))
 }
 

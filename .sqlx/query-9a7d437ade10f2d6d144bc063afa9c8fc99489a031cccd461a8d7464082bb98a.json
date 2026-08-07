@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH ranked AS ( SELECT id, row_number() OVER (ORDER BY doc_count DESC, id) - 1 AS position FROM rec_features WHERE kind <> 'author' AND doc_count > 0 ), capped AS (SELECT id, position FROM ranked WHERE position < $1), applied AS ( UPDATE rec_features f SET dense_index = c.position FROM capped c WHERE f.id = c.id RETURNING 1 ) SELECT count(*) AS \"n!\" FROM applied",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9a7d437ade10f2d6d144bc063afa9c8fc99489a031cccd461a8d7464082bb98a"
+}

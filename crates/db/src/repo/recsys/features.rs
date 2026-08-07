@@ -1,7 +1,7 @@
 //! The sparse half: reading what a series is, interning the vocabulary, and storing the vectors.
 
 use crate::error::DbResult;
-use sqlx::{FromRow, PgExecutor};
+use sqlx::{Connection as _, FromRow, PgExecutor};
 use tankovault_domain::{ContentType, SeriesId, SeriesStatus};
 use tankovault_recsys::{FeatureKey, FeatureKind, SeriesFacts};
 use uuid::Uuid;
@@ -297,11 +297,22 @@ pub async fn set_feature_stats<'e, E: PgExecutor<'e>>(
 /// before the projection is solved and must not run between solving it and applying it.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
-pub async fn set_dense_indices<'e, E: PgExecutor<'e>>(exec: E, cap: i64) -> DbResult<i64> {
+/// [`crate::DbError::Sqlx`] only; rolls back on first failure, so the column is never left
+/// half-cleared.
+pub async fn set_dense_indices(conn: &mut sqlx::PgConnection, cap: i64) -> DbResult<i64> {
+    let mut tx = conn.begin().await?;
+
+    // Two statements, not one statement with a clearing CTE beside the assigning one. Sibling
+    // sub-statements of a single statement share one snapshot, so the clear would be invisible to
+    // the assignment: a position moving from one feature to another collides with its previous
+    // holder and `rec_features_dense_idx` rejects the write. The index is partial, so it cannot be
+    // a deferrable constraint either — emptying the column first is what makes the write legal.
+    sqlx::query!("UPDATE rec_features SET dense_index = NULL WHERE dense_index IS NOT NULL")
+        .execute(&mut *tx)
+        .await?;
+
     let assigned = sqlx::query_scalar!(
-        "WITH cleared AS (UPDATE rec_features SET dense_index = NULL WHERE dense_index IS NOT NULL), \
-              ranked AS ( \
+        "WITH ranked AS ( \
                 SELECT id, row_number() OVER (ORDER BY doc_count DESC, id) - 1 AS position \
                 FROM rec_features \
                 WHERE kind <> 'author' AND doc_count > 0 \
@@ -315,8 +326,10 @@ pub async fn set_dense_indices<'e, E: PgExecutor<'e>>(exec: E, cap: i64) -> DbRe
          SELECT count(*) AS \"n!\" FROM applied",
         cap,
     )
-    .fetch_one(exec)
+    .fetch_one(&mut *tx)
     .await?;
+
+    tx.commit().await?;
     Ok(assigned)
 }
 

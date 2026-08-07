@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE rec_features SET dense_index = NULL WHERE dense_index IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "468399767204ae08f02cb023dffbc72d03c0700cd026f877b2f58d382a452cec"
+}

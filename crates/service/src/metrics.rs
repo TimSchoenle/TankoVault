@@ -81,6 +81,8 @@ pub mod names {
     pub const SCAN_TASKS_SETTLED: &str = "scan_tasks_settled_total";
     /// How long one scan task took.
     pub const SCAN_TASK_DURATION: &str = "scan_task_duration_seconds";
+    /// Scan tasks a worker is executing right now — one per provider in flight.
+    pub const SCAN_TASKS_INFLIGHT: &str = "scan_tasks_inflight";
     /// Chapters a scan accepted and recorded as new.
     pub const CHAPTERS_DISCOVERED: &str = "chapters_discovered_total";
     /// Listing entries refused as implausible chapter numbers.
@@ -297,6 +299,13 @@ pub const CATALOGUE: &[Metric] = &[
         unit: Unit::Seconds,
         emitted_by: "worker",
         help: "Wall time for one scan task, by provider, tier and task kind.",
+    },
+    Metric {
+        name: names::SCAN_TASKS_INFLIGHT,
+        kind: Kind::Gauge,
+        unit: Unit::Count,
+        emitted_by: "worker",
+        help: "Scan tasks a worker is executing right now. A worker runs at most one task per provider, so this is also the number of providers being crawled concurrently, and it is capped by worker.max_concurrent_providers. Sitting at the cap means the queue is the constraint; sitting below it while tasks are queued means every remaining provider already has a task in flight.",
     },
     Metric {
         name: names::CHAPTERS_DISCOVERED,

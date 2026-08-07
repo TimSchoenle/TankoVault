@@ -239,7 +239,8 @@ to the timeout's `408`, not only to handler responses.
 Authorization is **per-capability**. There is no role, no tier, and no ordering: a principal
 holds a set of named [`Permission`](../crates/domain/src/permissions.rs) grants, each endpoint
 asks for the specific thing it does, and permissions never imply one another —
-`users.write` does not confer `users.read`.
+`users.write` does not confer `users.read`. The single exception is the super user grant below,
+which is deliberately not a role either.
 
 The previous `user < operator < admin` tier was removed rather than extended. It could not
 express least privilege (letting someone triage the merge queue also handed them provider
@@ -254,7 +255,7 @@ offer at any price.
 
 | Concept | Where |
 |---|---|
-| The capability registry (24 permissions, their groups and descriptions) | `tankovault_domain::Permission` |
+| The capability registry (every permission, its group and description) | `tankovault_domain::Permission` |
 | Storage | `user_permissions` (one row per user × capability, with `granted_by` provenance) |
 | Resolution | `tankovault_db::repo::permissions::resolve` |
 | Enforcement | `AuthUser::require` / `require_all` — a refusal is audited as `authz.denied` |
@@ -265,6 +266,29 @@ offer at any price.
 starting point; applying one expands to a checklist the administrator then edits, and only the
 resulting set is stored. Nothing in the database or in an authorization decision knows presets
 exist.
+
+### The super user
+
+One account holds `system.superuser`, a grant that answers **every** permission check —
+including checks for capabilities added by a later release, which the enumerated grants of a
+fully-privileged administrator would not cover until someone re-granted them.
+
+It is created by the installer and by nothing else:
+
+- `bootstrap seed-admin` claims it for the account it creates, and only while that account is
+  the **only** one in the database. Re-running the job, or seeding a second administrator later,
+  promotes nobody; the job's log line says which happened.
+- Migration `0042_super_user` grants it retroactively to the earliest account that holds
+  `users.permissions` — an existing deployment's owner, who could already grant themselves
+  anything. A deployment whose accounts include no such holder gets no super user.
+- A partial unique index makes a second one impossible, whatever writes the row.
+
+The permission editor cannot hand it out: it is absent from `GET /v1/admin/permissions`, from
+every preset, and `PUT /v1/admin/users/{id}/permissions` refuses (400, audited) a request that
+would add one. An edit that *omits* it leaves it alone rather than revoking it — the console's
+checklist omits it on every save, so any other behaviour would demote the owner on their first
+edit. Removing it is therefore a deliberate `DELETE` against `user_permissions`, or erasing the
+account.
 
 ### Account status
 

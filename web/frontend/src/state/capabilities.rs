@@ -61,10 +61,18 @@ impl CapabilitySet {
     ///
     /// `false` while loading: showing a privileged control and then withdrawing it is worse
     /// than showing it a moment late.
+    ///
+    /// The super user grant answers yes to everything, mirroring `PermissionSet::has` on the
+    /// backend. The wire carries the single token rather than an expansion, so this is the one
+    /// place the implication has to be repeated — without it the deployment owner would be
+    /// handed a console with every panel hidden.
     pub(crate) fn can(&self, permission: Permission) -> bool {
         match &*self.inner.read() {
             CapabilityState::Loading => false,
-            CapabilityState::Ready(caps) => caps.permissions.contains(&permission),
+            CapabilityState::Ready(caps) => {
+                caps.permissions.contains(&Permission::SystemSuperuser)
+                    || caps.permissions.contains(&permission)
+            }
         }
     }
 

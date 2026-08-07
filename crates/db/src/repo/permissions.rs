@@ -127,7 +127,8 @@ pub async fn list_for_user<'e, E: PgExecutor<'e>>(
 /// Replace a user's entire grant set in one transaction, returning what changed.
 ///
 /// Whole-set diff, not add/remove calls, so a UI checklist submit can't interleave with
-/// itself. Unchanged grants keep their `granted_at`.
+/// itself. Unchanged grants keep their `granted_at`. [`Permission::SuperUser`] is inert here in
+/// both directions — see the comment on the diff.
 ///
 /// # Errors
 /// `Sqlx` only; rolls back on first failure. A concurrent identical grant is absorbed
@@ -149,16 +150,23 @@ pub async fn replace(
 
     let desired_tokens: Vec<&str> = desired.tokens();
 
+    // The super user grant belongs to the installer, not to this path: it is filtered out of
+    // both sides of the diff, so an edit can neither mint one nor strip one. Stripping is the
+    // case that matters — the editor's catalogue does not list it, so *every* checklist submit
+    // omits it, and without this the first save against the deployment owner's account would
+    // silently demote them.
+    let super_user = Permission::SuperUser.as_str();
+
     // Removes stored tokens the desired set lacks, including unrecognised ones — clears
     // inert grants instead of letting them accumulate.
     let removed: Vec<String> = existing
         .iter()
-        .filter(|token| !desired_tokens.contains(&token.as_str()))
+        .filter(|token| token.as_str() != super_user && !desired_tokens.contains(&token.as_str()))
         .cloned()
         .collect();
     let added: Vec<String> = desired_tokens
         .iter()
-        .filter(|token| !existing.iter().any(|e| e == *token))
+        .filter(|token| **token != super_user && !existing.iter().any(|e| e == *token))
         .map(|t| (*t).to_owned())
         .collect();
 
@@ -233,6 +241,9 @@ pub async fn grant<'e, E: PgExecutor<'e>>(
 /// capability would leave no way to grant anything back except editing the database directly.
 /// Suspended accounts don't count; they can't sign in.
 ///
+/// A super user counts as a holder of everything, matching [`PermissionSet::has`]. Counting
+/// only the exact token would refuse a revocation the deployment owner could undo in a click.
+///
 /// # Errors
 /// `Sqlx` only; `count(*)` always returns a row, so `Ok(0)` means nobody else holds it. Must
 /// propagate, not default to zero — that would permit the exact revocation this guards against.
@@ -242,15 +253,41 @@ pub async fn other_active_holders<'e, E: PgExecutor<'e>>(
     ignoring: UserId,
 ) -> DbResult<i64> {
     let count = sqlx::query_scalar!(
-        "SELECT count(*) AS \"count!\" FROM user_permissions p \
+        // DISTINCT because an account can hold both the exact grant and the super user one.
+        "SELECT count(DISTINCT p.user_id) AS \"count!\" FROM user_permissions p \
          JOIN users u ON u.id = p.user_id \
-         WHERE p.permission = $1 AND p.user_id <> $2 AND u.status = 'active'",
+         WHERE p.permission IN ($1, $3) AND p.user_id <> $2 AND u.status = 'active'",
         permission.as_str(),
         ignoring.as_uuid(),
+        Permission::SuperUser.as_str(),
     )
     .fetch_one(exec)
     .await?;
     Ok(count)
+}
+
+/// Grant [`Permission::SuperUser`] to `user_id`, and only if it is the deployment's *first*
+/// account — the one the bootstrap migrator has just created.
+///
+/// The two conditions that make the grant unforgeable live in the database, not in the caller:
+/// this insert is a no-op unless no other account exists, and a partial unique index refuses a
+/// second super user however the row is written.
+///
+/// # Errors
+/// `Sqlx` only. `Ok(false)` means the conditions did not hold and nothing was written, which is
+/// the normal outcome of re-running an install job.
+pub async fn claim_super_user<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<bool> {
+    let result = sqlx::query!(
+        "INSERT INTO user_permissions (user_id, permission) \
+         SELECT $1::uuid, $2::text \
+         WHERE NOT EXISTS (SELECT 1 FROM users WHERE id <> $1::uuid) \
+         ON CONFLICT DO NOTHING",
+        user_id.as_uuid(),
+        Permission::SuperUser.as_str(),
+    )
+    .execute(exec)
+    .await?;
+    Ok(result.rows_affected() > 0)
 }
 
 /// Grant counts for a batch of users (avoids an N+1 per-row subquery), for the directory's

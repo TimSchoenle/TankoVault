@@ -1,6 +1,10 @@
 //! Fine-grained permission capabilities — the system's only authorization primitive. A
 //! principal holds an unordered set of them, with no implication between grants; see
 //! [`Permission`] for the invariant that protects.
+//!
+//! [`Permission::SuperUser`] is the single exception, and deliberately not a role: it is one
+//! grant that answers `true` to every check, held by the account the bootstrap migrator creates
+//! and by no one else, because the permission editor never offers it.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -128,10 +132,26 @@ pub enum Permission {
     /// Turn a feature on or off for the whole deployment.
     #[serde(rename = "flags.write")]
     FlagsWrite,
+
+    /// Every capability there is, including ones added by a later release.
+    ///
+    /// The deployment owner, held by the first account the bootstrap migrator creates and by
+    /// nobody else. It is not in [`Permission::grantable`], so no catalogue, preset or seed
+    /// loop can hand it out, and the permission editor refuses it explicitly — a holder of
+    /// `users.permissions` can escalate anyone to everything *enumerable*, but cannot mint an
+    /// account that outlives the next capability the codebase gains.
+    ///
+    /// Declared last on purpose: the variant order is the sort order of a stored grant set, so
+    /// appending leaves every existing serialised set byte-identical.
+    #[serde(rename = "system.superuser")]
+    SuperUser,
 }
 
 impl Permission {
-    /// Every permission, in declaration order — the order the admin UI lists them in.
+    /// Every permission this build defines, in declaration order.
+    ///
+    /// Includes [`Self::SuperUser`], so parsing and exhaustiveness checks see the whole enum.
+    /// Anything that *hands out* a permission wants [`Self::grantable`] instead.
     #[must_use]
     pub const fn all() -> &'static [Self] {
         &[
@@ -165,7 +185,29 @@ impl Permission {
             Self::AuditRead,
             Self::FlagsRead,
             Self::FlagsWrite,
+            Self::SuperUser,
         ]
+    }
+
+    /// Every permission an administrator may grant: [`Self::all`] minus [`Self::SuperUser`], in
+    /// the same order — what the admin UI lists.
+    ///
+    /// This exclusion is the enforcement point for "one super user, minted by the migrator". A
+    /// catalogue, a preset expansion or a seed loop built from this list cannot grant it, and
+    /// none of them has to remember not to.
+    #[must_use]
+    pub fn grantable() -> Vec<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .filter(|p| !p.is_super_user())
+            .collect()
+    }
+
+    /// Whether this is the grant that answers every check.
+    #[must_use]
+    pub const fn is_super_user(self) -> bool {
+        matches!(self, Self::SuperUser)
     }
 
     /// The persisted wire token (`<surface>.<action>`), stable forever — renaming one
@@ -203,6 +245,7 @@ impl Permission {
             Self::AuditRead => "audit.read",
             Self::FlagsRead => "flags.read",
             Self::FlagsWrite => "flags.write",
+            Self::SuperUser => "system.superuser",
         }
     }
 
@@ -226,11 +269,15 @@ impl Permission {
             Self::SyncAdminRead | Self::SyncAdminWrite | Self::SyncAudit | Self::SyncRevert => {
                 PermissionGroup::Sync
             }
+            // `SuperUser` is never rendered — the editor lists `grantable()` — but it is
+            // grouped with the other privilege-over-people capabilities so the answer is not a
+            // lie if it ever is.
             Self::UsersRead
             | Self::UsersWrite
             | Self::UsersPermissions
             | Self::UsersDelete
-            | Self::UsersSessions => PermissionGroup::Users,
+            | Self::UsersSessions
+            | Self::SuperUser => PermissionGroup::Users,
             Self::PrivacyRead | Self::PrivacyWrite | Self::PrivacyExport => {
                 PermissionGroup::Privacy
             }
@@ -280,6 +327,10 @@ impl Permission {
             Self::AuditRead => "Read the privileged-action audit trail.",
             Self::FlagsRead => "View which features are enabled.",
             Self::FlagsWrite => "Turn features on and off for the whole deployment.",
+            Self::SuperUser => {
+                "Every capability, present and future. Held only by the account the installer \
+                 created; cannot be granted here."
+            }
         }
     }
 }
@@ -406,9 +457,10 @@ impl PermissionPreset {
                 Permission::AuditRead,
                 Permission::FlagsRead,
             ],
-            // "Everything", not an enumerated list — a hand-maintained one would silently
-            // exclude a new capability from the administrator preset.
-            Self::Administrator => Permission::all().to_vec(),
+            // "Everything grantable", not an enumerated list — a hand-maintained one would
+            // silently exclude a new capability from the administrator preset. Not `all()`:
+            // the preset must never expand to the super user grant.
+            Self::Administrator => Permission::grantable(),
         }
     }
 }
@@ -467,9 +519,21 @@ impl PermissionSet {
     }
 
     /// Whether this principal holds `permission`.
+    ///
+    /// A super user holds everything, including capabilities added after their grant was
+    /// written — the one implication in the model, and the reason
+    /// [`Permission::SuperUser`] cannot be handed out through the API.
     #[must_use]
     pub fn has(&self, permission: Permission) -> bool {
-        self.0.contains(&permission)
+        self.is_super_user() || self.0.contains(&permission)
+    }
+
+    /// Whether this principal *is* the super user, as opposed to holding a permission through
+    /// one. Every site that writes or displays grants needs this rather than [`Self::has`],
+    /// which cannot tell the two apart.
+    #[must_use]
+    pub fn is_super_user(&self) -> bool {
+        self.0.contains(&Permission::SuperUser)
     }
 
     /// Whether this principal holds *every* listed permission.
@@ -546,7 +610,7 @@ mod tests {
     fn all_lists_every_variant() {
         // `all()` is hand-written and can drift from the enum; bump this count when adding
         // a variant, or a forgotten one slips through unnoticed.
-        assert_eq!(Permission::all().len(), 30);
+        assert_eq!(Permission::all().len(), 31);
     }
 
     #[test]
@@ -580,7 +644,38 @@ mod tests {
             .permissions()
             .into_iter()
             .collect();
+        assert!(set.has_all(&Permission::grantable()));
+    }
+
+    /// The super user grant is what makes "everything" mean everything, so the two ways of
+    /// asking must not diverge: `has` says yes to a capability the set does not contain, while
+    /// `is_super_user` still distinguishes the holder from a fully-granted administrator.
+    #[test]
+    fn the_super_user_holds_every_capability() {
+        let set: PermissionSet = [Permission::SuperUser].into_iter().collect();
         assert!(set.has_all(Permission::all()));
+        assert!(set.is_super_user());
+        assert_eq!(set.len(), 1, "one stored grant, not an expansion");
+
+        let admin: PermissionSet = PermissionPreset::Administrator
+            .permissions()
+            .into_iter()
+            .collect();
+        assert!(!admin.is_super_user());
+    }
+
+    /// Nothing that hands out permissions may offer the super user grant: the editor's
+    /// catalogue, the presets and the bootstrap seed loop are all built from `grantable()`.
+    #[test]
+    fn the_super_user_is_not_grantable() {
+        assert!(!Permission::grantable().contains(&Permission::SuperUser));
+        assert_eq!(Permission::grantable().len(), Permission::all().len() - 1);
+        for preset in PermissionPreset::all() {
+            assert!(
+                !preset.permissions().contains(&Permission::SuperUser),
+                "preset {preset} expands to the super user grant"
+            );
+        }
     }
 
     #[test]

@@ -33,3 +33,12 @@ in api get /v1/admin/scans the response's body `type` changed from `array<object
 in api post /v1/admin/recommendations/rebuild removed the required property `series_built` from the response with the `200` status
 in api post /v1/admin/recommendations/rebuild removed the required property `vocabulary` from the response with the `200` status
 in api post /v1/admin/recommendations/rebuild removed the required property `dense_dims` from the response with the `200` status
+
+# The notification preferences were an unvalidated free-form document — and nothing on the server
+# ever read it, so the three toggles the account panel wrote had no effect on delivery at all. They
+# are a typed, versioned contract now, which is what makes a saved preference one the notifier
+# honours. Every field defaults, so the widest previously-valid body an old bundle could send —
+# `{}` — is still accepted and still means "the product defaults"; what this break rejects is a
+# body that was never a preference document, such as a bare string or array. Consumed only by
+# `web/frontend`, updated in the same commit.
+in api put /v1/me/notification-prefs the request's body `type` changed from `any` to `object`

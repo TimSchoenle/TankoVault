@@ -1,0 +1,65 @@
+name: Registry retry helper
+description: >-
+  Installs `${RUNNER_TEMP}/registry-retry`, the wrapper every registry call on the publishing path
+  runs through, so a throttled GHCR token request is retried instead of failing a release.
+
+# GHCR answers a throttled token request with `403 Forbidden` / `DENIED` and no `Retry-After` —
+# byte for byte a permissions failure — so buildx, syft and cosign all treat the first one as
+# fatal. The release publishes eighteen `build` legs and nine `publish` legs against that registry,
+# and `ci.yml` reads the same registry's build cache on the same push, so the burst is guaranteed
+# and the loser is arbitrary.
+#
+# It has cost two releases so far. At v2.0.0 two `publish` legs lost the race one second apart,
+# each *after* its image was pushed: `publish api` on the SBOM's pull, and `publish bootstrap` half
+# way through `imagetools create` — Docker Hub tagged, GHCR not. At v2.1.0 the leg that lost was
+# `bootstrap (arm64)`, on the by-digest push itself:
+#
+#     #31 ERROR: failed to push ghcr.io/…/tankovault/bootstrap: failed to authorize:
+#         failed to fetch oauth token: denied: denied
+#
+# Seventeen legs had pushed to the same registry in the preceding ninety seconds and all passed.
+#
+# The helper lives here rather than inline in one job because the second incident was in a job that
+# did not have it: two copies of the script would have been two chances to drift, and one copy in
+# one job was already the bug. `xtask repo-lint`'s `registry-calls-in-publish-retry` rule fails if
+# a job that reaches a registry does not install it, or makes a call that does not go through it.
+
+runs:
+  using: composite
+  steps:
+    - name: install the registry retry helper
+      shell: bash
+      run: |
+        set -euo pipefail
+        cat > "${RUNNER_TEMP}/registry-retry" <<'SH'
+        #!/usr/bin/env bash
+        set -uo pipefail
+        attempts=5
+        delay=5
+        attempt=1
+        while :; do
+          status=0
+          "$@" || status=$?
+          if [ "$status" -eq 0 ]; then
+            exit 0
+          fi
+          if [ "$attempt" -ge "$attempts" ]; then
+            echo "::error::${1} failed ${attempts} times against the registry (exit ${status})" >&2
+            exit "$status"
+          fi
+          echo "::warning::${1} failed (attempt ${attempt}/${attempts}, exit ${status}); retrying" >&2
+          # Jittered, and both messages go to stderr. Every leg meets the same quota at the same
+          # instant, so a fixed schedule would only re-synchronise them onto the next one; and a
+          # caller reads this wrapper's stdout in a command substitution.
+          sleep "$(( delay + RANDOM % delay ))"
+          attempt=$(( attempt + 1 ))
+          # Clamped, because a genuinely broken registry has to fail the job with the message above
+          # rather than with its `timeout-minutes`: several calls each backing off unbounded would
+          # outlast it and report nothing.
+          delay=$(( delay * 2 ))
+          if [ "$delay" -gt 20 ]; then
+            delay=20
+          fi
+        done
+        SH
+        chmod +x "${RUNNER_TEMP}/registry-retry"

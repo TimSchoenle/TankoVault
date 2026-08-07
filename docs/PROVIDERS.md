@@ -64,7 +64,9 @@ score against, so the effect reached matching and search rather than stopping at
 
 `www.kunmanga.co.uk` is Madara-shaped in its markup but deviates in two ways a selector
 cannot express, so it ships [`KunMangaAdapter`](../crates/adapters/src/kunmanga.rs), which
-delegates latest/series parsing to the generic config adapter and overrides the rest.
+delegates latest/series parsing to the generic config adapter and overrides the rest. A third
+deviation *is* expressible as selectors and stays in the preset config — see
+[the latest feed](#the-latest-feed-is-not-madara-shaped) below.
 
 **1. Chapters come from a JSON API, not the HTML.** The `div.wp-manga-chapter` rows are
 rendered client-side; a non-JS fetch of a series page yields zero chapters. `fetch_chapters`
@@ -111,8 +113,34 @@ itself a normalised form of the real title it collapses to the same matching key
 per-series enrichment task then overwrites it with the real one.
 
 Covers use a plain `src` on a separate CDN host (`cdn.zinmanga1.com`), so the default
-`img@src` works unchanged. Only `series.release` is overridden (the year is only reliably
-available as a link into the `manga-release` archive).
+`img@src` works unchanged. `series.release` is overridden because the year is only reliably
+available as a link into the `manga-release` archive.
+
+### The latest feed is not Madara-shaped
+
+The home page renders no `div.page-item-detail`. Inheriting the Madara `latest` defaults
+therefore selected nothing, `list_latest` returned an empty feed, and **every fast scan
+silently did no work** — an empty feed is a valid answer, so nothing failed and nothing was
+logged. Full scans still ran, so the symptom was new chapters arriving late rather than not
+at all, which is why it survived until an adapter dry run showed `"latest": {"items": []}`.
+
+The site's updates are the home page's "Manga Updates!" slider, and the preset selects it:
+
+| Field | Value | Why |
+|---|---|---|
+| `latest.item` | `div.manga-item` | one per slider entry |
+| `latest.title` | `img@alt` | the anchor wraps only the cover image, so there is no link text |
+| `latest.chapter` | `null` | the slider carries no chapter label |
+
+`null` is deliberate rather than omitted: the config merges onto the Madara defaults, so
+leaving the key out keeps the inherited `span.chapter a` — a rule that reads as live but can
+never match. The resulting `latest_chapter` of `0.0` costs nothing, because both callers of
+`list_latest` (`TaskKind::LatestFeed` and `run_fast_scan_inline`) re-ingest by `path` and
+read neither the title nor the chapter number.
+
+Because `seed-providers` is create-only, this preset change reaches **new installations
+only**. An existing deployment keeps the config already in its `providers` row until an
+operator updates it from the admin console.
 
 > **Note on body size.** A shard is ~2.9 MB as raw XML, comfortably under the fetch stack's
 > 8 MB cap. When a fetch has to be solved, the headless browser returns an XML *viewer* page

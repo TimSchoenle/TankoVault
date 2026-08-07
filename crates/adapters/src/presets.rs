@@ -73,6 +73,20 @@ pub fn builtin() -> Vec<ProviderPreset> {
             config: json!({
                 // No `catalog` block: HTML listing is server-clamped at page 100 with an
                 // always-rendered "Next", so `list_catalog` walks the sitemap shards instead.
+                "latest": {
+                    // This theme renders no `div.page-item-detail`, so the inherited Madara
+                    // defaults matched nothing and every fast scan read an empty feed. The
+                    // site's updates live in the home page's "Manga Updates!" slider.
+                    "item": "div.manga-item",
+                    // The anchor wraps only the cover image: no link text, so the title is
+                    // readable solely from the image's `alt` (site suffix and all).
+                    "title": "img@alt",
+                    // Explicitly none, to override the inherited `span.chapter a`: the slider
+                    // carries no chapter label, and a selector that can never match reads as a
+                    // live rule rather than an absent one. Costs nothing downstream — both
+                    // consumers of `list_latest` re-ingest by `path` and ignore the rest.
+                    "chapter": null
+                },
                 "series": {
                     // Only reliable release-year signal on this site: one link into the year
                     // archive.

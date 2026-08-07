@@ -18,16 +18,27 @@ struct SiteFetcher {
     /// Bodies for kunmanga's sitemap index and its series shards; unused elsewhere.
     sitemap_index: &'static str,
     sitemap_shard: &'static str,
+    /// Body for the site root, which is where the `latest` feed is read from.
+    home: &'static str,
     /// Body for catalogue pages after page 1, when supplied; expresses walking off the end
     /// of a catalogue whose only end-of-list signal is an empty page.
     catalog_past_end: &'static str,
 }
 
+/// Whether `url` addresses the site root — where every preset reads its `latest` feed —
+/// rather than any document below it.
+fn is_site_root(url: &str) -> bool {
+    url.split_once("://")
+        .is_some_and(|(_, rest)| !rest.trim_end_matches('/').contains('/'))
+}
+
 #[async_trait]
 impl Fetcher for SiteFetcher {
     async fn get(&self, req: FetchRequest) -> Result<FetchResponse, FetchError> {
-        // Route by URL shape: sitemap, chapter API, catalogue listing, else series page.
-        let body = if req.url.contains("/sitemap-comic-") {
+        // Route by URL shape: sitemap, chapter API, catalogue listing, root, else series page.
+        let body = if is_site_root(&req.url) {
+            self.home
+        } else if req.url.contains("/sitemap-comic-") {
             self.sitemap_shard
         } else if req.url.ends_with("/sitemap.xml") {
             self.sitemap_index
@@ -77,6 +88,7 @@ const KUNMANGA_SERIES: &str = include_str!("../fixtures/kunmanga/series.html");
 const KUNMANGA_CHAPTERS_API: &str = include_str!("../fixtures/kunmanga/chapters.json");
 const KUNMANGA_SITEMAP_INDEX: &str = include_str!("../fixtures/kunmanga/sitemap-index.xml");
 const KUNMANGA_SITEMAP_SHARD: &str = include_str!("../fixtures/kunmanga/sitemap-comic.xml");
+const KUNMANGA_HOME: &str = include_str!("../fixtures/kunmanga/home.html");
 
 /// The fixture set for kunmanga: every document any of its adapter calls can reach.
 fn kunmanga_fixtures() -> SiteFetcher {
@@ -86,6 +98,7 @@ fn kunmanga_fixtures() -> SiteFetcher {
         chapters_api: KUNMANGA_CHAPTERS_API,
         sitemap_index: KUNMANGA_SITEMAP_INDEX,
         sitemap_shard: KUNMANGA_SITEMAP_SHARD,
+        home: KUNMANGA_HOME,
         // Unused: kunmanga enumerates from sitemap shards, never from `/manga/page/`.
         ..SiteFetcher::default()
     }
@@ -217,6 +230,31 @@ async fn kunmanga_catalog_terminates_after_the_last_shard() {
     let past_end = adapter.list_catalog(&ctx, 6).await.expect("catalog parses");
     assert!(past_end.items.is_empty());
     assert!(!past_end.has_next);
+}
+
+/// Bug: kunmanga inherited the Madara `latest` defaults, which select `div.page-item-detail`
+/// on `/`. This theme renders no such element anywhere, so `list_latest` returned an empty
+/// feed and every fast scan did nothing — silently, since an empty feed is not an error. The
+/// site's updates are the home page's "Manga Updates!" slider, so the preset selects that.
+#[tokio::test]
+async fn kunmanga_latest_reads_the_home_page_updates_slider() {
+    let (adapter, ctx) = preset_adapter("kunmanga", kunmanga_fixtures());
+    let updates = adapter.list_latest(&ctx).await.expect("latest parses");
+
+    assert_eq!(updates.len(), 3, "the slider's items are the feed");
+    // `path` is the only field either consumer of the feed reads, so it carries the fix.
+    assert_eq!(
+        updates.iter().map(|u| u.path.as_str()).collect::<Vec<_>>(),
+        [
+            "/manga/jiang-si-xianshengg",
+            "/manga/jijou-o-shiranai-tenkousei-ga-guigui-kuru",
+            "/manga/nanji-no-teki-wo-aiseyo",
+        ]
+    );
+    // Titles come off the image `alt`, the only text the slider carries.
+    assert_eq!(updates[0].title, "Mr. Zombie on KunManga");
+    // The slider publishes no chapter label; the feed must still parse without one.
+    assert!(updates.iter().all(|u| u.latest_chapter == 0.0));
 }
 
 #[tokio::test]

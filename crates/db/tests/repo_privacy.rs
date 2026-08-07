@@ -45,6 +45,11 @@ const EXPORTED: &[(&str, &str)] = &[
     // not an argument for leaving it out of a subject access request, where "which
     // recommendations did this system put in front of me" is the question being asked.
     ("user_recommendations", "recommendation_shelf"),
+    // The reader's global source order — which providers they prefer a series to open on, and in
+    // what sequence. A preference they entered, not an inference, and the export resolves each
+    // row to its provider slug so it says which *sites* rather than which uuids. The per-series
+    // half of the same preference is a column on `watchlist_entries`, exported with those rows.
+    ("user_provider_priority", "source_preferences"),
 ];
 
 /// Tables referencing a subject that are deliberately not exported, with the reason.

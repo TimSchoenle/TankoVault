@@ -9,7 +9,10 @@ mod row;
 mod toolbar;
 
 use crate::api;
-use crate::components::{AuthRequired, ErrorBox, FocusTargets, OutcomeLine, SkeletonRows};
+use crate::components::{
+    unmeasured, use_grid_fit, AuthRequired, ErrorBox, FocusTargets, GridFitProbe, OutcomeLine,
+    SkeletonRows,
+};
 use crate::hooks::{use_busy, use_outcome, use_reload};
 use crate::i18n::{use_i18n, Translator};
 use crate::icons::{Ic, Icon};
@@ -27,9 +30,20 @@ use row::{GroupHeader, RowCtx, WatchRow};
 use std::collections::HashSet;
 use toolbar::{FilterBar, StatusTabs};
 
-/// Rows fetched per page. The list pages on a scroll sentinel, so this is the size of one
-/// bite, not of the list.
+/// Rows fetched per page in the list view. The list pages on a scroll sentinel, so this is the
+/// size of one bite, not of the list. The cover grid sizes its own bite from [`PAGE_ROWS`],
+/// because a bite that is not a whole number of tiles ends every page in a half-empty row.
 const PAGE_SIZE: i64 = 60;
+
+/// Rows of covers one bite of the grid view holds; the window's width decides the rest.
+const PAGE_ROWS: usize = 8;
+
+/// The longest prefix this list will hold, matching the API's own `limit` cap.
+///
+/// Past it the request keeps growing while the answer does not, and `has_more` — which only
+/// looks at how much of `total` is loaded — stayed true, so the sentinel went on asking for a
+/// page it already had.
+const MAX_ROWS: i64 = 200;
 
 /// The largest selection a bulk call accepts, mirroring the API's own cap. Enforced here so
 /// `Select all` on a 564-row tab does not build a request the server will refuse.
@@ -142,8 +156,8 @@ impl Request {
     /// Rows to ask for: every page reached so far, refetched as one complete prefix rather than
     /// appended — this avoids the accumulate-and-dedupe bugs an append-only cache has (a filter
     /// change racing an in-flight page, a `reload` appending a duplicate).
-    fn limit(&self) -> i64 {
-        PAGE_SIZE.saturating_mul(self.pages)
+    fn limit(&self, bite: i64) -> i64 {
+        bite.saturating_mul(self.pages).min(MAX_ROWS)
     }
 }
 
@@ -185,6 +199,8 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
     let mut focus = use_signal(|| 0usize);
     let menu_for = use_signal(|| Option::<SeriesId>::None);
     let focus_targets = crate::components::use_focus_targets();
+    // Only the cover grid has columns to fill; the list view is one row per title at any width.
+    let fit = use_grid_fit(PAGE_ROWS);
 
     // Route is the source of truth for view state, so a route change restarts paging. Guarded
     // on inequality, or `Signal::set`'s unconditional invalidation double-fetches on first render.
@@ -199,6 +215,13 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
     let page = use_resource(move || {
         reload.track();
         let req = request.read().clone();
+        // In the grid view the bite is whole rows of tiles, and the fetch waits for the first
+        // measurement rather than firing a request the corrected one would immediately replace.
+        let bite = if req.query.view == View::Grid {
+            fit.page_size().and_then(|size| i64::try_from(size).ok())
+        } else {
+            Some(PAGE_SIZE)
+        };
         let client = api.client();
         let authed = session.is_authenticated();
         async move {
@@ -223,13 +246,16 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
                     next_cursor: None,
                 });
             }
+            let Some(bite) = bite else {
+                return unmeasured().await;
+            };
             let mut builder = client
                 .watchlist()
                 .sort(req.query.sort.token())
                 .order(req.query.effective_order().token())
                 .unread_only(req.query.unread_only)
                 .source_issues(req.query.source_issues)
-                .limit(req.limit())
+                .limit(req.limit(bite))
                 .offset(0);
             if let Some(status) = req.query.status_token() {
                 builder = builder.status(status);
@@ -333,7 +359,8 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
     let snapshot = board.read().clone();
     let counts = snapshot.counts.clone();
     let loaded = snapshot.items.len();
-    let has_more = i64::try_from(loaded).unwrap_or(i64::MAX) < snapshot.total;
+    let loaded_rows = i64::try_from(loaded).unwrap_or(i64::MAX);
+    let has_more = loaded_rows < snapshot.total && loaded_rows < MAX_ROWS;
     let grouped = query.sort.groups_by_release();
     let entries = layout(&snapshot.items, grouped);
 
@@ -378,6 +405,12 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
             source_issues: counts.as_ref().map_or(0, |c| c.source_issues),
             on_change: go,
             on_change_quiet: go_replace,
+        }
+
+        // Mounted for the whole grid view, skeleton included: its first measurement is what
+        // releases the parked fetch above.
+        if query.view == View::Grid {
+            GridFitProbe { fit, tiles: true }
         }
 
         if let Some(Err(message)) = &*page.read() {
@@ -734,5 +767,24 @@ mod tests {
     #[test]
     fn a_skewed_clock_does_not_bury_a_fresh_release() {
         assert_eq!(bucket_of_age(-60_000.0), Bucket::Today);
+    }
+
+    /// The prefix must stop growing at the API's own `limit` cap. Past it the server answers the
+    /// same 200 rows however many pages are asked for, so the request got steadily more
+    /// expensive while `has_more` — computed from `total` — stayed true and the sentinel kept
+    /// firing. `has_more` is capped in the same place; the two must not drift apart.
+    #[test]
+    fn the_prefix_request_stops_at_the_api_cap() {
+        let deep = Request {
+            query: WatchlistQuery::default(),
+            pages: 40,
+        };
+        assert_eq!(deep.limit(PAGE_SIZE), MAX_ROWS);
+
+        let first = Request {
+            query: WatchlistQuery::default(),
+            pages: 1,
+        };
+        assert_eq!(first.limit(PAGE_SIZE), PAGE_SIZE);
     }
 }

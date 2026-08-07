@@ -5,7 +5,10 @@ mod active;
 mod filters;
 
 use crate::api;
-use crate::components::{async_view, CoverCard, Pagination, SkeletonGrid};
+use crate::components::{
+    async_view, unmeasured, use_grid_fit, use_page_rescale, CoverCard, GridFitProbe, Pagination,
+    SkeletonGrid,
+};
 use crate::hooks::use_reload;
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -15,8 +18,9 @@ use dioxus::prelude::*;
 use filters::FilterPanel;
 use progenitor_client::ResponseValue;
 
-/// How many series a page of the grid shows.
-const PAGE_SIZE: usize = 24;
+/// How many *rows* of covers a page of the grid shows. How many series that is depends on how
+/// many columns the window fits — see [`crate::components::use_grid_fit`].
+const PAGE_ROWS: usize = 4;
 /// Lowest / highest release year the panel's slider exposes; sending a bound only when the
 /// user narrows past these avoids the server dropping series with an unknown year.
 const YEAR_MIN: i32 = 1970;
@@ -100,6 +104,11 @@ pub(crate) fn Discover() -> Element {
     let reload = use_reload();
     let i18n = use_i18n();
     let api = api::use_api();
+    // The page is as many whole rows as the results column is wide, so the last row of a page is
+    // never a run of empty cells. A page index means nothing without the size it was computed
+    // against, so it is rescaled whenever that size moves — opening the filter panel is enough.
+    let fit = use_grid_fit(PAGE_ROWS);
+    use_page_rescale(fit, page);
 
     // Degrades to an empty facet on failure rather than blocking the screen — a missing
     // tag/provider filter is cheaper than an error state.
@@ -152,9 +161,15 @@ pub(crate) fn Discover() -> Element {
             };
             let sort = sort.read().value().to_owned();
             let page = i64::try_from(*page.read()).unwrap_or(0);
+            let limit = fit.page_size();
             let client = api.client();
 
             async move {
+                // Parked, not guessed: a request sized for the wrong grid would be answered and
+                // then thrown away by the corrected one, doubling this screen's query load.
+                let Some(limit) = limit else {
+                    return unmeasured().await;
+                };
                 let mut builder = client.list();
                 if let Some(ct) = content_type {
                     builder = builder.content_type(ct);
@@ -182,7 +197,7 @@ pub(crate) fn Discover() -> Element {
                 }
                 builder = builder.sort(sort);
                 builder = builder.page(page);
-                builder = builder.limit(i64::try_from(PAGE_SIZE).unwrap_or(24));
+                builder = builder.limit(i64::try_from(limit).unwrap_or(24));
 
                 builder
                     .send()
@@ -220,11 +235,11 @@ pub(crate) fn Discover() -> Element {
     let content = async_view(
         &resource,
         reload,
-        || rsx! { SkeletonGrid { count: 12 } },
+        || rsx! { SkeletonGrid { count: fit.page_size_or_default() } },
         |page_data| {
             let total = usize::try_from(page_data.total).unwrap_or(0);
             let has_next = page_data.next_cursor.is_some();
-            let pages = total.div_ceil(PAGE_SIZE).max(1);
+            let pages = total.div_ceil(fit.page_size_or_default()).max(1);
             let current = *page.read();
 
             if page_data.items.is_empty() {
@@ -318,7 +333,12 @@ pub(crate) fn Discover() -> Element {
                     on_reset: move |()| clear_all(types, statuses, inc, exc, provider, page),
                 }
             }
-            div { {content} }
+            div {
+                // Inside the results column, and outside the `content` branches: this is what
+                // measures the grid, and the fetch is parked until it reports.
+                GridFitProbe { fit }
+                {content}
+            }
         }
     }
 }

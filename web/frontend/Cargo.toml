@@ -222,6 +222,15 @@ uuid = { version = "1", features = ["js"] }
 webauthn-authenticator-rs = { version = "=0.6.1-dev", features = [
     "win10",
 ], optional = true }
+# The `HKCU\…\Run` value behind `platform::set_autostart`, which the NSIS installer's "start when
+# I sign in" checkbox writes too. The only alternative Windows offers is a shortcut in the Startup
+# folder, and a `.lnk` is a COM object — unreachable from a crate that `forbid`s unsafe.
+#
+# Microsoft's own safe wrapper, and it costs one crate rather than a subtree: all three of its
+# dependencies (`windows-link`, `windows-result`, `windows-strings`) are already in this graph
+# below `keyring` and `notify-rust`. The dependency-free option was shelling out to `reg.exe` and
+# reading exit codes, which is a parser for output that is not a contract.
+windows-registry = { version = "0.6", optional = true }
 
 # One of `web` and `desktop` must be on and both may not be; `src/platform/mod.rs` says so to the
 # compiler, because a violation otherwise surfaces as a wall of unrelated resolution errors.
@@ -255,9 +264,11 @@ desktop = [
     "dep:sha2",
     "dep:sys-locale",
     "dep:tokio",
-    # Resolves to nothing off Windows — the dependency is declared per-target — so this enables
-    # Windows Hello where there is one and changes nothing where there is not.
+    # Both resolve to nothing off Windows — the dependencies are declared per-target — so these
+    # enable Windows Hello and the `Run`-key autostart where there is one, and change nothing
+    # where there is not. Linux gets its autostart entry from `std::fs`.
     "dep:webauthn-authenticator-rs",
+    "dep:windows-registry",
     # `bytes_stream()`, which is what the SSE parser above is fed.
     "reqwest/stream",
     # The refresh credential is an httpOnly cookie. On web the browser owns the jar and this is

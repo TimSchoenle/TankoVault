@@ -42,6 +42,7 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(frontend::no_unsafe_eval(root));
     findings.extend(frontend::no_dangerous_inner_html(root));
     findings.extend(frontend::shell_loads_nothing_off_origin(root)?);
+    findings.extend(frontend::autostart_entry_agrees(root)?);
     findings.extend(secrets::published_secrets_are_refused(root)?);
     findings.extend(deploy::dockerfile_ships_every_workspace_binary(root)?);
     findings.extend(deploy::deploy_blacklist_is_honoured(root)?);
@@ -62,7 +63,7 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(gitattributes::generated_artefacts_check_out_as_lf(root)?);
 
     if findings.is_empty() {
-        println!("repo-lint: 18 rules, no violations");
+        println!("repo-lint: 19 rules, no violations");
         return Ok(());
     }
 

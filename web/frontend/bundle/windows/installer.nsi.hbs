@@ -1,0 +1,220 @@
+; TankoVault's Windows installer script — a Handlebars template rendered by `dx bundle`, wired
+; up through `[bundle.windows.nsis] template` in `Dioxus.toml`.
+;
+; It is a fork of the one embedded in dioxus-cli 0.7.10 (`src/bundler/windows.rs`,
+; `NSIS_TEMPLATE`), which offers the reader no choices at all: it installs, drops a desktop
+; shortcut whether or not one is wanted, and exits. Everything below that is not one of the
+; three options is that template unchanged, so a `dx` upgrade can be diffed against it.
+;
+; **Every `{{…}}` is supplied by `dx` and the set is closed** — it builds the map in
+; `Bundler::build_nsis`, and Handlebars runs in non-strict mode, so a typo'd name renders as
+; nothing rather than failing the build. Check a new one against that function before using it.
+;
+; Reader-facing choices, and why each defaults the way it does:
+;
+;   * **Desktop shortcut** — on. Replaces the unconditional one the stock template created, so
+;     the default is what shipped before and the checkbox only takes something away.
+;   * **Start with Windows** — off. An app that adds itself to startup uninvited is a thing
+;     readers uninstall. The same switch lives in the app (`crate::platform::set_autostart`),
+;     writing the same registry value, so it can be turned on later without reinstalling.
+;   * **Run after install** — on, via MUI's finish page.
+
+!include "MUI2.nsh"
+!include "FileFunc.nsh"
+!include "LogicLib.nsh"
+!include "Sections.nsh"
+!include "x64.nsh"
+
+; Basic installer attributes
+Name "{{product_name}}"
+OutFile "{{output_path}}"
+Unicode true
+{{#if install_mode_per_machine}}
+InstallDir "$PROGRAMFILES\{{product_name}}"
+{{else}}
+InstallDir "$LOCALAPPDATA\Programs\{{product_name}}"
+{{/if}}
+
+; Request appropriate privileges
+{{#if install_mode_per_machine}}
+RequestExecutionLevel admin
+{{else if install_mode_both}}
+RequestExecutionLevel admin
+{{else}}
+RequestExecutionLevel user
+{{/if}}
+
+; Version information
+VIProductVersion "{{version}}.0"
+VIAddVersionKey "ProductName" "{{product_name}}"
+VIAddVersionKey "FileVersion" "{{version}}"
+VIAddVersionKey "ProductVersion" "{{version}}"
+VIAddVersionKey "FileDescription" "{{short_description}}"
+{{#if publisher}}
+VIAddVersionKey "CompanyName" "{{publisher}}"
+{{/if}}
+{{#if copyright}}
+VIAddVersionKey "LegalCopyright" "{{copyright}}"
+{{/if}}
+
+; MUI settings
+!define MUI_ABORTWARNING
+{{#if installer_icon}}
+!define MUI_ICON "{{installer_icon}}"
+{{/if}}
+{{#if header_image}}
+!define MUI_HEADERIMAGE
+!define MUI_HEADERIMAGE_BITMAP "{{header_image}}"
+{{/if}}
+{{#if sidebar_image}}
+!define MUI_WELCOMEFINISHPAGE_BITMAP "{{sidebar_image}}"
+{{/if}}
+
+; Every option is a one-line component, so the wide description pane the default layout reserves
+; is empty space between three checkboxes and the Next button.
+!define MUI_COMPONENTSPAGE_SMALLDESC
+
+; The finish page's "run it now" checkbox, ticked by default.
+;
+; It launches with the installer's own token, which is only the reader's because this bundle
+; installs per user and therefore runs unelevated — see `install_mode` in `Dioxus.toml`, which
+; states that rather than inheriting it. Switching to `PerMachine` would hand the app an
+; administrator token on first run and this define would have to go, or go through a
+; run-as-user shim.
+!define MUI_FINISHPAGE_RUN "$INSTDIR\{{main_binary_name}}"
+
+; Pages
+{{#if license}}
+!insertmacro MUI_PAGE_LICENSE "{{license}}"
+{{/if}}
+!insertmacro MUI_PAGE_COMPONENTS
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!insertmacro MUI_PAGE_FINISH
+
+; Uninstaller pages
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+
+; Language
+!insertmacro MUI_LANGUAGE "English"
+{{#each additional_languages}}
+!insertmacro MUI_LANGUAGE "{{this}}"
+{{/each}}
+
+; The value name under HKCU\...\Run, and what Task Manager's Startup tab lists the entry as.
+;
+; `crate::platform::desktop::AUTOSTART_VALUE` writes the same name at the same key: the in-app
+; switch and this checkbox are two views of one registry value, not two settings that have to be
+; kept in step. Renaming it here without renaming it there orphans whatever the other one wrote.
+!define AUTOSTART_VALUE "TankoVault"
+!define AUTOSTART_KEY "Software\Microsoft\Windows\CurrentVersion\Run"
+
+; Installer section
+Section "{{product_name}}" SecMain
+    SectionIn RO
+    SetOutPath $INSTDIR
+
+    ; Install main binary
+    File "{{main_binary_path}}"
+
+    ; Install resources
+    {{#each staged_files}}
+    SetOutPath "$INSTDIR{{#if this.target_dir}}\{{this.target_dir}}{{/if}}"
+    File "{{this.source}}"
+    {{/each}}
+
+    SetOutPath $INSTDIR
+
+    ; Create uninstaller
+    WriteUninstaller "$INSTDIR\uninstall.exe"
+
+    ; Create Start Menu shortcuts
+    CreateDirectory "$SMPROGRAMS\{{start_menu_folder}}"
+    CreateShortcut "$SMPROGRAMS\{{start_menu_folder}}\{{product_name}}.lnk" "$INSTDIR\{{main_binary_name}}"
+    CreateShortcut "$SMPROGRAMS\{{start_menu_folder}}\Uninstall {{product_name}}.lnk" "$INSTDIR\uninstall.exe"
+
+    ; Write registry keys for Add/Remove Programs
+    WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{bundle_id}}" \
+        "DisplayName" "{{product_name}}"
+    WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{bundle_id}}" \
+        "UninstallString" '"$INSTDIR\uninstall.exe"'
+    WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{bundle_id}}" \
+        "DisplayVersion" "{{version}}"
+    {{#if publisher}}
+    WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{bundle_id}}" \
+        "Publisher" "{{publisher}}"
+    {{/if}}
+    WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{bundle_id}}" \
+        "InstallLocation" "$INSTDIR"
+
+    ; Get installed size
+    ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
+    IntFmt $0 "0x%08X" $0
+    WriteRegDWORD SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{bundle_id}}" \
+        "EstimatedSize" "$0"
+
+    {{#if install_webview}}
+    ; WebView2 installation
+    {{webview_install_code}}
+    {{/if}}
+
+SectionEnd
+
+Section "Add a desktop shortcut" SecDesktop
+    CreateShortcut "$DESKTOP\{{product_name}}.lnk" "$INSTDIR\{{main_binary_name}}"
+SectionEnd
+
+; `/o`: present but unticked. See the header for why this one, alone, is opt-in.
+;
+; HKCU rather than SHCTX even under a per-machine install: "start when *I* log in" is a property
+; of the reader who ran the installer, and the HKLM equivalent would start the app for every
+; account on the machine.
+Section /o "Start {{product_name}} when I sign in" SecAutostart
+    WriteRegStr HKCU "${AUTOSTART_KEY}" "${AUTOSTART_VALUE}" '"$INSTDIR\{{main_binary_name}}"'
+SectionEnd
+
+; Hidden (the leading `-`), and last because `${SecDesktop}` is only defined from the line that
+; declares it onwards.
+Section "-Reconcile"
+    ; An unticked box on a *re-install* has to remove what a previous run created, or unchecking
+    ; it appears to do nothing. Safe under the silent re-install `crate::update` performs to
+    ; apply an update: no components page runs there, so every section keeps its default state
+    ; and this one is selected.
+    ${IfNot} ${SectionIsSelected} ${SecDesktop}
+        Delete "$DESKTOP\{{product_name}}.lnk"
+    ${EndIf}
+
+    ; Deliberately no matching branch for ${SecAutostart}. It defaults to unselected, so one
+    ; would fire on every silent update and switch off a reader who had turned autostart on —
+    ; either in the app or in a previous install. Turning it *off* is the app's job, and the
+    ; uninstaller's.
+SectionEnd
+
+!insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecMain} "{{short_description}}"
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} "Put a {{product_name}} shortcut on the desktop."
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecAutostart} "Launch {{product_name}} automatically when you sign in to Windows. You can change this later in the app's settings."
+!insertmacro MUI_FUNCTION_DESCRIPTION_END
+
+{{#if installer_hooks}}
+!include "{{installer_hooks}}"
+{{/if}}
+
+; Uninstaller section
+Section "Uninstall"
+    ; Remove files
+    RMDir /r "$INSTDIR"
+
+    ; Remove Start Menu items
+    RMDir /r "$SMPROGRAMS\{{start_menu_folder}}"
+
+    ; Remove Desktop shortcut
+    Delete "$DESKTOP\{{product_name}}.lnk"
+
+    ; Remove the autostart entry, however it was set — installer checkbox or in-app switch.
+    DeleteRegValue HKCU "${AUTOSTART_KEY}" "${AUTOSTART_VALUE}"
+
+    ; Remove registry keys
+    DeleteRegKey SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{bundle_id}}"
+SectionEnd

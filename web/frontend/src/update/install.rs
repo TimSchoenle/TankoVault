@@ -124,13 +124,53 @@ fn classify_windows(
     local_app_data: Option<&Path>,
     program_files: &[PathBuf],
 ) -> Flavour {
-    if local_app_data.is_some_and(|dir| exe.starts_with(dir)) {
+    if local_app_data.is_some_and(|dir| is_under(exe, dir)) {
         return Flavour::Nsis;
     }
-    if program_files.iter().any(|dir| exe.starts_with(dir)) {
+    if program_files.iter().any(|dir| is_under(exe, dir)) {
         return Flavour::Msi;
     }
     Flavour::Portable
+}
+
+/// Whether `path` sits inside `dir`, by Windows' rules for what counts as the same path.
+///
+/// **Not `Path::starts_with`**, for two separate reasons, and each of them is a real
+/// misclassification rather than tidying:
+///
+/// * `Path::starts_with` compares *components*, and what a component is depends on the host. A
+///   backslash is not a separator off Windows, so the whole of `C:\Program Files\…` is one opaque
+///   component there — which made every Windows fixture classify as `Portable` on the Linux runner
+///   that gates this file.
+/// * Windows paths are case-insensitive, and `Path`'s component comparison is not. An executable
+///   reported as `C:\PROGRAM FILES\Tankovault\…` — which is what a short-name or an
+///   all-caps environment variable yields — is under `%ProgramFiles%`, and comparing it verbatim
+///   says it is not.
+///
+/// Separators are folded too, because Windows accepts `/` in a path and `current_exe` is not the
+/// only thing that produces one.
+///
+/// A path that is not valid UTF-8 is compared lossily. The worst outcome is `Portable`, which is
+/// the answer that touches nothing.
+fn is_under(path: &Path, dir: &Path) -> bool {
+    let normalise = |value: &Path| {
+        value
+            .to_string_lossy()
+            .to_ascii_lowercase()
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_owned()
+    };
+    let dir = normalise(dir);
+    // An empty directory would otherwise match everything: an unset `%LOCALAPPDATA%` arrives here
+    // as `Some("")` if it is ever read without a filter, and "every path is under it" is the one
+    // answer that installs the wrong package.
+    if dir.is_empty() {
+        return false;
+    }
+    // The trailing separator is what stops `C:/Program Files (x86)` matching under
+    // `C:/Program Files`.
+    normalise(path).starts_with(&format!("{dir}/"))
 }
 
 /// Which Linux packaging produced a copy running from `exe`.
@@ -444,39 +484,84 @@ fn launch(plan: &Plan) -> Result<Infallible, &'static str> {
 mod tests {
     use super::*;
 
+    fn local_app_data() -> PathBuf {
+        PathBuf::from(r"C:\Users\reader\AppData\Local")
+    }
+
+    fn program_files() -> Vec<PathBuf> {
+        vec![
+            PathBuf::from(r"C:\Program Files"),
+            PathBuf::from(r"C:\Program Files (x86)"),
+        ]
+    }
+
+    fn windows(exe: &str) -> Flavour {
+        classify_windows(Path::new(exe), Some(&local_app_data()), &program_files())
+    }
+
     /// The two Windows installers are told apart by where they land, and handing the wrong one to
     /// an existing install produces a **second** install rather than an upgrade — so anything not
     /// recognisably one or the other has to be left alone.
     #[test]
     fn a_windows_install_is_classified_by_its_directory() {
-        let local = PathBuf::from(r"C:\Users\reader\AppData\Local");
-        let program_files = vec![
-            PathBuf::from(r"C:\Program Files"),
-            PathBuf::from(r"C:\Program Files (x86)"),
-        ];
         assert_eq!(
-            classify_windows(
-                Path::new(r"C:\Users\reader\AppData\Local\Tankovault\tankovault.exe"),
-                Some(&local),
-                &program_files,
-            ),
+            windows(r"C:\Users\reader\AppData\Local\Tankovault\tankovault.exe"),
             Flavour::Nsis
         );
         assert_eq!(
-            classify_windows(
-                Path::new(r"C:\Program Files\Tankovault\tankovault.exe"),
-                Some(&local),
-                &program_files,
-            ),
+            windows(r"C:\Program Files\Tankovault\tankovault.exe"),
             Flavour::Msi
         );
         assert_eq!(
-            classify_windows(
-                Path::new(r"D:\unpacked\tankovault.exe"),
-                Some(&local),
-                &program_files,
-            ),
-            Flavour::Portable
+            windows(r"C:\Program Files (x86)\Tankovault\tankovault.exe"),
+            Flavour::Msi
+        );
+        assert_eq!(windows(r"D:\unpacked\tankovault.exe"), Flavour::Portable);
+    }
+
+    /// The rule holds on a Linux runner, which is the only place it is ever gated.
+    ///
+    /// It was written with `Path::starts_with`, whose idea of a component is the *host's*: off
+    /// Windows a backslash is not a separator, so every path above was one opaque component and
+    /// every case classified as `Portable`. The rule passed on a Windows workstation and failed in
+    /// CI, which is exactly the wrong way round for a rule about Windows.
+    #[test]
+    fn the_windows_rule_does_not_depend_on_the_host_path_semantics() {
+        assert!(is_under(
+            Path::new(r"C:\Program Files\Tankovault\tankovault.exe"),
+            Path::new(r"C:\Program Files"),
+        ));
+        // Forward slashes are legal in a Windows path, and mixed separators have to fold together.
+        assert!(is_under(
+            Path::new("C:/Program Files/Tankovault/tankovault.exe"),
+            Path::new(r"C:\Program Files"),
+        ));
+        // A sibling whose name merely starts the same is not inside it.
+        assert!(!is_under(
+            Path::new(r"C:\Program Files (x86)\Tankovault\tankovault.exe"),
+            Path::new(r"C:\Program Files"),
+        ));
+        // The directory itself is not "under" itself; an executable is always in a subdirectory.
+        assert!(!is_under(
+            Path::new(r"C:\Program Files"),
+            Path::new(r"C:\Program Files"),
+        ));
+        // An unset environment variable must not match every path in existence.
+        assert!(!is_under(Path::new(r"C:\anywhere\at\all"), Path::new("")));
+    }
+
+    /// Windows paths are case-insensitive and `Path`'s comparison is not, so an executable
+    /// reported in a different case than the environment variable it sits under — an all-caps
+    /// `%ProgramFiles%`, a short name — was classified as portable and never updated.
+    #[test]
+    fn a_windows_path_matches_regardless_of_case() {
+        assert_eq!(
+            windows(r"C:\PROGRAM FILES\Tankovault\tankovault.exe"),
+            Flavour::Msi
+        );
+        assert_eq!(
+            windows(r"c:\users\reader\appdata\local\Tankovault\tankovault.exe"),
+            Flavour::Nsis
         );
     }
 

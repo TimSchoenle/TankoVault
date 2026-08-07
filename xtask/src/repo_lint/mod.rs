@@ -56,6 +56,7 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(metrics::every_service_serves_metrics(root)?);
     findings.extend(workflows::concurrency_groups_hold_one_workflow(root)?);
     findings.extend(workflows::the_oidc_token_carries_no_newline(root)?);
+    findings.extend(workflows::the_build_epoch_is_one_constant(root)?);
     findings.extend(floors::coverage_floors_parse(root)?);
     findings.extend(gitattributes::generated_artefacts_check_out_as_lf(root)?);
 

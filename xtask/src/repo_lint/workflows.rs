@@ -460,6 +460,157 @@ fn oidc_token_writes(text: &str) -> Vec<(usize, bool)> {
         .collect()
 }
 
+/// **Every workflow that builds an image declares one constant `SOURCE_DATE_EPOCH`, at workflow
+/// level, and nothing else names it.** buildx propagates the variable from its environment into
+/// the solve as `build-arg:SOURCE_DATE_EPOCH`, so its value is part of the cache key of every
+/// stage in `deploy/docker/Dockerfile`. There is no channel that reaches the exporter — where
+/// `rewrite-timestamp=true` needs it — without also reaching the build.
+///
+/// So a *derived* epoch cannot be reproducibility for free; it is a guaranteed cache miss. The
+/// repository has now paid for that twice, in opposite directions. Passed as
+/// `--build-arg SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)` it went to the warm-up and both
+/// publishing builds, which agreed with each other and with nothing `ci.yml` wrote: the warm-up
+/// cold-compiled the workspace on every release, 31 minutes. Moved to a step `env:` on the
+/// publishing build alone — on the belief that an environment value stops at the exporter — it
+/// inverted the failure: the warm-up became a 28-second import and each of the eighteen legs
+/// recompiled the whole workspace instead, 24 minutes apiece (release v1.5.2). Both spellings are
+/// the same wire format, which is why this rule reads the value rather than the syntax.
+///
+/// The three checks are one rule because any of them alone is satisfiable while broken: agreeing
+/// on `${{ steps.epoch.outputs.value }}` in both files is textual agreement and per-commit drift,
+/// and a correct workflow-level constant is undone by one step that overrides it.
+pub(super) fn the_build_epoch_is_one_constant(root: &Path) -> anyhow::Result<Vec<Finding>> {
+    const RULE: &str = "build-epoch-is-one-constant";
+    const WORKFLOWS: &str = ".github/workflows";
+    /// Present in a workflow that builds images, and in no other.
+    const BUILD_ACTION: &str = "docker/build-push-action";
+    const EPOCH: &str = "SOURCE_DATE_EPOCH";
+
+    let dir = root.join(WORKFLOWS);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        anyhow::bail!("repo-lint: cannot read {}", dir.display());
+    };
+
+    let mut findings = Vec::new();
+    let mut declared: Vec<(String, usize, String)> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension == "yml" || extension == "yaml")
+        {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            anyhow::bail!("repo-lint: cannot read {}", path.display());
+        };
+        if !text
+            .lines()
+            .any(|line| !is_comment(line) && line.contains(BUILD_ACTION))
+        {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let file = PathBuf::from(format!("{WORKFLOWS}/{name}"));
+        let declaration = workflow_env_value(&text, EPOCH);
+
+        match &declaration {
+            None => findings.push(Finding {
+                rule: RULE,
+                file: file.clone(),
+                line: 0,
+                detail: format!(
+                    "builds images but declares no workflow-level `{EPOCH}`; buildx passes \
+                     whatever it finds in the environment as `build-arg:{EPOCH}`, so a workflow \
+                     without one writes and reads cache keys that no other workflow can match"
+                ),
+            }),
+            Some((line, value)) if value.contains("${{") => findings.push(Finding {
+                rule: RULE,
+                file: file.clone(),
+                line: *line,
+                detail: format!(
+                    "`{EPOCH}` is `{value}`; it is part of every stage's cache key, so it has to \
+                     be a literal constant — an expression makes each run look up a key no other \
+                     run wrote"
+                ),
+            }),
+            Some((line, value)) => declared.push((name.clone(), *line, value.clone())),
+        }
+
+        // Anything naming the epoch outside its one declaration overrides it for that step —
+        // `build-args:` and a step `env:` alike — which is the failure the constant exists to
+        // prevent.
+        let declared_line = declaration.map(|(line, _)| line).unwrap_or_default();
+        for (index, line) in text.lines().enumerate() {
+            if index + 1 == declared_line || is_comment(line) || !line.contains(EPOCH) {
+                continue;
+            }
+            findings.push(Finding {
+                rule: RULE,
+                file: file.clone(),
+                line: index + 1,
+                detail: format!(
+                    "`{EPOCH}` is set a second time here; the workflow-level constant is the only \
+                     declaration allowed, because a build carrying a different value reuses no \
+                     layer any other build cached"
+                ),
+            });
+        }
+    }
+
+    // Cross-file agreement, reported once against the first file in name order rather than n times.
+    declared.sort();
+    if let Some(((_, _, first), rest)) = declared.split_first()
+        && let Some((name, line, value)) = rest.iter().find(|(_, _, value)| value != first)
+    {
+        findings.push(Finding {
+            rule: RULE,
+            file: PathBuf::from(format!("{WORKFLOWS}/{name}")),
+            line: *line,
+            detail: format!(
+                "`{EPOCH}` is `{value}` here and `{first}` in {}; the two workflows write and \
+                 read the same GHCR cache tags, so a build under either value misses every layer \
+                 the other exported",
+                declared
+                    .iter()
+                    .map(|(name, _, _)| name.as_str())
+                    .find(|other| *other != name)
+                    .unwrap_or("the other workflow")
+            ),
+        });
+    }
+    Ok(findings)
+}
+
+/// The value of one key in a workflow's **top-level** `env:` block, and the line it is on.
+///
+/// Top-level only: an `env:` nested under a job or a step is the override this rule reports, so
+/// reading one as the declaration would make the rule report nothing. Column zero is what
+/// distinguishes them.
+fn workflow_env_value(text: &str, key: &str) -> Option<(usize, String)> {
+    let mut inside = false;
+    for (index, line) in text.lines().enumerate() {
+        if is_comment(line) || line.trim().is_empty() {
+            continue;
+        }
+        if !line.starts_with([' ', '\t']) {
+            inside = line.trim_end() == "env:";
+            continue;
+        }
+        if inside
+            && let Some(value) = line.trim().strip_prefix(key).and_then(|rest| {
+                rest.strip_prefix(':')
+                    .map(|value| value.trim().trim_matches(['"', '\'']).to_owned())
+            })
+        {
+            return Some((index + 1, value));
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -501,6 +652,52 @@ mod tests {
         // The no-op guard: a renamed file leaves nothing to check, which the rule reports rather
         // than passing silently.
         assert!(oidc_token_writes("          printf '%s' \"$token\" > \"$other\"").is_empty());
+    }
+
+    /// The bug this pins, in both of the shapes it has taken. Release 1.5.1 passed
+    /// `SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)` as a build arg, so the release warm-up could
+    /// import nothing `ci.yml` wrote and cold-compiled the workspace every time. Release 1.5.2
+    /// moved the same value to a step `env:` on the publishing build, believing an environment
+    /// value reaches only the exporter; buildx passes it as `build-arg:SOURCE_DATE_EPOCH` either
+    /// way, so all eighteen legs recompiled instead — 24 minutes each, against a `builder` the
+    /// warm-up had just imported in 28 seconds.
+    ///
+    /// The reader has to find the top-level declaration and *only* that one: a job- or step-level
+    /// `env:` is the override the rule reports, so reading one as the declaration would make the
+    /// rule report nothing while looking straight at the bug.
+    #[test]
+    fn only_a_top_level_literal_epoch_counts_as_the_declaration() {
+        let workflow = "env:\n  RUSTFLAGS: \"-D warnings\"\n  SOURCE_DATE_EPOCH: \"0\"\n\njobs:\n";
+        assert_eq!(
+            workflow_env_value(workflow, "SOURCE_DATE_EPOCH"),
+            Some((3, "0".to_owned()))
+        );
+
+        // The 1.5.2 shape: workflow level, but derived. Read, and reported by the caller.
+        let derived = "env:\n  SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}\n";
+        assert_eq!(
+            workflow_env_value(derived, "SOURCE_DATE_EPOCH"),
+            Some((2, "${{ steps.epoch.outputs.value }}".to_owned()))
+        );
+
+        // A step `env:` is nested, so it is not the declaration — the caller reports it as the
+        // override it is.
+        let step = "jobs:\n  build:\n    steps:\n      - env:\n          SOURCE_DATE_EPOCH: \"7\"\n";
+        assert_eq!(workflow_env_value(step, "SOURCE_DATE_EPOCH"), None);
+
+        // An unindented key ends the block; a later top-level `env:` is a different workflow's
+        // shape, but a key after `jobs:` must not be read as one.
+        let after = "env:\n  A: b\n\njobs:\n  x:\n    SOURCE_DATE_EPOCH: \"9\"\n";
+        assert_eq!(workflow_env_value(after, "SOURCE_DATE_EPOCH"), None);
+
+        // A comment describing the rule — including this one's own rationale in both workflows —
+        // is not a declaration.
+        let documented = "env:\n  # SOURCE_DATE_EPOCH: \"0\" was derived once; never again\n";
+        assert_eq!(workflow_env_value(documented, "SOURCE_DATE_EPOCH"), None);
+
+        // A prefix match is not a match: a different key must not satisfy the rule.
+        let prefixed = "env:\n  SOURCE_DATE_EPOCH_NOTE: \"0\"\n";
+        assert_eq!(workflow_env_value(prefixed, "SOURCE_DATE_EPOCH"), None);
     }
 
     /// The compose file pins images by digest, so the tag the rule has to read is

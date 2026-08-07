@@ -5,14 +5,16 @@
 
 ARG RUST_VERSION=1.94
 
-# `SOURCE_DATE_EPOCH` is deliberately **not** declared, and must not be re-added. Reproducible
-# timestamps come from the exporter — `rewrite-timestamp=true` on the publishing legs in
-# release-please.yaml — which reads the value buildx propagates from the environment. Declaring it
-# and passing `--build-arg` instead puts the commit timestamp into the build's argument set, and
-# BuildKit then reuses no cached layer built under a different epoch. That made every cross-run
-# `cache-from` a total miss: `chef` re-ran `apk add` and rebuilt `cargo-auditable` on a
-# digest-pinned base, and `cook` recompiled all 549 dependencies, on every run — 45 minutes a
-# build. release-please.yaml documents the same trap for `SERVICE_BINS`.
+# `SOURCE_DATE_EPOCH` is deliberately **not** declared here, and it must be a **constant**
+# wherever it is set. The Dockerfile frontend consumes it as a built-in build arg, so its value is
+# part of the cache key of every stage below — and there is no way to keep it out of one: buildx
+# propagates it from the environment into the solve as `build-arg:SOURCE_DATE_EPOCH` whether it is
+# passed as `--build-arg` or exported to the process. A per-commit epoch therefore makes every
+# cross-run `cache-from` a total miss: `chef` re-runs `apk add` and rebuilds `cargo-auditable` on a
+# digest-pinned base, and `cook` recompiles all 549 dependencies, on every run — 24 to 45 minutes
+# a build. Both workflows pin it to `"0"` at workflow level for that reason, which is also what
+# makes `rewrite-timestamp=true` on the publishing legs produce byte-identical images.
+# release-please.yaml documents the same trap for `SERVICE_BINS`.
 
 # Alpine, not Debian: BoringSSL (wreq's TLS backend) needs a musl C++ toolchain that Debian's
 # musl-tools lacks, so the build is native rather than cross. Pinned by digest.

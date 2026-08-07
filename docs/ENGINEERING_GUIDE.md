@@ -403,7 +403,7 @@ stops compiling on the other side is otherwise first noticed by a release.
 platform to read, and neither may reach for `eval` to fill a gap in the surface — the desktop
 webview is served under the same CSP, for the same reason.
 
-Two divergences are deliberate and are argued where they live:
+Three divergences are deliberate and are argued where they live:
 
 **There is no served origin on desktop.** The SPA is delivered by the API it talks to, so
 `location.origin` answers; a desktop binary is delivered by nobody and has to be told.
@@ -412,6 +412,26 @@ a loopback host — the access token rides an `Authorization` header on every re
 accepted over plaintext puts it on the wire for the life of the session. **The token itself is
 never written to disk**, on either build; the settings file holds the server URL and the
 appearance choices and nothing else.
+
+**The refresh cookie has no browser to keep it, so the OS credential store keeps it.** A native
+`reqwest` has no cookie jar unless asked for one, and one that lives only in memory ends the
+reader's session at every restart. `src/api/session_store.rs` mirrors the `Set-Cookie` lines the
+server issues into the Windows Credential Manager or the freedesktop Secret Service, keyed by the
+origin they came from, and replays them into the jar on the next start.
+
+**[R] A long-lived credential goes to the credential store or nowhere — never beside
+`settings.json`.** That file is plain text readable by every process running as the reader; the
+credential store is encrypted at rest and scoped to their login, which is the guarantee the
+browser gives the web build and the only reason persisting this is acceptable at all. Where no
+store is available — a headless Linux session with no Secret Service provider — the calls are
+silent no-ops and the session ends with the process, which is the correct fallback.
+
+**[R] Credential-store calls run on their own OS thread (`platform::credentials`).** The Secret
+Service backend is `zbus::blocking`, which under the `tokio` feature `notify-rust` turns on is
+`Runtime::block_on` — and that panics when called from inside a runtime, which under
+`panic = "abort"` takes the process with it. The writes happen on `reqwest`'s response path,
+which *is* a runtime worker. The same thread also serialises writes against deletes, so a
+sign-out cannot be overtaken by a queued write.
 
 **Passkeys do not go through the webview, and must not.** WebAuthn *in a browser* requires
 `rp.id` to be a registrable suffix of the document's origin, and a wry webview serves this app

@@ -1,7 +1,10 @@
 //! Client session state (design §17.4).
 //!
 //! The access token lives only in memory — never `localStorage`, so an XSS foothold cannot
-//! exfiltrate it — and is re-adopted from the httpOnly refresh cookie on boot.
+//! exfiltrate it — and is re-adopted from the httpOnly refresh cookie on boot. That holds on
+//! both builds; what differs is only where the *refresh* cookie is kept between runs, which is
+//! the browser's own store on web and the OS credential store on desktop
+//! (`crate::api::session_store`).
 //!
 //! The session carries **identity only**. What the reader is allowed to do lives in
 //! [`capabilities`], fetched from the server rather than decoded from the token: the backend
@@ -83,10 +86,18 @@ impl Session {
     }
 
     /// Clear the session (sign out).
+    ///
+    /// On desktop this also forgets the refresh credential in the OS credential store. That
+    /// belongs here rather than at the call sites because this is what "the session is over"
+    /// means in this app — a sign-out, a `401` from refresh, a deleted account and a re-pointed
+    /// server all arrive through it, and a credential left behind by any one of them would sign
+    /// the reader back in on the next start.
     pub(crate) fn clear(self) {
         let (mut token, mut name) = (self.token, self.name);
         token.set(None);
         name.set(None);
+        #[cfg(feature = "desktop")]
+        crate::api::forget_session();
     }
 
     pub(crate) fn mark_ready(self) {

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series_sync_overrides SELECT * FROM jsonb_populate_recordset(NULL::series_sync_overrides, $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "62fa5ad22ae0fdca628f4baf4fef06beba197f70da725b12aaea0fca657daf7b"
+}

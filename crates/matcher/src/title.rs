@@ -6,14 +6,14 @@ use tankovault_domain::matching::Candidate;
 use crate::similarity::{edit_ratio, is_token_subset, token_set_ratio};
 
 /// How the query title compares against the best of the candidate's titles.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "the return value of one comparison, private to this module and consumed field by \
               field a few lines later. Packing four independent yes/no answers into flags would \
               hide at the call site exactly what the names make obvious."
 )]
-pub(crate) struct TitleMatch {
+pub(crate) struct TitleMatch<'a> {
     /// The best textual agreement in `[0,1]` across all of the candidate's titles.
     pub(crate) ratio: f32,
     /// The best edit-distance ratio specifically, which is what [`MatchSignals::near_identical`]
@@ -24,6 +24,23 @@ pub(crate) struct TitleMatch {
     pub(crate) containment: bool,
     /// Whether the winning title was an alternative rather than the canonical one.
     pub(crate) via_alias: bool,
+    /// The candidate title the winning comparison was against. Borrowed from the candidate, so
+    /// an explanation can name it without the scorer cloning a string on the hot path.
+    pub(crate) matched: &'a str,
+}
+
+impl Default for TitleMatch<'_> {
+    fn default() -> Self {
+        Self {
+            ratio: 0.0,
+            edit_ratio: 0.0,
+            exact: false,
+            compact_equal: false,
+            containment: false,
+            via_alias: false,
+            matched: "",
+        }
+    }
 }
 
 /// Compare the query against the candidate's canonical title **and** each of its alternatives,
@@ -34,12 +51,17 @@ pub(crate) struct TitleMatch {
 /// title then re-judged that candidate against a name it does not go by, which is how a series
 /// listed under its romaji title on one provider and its english title on another stayed split
 /// even though the retrieval had already connected them.
-pub(crate) fn best_title_match(
+pub(crate) fn best_title_match<'a>(
     query: &str,
     query_compact: &str,
-    candidate: &Candidate,
-) -> TitleMatch {
-    let mut best = TitleMatch::default();
+    candidate: &'a Candidate,
+) -> TitleMatch<'a> {
+    // The canonical title is the answer to "which title matched?" until something beats it, so
+    // an explanation of a pair that agrees on nothing still names a title rather than nothing.
+    let mut best = TitleMatch {
+        matched: &candidate.normalized_title,
+        ..TitleMatch::default()
+    };
     let titles = std::iter::once((&candidate.normalized_title, false))
         .chain(candidate.alt_normalized_titles.iter().map(|t| (t, true)));
 
@@ -75,6 +97,7 @@ pub(crate) fn best_title_match(
             best.exact = exact;
             best.compact_equal = compact_equal;
             best.via_alias = is_alias;
+            best.matched = title;
         }
         // Containment is a property of the pair, not of the winning title: an abbreviated
         // canonical title with a fully subtitled synonym should still earn the nudge.

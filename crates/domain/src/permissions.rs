@@ -51,6 +51,15 @@ pub enum Permission {
     /// Merge two series or dismiss a candidate.
     #[serde(rename = "merge.write")]
     MergeWrite,
+    /// Read the automatic-merge decision journal: the itemised score, the rule that decided
+    /// each pair, the guards that held one back, and what a revert would restore.
+    #[serde(rename = "merge.audit")]
+    MergeAudit,
+    /// Undo an automatic merge, or flag one as wrong. Separate from `merge.write` because it is
+    /// the only capability that can *resurrect* a deleted series, and because an operator
+    /// trusted to work the review queue is not thereby trusted to reverse the sweep.
+    #[serde(rename = "merge.revert")]
+    MergeRevert,
 
     /// Read the recommender's tuning registry and its model-health figures.
     #[serde(rename = "recsys.read")]
@@ -67,6 +76,14 @@ pub enum Permission {
     /// Force a pull/push/unlink or repoint a mapping on another user's behalf.
     #[serde(rename = "sync.admin.write")]
     SyncAdminWrite,
+    /// Read the automatic-sync decision journal across every user: what each reconciliation
+    /// matched, wrote, skipped, and why. Separate from `sync.admin.read` because it discloses
+    /// every reader's progress *history* rather than the current state of their links.
+    #[serde(rename = "sync.audit")]
+    SyncAudit,
+    /// Undo a sync decision, or flag one wrong and refuse the match it made.
+    #[serde(rename = "sync.revert")]
+    SyncRevert,
 
     /// Read the user directory and individual user detail.
     #[serde(rename = "users.read")]
@@ -128,10 +145,14 @@ impl Permission {
             Self::ScansRun,
             Self::MergeRead,
             Self::MergeWrite,
+            Self::MergeAudit,
+            Self::MergeRevert,
             Self::RecsysRead,
             Self::RecsysWrite,
             Self::SyncAdminRead,
             Self::SyncAdminWrite,
+            Self::SyncAudit,
+            Self::SyncRevert,
             Self::UsersRead,
             Self::UsersWrite,
             Self::UsersPermissions,
@@ -162,10 +183,14 @@ impl Permission {
             Self::ScansRun => "scans.run",
             Self::MergeRead => "merge.read",
             Self::MergeWrite => "merge.write",
+            Self::MergeAudit => "merge.audit",
+            Self::MergeRevert => "merge.revert",
             Self::RecsysRead => "recsys.read",
             Self::RecsysWrite => "recsys.write",
             Self::SyncAdminRead => "sync.admin.read",
             Self::SyncAdminWrite => "sync.admin.write",
+            Self::SyncAudit => "sync.audit",
+            Self::SyncRevert => "sync.revert",
             Self::UsersRead => "users.read",
             Self::UsersWrite => "users.write",
             Self::UsersPermissions => "users.permissions",
@@ -192,10 +217,15 @@ impl Permission {
             | Self::ProvidersState
             | Self::ProvidersTest => PermissionGroup::Providers,
             Self::ScansRead | Self::ScansRun => PermissionGroup::Scanning,
-            Self::MergeRead | Self::MergeWrite | Self::RecsysRead | Self::RecsysWrite => {
-                PermissionGroup::Catalogue
+            Self::MergeRead
+            | Self::MergeWrite
+            | Self::MergeAudit
+            | Self::MergeRevert
+            | Self::RecsysRead
+            | Self::RecsysWrite => PermissionGroup::Catalogue,
+            Self::SyncAdminRead | Self::SyncAdminWrite | Self::SyncAudit | Self::SyncRevert => {
+                PermissionGroup::Sync
             }
-            Self::SyncAdminRead | Self::SyncAdminWrite => PermissionGroup::Sync,
             Self::UsersRead
             | Self::UsersWrite
             | Self::UsersPermissions
@@ -226,12 +256,16 @@ impl Permission {
             Self::ScansRun => "Trigger scan runs.",
             Self::MergeRead => "View the series merge-candidate queue.",
             Self::MergeWrite => "Merge series and dismiss merge candidates.",
+            Self::MergeAudit => "Inspect why the automatic merge merged each pair.",
+            Self::MergeRevert => "Undo an automatic merge and flag it as wrong.",
             Self::RecsysRead => "View recommendation tuning and model health.",
             Self::RecsysWrite => "Change recommendation tuning and trigger model rebuilds.",
             Self::SyncAdminRead => "View any user's linked trackers and series mappings.",
             Self::SyncAdminWrite => {
                 "Force sync pulls, pushes and unlinks, and repoint series mappings."
             }
+            Self::SyncAudit => "Inspect why the automatic sync matched and wrote each value.",
+            Self::SyncRevert => "Undo a sync decision and refuse the match it made.",
             Self::UsersRead => "View the user directory and individual accounts.",
             Self::UsersWrite => "Edit user identities, suspend and reinstate accounts.",
             Self::UsersPermissions => {
@@ -363,6 +397,9 @@ impl PermissionPreset {
                 Permission::ScansRun,
                 Permission::MergeRead,
                 Permission::MergeWrite,
+                // Reading the merge journal is diagnostic and belongs with working the queue;
+                // reversing the sweep does not, and is left to an administrator.
+                Permission::MergeAudit,
                 Permission::RecsysRead,
                 Permission::SyncAdminRead,
                 Permission::SystemStats,
@@ -509,7 +546,7 @@ mod tests {
     fn all_lists_every_variant() {
         // `all()` is hand-written and can drift from the enum; bump this count when adding
         // a variant, or a forgotten one slips through unnoticed.
-        assert_eq!(Permission::all().len(), 26);
+        assert_eq!(Permission::all().len(), 30);
     }
 
     #[test]
@@ -565,6 +602,11 @@ mod tests {
             Permission::ProvidersDelete,
             Permission::ProvidersCreate,
             Permission::SyncAdminWrite,
+            // Undoing the sweep resurrects a deleted series, and the sync journal discloses
+            // every reader's progress history. Neither belongs to day-to-day operation.
+            Permission::MergeRevert,
+            Permission::SyncAudit,
+            Permission::SyncRevert,
         ] {
             assert!(!set.has(forbidden), "operator must not hold {forbidden}");
         }

@@ -1147,6 +1147,18 @@
         ],
         "type": "object"
       },
+      "JudgementRequest": {
+        "properties": {
+          "reason": {
+            "description": "Why. Required, stored, and rendered beside the decision forever.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
       "KeyRebuildView": {
         "description": "What a normalized-key rebuild changed.\n\n`normalized_title` is a persisted matching key, so a change to the normalization rules only\nreaches rows that happen to be re-scanned until this runs.",
         "properties": {
@@ -1459,6 +1471,184 @@
         ],
         "type": "object"
       },
+      "MergeDecision": {
+        "description": "One row of the automatic-merge decision journal.\n\nThe journal answers the question a score cannot: *why*. `terms` itemises how the number was\nreached, `reason` names the rule that turned it into a verdict, `blocked_by` names the guards\nthat overrode it, and `evidence` carries both sides' facts and which title actually matched.",
+        "properties": {
+          "absorbed_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SeriesId"
+              }
+            ]
+          },
+          "actor": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "base_score": {
+            "description": "The similarity the score started from, before any bonus or penalty.",
+            "format": "float",
+            "type": "number"
+          },
+          "blocked_by": {
+            "description": "Guards that fired. Non-empty on a `review` row means the pair cleared the score and\nidentity bar and was held back anyway.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "decided_at": {
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/Value",
+            "description": "Both sides' facts, which titles matched, and how the survivor was chosen."
+          },
+          "flag_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "flagged_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "flagged_by": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "left_id": {
+            "$ref": "#/components/schemas/SeriesId"
+          },
+          "left_title": {
+            "type": "string"
+          },
+          "outcome": {
+            "description": "What was actually done, which is not always the verdict: `merged`, `queued`, `requeued`,\n`reopened`, `withdrawn`, `distinct`, `deferred`.",
+            "type": "string"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/Value",
+            "description": "The thresholds and guards in force when the decision was taken."
+          },
+          "reason": {
+            "description": "The stable slug of the rule that produced the verdict.",
+            "type": "string"
+          },
+          "revert_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reverted_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reverted_by": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revertible": {
+            "description": "Whether this decision still has an unspent undo journal.",
+            "type": "boolean"
+          },
+          "right_id": {
+            "$ref": "#/components/schemas/SeriesId"
+          },
+          "right_title": {
+            "type": "string"
+          },
+          "score": {
+            "format": "float",
+            "type": "number"
+          },
+          "signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "survivor_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SeriesId"
+              }
+            ]
+          },
+          "sweep_id": {
+            "description": "Groups every decision of one sweep run; absent for an operator's console merge.",
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "terms": {
+            "$ref": "#/components/schemas/Value",
+            "description": "`[{rule, delta, detail}]` — every term the scorer applied, in order."
+          },
+          "trigger": {
+            "description": "`sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`.",
+            "type": "string"
+          },
+          "undo_rows": {
+            "description": "How many rows a revert would restore or move back.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "verdict": {
+            "description": "`auto` | `review` | `distinct`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "decided_at",
+          "trigger",
+          "left_id",
+          "right_id",
+          "left_title",
+          "right_title",
+          "verdict",
+          "reason",
+          "blocked_by",
+          "outcome",
+          "score",
+          "base_score",
+          "signals",
+          "terms",
+          "evidence",
+          "policy",
+          "revertible",
+          "undo_rows"
+        ],
+        "type": "object"
+      },
       "MergeRequest": {
         "properties": {
           "keep": {
@@ -1476,11 +1666,49 @@
         ],
         "type": "object"
       },
+      "MergeReverted": {
+        "description": "What undoing an automatic merge put back.",
+        "properties": {
+          "decision_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "pair_suppressed": {
+            "description": "Always true: a revert also suppresses the pair, or the next sweep would merge it again.",
+            "type": "boolean"
+          },
+          "restored_id": {
+            "$ref": "#/components/schemas/SeriesId",
+            "description": "The series that exists again, under its original id."
+          },
+          "rows_restored": {
+            "description": "Rows restored or moved back off the survivor.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "survivor_id": {
+            "$ref": "#/components/schemas/SeriesId"
+          }
+        },
+        "required": [
+          "decision_id",
+          "restored_id",
+          "survivor_id",
+          "rows_restored",
+          "pair_suppressed"
+        ],
+        "type": "object"
+      },
       "MergeSweepView": {
         "description": "What one duplicate-reconciliation sweep did.\n\nReturned by `POST /v1/admin/merge-candidates/sweep` and logged by the scheduled sweep, so an\noperator can see the effect of a threshold change on a single run before leaving it to the\nschedule.",
         "properties": {
           "auto_merged": {
             "description": "Pairs merged without asking, because a structural identity rule fired *and* the score\ncleared the automatic-merge threshold.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "blocked": {
+            "description": "Pairs an auto-merge guard held back: identical titles, a score above the automatic\nthreshold, and a signal saying the two are different works anyway. These are the near\nmisses, and they are the rows to read first — each is either a duplicate the guard is\ncosting you or a merge the guard just prevented.",
             "format": "int64",
             "type": "integer"
           },
@@ -1528,7 +1756,8 @@
           "reopened",
           "withdrawn",
           "distinct",
-          "deferred"
+          "deferred",
+          "blocked"
         ],
         "type": "object"
       },
@@ -2036,10 +2265,14 @@
           "scans.run",
           "merge.read",
           "merge.write",
+          "merge.audit",
+          "merge.revert",
           "recsys.read",
           "recsys.write",
           "sync.admin.read",
           "sync.admin.write",
+          "sync.audit",
+          "sync.revert",
           "users.read",
           "users.write",
           "users.permissions",
@@ -3488,6 +3721,186 @@
         ],
         "type": "object"
       },
+      "SyncDecision": {
+        "description": "One row of the automatic-sync decision journal.\n\nCovers what `sync_history` never did: the entries that matched no local series, the series\nskipped as excluded, the fields both sides already agreed on, and the scored title match\nbehind every mapping.",
+        "properties": {
+          "action": {
+            "description": "`matched` | `unmatched` | `pull` | `push` | `create_remote` | `conflict` | `noop`\n| `skipped` | `import_status` | `enriched` | `unmapped`.",
+            "type": "string"
+          },
+          "ancestor_local": {
+            "description": "The three-way merge's common ancestor. Without it a pull cannot be told from a clobber.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ancestor_remote": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "applied": {
+            "description": "Whether anything was actually written. A run is mostly considerations.",
+            "type": "boolean"
+          },
+          "decided_at": {
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/Value",
+            "description": "Which titles matched, the scored terms, the runner-up, and the provider's own metadata."
+          },
+          "external_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "flag_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "flagged_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "flagged_by": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "local_after": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "local_before": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "match_score": {
+            "format": "float",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "match_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "policy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "reason": {
+            "description": "The stable slug for why: `only_remote_changed`, `both_sides_changed_policy_remote_wins`,\n`title_match_above_threshold`, `blocked_by_operator`, …",
+            "type": "string"
+          },
+          "remote_after": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remote_before": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revert_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reverted_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reverted_by": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run_id": {
+            "description": "Groups one account reconciliation.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "scope": {
+            "description": "`match` | `progress` | `status` | `series` | `metadata`.",
+            "type": "string"
+          },
+          "series_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SeriesId"
+              }
+            ]
+          },
+          "series_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "decided_at",
+          "user_id",
+          "provider",
+          "scope",
+          "action",
+          "reason",
+          "applied",
+          "match_signals",
+          "evidence"
+        ],
+        "type": "object"
+      },
       "SyncExcluded": {
         "properties": {
           "excluded": {
@@ -3496,6 +3909,22 @@
         },
         "required": [
           "excluded"
+        ],
+        "type": "object"
+      },
+      "SyncFlagRequest": {
+        "properties": {
+          "block_match": {
+            "description": "Also refuse the (external id, series) match this decision made, permanently.\n\nDeleting the mapping alone fixes nothing: the next reconciliation runs the same title\nmatch against the same catalogue and writes the same row back.",
+            "type": "boolean"
+          },
+          "reason": {
+            "description": "Why. Required, stored, and rendered beside the decision forever.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
         ],
         "type": "object"
       },
@@ -3528,6 +3957,36 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "SyncReverted": {
+        "description": "What undoing a sync decision put back.",
+        "properties": {
+          "blocked_match": {
+            "description": "Whether the revert also refused the title match permanently.",
+            "type": "boolean"
+          },
+          "decision_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "restored": {
+            "description": "`local_progress` | `local_status` | `watchlist_entry` | `remote_entry` | `match`.",
+            "type": "string"
+          },
+          "value": {
+            "description": "The value the restored side now holds.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "decision_id",
+          "restored",
+          "blocked_match"
+        ],
         "type": "object"
       },
       "SyncSettingsPatch": {
@@ -5164,6 +5623,323 @@
           }
         ],
         "summary": "Run the duplicate sweep",
+        "tags": [
+          "admin-matching"
+        ]
+      }
+    },
+    "/v1/admin/merge-decisions": {
+      "get": {
+        "description": "The automatic-merge journal, newest first: the itemised score behind each decision, the rule\nthat produced the verdict, the guards that overrode it, and whether it can still be undone.",
+        "operationId": "list_merge_decisions",
+        "parameters": [
+          {
+            "description": "Restrict to one outcome: `merged`, `queued`, `requeued`, `reopened`, `withdrawn`,\n`distinct`, `deferred`.",
+            "in": "query",
+            "name": "outcome",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Only decisions naming this series on either side. Survives the merge — an absorbed id is\nstill on the row that absorbed it, which is the one you go looking for.\n\nA bare `Uuid`, not `SeriesId`: an optional newtype in a query parameter generates a\none-variant `oneOf` that the client generator cannot render.",
+            "in": "query",
+            "name": "series_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Only merges that can still be undone.",
+            "in": "query",
+            "name": "revertible",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Only decisions an operator has flagged wrong.",
+            "in": "query",
+            "name": "flagged",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Only decisions a guard held back: the near misses.",
+            "in": "query",
+            "name": "blocked",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MergeDecision"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "A page of the merge decision journal"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List merge decisions",
+        "tags": [
+          "admin-matching"
+        ]
+      }
+    },
+    "/v1/admin/merge-decisions/{id}/flag": {
+      "post": {
+        "description": "Record that an automatic merge was the wrong call, and suppress the pair permanently, without\nundoing it. Deliberately independent of the revert: a merge can be wrong and no longer worth\nthe disruption of unpicking, and a merge can be undone as a precaution while still having been\ncorrect. Either way the flag is what stops the sweep re-making the same decision.",
+        "operationId": "flag_merge_decision",
+        "parameters": [
+          {
+            "description": "The merge decision to flag",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JudgementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "flagged": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Whether this call was the one that flagged it"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no reason given"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such decision"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Flag a merge as wrong",
+        "tags": [
+          "admin-matching"
+        ]
+      }
+    },
+    "/v1/admin/merge-decisions/{id}/revert": {
+      "post": {
+        "description": "Undo one automatic merge: the absorbed series exists again under its **original id**, every\nrow that moved is moved back, and every row the merge created on the survivor is removed.\n\nThe pair is suppressed as part of the same action. Reverting alone changes nothing about why\nthe two were merged — the titles still agree and the score is still above the threshold — so\nthe next sweep would simply merge them again.",
+        "operationId": "revert_merge_decision",
+        "parameters": [
+          {
+            "description": "The merge decision to undo",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JudgementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeReverted"
+                }
+              }
+            },
+            "description": "What was put back"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no reason given"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such decision"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "already reverted, merged nothing, or the absorbed id is live again"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Revert a merge",
         "tags": [
           "admin-matching"
         ]
@@ -7382,6 +8158,349 @@
           }
         ],
         "summary": "Assign a remote entry to a local series",
+        "tags": [
+          "admin-sync"
+        ]
+      }
+    },
+    "/v1/admin/sync/decisions": {
+      "get": {
+        "description": "The automatic-sync journal across every user, newest first. Covers what the per-user sync\nhistory never did: the remote entries that matched nothing, the series skipped as excluded,\nthe fields both sides already agreed on, and the scored title match behind every mapping.",
+        "operationId": "list_sync_decisions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "A bare `Uuid` for the same reason as above.",
+            "in": "query",
+            "name": "series_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Restrict to one action: `matched`, `unmatched`, `pull`, `push`, `conflict`, `noop`, …",
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "One reconciliation run.",
+            "in": "query",
+            "name": "run_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Only decisions that wrote something. A run is mostly considerations, so this is the\nfilter to reach for when asking \"what did the sync change?\".",
+            "in": "query",
+            "name": "applied",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "flagged",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SyncDecision"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "A page of the sync decision journal"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List sync decisions",
+        "tags": [
+          "admin-sync"
+        ]
+      }
+    },
+    "/v1/admin/sync/decisions/{id}/flag": {
+      "post": {
+        "description": "Record that an automatic sync action was the wrong call without undoing it, and — with\n`block_match` — refuse the title match it made so no later run can re-make it.",
+        "operationId": "flag_sync_decision",
+        "parameters": [
+          {
+            "description": "The sync decision to flag",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncFlagRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "flagged": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Whether this call was the one that flagged it"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no reason given"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such decision"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Flag a sync decision as wrong",
+        "tags": [
+          "admin-sync"
+        ]
+      }
+    },
+    "/v1/admin/sync/decisions/{id}/revert": {
+      "post": {
+        "description": "Undo one journalled sync action. Forwarded to the sync service, which is the tier holding the\nprovider token: taking back a *push* means writing the remote's previous values back, and only\nthat service can.\n\nNot every action has an inverse. A series the sync created on the remote cannot be removed\nfrom here — no provider in this system exposes a delete — and that case answers with an error\nsaying so rather than silently doing half of it.",
+        "operationId": "revert_sync_decision",
+        "parameters": [
+          {
+            "description": "The sync decision to undo",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JudgementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncReverted"
+                }
+              }
+            },
+            "description": "What was put back"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no reason given"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such decision"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "already reverted, changed nothing, or has no inverse"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Revert a sync decision",
         "tags": [
           "admin-sync"
         ]

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM read_progress p WHERE p.series_id = $1 AND p.user_id IN (SELECT user_id FROM jsonb_populate_recordset(NULL::read_progress, $2))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "12a9246b5e57ff2517be97e8f09a854021ce9cfbcafc77070d9ef3073a89af20"
+}

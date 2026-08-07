@@ -1,0 +1,759 @@
+//! The decision journals: what the automatic merge and the automatic sync did, why, and the two
+//! answers to "that was wrong" — undo it, and say so durably.
+//!
+//! Both halves render the same shape because the operator's question is the same one: a headline
+//! naming what happened, the rule that decided it, and an expander holding the itemised evidence.
+//! The evidence is the point — a score and a bag of signal names say *that* two things matched,
+//! and only the terms say which title matched and what each rule contributed.
+
+use crate::api;
+use crate::components::{async_view, SkeletonRows};
+use crate::i18n::{use_i18n, Translator};
+use crate::models::*;
+use crate::state::capabilities::use_capabilities;
+use crate::util::rel_time;
+use crate::views::console::RefreshTick;
+use crate::wire::types::Permission;
+use dioxus::prelude::*;
+use progenitor_client::ResponseValue;
+
+/// Rows per page. The server clamps regardless; this is the number that fits a screen without
+/// paging becoming the primary interaction.
+const PAGE_SIZE: u32 = 50;
+
+/// Which journal the panel is showing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Journal {
+    Merges,
+    Sync,
+}
+
+/// The whole surface: a journal switch, then whichever journal is selected.
+///
+/// The two are separate fetches behind one switch rather than one merged feed, because they are
+/// not comparable: a merge decision is about the catalogue and a sync decision is about one
+/// reader's shelf, and interleaving them by timestamp produces a list that answers neither
+/// question.
+#[component]
+pub(super) fn DecisionsPanel(tick: RefreshTick) -> Element {
+    let i18n = use_i18n();
+    let caps = use_capabilities();
+    let can_merge = caps.can(Permission::MergeAudit);
+    let can_sync = caps.can(Permission::SyncAudit);
+
+    // Open on whichever journal the reader may actually see. Defaulting to merges and rendering
+    // a permission message would read as an error to someone holding only `sync.audit`.
+    let mut journal = use_signal(|| {
+        if can_merge {
+            Journal::Merges
+        } else {
+            Journal::Sync
+        }
+    });
+    let current = *journal.read();
+
+    rsx! {
+        section { style: "margin-bottom:18px;",
+            h3 { {i18n.t("console.decisions.title")} }
+            p { class: "ik-muted", style: "margin:0 0 12px;max-width:78ch;",
+                {i18n.t("console.decisions.intro")}
+            }
+            div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;margin-bottom:12px;",
+                if can_merge {
+                    button {
+                        class: if current == Journal::Merges { "ik-btn sm active" } else { "ik-btn sm" },
+                        "aria-pressed": if current == Journal::Merges { "true" } else { "false" },
+                        onclick: move |_| journal.set(Journal::Merges),
+                        {i18n.t("console.decisions.tab.merges")}
+                    }
+                }
+                if can_sync {
+                    button {
+                        class: if current == Journal::Sync { "ik-btn sm active" } else { "ik-btn sm" },
+                        "aria-pressed": if current == Journal::Sync { "true" } else { "false" },
+                        onclick: move |_| journal.set(Journal::Sync),
+                        {i18n.t("console.decisions.tab.sync")}
+                    }
+                }
+            }
+            match current {
+                Journal::Merges if can_merge => rsx! { MergeJournal { tick } },
+                Journal::Sync if can_sync => rsx! { SyncJournal { tick } },
+                _ => rsx! {
+                    div { class: "ik-empty", style: "padding:24px;",
+                        {i18n.t("console.operatorsOnly")}
+                    }
+                },
+            }
+        }
+    }
+}
+
+/// The automatic-merge journal, newest first.
+#[component]
+fn MergeJournal(tick: RefreshTick) -> Element {
+    let api = api::use_api();
+    let i18n = use_i18n();
+    let caps = use_capabilities();
+    let can_revert = caps.can(Permission::MergeRevert);
+    let mut outcome = use_signal(String::new);
+    let mut blocked_only = use_signal(|| false);
+    let notice = use_signal(String::new);
+
+    let filter_outcome = outcome.read().clone();
+    let only_blocked = *blocked_only.read();
+    let rows = use_resource(use_reactive!(|(filter_outcome, only_blocked)| {
+        tick.track();
+        let client = api.client();
+        async move {
+            let mut request = client.list_merge_decisions().limit(PAGE_SIZE);
+            if !filter_outcome.is_empty() {
+                request = request.outcome(filter_outcome);
+            }
+            if only_blocked {
+                request = request.blocked(true);
+            }
+            request
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))
+        }
+    }));
+
+    rsx! {
+        div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;margin-bottom:10px;",
+            select {
+                class: "ik-input",
+                "aria-label": i18n.t("console.decisions.filter.outcome"),
+                value: "{outcome}",
+                onchange: move |event: FormEvent| outcome.set(event.value()),
+                option { value: "", {i18n.t("console.decisions.filter.anyOutcome")} }
+                for token in ["merged", "queued", "reopened", "withdrawn", "deferred"] {
+                    option { key: "{token}", value: "{token}",
+                        {i18n.t(&format!("console.decisions.outcome.{token}"))}
+                    }
+                }
+            }
+            label { class: "ik-flex", style: "gap:6px;align-items:center;",
+                input {
+                    r#type: "checkbox",
+                    checked: only_blocked,
+                    onchange: move |event: FormEvent| blocked_only.set(event.checked()),
+                }
+                span { {i18n.t("console.decisions.filter.blockedOnly")} }
+            }
+        }
+        if !notice.read().is_empty() {
+            div { class: "ik-note", style: "margin-bottom:10px;", "{notice}" }
+        }
+        {
+            async_view(
+                &rows,
+                tick.reload(),
+                || rsx! { SkeletonRows { count: 6, height: 28 } },
+                move |list| {
+                    if list.is_empty() {
+                        return rsx! {
+                            div { class: "ik-empty", style: "padding:24px;",
+                                {i18n.t("console.decisions.mergeEmpty")}
+                            }
+                        };
+                    }
+                    let list = list.clone();
+                    rsx! {
+                        div { class: "ik-cons-list",
+                            for decision in list {
+                                MergeDecisionRow {
+                                    key: "{decision.id}",
+                                    decision: Signal::new(decision),
+                                    can_revert,
+                                    notice,
+                                    tick,
+                                }
+                            }
+                        }
+                    }
+                },
+            )
+        }
+    }
+}
+
+/// One merge decision: the headline, the rule, and the evidence behind an expander.
+#[component]
+fn MergeDecisionRow(
+    decision: Signal<MergeDecision>,
+    can_revert: bool,
+    notice: Signal<String>,
+    tick: RefreshTick,
+) -> Element {
+    let api = api::use_api();
+    let i18n = use_i18n();
+    let mut open = use_signal(|| false);
+    let mut busy = use_signal(|| false);
+    let mut reason = use_signal(String::new);
+    let d = decision.read();
+    let expanded = *open.read();
+    let id = d.id;
+
+    // Two calls, one shape: the only difference an operator cares about is whether the catalogue
+    // is put back, and both write the same durable "not a duplicate" judgement.
+    let mut judge = move |revert: bool| {
+        let text = reason.peek().trim().to_owned();
+        if text.is_empty() {
+            notice.set(i18n.t("console.decisions.reasonRequired"));
+            return;
+        }
+        if *busy.peek() {
+            return;
+        }
+        busy.set(true);
+        let mut notice = notice;
+        spawn(async move {
+            let client = api.client();
+            let outcome = if revert {
+                client
+                    .revert_merge_decision()
+                    .id(id)
+                    .body_map(|body| body.reason(text.clone()))
+                    .send()
+                    .await
+                    .map(|response| {
+                        let r = response.into_inner();
+                        i18n.args(
+                            "console.decisions.reverted",
+                            &[("rows", &r.rows_restored.to_string())],
+                        )
+                    })
+            } else {
+                client
+                    .flag_merge_decision()
+                    .id(id)
+                    .body_map(|body| body.reason(text.clone()))
+                    .send()
+                    .await
+                    .map(|_| i18n.t("console.decisions.flagged"))
+            };
+            match outcome {
+                Ok(message) => {
+                    notice.set(message);
+                    reason.set(String::new());
+                    tick.bump();
+                }
+                Err(e) => notice.set(i18n.args(
+                    "console.decisions.actionFailed",
+                    &[("message", &api::friendly_error(i18n, e))],
+                )),
+            }
+            busy.set(false);
+        });
+    };
+
+    rsx! {
+        article { class: "ik-card", style: "padding:12px;margin-bottom:10px;",
+            div { class: "ik-flex", style: "gap:10px;align-items:baseline;flex-wrap:wrap;",
+                span { class: outcome_tone(&d.outcome),
+                    {i18n.t(&format!("console.decisions.outcome.{}", d.outcome))}
+                }
+                strong { "{d.left_title}" }
+                span { class: "ik-muted", "·" }
+                strong { "{d.right_title}" }
+                span { class: "ik-muted ik-mono", style: "font-size:12px;margin-left:auto;",
+                    "{rel_time(i18n, Some(d.decided_at.as_str()))}"
+                }
+            }
+            div { class: "ik-flex", style: "gap:6px;flex-wrap:wrap;margin-top:6px;",
+                span { class: "ik-pill",
+                    {i18n.args("console.merge.score", &[("percent", &percent(d.score))])}
+                }
+                span { class: "ik-pill", {reason_label(i18n, &d.reason)} }
+                for signal in d.signals.clone() {
+                    span { key: "{signal}", class: "ik-pill ghost",
+                        {signal_label(i18n, &signal)}
+                    }
+                }
+                for guard in d.blocked_by.clone() {
+                    span { key: "blocked-{guard}", class: "ik-pill amber",
+                        {i18n.args("console.decisions.blockedBy", &[("guard", &signal_label(i18n, &guard))])}
+                    }
+                }
+                if d.reverted_at.is_some() {
+                    span { class: "ik-pill vermilion", {i18n.t("console.decisions.wasReverted")} }
+                }
+                if d.flagged_at.is_some() {
+                    span { class: "ik-pill vermilion", {i18n.t("console.decisions.wasFlagged")} }
+                }
+            }
+            div { class: "ik-flex", style: "gap:8px;margin-top:8px;flex-wrap:wrap;",
+                button {
+                    class: "ik-btn xs",
+                    "aria-expanded": if expanded { "true" } else { "false" },
+                    onclick: move |_| {
+                        let next = !*open.peek();
+                        open.set(next);
+                    },
+                    if expanded {
+                        {i18n.t("console.decisions.hideEvidence")}
+                    } else {
+                        {i18n.t("console.decisions.showEvidence")}
+                    }
+                }
+                if can_revert && d.flagged_at.is_none() {
+                    input {
+                        class: "ik-input",
+                        style: "flex:1;min-width:20ch;",
+                        r#type: "text",
+                        placeholder: i18n.t("console.decisions.reasonPlaceholder"),
+                        "aria-label": i18n.t("console.decisions.reasonPlaceholder"),
+                        value: "{reason}",
+                        oninput: move |event: FormEvent| reason.set(event.value()),
+                    }
+                    // Offered only while an undo journal is unspent. A decision that queued a
+                    // pair rather than merging one has nothing to put back, and a button that
+                    // always errors is worse than no button.
+                    if d.revertible {
+                        button {
+                            class: "ik-btn xs vermilion",
+                            disabled: *busy.read(),
+                            onclick: move |_| judge(true),
+                            {i18n.args(
+                                "console.decisions.revert",
+                                &[("rows", &d.undo_rows.to_string())],
+                            )}
+                        }
+                    }
+                    button {
+                        class: "ik-btn xs",
+                        disabled: *busy.read(),
+                        onclick: move |_| judge(false),
+                        {i18n.t("console.decisions.flag")}
+                    }
+                }
+            }
+            if expanded {
+                MergeEvidence { decision }
+            }
+        }
+    }
+}
+
+/// The itemised score, the policy in force, and both sides' facts.
+#[component]
+fn MergeEvidence(decision: Signal<MergeDecision>) -> Element {
+    let i18n = use_i18n();
+    let d = decision.read();
+    let terms = d.terms.as_array().cloned().unwrap_or_default();
+
+    rsx! {
+        div { style: "margin-top:10px;border-top:1px solid var(--line);padding-top:10px;",
+            h4 { style: "margin:0 0 6px;font-size:13px;", {i18n.t("console.decisions.howScored")} }
+            if terms.is_empty() {
+                p { class: "ik-muted", {i18n.t("console.decisions.noTerms")} }
+            } else {
+                div { class: "ik-tablewrap",
+                    table { class: "ik-table ik-table-compact",
+                        thead {
+                            tr {
+                                th { {i18n.t("console.decisions.col.rule")} }
+                                th { style: "text-align:right;", {i18n.t("console.decisions.col.delta")} }
+                                th { {i18n.t("console.decisions.col.detail")} }
+                            }
+                        }
+                        tbody {
+                            for (index , term) in terms.iter().enumerate() {
+                                tr { key: "{index}",
+                                    td {
+                                        {term.get("rule").and_then(|v| v.as_str()).map_or_else(
+                                            || "?".to_owned(),
+                                            |rule| signal_label(i18n, rule),
+                                        )}
+                                    }
+                                    td { class: "ik-mono", style: "text-align:right;",
+                                        {signed(term.get("delta").and_then(serde_json::Value::as_f64).unwrap_or(0.0))}
+                                    }
+                                    td { class: "ik-muted", style: "font-size:12px;",
+                                        {term.get("detail").and_then(|v| v.as_str()).unwrap_or("")}
+                                    }
+                                }
+                            }
+                            tr {
+                                td { strong { {i18n.t("console.decisions.finalScore")} } }
+                                td { class: "ik-mono", style: "text-align:right;",
+                                    strong { {percent(d.score)} "%" }
+                                }
+                                td {}
+                            }
+                        }
+                    }
+                }
+            }
+            h4 { style: "margin:12px 0 6px;font-size:13px;", {i18n.t("console.decisions.evidence")} }
+            pre { class: "ik-code", style: "max-height:280px;overflow:auto;",
+                {pretty(&d.evidence)}
+            }
+            h4 { style: "margin:12px 0 6px;font-size:13px;", {i18n.t("console.decisions.policyInForce")} }
+            pre { class: "ik-code", style: "max-height:180px;overflow:auto;", {pretty(&d.policy)} }
+            if let Some(text) = d.revert_reason.clone() {
+                p { class: "ik-muted", style: "margin-top:8px;",
+                    {i18n.args("console.decisions.revertedBecause", &[("reason", &text)])}
+                }
+            }
+            if let Some(text) = d.flag_reason.clone() {
+                p { class: "ik-muted", style: "margin-top:4px;",
+                    {i18n.args("console.decisions.flaggedBecause", &[("reason", &text)])}
+                }
+            }
+        }
+    }
+}
+
+/// The automatic-sync journal, newest first.
+#[component]
+fn SyncJournal(tick: RefreshTick) -> Element {
+    let api = api::use_api();
+    let i18n = use_i18n();
+    let caps = use_capabilities();
+    let can_revert = caps.can(Permission::SyncRevert);
+    let mut action = use_signal(String::new);
+    // Default on: a reconciliation is mostly considerations, and an operator opening this panel
+    // is almost always asking what actually changed.
+    let mut applied_only = use_signal(|| true);
+    let notice = use_signal(String::new);
+
+    let filter_action = action.read().clone();
+    let only_applied = *applied_only.read();
+    let rows = use_resource(use_reactive!(|(filter_action, only_applied)| {
+        tick.track();
+        let client = api.client();
+        async move {
+            let mut request = client.list_sync_decisions().limit(PAGE_SIZE);
+            if !filter_action.is_empty() {
+                request = request.action(filter_action);
+            }
+            if only_applied {
+                request = request.applied(true);
+            }
+            request
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))
+        }
+    }));
+
+    rsx! {
+        div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;margin-bottom:10px;",
+            select {
+                class: "ik-input",
+                "aria-label": i18n.t("console.decisions.filter.action"),
+                value: "{action}",
+                onchange: move |event: FormEvent| action.set(event.value()),
+                option { value: "", {i18n.t("console.decisions.filter.anyAction")} }
+                for token in ["matched", "unmatched", "pull", "push", "conflict", "skipped", "noop"] {
+                    option { key: "{token}", value: "{token}",
+                        {i18n.t(&format!("console.decisions.action.{token}"))}
+                    }
+                }
+            }
+            label { class: "ik-flex", style: "gap:6px;align-items:center;",
+                input {
+                    r#type: "checkbox",
+                    checked: only_applied,
+                    onchange: move |event: FormEvent| applied_only.set(event.checked()),
+                }
+                span { {i18n.t("console.decisions.filter.appliedOnly")} }
+            }
+        }
+        if !notice.read().is_empty() {
+            div { class: "ik-note", style: "margin-bottom:10px;", "{notice}" }
+        }
+        {
+            async_view(
+                &rows,
+                tick.reload(),
+                || rsx! { SkeletonRows { count: 6, height: 28 } },
+                move |list| {
+                    if list.is_empty() {
+                        return rsx! {
+                            div { class: "ik-empty", style: "padding:24px;",
+                                {i18n.t("console.decisions.syncEmpty")}
+                            }
+                        };
+                    }
+                    let list = list.clone();
+                    rsx! {
+                        div { class: "ik-cons-list",
+                            for decision in list {
+                                SyncDecisionRow {
+                                    key: "{decision.id}",
+                                    decision: Signal::new(decision),
+                                    can_revert,
+                                    notice,
+                                    tick,
+                                }
+                            }
+                        }
+                    }
+                },
+            )
+        }
+    }
+}
+
+/// One sync decision: what changed on which side, from what to what, and why.
+#[component]
+fn SyncDecisionRow(
+    decision: Signal<SyncDecision>,
+    can_revert: bool,
+    notice: Signal<String>,
+    tick: RefreshTick,
+) -> Element {
+    let api = api::use_api();
+    let i18n = use_i18n();
+    let mut open = use_signal(|| false);
+    let mut busy = use_signal(|| false);
+    let mut reason = use_signal(String::new);
+    let d = decision.read();
+    let expanded = *open.read();
+    let id = d.id;
+    let title = d
+        .series_title
+        .clone()
+        .unwrap_or_else(|| i18n.t("console.decisions.noSeries"));
+
+    let mut judge = move |revert: bool| {
+        let text = reason.peek().trim().to_owned();
+        if text.is_empty() {
+            notice.set(i18n.t("console.decisions.reasonRequired"));
+            return;
+        }
+        if *busy.peek() {
+            return;
+        }
+        busy.set(true);
+        let mut notice = notice;
+        spawn(async move {
+            let client = api.client();
+            let outcome = if revert {
+                client
+                    .revert_sync_decision()
+                    .id(id)
+                    .body_map(|body| body.reason(text.clone()))
+                    .send()
+                    .await
+                    .map(|response| {
+                        let r = response.into_inner();
+                        i18n.args(
+                            "console.decisions.syncReverted",
+                            &[(
+                                "what",
+                                &i18n.t(&format!("console.decisions.restored.{}", r.restored)),
+                            )],
+                        )
+                    })
+            } else {
+                client
+                    .flag_sync_decision()
+                    .id(id)
+                    // Flagging a sync decision wrong almost always means the *match* was wrong,
+                    // and a flag that leaves the mapping in place fixes nothing: the next
+                    // reconciliation re-derives the same one.
+                    .body_map(|body| body.reason(text.clone()).block_match(true))
+                    .send()
+                    .await
+                    .map(|_| i18n.t("console.decisions.flaggedAndBlocked"))
+            };
+            match outcome {
+                Ok(message) => {
+                    notice.set(message);
+                    reason.set(String::new());
+                    tick.bump();
+                }
+                Err(e) => notice.set(i18n.args(
+                    "console.decisions.actionFailed",
+                    &[("message", &api::friendly_error(i18n, e))],
+                )),
+            }
+            busy.set(false);
+        });
+    };
+
+    rsx! {
+        article { class: "ik-card", style: "padding:12px;margin-bottom:10px;",
+            div { class: "ik-flex", style: "gap:10px;align-items:baseline;flex-wrap:wrap;",
+                span { class: if d.applied { "ik-pill" } else { "ik-pill ghost" },
+                    {i18n.t(&format!("console.decisions.action.{}", d.action))}
+                }
+                strong { "{title}" }
+                span { class: "ik-pill ghost", "{d.provider}" }
+                if let Some(name) = d.username.clone() {
+                    span { class: "ik-muted", "{name}" }
+                }
+                span { class: "ik-muted ik-mono", style: "font-size:12px;margin-left:auto;",
+                    "{rel_time(i18n, Some(d.decided_at.as_str()))}"
+                }
+            }
+            div { class: "ik-flex", style: "gap:6px;flex-wrap:wrap;margin-top:6px;",
+                span { class: "ik-pill", {reason_label(i18n, &d.reason)} }
+                if let Some(score) = d.match_score {
+                    span { class: "ik-pill",
+                        {i18n.args("console.merge.score", &[("percent", &percent(score))])}
+                    }
+                }
+                if let (Some(before), Some(after)) = (d.local_before.clone(), d.local_after.clone()) {
+                    span { class: "ik-pill ghost",
+                        {i18n.args("console.decisions.localMoved", &[("from", &before), ("to", &after)])}
+                    }
+                }
+                if let (Some(before), Some(after)) = (d.remote_before.clone(), d.remote_after.clone()) {
+                    span { class: "ik-pill ghost",
+                        {i18n.args("console.decisions.remoteMoved", &[("from", &before), ("to", &after)])}
+                    }
+                }
+                if d.reverted_at.is_some() {
+                    span { class: "ik-pill vermilion", {i18n.t("console.decisions.wasReverted")} }
+                }
+                if d.flagged_at.is_some() {
+                    span { class: "ik-pill vermilion", {i18n.t("console.decisions.wasFlagged")} }
+                }
+            }
+            div { class: "ik-flex", style: "gap:8px;margin-top:8px;flex-wrap:wrap;",
+                button {
+                    class: "ik-btn xs",
+                    "aria-expanded": if expanded { "true" } else { "false" },
+                    onclick: move |_| {
+                        let next = !*open.peek();
+                        open.set(next);
+                    },
+                    if expanded {
+                        {i18n.t("console.decisions.hideEvidence")}
+                    } else {
+                        {i18n.t("console.decisions.showEvidence")}
+                    }
+                }
+                if can_revert && d.flagged_at.is_none() && d.reverted_at.is_none() {
+                    input {
+                        class: "ik-input",
+                        style: "flex:1;min-width:20ch;",
+                        r#type: "text",
+                        placeholder: i18n.t("console.decisions.reasonPlaceholder"),
+                        "aria-label": i18n.t("console.decisions.reasonPlaceholder"),
+                        value: "{reason}",
+                        oninput: move |event: FormEvent| reason.set(event.value()),
+                    }
+                    if d.applied {
+                        button {
+                            class: "ik-btn xs vermilion",
+                            disabled: *busy.read(),
+                            onclick: move |_| judge(true),
+                            {i18n.t("console.decisions.undo")}
+                        }
+                    }
+                    button {
+                        class: "ik-btn xs",
+                        disabled: *busy.read(),
+                        onclick: move |_| judge(false),
+                        {i18n.t("console.decisions.flagMatch")}
+                    }
+                }
+            }
+            if expanded {
+                div { style: "margin-top:10px;border-top:1px solid var(--line);padding-top:10px;",
+                    dl { class: "ik-kv",
+                        DecisionFact { label: i18n.t("console.decisions.ancestorLocal"), value: d.ancestor_local.clone() }
+                        DecisionFact { label: i18n.t("console.decisions.ancestorRemote"), value: d.ancestor_remote.clone() }
+                        DecisionFact { label: i18n.t("console.decisions.policy"), value: d.policy.clone() }
+                        DecisionFact { label: i18n.t("console.decisions.externalId"), value: d.external_id.clone() }
+                    }
+                    if !d.match_signals.is_empty() {
+                        div { class: "ik-flex", style: "gap:6px;flex-wrap:wrap;margin:8px 0;",
+                            for signal in d.match_signals.clone() {
+                                span { key: "{signal}", class: "ik-pill ghost", {signal_label(i18n, &signal)} }
+                            }
+                        }
+                    }
+                    pre { class: "ik-code", style: "max-height:280px;overflow:auto;", {pretty(&d.evidence)} }
+                    if let Some(text) = d.revert_reason.clone() {
+                        p { class: "ik-muted", style: "margin-top:8px;",
+                            {i18n.args("console.decisions.revertedBecause", &[("reason", &text)])}
+                        }
+                    }
+                    if let Some(text) = d.flag_reason.clone() {
+                        p { class: "ik-muted", style: "margin-top:4px;",
+                            {i18n.args("console.decisions.flaggedBecause", &[("reason", &text)])}
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// One label/value pair, rendered only when there is a value. An empty row in a fact list reads
+/// as missing data rather than as "not applicable to this decision".
+#[component]
+fn DecisionFact(label: String, value: Option<String>) -> Element {
+    let Some(value) = value else {
+        return rsx! {};
+    };
+    rsx! {
+        dt { "{label}" }
+        dd { class: "ik-mono", "{value}" }
+    }
+}
+
+/// The tone an outcome is drawn in. A merge is the destructive one and has to be findable in a
+/// list of hundreds without reading every row.
+fn outcome_tone(outcome: &str) -> &'static str {
+    match outcome {
+        "merged" => "ik-pill vermilion",
+        "deferred" => "ik-pill amber",
+        _ => "ik-pill",
+    }
+}
+
+/// The catalogue wording for a scoring rule or signal slug, falling back to the slug.
+///
+/// The vocabulary lives in the scorer, and the console must not need a release to display a rule
+/// someone has just added. A missing key resolves to the key itself, which is how the fallback is
+/// detected — rendering `console.merge.signal.foo` to an operator is worse than rendering `foo`.
+fn signal_label(i18n: Translator, slug: &str) -> String {
+    for key in [
+        format!("console.merge.signal.{slug}"),
+        format!("console.decisions.term.{slug}"),
+    ] {
+        let worded = i18n.t(&key);
+        if worded != key {
+            return worded;
+        }
+    }
+    slug.to_owned()
+}
+
+/// The catalogue wording for a decision's reason slug, falling back to the slug.
+fn reason_label(i18n: Translator, slug: &str) -> String {
+    let key = format!("console.decisions.reason.{slug}");
+    let worded = i18n.t(&key);
+    if worded == key {
+        slug.to_owned()
+    } else {
+        worded
+    }
+}
+
+/// A score as a whole-number percentage, matching how the merge queue renders one.
+fn percent(score: f32) -> String {
+    format!("{:.0}", score * 100.0)
+}
+
+/// A score term with its sign always shown: the point of the column is which way each rule moved
+/// the number, and a bare `0.10` beside a bare `0.15` hides that one of them was a penalty.
+fn signed(delta: f64) -> String {
+    format!("{delta:+.3}")
+}
+
+/// Pretty-printed JSON, or the value as-is when it will not render.
+fn pretty(value: &serde_json::Value) -> String {
+    serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
+}

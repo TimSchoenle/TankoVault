@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO notification_dedup SELECT * FROM jsonb_populate_recordset(NULL::notification_dedup, $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "06c4a593b14c249c01dc2f9d7e56b064c15299a416e4a9f0e8b21c319de524af"
+}

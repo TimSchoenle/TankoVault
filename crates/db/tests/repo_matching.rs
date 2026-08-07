@@ -41,6 +41,7 @@ use tankovault_db::repo::catalog::{
 use tankovault_db::repo::matching::{
     MergeCandidateView, dismiss_merge_candidate, find_candidates, find_candidates_multi,
     list_open_merge_candidates, merge_series, resolve_merged_series, resolve_merged_series_batch,
+    revert_merge,
 };
 use tankovault_db::repo::sync;
 use tankovault_db::repo::tracking::{
@@ -1932,6 +1933,11 @@ const SERIES_REFERENCES: &[(&str, &str, Handling)] = &[
     ),
     // The one table here that holds a *decision* rather than a derivation.
     ("recommendation_feedback", "series_id", Handling::Folded),
+    // The decision journals. `sync_decisions.series_id` is `ON DELETE SET NULL` rather than a
+    // cascade — a journal a deletion can erase is not one — but the merge re-points it anyway,
+    // because a record detached from the series it describes survives and stops being findable.
+    ("sync_decisions", "series_id", Handling::Folded),
+    ("sync_match_blocks", "series_id", Handling::Folded),
 ];
 
 /// `user_taste_profile.seeds` is a `uuid[]` and therefore invisible to the enumeration above —
@@ -2111,4 +2117,213 @@ async fn merging_a_survivor_repoints_the_aliases_that_pointed_at_it() {
         batch, expected,
         "the batch form must resolve exactly the ids that moved, and no others"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The undo journal: a merge that can be taken back
+// ---------------------------------------------------------------------------
+
+/// A merge and its revert leave the database byte-identical to how it started.
+///
+/// This is the assertion the whole undo journal exists for, and it is deliberately made by
+/// *comparing the database to itself* rather than by checking a list of tables: a per-table
+/// assertion is exactly the thing that goes stale when someone adds a table, which is the failure
+/// mode `every_column_pointing_at_a_series_is_folded_or_deliberately_cascaded` already exists to
+/// catch on the forward path. Here the same risk runs backwards — a table the merge folds and the
+/// revert does not restore — and the only check that cannot rot is the whole-content one.
+///
+/// The fixture is chosen so every shape of change in the journal is exercised at once:
+///
+/// - a row only the **absorbed** series had (a second reader's watchlist entry, its own source),
+/// - a row only the **survivor** had (the first reader's watchlist entry),
+/// - a row **both** had at the same key, where the merge overwrote the survivor's value with
+///   `GREATEST` (the first reader's progress, 5.0 against 9.0) — the one case a `RETURNING`-based
+///   journal cannot reconstruct,
+/// - and a title present on both sides, so the union insert has something to skip and the revert
+///   has something it must *not* delete.
+#[tokio::test]
+async fn a_merge_and_its_revert_leave_the_database_exactly_as_it_was() {
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let keep = ingest(&db, alpha, &BERSERK, &[1.0, 2.0]).await;
+    let drop = ingest(&db, beta, &VINLAND, &[1.0]).await;
+
+    let reader = seed::user(&db, "reader").create().await;
+    let other = seed::user(&db, "other").create().await;
+
+    // Both sides, same reader, different frontiers: the merge keeps the further one, so the
+    // survivor's row is *overwritten* rather than created.
+    watchlist_upsert(&db.pool, reader, keep, WatchStatus::Reading, true)
+        .await
+        .expect("survivor watchlist");
+    progress_set(&db.pool, reader, keep, 5.0)
+        .await
+        .expect("survivor progress");
+    progress_set(&db.pool, reader, drop, 9.0)
+        .await
+        .expect("absorbed progress");
+    // A row only the absorbed series has, so the revert has something to move back off the
+    // survivor entirely rather than merely restore.
+    watchlist_upsert(&db.pool, other, drop, WatchStatus::Completed, false)
+        .await
+        .expect("absorbed watchlist");
+    sync::upsert_mapping(&db.pool, drop, "anilist", "12345")
+        .await
+        .expect("mapping");
+    // A title the survivor already answers to, so the union insert skips it and the revert must
+    // not take it away.
+    sqlx::query(
+        "INSERT INTO series_titles (series_id, title, normalized) \
+         VALUES ($1, $2, $3), ($4, $2, $3) ON CONFLICT DO NOTHING",
+    )
+    .bind(keep.as_uuid())
+    .bind("Shared Alias")
+    .bind(normalize_title("Shared Alias"))
+    .bind(drop.as_uuid())
+    .execute(&db.pool)
+    .await
+    .expect("shared alias");
+
+    let before = snapshot(&db).await;
+
+    let undo = merge_series(&db.pool, keep, drop, Some(reader), "auto_merged")
+        .await
+        .expect("merge");
+
+    // Sanity: the merge really did something, or the comparison below proves nothing.
+    let after_merge = snapshot(&db).await;
+    assert_ne!(before, after_merge, "the merge must have changed something");
+    assert!(
+        undo.row_count() > 0,
+        "the journal must carry the rows it will put back"
+    );
+
+    revert_merge(&db.pool, &undo).await.expect("revert");
+
+    let after_revert = snapshot(&db).await;
+    for (table, rows) in &before {
+        assert_eq!(
+            after_revert.get(table),
+            Some(rows),
+            "`{table}` differs after a merge and its revert"
+        );
+    }
+    assert_eq!(before, after_revert, "the revert must restore everything");
+}
+
+/// The absorbed series comes back under its **original id**, not a new one.
+///
+/// Every bookmark, external mapping and shared link names an id. A revert that re-created the
+/// series under a fresh id would restore the data and break exactly the references the merge
+/// broke — which is the harm the whole feature exists to undo.
+#[tokio::test]
+async fn a_revert_restores_the_original_id_and_removes_the_forwarding_address() {
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let keep = ingest(&db, alpha, &BERSERK, &[1.0]).await;
+    let drop = ingest(&db, beta, &VINLAND, &[1.0]).await;
+
+    let undo = merge_series(&db.pool, keep, drop, None, "auto_merged")
+        .await
+        .expect("merge");
+    assert_eq!(
+        resolve_merged_series(&db.pool, drop)
+            .await
+            .expect("resolve"),
+        Some(keep),
+        "sanity: the merge left a forwarding address"
+    );
+
+    revert_merge(&db.pool, &undo).await.expect("revert");
+
+    let live: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM series WHERE id = $1)")
+        .bind(drop.as_uuid())
+        .fetch_one(&db.pool)
+        .await
+        .expect("check the restored series");
+    assert!(
+        live,
+        "the absorbed series must exist again under its own id"
+    );
+    assert_eq!(
+        resolve_merged_series(&db.pool, drop)
+            .await
+            .expect("resolve"),
+        None,
+        "a restored series must not still forward to the survivor"
+    );
+}
+
+/// Reverting twice is refused rather than half-applied.
+///
+/// The journal is not idempotent — it re-inserts rows and re-points ids — so applying it to a
+/// database that has already been restored would fail partway through on a primary key. Refusing
+/// on the live id is what turns that into a clean 409.
+#[tokio::test]
+async fn a_second_revert_is_refused() {
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let keep = ingest(&db, alpha, &BERSERK, &[1.0]).await;
+    let drop = ingest(&db, beta, &VINLAND, &[1.0]).await;
+
+    let undo = merge_series(&db.pool, keep, drop, None, "auto_merged")
+        .await
+        .expect("merge");
+    revert_merge(&db.pool, &undo).await.expect("first revert");
+
+    let again = revert_merge(&db.pool, &undo).await;
+    assert!(
+        matches!(again, Err(DbError::Conflict(_))),
+        "a second revert must be a conflict, not a partial re-application: {again:?}"
+    );
+}
+
+/// Every row of every table a revert is expected to restore, as text, keyed by table.
+///
+/// Read through `to_jsonb` so the comparison is over *values* rather than over a hand-written
+/// column list — the same reason the journal itself round-trips through the composite type.
+/// Sorted inside each table so two equal sets compare equal regardless of physical row order,
+/// which changes freely when a row is deleted and re-inserted.
+///
+/// # What this deliberately does not cover
+///
+/// The `Handling::Cascades` tables are the recommender's *derived* rows: the merge lets them go
+/// with the absorbed series and the revert re-queues both series for a rebuild rather than
+/// reconstructing them, because re-deriving is the only way to be sure they agree with the
+/// restored truth. Asserting they came back would be asserting the wrong thing.
+///
+/// `rec_repair_queue` is excluded for the opposite reason — it is a work queue, not state. The
+/// merge enqueues the survivor and the revert enqueues both, and neither can un-request a rebuild
+/// that has already been asked for.
+async fn snapshot(db: &TestDb) -> std::collections::BTreeMap<String, Vec<String>> {
+    // Derived from `SERIES_REFERENCES` rather than listed again, so a table classified as folded
+    // there is compared here without this function changing. Plus the series row itself and the
+    // forwarding map, which that list does not name.
+    let mut tables: std::collections::BTreeSet<&str> = SERIES_REFERENCES
+        .iter()
+        .filter(|(table, _, handling)| {
+            matches!(handling, Handling::Folded) && *table != "rec_repair_queue"
+        })
+        .map(|(table, _, _)| *table)
+        .collect();
+    tables.insert("series");
+    tables.insert("series_merges");
+
+    let mut out = std::collections::BTreeMap::new();
+    for table in tables {
+        // `AssertSqlSafe` because the interpolated name is a `&'static str` from
+        // `SERIES_REFERENCES`, not anything a caller supplies.
+        let mut rows: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT to_jsonb(t)::text FROM {table} t"
+        )))
+        .fetch_all(&db.pool)
+        .await
+        .unwrap_or_else(|e| panic!("snapshot {table}: {e}"));
+        rows.sort_unstable();
+        out.insert(table.to_owned(), rows);
+    }
+    out
 }

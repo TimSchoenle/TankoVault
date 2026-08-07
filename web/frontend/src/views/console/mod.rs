@@ -10,6 +10,7 @@
 
 mod audit;
 mod controls;
+mod decisions;
 mod flags;
 mod live;
 mod merge;
@@ -76,6 +77,7 @@ impl RefreshTick {
 pub(crate) enum ConsoleEntity {
     Overview,
     Merge,
+    Decisions,
     Recommendations,
     Providers,
     Scans,
@@ -93,7 +95,11 @@ const RAIL: &[(&str, &[ConsoleEntity])] = &[
     ("console.group.system", &[ConsoleEntity::Overview]),
     (
         "console.group.catalogue",
-        &[ConsoleEntity::Merge, ConsoleEntity::Recommendations],
+        &[
+            ConsoleEntity::Merge,
+            ConsoleEntity::Decisions,
+            ConsoleEntity::Recommendations,
+        ],
     ),
     (
         "console.group.pipeline",
@@ -119,9 +125,10 @@ const RAIL: &[(&str, &[ConsoleEntity])] = &[
 impl ConsoleEntity {
     /// Every entity, in rail order. Kept in step with [`RAIL`] by
     /// `the_rail_and_the_entity_list_hold_the_same_entities`.
-    pub(crate) const ALL: [ConsoleEntity; 12] = [
+    pub(crate) const ALL: [ConsoleEntity; 13] = [
         Self::Overview,
         Self::Merge,
+        Self::Decisions,
         Self::Recommendations,
         Self::Providers,
         Self::Scans,
@@ -139,6 +146,7 @@ impl ConsoleEntity {
         match self {
             Self::Overview => "console.tab.overview",
             Self::Merge => "console.tab.merge",
+            Self::Decisions => "console.tab.decisions",
             Self::Recommendations => "console.tab.recommendations",
             Self::Providers => "console.tab.providers",
             Self::Scans => "console.tab.liveScans",
@@ -157,6 +165,9 @@ impl ConsoleEntity {
         match self {
             Self::Overview => Icon::Dashboard,
             Self::Merge => Icon::Merge,
+            // A judgement surface for two automatic engines, not a queue to work — and
+            // distinct from Audit, which records what *people* did.
+            Self::Decisions => Icon::Gavel,
             // A tuning surface, not a discovery one: the operator's view of it is the knobs.
             Self::Recommendations => Icon::Tune,
             Self::Providers => Icon::Layers,
@@ -177,6 +188,7 @@ impl ConsoleEntity {
         match self {
             Self::Overview => "overview",
             Self::Merge => "merge-queue",
+            Self::Decisions => "decisions",
             Self::Recommendations => "recommendations",
             Self::Providers => "providers",
             Self::Scans => "scan-runs",
@@ -200,6 +212,8 @@ impl ConsoleEntity {
             Self::Providers | Self::Solver => (Permission::ProvidersRead, Feature::AdminProviders),
             Self::AdapterTest => (Permission::ProvidersTest, Feature::AdminAdapterTest),
             Self::Merge => (Permission::MergeRead, Feature::ScanningMergeQueue),
+            // The *merge* half of the pair; `is_visible` widens it to either journal.
+            Self::Decisions => (Permission::MergeAudit, Feature::AdminAudit),
             Self::Recommendations => (Permission::RecsysRead, Feature::AdminRecommendations),
             Self::Sync => (Permission::SyncAdminRead, Feature::AdminSync),
             Self::Users => (Permission::UsersRead, Feature::AdminUsers),
@@ -210,9 +224,16 @@ impl ConsoleEntity {
     }
 
     /// Whether this reader should be offered this entity at all.
+    ///
+    /// [`Self::Decisions`] is the one entity backed by two independent journals behind two
+    /// independent permissions, so holding either opens it and the panel shows whichever halves
+    /// the reader may see. Folding that into `requires` would mean an operator granted only
+    /// `sync.audit` could not reach the sync journal at all.
     fn is_visible(self, caps: &CapabilitySet) -> bool {
         let (permission, feature) = self.requires();
-        caps.can(permission) && caps.has_feature(feature)
+        let permitted =
+            caps.can(permission) || (self == Self::Decisions && caps.can(Permission::SyncAudit));
+        permitted && caps.has_feature(feature)
     }
 
     /// Whether this entity owns both the list and the inspector pane, or renders one wide panel.
@@ -534,6 +555,11 @@ pub(crate) fn ConsoleSection(entity: ConsoleEntity, query: ConsoleQuery) -> Elem
         ConsoleEntity::Merge => rsx! {
             div { class: "ik-cons-pane",
                 merge::MergeQueue {}
+            }
+        },
+        ConsoleEntity::Decisions => rsx! {
+            div { class: "ik-cons-pane",
+                decisions::DecisionsPanel { tick }
             }
         },
         ConsoleEntity::Recommendations => rsx! {

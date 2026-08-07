@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM series_tags t USING jsonb_populate_recordset(NULL::series_tags, $1) x WHERE t.series_id = x.series_id AND t.tag_id = x.tag_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "907dce43b5efa79137aaca85f738e6bc8d3b0bc5a6281f00bf8e2a154c7d1575"
+}

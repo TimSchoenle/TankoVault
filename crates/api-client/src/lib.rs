@@ -2790,6 +2790,35 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "`JudgementRequest`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"reason\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"reason\": {"]
+    #[doc = "      \"description\": \"Why. Required, stored, and rendered beside the decision forever.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct JudgementRequest {
+        #[doc = "Why. Required, stored, and rendered beside the decision forever."]
+        pub reason: ::std::string::String,
+    }
+    impl JudgementRequest {
+        pub fn builder() -> builder::JudgementRequest {
+            Default::default()
+        }
+    }
     #[doc = "What a normalized-key rebuild changed.\n\n`normalized_title` is a persisted matching key, so a change to the normalization rules only\nreaches rows that happen to be re-scanned until this runs."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3453,6 +3482,302 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "One row of the automatic-merge decision journal.\n\nThe journal answers the question a score cannot: *why*. `terms` itemises how the number was\nreached, `reason` names the rule that turned it into a verdict, `blocked_by` names the guards\nthat overrode it, and `evidence` carries both sides' facts and which title actually matched."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One row of the automatic-merge decision journal.\\n\\nThe journal answers the question a score cannot: *why*. `terms` itemises how the number was\\nreached, `reason` names the rule that turned it into a verdict, `blocked_by` names the guards\\nthat overrode it, and `evidence` carries both sides' facts and which title actually matched.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"base_score\","]
+    #[doc = "    \"blocked_by\","]
+    #[doc = "    \"decided_at\","]
+    #[doc = "    \"evidence\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"left_id\","]
+    #[doc = "    \"left_title\","]
+    #[doc = "    \"outcome\","]
+    #[doc = "    \"policy\","]
+    #[doc = "    \"reason\","]
+    #[doc = "    \"revertible\","]
+    #[doc = "    \"right_id\","]
+    #[doc = "    \"right_title\","]
+    #[doc = "    \"score\","]
+    #[doc = "    \"signals\","]
+    #[doc = "    \"terms\","]
+    #[doc = "    \"trigger\","]
+    #[doc = "    \"undo_rows\","]
+    #[doc = "    \"verdict\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"absorbed_id\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {},"]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"actor\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"base_score\": {"]
+    #[doc = "      \"description\": \"The similarity the score started from, before any bonus or penalty.\","]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"float\""]
+    #[doc = "    },"]
+    #[doc = "    \"blocked_by\": {"]
+    #[doc = "      \"description\": \"Guards that fired. Non-empty on a `review` row means the pair cleared the score and\\nidentity bar and was held back anyway.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"decided_at\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"evidence\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/Value\""]
+    #[doc = "    },"]
+    #[doc = "    \"flag_reason\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"flagged_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"flagged_by\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"left_id\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    },"]
+    #[doc = "    \"left_title\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"outcome\": {"]
+    #[doc = "      \"description\": \"What was actually done, which is not always the verdict: `merged`, `queued`, `requeued`,\\n`reopened`, `withdrawn`, `distinct`, `deferred`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"policy\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/Value\""]
+    #[doc = "    },"]
+    #[doc = "    \"reason\": {"]
+    #[doc = "      \"description\": \"The stable slug of the rule that produced the verdict.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"revert_reason\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"reverted_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"reverted_by\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"revertible\": {"]
+    #[doc = "      \"description\": \"Whether this decision still has an unspent undo journal.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"right_id\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    },"]
+    #[doc = "    \"right_title\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"score\": {"]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"float\""]
+    #[doc = "    },"]
+    #[doc = "    \"signals\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"survivor_id\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {},"]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"sweep_id\": {"]
+    #[doc = "      \"description\": \"Groups every decision of one sweep run; absent for an operator's console merge.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"terms\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/Value\""]
+    #[doc = "    },"]
+    #[doc = "    \"trigger\": {"]
+    #[doc = "      \"description\": \"`sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"undo_rows\": {"]
+    #[doc = "      \"description\": \"How many rows a revert would restore or move back.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"verdict\": {"]
+    #[doc = "      \"description\": \"`auto` | `review` | `distinct`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MergeDecision {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub absorbed_id: ::std::option::Option<MergeDecisionAbsorbedId>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub actor: ::std::option::Option<::uuid::Uuid>,
+        #[doc = "The similarity the score started from, before any bonus or penalty."]
+        pub base_score: f32,
+        #[doc = "Guards that fired. Non-empty on a `review` row means the pair cleared the score and\nidentity bar and was held back anyway."]
+        pub blocked_by: ::std::vec::Vec<::std::string::String>,
+        pub decided_at: ::std::string::String,
+        pub evidence: Value,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub flag_reason: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub flagged_at: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub flagged_by: ::std::option::Option<::uuid::Uuid>,
+        pub id: ::uuid::Uuid,
+        pub left_id: SeriesId,
+        pub left_title: ::std::string::String,
+        #[doc = "What was actually done, which is not always the verdict: `merged`, `queued`, `requeued`,\n`reopened`, `withdrawn`, `distinct`, `deferred`."]
+        pub outcome: ::std::string::String,
+        pub policy: Value,
+        #[doc = "The stable slug of the rule that produced the verdict."]
+        pub reason: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub revert_reason: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub reverted_at: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub reverted_by: ::std::option::Option<::uuid::Uuid>,
+        #[doc = "Whether this decision still has an unspent undo journal."]
+        pub revertible: bool,
+        pub right_id: SeriesId,
+        pub right_title: ::std::string::String,
+        pub score: f32,
+        pub signals: ::std::vec::Vec<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub survivor_id: ::std::option::Option<MergeDecisionSurvivorId>,
+        #[doc = "Groups every decision of one sweep run; absent for an operator's console merge."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub sweep_id: ::std::option::Option<::uuid::Uuid>,
+        pub terms: Value,
+        #[doc = "`sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`."]
+        pub trigger: ::std::string::String,
+        #[doc = "How many rows a revert would restore or move back."]
+        pub undo_rows: i64,
+        #[doc = "`auto` | `review` | `distinct`."]
+        pub verdict: ::std::string::String,
+    }
+    impl MergeDecision {
+        pub fn builder() -> builder::MergeDecision {
+            Default::default()
+        }
+    }
+    #[doc = "`MergeDecisionAbsorbedId`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum MergeDecisionAbsorbedId {
+        Variant0(::serde_json::Value),
+        Variant1(SeriesId),
+    }
+    impl ::std::convert::From<::serde_json::Value> for MergeDecisionAbsorbedId {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<SeriesId> for MergeDecisionAbsorbedId {
+        fn from(value: SeriesId) -> Self {
+            Self::Variant1(value)
+        }
+    }
+    #[doc = "`MergeDecisionSurvivorId`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum MergeDecisionSurvivorId {
+        Variant0(::serde_json::Value),
+        Variant1(SeriesId),
+    }
+    impl ::std::convert::From<::serde_json::Value> for MergeDecisionSurvivorId {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<SeriesId> for MergeDecisionSurvivorId {
+        fn from(value: SeriesId) -> Self {
+            Self::Variant1(value)
+        }
+    }
     #[doc = "`MergeRequest`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3485,6 +3810,60 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "What undoing an automatic merge put back."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What undoing an automatic merge put back.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"decision_id\","]
+    #[doc = "    \"pair_suppressed\","]
+    #[doc = "    \"restored_id\","]
+    #[doc = "    \"rows_restored\","]
+    #[doc = "    \"survivor_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"decision_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"pair_suppressed\": {"]
+    #[doc = "      \"description\": \"Always true: a revert also suppresses the pair, or the next sweep would merge it again.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"restored_id\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    },"]
+    #[doc = "    \"rows_restored\": {"]
+    #[doc = "      \"description\": \"Rows restored or moved back off the survivor.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"survivor_id\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MergeReverted {
+        pub decision_id: ::uuid::Uuid,
+        #[doc = "Always true: a revert also suppresses the pair, or the next sweep would merge it again."]
+        pub pair_suppressed: bool,
+        pub restored_id: SeriesId,
+        #[doc = "Rows restored or moved back off the survivor."]
+        pub rows_restored: i64,
+        pub survivor_id: SeriesId,
+    }
+    impl MergeReverted {
+        pub fn builder() -> builder::MergeReverted {
+            Default::default()
+        }
+    }
     #[doc = "What one duplicate-reconciliation sweep did.\n\nReturned by `POST /v1/admin/merge-candidates/sweep` and logged by the scheduled sweep, so an\noperator can see the effect of a threshold change on a single run before leaving it to the\nschedule."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3495,6 +3874,7 @@ pub mod types {
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"auto_merged\","]
+    #[doc = "    \"blocked\","]
     #[doc = "    \"deferred\","]
     #[doc = "    \"distinct\","]
     #[doc = "    \"pairs_examined\","]
@@ -3506,6 +3886,11 @@ pub mod types {
     #[doc = "  \"properties\": {"]
     #[doc = "    \"auto_merged\": {"]
     #[doc = "      \"description\": \"Pairs merged without asking, because a structural identity rule fired *and* the score\\ncleared the automatic-merge threshold.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"blocked\": {"]
+    #[doc = "      \"description\": \"Pairs an auto-merge guard held back: identical titles, a score above the automatic\\nthreshold, and a signal saying the two are different works anyway. These are the near\\nmisses, and they are the rows to read first — each is either a duplicate the guard is\\ncosting you or a merge the guard just prevented.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -3552,6 +3937,8 @@ pub mod types {
     pub struct MergeSweepView {
         #[doc = "Pairs merged without asking, because a structural identity rule fired *and* the score\ncleared the automatic-merge threshold."]
         pub auto_merged: i64,
+        #[doc = "Pairs an auto-merge guard held back: identical titles, a score above the automatic\nthreshold, and a signal saying the two are different works anyway. These are the near\nmisses, and they are the rows to read first — each is either a duplicate the guard is\ncosting you or a merge the guard just prevented."]
+        pub blocked: i64,
         #[doc = "Pairs skipped because the sweep's per-run automatic-merge budget was exhausted. Non-zero\nmeans the next sweep has more to do, not that anything failed."]
         pub deferred: i64,
         #[doc = "Pairs the sweep judged distinct and left alone."]
@@ -4474,10 +4861,14 @@ pub mod types {
     #[doc = "    \"scans.run\","]
     #[doc = "    \"merge.read\","]
     #[doc = "    \"merge.write\","]
+    #[doc = "    \"merge.audit\","]
+    #[doc = "    \"merge.revert\","]
     #[doc = "    \"recsys.read\","]
     #[doc = "    \"recsys.write\","]
     #[doc = "    \"sync.admin.read\","]
     #[doc = "    \"sync.admin.write\","]
+    #[doc = "    \"sync.audit\","]
+    #[doc = "    \"sync.revert\","]
     #[doc = "    \"users.read\","]
     #[doc = "    \"users.write\","]
     #[doc = "    \"users.permissions\","]
@@ -4527,6 +4918,10 @@ pub mod types {
         MergeRead,
         #[serde(rename = "merge.write")]
         MergeWrite,
+        #[serde(rename = "merge.audit")]
+        MergeAudit,
+        #[serde(rename = "merge.revert")]
+        MergeRevert,
         #[serde(rename = "recsys.read")]
         RecsysRead,
         #[serde(rename = "recsys.write")]
@@ -4535,6 +4930,10 @@ pub mod types {
         SyncAdminRead,
         #[serde(rename = "sync.admin.write")]
         SyncAdminWrite,
+        #[serde(rename = "sync.audit")]
+        SyncAudit,
+        #[serde(rename = "sync.revert")]
+        SyncRevert,
         #[serde(rename = "users.read")]
         UsersRead,
         #[serde(rename = "users.write")]
@@ -4573,10 +4972,14 @@ pub mod types {
                 Self::ScansRun => f.write_str("scans.run"),
                 Self::MergeRead => f.write_str("merge.read"),
                 Self::MergeWrite => f.write_str("merge.write"),
+                Self::MergeAudit => f.write_str("merge.audit"),
+                Self::MergeRevert => f.write_str("merge.revert"),
                 Self::RecsysRead => f.write_str("recsys.read"),
                 Self::RecsysWrite => f.write_str("recsys.write"),
                 Self::SyncAdminRead => f.write_str("sync.admin.read"),
                 Self::SyncAdminWrite => f.write_str("sync.admin.write"),
+                Self::SyncAudit => f.write_str("sync.audit"),
+                Self::SyncRevert => f.write_str("sync.revert"),
                 Self::UsersRead => f.write_str("users.read"),
                 Self::UsersWrite => f.write_str("users.write"),
                 Self::UsersPermissions => f.write_str("users.permissions"),
@@ -4606,10 +5009,14 @@ pub mod types {
                 "scans.run" => Ok(Self::ScansRun),
                 "merge.read" => Ok(Self::MergeRead),
                 "merge.write" => Ok(Self::MergeWrite),
+                "merge.audit" => Ok(Self::MergeAudit),
+                "merge.revert" => Ok(Self::MergeRevert),
                 "recsys.read" => Ok(Self::RecsysRead),
                 "recsys.write" => Ok(Self::RecsysWrite),
                 "sync.admin.read" => Ok(Self::SyncAdminRead),
                 "sync.admin.write" => Ok(Self::SyncAdminWrite),
+                "sync.audit" => Ok(Self::SyncAudit),
+                "sync.revert" => Ok(Self::SyncRevert),
                 "users.read" => Ok(Self::UsersRead),
                 "users.write" => Ok(Self::UsersWrite),
                 "users.permissions" => Ok(Self::UsersPermissions),
@@ -8108,6 +8515,282 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "One row of the automatic-sync decision journal.\n\nCovers what `sync_history` never did: the entries that matched no local series, the series\nskipped as excluded, the fields both sides already agreed on, and the scored title match\nbehind every mapping."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One row of the automatic-sync decision journal.\\n\\nCovers what `sync_history` never did: the entries that matched no local series, the series\\nskipped as excluded, the fields both sides already agreed on, and the scored title match\\nbehind every mapping.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"action\","]
+    #[doc = "    \"applied\","]
+    #[doc = "    \"decided_at\","]
+    #[doc = "    \"evidence\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"match_signals\","]
+    #[doc = "    \"provider\","]
+    #[doc = "    \"reason\","]
+    #[doc = "    \"run_id\","]
+    #[doc = "    \"scope\","]
+    #[doc = "    \"user_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"action\": {"]
+    #[doc = "      \"description\": \"`matched` | `unmatched` | `pull` | `push` | `create_remote` | `conflict` | `noop`\\n| `skipped` | `import_status` | `enriched` | `unmapped`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"ancestor_local\": {"]
+    #[doc = "      \"description\": \"The three-way merge's common ancestor. Without it a pull cannot be told from a clobber.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"ancestor_remote\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"applied\": {"]
+    #[doc = "      \"description\": \"Whether anything was actually written. A run is mostly considerations.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"decided_at\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"evidence\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/Value\""]
+    #[doc = "    },"]
+    #[doc = "    \"external_id\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"flag_reason\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"flagged_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"flagged_by\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"local_after\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"local_before\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"match_score\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"number\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"float\""]
+    #[doc = "    },"]
+    #[doc = "    \"match_signals\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"policy\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"provider\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"reason\": {"]
+    #[doc = "      \"description\": \"The stable slug for why: `only_remote_changed`, `both_sides_changed_policy_remote_wins`,\\n`title_match_above_threshold`, `blocked_by_operator`, …\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"remote_after\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"remote_before\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"revert_reason\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"reverted_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"reverted_by\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"run_id\": {"]
+    #[doc = "      \"description\": \"Groups one account reconciliation.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"scope\": {"]
+    #[doc = "      \"description\": \"`match` | `progress` | `status` | `series` | `metadata`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"series_id\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {},"]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"series_title\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"user_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"username\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SyncDecision {
+        #[doc = "`matched` | `unmatched` | `pull` | `push` | `create_remote` | `conflict` | `noop`\n| `skipped` | `import_status` | `enriched` | `unmapped`."]
+        pub action: ::std::string::String,
+        #[doc = "The three-way merge's common ancestor. Without it a pull cannot be told from a clobber."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub ancestor_local: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub ancestor_remote: ::std::option::Option<::std::string::String>,
+        #[doc = "Whether anything was actually written. A run is mostly considerations."]
+        pub applied: bool,
+        pub decided_at: ::std::string::String,
+        pub evidence: Value,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub external_id: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub flag_reason: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub flagged_at: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub flagged_by: ::std::option::Option<::uuid::Uuid>,
+        pub id: ::uuid::Uuid,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub local_after: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub local_before: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub match_score: ::std::option::Option<f32>,
+        pub match_signals: ::std::vec::Vec<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub policy: ::std::option::Option<::std::string::String>,
+        pub provider: ::std::string::String,
+        #[doc = "The stable slug for why: `only_remote_changed`, `both_sides_changed_policy_remote_wins`,\n`title_match_above_threshold`, `blocked_by_operator`, …"]
+        pub reason: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub remote_after: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub remote_before: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub revert_reason: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub reverted_at: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub reverted_by: ::std::option::Option<::uuid::Uuid>,
+        #[doc = "Groups one account reconciliation."]
+        pub run_id: ::uuid::Uuid,
+        #[doc = "`match` | `progress` | `status` | `series` | `metadata`."]
+        pub scope: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub series_id: ::std::option::Option<SyncDecisionSeriesId>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub series_title: ::std::option::Option<::std::string::String>,
+        pub user_id: ::uuid::Uuid,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub username: ::std::option::Option<::std::string::String>,
+    }
+    impl SyncDecision {
+        pub fn builder() -> builder::SyncDecision {
+            Default::default()
+        }
+    }
+    #[doc = "`SyncDecisionSeriesId`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum SyncDecisionSeriesId {
+        Variant0(::serde_json::Value),
+        Variant1(SeriesId),
+    }
+    impl ::std::convert::From<::serde_json::Value> for SyncDecisionSeriesId {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<SeriesId> for SyncDecisionSeriesId {
+        fn from(value: SeriesId) -> Self {
+            Self::Variant1(value)
+        }
+    }
     #[doc = "`SyncExcluded`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -8132,6 +8815,42 @@ pub mod types {
     }
     impl SyncExcluded {
         pub fn builder() -> builder::SyncExcluded {
+            Default::default()
+        }
+    }
+    #[doc = "`SyncFlagRequest`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"reason\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"block_match\": {"]
+    #[doc = "      \"description\": \"Also refuse the (external id, series) match this decision made, permanently.\\n\\nDeleting the mapping alone fixes nothing: the next reconciliation runs the same title\\nmatch against the same catalogue and writes the same row back.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"reason\": {"]
+    #[doc = "      \"description\": \"Why. Required, stored, and rendered beside the decision forever.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SyncFlagRequest {
+        #[doc = "Also refuse the (external id, series) match this decision made, permanently.\n\nDeleting the mapping alone fixes nothing: the next reconciliation runs the same title\nmatch against the same catalogue and writes the same row back."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub block_match: ::std::option::Option<bool>,
+        #[doc = "Why. Required, stored, and rendered beside the decision forever."]
+        pub reason: ::std::string::String,
+    }
+    impl SyncFlagRequest {
+        pub fn builder() -> builder::SyncFlagRequest {
             Default::default()
         }
     }
@@ -8295,6 +9014,59 @@ pub mod types {
     impl ::std::convert::From<SyncOpts> for SyncPushBody {
         fn from(value: SyncOpts) -> Self {
             Self::Variant1(value)
+        }
+    }
+    #[doc = "What undoing a sync decision put back."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What undoing a sync decision put back.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"blocked_match\","]
+    #[doc = "    \"decision_id\","]
+    #[doc = "    \"restored\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"blocked_match\": {"]
+    #[doc = "      \"description\": \"Whether the revert also refused the title match permanently.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"decision_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"restored\": {"]
+    #[doc = "      \"description\": \"`local_progress` | `local_status` | `watchlist_entry` | `remote_entry` | `match`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"value\": {"]
+    #[doc = "      \"description\": \"The value the restored side now holds.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SyncReverted {
+        #[doc = "Whether the revert also refused the title match permanently."]
+        pub blocked_match: bool,
+        pub decision_id: ::uuid::Uuid,
+        #[doc = "`local_progress` | `local_status` | `watchlist_entry` | `remote_entry` | `match`."]
+        pub restored: ::std::string::String,
+        #[doc = "The value the restored side now holds."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub value: ::std::option::Option<::std::string::String>,
+    }
+    impl SyncReverted {
+        pub fn builder() -> builder::SyncReverted {
+            Default::default()
         }
     }
     #[doc = "`SyncSettingsPatch`"]
@@ -13834,6 +14606,46 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct JudgementRequest {
+            reason: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for JudgementRequest {
+            fn default() -> Self {
+                Self {
+                    reason: Err("no value supplied for reason".to_string()),
+                }
+            }
+        }
+        impl JudgementRequest {
+            pub fn reason<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reason = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reason: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<JudgementRequest> for super::JudgementRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: JudgementRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    reason: value.reason?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::JudgementRequest> for JudgementRequest {
+            fn from(value: super::JudgementRequest) -> Self {
+                Self {
+                    reason: Ok(value.reason),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct KeyRebuildView {
             series_scanned: ::std::result::Result<i64, ::std::string::String>,
             series_updated: ::std::result::Result<i64, ::std::string::String>,
@@ -14752,6 +15564,466 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct MergeDecision {
+            absorbed_id: ::std::result::Result<
+                ::std::option::Option<super::MergeDecisionAbsorbedId>,
+                ::std::string::String,
+            >,
+            actor:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+            base_score: ::std::result::Result<f32, ::std::string::String>,
+            blocked_by: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            decided_at: ::std::result::Result<::std::string::String, ::std::string::String>,
+            evidence: ::std::result::Result<super::Value, ::std::string::String>,
+            flag_reason: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            flagged_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            flagged_by:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            left_id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+            left_title: ::std::result::Result<::std::string::String, ::std::string::String>,
+            outcome: ::std::result::Result<::std::string::String, ::std::string::String>,
+            policy: ::std::result::Result<super::Value, ::std::string::String>,
+            reason: ::std::result::Result<::std::string::String, ::std::string::String>,
+            revert_reason: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            reverted_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            reverted_by:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+            revertible: ::std::result::Result<bool, ::std::string::String>,
+            right_id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+            right_title: ::std::result::Result<::std::string::String, ::std::string::String>,
+            score: ::std::result::Result<f32, ::std::string::String>,
+            signals: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            survivor_id: ::std::result::Result<
+                ::std::option::Option<super::MergeDecisionSurvivorId>,
+                ::std::string::String,
+            >,
+            sweep_id:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+            terms: ::std::result::Result<super::Value, ::std::string::String>,
+            trigger: ::std::result::Result<::std::string::String, ::std::string::String>,
+            undo_rows: ::std::result::Result<i64, ::std::string::String>,
+            verdict: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for MergeDecision {
+            fn default() -> Self {
+                Self {
+                    absorbed_id: Ok(Default::default()),
+                    actor: Ok(Default::default()),
+                    base_score: Err("no value supplied for base_score".to_string()),
+                    blocked_by: Err("no value supplied for blocked_by".to_string()),
+                    decided_at: Err("no value supplied for decided_at".to_string()),
+                    evidence: Err("no value supplied for evidence".to_string()),
+                    flag_reason: Ok(Default::default()),
+                    flagged_at: Ok(Default::default()),
+                    flagged_by: Ok(Default::default()),
+                    id: Err("no value supplied for id".to_string()),
+                    left_id: Err("no value supplied for left_id".to_string()),
+                    left_title: Err("no value supplied for left_title".to_string()),
+                    outcome: Err("no value supplied for outcome".to_string()),
+                    policy: Err("no value supplied for policy".to_string()),
+                    reason: Err("no value supplied for reason".to_string()),
+                    revert_reason: Ok(Default::default()),
+                    reverted_at: Ok(Default::default()),
+                    reverted_by: Ok(Default::default()),
+                    revertible: Err("no value supplied for revertible".to_string()),
+                    right_id: Err("no value supplied for right_id".to_string()),
+                    right_title: Err("no value supplied for right_title".to_string()),
+                    score: Err("no value supplied for score".to_string()),
+                    signals: Err("no value supplied for signals".to_string()),
+                    survivor_id: Ok(Default::default()),
+                    sweep_id: Ok(Default::default()),
+                    terms: Err("no value supplied for terms".to_string()),
+                    trigger: Err("no value supplied for trigger".to_string()),
+                    undo_rows: Err("no value supplied for undo_rows".to_string()),
+                    verdict: Err("no value supplied for verdict".to_string()),
+                }
+            }
+        }
+        impl MergeDecision {
+            pub fn absorbed_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::MergeDecisionAbsorbedId>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.absorbed_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for absorbed_id: {e}"));
+                self
+            }
+            pub fn actor<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.actor = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for actor: {e}"));
+                self
+            }
+            pub fn base_score<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.base_score = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for base_score: {e}"));
+                self
+            }
+            pub fn blocked_by<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.blocked_by = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for blocked_by: {e}"));
+                self
+            }
+            pub fn decided_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.decided_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for decided_at: {e}"));
+                self
+            }
+            pub fn evidence<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.evidence = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for evidence: {e}"));
+                self
+            }
+            pub fn flag_reason<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.flag_reason = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for flag_reason: {e}"));
+                self
+            }
+            pub fn flagged_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.flagged_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for flagged_at: {e}"));
+                self
+            }
+            pub fn flagged_by<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.flagged_by = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for flagged_by: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn left_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::SeriesId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.left_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for left_id: {e}"));
+                self
+            }
+            pub fn left_title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.left_title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for left_title: {e}"));
+                self
+            }
+            pub fn outcome<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.outcome = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for outcome: {e}"));
+                self
+            }
+            pub fn policy<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.policy = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for policy: {e}"));
+                self
+            }
+            pub fn reason<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reason = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reason: {e}"));
+                self
+            }
+            pub fn revert_reason<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.revert_reason = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for revert_reason: {e}"));
+                self
+            }
+            pub fn reverted_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reverted_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reverted_at: {e}"));
+                self
+            }
+            pub fn reverted_by<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reverted_by = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reverted_by: {e}"));
+                self
+            }
+            pub fn revertible<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.revertible = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for revertible: {e}"));
+                self
+            }
+            pub fn right_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::SeriesId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.right_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for right_id: {e}"));
+                self
+            }
+            pub fn right_title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.right_title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for right_title: {e}"));
+                self
+            }
+            pub fn score<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.score = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for score: {e}"));
+                self
+            }
+            pub fn signals<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.signals = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for signals: {e}"));
+                self
+            }
+            pub fn survivor_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::MergeDecisionSurvivorId>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.survivor_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for survivor_id: {e}"));
+                self
+            }
+            pub fn sweep_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sweep_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for sweep_id: {e}"));
+                self
+            }
+            pub fn terms<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.terms = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for terms: {e}"));
+                self
+            }
+            pub fn trigger<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.trigger = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for trigger: {e}"));
+                self
+            }
+            pub fn undo_rows<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.undo_rows = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for undo_rows: {e}"));
+                self
+            }
+            pub fn verdict<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.verdict = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for verdict: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MergeDecision> for super::MergeDecision {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MergeDecision,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    absorbed_id: value.absorbed_id?,
+                    actor: value.actor?,
+                    base_score: value.base_score?,
+                    blocked_by: value.blocked_by?,
+                    decided_at: value.decided_at?,
+                    evidence: value.evidence?,
+                    flag_reason: value.flag_reason?,
+                    flagged_at: value.flagged_at?,
+                    flagged_by: value.flagged_by?,
+                    id: value.id?,
+                    left_id: value.left_id?,
+                    left_title: value.left_title?,
+                    outcome: value.outcome?,
+                    policy: value.policy?,
+                    reason: value.reason?,
+                    revert_reason: value.revert_reason?,
+                    reverted_at: value.reverted_at?,
+                    reverted_by: value.reverted_by?,
+                    revertible: value.revertible?,
+                    right_id: value.right_id?,
+                    right_title: value.right_title?,
+                    score: value.score?,
+                    signals: value.signals?,
+                    survivor_id: value.survivor_id?,
+                    sweep_id: value.sweep_id?,
+                    terms: value.terms?,
+                    trigger: value.trigger?,
+                    undo_rows: value.undo_rows?,
+                    verdict: value.verdict?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MergeDecision> for MergeDecision {
+            fn from(value: super::MergeDecision) -> Self {
+                Self {
+                    absorbed_id: Ok(value.absorbed_id),
+                    actor: Ok(value.actor),
+                    base_score: Ok(value.base_score),
+                    blocked_by: Ok(value.blocked_by),
+                    decided_at: Ok(value.decided_at),
+                    evidence: Ok(value.evidence),
+                    flag_reason: Ok(value.flag_reason),
+                    flagged_at: Ok(value.flagged_at),
+                    flagged_by: Ok(value.flagged_by),
+                    id: Ok(value.id),
+                    left_id: Ok(value.left_id),
+                    left_title: Ok(value.left_title),
+                    outcome: Ok(value.outcome),
+                    policy: Ok(value.policy),
+                    reason: Ok(value.reason),
+                    revert_reason: Ok(value.revert_reason),
+                    reverted_at: Ok(value.reverted_at),
+                    reverted_by: Ok(value.reverted_by),
+                    revertible: Ok(value.revertible),
+                    right_id: Ok(value.right_id),
+                    right_title: Ok(value.right_title),
+                    score: Ok(value.score),
+                    signals: Ok(value.signals),
+                    survivor_id: Ok(value.survivor_id),
+                    sweep_id: Ok(value.sweep_id),
+                    terms: Ok(value.terms),
+                    trigger: Ok(value.trigger),
+                    undo_rows: Ok(value.undo_rows),
+                    verdict: Ok(value.verdict),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct MergeRequest {
             keep: ::std::result::Result<super::SeriesId, ::std::string::String>,
             merge: ::std::result::Result<super::SeriesId, ::std::string::String>,
@@ -14806,8 +16078,105 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct MergeReverted {
+            decision_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            pair_suppressed: ::std::result::Result<bool, ::std::string::String>,
+            restored_id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+            rows_restored: ::std::result::Result<i64, ::std::string::String>,
+            survivor_id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+        }
+        impl ::std::default::Default for MergeReverted {
+            fn default() -> Self {
+                Self {
+                    decision_id: Err("no value supplied for decision_id".to_string()),
+                    pair_suppressed: Err("no value supplied for pair_suppressed".to_string()),
+                    restored_id: Err("no value supplied for restored_id".to_string()),
+                    rows_restored: Err("no value supplied for rows_restored".to_string()),
+                    survivor_id: Err("no value supplied for survivor_id".to_string()),
+                }
+            }
+        }
+        impl MergeReverted {
+            pub fn decision_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.decision_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for decision_id: {e}"));
+                self
+            }
+            pub fn pair_suppressed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.pair_suppressed = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for pair_suppressed: {e}")
+                });
+                self
+            }
+            pub fn restored_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::SeriesId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.restored_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for restored_id: {e}"));
+                self
+            }
+            pub fn rows_restored<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.rows_restored = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for rows_restored: {e}"));
+                self
+            }
+            pub fn survivor_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::SeriesId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.survivor_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for survivor_id: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MergeReverted> for super::MergeReverted {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MergeReverted,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    decision_id: value.decision_id?,
+                    pair_suppressed: value.pair_suppressed?,
+                    restored_id: value.restored_id?,
+                    rows_restored: value.rows_restored?,
+                    survivor_id: value.survivor_id?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MergeReverted> for MergeReverted {
+            fn from(value: super::MergeReverted) -> Self {
+                Self {
+                    decision_id: Ok(value.decision_id),
+                    pair_suppressed: Ok(value.pair_suppressed),
+                    restored_id: Ok(value.restored_id),
+                    rows_restored: Ok(value.rows_restored),
+                    survivor_id: Ok(value.survivor_id),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct MergeSweepView {
             auto_merged: ::std::result::Result<i64, ::std::string::String>,
+            blocked: ::std::result::Result<i64, ::std::string::String>,
             deferred: ::std::result::Result<i64, ::std::string::String>,
             distinct: ::std::result::Result<i64, ::std::string::String>,
             pairs_examined: ::std::result::Result<i64, ::std::string::String>,
@@ -14820,6 +16189,7 @@ pub mod types {
             fn default() -> Self {
                 Self {
                     auto_merged: Err("no value supplied for auto_merged".to_string()),
+                    blocked: Err("no value supplied for blocked".to_string()),
                     deferred: Err("no value supplied for deferred".to_string()),
                     distinct: Err("no value supplied for distinct".to_string()),
                     pairs_examined: Err("no value supplied for pairs_examined".to_string()),
@@ -14839,6 +16209,16 @@ pub mod types {
                 self.auto_merged = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for auto_merged: {e}"));
+                self
+            }
+            pub fn blocked<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.blocked = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for blocked: {e}"));
                 self
             }
             pub fn deferred<T>(mut self, value: T) -> Self
@@ -14919,6 +16299,7 @@ pub mod types {
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
                     auto_merged: value.auto_merged?,
+                    blocked: value.blocked?,
                     deferred: value.deferred?,
                     distinct: value.distinct?,
                     pairs_examined: value.pairs_examined?,
@@ -14933,6 +16314,7 @@ pub mod types {
             fn from(value: super::MergeSweepView) -> Self {
                 Self {
                     auto_merged: Ok(value.auto_merged),
+                    blocked: Ok(value.blocked),
                     deferred: Ok(value.deferred),
                     distinct: Ok(value.distinct),
                     pairs_examined: Ok(value.pairs_examined),
@@ -20171,6 +21553,488 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct SyncDecision {
+            action: ::std::result::Result<::std::string::String, ::std::string::String>,
+            ancestor_local: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            ancestor_remote: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            applied: ::std::result::Result<bool, ::std::string::String>,
+            decided_at: ::std::result::Result<::std::string::String, ::std::string::String>,
+            evidence: ::std::result::Result<super::Value, ::std::string::String>,
+            external_id: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            flag_reason: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            flagged_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            flagged_by:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            local_after: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            local_before: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            match_score: ::std::result::Result<::std::option::Option<f32>, ::std::string::String>,
+            match_signals: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            policy: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            provider: ::std::result::Result<::std::string::String, ::std::string::String>,
+            reason: ::std::result::Result<::std::string::String, ::std::string::String>,
+            remote_after: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            remote_before: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            revert_reason: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            reverted_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            reverted_by:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+            run_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            scope: ::std::result::Result<::std::string::String, ::std::string::String>,
+            series_id: ::std::result::Result<
+                ::std::option::Option<super::SyncDecisionSeriesId>,
+                ::std::string::String,
+            >,
+            series_title: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            user_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            username: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for SyncDecision {
+            fn default() -> Self {
+                Self {
+                    action: Err("no value supplied for action".to_string()),
+                    ancestor_local: Ok(Default::default()),
+                    ancestor_remote: Ok(Default::default()),
+                    applied: Err("no value supplied for applied".to_string()),
+                    decided_at: Err("no value supplied for decided_at".to_string()),
+                    evidence: Err("no value supplied for evidence".to_string()),
+                    external_id: Ok(Default::default()),
+                    flag_reason: Ok(Default::default()),
+                    flagged_at: Ok(Default::default()),
+                    flagged_by: Ok(Default::default()),
+                    id: Err("no value supplied for id".to_string()),
+                    local_after: Ok(Default::default()),
+                    local_before: Ok(Default::default()),
+                    match_score: Ok(Default::default()),
+                    match_signals: Err("no value supplied for match_signals".to_string()),
+                    policy: Ok(Default::default()),
+                    provider: Err("no value supplied for provider".to_string()),
+                    reason: Err("no value supplied for reason".to_string()),
+                    remote_after: Ok(Default::default()),
+                    remote_before: Ok(Default::default()),
+                    revert_reason: Ok(Default::default()),
+                    reverted_at: Ok(Default::default()),
+                    reverted_by: Ok(Default::default()),
+                    run_id: Err("no value supplied for run_id".to_string()),
+                    scope: Err("no value supplied for scope".to_string()),
+                    series_id: Ok(Default::default()),
+                    series_title: Ok(Default::default()),
+                    user_id: Err("no value supplied for user_id".to_string()),
+                    username: Ok(Default::default()),
+                }
+            }
+        }
+        impl SyncDecision {
+            pub fn action<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.action = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for action: {e}"));
+                self
+            }
+            pub fn ancestor_local<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ancestor_local = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for ancestor_local: {e}")
+                });
+                self
+            }
+            pub fn ancestor_remote<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ancestor_remote = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for ancestor_remote: {e}")
+                });
+                self
+            }
+            pub fn applied<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.applied = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for applied: {e}"));
+                self
+            }
+            pub fn decided_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.decided_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for decided_at: {e}"));
+                self
+            }
+            pub fn evidence<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.evidence = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for evidence: {e}"));
+                self
+            }
+            pub fn external_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.external_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for external_id: {e}"));
+                self
+            }
+            pub fn flag_reason<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.flag_reason = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for flag_reason: {e}"));
+                self
+            }
+            pub fn flagged_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.flagged_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for flagged_at: {e}"));
+                self
+            }
+            pub fn flagged_by<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.flagged_by = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for flagged_by: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn local_after<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.local_after = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for local_after: {e}"));
+                self
+            }
+            pub fn local_before<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.local_before = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for local_before: {e}"));
+                self
+            }
+            pub fn match_score<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<f32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.match_score = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for match_score: {e}"));
+                self
+            }
+            pub fn match_signals<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.match_signals = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for match_signals: {e}"));
+                self
+            }
+            pub fn policy<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.policy = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for policy: {e}"));
+                self
+            }
+            pub fn provider<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provider = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for provider: {e}"));
+                self
+            }
+            pub fn reason<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reason = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reason: {e}"));
+                self
+            }
+            pub fn remote_after<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.remote_after = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for remote_after: {e}"));
+                self
+            }
+            pub fn remote_before<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.remote_before = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for remote_before: {e}"));
+                self
+            }
+            pub fn revert_reason<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.revert_reason = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for revert_reason: {e}"));
+                self
+            }
+            pub fn reverted_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reverted_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reverted_at: {e}"));
+                self
+            }
+            pub fn reverted_by<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reverted_by = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reverted_by: {e}"));
+                self
+            }
+            pub fn run_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.run_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for run_id: {e}"));
+                self
+            }
+            pub fn scope<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.scope = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for scope: {e}"));
+                self
+            }
+            pub fn series_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::SyncDecisionSeriesId>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series_id: {e}"));
+                self
+            }
+            pub fn series_title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series_title: {e}"));
+                self
+            }
+            pub fn user_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.user_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for user_id: {e}"));
+                self
+            }
+            pub fn username<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.username = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for username: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SyncDecision> for super::SyncDecision {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SyncDecision,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    action: value.action?,
+                    ancestor_local: value.ancestor_local?,
+                    ancestor_remote: value.ancestor_remote?,
+                    applied: value.applied?,
+                    decided_at: value.decided_at?,
+                    evidence: value.evidence?,
+                    external_id: value.external_id?,
+                    flag_reason: value.flag_reason?,
+                    flagged_at: value.flagged_at?,
+                    flagged_by: value.flagged_by?,
+                    id: value.id?,
+                    local_after: value.local_after?,
+                    local_before: value.local_before?,
+                    match_score: value.match_score?,
+                    match_signals: value.match_signals?,
+                    policy: value.policy?,
+                    provider: value.provider?,
+                    reason: value.reason?,
+                    remote_after: value.remote_after?,
+                    remote_before: value.remote_before?,
+                    revert_reason: value.revert_reason?,
+                    reverted_at: value.reverted_at?,
+                    reverted_by: value.reverted_by?,
+                    run_id: value.run_id?,
+                    scope: value.scope?,
+                    series_id: value.series_id?,
+                    series_title: value.series_title?,
+                    user_id: value.user_id?,
+                    username: value.username?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SyncDecision> for SyncDecision {
+            fn from(value: super::SyncDecision) -> Self {
+                Self {
+                    action: Ok(value.action),
+                    ancestor_local: Ok(value.ancestor_local),
+                    ancestor_remote: Ok(value.ancestor_remote),
+                    applied: Ok(value.applied),
+                    decided_at: Ok(value.decided_at),
+                    evidence: Ok(value.evidence),
+                    external_id: Ok(value.external_id),
+                    flag_reason: Ok(value.flag_reason),
+                    flagged_at: Ok(value.flagged_at),
+                    flagged_by: Ok(value.flagged_by),
+                    id: Ok(value.id),
+                    local_after: Ok(value.local_after),
+                    local_before: Ok(value.local_before),
+                    match_score: Ok(value.match_score),
+                    match_signals: Ok(value.match_signals),
+                    policy: Ok(value.policy),
+                    provider: Ok(value.provider),
+                    reason: Ok(value.reason),
+                    remote_after: Ok(value.remote_after),
+                    remote_before: Ok(value.remote_before),
+                    revert_reason: Ok(value.revert_reason),
+                    reverted_at: Ok(value.reverted_at),
+                    reverted_by: Ok(value.reverted_by),
+                    run_id: Ok(value.run_id),
+                    scope: Ok(value.scope),
+                    series_id: Ok(value.series_id),
+                    series_title: Ok(value.series_title),
+                    user_id: Ok(value.user_id),
+                    username: Ok(value.username),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct SyncExcluded {
             excluded: ::std::result::Result<bool, ::std::string::String>,
         }
@@ -20207,6 +22071,60 @@ pub mod types {
             fn from(value: super::SyncExcluded) -> Self {
                 Self {
                     excluded: Ok(value.excluded),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SyncFlagRequest {
+            block_match: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+            reason: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for SyncFlagRequest {
+            fn default() -> Self {
+                Self {
+                    block_match: Ok(Default::default()),
+                    reason: Err("no value supplied for reason".to_string()),
+                }
+            }
+        }
+        impl SyncFlagRequest {
+            pub fn block_match<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.block_match = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for block_match: {e}"));
+                self
+            }
+            pub fn reason<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reason = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reason: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SyncFlagRequest> for super::SyncFlagRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SyncFlagRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    block_match: value.block_match?,
+                    reason: value.reason?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SyncFlagRequest> for SyncFlagRequest {
+            fn from(value: super::SyncFlagRequest) -> Self {
+                Self {
+                    block_match: Ok(value.block_match),
+                    reason: Ok(value.reason),
                 }
             }
         }
@@ -20304,6 +22222,91 @@ pub mod types {
             fn from(value: super::SyncOpts) -> Self {
                 Self {
                     policy: Ok(value.policy),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SyncReverted {
+            blocked_match: ::std::result::Result<bool, ::std::string::String>,
+            decision_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            restored: ::std::result::Result<::std::string::String, ::std::string::String>,
+            value: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for SyncReverted {
+            fn default() -> Self {
+                Self {
+                    blocked_match: Err("no value supplied for blocked_match".to_string()),
+                    decision_id: Err("no value supplied for decision_id".to_string()),
+                    restored: Err("no value supplied for restored".to_string()),
+                    value: Ok(Default::default()),
+                }
+            }
+        }
+        impl SyncReverted {
+            pub fn blocked_match<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.blocked_match = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for blocked_match: {e}"));
+                self
+            }
+            pub fn decision_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.decision_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for decision_id: {e}"));
+                self
+            }
+            pub fn restored<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.restored = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for restored: {e}"));
+                self
+            }
+            pub fn value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for value: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SyncReverted> for super::SyncReverted {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SyncReverted,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    blocked_match: value.blocked_match?,
+                    decision_id: value.decision_id?,
+                    restored: value.restored?,
+                    value: value.value?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SyncReverted> for SyncReverted {
+            fn from(value: super::SyncReverted) -> Self {
+                Self {
+                    blocked_match: Ok(value.blocked_match),
+                    decision_id: Ok(value.decision_id),
+                    restored: Ok(value.restored),
+                    value: Ok(value.value),
                 }
             }
         }
@@ -22957,6 +24960,18 @@ impl Client {
     pub fn sweep_merge_candidates(&self) -> builder::SweepMergeCandidates<'_> {
         builder::SweepMergeCandidates::new(self)
     }
+    #[doc = "List merge decisions\n\nThe automatic-merge journal, newest first: the itemised score behind each decision, the rule\nthat produced the verdict, the guards that overrode it, and whether it can still be undone.\n\nSends a `GET` request to `/v1/admin/merge-decisions`\n\nArguments:\n- `blocked`: Only decisions a guard held back: the near misses.\n- `flagged`: Only decisions an operator has flagged wrong.\n- `limit`\n- `offset`\n- `outcome`: Restrict to one outcome: `merged`, `queued`, `requeued`, `reopened`, `withdrawn`,\n`distinct`, `deferred`.\n- `revertible`: Only merges that can still be undone.\n- `series_id`: Only decisions naming this series on either side. Survives the merge — an absorbed id is\nstill on the row that absorbed it, which is the one you go looking for.\n\nA bare `Uuid`, not `SeriesId`: an optional newtype in a query parameter generates a\none-variant `oneOf` that the client generator cannot render.\n```ignore\nlet response = client.list_merge_decisions()\n    .blocked(blocked)\n    .flagged(flagged)\n    .limit(limit)\n    .offset(offset)\n    .outcome(outcome)\n    .revertible(revertible)\n    .series_id(series_id)\n    .send()\n    .await;\n```"]
+    pub fn list_merge_decisions(&self) -> builder::ListMergeDecisions<'_> {
+        builder::ListMergeDecisions::new(self)
+    }
+    #[doc = "Flag a merge as wrong\n\nRecord that an automatic merge was the wrong call, and suppress the pair permanently, without\nundoing it. Deliberately independent of the revert: a merge can be wrong and no longer worth\nthe disruption of unpicking, and a merge can be undone as a precaution while still having been\ncorrect. Either way the flag is what stops the sweep re-making the same decision.\n\nSends a `POST` request to `/v1/admin/merge-decisions/{id}/flag`\n\nArguments:\n- `id`: The merge decision to flag\n- `body`\n```ignore\nlet response = client.flag_merge_decision()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn flag_merge_decision(&self) -> builder::FlagMergeDecision<'_> {
+        builder::FlagMergeDecision::new(self)
+    }
+    #[doc = "Revert a merge\n\nUndo one automatic merge: the absorbed series exists again under its **original id**, every\nrow that moved is moved back, and every row the merge created on the survivor is removed.\n\nThe pair is suppressed as part of the same action. Reverting alone changes nothing about why\nthe two were merged — the titles still agree and the score is still above the threshold — so\nthe next sweep would simply merge them again.\n\nSends a `POST` request to `/v1/admin/merge-decisions/{id}/revert`\n\nArguments:\n- `id`: The merge decision to undo\n- `body`\n```ignore\nlet response = client.revert_merge_decision()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn revert_merge_decision(&self) -> builder::RevertMergeDecision<'_> {
+        builder::RevertMergeDecision::new(self)
+    }
     #[doc = "List assignable permissions\n\nEvery capability this build defines, with its grouping and description, plus the preset\nbundles the editor offers. Served from the compiled registry, so the editor can never list a\ncapability the backend does not enforce or miss one it does.\n\nSends a `GET` request to `/v1/admin/permissions`\n\n```ignore\nlet response = client.permission_catalogue()\n    .send()\n    .await;\n```"]
     pub fn permission_catalogue(&self) -> builder::PermissionCatalogue<'_> {
         builder::PermissionCatalogue::new(self)
@@ -23080,6 +25095,18 @@ impl Client {
     #[doc = "Assign a remote entry to a local series\n\nHand-assign a fetched remote entry to a local series. It records the mapping, imports the\nentry onto the user's watchlist (status + progress from the stored snapshot) so the result\nshows immediately, and clears it from the unmatched queue — no fresh pull required.\n\nSends a `POST` request to `/v1/admin/sync/assign`\n\n```ignore\nlet response = client.assign_remote_entry()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn assign_remote_entry(&self) -> builder::AssignRemoteEntry<'_> {
         builder::AssignRemoteEntry::new(self)
+    }
+    #[doc = "List sync decisions\n\nThe automatic-sync journal across every user, newest first. Covers what the per-user sync\nhistory never did: the remote entries that matched nothing, the series skipped as excluded,\nthe fields both sides already agreed on, and the scored title match behind every mapping.\n\nSends a `GET` request to `/v1/admin/sync/decisions`\n\nArguments:\n- `action`: Restrict to one action: `matched`, `unmatched`, `pull`, `push`, `conflict`, `noop`, …\n- `applied`: Only decisions that wrote something. A run is mostly considerations, so this is the\nfilter to reach for when asking \"what did the sync change?\".\n- `flagged`\n- `limit`\n- `offset`\n- `provider`\n- `run_id`: One reconciliation run.\n- `series_id`: A bare `Uuid` for the same reason as above.\n- `user_id`\n```ignore\nlet response = client.list_sync_decisions()\n    .action(action)\n    .applied(applied)\n    .flagged(flagged)\n    .limit(limit)\n    .offset(offset)\n    .provider(provider)\n    .run_id(run_id)\n    .series_id(series_id)\n    .user_id(user_id)\n    .send()\n    .await;\n```"]
+    pub fn list_sync_decisions(&self) -> builder::ListSyncDecisions<'_> {
+        builder::ListSyncDecisions::new(self)
+    }
+    #[doc = "Flag a sync decision as wrong\n\nRecord that an automatic sync action was the wrong call without undoing it, and — with\n`block_match` — refuse the title match it made so no later run can re-make it.\n\nSends a `POST` request to `/v1/admin/sync/decisions/{id}/flag`\n\nArguments:\n- `id`: The sync decision to flag\n- `body`\n```ignore\nlet response = client.flag_sync_decision()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn flag_sync_decision(&self) -> builder::FlagSyncDecision<'_> {
+        builder::FlagSyncDecision::new(self)
+    }
+    #[doc = "Revert a sync decision\n\nUndo one journalled sync action. Forwarded to the sync service, which is the tier holding the\nprovider token: taking back a *push* means writing the remote's previous values back, and only\nthat service can.\n\nNot every action has an inverse. A series the sync created on the remote cannot be removed\nfrom here — no provider in this system exposes a delete — and that case answers with an error\nsaying so rather than silently doing half of it.\n\nSends a `POST` request to `/v1/admin/sync/decisions/{id}/revert`\n\nArguments:\n- `id`: The sync decision to undo\n- `body`\n```ignore\nlet response = client.revert_sync_decision()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn revert_sync_decision(&self) -> builder::RevertSyncDecision<'_> {
+        builder::RevertSyncDecision::new(self)
     }
     #[doc = "Get metadata enrichment status\n\nWhat the catalogue-wide `AniList` enrichment sweep did on its last run, how far it has got\nthrough the catalogue, and its progress if one is running now.\n\nSends a `GET` request to `/v1/admin/sync/enrichment`\n\n```ignore\nlet response = client.enrichment_status()\n    .send()\n    .await;\n```"]
     pub fn enrichment_status(&self) -> builder::EnrichmentStatus<'_> {
@@ -24117,6 +26144,370 @@ pub mod builder {
                     ResponseValue::from_response(response).await?,
                 )),
                 404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::list_merge_decisions`]\n\n[`Client::list_merge_decisions`]: super::Client::list_merge_decisions"]
+    #[derive(Debug, Clone)]
+    pub struct ListMergeDecisions<'a> {
+        client: &'a super::Client,
+        blocked: Result<Option<bool>, String>,
+        flagged: Result<Option<bool>, String>,
+        limit: Result<Option<i64>, String>,
+        offset: Result<Option<i64>, String>,
+        outcome: Result<Option<::std::string::String>, String>,
+        revertible: Result<Option<bool>, String>,
+        series_id: Result<Option<::uuid::Uuid>, String>,
+    }
+    impl<'a> ListMergeDecisions<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                blocked: Ok(None),
+                flagged: Ok(None),
+                limit: Ok(None),
+                offset: Ok(None),
+                outcome: Ok(None),
+                revertible: Ok(None),
+                series_id: Ok(None),
+            }
+        }
+        pub fn blocked<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.blocked = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for blocked failed".to_string());
+            self
+        }
+        pub fn flagged<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.flagged = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for flagged failed".to_string());
+            self
+        }
+        pub fn limit<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i64>,
+        {
+            self.limit = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i64` for limit failed".to_string());
+            self
+        }
+        pub fn offset<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i64>,
+        {
+            self.offset = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i64` for offset failed".to_string());
+            self
+        }
+        pub fn outcome<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.outcome = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for outcome failed".to_string()
+            });
+            self
+        }
+        pub fn revertible<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.revertible = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for revertible failed".to_string());
+            self
+        }
+        pub fn series_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.series_id = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for series_id failed".to_string());
+            self
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/merge-decisions`"]
+        pub async fn send(
+            self,
+        ) -> Result<
+            ResponseValue<::std::vec::Vec<types::MergeDecision>>,
+            Error<types::ProblemDetails>,
+        > {
+            let Self {
+                client,
+                blocked,
+                flagged,
+                limit,
+                offset,
+                outcome,
+                revertible,
+                series_id,
+            } = self;
+            let blocked = blocked.map_err(Error::InvalidRequest)?;
+            let flagged = flagged.map_err(Error::InvalidRequest)?;
+            let limit = limit.map_err(Error::InvalidRequest)?;
+            let offset = offset.map_err(Error::InvalidRequest)?;
+            let outcome = outcome.map_err(Error::InvalidRequest)?;
+            let revertible = revertible.map_err(Error::InvalidRequest)?;
+            let series_id = series_id.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/admin/merge-decisions", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("blocked", &blocked))
+                .query(&progenitor_client::QueryParam::new("flagged", &flagged))
+                .query(&progenitor_client::QueryParam::new("limit", &limit))
+                .query(&progenitor_client::QueryParam::new("offset", &offset))
+                .query(&progenitor_client::QueryParam::new("outcome", &outcome))
+                .query(&progenitor_client::QueryParam::new(
+                    "revertible",
+                    &revertible,
+                ))
+                .query(&progenitor_client::QueryParam::new("series_id", &series_id))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_merge_decisions",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::flag_merge_decision`]\n\n[`Client::flag_merge_decision`]: super::Client::flag_merge_decision"]
+    #[derive(Debug, Clone)]
+    pub struct FlagMergeDecision<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::JudgementRequest, String>,
+    }
+    impl<'a> FlagMergeDecision<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::JudgementRequest>,
+            <V as std::convert::TryInto<types::JudgementRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `JudgementRequest` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::JudgementRequest,
+                ) -> types::builder::JudgementRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/merge-decisions/{id}/flag`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+            let Self { client, id, body } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::JudgementRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/admin/merge-decisions/{}/flag",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "flag_merge_decision",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::revert_merge_decision`]\n\n[`Client::revert_merge_decision`]: super::Client::revert_merge_decision"]
+    #[derive(Debug, Clone)]
+    pub struct RevertMergeDecision<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::JudgementRequest, String>,
+    }
+    impl<'a> RevertMergeDecision<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::JudgementRequest>,
+            <V as std::convert::TryInto<types::JudgementRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `JudgementRequest` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::JudgementRequest,
+                ) -> types::builder::JudgementRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/merge-decisions/{id}/revert`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::MergeReverted>, Error<types::ProblemDetails>> {
+            let Self { client, id, body } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::JudgementRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/admin/merge-decisions/{}/revert",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "revert_merge_decision",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                409u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),
@@ -26473,6 +28864,392 @@ pub mod builder {
                     ResponseValue::from_response(response).await?,
                 )),
                 403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::list_sync_decisions`]\n\n[`Client::list_sync_decisions`]: super::Client::list_sync_decisions"]
+    #[derive(Debug, Clone)]
+    pub struct ListSyncDecisions<'a> {
+        client: &'a super::Client,
+        action: Result<Option<::std::string::String>, String>,
+        applied: Result<Option<bool>, String>,
+        flagged: Result<Option<bool>, String>,
+        limit: Result<Option<i64>, String>,
+        offset: Result<Option<i64>, String>,
+        provider: Result<Option<::std::string::String>, String>,
+        run_id: Result<Option<::uuid::Uuid>, String>,
+        series_id: Result<Option<::uuid::Uuid>, String>,
+        user_id: Result<Option<::uuid::Uuid>, String>,
+    }
+    impl<'a> ListSyncDecisions<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                action: Ok(None),
+                applied: Ok(None),
+                flagged: Ok(None),
+                limit: Ok(None),
+                offset: Ok(None),
+                provider: Ok(None),
+                run_id: Ok(None),
+                series_id: Ok(None),
+                user_id: Ok(None),
+            }
+        }
+        pub fn action<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.action = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for action failed".to_string()
+            });
+            self
+        }
+        pub fn applied<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.applied = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for applied failed".to_string());
+            self
+        }
+        pub fn flagged<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.flagged = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for flagged failed".to_string());
+            self
+        }
+        pub fn limit<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i64>,
+        {
+            self.limit = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i64` for limit failed".to_string());
+            self
+        }
+        pub fn offset<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i64>,
+        {
+            self.offset = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i64` for offset failed".to_string());
+            self
+        }
+        pub fn provider<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.provider = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for provider failed".to_string()
+            });
+            self
+        }
+        pub fn run_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.run_id = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for run_id failed".to_string());
+            self
+        }
+        pub fn series_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.series_id = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for series_id failed".to_string());
+            self
+        }
+        pub fn user_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.user_id = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for user_id failed".to_string());
+            self
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/sync/decisions`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::SyncDecision>>, Error<types::ProblemDetails>>
+        {
+            let Self {
+                client,
+                action,
+                applied,
+                flagged,
+                limit,
+                offset,
+                provider,
+                run_id,
+                series_id,
+                user_id,
+            } = self;
+            let action = action.map_err(Error::InvalidRequest)?;
+            let applied = applied.map_err(Error::InvalidRequest)?;
+            let flagged = flagged.map_err(Error::InvalidRequest)?;
+            let limit = limit.map_err(Error::InvalidRequest)?;
+            let offset = offset.map_err(Error::InvalidRequest)?;
+            let provider = provider.map_err(Error::InvalidRequest)?;
+            let run_id = run_id.map_err(Error::InvalidRequest)?;
+            let series_id = series_id.map_err(Error::InvalidRequest)?;
+            let user_id = user_id.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/admin/sync/decisions", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("action", &action))
+                .query(&progenitor_client::QueryParam::new("applied", &applied))
+                .query(&progenitor_client::QueryParam::new("flagged", &flagged))
+                .query(&progenitor_client::QueryParam::new("limit", &limit))
+                .query(&progenitor_client::QueryParam::new("offset", &offset))
+                .query(&progenitor_client::QueryParam::new("provider", &provider))
+                .query(&progenitor_client::QueryParam::new("run_id", &run_id))
+                .query(&progenitor_client::QueryParam::new("series_id", &series_id))
+                .query(&progenitor_client::QueryParam::new("user_id", &user_id))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_sync_decisions",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::flag_sync_decision`]\n\n[`Client::flag_sync_decision`]: super::Client::flag_sync_decision"]
+    #[derive(Debug, Clone)]
+    pub struct FlagSyncDecision<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::SyncFlagRequest, String>,
+    }
+    impl<'a> FlagSyncDecision<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SyncFlagRequest>,
+            <V as std::convert::TryInto<types::SyncFlagRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `SyncFlagRequest` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::SyncFlagRequest) -> types::builder::SyncFlagRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/sync/decisions/{id}/flag`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+            let Self { client, id, body } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::SyncFlagRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/admin/sync/decisions/{}/flag",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "flag_sync_decision",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::revert_sync_decision`]\n\n[`Client::revert_sync_decision`]: super::Client::revert_sync_decision"]
+    #[derive(Debug, Clone)]
+    pub struct RevertSyncDecision<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::JudgementRequest, String>,
+    }
+    impl<'a> RevertSyncDecision<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::JudgementRequest>,
+            <V as std::convert::TryInto<types::JudgementRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `JudgementRequest` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::JudgementRequest,
+                ) -> types::builder::JudgementRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/sync/decisions/{id}/revert`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::SyncReverted>, Error<types::ProblemDetails>> {
+            let Self { client, id, body } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::JudgementRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/admin/sync/decisions/{}/revert",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "revert_sync_decision",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                409u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

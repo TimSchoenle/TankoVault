@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO sync_mappings SELECT * FROM jsonb_populate_recordset(NULL::sync_mappings, $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "31c97f767d99bca1860856e24197bbde0d06b84a93b415bf7fc91387f4ab5d1a"
+}

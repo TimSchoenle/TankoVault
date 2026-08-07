@@ -4,7 +4,7 @@ use tankovault_domain::SeriesId;
 use tankovault_domain::matching::{Candidate, Decision, MergeVerdict, Query};
 
 use crate::assess::assess;
-use crate::types::{Assessment, Thresholds};
+use crate::types::{Adjudication, Assessment, Thresholds};
 
 /// The single best-scoring candidate for `query`, with its score — or `None` when there are
 /// no candidates. Unlike [`decide`], this reports the raw best so a caller working across
@@ -24,64 +24,103 @@ pub fn best_assessment(query: &Query, candidates: &[Candidate]) -> Option<(Serie
         .max_by(|a, b| a.1.score.total_cmp(&b.1.score))
 }
 
-/// What to do about two series that **already exist** as separate rows.
+/// What to do about two series that **already exist** as separate rows, and why.
 ///
 /// [`decide`] answers a different question — where an incoming source belongs, before anything
 /// is written. This one is asked by the merge queue and by the automatic-merge sweep, and its
 /// affirmative is destructive: [`MergeVerdict::Auto`] ends with one of the two ids no longer
 /// existing.
 ///
-/// Which is why the bar is two-part rather than a number. A score alone can reach the automatic
-/// threshold on nothing but fuzzy similarity, and two genuinely different works with similar
-/// names are precisely the pairs that do. [`MatchSignals::is_structural`](crate::MatchSignals::is_structural) means the titles are
-/// *the same string* under a rule designed to be conservative — identical, identical modulo
-/// whitespace, or an exact hit on a name the series already answers to — and only then does the
-/// score decide.
+/// Which is why the bar is three-part rather than a number.
+///
+/// 1. A score alone can reach the automatic threshold on nothing but fuzzy similarity, and two
+///    genuinely different works with similar names are precisely the pairs that do.
+///    [`MatchSignals::is_structural`](crate::MatchSignals::is_structural) means the titles are *the same string* under a rule designed
+///    to be conservative — identical, identical modulo whitespace, or an exact hit on a name the
+///    series already answers to.
+/// 2. The score must clear [`Thresholds::auto_merge`].
+/// 3. No enabled [`MergeGuards`](crate::MergeGuards) may have fired. Each guard names a way two series can satisfy
+///    both of the above and still be different works: a numbered sequel, a remake three years
+///    apart, an adaptation in a different medium, a same-titled work by different creators.
+///
+/// The returned [`Adjudication`] carries the slug of the rule that decided it, because "not
+/// merged" has four meanings and a queue row showing only a score cannot be triaged.
 ///
 /// ```
 /// use tankovault_domain::matching::{MatchSignals, MergeVerdict};
-/// use tankovault_matcher::{Assessment, Thresholds, adjudicate};
+/// use tankovault_matcher::{Assessment, MergeGuards, Thresholds, adjudicate};
 ///
 /// let t = Thresholds::default();
 /// let structural = MatchSignals { compact_identity: true, ..MatchSignals::default() };
 ///
 /// // Same string modulo whitespace, scoring at the ceiling: merge it.
-/// assert_eq!(
-///     adjudicate(Assessment { score: 1.0, signals: structural }, t),
-///     MergeVerdict::Auto,
-/// );
+/// let merged = adjudicate(Assessment { score: 1.0, signals: structural }, t);
+/// assert_eq!(merged.verdict, MergeVerdict::Auto);
+/// assert_eq!(merged.reason, "structural_identity_above_threshold");
 ///
 /// // The same score with no identity rule behind it is exactly what review is for.
 /// let fuzzy = MatchSignals { near_identical: true, ..MatchSignals::default() };
-/// assert_eq!(
-///     adjudicate(Assessment { score: 1.0, signals: fuzzy }, t),
-///     MergeVerdict::Review,
-/// );
+/// let held = adjudicate(Assessment { score: 1.0, signals: fuzzy }, t);
+/// assert_eq!(held.verdict, MergeVerdict::Review);
+/// assert_eq!(held.reason, "no_structural_identity");
 ///
-/// // And a numeric conflict is never merged automatically, whatever else agrees: a sequel's
+/// // A numeric conflict is never merged automatically, whatever else agrees: a sequel's
 /// // title resembles its predecessor's more closely the better the matcher works.
 /// let sequel = MatchSignals { numeric_conflict: true, ..structural };
-/// assert_ne!(
-///     adjudicate(Assessment { score: 1.0, signals: sequel }, t),
+/// let apart = adjudicate(Assessment { score: 1.0, signals: sequel }, t);
+/// assert_eq!(apart.verdict, MergeVerdict::Distinct);
+/// assert_eq!(apart.reason, "numeric_conflict");
+///
+/// // A guard holds an otherwise-automatic merge for review, and names itself.
+/// let remake = MatchSignals { year_conflict: true, ..structural };
+/// let blocked = adjudicate(Assessment { score: 1.0, signals: remake }, t);
+/// assert_eq!(blocked.verdict, MergeVerdict::Review);
+/// assert_eq!(blocked.blocked_by, vec!["year_conflict"]);
+///
+/// // Switching that guard off restores the merge without changing the score or the signal.
+/// let permissive = Thresholds {
+///     guards: MergeGuards { year_conflict: false, ..MergeGuards::default() },
+///     ..Thresholds::default()
+/// };
+/// assert_eq!(
+///     adjudicate(Assessment { score: 1.0, signals: remake }, permissive).verdict,
 ///     MergeVerdict::Auto,
 /// );
 /// ```
 #[must_use]
-pub fn adjudicate(assessment: Assessment, thresholds: Thresholds) -> MergeVerdict {
+pub fn adjudicate(assessment: Assessment, thresholds: Thresholds) -> Adjudication {
     let Assessment { score, signals } = assessment;
-    if signals.numeric_conflict {
+    if thresholds.guards.numeric_conflict && signals.numeric_conflict {
         // Not merely "do not merge automatically": a pair whose titles carry different numbers
         // is reported as distinct rather than queued, because queueing it asks an operator to
         // re-derive the one fact the scorer is already certain about.
-        return MergeVerdict::Distinct;
+        return Adjudication {
+            verdict: MergeVerdict::Distinct,
+            reason: "numeric_conflict",
+            blocked_by: vec!["numeric_conflict"],
+        };
     }
-    if score >= thresholds.auto_merge && signals.is_structural() {
-        MergeVerdict::Auto
-    } else if score >= thresholds.low {
-        MergeVerdict::Review
-    } else {
-        MergeVerdict::Distinct
+
+    let blocked_by = thresholds.guards.blocking(signals);
+    let verdict = |verdict, reason| Adjudication {
+        verdict,
+        reason,
+        blocked_by: blocked_by.clone(),
+    };
+
+    if score < thresholds.low {
+        return verdict(MergeVerdict::Distinct, "below_review_floor");
     }
+    if !signals.is_structural() {
+        return verdict(MergeVerdict::Review, "no_structural_identity");
+    }
+    if score < thresholds.auto_merge {
+        return verdict(MergeVerdict::Review, "below_auto_merge_threshold");
+    }
+    if let Some(guard) = blocked_by.first().copied() {
+        return verdict(MergeVerdict::Review, guard);
+    }
+    verdict(MergeVerdict::Auto, "structural_identity_above_threshold")
 }
 
 /// Decide how to canonicalise the query given its candidates and thresholds.

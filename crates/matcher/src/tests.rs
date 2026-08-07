@@ -376,48 +376,96 @@ fn an_automatic_merge_requires_a_structural_signal() {
         ..MatchSignals::default()
     };
 
-    assert_eq!(
-        adjudicate(
-            Assessment {
-                score: 1.0,
-                signals: structural
-            },
-            t
-        ),
-        MergeVerdict::Auto
-    );
-    assert_eq!(
-        adjudicate(
-            Assessment {
-                score: 1.0,
-                signals: fuzzy
-            },
-            t
-        ),
-        MergeVerdict::Review
-    );
+    let verdict = |score, signals| adjudicate(Assessment { score, signals }, t).verdict;
+
+    assert_eq!(verdict(1.0, structural), MergeVerdict::Auto);
+    assert_eq!(verdict(1.0, fuzzy), MergeVerdict::Review);
     // Structural but not confident enough is still review, not merge.
-    assert_eq!(
-        adjudicate(
-            Assessment {
-                score: 0.9,
-                signals: structural
-            },
-            t
-        ),
-        MergeVerdict::Review
-    );
+    assert_eq!(verdict(0.9, structural), MergeVerdict::Review);
     // Below the review floor, nothing is recorded at all.
+    assert_eq!(verdict(0.4, structural), MergeVerdict::Distinct);
+
+    // Each of the four "not merged" answers names itself, so a queue row can be triaged
+    // without re-deriving the reason from a score and a bag of signal names.
+    let reason = |score, signals| adjudicate(Assessment { score, signals }, t).reason;
     assert_eq!(
-        adjudicate(
-            Assessment {
-                score: 0.4,
-                signals: structural
-            },
-            t
-        ),
-        MergeVerdict::Distinct
+        reason(1.0, structural),
+        "structural_identity_above_threshold"
     );
+    assert_eq!(reason(1.0, fuzzy), "no_structural_identity");
+    assert_eq!(reason(0.9, structural), "below_auto_merge_threshold");
+    assert_eq!(reason(0.4, structural), "below_review_floor");
+}
+
+/// Each guard holds an otherwise-automatic merge for review, names itself, and is switchable
+/// without changing the score or the signal that fired.
+///
+/// The guards exist because a score is one number and cannot express "these titles agree and
+/// the works do not". Every case below scores at the ceiling with a structural identity — the
+/// full automatic bar — and is still not merged.
+#[test]
+fn each_guard_holds_an_automatic_merge_for_review() {
+    let structural = MatchSignals {
+        compact_identity: true,
+        ..MatchSignals::default()
+    };
+    let cases = [
+        (
+            "author_conflict",
+            MatchSignals {
+                author_conflict: true,
+                ..structural
+            },
+        ),
+        (
+            "year_conflict",
+            MatchSignals {
+                year_conflict: true,
+                ..structural
+            },
+        ),
+        (
+            "type_conflict",
+            MatchSignals {
+                type_conflict: true,
+                ..structural
+            },
+        ),
+    ];
+
+    for (label, signals) in cases {
+        let held = adjudicate(
+            Assessment {
+                score: 1.0,
+                signals,
+            },
+            Thresholds::default(),
+        );
+        assert_eq!(held.verdict, MergeVerdict::Review, "{label}");
+        assert_eq!(held.blocked_by, vec![label], "{label}");
+        assert_eq!(held.reason, label, "{label}");
+
+        // Switching only that guard off merges the pair; the signal still fires and is still
+        // reported, which is the difference between disabling a guard and disabling a rule.
+        let mut guards = MergeGuards::default();
+        match label {
+            "author_conflict" => guards.author_conflict = false,
+            "year_conflict" => guards.year_conflict = false,
+            _ => guards.type_conflict = false,
+        }
+        let merged = adjudicate(
+            Assessment {
+                score: 1.0,
+                signals,
+            },
+            Thresholds {
+                guards,
+                ..Thresholds::default()
+            },
+        );
+        assert_eq!(merged.verdict, MergeVerdict::Auto, "{label}");
+        assert!(merged.blocked_by.is_empty(), "{label}");
+    }
 }
 
 /// A numeric conflict is reported as distinct rather than queued.
@@ -433,16 +481,15 @@ fn a_numeric_conflict_is_never_queued() {
         numeric_conflict: true,
         ..MatchSignals::default()
     };
-    assert_eq!(
-        adjudicate(
-            Assessment {
-                score: 1.0,
-                signals
-            },
-            t
-        ),
-        MergeVerdict::Distinct
+    let apart = adjudicate(
+        Assessment {
+            score: 1.0,
+            signals,
+        },
+        t,
     );
+    assert_eq!(apart.verdict, MergeVerdict::Distinct);
+    assert_eq!(apart.reason, "numeric_conflict");
 }
 
 /// The signal labels are persisted in `merge_candidates.reason` and rendered as console

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sync_decisions SET reverted_at = now(), reverted_by = $2, revert_reason = $3 WHERE id = $1 AND reverted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "626a0a44eed9fd58613e9b0a16574089bfc2a5b081b549a83542fc1cc3892302"
+}

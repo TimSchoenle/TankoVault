@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE merge_candidates SET resolved = false, outcome = NULL, resolved_by = NULL, resolved_at = NULL, updated_at = now() WHERE id = ANY($1) AND outcome IN ('merged', 'auto_merged')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "57571a53b9dd6334d2e89c0dc2da0ab5bc99e457d4b227952f00a48f14ead143"
+}

@@ -21,7 +21,7 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use assess::{assess, score};
+pub use assess::{assess, explain, score};
 pub use decide::{adjudicate, best_assessment, best_match, decide};
 pub use similarity::token_set_ratio;
-pub use types::{Assessment, Thresholds};
+pub use types::{Adjudication, Assessment, Explanation, MergeGuards, ScoreTerm, Thresholds};

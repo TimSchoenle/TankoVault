@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sync_remote_entries e SET series_id = $1 FROM jsonb_populate_recordset(NULL::sync_remote_entries, $2) x WHERE e.user_id = x.user_id AND e.provider = x.provider AND e.external_id = x.external_id AND e.series_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a7da03fe553d06f61069f9af3e540e8f215851be73754376eb2b4d1a503976f6"
+}

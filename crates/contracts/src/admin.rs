@@ -241,6 +241,11 @@ pub struct MergeSweepView {
     /// Pairs skipped because the sweep's per-run automatic-merge budget was exhausted. Non-zero
     /// means the next sweep has more to do, not that anything failed.
     pub deferred: i64,
+    /// Pairs an auto-merge guard held back: identical titles, a score above the automatic
+    /// threshold, and a signal saying the two are different works anyway. These are the near
+    /// misses, and they are the rows to read first — each is either a duplicate the guard is
+    /// costing you or a merge the guard just prevented.
+    pub blocked: i64,
 }
 
 /// What a normalized-key rebuild changed.
@@ -466,4 +471,144 @@ pub struct AdminPrivacyRequestView {
 pub struct ScanTriggeredView {
     /// One id per run planned — one per provider when the request names none.
     pub run_ids: Vec<ScanRunId>,
+}
+
+/// One row of the automatic-merge decision journal.
+///
+/// The journal answers the question a score cannot: *why*. `terms` itemises how the number was
+/// reached, `reason` names the rule that turned it into a verdict, `blocked_by` names the guards
+/// that overrode it, and `evidence` carries both sides' facts and which title actually matched.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = MergeDecision)]
+pub struct MergeDecisionView {
+    pub id: Uuid,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
+    pub decided_at: OffsetDateTime,
+    /// Groups every decision of one sweep run; absent for an operator's console merge.
+    pub sweep_id: Option<Uuid>,
+    /// `sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`.
+    pub trigger: String,
+    pub actor: Option<Uuid>,
+    pub left_id: SeriesId,
+    pub right_id: SeriesId,
+    pub left_title: String,
+    pub right_title: String,
+    /// `auto` | `review` | `distinct`.
+    pub verdict: String,
+    /// The stable slug of the rule that produced the verdict.
+    pub reason: String,
+    /// Guards that fired. Non-empty on a `review` row means the pair cleared the score and
+    /// identity bar and was held back anyway.
+    pub blocked_by: Vec<String>,
+    /// What was actually done, which is not always the verdict: `merged`, `queued`, `requeued`,
+    /// `reopened`, `withdrawn`, `distinct`, `deferred`.
+    pub outcome: String,
+    pub survivor_id: Option<SeriesId>,
+    pub absorbed_id: Option<SeriesId>,
+    pub score: f32,
+    /// The similarity the score started from, before any bonus or penalty.
+    pub base_score: f32,
+    pub signals: Vec<String>,
+    /// `[{rule, delta, detail}]` — every term the scorer applied, in order.
+    pub terms: Json,
+    /// Both sides' facts, which titles matched, and how the survivor was chosen.
+    pub evidence: Json,
+    /// The thresholds and guards in force when the decision was taken.
+    pub policy: Json,
+    /// Whether this decision still has an unspent undo journal.
+    pub revertible: bool,
+    /// How many rows a revert would restore or move back.
+    pub undo_rows: i64,
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
+    pub reverted_at: Option<OffsetDateTime>,
+    pub reverted_by: Option<Uuid>,
+    pub revert_reason: Option<String>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
+    pub flagged_at: Option<OffsetDateTime>,
+    pub flagged_by: Option<Uuid>,
+    pub flag_reason: Option<String>,
+}
+
+/// What undoing an automatic merge put back.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = MergeReverted)]
+pub struct MergeRevertedView {
+    pub decision_id: Uuid,
+    /// The series that exists again, under its original id.
+    pub restored_id: SeriesId,
+    pub survivor_id: SeriesId,
+    /// Rows restored or moved back off the survivor.
+    pub rows_restored: i64,
+    /// Always true: a revert also suppresses the pair, or the next sweep would merge it again.
+    pub pair_suppressed: bool,
+}
+
+/// One row of the automatic-sync decision journal.
+///
+/// Covers what `sync_history` never did: the entries that matched no local series, the series
+/// skipped as excluded, the fields both sides already agreed on, and the scored title match
+/// behind every mapping.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = SyncDecision)]
+pub struct SyncDecisionView {
+    pub id: Uuid,
+    /// Groups one account reconciliation.
+    pub run_id: Uuid,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
+    pub decided_at: OffsetDateTime,
+    pub user_id: Uuid,
+    pub username: Option<String>,
+    pub series_id: Option<SeriesId>,
+    pub series_title: Option<String>,
+    pub provider: String,
+    pub external_id: Option<String>,
+    /// `match` | `progress` | `status` | `series` | `metadata`.
+    pub scope: String,
+    /// `matched` | `unmatched` | `pull` | `push` | `create_remote` | `conflict` | `noop`
+    /// | `skipped` | `import_status` | `enriched` | `unmapped`.
+    pub action: String,
+    /// The stable slug for why: `only_remote_changed`, `both_sides_changed_policy_remote_wins`,
+    /// `title_match_above_threshold`, `blocked_by_operator`, …
+    pub reason: String,
+    pub policy: Option<String>,
+    /// Whether anything was actually written. A run is mostly considerations.
+    pub applied: bool,
+    pub local_before: Option<String>,
+    pub local_after: Option<String>,
+    pub remote_before: Option<String>,
+    pub remote_after: Option<String>,
+    /// The three-way merge's common ancestor. Without it a pull cannot be told from a clobber.
+    pub ancestor_local: Option<String>,
+    pub ancestor_remote: Option<String>,
+    pub match_score: Option<f32>,
+    pub match_signals: Vec<String>,
+    /// Which titles matched, the scored terms, the runner-up, and the provider's own metadata.
+    pub evidence: Json,
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
+    pub reverted_at: Option<OffsetDateTime>,
+    pub reverted_by: Option<Uuid>,
+    pub revert_reason: Option<String>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
+    pub flagged_at: Option<OffsetDateTime>,
+    pub flagged_by: Option<Uuid>,
+    pub flag_reason: Option<String>,
+}
+
+/// What undoing a sync decision put back.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = SyncReverted)]
+pub struct SyncRevertedView {
+    pub decision_id: Uuid,
+    /// `local_progress` | `local_status` | `watchlist_entry` | `remote_entry` | `match`.
+    pub restored: String,
+    /// The value the restored side now holds.
+    pub value: Option<String>,
+    /// Whether the revert also refused the title match permanently.
+    pub blocked_match: bool,
 }

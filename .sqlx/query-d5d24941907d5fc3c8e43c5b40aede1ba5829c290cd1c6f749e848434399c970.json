@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM series_titles t USING jsonb_populate_recordset(NULL::series_titles, $1) x WHERE t.series_id = x.series_id AND t.normalized = x.normalized",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d5d24941907d5fc3c8e43c5b40aede1ba5829c290cd1c6f749e848434399c970"
+}

@@ -130,9 +130,13 @@ impl TargetedPush {
         }
 
         let access = self.tokens.access(slug, provider, user_id).await?;
+        // The same blocklist the scheduled reconciliation reads. A targeted push is the one path
+        // that could otherwise re-create a mapping an operator has just rejected, because it runs
+        // the moment a reader marks a chapter read rather than on the next sweep.
+        let blocked = self.resolver.blocklist(slug).await?;
         let external_id = self
             .resolver
-            .media_id_for_series(provider, slug, &access, series_id)
+            .media_id_for_series(provider, slug, &access, series_id, &blocked)
             .await?
             .ok_or_else(|| {
                 anyhow!(

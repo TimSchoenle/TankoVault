@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sync_match_blocks SET series_id = $1 WHERE series_id = $2 RETURNING to_jsonb(sync_match_blocks)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "to_jsonb",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8456866829aad6f4099f09e3cecbbdb7f096eace3a5697dd9215b502b4f14fbc"
+}

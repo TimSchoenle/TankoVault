@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series_titles (series_id, title, normalized) SELECT $1, canonical_title, normalized_title FROM series WHERE id = $2 ON CONFLICT (series_id, normalized) DO NOTHING RETURNING to_jsonb(series_titles)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "to_jsonb",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e2e67ab84d356566249b1894f7d557463f96b5519c96603d461edf54665cf7e1"
+}

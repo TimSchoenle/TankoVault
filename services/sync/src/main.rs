@@ -415,6 +415,10 @@ async fn serve_once(
         .route("/v1/sync/conflicts/{user_id}", get(list_conflicts))
         .route("/v1/sync/conflicts/{id}/resolve", post(resolve_conflict))
         .route("/v1/sync/history/{user_id}", get(list_history))
+        .route("/v1/sync/decisions", get(list_decisions))
+        .route("/v1/sync/decisions/{id}/revert", post(revert_decision))
+        .route("/v1/sync/decisions/{id}/flag", post(flag_decision))
+        .route("/v1/sync/match-blocks", post(block_match))
         .with_state(state)
         // Same declarative gate the public API uses: this service is reachable from anywhere on
         // the internal network, so the switch must hold here too, not just at the edge.
@@ -652,6 +656,130 @@ async fn list_history(
         )
         .await?;
     Ok(Json(rows))
+}
+
+#[derive(Debug, Deserialize)]
+struct DecisionQuery {
+    #[serde(default)]
+    user_id: Option<UserId>,
+    #[serde(default)]
+    series_id: Option<SeriesId>,
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    action: Option<String>,
+    #[serde(default)]
+    run_id: Option<uuid::Uuid>,
+    #[serde(default)]
+    applied_only: bool,
+    #[serde(default)]
+    flagged_only: bool,
+    #[serde(default)]
+    limit: Option<i64>,
+    #[serde(default)]
+    offset: Option<i64>,
+}
+
+/// `GET /v1/sync/decisions` — the operator-facing journal of what the engine decided and why.
+async fn list_decisions(
+    State(state): State<AppState>,
+    axum::extract::Query(q): axum::extract::Query<DecisionQuery>,
+) -> Result<Json<Vec<tankovault_db::repo::sync::SyncDecisionRow>>, AppError> {
+    let filter = tankovault_db::repo::sync::SyncDecisionFilter {
+        user_id: q.user_id,
+        series_id: q.series_id,
+        provider: q.provider,
+        action: q.action,
+        run_id: q.run_id,
+        applied_only: q.applied_only,
+        flagged_only: q.flagged_only,
+    };
+    let rows = state
+        .engine
+        .list_decisions(
+            &filter,
+            q.limit.unwrap_or(100).clamp(1, 500),
+            q.offset.unwrap_or(0),
+        )
+        .await?;
+    Ok(Json(rows))
+}
+
+#[derive(Debug, Deserialize)]
+struct RevertRequest {
+    /// The operator asking, for attribution. `None` for an automated caller.
+    #[serde(default)]
+    actor: Option<UserId>,
+    reason: String,
+}
+
+/// `POST /v1/sync/decisions/{id}/revert` — undo one journalled decision.
+async fn revert_decision(
+    State(state): State<AppState>,
+    Path(id): Path<uuid::Uuid>,
+    Json(req): Json<RevertRequest>,
+) -> Result<Json<engine::RevertReport>, AppError> {
+    let report = state
+        .engine
+        .revert_decision(id, req.actor, &req.reason)
+        .await?;
+    Ok(Json(report))
+}
+
+#[derive(Debug, Deserialize)]
+struct FlagRequest {
+    #[serde(default)]
+    actor: Option<UserId>,
+    reason: String,
+    /// Also refuse the (external id, series) match this decision made, permanently.
+    #[serde(default)]
+    block_match: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct Flagged {
+    flagged: bool,
+}
+
+/// `POST /v1/sync/decisions/{id}/flag` — mark one decision wrong without undoing it.
+async fn flag_decision(
+    State(state): State<AppState>,
+    Path(id): Path<uuid::Uuid>,
+    Json(req): Json<FlagRequest>,
+) -> Result<Json<Flagged>, AppError> {
+    let flagged = state
+        .engine
+        .flag_decision(id, req.actor, &req.reason, req.block_match)
+        .await?;
+    Ok(Json(Flagged { flagged }))
+}
+
+#[derive(Debug, Deserialize)]
+struct BlockMatchRequest {
+    provider: String,
+    external_id: String,
+    series_id: SeriesId,
+    #[serde(default)]
+    actor: Option<UserId>,
+    reason: String,
+}
+
+/// `POST /v1/sync/match-blocks` — refuse one title match permanently, without a decision row.
+async fn block_match(
+    State(state): State<AppState>,
+    Json(req): Json<BlockMatchRequest>,
+) -> Result<StatusCode, AppError> {
+    state
+        .engine
+        .block_match(
+            &req.provider,
+            &req.external_id,
+            req.series_id,
+            req.actor,
+            &req.reason,
+        )
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]

@@ -69,8 +69,11 @@ pub(crate) use crate::wire::types::AdminMappingRow as AdminSyncMapping;
 pub(crate) use crate::wire::types::AuditView as AuditEntry;
 pub(crate) use crate::wire::types::FailedTaskView as FailedTask;
 pub(crate) use crate::wire::types::MergeCandidateView as MergeCandidate;
+// The two decision journals keep their generated names: `MergeDecision` is what the operator
+// console calls the row, and there is no shorter name that stays distinct from `MergeCandidate`.
 pub(crate) use crate::wire::types::RemoteEntryRow as UnmatchedRemoteEntry;
 pub(crate) use crate::wire::types::UnmappedSeriesRow as UnmappedSeries;
+pub(crate) use crate::wire::types::{MergeDecision, SyncDecision};
 
 /// One inbox row.
 ///

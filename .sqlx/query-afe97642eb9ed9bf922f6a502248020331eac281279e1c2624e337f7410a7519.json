@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM notification_dedup t USING jsonb_populate_recordset(NULL::notification_dedup, $1) x WHERE t.series_id = x.series_id AND t.user_id = x.user_id AND t.chapter_number = x.chapter_number",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "afe97642eb9ed9bf922f6a502248020331eac281279e1c2624e337f7410a7519"
+}

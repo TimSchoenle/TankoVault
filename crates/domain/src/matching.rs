@@ -74,6 +74,13 @@ pub struct MatchSignals {
     pub year_conflict: bool,
     /// The two series share at least one author/artist credit.
     pub shared_author: bool,
+    /// Both sides name authors and they have **none** in common.
+    ///
+    /// The counterpart to [`Self::shared_author`], and not merely its absence: two series where
+    /// one side has no credits at all says nothing, while two series that each name a full
+    /// creator list and agree on no one is positive evidence of two different works. A remake, a
+    /// spin-off by a different studio and a same-titled unrelated series all present this way.
+    pub author_conflict: bool,
     /// The two series share at least one genre/tag.
     pub tag_overlap: bool,
     /// The titles carry **different numbers** — `Overlord` against `Overlord 2`, volume 3
@@ -112,6 +119,7 @@ impl MatchSignals {
             (self.year_agreement, "year_agreement"),
             (self.year_conflict, "year_conflict"),
             (self.shared_author, "shared_author"),
+            (self.author_conflict, "author_conflict"),
             (self.tag_overlap, "tag_overlap"),
             (self.numeric_conflict, "numeric_conflict"),
         ] {

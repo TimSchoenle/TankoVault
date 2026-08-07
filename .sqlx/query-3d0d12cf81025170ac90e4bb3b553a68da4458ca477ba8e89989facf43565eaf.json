@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO notification_dedup (user_id, series_id, chapter_number, created_at) SELECT user_id, $1, chapter_number, created_at FROM notification_dedup WHERE series_id = $2 ON CONFLICT (user_id, series_id, chapter_number) DO NOTHING RETURNING to_jsonb(notification_dedup)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "to_jsonb",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3d0d12cf81025170ac90e4bb3b553a68da4458ca477ba8e89989facf43565eaf"
+}

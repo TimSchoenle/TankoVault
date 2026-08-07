@@ -82,6 +82,30 @@ const ROMANCE: &[Fixture] = &[
     },
 ];
 
+/// Chosen to *move* input positions rather than append them: every one carries `tower`, the
+/// rarest tag of the first build, which makes it the most frequent tag of the second and shifts
+/// every position below it.
+const TOWER: &[Fixture] = &[
+    Fixture {
+        title: "Tower Climb",
+        tags: &["tower", "action", "system", "leveling"],
+        authors: &["kim-one"],
+        content_type: ContentType::Manhwa,
+    },
+    Fixture {
+        title: "The Endless Spire",
+        tags: &["tower", "action", "system", "regression"],
+        authors: &["kim-two"],
+        content_type: ContentType::Manhwa,
+    },
+    Fixture {
+        title: "Ascension Floor",
+        tags: &["tower", "dungeon", "system", "leveling"],
+        authors: &["kim-three"],
+        content_type: ContentType::Manhwa,
+    },
+];
+
 async fn ingest(db: &TestDb, provider: ProviderId, fixture: &Fixture) -> SeriesId {
     ingest_series(
         &db.pool,
@@ -201,6 +225,55 @@ async fn a_full_build_produces_an_index_that_separates_the_clusters() {
         worst_dungeon < best_romance,
         "every dungeon series must outrank every romance one; dungeon worst rank {worst_dungeon}, \
          romance best rank {best_romance}"
+    );
+}
+
+/// **A rebuild must not collide with the positions the last build assigned.**
+///
+/// The bug this pins: the input positions were cleared and reassigned by two sub-statements of a
+/// single statement. Postgres runs those against one snapshot, so the clear was invisible to the
+/// assignment, and any position that moved to a different feature collided with its previous
+/// holder — every full build after the first died with `duplicate key value violates unique
+/// constraint "rec_features_dense_idx"`. The second batch is chosen to move positions rather than
+/// only append them, which is what the first build's catalogue alone would do.
+#[tokio::test]
+async fn a_second_full_build_reassigns_the_input_positions() {
+    let db = TestDb::spawn().await;
+    catalogue(&db).await;
+    build(&db.pool, budget(), true)
+        .await
+        .expect("first build")
+        .expect("the build was not claimed by anyone else");
+
+    let provider = seed::provider(&db, "beta").create().await;
+    for fixture in TOWER {
+        ingest(&db, provider, fixture).await;
+    }
+
+    let report = build(&db.pool, budget(), true)
+        .await
+        .expect("a second full build must not collide on rec_features_dense_idx")
+        .expect("the build was not claimed by anyone else");
+    assert_eq!(
+        report.generation, 2,
+        "a full build takes the next generation"
+    );
+    assert_eq!(report.series_built, 9);
+
+    let state = recsys::read_build_state(&db.pool).await.expect("state");
+    assert_eq!(state.error, None, "the rebuild must record no error");
+
+    // Contiguous from zero, or the basis' column order means nothing: `dense_vocabulary` orders
+    // by `dense_index`, so this is the assignment read back exactly as the projection reads it.
+    let vocabulary = recsys::dense_vocabulary(&db.pool)
+        .await
+        .expect("vocabulary");
+    let positions: Vec<i32> = vocabulary.iter().map(|(_, index, _)| *index).collect();
+    let expected: Vec<i32> =
+        (0..i32::try_from(positions.len()).expect("small vocabulary")).collect();
+    assert_eq!(
+        positions, expected,
+        "the input positions must be dense from zero"
     );
 }
 
